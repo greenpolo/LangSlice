@@ -5,7 +5,7 @@ Every section has a DEFAULT appearance, the tested one: ``preprocess`` auto
 the host's channel blend (:func:`langslice.image_prep.host_preprocess`, the
 image ``preprocess.preview`` shows) for snapshots exported one page per
 channel. The blend is an appearance, not a lossy step: the raw channels stay
-readable (:meth:`langslice.linear.engine.EngineContext.section_channels`).
+readable (:meth:`langslice.linear.workspace.Workspace.section_channels`).
 
 With ``JobSpec.agent_preprocessing`` the ``preprocess`` tool may replace the
 default per TARGET, independently:
@@ -26,14 +26,12 @@ from __future__ import annotations
 
 import json
 import math
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from PIL import Image
 
 from langslice.linear.state import SliceState, StackState
-
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
-    from langslice.linear.engine import EngineContext
+from langslice.linear.workspace import Workspace
 
 #: The images an appearance can be set for.
 TARGETS: tuple[str, ...] = ("view", "fit")
@@ -170,7 +168,7 @@ def set_settings(
         state.appearance[target] = held
 
 
-def look_token(ctx: EngineContext, look: Look) -> str:
+def look_token(ctx: Workspace, look: Look) -> str:
     """The render-cache slot of a look; the default keeps ``spec.preprocess``."""
     if look is None:
         return str(ctx.spec.preprocess)
@@ -183,7 +181,7 @@ def view_look(state: StackState, record: SliceState) -> Look:
 
 
 def fit_image(
-    ctx: EngineContext, state: StackState, record: SliceState, *, long_edge: int,
+    ctx: Workspace, state: StackState, record: SliceState, *, long_edge: int,
 ) -> Image.Image:
     """The section as a deformable fit reads it: the fit appearance, unframed.
 

@@ -20,10 +20,10 @@ from langslice.linear.render import (
     render_cache_key,
     render_slice,
 )
+from langslice.linear.workspace import Workspace
 from langslice.space import Plane
 
 if TYPE_CHECKING:
-    from langslice.linear.engine import EngineContext
     from langslice.linear.state import StackState
     from langslice.nonlinear.image_gen_registration import RegistrationCandidate
 
@@ -49,7 +49,7 @@ class LinearRegistrationInput:
 
 def prepare_linear_registration(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     section_id: str,
     *,
     long_edge: int = 2048,
@@ -165,7 +165,7 @@ def prepare_linear_registration(
 
 def run_linear_registration(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     section_id: str,
     *,
     long_edge: int = 2048,

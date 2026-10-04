@@ -19,6 +19,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.atlas.render import annotation_slice
+from langslice.linear.workspace import Workspace
 from langslice.nonlinear.border_refinement import (
     border_overlay,
     extract_thinned_lines,
@@ -43,7 +44,6 @@ from langslice.registration_handoff import prepare_linear_registration
 from langslice.space import Plane
 
 if TYPE_CHECKING:
-    from langslice.linear.engine import EngineContext
     from langslice.linear.state import StackState
 
 
@@ -86,7 +86,7 @@ def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def correction_fingerprint(state: StackState, ctx: EngineContext, section_id: str) -> str:
+def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -> str:
     """Identify the source image, placement and rendering settings for a correction."""
     record = state.by_id(section_id)
     if record is None:
@@ -126,7 +126,7 @@ MAX_CONCURRENT_IMAGE_CALLS = 8
 
 def correct_slice(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     section_id: str,
     *,
     prompt: str = "",
@@ -148,7 +148,7 @@ def correct_slice(
 
 def start_correction(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     section_id: str,
     *,
     prompt: str = "",

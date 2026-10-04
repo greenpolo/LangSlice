@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -57,10 +57,8 @@ from langslice.linear.render import (
     shown_section,
 )
 from langslice.linear.state import SliceState, StackState
+from langslice.linear.workspace import Workspace
 from langslice.space import Plane
-
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
-    from langslice.linear.engine import EngineContext
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 
 def calibrate(
-    state: StackState, ctx: EngineContext, record: SliceState, section: Image.Image
+    state: StackState, ctx: Workspace, record: SliceState, section: Image.Image
 ) -> tuple[float, str]:
     """``(canvas micrometres per pixel, source)``, never failing.
 
@@ -321,7 +319,7 @@ def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
 
 def fit_silhouette(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     *,
     draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,
@@ -404,7 +402,7 @@ def fit_silhouette(
 
 def _fit_payload(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     section: Image.Image,
     um_per_px: float,
@@ -573,7 +571,7 @@ def _overlap(prepared: Any, atlas: Any, atlas_to_section: np.ndarray,
 
 def elastix_affine(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     start_params: Sequence[float],
     calibration: dict[str, Any],
@@ -643,7 +641,7 @@ def elastix_affine(
 
 
 def _start_calibration(
-    state: StackState, ctx: EngineContext, record: SliceState, section: Image.Image,
+    state: StackState, ctx: Workspace, record: SliceState, section: Image.Image,
     stored: bool,
 ) -> tuple[float, str]:
     """The calibration the section's current placement was drawn with.
@@ -668,7 +666,7 @@ def _start_calibration(
 
 def fit_elastix(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     *,
     draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,

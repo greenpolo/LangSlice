@@ -44,10 +44,11 @@ from langslice.image_prep import (
 )
 from langslice.linear.appearance import Look, look_token, view_look
 from langslice.linear.state import SliceState, StackState
-from langslice.space import Plane
+from langslice.linear.workspace import Workspace
 
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox that renders
+if TYPE_CHECKING:  # interim: the media module takes these next
     from langslice.linear.engine import EngineContext
+from langslice.space import Plane
 
 #: Working frame for transform fits and their preview panels. A COMPUTE
 #: size: fits, calibration and the six stored numbers are normalized against
@@ -99,18 +100,18 @@ _ROTATE_OPS = {
 }
 
 
-def resolution_level(ctx: EngineContext) -> str:
+def resolution_level(ctx: Workspace) -> str:
     """This run's ``image_resolution`` ("low" when the spec has none)."""
     level = str(getattr(getattr(ctx, "spec", None), "image_resolution", "low") or "low")
     return level if level in PICTURE_EDGES else "low"
 
 
-def opening_edge(ctx: EngineContext) -> int:
+def opening_edge(ctx: Workspace) -> int:
     """Long edge of each opening-strip tile at this run's level."""
     return PICTURE_EDGES[resolution_level(ctx)][0]
 
 
-def picture_edge(ctx: EngineContext, requested: int | None = None) -> int:
+def picture_edge(ctx: Workspace, requested: int | None = None) -> int:
     """Long edge of each later picture: the level's, or *requested* at "auto".
 
     *requested* must already be clamped into :data:`RESOLUTION_RANGE`
@@ -203,7 +204,7 @@ def wrap_caption(text: str, font: Any, width: int) -> str:
 
 
 def render_cache_key(
-    ctx: EngineContext, record: SliceState, *, long_edge: int, frame: bool, look: Look = None,
+    ctx: Workspace, record: SliceState, *, long_edge: int, frame: bool, look: Look = None,
 ) -> tuple[str, bool, int, int, str, bool]:
     """The key a render is cached under: the section plus everything it shows.
 
@@ -215,7 +216,7 @@ def render_cache_key(
 
 
 def render_slice(
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     *,
     long_edge: int = PREVIEW_LONG_EDGE,
@@ -286,7 +287,7 @@ def fine_detail(stretched: np.ndarray) -> float:
 
 
 def _look_image(
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     look: dict[str, Any],
     working_size: tuple[int, int],
@@ -363,7 +364,7 @@ def _look_image(
 
 
 def canvas_um_per_px(
-    ctx: EngineContext,
+    ctx: Workspace,
     record: SliceState,
     *,
     long_edge: int = PREVIEW_LONG_EDGE,
@@ -385,7 +386,7 @@ def canvas_um_per_px(
 
 
 def shown_section(
-    ctx: EngineContext, record: SliceState, section: Image.Image, um_per_px: float,
+    ctx: Workspace, record: SliceState, section: Image.Image, um_per_px: float,
     look: Look = None, *, long_edge: int = PREVIEW_LONG_EDGE,
 ) -> tuple[Image.Image, float, tuple[float, float]]:
     """The render a PICTURE of *section* is drawn from, *long_edge* at most.
@@ -539,7 +540,7 @@ def slice_flags(record: SliceState) -> list[str]:
 
 def stack_pictures(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     *,
     long_edge: int | None = None,
     by_position: bool = False,
@@ -617,7 +618,7 @@ def reference_slice_part(
 
 def stack_sheet(
     state: StackState,
-    ctx: EngineContext,
+    ctx: Workspace,
     *,
     under: Callable[[SliceState], Image.Image | None] | None = None,
     columns: int = 8,
