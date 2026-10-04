@@ -106,23 +106,23 @@ def params_for(workspace: Workspace, given: Given) -> list[float]:
                                       **{**knobs(0.0, 1.0, 1.0, 0.0, 0.0, 0.0), **given.knobs})
 
 
-def state_of(workspace: Workspace, sections: list[Given], *, pitch: float,
-             yaw: float) -> StackState:
+def state_of(workspace: Workspace, sections: list[Given]) -> StackState:
+    """A state holding *sections* as given, each at its own cutting angles."""
     records = [
         SliceState(id=g.section_id, index_original=i, index_corrected=i, flip=g.flip,
                    rotation_deg=g.rotation_deg, position_mm=g.position_mm,
-                   transform={"kind": "interactive", "params": params_for(workspace, g)})
+                   transform={"kind": "interactive", "params": params_for(workspace, g)},
+                   cutting_angles_deg={"pitch": g.pitch_deg, "yaw": g.yaw_deg})
         for i, g in enumerate(sections)
     ]
     return StackState(image_folder=workspace.image_folder, atlas=workspace.spec.atlas,
-                      plane=workspace.spec.plane,
-                      cutting_angles_deg={"pitch": pitch, "yaw": yaw}, slices=records)
+                      plane=workspace.spec.plane, slices=records)
 
 
 def pixel_map(workspace: Workspace, given: Given) -> np.ndarray:
     """The section's file pixel -> atlas map as the job draws it, at its own
-    cutting angles (one state per section: the job stores one stack angle)."""
-    state = state_of(workspace, [given], pitch=given.pitch_deg, yaw=given.yaw_deg)
+    cutting angles."""
+    state = state_of(workspace, [given])
     return section_frame(state, workspace, state.slices[0]).pixel_to_atlas_um()
 
 
@@ -220,7 +220,7 @@ def test_a_fixed_orientation_still_reproduces_the_map(stack: Path):
     assert found.in_plane["mirrored"]  # the flip is carried by the six numbers
     again = Given(given.section_id, found.position_mm, found.pitch_deg, found.yaw_deg, 0,
                   False, {})
-    state = state_of(workspace, [again], pitch=found.pitch_deg, yaw=found.yaw_deg)
+    state = state_of(workspace, [again])
     state.slices[0].transform = {"params": list(found.params)}
     redrawn = section_frame(state, workspace, state.slices[0]).pixel_to_atlas_um()
     assert np.allclose(redrawn, matrix, atol=1e-7, rtol=0)
@@ -237,8 +237,7 @@ def test_another_pixel_size_moves_the_scale_into_the_six_numbers(stack: Path):
     redrawn_workspace = make_workspace(stack, atlas, pixel_size=2.0 * PIXEL_SIZE_UM)
     state = state_of(redrawn_workspace, [Given(given.section_id, found.position_mm,
                                                found.pitch_deg, found.yaw_deg,
-                                               found.rotation_deg, found.flip, {})],
-                     pitch=found.pitch_deg, yaw=found.yaw_deg)
+                                               found.rotation_deg, found.flip, {})])
     state.slices[0].transform = {"params": list(found.params)}
     redrawn = section_frame(state, redrawn_workspace, state.slices[0]).pixel_to_atlas_um()
     assert np.allclose(redrawn, matrix, atol=1e-7, rtol=0)
@@ -379,30 +378,33 @@ def test_visualign_markers_come_back_on_the_file(stack: Path, tmp_path: Path):
 
 
 def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
-    """A finished job's registration.json (one stack angle, as a job holds)
-    gives back every section's placement; read by a job whose files are
-    renamed copies, matched by stem."""
+    """A finished job's registration.json gives back every section's
+    placement, whether the stack shares one cutting angle or each section
+    has its own."""
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas)
     shared = [Given(g.section_id, g.position_mm, 2.25, -1.5, g.rotation_deg, g.flip, g.knobs)
               for g in PER_SECTION]
-    state = state_of(workspace, shared, pitch=2.25, yaw=-1.5)
-    document = registration_document(state, workspace, JobLayout(tmp_path / "job", stack))
-    assert all(entry["problem"] is None for entry in document["sections"])
-    path = write_export(tmp_path / "registration.json", document)
-    result = imports.import_placements(path, workspace)
-    assert result.source.format == "langslice-registration"
-    for given in shared:
-        placement = result.by_section()[given.section_id]
-        assert_recovered(placement, given, params_for(workspace, given))
-        record = state.by_id(given.section_id)
-        assert record is not None and record.transform is not None
-        assert np.allclose(placement.params, record.transform["params"], atol=TOL_PARAMS)
+    for index, sections in enumerate((shared, PER_SECTION)):
+        state = state_of(workspace, sections)
+        assert state.mixed_angles is (sections is PER_SECTION)
+        document = registration_document(state, workspace,
+                                         JobLayout(tmp_path / f"job{index}", stack))
+        assert all(entry["problem"] is None for entry in document["sections"])
+        path = write_export(tmp_path / f"registration{index}.json", document)
+        result = imports.import_placements(path, workspace)
+        assert result.source.format == "langslice-registration"
+        for given in sections:
+            placement = result.by_section()[given.section_id]
+            assert_recovered(placement, given, params_for(workspace, given))
+            record = state.by_id(given.section_id)
+            assert record is not None and record.transform is not None
+            assert np.allclose(placement.params, record.transform["params"], atol=TOL_PARAMS)
     # The same registration into a job on another atlas of the same target.
     other = DeepAtlas("allen_mouse_50um")
     elsewhere = make_workspace(stack, other)
-    document_allen = registration_document(state_of(elsewhere, shared, pitch=2.25, yaw=-1.5),
-                                           elsewhere, JobLayout(tmp_path / "job2", stack))
+    document_allen = registration_document(state_of(elsewhere, shared), elsewhere,
+                                           JobLayout(tmp_path / "job2", stack))
     refused = imports.import_placements(
         write_export(tmp_path / "allen_registration.json", document_allen), workspace)
     assert set(refused.refused) == {ID0, ID1, ID2}
@@ -426,7 +428,7 @@ def test_without_a_pixel_size_the_imported_one_is_used(stack: Path, tmp_path: Pa
         assert placement.pixel_size_source == "imported"
         given = Given(placement.section_id, placement.position_mm, placement.pitch_deg,
                       placement.yaw_deg, placement.rotation_deg, placement.flip, {})
-        state = state_of(redrawn, [given], pitch=given.pitch_deg, yaw=given.yaw_deg)
+        state = state_of(redrawn, [given])
         state.slices[0].transform = {"params": list(placement.params)}
         frame = section_frame(state, redrawn, state.slices[0])
         assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
