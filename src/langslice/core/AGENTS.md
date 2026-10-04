@@ -26,9 +26,20 @@ other module whose imports are core-only:
 - the host-row geometry the linear snapshot worker emits
   (`doors/api/abba_worker.py`): `abba_affine.py` (a normalized affine in
   ABBA's centred world millimetres) and `abba_spline.py` (a stored landmark
-  spline as ABBA landmark pairs; the Java BigWarp step built from them is
-  `hosts/integrations/abba.py`'s `prepare_spline_registration`). Both moved
-  down from `hosts/integrations/` (2026-10-04) because a door uses them.
+  spline as ABBA landmark pairs, kept for old checkpoints; never emitted for
+  new jobs). Both moved down from `hosts/integrations/` (2026-10-04) because
+  a door uses them. `abba_warp.py` (2026-10-04): an applied deformation as
+  the landmark pairs of a SECOND ABBA step on top of the affine row
+  (`warp_world_landmarks(frame, record, params, size=, pixel_size_um=)`:
+  `source` = a section point as the affine step placed it, `target` = where
+  the deformation takes it, centred world mm, the frame derived from
+  `normalized_to_abba_affine` and `maps.native_points`; adaptive 9x9 to
+  33x33 grid, the TPS pull-back checked within 5 um at off-grid probes, the
+  exact map's and the TPS's sampled Jacobians checked for folds; refused
+  otherwise). `abba_angles.py`: ABBA's `ReslicedAtlas` rotations <->
+  pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`, `YAW_TO_ROTATE_Y_SIGN`, both -1;
+  `angles_to_rotate`, `rotate_to_angles`; SliceBench reads the constants
+  through the `langslice.integrations.abba_linear` shim).
 
 ## The layer rule
 
