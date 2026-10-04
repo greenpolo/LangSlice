@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -27,6 +27,9 @@ from langslice.nonlinear.providers import (
 from langslice.nonlinear.types import Deformation
 from langslice.providers.registry import canonical_provider
 from langslice.space import Plane
+
+if TYPE_CHECKING:
+    from langslice.providers.registry import ImageCall
 
 __all__ = [
     "BorderRefinementResult",
@@ -163,6 +166,7 @@ def refine_borders(
     generated_image: Image.Image | None = None,
     deformation: Deformation = "bspline",
     image_prompt: str | None = None,
+    image_call: ImageCall | None = None,
 ) -> BorderRefinementResult:
     """Fit label-preserving residual deformation to a model's corrected lines.
 
@@ -201,7 +205,8 @@ def refine_borders(
             {**metadata, "model_called": False, "model_free": True},
         )
     if generated_image is None:
-        generated = generate_warped_segmentation_image(SegmentationGenerationRequest(
+        edit = image_call or generate_warped_segmentation_image
+        generated = edit(SegmentationGenerationRequest(
             slice_image=rough, reference_images=[original], prompt=prompt,
             provider=provider, model=model, review_model=review_model,
             openai_image_route=openai_image_route, thinking_level=thinking_level,

@@ -2,6 +2,11 @@
 
 The first image reply is retained automatically. This tool produces annotation
 artifacts, not a fitted deformation or a replacement linear transform.
+
+The image model is an argument (:class:`langslice.providers.registry.ImageModel`,
+resolved by a door), so this module imports no provider and is core-clean
+(``tests/test_core_imports.py``); the geometry it starts from is the core's
+(:mod:`langslice.core.handoff`).
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.atlas.render import annotation_slice
+from langslice.core.handoff import correction_fingerprint, digest, prepare_linear_registration
 from langslice.linear.workspace import Workspace
 from langslice.nonlinear.border_refinement import (
     border_overlay,
@@ -34,18 +40,12 @@ from langslice.nonlinear.prompts import (
     border_correction_tool_prompt,
     supplied_prompt_is_gpt_twin,
 )
-from langslice.nonlinear.providers import (
-    SegmentationGenerationRequest,
-    generate_warped_segmentation_image,
-)
-from langslice.providers.openai_oauth import DEFAULT_IMAGE_MODEL
-from langslice.providers.registry import canonical_provider
-from langslice.registration_handoff import prepare_linear_registration
+from langslice.nonlinear.types import SegmentationGenerationRequest
 from langslice.space import Plane
 
 if TYPE_CHECKING:
     from langslice.linear.state import StackState
-
+    from langslice.providers.registry import ImageModel
 
 #: Width of the placed boundaries in Image 1, in canvas pixels at a 1536-px long edge.
 BORDER_WIDTH_PX = 2.0
@@ -82,37 +82,6 @@ def prompt_diff(base: str, edited: str) -> str:
     return " ".join(parts)
 
 
-def _digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
-
-
-def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -> str:
-    """Identify the source image, placement and rendering settings for a correction."""
-    record = state.by_id(section_id)
-    if record is None:
-        raise ValueError(f"Unknown section: {section_id}")
-    source = Path(ctx.image_path(record.id)).resolve()
-    stat = source.stat()
-    transform = record.transform or {}
-    nonlinear = dict(ctx.spec.to_dict().get("nonlinear") or {})
-    # The deformable-fit engine never reaches the image call; leaving it in
-    # made every trace saved before the field existed (or under another
-    # engine choice) stale at an unchanged placement.
-    nonlinear.pop("engine", None)
-    return _digest({
-        "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
-        "section_id": record.id, "atlas": state.atlas, "plane": state.plane,
-        "position_mm": record.position_mm, "angles": state.cutting_angles_deg,
-        "flip": record.flip, "rotation_deg": record.rotation_deg,
-        "transform": {key: transform.get(key) for key in (
-            "params", "calibration", "orientation", "stale", "spline",
-        )},
-        "preprocess": ctx.spec.preprocess,
-        "pixel_size_um": ctx.spec.inputs.get("pixel_size_um"),
-        "nonlinear": nonlinear,
-    })
-
-
 def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
@@ -131,8 +100,7 @@ def correct_slice(
     *,
     prompt: str = "",
     out: Path,
-    provider: str = "openai-oauth",
-    image_model: str | None = None,
+    image_model: ImageModel,
 ) -> dict[str, Any]:
     """Make one image edit and wait for its result.
 
@@ -140,8 +108,7 @@ def correct_slice(
     image call in this thread.
     """
     record, job = start_correction(
-        state, ctx, section_id, prompt=prompt, out=out,
-        provider=provider, image_model=image_model,
+        state, ctx, section_id, prompt=prompt, out=out, image_model=image_model,
     )
     return job() if job is not None else record
 
@@ -153,11 +120,14 @@ def start_correction(
     *,
     prompt: str = "",
     out: Path | None = None,
-    provider: str = "openai-oauth",
-    image_model: str | None = None,
+    image_model: ImageModel,
     calls_dir: Path | None = None,
 ) -> tuple[dict[str, Any], Callable[[], dict[str, Any]] | None]:
     """Prepare one image edit from an existing calibrated linear placement.
+
+    *image_model* is the model to call, resolved by the caller
+    (:func:`langslice.providers.registry.resolve_image_model`; a door binds
+    the run's provider): this module never chooses or imports a provider.
 
     Returns ``(record, job)``. Everything that reads the stack state happens
     here, so ``job`` (the image call and its artifacts) may run in another
@@ -176,16 +146,13 @@ def start_correction(
     regenerate or replace an existing reply.
     The caller checkpoints the returned record; the source linear state is untouched.
     """
-    provider = canonical_provider(provider)
-    if provider == "none":
-        raise ValueError("The image correction tool requires an image-model provider")
-    model = image_model or (DEFAULT_IMAGE_MODEL if provider == "openai-oauth" else None)
+    provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
         raise ValueError("prompt must be text")
     # Validate prerequisites before spending a call or marking an attempt.
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
-    call_key = _digest({
+    call_key = digest({
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     })
     if calls_dir is None:
@@ -280,7 +247,7 @@ def start_correction(
     def job() -> dict[str, Any]:
         try:
             first, second = (canvas, rough) if gpt_twin else (rough, canvas)
-            generated = generate_warped_segmentation_image(SegmentationGenerationRequest(
+            generated = image_model.call(SegmentationGenerationRequest(
                 slice_image=first, reference_images=[second], prompt=sent,
                 provider=provider, model=model, openai_image_route="images", mode="edit",
             ))

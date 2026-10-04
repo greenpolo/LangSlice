@@ -185,7 +185,7 @@ def fit_image(
 ) -> Image.Image:
     """The section as a deformable fit reads it: the fit appearance, unframed.
 
-    Same frame as :func:`langslice.registration_handoff.linear_registration_input`
+    Same frame as :func:`langslice.core.handoff.prepare_linear_registration`
     (oriented, not tissue-framed) at *long_edge*.
     """
     from langslice.core.sections import render_slice

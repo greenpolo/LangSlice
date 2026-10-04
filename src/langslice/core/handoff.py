@@ -1,0 +1,204 @@
+"""The geometry an image correction or a deformable fit starts from.
+
+The core half of the bridge between a written linear placement and the
+nonlinear work on top of it (layered refactor, phase 4, 2026-10-04):
+:func:`prepare_linear_registration` renders the section and maps the native
+atlas plane onto it (the trace's canvas and every deformable fit's grid start
+here), and :func:`correction_fingerprint` identifies everything an image
+correction's inputs depend on, so a saved reply is reused only at the exact
+geometry that produced it. Neither generates an image nor changes the stack;
+neither imports a provider. The image-model call itself is
+``registration_tool.start_correction``, which takes the model as an argument.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
+
+import numpy as np
+from PIL import Image
+
+from langslice.affine import denormalized_affine
+from langslice.core.canvas import canvas_geometry
+from langslice.core.sections import (
+    PREVIEW_LONG_EDGE,
+    canvas_um_per_px,
+    render_cache_key,
+    render_slice,
+)
+from langslice.linear.workspace import Workspace
+from langslice.space import Plane
+
+if TYPE_CHECKING:
+    from langslice.linear.state import StackState
+
+
+@dataclass(frozen=True)
+class LinearRegistrationInput:
+    """Native sampled atlas pixels mapped onto the returned section image.
+
+    Pass ``atlas_to_slice`` as nonlinear's ``initial_atlas_to_slice``. The image
+    already includes the section's orientation and display preprocessing; use
+    native atlas image axes and no additional atlas mirror for this handoff.
+    """
+
+    image: Image.Image
+    atlas_to_slice: np.ndarray
+    atlas_name: str
+    position_mm: float
+    plane: Plane
+    pitch_deg: float
+    yaw_deg: float
+    metadata: dict[str, Any]
+
+
+def prepare_linear_registration(
+    state: StackState,
+    ctx: Workspace,
+    section_id: str,
+    *,
+    long_edge: int = 2048,
+    transform: dict[str, Any] | None = None,
+) -> LinearRegistrationInput:
+    """Prepare a supplied affine placement, preserving shear and physical scale.
+
+    Requires a written position, invertible affine and recoverable calibration.
+    Legacy records do not retain an orientation snapshot; when supplied, an
+    ``orientation`` dictionary or ``stale`` flag is checked before using a fit.
+    Missing calibration is never replaced with a new silhouette estimate.
+
+    *transform* stands in for the section's written transform (same keys:
+    ``params``, ``calibration``), for a fit that starts from a placement it
+    has not written: ``fit_affine``'s Elastix method on a section with no
+    transform yet starts from the identity.
+    """
+    if isinstance(long_edge, bool) or not isinstance(long_edge, int) or long_edge <= 0:
+        raise ValueError("long_edge must be a positive integer")
+    record = state.by_id(section_id)
+    if record is None:
+        raise ValueError(f"Unknown section: {section_id}")
+    if record.position_mm is None or not np.isfinite(record.position_mm):
+        raise ValueError("A finite written position is required")
+    if transform is None:
+        transform = record.transform
+    if not transform:
+        raise ValueError("A written affine transform is required")
+    if transform.get("spline"):
+        raise ValueError("A linear placement is required; an existing spline cannot be discarded")
+    if transform.get("stale"):
+        raise ValueError("The written affine is marked stale")
+    orientation = transform.get("orientation")
+    if orientation is not None:
+        expected = {"flip": record.flip, "rotation_deg": record.rotation_deg}
+        if not isinstance(orientation, dict) or any(
+            key in orientation and orientation[key] != value for key, value in expected.items()
+        ):
+            raise ValueError("The written affine has a different section orientation")
+    if state.atlas != ctx.spec.atlas or state.plane != ctx.spec.plane:
+        raise ValueError("State and rendering context disagree about the atlas or plane")
+    if state.plane not in ("coronal", "sagittal", "horizontal"):
+        raise ValueError("Unsupported section plane")
+    if not np.isfinite([state.pitch_deg, state.yaw_deg]).all():
+        raise ValueError("Cutting angles must be finite")
+    try:
+        params = np.asarray(transform["params"], dtype=np.float64)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("The written affine must contain six finite parameters") from exc
+    if params.shape != (6,) or not np.isfinite(params).all():
+        raise ValueError("The written affine must contain six finite parameters")
+
+    image = render_slice(ctx, record, long_edge=long_edge, frame=False)
+    with Image.open(ctx.image_path(record.id)) as source_image:
+        original_size = list(source_image.size)
+    matrix = np.vstack([denormalized_affine(params, image.size), [0.0, 0.0, 1.0]])
+    try:
+        inverse = np.linalg.inv(matrix)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("The written affine is singular") from exc
+    if not np.isfinite(inverse).all():
+        raise ValueError("The written affine cannot be inverted to finite coordinates")
+
+    um_per_px, source = canvas_um_per_px(ctx, record, long_edge=long_edge, frame=False)
+    if um_per_px is None:
+        calibration = transform.get("calibration") or {}
+        try:
+            preview_um_per_px = float(calibration["section_um_per_px"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("The written affine has no recoverable calibration") from exc
+        render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
+        preview_key = render_cache_key(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
+        target_key = render_cache_key(ctx, record, long_edge=long_edge, frame=False)
+        um_per_px = preview_um_per_px * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
+        source = str(calibration.get("source", "stored"))
+    if not np.isfinite(um_per_px) or um_per_px <= 0:
+        raise ValueError("Section calibration must be finite and positive")
+
+    plane = cast(Plane, state.plane)
+    geometry = canvas_geometry(
+        image.size, um_per_px, ctx.atlas, record.position_mm, plane,
+        state.pitch_deg, state.yaw_deg,
+    )
+    sx, sy = geometry.section_offset
+    ax, ay = geometry.atlas_offset
+    atlas_to_section_frame = np.array(
+        [[geometry.atlas_scale, 0.0, ax - sx],
+         [0.0, geometry.atlas_scale, ay - sy], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+    atlas_to_slice = inverse @ atlas_to_section_frame
+    if not np.isfinite(atlas_to_slice).all():
+        raise ValueError("Atlas placement produced non-finite coordinates")
+    return LinearRegistrationInput(
+        image=image.copy(), atlas_to_slice=atlas_to_slice, atlas_name=state.atlas,
+        position_mm=float(record.position_mm), plane=plane,
+        pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+        metadata={
+            "source": "linear_state", "section_id": record.id,
+            "orientation": {"rotation_deg": record.rotation_deg, "flip": record.flip},
+            "orientation_snapshot_checked": orientation is not None,
+            "preprocess": ctx.spec.preprocess, "image_size": list(image.size),
+            "image_frame": "oriented rendered section; not acquisition image pixels",
+            "source_image_size": original_size,
+            "section_um_per_px": float(um_per_px), "calibration_source": source,
+            "linear_params": params.tolist(),
+            "atlas_to_slice": atlas_to_slice.tolist(),
+            "atlas_grid_size": list(geometry.annotation.shape[::-1]),
+            "image_axes": "native", "atlas_mirror_lr": False,
+        },
+    )
+
+
+def digest(value: object) -> str:
+    """SHA-256 of a JSON value (sorted keys, no NaN): the fingerprints' hash."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -> str:
+    """Identify the source image, placement and rendering settings for a correction."""
+    record = state.by_id(section_id)
+    if record is None:
+        raise ValueError(f"Unknown section: {section_id}")
+    source = Path(ctx.image_path(record.id)).resolve()
+    stat = source.stat()
+    transform = record.transform or {}
+    nonlinear = dict(ctx.spec.to_dict().get("nonlinear") or {})
+    # The deformable-fit engine never reaches the image call; leaving it in
+    # made every trace saved before the field existed (or under another
+    # engine choice) stale at an unchanged placement.
+    nonlinear.pop("engine", None)
+    return digest({
+        "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
+        "section_id": record.id, "atlas": state.atlas, "plane": state.plane,
+        "position_mm": record.position_mm, "angles": state.cutting_angles_deg,
+        "flip": record.flip, "rotation_deg": record.rotation_deg,
+        "transform": {key: transform.get(key) for key in (
+            "params", "calibration", "orientation", "stale", "spline",
+        )},
+        "preprocess": ctx.spec.preprocess,
+        "pixel_size_um": ctx.spec.inputs.get("pixel_size_um"),
+        "nonlinear": nonlinear,
+    })

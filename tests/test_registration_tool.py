@@ -12,7 +12,13 @@ from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState
 from langslice.nonlinear.border_refinement import border_overlay, smooth_border_overlay
 from langslice.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
+from langslice.providers.registry import ImageModel, resolve_image_model
 from langslice.registration_handoff import LinearRegistrationInput, prepare_linear_registration
+
+
+def _model(call, provider="openai-oauth"):
+    """The run's image model with its network call replaced (a door resolves it)."""
+    return ImageModel(provider, resolve_image_model(provider).model, call)
 
 
 @pytest.fixture
@@ -51,10 +57,11 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
         calls.append(request)
         return SimpleNamespace(image=raw, route="test")
 
-    monkeypatch.setattr(tool, "generate_warped_segmentation_image", generate)
+    model = _model(generate)
     before = state.to_dict()
     result = tool.correct_slice(
-        state, ctx, record.id, out=tmp_path / "out", prompt=border_correction_tool_prompt(
+        state, ctx, record.id, out=tmp_path / "out", image_model=model,
+        prompt=border_correction_tool_prompt(
             provider="openai-oauth",
         ).replace("Output one image.", "The left piece has shifted. Output one image."),
     )
@@ -94,10 +101,10 @@ def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_pat
         calls.append(request)
         return SimpleNamespace(image=original, route="test")
 
-    monkeypatch.setattr(tool, "generate_warped_segmentation_image", generate)
-    first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
+    model = _model(generate)
+    first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     repeated = tool.correct_slice(
-        state, ctx, record.id, out=tmp_path / "out",
+        state, ctx, record.id, out=tmp_path / "out", image_model=model,
         prompt="Try something else.",
     )
     assert len(calls) == 1
@@ -107,7 +114,7 @@ def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_pat
     assert repeated["artifact_dir"] == first["artifact_dir"]
     # A changed linear alignment is a new input, not a veto of the first reply.
     record.position_mm = 4.5
-    changed = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
+    changed = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert len(calls) == 2
     assert changed["geometry_fingerprint"] != first["geometry_fingerprint"]
 
@@ -116,11 +123,9 @@ def test_missing_linear_placement_never_reaches_provider(case, tmp_path, monkeyp
     state, ctx, record, *_ = case
     record.transform = None
     monkeypatch.setattr(tool, "prepare_linear_registration", prepare_linear_registration)
-    monkeypatch.setattr(
-        tool, "generate_warped_segmentation_image", lambda *a: pytest.fail("Unexpected model call"),
-    )
+    model = _model(lambda *a: pytest.fail("Unexpected model call"))
     with pytest.raises(ValueError, match="affine transform"):
-        tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
+        tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert not (tmp_path / "out").exists()
 
 
@@ -134,14 +139,14 @@ def test_transport_can_retry_without_discarding_any_image_reply(case, tmp_path, 
             raise RuntimeError("transport failed")
         return SimpleNamespace(image=original, route="test")
 
-    monkeypatch.setattr(tool, "generate_warped_segmentation_image", fail)
-    first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
-    repeated = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
+    model = _model(fail)
+    first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    repeated = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert first["status"] == "error" and first["message"] == "transport failed"
     assert not first["raw_received"]
     assert repeated["status"] == "ok" and repeated["raw_received"]
     assert repeated["attempt"] == 2 and len(calls) == 2
-    cached = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
+    cached = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert cached["cached"] and len(calls) == 2
 
 
@@ -155,6 +160,14 @@ def test_deformable_engine_choice_does_not_make_a_trace_stale(case):
     assert tool.correction_fingerprint(state, ctx, record.id) != first
 
 
+def test_a_door_resolves_the_provider_and_none_has_no_image_model():
+    resolved = resolve_image_model("chatgpt")
+    assert (resolved.provider, resolved.model) == ("openai-oauth", "gpt-image-2")
+    assert resolve_image_model("gemini-api", "some-model").model == "some-model"
+    with pytest.raises(ValueError, match="image-model provider"):
+        resolve_image_model("none")
+
+
 def test_existing_spline_is_not_silently_reduced_to_affine(case, monkeypatch):
     state, ctx, record, *_ = case
     record.transform["spline"] = {"backend": "elastix"}
@@ -165,11 +178,11 @@ def test_existing_spline_is_not_silently_reduced_to_affine(case, monkeypatch):
 def test_gemini_keeps_the_accepted_prompt_and_attachment_order(case, tmp_path, monkeypatch):
     state, ctx, record, original, *_ = case
     calls = []
-    monkeypatch.setattr(
-        tool, "generate_warped_segmentation_image",
+    model = _model(
         lambda request: calls.append(request) or SimpleNamespace(image=original, route="test"),
+        provider="gemini-api",
     )
-    tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", provider="gemini-api")
+    tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert calls[0].prompt == border_refinement_prompt()
     np.testing.assert_array_equal(calls[0].reference_images[0], original)
     assert not np.array_equal(np.asarray(calls[0].slice_image), np.asarray(original))

@@ -18,7 +18,7 @@ import numpy as np
 from langslice.space import Plane
 
 if TYPE_CHECKING:
-    from langslice.registration_handoff import LinearRegistrationInput
+    from langslice.core.handoff import LinearRegistrationInput
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class Placement:
     atlas plane (``langslice.atlas.render.annotation_slice`` at this
     position, plane and cutting angles; native image axes, no mirror) to
     pixel centres of the section image the fit is given. This is
-    ``registration_handoff``'s ``atlas_to_slice`` and the image tool's
+    ``core.handoff``'s ``atlas_to_slice`` and the image tool's
     ``atlas_to_canvas``, unchanged.
     """
 
@@ -78,7 +78,7 @@ class Placement:
 
 
 def placement_from_handoff(prepared: LinearRegistrationInput) -> Placement:
-    """The placement a ``registration_handoff.prepare_linear_registration`` result carries.
+    """The placement a ``core.handoff.prepare_linear_registration`` result carries.
 
     The section image to fit is ``prepared.image`` (the oriented rendered
     section, not the acquisition TIFF).

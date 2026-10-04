@@ -320,6 +320,28 @@ def annotation_session_to_dict(
     return asdict(session)
 
 @dataclass
+class SegmentationGenerationRequest:
+    #: Model-facing atlas references, in prompt order: they follow the slice
+    #: image as Image 2..N. The prompt describes what each one is; providers
+    #: just deliver them in this order.
+    reference_images: list[Image.Image]
+    slice_image: Image.Image
+    prompt: str
+    provider: str = "google"
+    model: str | None = None
+    route: str | None = None
+    review_model: str | None = None
+    #: Task-level semantic: registration is always an EDIT of the slice image
+    #: (pixel-aligned output). Each transport translates this its own way —
+    #: the images endpoint IS an edit call, the Responses-based routes pass it
+    #: as the image_generation tool's action.
+    mode: str = "edit"
+    openai_image_route: str = "images"
+    thinking_level: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class GeneratedSegmentation:
     """Image-gen output for a dense registration candidate."""
 

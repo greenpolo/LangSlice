@@ -5,7 +5,7 @@ engine package :mod:`langslice.deformable`. What lives here:
 
 - the fit grid: the section's oriented, unframed render at
   :data:`FIT_LONG_EDGE` with its linear placement
-  (:func:`langslice.registration_handoff.prepare_linear_registration`, the
+  (:func:`langslice.core.handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
   the section's ``fit`` appearance (one raw channel is a fit appearance the
   ``preprocess`` tool sets), or the image model's traced lines mapped onto
@@ -179,7 +179,7 @@ def fit_grid(
     *transform* stands in for the written one (``fit_affine``'s Elastix
     method starts from it).
     """
-    from langslice.registration_handoff import prepare_linear_registration
+    from langslice.core.handoff import prepare_linear_registration
 
     prepared = prepare_linear_registration(state, ctx, record.id, long_edge=FIT_LONG_EDGE,
                                            transform=transform)
@@ -225,7 +225,7 @@ def traced_lines(
     the trace's artifact directory as stored (so a cache key built on it
     survives a move of the job folder).
     """
-    from langslice.registration_tool import correction_fingerprint
+    from langslice.core import handoff
 
     record = grid.record
     held = record.image_correction or {}
@@ -244,7 +244,7 @@ def traced_lines(
     if held.get("status") != "ok":
         raise FitRefusal("NO_TRACE", f"{record.id} has no completed trace_borders "
                          "result; traced section images need one.", id=record.id)
-    if held.get("geometry_fingerprint") != correction_fingerprint(state, ctx, record.id):
+    if held.get("geometry_fingerprint") != handoff.correction_fingerprint(state, ctx, record.id):
         raise FitRefusal("TRACE_STALE", f"{record.id}'s trace_borders result was made at "
                          "a different placement; trace the current placement first.",
                          id=record.id)

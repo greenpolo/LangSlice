@@ -133,6 +133,7 @@ def test_run_forwards_supplied_geometry_and_metadata(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     from langslice.nonlinear import image_gen_registration
+    from langslice.providers.registry import ImageModel
     from langslice.registration_handoff import run_linear_registration
 
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch)
@@ -144,12 +145,21 @@ def test_run_forwards_supplied_geometry_and_metadata(tmp_path, monkeypatch):
         return SimpleNamespace(metadata={})
 
     monkeypatch.setattr(image_gen_registration, "generate_registration_candidate", fake_run)
+    def edit(request):
+        raise AssertionError("the fake candidate makes no call")
+
+    model = ImageModel("gemini-api", "test-image-model", edit)
     before = state.to_dict()
-    candidate = run_linear_registration(state, ctx, record.id, long_edge=120, provider="none")
+    candidate = run_linear_registration(state, ctx, record.id, image_model=model, long_edge=120)
+    # The injected model reaches the candidate unchanged; nothing resolves a name.
+    assert (seen["provider"], seen["image_model"]) == ("gemini-api", "test-image-model")
+    assert seen["image_call"] is edit
     assert seen["initial_alignment_source"] == "linear_agent"
     assert seen["initial_atlas_to_slice"].shape == (3, 3)
     assert seen["image"].size == (120, 80)
     assert candidate.metadata["linear_handoff"]["source_image_size"] == [120, 80]
     assert state.to_dict() == before
     with pytest.raises(ValueError, match="cannot be overridden"):
-        run_linear_registration(state, ctx, record.id, atlas_mirror_lr=True)
+        run_linear_registration(state, ctx, record.id, image_model=model, atlas_mirror_lr=True)
+    with pytest.raises(ValueError, match="cannot be overridden"):
+        run_linear_registration(state, ctx, record.id, image_model=model, provider="none")

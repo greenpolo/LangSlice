@@ -923,22 +923,22 @@ class Job:
         _land(self.state, section_id, fingerprint, self.portable(result))
         return True
 
-    def missing_image_corrections(
-        self, fingerprint: Callable[[str], str],
-    ) -> list[dict[str, str]]:
+    def missing_image_corrections(self, workspace: Workspace) -> list[dict[str, str]]:
         """Sections without a completed image correction at their current geometry.
 
-        *fingerprint* gives a section's current geometry fingerprint (the
-        image-correction bridge's, ``registration_tool.correction_fingerprint``,
-        which the caller binds: it lives with the provider code). Running
+        A section's current geometry is the core's fingerprint
+        (:func:`langslice.core.handoff.correction_fingerprint`), read through
+        *workspace* (the section files and the spec it renders with). Running
         corrections are settled first.
         """
+        from langslice.core import handoff
+
         self.settle_image_corrections()
         pending: list[dict[str, str]] = []
         for record in self.state.in_order():
             result = record.image_correction or {}
             try:
-                current = fingerprint(record.id)
+                current = handoff.correction_fingerprint(self.state, workspace, record.id)
             except (OSError, ValueError) as exc:
                 pending.append({"id": record.id, "reason": str(exc)})
                 continue
