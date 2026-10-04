@@ -140,6 +140,27 @@ def apply_saved_credentials() -> None:
                 os.environ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
 
 
+def load_dotenv() -> None:
+    """Read a ``.env`` file's keys (GEMINI_API_KEY, OPENAI_API_KEY, ...) into
+    the environment when python-dotenv is installed; every lane reads them."""
+    import importlib
+
+    try:
+        importlib.import_module("dotenv").load_dotenv()
+    except ImportError:
+        pass
+
+
+def load_credentials(*, saved: bool = True) -> None:
+    """The one place a door loads the model keys: ``.env``, then with
+    *saved* the keys saved by setup (:func:`apply_saved_credentials`; an
+    explicit environment setting wins). The CLI calls it per command, the
+    library on :func:`langslice.open_job`."""
+    load_dotenv()
+    if saved:
+        apply_saved_credentials()
+
+
 def login_oauth(
     on_url: Callable[[str], None] | None = None, timeout_s: float = 300.0
 ) -> dict[str, object]:

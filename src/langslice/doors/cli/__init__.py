@@ -114,22 +114,17 @@ def main(argv: list[str] | None = None) -> int | None:
     """Run one ``langslice`` command; the agent CLI's commands (``job``,
     ``ops``, ``schema``) return their exit code (0, 2, 3 or 4)."""
     # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
-    # reads it, not only the one whose module happens to be imported.
-    from langslice.providers.openai_config import _load_dotenv
+    # reads it, not only the one whose module happens to be imported. The
+    # keys saved by setup too, except for the commands that need none (the
+    # agent CLI's verbs get them when their job opens: doors.jobs).
+    from langslice.doors.api.setup import load_credentials
 
-    _load_dotenv()
     parser = build_parser()
     args = parser.parse_args(argv)
+    load_credentials(saved=args.command not in {"serve", "login", "version",
+                                                 *AGENT_COMMANDS})
     if args.command in AGENT_COMMANDS:
-        if args.command == "job" and args.verb.replace("-", "_") == "trace_borders":
-            from langslice.doors.api.setup import apply_saved_credentials
-
-            apply_saved_credentials()  # the image model's keys
         return AGENT_COMMANDS[args.command](args)
-    if args.command not in {"serve", "login", "version"}:
-        from langslice.doors.api.setup import apply_saved_credentials
-
-        apply_saved_credentials()
 
     # Group commands (`linear`, `nonlinear`) carry the leaf name in
     # `subcommand`; top-level commands only set `command`. Leaf names are

@@ -80,7 +80,9 @@ plugin's `nonlinear.abba` worker stay in `hosts/api/`.
   `EngineContext` adds only the model), `find(path)` (a job folder, or the
   image folder beside one; `NoJob`), `read_spec` (`job.json`'s spec, as a
   resume), `open_folder(path, persist=)` (`Job.load`: nothing rewritten;
-  the card brought up to date), `create(spec)` (`Job.open`: the ingest
+  the card brought up to date; the model keys loaded by
+  `api.setup.load_credentials`, `.env` then the keys saved by setup, the one
+  loader the CLI's `main` uses too), `create(spec)` (`Job.open`: the ingest
   every host uses; the card), `Opened.tools()` (the toolbox with
   `gates=False`, `level="auto"`, `scripting=True`, `max_view_edge` `OPEN_MAX_VIEW_EDGE`:
   no model's cap, the source's pixels bound every picture), `Opened.close`
