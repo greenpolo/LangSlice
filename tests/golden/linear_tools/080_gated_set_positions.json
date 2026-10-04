@@ -1,0 +1,28 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   }
+  ]
+ ],
+ "data": {
+  "error": "NOTHING_WRITTEN",
+  "rejected": [
+   {
+    "id": "s0.png",
+    "reason": "not compared since its last write; view_placement first"
+   }
+  ],
+  "status": "error",
+  "unknown_ids": []
+ },
+ "door": "gated",
+ "images": [],
+ "kwargs": {
+  "tool_context": "<ToolContext> ToolContext('w0')"
+ },
+ "media_texts": [],
+ "tool": "set_positions"
+}

@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "status"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"rows\": [{\"index\": 0, \"id\": \"s0.png\", \"position_mm\": 0.1, \"delta_to_next_mm\": 0.05, \"flip\": false, \"rotation_deg\": 0, \"damaged\": false, \"transform\": \"interactive\", \"transform_mirrored\": false}, {\"index\": 1, \"id\": \"s1.png\", \"position_mm\": 0.15, \"delta_to_next_mm\": 0.05, \"flip\": false, \"rotation_deg\": 0, \"damaged\": false, \"transform\": \"silhouette\", \"transform_iou\": 0.986, \"transform_mirrored\": false}, {\"index\": 2, \"id\": \"s2.png\", \"position_mm\": 0.2, \"flip\": false, \"rotation_deg\": 0, \"damaged\": false}], \"cutting_angles_deg\": {\"pitch\": 0.0, \"yaw\": 0.0}, \"interval_breaks\": []}"
+  }
+ ],
+ "door": "resume",
+ "images": []
+}

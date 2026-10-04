@@ -1,0 +1,109 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "positions_mm": [
+     0.1
+    ]
+   },
+   {
+    "id": "s1.png",
+    "positions_mm": [
+     0.15
+    ]
+   },
+   {
+    "id": "s2.png",
+    "positions_mm": [
+     0.2
+    ]
+   }
+  ]
+ ],
+ "data": {
+  "compared": [
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.1,
+    "id": "s0.png",
+    "position_mm": 0.1,
+    "transform": "identity"
+   },
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": null,
+    "id": "s1.png",
+    "position_mm": 0.15,
+    "transform": "identity"
+   },
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": null,
+    "id": "s2.png",
+    "position_mm": 0.2,
+    "transform": "identity"
+   }
+  ],
+  "description": "Shown, in order: s0.png at 0.10 mm, s1.png at 0.15 mm, s2.png at 0.20 mm; the images of each pair in that order, each captioned with the section and the position it is shown at.",
+  "media_delivery_id": "c2",
+  "no_position": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "deformation": "applied",
+   "mode": "template",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "gated",
+ "images": [
+  {
+   "file": "085_gated_view_placement.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    332
+   ]
+  },
+  {
+   "file": "085_gated_view_placement.1.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    332
+   ]
+  },
+  {
+   "file": "085_gated_view_placement.2.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    332
+   ]
+  }
+ ],
+ "kwargs": {
+  "tool_context": "<ToolContext> ToolContext('c2')"
+ },
+ "media_texts": [],
+ "tool": "view_placement"
+}

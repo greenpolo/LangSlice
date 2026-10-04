@@ -1,0 +1,80 @@
+{
+ "args": [
+  [
+   {
+    "id": "s1.png",
+    "position_mm": 0.16
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.04,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.16,
+    "rotation_deg": 0
+   }
+  ],
+  "clamped": [],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "Attached: the placement pictures of each section not already seen at this position, orientation and cutting angle, in the order written (mapped by image_indexes), for s1.png.",
+  "image_indexes": {
+   "s1.png": [
+    0
+   ]
+  },
+  "images_suppressed_seen": [],
+  "interval_breaks": [],
+  "media_delivery_id": "w4",
+  "n_sections": 3,
+  "rejected": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "channels": [
+    "view"
+   ],
+   "deformation": "applied",
+   "mode": "stacked",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  },
+  "written": [
+   {
+    "id": "s1.png",
+    "position_mm": 0.16
+   }
+  ]
+ },
+ "door": "gated",
+ "images": [
+  {
+   "file": "094_gated_set_positions.0.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    421
+   ]
+  }
+ ],
+ "kwargs": {
+  "tool_context": "<ToolContext> ToolContext('w4')"
+ },
+ "media_texts": [],
+ "tool": "set_positions"
+}

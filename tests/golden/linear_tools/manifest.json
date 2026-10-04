@@ -1,5 +1,5 @@
 {
- "calls": 92,
+ "calls": 121,
  "tools_auto_spec": [
   "adjust_transforms",
   "fit_affine",
@@ -60,6 +60,20 @@
   "status",
   "submit",
   "trace_borders",
+  "undo",
+  "view_atlas",
+  "view_placement",
+  "view_slices",
+  "view_stack"
+ ],
+ "tools_gated_spec": [
+  "mark_damaged",
+  "note",
+  "redo",
+  "reorder_slices",
+  "set_positions",
+  "status",
+  "submit",
   "undo",
   "view_atlas",
   "view_placement",
