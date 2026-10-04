@@ -98,7 +98,7 @@ class PlacementEntry(TypedDict, total=False):
 
 @with_config(ConfigDict(extra="forbid"))
 class TransformEntry(TypedDict, total=False):
-    """One ``adjust_transforms`` entry: the knobs (shear optional), the pivot and a note."""
+    """One ``adjust_transforms`` entry; a shear left out keeps the current shear."""
 
     id: str | int
     rotation_deg: float

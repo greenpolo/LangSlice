@@ -270,7 +270,9 @@ def test_fits_and_written_transforms_are_the_numbers_from_before(tmp_path: Path,
     assert state.by_id("s0.tif").transform["params"] == _PINNED_S0_FIT
     tools["adjust_transforms"]([{
         "id": "s1.tif", "rotation_deg": 4.0, "scale_x": 1.1, "scale_y": 0.95,
-        "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue"}])
+        "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue",
+        # A left-out shear keeps the fit's (2026-10-03); the pin is shear-free.
+        "shear": 0.0}])
     assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
 
 

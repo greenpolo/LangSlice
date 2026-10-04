@@ -47,7 +47,8 @@ write.
   draws its AFTER picture first).
 - `notes.py` — `add_note(job, text)`.
 - `transforms.py` — the stored transform: `interactive_transform` (knobs,
-  `shear` optional, to the record), `same_transform`, `fit_transform`
+  `shear` optional (0), to the record; the tool door fills a left-out
+  shear from the current transform), `same_transform`, `fit_transform`
   (`fit_affine`'s record), `set_transforms(job, {id: record})` (one undo step
   for the batch; locked sections refused). `KNOBS` lists the knobs in
   payload order. The shear convention is `affine.decompose_affine`'s.

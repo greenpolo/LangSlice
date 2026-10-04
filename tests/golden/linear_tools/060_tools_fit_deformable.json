@@ -13,8 +13,8 @@
     "cached": false,
     "candidate": 1,
     "displacement_mm": {
-     "max": 0.134,
-     "median": 0.03
+     "max": 0.156,
+     "median": 0.029
     },
     "engine_settings": {
      "bending_weight": 0.001,
@@ -43,8 +43,8 @@
     "cached": false,
     "candidate": 2,
     "displacement_mm": {
-     "max": 0.274,
-     "median": 0.104
+     "max": 0.272,
+     "median": 0.102
     },
     "engine_settings": {
      "bending_weight": 0.01,

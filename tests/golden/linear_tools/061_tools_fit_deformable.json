@@ -12,8 +12,8 @@
    {
     "cached": false,
     "displacement_mm": {
-     "max": 0.179,
-     "median": 0.097
+     "max": 0.178,
+     "median": 0.095
     },
     "engine_settings": {
      "correlation_radius_um": 80.0,

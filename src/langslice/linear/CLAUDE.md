@@ -393,12 +393,14 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   written once by `ops.transforms.set_transforms`: one to four distinct
   sections share one undo step and one `view`; each returns one image, or two for `ab`/`side_by_side`, mapped by
   per-result `image_indexes`. The knobs are rotation, the two scales, the
-  two shifts and, since 2026-10-03 (Nash), an optional `shear` (default 0):
+  two shifts and, since 2026-10-03 (Nash), an optional `shear` (left out:
+  the section's current shear is kept, 0 when it has none; an explicit 0
+  drops it; the reply's `physical` shows the shear stored):
   `affine.decompose_affine`'s convention, linear part
   `R(rotation) . [[scale_x, shear*scale_x], [0, scale_y]]`, a unitless slant
   before the rotation in units of `scale_x`, the same number a fit reports,
-  so a tweak that copies a fit's knobs keeps its map (an Elastix fit's shear
-  given back: 0.07 px; dropped: 8 px, `test_linear_fit_affine_elastix`).
+  so a tweak after a fit keeps its map (an Elastix fit's shear kept: 0.07
+  px; set to 0: 8 px, `test_linear_fit_affine_elastix`).
   Paired landmark tools are removed; interactive
   alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
@@ -610,8 +612,8 @@ failed `submit` reports unmet requirements without changing or ending the run.
 block after an anchor or to the start; a full list sets the whole order. Unlisted
 sections retain relative order. `move_slice` and the three paired-landmark tools
 are removed. Direct adjustments replace the complete transform, including a
-historical spline or shear (a shear is given again with the `shear` knob,
-2026-10-03).
+historical spline; a `shear` left out keeps the current transform's
+shear, an explicit value sets it (2026-10-03).
 
 ## Linear scope and saved spline compatibility (2026-09-15)
 
