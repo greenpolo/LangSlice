@@ -67,6 +67,36 @@ def correction_instructions(plane: Plane, provider: str | None = None) -> str:
     return border_correction_tool_prompt(plane, provider=provider)
 
 
+#: Where a profile's own prompt names the section plane.
+PLANE_PLACEHOLDER = "{plane}"
+
+
+def profile_prompt(image_model: ImageModel, plane: Plane) -> tuple[str, bool]:
+    """The base prompt *image_model* is sent and whether the clean photograph
+    is its Image 1 (else the placed borders are).
+
+    A model profile's own ``prompt`` (``{plane}`` replaced by the plane) in
+    the order it names (``photograph_first``; None: the provider's); without
+    one, LangSlice's prompt for the provider
+    (:func:`~langslice.core.nonlinear.prompts.border_correction_tool_prompt`).
+    """
+    provider = image_model.provider
+    own = getattr(image_model, "prompt", None)
+    order = getattr(image_model, "photograph_first", None)
+    photograph_first = supplied_prompt_is_gpt_twin(provider) if order is None else bool(order)
+    if own is None:
+        return border_correction_tool_prompt(plane, provider=provider), photograph_first
+    return str(own).replace(PLANE_PLACEHOLDER, plane), photograph_first
+
+
+def profile_marks(image_model: ImageModel) -> dict[str, Any]:
+    """What a trace record says of an untested profile (``profile``, ``untested``
+    True); nothing for a provider's own model and prompt."""
+    if getattr(image_model, "tested", True):
+        return {}
+    return {"profile": getattr(image_model, "profile", None) or "custom", "untested": True}
+
+
 def prompt_diff(base: str, edited: str) -> str:
     """Word-level diff of an edited prompt: removed words [-so-], added {+so+}."""
     old, new = base.split(" "), edited.split(" ")
@@ -137,8 +167,12 @@ def start_correction(
 
     *prompt* is the agent's edited copy of the base prompt (blank sends the
     base); the base, the prompt sent and their word diff are saved with the
-    attempt. The calls are saved in *calls_dir* (the section's own folder,
-    one subfolder per call key; the job's ``sections/<name>/image_correction``)
+    attempt. The base is *image_model*'s profile prompt when it has one
+    (:func:`profile_prompt`), and a profile's own prompt or attachment order
+    is part of the call key; an untested profile's request and result say
+    so (``profile``, ``untested`` True: :func:`profile_marks`). The calls
+    are saved in *calls_dir* (the section's own folder, one subfolder per
+    call key; the job's ``sections/<name>/image_correction``)
     or, without it, in ``<out>/<section filename>``. There is no
     atlas search, model veto, or selection step. Repeated calls at the same
     geometry return the first image reply. Failed transports that returned no
@@ -152,9 +186,14 @@ def start_correction(
     # Validate prerequisites before spending a call or marking an attempt.
     prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
-    call_key = digest({
+    key: dict[str, Any] = {
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
-    })
+    }
+    own_prompt = getattr(image_model, "prompt", None)
+    own_order = getattr(image_model, "photograph_first", None)
+    if own_prompt is not None or own_order is not None:  # a profile's own inputs
+        key["profile_inputs"] = digest({"prompt": own_prompt, "photograph_first": own_order})
+    call_key = digest(key)
     if calls_dir is None:
         if out is None:
             raise ValueError("start_correction needs calls_dir or an out folder")
@@ -192,9 +231,9 @@ def start_correction(
         canvas, _merge_classified(labels, ctx.atlas), placement,
         width_px=BORDER_WIDTH_PX * max(canvas.size) / 1536,
     )
-    gpt_twin = supplied_prompt_is_gpt_twin(provider)
-    base_prompt = border_correction_tool_prompt(prepared.plane, provider=provider)
+    base_prompt, gpt_twin = profile_prompt(image_model, prepared.plane)
     sent = prompt.strip() or base_prompt
+    marks = profile_marks(image_model)
 
     # Exclusive creation detects interrupted requests with no known outcome.
     # A recorded transport failure may start another attempt under the same key.
@@ -225,7 +264,7 @@ def start_correction(
     request = {
         "id": section_id, "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,
-        "provider": provider, "model": model,
+        "provider": provider, "model": model, **marks,
         "linear_handoff": prepared.metadata, "atlas_to_canvas": placement.tolist(),
         "attachments": [
             {"role": role, "path": paths[key],
@@ -237,7 +276,7 @@ def start_correction(
     result: dict[str, Any] = {
         "id": section_id, "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,
-        "provider": provider, "model": model,
+        "provider": provider, "model": model, **marks,
         "output_kind": "border_annotation", "fit_performed": False,
         "artifact_dir": str(directory), "artifact_paths": paths, "cached": False,
         "attempt": attempt, "raw_received": False,

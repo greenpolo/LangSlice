@@ -95,10 +95,18 @@ PLAIN_DOORS = (
     "langslice.doors.declarations",
     "langslice.doors.jobs",
     "langslice.doors.library",
+    "langslice.doors.pipeline",
+    "langslice.providers.profiles",
     "langslice.doors.card",
     "langslice.doors.cli",
     "langslice.doors.cli.job",
 )
+
+#: The child interpreters import this tree's sources (not whichever checkout
+#: the environment's editable install points at).
+_SOURCES = {**os.environ, "PYTHONPATH": os.pathsep.join(
+    [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"),
+     os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)}
 
 _PROBE = """
 import importlib, json, sys
@@ -115,7 +123,7 @@ print(json.dumps(sorted(
 def test_core_module_loads_no_agent_or_model_client(module: str):
     done = subprocess.run(
         [sys.executable, "-c", _PROBE, module, *FORBIDDEN],
-        capture_output=True, text=True, timeout=300, check=False,
+        capture_output=True, text=True, timeout=300, check=False, env=_SOURCES,
     )
     assert done.returncode == 0, done.stderr
     loaded = json.loads(done.stdout.strip().splitlines()[-1])
@@ -132,7 +140,7 @@ def test_operations_and_job_files_load_no_door(module: str):
     forbidden = DOORS + (OPERATIONS if module.startswith("langslice.job") else ())
     done = subprocess.run(
         [sys.executable, "-c", _PROBE, module, *forbidden],
-        capture_output=True, text=True, timeout=300, check=False,
+        capture_output=True, text=True, timeout=300, check=False, env=_SOURCES,
     )
     assert done.returncode == 0, done.stderr
     loaded = json.loads(done.stdout.strip().splitlines()[-1])
@@ -144,7 +152,7 @@ import json, os, sys
 from pathlib import Path
 
 import langslice
-from tests.golden.record import PIXEL_SIZE_UM, atlas_loader, write_sections
+from tests.golden.record import PIXEL_SIZE_UM, apply_patches, atlas_loader, write_sections
 from langslice.doors.jobs import create
 from langslice.core.spec import JobSpec
 
@@ -158,6 +166,11 @@ job = langslice.open_job(images, atlas_loader=loader)
 job.status()
 job.set_positions(entries=[{"id": "s0.png", "position_mm": 0.1}], view={"mode": "overlay"})
 job.close()
+apply_patches()
+model = langslice.image_model(lambda request: request.slice_image, prompt="Image 1 ... {plane}")
+langslice.register_section(images / "s0.png", position_mm=0.1, transform=[1, 0, 0, 0, 1, 0],
+                           pixel_size_um=PIXEL_SIZE_UM, image_model=model,
+                           folder=images.parent / "one", atlas_loader=loader, output="lean")
 forbidden = tuple(sys.argv[2:])
 print(json.dumps(sorted(
     name for name in sys.modules
@@ -167,14 +180,16 @@ print(json.dumps(sorted(
 
 
 def test_the_library_opens_a_job_without_an_agent_or_model_client(tmp_path):
-    """``import langslice``, ``open_job`` and a verb or two: the script door."""
+    """``import langslice``, ``open_job`` and a verb or two, then a scripted
+    ``register_section`` with a model of the script's own: the script door."""
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[1]
     done = subprocess.run(
         [sys.executable, "-c", _LIBRARY, str(tmp_path / "stack"), *FORBIDDEN],
         capture_output=True, text=True, timeout=300, check=False, cwd=repo,
-        env={**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(repo)},
+        env={**os.environ, "HOME": str(tmp_path / "home"),
+             "PYTHONPATH": os.pathsep.join([str(repo / "src"), str(repo)])},
     )
     assert done.returncode == 0, done.stderr[-3000:]
     loaded = json.loads(done.stdout.strip().splitlines()[-1])
