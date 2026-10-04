@@ -40,6 +40,7 @@ CORE_MODULES = (
     "langslice.ops.damage",
     "langslice.ops.appearance",
     "langslice.ops.notes",
+    "langslice.ops.transforms",
 )
 
 #: The doors: an operation (``langslice.ops``) must load none of them.

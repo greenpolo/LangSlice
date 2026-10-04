@@ -10,9 +10,10 @@ own hand: `adjust_transforms` in :mod:`langslice.linear.toolbox`, whose
 arithmetic (calibration and the decomposition it reports) lives here. Shared
 point-fit geometry helpers are retained for analysis and historical results.
 
-Both draw ONE picture, :func:`langslice.linear.render.physical_overlay`: the
-section under its transform with the atlas family outlines on top at true
-physical scale. Parameters are ABBA's — rotation about the canvas centre (or a
+The fits return numbers, never pictures: each ok payload carries its
+:class:`FitFrame` (the working frame, its calibration and the fitted matrix
+on it) under :data:`FIT_FRAME_KEY`, and the caller draws whatever picture it
+wants from that. Parameters are ABBA's — rotation about the canvas centre (or a
 chosen pivot), per-axis scales, translations in MILLIMETRES — which only mean
 anything once the canvas is calibrated, so every payload carries the
 calibration and where it came from.
@@ -25,7 +26,7 @@ convention).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -50,11 +51,7 @@ from langslice.linear.render import (
     canvas_geometry,
     canvas_um_per_px,
     estimate_um_per_px,
-    physical_overlay,
-    picture_edge,
     render_slice,
-    rescale_section_matrix,
-    shown_section,
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
@@ -92,6 +89,24 @@ def calibrate(
 
 
 # --- the closed-form fit -------------------------------------------------
+
+#: Key of the :class:`FitFrame` in an ok fit payload. A caller that draws
+#: pops it; one that records the payload as JSON must drop it.
+FIT_FRAME_KEY = "frame"
+
+
+@dataclass(frozen=True)
+class FitFrame:
+    """What a picture of one fit is drawn from.
+
+    ``section`` is the working frame the fit ran on (the oriented section at
+    ``PREVIEW_LONG_EDGE``), ``um_per_px`` its calibration and ``matrix`` the
+    fitted 2x3 on it (the six stored numbers, in pixels).
+    """
+
+    section: Image.Image
+    um_per_px: float
+    matrix: np.ndarray
 
 #: Below this long/short axis ratio an outline has no defined long axis, and a
 #: region-restricted fit's reply says so with the rotation it chose (M04_D_08
@@ -322,7 +337,6 @@ def fit_silhouette(
     ctx: Workspace,
     record: SliceState,
     *,
-    draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
 ) -> dict[str, Any]:
@@ -339,9 +353,8 @@ def fit_silhouette(
 
     Returns the tool-shaped payload: on success ``params`` (six normalized
     numbers on the section's frame), ``iou``, the ``physical`` knobs about the
-    canvas centre, the ``calibration`` the panel was drawn with, and
-    ``panels`` (the overlay labelled with the section id, or what *draw*
-    returned for the working frame and fitted matrix). The fit measures against
+    canvas centre, the ``calibration`` of the working frame, and the
+    :class:`FitFrame` to draw it from (:data:`FIT_FRAME_KEY`). The fit measures against
     the atlas plane at the stack's cutting angles, the same plane every
     picture in the run shows.
     """
@@ -396,13 +409,11 @@ def fit_silhouette(
             "message": str(exc),
         }
 
-    return _fit_payload(state, ctx, record, section, um_per_px, source, geometry,
-                        in_section, iou, draw=draw, regions=regions)
+    return _fit_payload(record, section, um_per_px, source, geometry, in_section, iou,
+                        regions=regions)
 
 
 def _fit_payload(
-    state: StackState,
-    ctx: Workspace,
     record: SliceState,
     section: Image.Image,
     um_per_px: float,
@@ -411,37 +422,16 @@ def _fit_payload(
     in_section: np.ndarray,
     iou: float,
     *,
-    draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None,
     regions: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """The tool-shaped payload of one fit, whichever method made it.
 
-    *in_section* is the fitted 2x3 on the working frame *section*.
+    *in_section* is the fitted 2x3 on the working frame *section*; the
+    numbers stay on that frame, and the :class:`FitFrame` lets a caller
+    carry the matrix onto whatever render it draws from.
     """
     assert record.position_mm is not None
     on_canvas = _conjugate(in_section, geometry.section_offset)
-    # The panel may be drawn from a larger render (image_resolution); the fit
-    # above and the numbers below stay on the working frame. *draw* (the
-    # toolbox's display options) receives the working frame and the fitted
-    # matrix on it and carries both onto whatever it draws from.
-    if draw is not None:
-        panels = draw(section, um_per_px, in_section)
-    else:
-        shown, shown_um, (fx, fy) = shown_section(
-            ctx, record, section, um_per_px, long_edge=picture_edge(ctx),
-        )
-        panels = [physical_overlay(
-            shown,
-            shown_um,
-            ctx.atlas,
-            record.position_mm,
-            cast(Plane, state.plane),
-            state.pitch_deg,
-            state.yaw_deg,
-            in_section if shown is section else rescale_section_matrix(in_section, fx, fy),
-            label=record.id,
-            long_edge=picture_edge(ctx),
-        )]
     params = normalized_affine(in_section, section.size)
     width, height = geometry.size
     payload: dict[str, Any] = {
@@ -463,7 +453,7 @@ def _fit_payload(
             "section_um_per_px": round(um_per_px, 4),
             "source": source,
         },
-        "panels": panels,
+        FIT_FRAME_KEY: FitFrame(section=section, um_per_px=um_per_px, matrix=in_section),
     }
     if regions is not None:
         payload["regions"] = regions
@@ -669,7 +659,6 @@ def fit_elastix(
     ctx: Workspace,
     record: SliceState,
     *,
-    draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
@@ -716,8 +705,7 @@ def fit_elastix(
             "message": f"The Elastix affine failed: {exc}",
         }
     in_section = denormalized_affine(fit.params, section.size)
-    return _fit_payload(state, ctx, record, section, um_per_px, source, geometry,
-                        in_section, fit.iou, draw=draw,
+    return _fit_payload(record, section, um_per_px, source, geometry, in_section, fit.iou,
                         regions=fit.report if (include or exclude) else None)
 
 
