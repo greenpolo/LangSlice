@@ -12,15 +12,15 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.affine import decompose_affine, normalized_affine
+from langslice.agent.engine import build_context
+from langslice.core import transform as tr
+from langslice.core.affine import decompose_affine, normalized_affine
 from langslice.core.canvas import canvas_geometry
-from langslice.deformable import engines
-from langslice.linear import transform as tr
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.spec import JobSpec
-from langslice.linear.toolbox import build_tools
+from langslice.core.deformable import engines
+from langslice.core.spec import JobSpec
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.job import ingest
 from tests.deformable_synthetic import SECTION_SIZE, TH, SyntheticAtlas
 
 ID = "s0.png"
@@ -281,7 +281,7 @@ def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Pa
 
 def _px(params: list[float]) -> np.ndarray:
     """Six normalized numbers as a 3x3 in section pixels."""
-    from langslice.affine import denormalized_affine
+    from langslice.core.affine import denormalized_affine
 
     return np.vstack([denormalized_affine(params, SECTION_SIZE), [0, 0, 1]])
 

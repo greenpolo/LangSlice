@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from langslice.integrations.abba_compare import (
+from langslice.hosts.integrations.abba_compare import (
     ComparisonWindow,
     _Panel,
     atlas_channel_indices,
@@ -149,7 +149,7 @@ def test_unchanged_poll_does_not_restart_progressive_renderer():
 
 
 def test_late_bdv_camera_override_is_corrected_without_repainting_settled_view():
-    from langslice.integrations.abba_compare import ensure_camera
+    from langslice.hosts.integrations.abba_compare import ensure_camera
 
     viewer, desired, current = Mock(), Mock(), Mock()
     desired.get.side_effect = lambda row, column: 10.0 if row == column else 0.0

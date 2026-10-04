@@ -22,7 +22,7 @@ import pytest
 
 import langslice
 from langslice.cli import main
-from langslice.linear import deformation
+from langslice.core import deformation
 from tests.cli_child import install
 from tests.golden.record import (
     ID0,
@@ -130,7 +130,7 @@ def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
 
 
 def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, monkeypatch):
-    from langslice.linear import transform
+    from langslice.core import transform
 
     agent = langslice.open_job(images)
     during(monkeypatch, transform, "fit_silhouette",

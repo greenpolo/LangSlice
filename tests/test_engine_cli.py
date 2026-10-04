@@ -72,21 +72,21 @@ def test_run_abba_dispatches_to_run_linear_in_abba_when_linear_is_given(monkeypa
     import types
     from typing import Any
 
-    from langslice.linear.spec import JobSpec
+    from langslice.core.spec import JobSpec
 
     calls: dict[str, Any] = {}
 
     fake_abba_python = types.ModuleType("abba_python")
     monkeypatch.setitem(sys.modules, "abba_python", fake_abba_python)
 
-    fake_module = types.ModuleType("langslice.integrations.abba_linear")
+    fake_module = types.ModuleType("langslice.hosts.integrations.abba_linear")
 
     def fake_run_linear_in_abba(spec: JobSpec, **kwargs: Any) -> None:
         calls["spec"] = spec
         calls["kwargs"] = kwargs
 
     fake_module.run_linear_in_abba = fake_run_linear_in_abba  # pyright: ignore[reportAttributeAccessIssue]
-    monkeypatch.setitem(sys.modules, "langslice.integrations.abba_linear", fake_module)
+    monkeypatch.setitem(sys.modules, "langslice.hosts.integrations.abba_linear", fake_module)
 
     parser = build_parser()
     args = parser.parse_args(["abba", "--linear", "/stack", "--save-state", "/out.abba"])

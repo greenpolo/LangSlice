@@ -68,18 +68,18 @@ class JobHandle:
 
     @property
     def job(self) -> Any:
-        """The job itself (:class:`langslice.linear.job.Job`: state, undo, gates)."""
+        """The job itself (:class:`langslice.job.job.Job`: state, undo, gates)."""
         return self._opened.job
 
     @property
     def state(self) -> Any:
-        """The stack as it stands (:class:`langslice.linear.state.StackState`);
+        """The stack as it stands (:class:`langslice.core.state.StackState`);
         read it, write through the verbs."""
         return self._opened.job.state
 
     @property
     def workspace(self) -> Any:
-        """The atlas and the section files (:class:`langslice.linear.workspace.Workspace`)."""
+        """The atlas and the section files (:class:`langslice.core.workspace.Workspace`)."""
         return self._opened.ctx
 
     def close(self) -> None:

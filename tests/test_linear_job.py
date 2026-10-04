@@ -11,17 +11,17 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.job.history import HISTORY_FORMAT_VERSION
-from langslice.linear.checkpoint import (
+from langslice.agent.engine import build_context
+from langslice.core.spec import JobSpec, PositionSpec
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.checkpoint import (
     STATE_FORMAT_VERSION,
     load_checkpoint,
     read_checkpoint,
     save_checkpoint,
 )
-from langslice.linear.engine import build_context
-from langslice.linear.job import UNDO_DEPTH, Job
-from langslice.linear.spec import JobSpec, PositionSpec
-from langslice.linear.toolbox import build_tools
+from langslice.job.history import HISTORY_FORMAT_VERSION
+from langslice.job.job import UNDO_DEPTH, Job
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

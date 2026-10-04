@@ -89,10 +89,10 @@ class PictureNote:
 class WarpNote:
     """How a ``fit_deformable`` picture was drawn: the record resampled onto
     the picture's content (``record``, a
-    :class:`~langslice.deformable.record.DeformableRecord` on the picture's
+    :class:`~langslice.core.deformable.record.DeformableRecord` on the picture's
     grid below its caption band of ``band`` rows), whether the residual was
     drawn (``warped``; False is the linear placement alone), and the border
-    style the lines were drawn with (``langslice.deformable.draw_warped_borders``)."""
+    style the lines were drawn with (``langslice.core.deformable.draw_warped_borders``)."""
 
     record: Any
     band: int
@@ -219,7 +219,7 @@ def section_to_picture(panel: PanelFrame) -> np.ndarray:
 
 def atlas_facts(atlas: Any) -> dict[str, Any]:
     """The atlas as a frame record names it."""
-    from langslice.space import atlas_space_context
+    from langslice.core.space import atlas_space_context
 
     context = atlas_space_context(atlas)
     metadata = getattr(atlas, "metadata", None)
@@ -235,7 +235,7 @@ def atlas_facts(atlas: Any) -> dict[str, Any]:
 
 def frame_record(atlas: Any, note: PictureNote) -> dict[str, Any]:
     """The frame of a placement picture as plain JSON (see the module text)."""
-    from langslice.oblique import plane_index_affine
+    from langslice.core.oblique import plane_index_affine
 
     frame, panel = note.frame, note.panel
     if frame is None or panel is None:
@@ -306,9 +306,9 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     lines stop at the tissue; the labels do not); borders the drawn lines'
     coverage at full strength.
     """
-    from langslice.deformable.geometry import sample_native
-    from langslice.deformable.render import drawn_border_coverage
-    from langslice.oblique import plane_index_affine
+    from langslice.core.deformable.geometry import sample_native
+    from langslice.core.deformable.render import drawn_border_coverage
+    from langslice.core.oblique import plane_index_affine
 
     warp = note.warp
     if warp is None:
@@ -338,7 +338,7 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     native_y = grid_to_native[1, 0] * gx + grid_to_native[1, 1] * gy + grid_to_native[1, 2]
     native = warp.native if warp.native is not None else None
     if native is None:
-        from langslice.deformable.atlas_images import native_labels
+        from langslice.core.deformable.atlas_images import native_labels
 
         native = native_labels(atlas, placement)
     ids = sample_native(np.asarray(native), np.stack([native_x, native_y], axis=-1))

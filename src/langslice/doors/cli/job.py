@@ -240,7 +240,7 @@ def arguments_for(tool: Any, options: dict[str, Any],
     tool declares them; refused (exit 2) when one is unknown or missing."""
     import inspect
 
-    from langslice.linear.arguments import argument_refusal, normalize_arguments
+    from langslice.doors.tools.arguments import argument_refusal, normalize_arguments
 
     signature = inspect.signature(tool)
     declared = {name: parameter for name, parameter in signature.parameters.items()
@@ -407,7 +407,7 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     """A tool reply for the CLI: pictures out (they are artifacts); concise
     unless *verbose* (no model-facing descriptions, no whole-stack rows on a
     write)."""
-    from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 
     if not isinstance(reply, dict):
         return reply
@@ -454,9 +454,9 @@ def changes(before: dict[str, Any], after: dict[str, Any], *,
 def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     """Create (or continue) the job for the image folder *folder*: the job
     flags of ``langslice linear run``; ingest as every host does."""
+    from langslice.core.discovery import discover_slices
     from langslice.doors.cli.linear import add_linear_arguments, build_linear_spec
     from langslice.doors.jobs import create
-    from langslice.linear.discovery import discover_slices
     from langslice.ops.registry import enabled
 
     parser = _Parser(prog="langslice job FOLDER init", add_help=False)

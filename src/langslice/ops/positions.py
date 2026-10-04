@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any, cast
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
-    from langslice.linear.display import DisplayOptions
-    from langslice.linear.job import Job
-    from langslice.linear.state import SliceState
-    from langslice.linear.workspace import Workspace
+    from langslice.core.display import DisplayOptions
+    from langslice.core.state import SliceState
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
     from langslice.ops.views import PlacementView
 
 
@@ -112,7 +112,7 @@ def search_position(
     """Search the atlas around a section's current position; writes nothing.
 
     Scores the section (its 512 px working render) against resampled atlas
-    planes within *window_mm* of its position (:func:`langslice.oblique.fit_oblique`)
+    planes within *window_mm* of its position (:func:`langslice.core.oblique.fit_oblique`)
     and returns the best: ``id``, ``current_position_mm``, ``position_mm``,
     ``pitch_deg``, ``yaw_deg``, ``score``, ``searched_window_mm``,
     ``searched_angles``. *angles* also searches the cutting angles (±15
@@ -122,9 +122,9 @@ def search_position(
     """
     import logging
 
+    from langslice.core.oblique import fit_oblique
     from langslice.core.sections import render_slice
-    from langslice.oblique import fit_oblique
-    from langslice.space import Plane
+    from langslice.core.space import Plane
 
     state = job.state
     record = state.resolve(ref)
@@ -169,8 +169,8 @@ def run_deepslice(
     job: Job, workspace: Workspace, slice_ids: list[str], *, allow_angle_change: bool,
 ) -> dict[str, Any]:
     """Seed positions (and optionally angles) with DeepSlice: the seam only
-    (:mod:`langslice.linear.deepslice`), which answers ``UNAVAILABLE``."""
-    from langslice.linear.deepslice import run_deepslice as seam
+    (:mod:`langslice.core.deepslice`), which answers ``UNAVAILABLE``."""
+    from langslice.core.deepslice import run_deepslice as seam
 
     return seam(job.state, workspace, slice_ids=[str(item) for item in slice_ids],
                 allow_angle_change=bool(allow_angle_change))

@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.spec import JobSpec
-from langslice.linear.toolbox import build_tools
+from langslice.agent.engine import build_context
+from langslice.core.spec import JobSpec
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.job import ingest
 from tests.fakes import EllipseAtlas, ellipse_section
 
 LEFT, RIGHT, CORE = 2, 3, 4
@@ -186,8 +186,8 @@ def test_a_picture_that_cannot_be_drawn_is_a_refusal_not_an_exception(tmp_path: 
 def test_outlines_mode_draws_a_listed_atlas_image(tmp_path: Path):
     import io
 
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
-    from langslice.adk.media import package_result
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools.media import package_result
 
     _, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
                   position_mm=1.0)
@@ -218,8 +218,8 @@ def test_a_large_turn_keeps_the_one_sided_highlight_the_fit_used(tmp_path: Path,
     (it used to fall back to no highlight at all)."""
     import io
 
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
-    from langslice.adk.media import package_result
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools.media import package_result
 
     def picture(view: dict[str, Any]) -> tuple[float, np.ndarray]:
         state, box = _box(tmp_path / f"{side}{len(view)}", WholeAtlas(), _flat_section(),

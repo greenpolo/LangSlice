@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from langslice.linear.job import Job
-    from langslice.linear.state import StackState
+    from langslice.core.state import StackState
+    from langslice.job.job import Job
 
 
 @dataclass(frozen=True)

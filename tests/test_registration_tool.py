@@ -7,13 +7,16 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice import registration_tool as tool
-from langslice.linear.spec import JobSpec
-from langslice.linear.state import SliceState, StackState
-from langslice.nonlinear.border_refinement import border_overlay, smooth_border_overlay
-from langslice.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
+from langslice.core.nonlinear import registration_tool as tool
+from langslice.core.nonlinear.border_refinement import border_overlay, smooth_border_overlay
+from langslice.core.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
+from langslice.core.nonlinear.registration_handoff import (
+    LinearRegistrationInput,
+    prepare_linear_registration,
+)
+from langslice.core.spec import JobSpec
+from langslice.core.state import SliceState, StackState
 from langslice.providers.registry import ImageModel, resolve_image_model
-from langslice.registration_handoff import LinearRegistrationInput, prepare_linear_registration
 
 
 def _model(call, provider="openai-oauth"):

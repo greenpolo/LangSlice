@@ -2,8 +2,8 @@
 
 import pytest
 
-from langslice.adk.plugins import ToolMediaDeliveryPlugin, WorkingSetImages
-from langslice.linear.session import build_plugins
+from langslice.agent.plugins import ToolMediaDeliveryPlugin, WorkingSetImages
+from langslice.agent.session import build_plugins
 from tests.linear_tool_helpers import single_adjust
 from tests.test_linear_toolbox import _box, _tool
 

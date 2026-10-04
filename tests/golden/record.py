@@ -13,7 +13,7 @@ Four doors are covered:
   the later phases move). Two toolboxes: the full spec (every task, every
   optional tool, image model stubbed, picture size ``low``) and an ``auto``
   picture-size spec with the deformable engine fixed and no image model.
-- ``engine``: ``langslice.linear.engine.run`` with a fake ADK model that
+- ``engine``: ``langslice.agent.engine.run`` with a fake ADK model that
   records the first model request (the job statement, the opening strips and
   the status table, the tool declarations) and stops the session.
 - ``mcp``: the MCP server driven by an in-memory client (``start_job``,
@@ -165,8 +165,8 @@ def atlas_loader() -> Callable[[str], Any]:
 #: level, as tests/test_linear_fit_deformable.py does. Same code path,
 #: smaller pyramid.
 PATCHES: tuple[tuple[str, str, Any], ...] = (
-    ("langslice.linear.deformation", "USE_PROCESS_POOL", False),
-    ("langslice.linear.deformation", "DETAIL_LEVEL", "coarse"),
+    ("langslice.core.deformation", "USE_PROCESS_POOL", False),
+    ("langslice.core.deformation", "DETAIL_LEVEL", "coarse"),
 )
 
 
@@ -193,7 +193,7 @@ def stub_image_model(spec: Any) -> Any:
     """
     import dataclasses
 
-    from langslice.nonlinear.types import GeneratedSegmentation
+    from langslice.core.nonlinear.types import GeneratedSegmentation
     from langslice.providers.registry import resolve_image_model
 
     def generate(request: Any) -> GeneratedSegmentation:
@@ -290,13 +290,13 @@ class Recorder:
         """Call one toolbox tool and record what the ADK agent receives from it.
 
         The tools return plain pictures; the ADK door packages them as
-        message parts (:func:`langslice.adk.media.package_result`), which
+        message parts (:func:`langslice.doors.tools.media.package_result`), which
         are what is recorded.
         """
         from google.genai import types
 
-        from langslice.adk import TOOL_MEDIA_PARTS_KEY
-        from langslice.adk.media import package_result
+        from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+        from langslice.doors.tools.media import package_result
 
         result = tools[name](*args, **kwargs)
         self.called.add(name)
@@ -358,7 +358,7 @@ class Recorder:
 
 
 def full_spec(folder: Path) -> Any:
-    from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
+    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
 
     return JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none",
@@ -376,9 +376,9 @@ def tool_map(box: Any) -> dict[str, Any]:
 
 
 def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
-    from langslice.linear.engine import build_context
-    from langslice.linear.job import ingest
-    from langslice.linear.toolbox import build_tools
+    from langslice.agent.engine import build_context
+    from langslice.job.job import ingest
+    from langslice.doors.tools.toolbox import build_tools
 
     spec = full_spec(folder)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
@@ -520,10 +520,10 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
 
 
 def record_auto_toolbox(rec: Recorder, folder: Path) -> list[str]:
-    from langslice.linear.engine import build_context
-    from langslice.linear.job import ingest
-    from langslice.linear.spec import JobSpec, NonlinearSpec
-    from langslice.linear.toolbox import build_tools
+    from langslice.agent.engine import build_context
+    from langslice.job.job import ingest
+    from langslice.core.spec import JobSpec, NonlinearSpec
+    from langslice.doors.tools.toolbox import build_tools
 
     spec = JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none",
@@ -574,10 +574,10 @@ def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
     model request carried a call's pictures; ``begin_model_call`` promotes
     direct calls (no tool context), as the MCP door does before every call.
     """
-    from langslice.linear.engine import build_context
-    from langslice.linear.job import ingest
-    from langslice.linear.spec import JobSpec, PositionSpec
-    from langslice.linear.toolbox import build_tools
+    from langslice.agent.engine import build_context
+    from langslice.job.job import ingest
+    from langslice.core.spec import JobSpec, PositionSpec
+    from langslice.doors.tools.toolbox import build_tools
 
     spec = JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none",
@@ -641,7 +641,7 @@ def record_engine_request(rec: Recorder, folder: Path) -> None:
     from google.adk.models.llm_response import LlmResponse
     from google.adk.models.registry import LLMRegistry
 
-    from langslice.linear.engine import run
+    from langslice.agent.engine import run
 
     captured: list[LlmRequest] = []
 
@@ -703,8 +703,8 @@ def record_mcp(rec: Recorder, folder: Path) -> None:
     from mcp.shared.memory import create_connected_server_and_client_session
     from mcp.types import TextContent
 
-    from langslice.linear.spec import JobSpec
-    from langslice.mcp_server.server import build_server
+    from langslice.core.spec import JobSpec
+    from langslice.doors.mcp.server import build_server
 
     positions = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
 
@@ -760,9 +760,9 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
     """Two servers on one folder: the second resumes the first's checkpoint."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from langslice.linear.checkpoint import default_checkpoint_path, load_checkpoint
-    from langslice.linear.spec import JobSpec
-    from langslice.mcp_server.server import build_server
+    from langslice.job.checkpoint import default_checkpoint_path, load_checkpoint
+    from langslice.core.spec import JobSpec
+    from langslice.doors.mcp.server import build_server
 
     positions = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
 
@@ -825,12 +825,12 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
     from google.adk.tools import FunctionTool
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from langslice.adk.media import packaged_tools
-    from langslice.linear.engine import build_context
-    from langslice.linear.job import ingest
-    from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
-    from langslice.linear.toolbox import build_tools
-    from langslice.mcp_server.server import build_server
+    from langslice.doors.tools.media import packaged_tools
+    from langslice.agent.engine import build_context
+    from langslice.job.job import ingest
+    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec
+    from langslice.doors.tools.toolbox import build_tools
+    from langslice.doors.mcp.server import build_server
 
     base = {"model": "fake-model", "preprocess": "none",
             "inputs": {"pixel_size_um": PIXEL_SIZE_UM}}

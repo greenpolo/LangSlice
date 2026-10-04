@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.api.abba_worker import run_linear, run_nonlinear
+from langslice.hosts.api.abba_worker import run_linear, run_nonlinear
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def params(tmp_path):
 def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
     params, monkeypatch, initial_position,
 ):
-    from langslice.linear import engine
+    from langslice.agent import engine
 
     params["positions_mm"]["section_0001.tif"] = initial_position
 
@@ -72,7 +72,7 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
      "nonlinear.provider"),
 ])
 def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypatch):
-    from langslice.linear import engine
+    from langslice.agent import engine
 
     async def never(*args, **kwargs):
         raise AssertionError("the engine must not start")
@@ -86,7 +86,7 @@ def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypa
 def test_nonlinear_retains_pair_direction_and_grid(tmp_path, monkeypatch):
     import tifffile
 
-    from langslice.integrations import abba
+    from langslice.hosts.integrations import abba
 
     coords = np.zeros((10, 12, 3), dtype=np.float32)
     np.save(tmp_path / "coords.npy", coords)
@@ -110,8 +110,8 @@ def test_nonlinear_retains_pair_direction_and_grid(tmp_path, monkeypatch):
 def test_trace_dir_saves_this_runs_trace_and_names_it(params, monkeypatch, tmp_path):
     import os
 
-    from langslice.linear import engine
-    from langslice.linear.trace import TRACE_DIR_ENV
+    from langslice.agent import engine
+    from langslice.agent.trace import TRACE_DIR_ENV
 
     traces = tmp_path / "traces" / "nested"
     monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
@@ -137,8 +137,8 @@ def test_trace_dir_saves_this_runs_trace_and_names_it(params, monkeypatch, tmp_p
 def test_no_trace_dir_means_no_trace(params, monkeypatch):
     import os
 
-    from langslice.linear import engine
-    from langslice.linear.trace import TRACE_DIR_ENV
+    from langslice.agent import engine
+    from langslice.agent.trace import TRACE_DIR_ENV
 
     monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
 
@@ -156,7 +156,7 @@ def test_no_trace_dir_means_no_trace(params, monkeypatch):
 
 @pytest.mark.parametrize(("tasks", "sent"), [(["transform"], True), (["reorder"], False)])
 def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
-    from langslice.api.abba_worker import _host_updates
+    from langslice.hosts.api.abba_worker import _host_updates
 
     before = {"slices": [{"id": "a.tif", "position_mm": 4.0, "index_corrected": 0,
                           "flip": False, "rotation_deg": 0, "transform": None}]}
@@ -169,7 +169,7 @@ def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
 
 
 def test_nonlinear_without_an_image_model_is_accepted(params):
-    from langslice.api.abba_worker import prepare_linear
+    from langslice.hosts.api.abba_worker import prepare_linear
 
     params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
     spec = prepare_linear(params).spec

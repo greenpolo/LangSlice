@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.linear.state import SliceState, StackState
-from langslice.linear.toolbox import _serialized, _tool_target_ids, build_tools
+from langslice.core.state import SliceState, StackState
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.toolbox import _serialized, _tool_target_ids, build_tools
 
 
 def test_execution_events_run_inside_lock_and_resolve_current_indices():
@@ -95,7 +95,7 @@ def test_target_resolution_matches_batch_and_default_tool_scope():
 
 
 def test_build_tools_forwards_execution_observer(tmp_path):
-    from langslice.linear.spec import JobSpec
+    from langslice.core.spec import JobSpec
 
     events = []
     state = StackState(slices=[SliceState("a", 0, 0)])

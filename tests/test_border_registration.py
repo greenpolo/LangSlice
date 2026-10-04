@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.affine import pixel_center_map
-from langslice.nonlinear import border_registration as registration
-from langslice.nonlinear.border_refinement import BorderRefinementResult
+from langslice.core.affine import pixel_center_map
+from langslice.core.nonlinear import border_registration as registration
+from langslice.core.nonlinear.border_refinement import BorderRefinementResult
 
 
 def test_zero_residual_retains_initial_affine_with_rounding_and_padding():
@@ -42,7 +42,7 @@ class _Calls(list):
 
 @pytest.fixture
 def case(monkeypatch):
-    import langslice.nonlinear.image_gen_registration as legacy
+    import langslice.core.nonlinear.image_gen_registration as legacy
 
     labels = np.zeros((20, 30), dtype=np.int64)
     labels[2:18, 3:14] = 100000001
@@ -83,7 +83,7 @@ def test_supplied_placement_precedes_automatic_and_preserves_ids(case, monkeypat
         pytest.fail("Explicit placement must not run automatic placement")
 
     monkeypatch.setattr(registration, "place_plane_on_tissue_with_matrix", forbidden)
-    import langslice.nonlinear.image_gen_registration as legacy
+    import langslice.core.nonlinear.image_gen_registration as legacy
     monkeypatch.setattr(legacy, "generate_registration_candidate", forbidden)
     result = registration.generate_border_registration_candidate(
         image, atlas_name="test", position_mm=1, initial_atlas_to_slice=np.eye(3),
@@ -126,7 +126,7 @@ def test_atlas_route_draws_boundaries_then_places_and_fits(case, monkeypatch):
     (never the model), and the SAME refine_borders fit as route "supplied"
     runs on the model's output."""
     image, labels, received = case
-    import langslice.nonlinear.image_gen_registration as legacy
+    import langslice.core.nonlinear.image_gen_registration as legacy
 
     outlined = Image.new("RGB", (5, 5))
     monkeypatch.setattr(legacy, "outlined_atlas_template", lambda *a, **k: outlined)
@@ -159,7 +159,7 @@ def test_atlas_route_draws_boundaries_then_places_and_fits(case, monkeypatch):
 
 def test_atlas_route_passes_two_corrects_against_pass_one_and_the_template(case, monkeypatch):
     image, labels, received = case
-    import langslice.nonlinear.image_gen_registration as legacy
+    import langslice.core.nonlinear.image_gen_registration as legacy
 
     template = Image.new("RGB", (5, 5))
     monkeypatch.setattr(legacy, "outlined_atlas_template", lambda *a, **k: template)
@@ -204,7 +204,7 @@ def test_replay_route_atlas_skips_every_model_call(case, monkeypatch):
     end to end: it IS that route's final output, so no model call happens —
     this is the offline-smoke-test contract."""
     image, labels, received = case
-    import langslice.nonlinear.image_gen_registration as legacy
+    import langslice.core.nonlinear.image_gen_registration as legacy
 
     monkeypatch.setattr(
         legacy, "outlined_atlas_template", lambda *a, **k: Image.new("RGB", (5, 5))
@@ -260,7 +260,7 @@ def test_native_to_oriented_map_reproduces_the_label_orientation(axes, mirror):
     labels: the map between them is exactly the turn/flip the labels took."""
     import cv2
 
-    from langslice.space import atlas_space_context, orient_slice_to_axes
+    from langslice.core.space import atlas_space_context, orient_slice_to_axes
     from tests.deformable_synthetic import SyntheticAtlas
 
     atlas = SyntheticAtlas()

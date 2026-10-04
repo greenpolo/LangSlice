@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from langslice.linear.state import SliceState, StackState
+from langslice.core.state import SliceState, StackState
 
 
 def status_rows(state: StackState) -> list[dict[str, Any]]:

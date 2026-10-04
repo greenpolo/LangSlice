@@ -14,15 +14,15 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.api.abba_worker import run_linear
-from langslice.api.service import run_stdio
-from langslice.image_prep import (
+from langslice.core.image_prep import (
     adaptive_preprocess,
     host_preprocess,
     host_preprocess_file,
     normalize_image,
     read_pages,
 )
+from langslice.hosts.api.abba_worker import run_linear
+from langslice.hosts.api.service import run_stdio
 
 
 def _tissue(shape=(120, 160)) -> np.ndarray:
@@ -155,7 +155,7 @@ def snapshots(tmp_path: Path):
 
 def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
     """Replace the engine: record the spec, then write each step as a checkpoint."""
-    from langslice.linear import engine
+    from langslice.agent import engine
 
     async def run(spec, *, on_write, on_event, emit):
         seen["spec"] = spec
@@ -176,7 +176,7 @@ def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
 
 def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkeypatch):
     """The host blend is the DEFAULT appearance; the pages stay raw channels."""
-    from langslice.linear.engine import build_context
+    from langslice.agent.engine import build_context
     from tests.fakes import SlabAtlas
 
     seen: dict[str, Any] = {}
@@ -200,7 +200,7 @@ def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkey
 
 
 def test_host_channel_names_name_the_raw_channels(snapshots, monkeypatch):
-    from langslice.linear.engine import build_context
+    from langslice.agent.engine import build_context
     from tests.fakes import SlabAtlas
 
     seen: dict[str, Any] = {}

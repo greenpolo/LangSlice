@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.agent.prompt import build_job_statement
 from langslice.core import handoff
-from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.job import apply_host_inputs
-from langslice.linear.prompt import build_job_statement
-from langslice.linear.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
-from langslice.linear.state import StackState
-from langslice.linear.toolbox import _tool_target_ids, build_tools
+from langslice.core.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
+from langslice.core.state import StackState
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
+from langslice.job.checkpoint import load_checkpoint
+from langslice.job.job import apply_host_inputs
 from tests.test_linear_toolbox import _stack, _tool
 
 
@@ -48,7 +48,7 @@ def test_image_tool_is_opt_in_and_has_only_id_and_prompt(tmp_path: Path):
 def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, monkeypatch):
     import threading
 
-    from langslice import registration_tool
+    from langslice.core.nonlinear import registration_tool
 
     state, ctx, spec = _placed(tmp_path)
     transform = copy.deepcopy(state.slices[0].transform)
@@ -103,7 +103,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):
-    from langslice import registration_tool
+    from langslice.core.nonlinear import registration_tool
 
     state, ctx, spec = _placed(tmp_path)
     running = {"status": "running", "geometry_fingerprint": "geometry"}
@@ -132,7 +132,7 @@ def test_submit_requires_completed_correction_at_current_geometry(tmp_path, monk
 
 
 def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_path, monkeypatch):
-    from langslice import registration_tool
+    from langslice.core.nonlinear import registration_tool
 
     state, ctx, spec = _stack(tmp_path, n=1, tasks=["nonlinear"])
 

@@ -3,7 +3,7 @@
 A fit (``fit_affine``, ``fit_deformable``) computes outside the job's write
 lock, from the state it read, so a running agent and CLI calls keep working
 meanwhile. Before it applies, under the lock and after the job has reloaded
-what others wrote (:meth:`langslice.linear.job.Job.writing`), it compares
+what others wrote (:meth:`langslice.job.job.Job.writing`), it compares
 each section's :func:`section_inputs` with the value it computed from: an
 unchanged section is applied, a changed one is refused as that section's
 row (:data:`STALE_INPUT`) and the others still apply.
@@ -15,9 +15,9 @@ import hashlib
 import json
 from typing import Any
 
-from langslice.linear import appearance as looks
-from langslice.linear.deformation import linear_key
-from langslice.linear.state import SliceState, StackState
+from langslice.core import appearance as looks
+from langslice.core.deformation import linear_key
+from langslice.core.state import SliceState, StackState
 
 #: A section whose inputs changed while its result was computed.
 STALE_INPUT = "STALE_INPUT"

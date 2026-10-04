@@ -5,7 +5,7 @@ Phase 5 of the layered refactor (2026-10-04). Each verb of
 function below: its arguments (names, types, defaults) and its description.
 Every door is generated from these declarations:
 
-- the agent tools and the MCP tools: ``langslice.linear.toolbox.build_tools``
+- the agent tools and the MCP tools: ``langslice.doors.tools.toolbox.build_tools``
   puts each tool body behind :func:`declare`, so ADK's function declaration
   and FastMCP's input schema are read off these signatures and docstrings;
 - the agent CLI: ``langslice ops`` (:func:`summary`), ``langslice schema
@@ -19,12 +19,12 @@ before every continuation line; :func:`model_doc` adds the four this module
 level lacks, so what a model reads is byte for byte what it read before.
 
 A run varies a declaration in four ways, all decided here from a
-:class:`Variant`: ``view`` is typed :class:`~langslice.linear.arguments.ViewAuto`
+:class:`Variant`: ``view`` is typed :class:`~langslice.doors.tools.arguments.ViewAuto`
 (with ``resolution``) where the agent chooses the picture size (image
 resolution "auto"; the CLI always); ``fit_deformable`` without the image
 model has no traced fit sections in its description; with the agent's
 ``preprocess`` it points there; and with the engine fixed by the user it has
-no ``engine`` argument (candidates :class:`~langslice.linear.arguments.FixedCandidate`).
+no ``engine`` argument (candidates :class:`~langslice.doors.tools.arguments.FixedCandidate`).
 
 Door-only parameters (ADK's ``tool_context``) are the tool body's, never
 declared. Nothing here imports ``google.*``, ``litellm`` or ``openai``.
@@ -38,8 +38,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from langslice.linear import appearance as looks
-from langslice.linear.arguments import (
+from langslice.core import appearance as looks
+from langslice.core.deformation import TRACE_WAIT_S
+from langslice.doors.tools.arguments import (
     Candidate,
     DamageEntry,
     FixedCandidate,
@@ -50,7 +51,6 @@ from langslice.linear.arguments import (
     View,
     ViewAuto,
 )
-from langslice.linear.deformation import TRACE_WAIT_S
 
 # Defaults of picture tools are read, never mutated (ADK wants a value).
 # ruff: noqa: B006
@@ -672,7 +672,7 @@ class Variant:
 
     @classmethod
     def of(cls, spec: Any, *, auto: bool) -> Variant:
-        """The variant of a :class:`~langslice.linear.spec.JobSpec`'s run."""
+        """The variant of a :class:`~langslice.core.spec.JobSpec`'s run."""
         return cls(traces=bool(spec.nonlinear.uses_image_model),
                    preprocessing=bool(spec.agent_preprocessing),
                    engine=str(spec.nonlinear.engine), auto=bool(auto))

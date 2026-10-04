@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.linear.engine import build_context
-from langslice.linear.job import Job
-from langslice.linear.spec import JobSpec, TransformSpec
-from langslice.linear.state import SliceState
+from langslice.agent.engine import build_context
+from langslice.core.spec import JobSpec, TransformSpec
+from langslice.core.state import SliceState
+from langslice.job.job import Job
 from langslice.ops import appearance, damage, notes, order, orientation, positions, transforms
 from langslice.ops.refusal import Refused
 from tests.fakes import SlabAtlas

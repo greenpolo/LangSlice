@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from langslice.integrations.abba_overview import (
+from langslice.hosts.integrations.abba_overview import (
     native_atlas_sources,
     native_centers,
     native_handle_style,
@@ -80,7 +80,7 @@ def test_selection_colors_and_radii_match_abba_slice_gui_state():
 
 
 def test_native_key_square_uses_key_status_for_size_and_magenta_for_selected_key():
-    from langslice.integrations.abba_overview import native_key_style
+    from langslice.hosts.integrations.abba_overview import native_key_style
 
     assert native_key_style(True, False) == (6, (0, 255, 0, 180))
     assert native_key_style(False, False) == (6, (255, 255, 0, 64))

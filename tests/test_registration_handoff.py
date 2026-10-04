@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.affine import normalized_affine
+from langslice.agent.engine import EngineContext
 from langslice.core import canvas
-from langslice.linear.engine import EngineContext
-from langslice.linear.spec import JobSpec
-from langslice.linear.state import SliceState, StackState
-from langslice.registration_handoff import prepare_linear_registration
+from langslice.core.affine import normalized_affine
+from langslice.core.nonlinear.registration_handoff import prepare_linear_registration
+from langslice.core.spec import JobSpec
+from langslice.core.state import SliceState, StackState
 
 
 def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: bool = True):
@@ -132,9 +132,9 @@ def test_missing_position_transform_and_explicit_stale_orientation(tmp_path, mon
 def test_run_forwards_supplied_geometry_and_metadata(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from langslice.nonlinear import image_gen_registration
+    from langslice.core.nonlinear import image_gen_registration
+    from langslice.core.nonlinear.registration_handoff import run_linear_registration
     from langslice.providers.registry import ImageModel
-    from langslice.registration_handoff import run_linear_registration
 
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch)
     seen = {}

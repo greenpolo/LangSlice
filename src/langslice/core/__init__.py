@@ -1,8 +1,8 @@
 """The core library's picture builders (layered refactor, phase 3b).
 
-The core layer: plain inputs (a :class:`~langslice.linear.workspace.Workspace`,
-the :class:`~langslice.linear.state.StackState`, ids, numbers, the core's
-:class:`~langslice.linear.display.DisplayOptions`) in, plain PIL pictures
+The core layer: plain inputs (a :class:`~langslice.core.workspace.Workspace`,
+the :class:`~langslice.core.state.StackState`, ids, numbers, the core's
+:class:`~langslice.core.display.DisplayOptions`) in, plain PIL pictures
 (captions burned in) and plain metadata out. A door turns the pictures into
 what its host reads (ADK message parts, MCP image blocks, files).
 

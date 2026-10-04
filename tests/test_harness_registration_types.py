@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from langslice.nonlinear import (
+from langslice.core.nonlinear import (
     GeneratedSegmentation,
     RegistrationCandidate,
     candidate_to_registration_result,
 )
-from langslice.nonlinear.types import (
+from langslice.core.nonlinear.types import (
     RegistrationAnnotationSession,
     annotation_session_to_dict,
 )

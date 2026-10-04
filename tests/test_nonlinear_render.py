@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.nonlinear import render
+from langslice.core.nonlinear import render
 
 
 def _disc(size: int = 200, radius: int = 60, uid: int = 7) -> np.ndarray:

@@ -21,14 +21,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.spec import JobSpec
+from langslice.core.workspace import Workspace, log_progress
 from langslice.doors.card import write_card
+from langslice.job.job import Job
 from langslice.job.layout import JobLayout, job_folder_for, locate_job_folder, read_job_file
-from langslice.linear.job import Job
-from langslice.linear.spec import JobSpec
-from langslice.linear.workspace import Workspace, log_progress
 
 if TYPE_CHECKING:
-    from langslice.linear.toolbox import ToolBox
+    from langslice.doors.tools.toolbox import ToolBox
 
 #: The largest picture a CLI or script call may ask for (``view.resolution``):
 #: no model's limit applies, only the source's own pixels (nothing is
@@ -119,7 +119,7 @@ class Opened:
         the scripting verbs (``export_maps``) added."""
         if self._box is None:
             from langslice.core.sizes import AUTO_RESOLUTION
-            from langslice.linear.toolbox import build_tools
+            from langslice.doors.tools.toolbox import build_tools
 
             self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
                                     job=self.job, max_view_edge=OPEN_MAX_VIEW_EDGE,

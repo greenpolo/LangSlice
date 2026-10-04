@@ -1,7 +1,7 @@
 """The one JPEG encoding every picture a model receives goes through.
 
 The doors send pictures as JPEG (the ADK agent's message parts,
-:mod:`langslice.adk.media`; MCP image blocks); the job saves the same bytes
+:mod:`langslice.doors.tools.media`; MCP image blocks); the job saves the same bytes
 (:class:`langslice.job.views.ViewStore`) by calling the same function on the
 same picture. Pure Pillow, deterministic for a given picture.
 """

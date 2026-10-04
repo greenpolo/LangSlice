@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.integrations.abba import (
+from langslice.hosts.integrations.abba import (
     classify_to_ids,
     landmarks_from_field,
     normalize_to_rgb,
@@ -97,12 +97,12 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
 ):
     from types import SimpleNamespace
 
-    from langslice.atlas import core
-    from langslice.integrations.abba import (
+    from langslice.core.atlas import core
+    from langslice.core.nonlinear import border_fit, border_refinement
+    from langslice.hosts.integrations.abba import (
         LangSliceAbbaConfig,
         compute_registration_landmarks,
     )
-    from langslice.nonlinear import border_fit, border_refinement
 
     atlas = FakeAtlas()
     yy, xx = np.indices((40, 50))
@@ -163,12 +163,12 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
 
 
 def test_border_refinement_rejects_multiple_draws_before_loading_atlas(monkeypatch):
-    from langslice.atlas import core
-    from langslice.integrations.abba import (
+    from langslice.core.atlas import core
+    from langslice.core.nonlinear import border_refinement
+    from langslice.hosts.integrations.abba import (
         LangSliceAbbaConfig,
         compute_registration_landmarks,
     )
-    from langslice.nonlinear import border_refinement
 
     monkeypatch.setattr(
         border_refinement,
@@ -215,7 +215,7 @@ _ABBA_EXPORTS = {
 
 def _langslice_normal_ml_dv_ap(pitch_deg: float, yaw_deg: float) -> np.ndarray:
     """LangSlice's coronal cutting-plane normal on an asr atlas, as (ML, DV, AP)."""
-    from langslice.oblique import build_rotation_matrix
+    from langslice.core.oblique import build_rotation_matrix
 
     # asr: axis 0 = AP (the coronal normal), 1 = DV (rows), 2 = ML (columns)
     n = build_rotation_matrix(pitch_deg, yaw_deg, row_axis=1, col_axis=2) @ np.array(
@@ -233,7 +233,7 @@ def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
 def test_rotate_sign_constants_reproduce_abba_exported_plane(section):
     import math
 
-    from langslice.integrations.abba_linear import (
+    from langslice.hosts.integrations.abba_linear import (
         PITCH_TO_ROTATE_X_SIGN,
         YAW_TO_ROTATE_Y_SIGN,
     )

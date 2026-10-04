@@ -1,7 +1,7 @@
 
 import pytest
 
-from langslice.adk import model_resolver
+from langslice.agent import model_resolver
 
 
 class _FakeLiteLlm:

@@ -7,7 +7,7 @@ stack, and this test compares a fresh recording with the checked-in one in
 ``tests/golden/linear_tools/``: pictures pixel for pixel, data and text
 exactly. No tolerance anywhere; the recording is byte-stable across runs,
 core counts and ``OMP_NUM_THREADS`` because every fit pins its threads and
-seed (``langslice.deformable.engines``).
+seed (``langslice.core.deformable.engines``).
 
 The recorder runs in a fresh interpreter: ANTs fixes its thread count at
 its first import in a process, and another test importing it first would

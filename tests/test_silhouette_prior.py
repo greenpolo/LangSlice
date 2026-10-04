@@ -15,9 +15,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.affine import _affine_from_pose, _moments_pose, silhouette_iou
+from langslice.core.affine import _affine_from_pose, _moments_pose, silhouette_iou
+from langslice.core.nonlinear.prior import place_plane_on_tissue, tissue_mask
 from langslice.doors.cli import build_parser
-from langslice.nonlinear.prior import place_plane_on_tissue, tissue_mask
 
 _H, _W = 120, 160
 _ROWS = {
@@ -40,7 +40,7 @@ def _atlas_plane() -> np.ndarray:
 
 @pytest.fixture
 def atlas(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    import langslice.atlas.render as helpers
+    import langslice.core.atlas.render as helpers
 
     plane = _atlas_plane()
     fake = SimpleNamespace(
@@ -84,7 +84,7 @@ def _synthetic_slice(size: tuple[int, int] = (240, 180)) -> Image.Image:
 
 
 def _install_atlas(monkeypatch: pytest.MonkeyPatch, atlas: SimpleNamespace):
-    import langslice.nonlinear.border_registration as reg
+    import langslice.core.nonlinear.border_registration as reg
 
     monkeypatch.setattr(reg, "load_atlas", lambda atlas_name: atlas)
     return reg
@@ -129,7 +129,7 @@ def test_tissue_mask_refuses_a_blank_field() -> None:
 def test_placement_picks_the_better_sign_and_lands_on_the_tissue(
     atlas: SimpleNamespace,
 ) -> None:
-    from langslice.nonlinear.image_gen_helpers import _annotation_slice
+    from langslice.core.nonlinear.image_gen_helpers import _annotation_slice
 
     section = _synthetic_slice()
     mask = tissue_mask(section, section.size)
@@ -215,7 +215,7 @@ def test_cli_parses_the_model_free_backbone() -> None:
 
 
 def test_register_request_carries_the_model_free_provider() -> None:
-    from langslice.api.models import RegisterRequest
+    from langslice.hosts.api.models import RegisterRequest
 
     request = RegisterRequest(
         image_path="slice.png", atlas="toy", position_mm=1.0,

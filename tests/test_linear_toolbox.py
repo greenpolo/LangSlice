@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
-from langslice.linear.toolbox import build_tools
+from langslice.agent.engine import build_context
+from langslice.core.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.checkpoint import load_checkpoint
+from langslice.job.job import ingest
 from tests.fakes import EllipseAtlas, SlabAtlas, ellipse_section
 from tests.linear_tool_helpers import single_adjust
 
@@ -179,7 +179,7 @@ def test_set_positions_clamps_to_the_atlas_range(tmp_path: Path):
 
 
 def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     _, _, box = _box(tmp_path)
     placed = _tool(box, "set_positions")(
@@ -198,7 +198,7 @@ def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
 def test_set_positions_suppresses_only_a_placement_seen_in_an_earlier_round(
     tmp_path: Path,
 ):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, tasks=["position"])
     compare = _tool(box, "view_placement")
@@ -233,7 +233,7 @@ def test_set_positions_suppresses_only_a_placement_seen_in_an_earlier_round(
 def test_seen_placement_identity_includes_orientation_and_cutting_angles(
     tmp_path: Path,
 ):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, tasks=["position"])
     compare = _tool(box, "view_placement")
@@ -263,7 +263,7 @@ def test_seen_placement_identity_includes_orientation_and_cutting_angles(
 def test_seen_placement_uses_the_actual_position_not_rounded_reply_text(
     tmp_path: Path,
 ):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
     compare = _tool(box, "view_placement")
@@ -284,7 +284,7 @@ def test_seen_placement_uses_the_actual_position_not_rounded_reply_text(
 def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
     tmp_path: Path,
 ):
-    from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
     compare = _tool(box, "view_placement")
@@ -331,7 +331,7 @@ def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
 def test_historical_delivery_token_cannot_promote_a_new_pending_call(
     tmp_path: Path,
 ):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
     compare = _tool(box, "view_placement")
@@ -353,7 +353,7 @@ def test_historical_delivery_token_cannot_promote_a_new_pending_call(
 def test_failed_compare_is_not_counted_as_seen_or_compared(
     tmp_path: Path, monkeypatch,
 ):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
 
@@ -377,7 +377,7 @@ def test_failed_compare_is_not_counted_as_seen_or_compared(
 
 
 def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     state, ctx, box = _box(tmp_path, placed=True)
     state.by_id("s0.png").position_mm = 9.0  # placed after the others
@@ -416,11 +416,17 @@ def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
 
 def test_confidence_is_gone_from_the_package():
     """Nash: "What use is there for confidence?" — none downstream."""
-    import langslice.linear
+    import langslice.agent
+    import langslice.core
+    import langslice.doors.tools
+    import langslice.job
 
-    package = Path(langslice.linear.__file__).parent
+    # The former linear package's modules, in their layer packages.
+    packages = [Path(module.__file__).parent for module in (
+        langslice.core, langslice.job, langslice.doors.tools, langslice.agent)]
     hits = [
         path.name
+        for package in packages
         for path in sorted(package.glob("*.py"))
         if "confidence" in path.read_text(encoding="utf-8")
     ]
@@ -685,7 +691,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
 
 
 def test_one_entry_adjustment_writes_shows_and_undoes(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     atlas = EllipseAtlas()
     for index in range(2):
@@ -730,7 +736,7 @@ def test_one_entry_adjustment_writes_shows_and_undoes(tmp_path: Path):
 def test_adjust_transforms_batches_independent_sections_as_one_undo_step(
     tmp_path: Path,
 ):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, placed=True)
     adjust_many = _tool(box, "adjust_transforms")
@@ -869,8 +875,8 @@ def test_orient_change_clears_a_stale_transform(tmp_path: Path):
 
 
 def test_view_atlas_images_are_section_sized(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
-    from langslice.linear.atlas_fetch import atlas_section
+    from langslice.core.atlas_fetch import atlas_section
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     state, ctx, box = _box(tmp_path)
     result = _tool(box, "view_atlas")([1.0])
@@ -888,7 +894,7 @@ def test_tools_keep_their_identity_and_run_one_at_a_time():
     import threading
     import time
 
-    from langslice.linear.toolbox import _serialized
+    from langslice.doors.tools.toolbox import _serialized
 
     lock = threading.Lock()
     inside = {"now": 0, "peak": 0}
@@ -915,7 +921,7 @@ def test_tools_keep_their_identity_and_run_one_at_a_time():
 
 
 def test_gated_set_positions_refuses_an_uncompared_section(tmp_path: Path):
-    from langslice.linear.spec import PositionSpec
+    from langslice.core.spec import PositionSpec
 
     state, _, box = _box(tmp_path, tasks=["position"], position=PositionSpec(gated=True))
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
@@ -932,7 +938,7 @@ def test_gated_set_positions_refuses_an_uncompared_section(tmp_path: Path):
 
 
 def test_gated_submit_waits_for_a_review_after_the_last_write(tmp_path: Path):
-    from langslice.linear.spec import PositionSpec
+    from langslice.core.spec import PositionSpec
 
     state, _, box = _box(
         tmp_path, placed=True, tasks=["position"], position=PositionSpec(gated=True)
@@ -948,8 +954,8 @@ def test_gated_submit_waits_for_a_review_after_the_last_write(tmp_path: Path):
 
 
 def test_the_playbook_puts_astras_method_in_the_job_statement(tmp_path: Path):
-    from langslice.linear.prompt import build_job_statement
-    from langslice.linear.spec import PositionSpec
+    from langslice.agent.prompt import build_job_statement
+    from langslice.core.spec import PositionSpec
 
     kwargs = dict(tool_names=["set_positions", "view_placement", "view_stack", "submit"],
                   species="mouse", pos_lo=0.0, pos_hi=10.0, axis_ends=("anterior", "posterior"))
@@ -990,7 +996,7 @@ def test_damage_flags_can_be_set_and_cleared_together_with_undo(tmp_path: Path):
 
 
 def test_adjust_transforms_one_view_draws_every_entry(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, placed=True)
     base = {"rotation_deg": 2, "scale_x": 1, "scale_y": 1,

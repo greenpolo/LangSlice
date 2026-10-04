@@ -14,13 +14,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from langslice.linear import JobSpec, run
-from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import build_context
-from langslice.linear.job import apply_host_inputs, emit_results, ingest
-from langslice.linear.prompt import build_job_statement
-from langslice.linear.spec import PositionSpec
-from langslice.linear.toolbox import build_tools
+from langslice.agent.engine import build_context, run
+from langslice.agent.prompt import build_job_statement
+from langslice.core.spec import JobSpec, PositionSpec
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.checkpoint import load_checkpoint
+from langslice.job.job import apply_host_inputs, emit_results, ingest
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack
 
 _ATLAS = SlabAtlas()
@@ -92,7 +91,7 @@ def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
 def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
     # A host's own alignment (ABBA) carries a flip inside its affine: a
     # negative determinant. The harness keeps it as supplied.
-    from langslice.linear.job import submit_errors
+    from langslice.job.job import submit_errors
 
     names = _make_stack(tmp_path, n=2)
     mirrored = {"kind": "host", "params": [-1.0, 0.0, 1.0, 0.0, 1.0, 0.0], "mirrored": True}
@@ -166,7 +165,7 @@ def _statement(spec: JobSpec) -> str:
 
 
 def test_mirroring_is_part_of_linear_never_of_positioning(tmp_path: Path):
-    from langslice.linear.spec import TransformSpec
+    from langslice.core.spec import TransformSpec
 
     _make_stack(tmp_path, n=3)
     cue = TransformSpec(hemisphere_cue="ink on the right")
@@ -347,7 +346,7 @@ def test_input_context_safeguard_is_disabled_by_default(tmp_path):
 def test_token_tally_tracks_last_and_peak_including_cached_input():
     from types import SimpleNamespace
 
-    from langslice.linear.session import TokenTally
+    from langslice.agent.session import TokenTally
 
     tally = TokenTally()
     for prompt, cached in [(2000, 1900), (1000, 900)]:
@@ -383,8 +382,8 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
 
 
 def test_the_seed_carries_section_strips_then_the_atlas_reference(tmp_path: Path):
-    from langslice.linear.engine import build_context, build_seed_message
-    from langslice.linear.job import ingest
+    from langslice.agent.engine import build_context, build_seed_message
+    from langslice.job.job import ingest
 
     _make_stack(tmp_path, n=3)
     spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
@@ -440,10 +439,10 @@ def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp
     del names
     on = _spec(tmp_path, tasks=["transform"])
     off = _spec(tmp_path, tasks=["position"])
-    from langslice.linear.engine import build_context
-    from langslice.linear.job import ingest
-    from langslice.linear.prompt import build_job_statement
-    from langslice.linear.toolbox import build_tools
+    from langslice.agent.engine import build_context
+    from langslice.agent.prompt import build_job_statement
+    from langslice.doors.tools.toolbox import build_tools
+    from langslice.job.job import ingest
 
     for spec, expected in ((on, True), (off, False)):
         ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)

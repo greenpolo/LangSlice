@@ -10,7 +10,7 @@ doors) and ``submit`` write, from the stack as it stands:
   *full_resolution* on the file's own pixels (:func:`langslice.core.maps.section_maps`);
 - ``exports/quicknii.json`` (every placed section's linear anchoring) and
   ``exports/visualign.json`` (the same, with VisuAlign markers of each
-  applied deformation) (:func:`langslice.integrations.quint.job_export`);
+  applied deformation) (:func:`langslice.job.quint.job_export`);
 - ``registration.json`` again, so it lists the files just written.
 
 Nothing in the state changes (no undo step). A job that persists nothing
@@ -29,10 +29,10 @@ from typing import TYPE_CHECKING, Any
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
-    from langslice.deformable.record import DeformableRecord
-    from langslice.linear.job import Job
-    from langslice.linear.state import SliceState
-    from langslice.linear.workspace import Workspace
+    from langslice.core.deformable.record import DeformableRecord
+    from langslice.core.state import SliceState
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ def export_maps(
             sections_linear.append(base)
             sections_markers.append({**base, "markers": markers})
         if sections_linear:
-            from langslice.integrations.quint import job_export
+            from langslice.job.quint import job_export
 
             exports_dir.mkdir(parents=True, exist_ok=True)
             for name, kind, rows in ((formats.QUICKNII_FILE, "quicknii", sections_linear),

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
-    from langslice.linear.job import Job
+    from langslice.job.job import Job
 
 
 def add_note(job: Job, text: str) -> list[str]:

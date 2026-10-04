@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
-from langslice.atlas.core import (
+from langslice.core.atlas.core import (
     get_position_range_mm,
     get_reference_slice,
     index_to_position_mm,
     load_atlas,
     position_mm_to_index,
 )
-from langslice.space import atlas_space_context, slice_axis_index
+from langslice.core.space import atlas_space_context, slice_axis_index
 
 pytestmark = pytest.mark.slow
 

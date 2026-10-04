@@ -287,10 +287,10 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
 
 
 def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images):
+    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec
     from langslice.doors.jobs import context
-    from langslice.linear.job import Job
-    from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
-    from langslice.linear.toolbox import build_tools
+    from langslice.doors.tools.toolbox import build_tools
+    from langslice.job.job import Job
 
     job_folder = init(capsys, images)
     # The agent's side: the job folder opened as a run opens it, its tools.

@@ -41,8 +41,8 @@ from langslice.job.layout import EXPORTS_DIR, REGISTRATION_FILE, JobLayout
 
 if TYPE_CHECKING:
     from langslice.core.maps import SectionFrame, SectionMaps
-    from langslice.linear.state import SliceState, StackState
-    from langslice.linear.workspace import Workspace
+    from langslice.core.state import SliceState, StackState
+    from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def digest(value: Any) -> str:
 
 def applied_deformation(state: StackState, record: SliceState) -> dict[str, Any] | None:
     """The section's deformation as it stands on its current placement, or None."""
-    from langslice.linear.deformation import linear_key
+    from langslice.core.deformation import linear_key
 
     held = record.deformation
     if not held or held.get("linear_key") != linear_key(state, record):
@@ -128,7 +128,7 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
             "params": transform.get("params"),
             "params_convention": (
                 "normalized 2x3 [a, b, tx, c, d, ty] on the oriented section render: "
-                "x as a fraction of its width, y of its height (langslice.affine)"),
+                "x as a fraction of its width, y of its height (langslice.core.affine)"),
             "physical": transform.get("physical"),
             "mirrored": bool(transform.get("mirrored", False)),
         }
@@ -249,7 +249,7 @@ def write_registration(
     layout: JobLayout, state: StackState, workspace: Workspace | None,
 ) -> Path | None:
     """Write ``registration.json`` atomically; never raises (None on failure)."""
-    from langslice.linear.checkpoint import write_json_atomic
+    from langslice.job.checkpoint import write_json_atomic
 
     path = layout.folder / REGISTRATION_FILE
     try:
@@ -297,7 +297,7 @@ def write_float_channels(path: Path, planes: np.ndarray, names: Iterable[str],
 def structure_rows(atlas: Any) -> dict[int, dict[str, Any]]:
     """Atlas id -> its structure (acronym, name, rgb_triplet), from the
     BrainGlobe structure tree."""
-    from langslice.atlas.recolor import _structure_rows
+    from langslice.core.atlas.recolor import _structure_rows
 
     return _structure_rows(atlas)
 
@@ -393,7 +393,7 @@ def write_section_maps(
               "deformation_record": deformation_record,
               "files": {kind: name for kind, name in SECTION_FILES.items()
                         if kind != "maps" and (folder / name).exists()}}
-    from langslice.linear.checkpoint import write_json_atomic
+    from langslice.job.checkpoint import write_json_atomic
 
     write_json_atomic(str(folder / MAPS_FILE), record)
     written.append((folder / MAPS_FILE, "maps"))
@@ -419,7 +419,7 @@ def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]
 
 def write_json(path: Path, data: Any) -> Path:
     """Write a JSON export atomically."""
-    from langslice.linear.checkpoint import write_json_atomic
+    from langslice.job.checkpoint import write_json_atomic
 
     write_json_atomic(str(path), data)
     return path

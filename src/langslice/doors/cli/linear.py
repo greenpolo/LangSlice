@@ -9,7 +9,7 @@ import textwrap
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from langslice.linear.spec import JobSpec
+    from langslice.core.spec import JobSpec
 
 PLANE_HELP = (
     "Slicing plane (normal axis). Position is interpreted along this axis "
@@ -236,21 +236,20 @@ def apply_trace_dir(args: argparse.Namespace) -> None:
     """``--trace-dir`` overrides ``LANGSLICE_TRACE_DIR`` for this process."""
     import os
 
-    from langslice.linear.trace import TRACE_DIR_ENV
+    from langslice.agent.trace import TRACE_DIR_ENV
 
     if args.trace_dir:
         os.environ[TRACE_DIR_ENV] = args.trace_dir
 
 
 def build_linear_spec(args: argparse.Namespace, image_folder: str) -> JobSpec:
-    """Args -> :class:`~langslice.linear.spec.JobSpec`.
+    """Args -> :class:`~langslice.core.spec.JobSpec`.
 
     Shared by ``linear run`` (*image_folder* is the positional) and
     ``abba --linear FOLDER`` (*image_folder* is that flag's value) — both
     parsers add the same flags via :func:`add_linear_arguments`.
     """
-    from langslice.linear import JobSpec
-    from langslice.linear.spec import NonlinearSpec, PositionSpec, ReorderSpec, TransformSpec
+    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, ReorderSpec, TransformSpec
 
     inputs: dict[str, object] = {}
     positions = load_json_arg(args.positions)
@@ -309,8 +308,8 @@ def run_linear(args: argparse.Namespace) -> None:
     import asyncio
     import os
 
-    from langslice.linear import run
-    from langslice.linear.trace import TRACE_DIR_ENV
+    from langslice.agent.engine import run
+    from langslice.agent.trace import TRACE_DIR_ENV
 
     apply_trace_dir(args)
     spec = build_linear_spec(args, args.image_folder)
@@ -367,7 +366,7 @@ def run_quick_affine(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    from langslice.nonlinear.quick_affine import quick_affine_register
+    from langslice.core.nonlinear.quick_affine import quick_affine_register
 
     image = Image.open(args.image)
     result = quick_affine_register(

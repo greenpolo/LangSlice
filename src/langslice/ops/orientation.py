@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from PIL import Image
 
-    from langslice.linear.display import DisplayOptions
-    from langslice.linear.job import Job
-    from langslice.linear.workspace import Workspace
+    from langslice.core.display import DisplayOptions
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 #: The rotations a section may carry, degrees.
 ROTATIONS: tuple[int, ...] = (0, 90, 180, 270)

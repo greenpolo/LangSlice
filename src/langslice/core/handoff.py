@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from PIL import Image
 
-from langslice.affine import denormalized_affine
+from langslice.core.affine import denormalized_affine
 from langslice.core.canvas import CanvasGeometry, canvas_geometry
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
@@ -30,11 +30,11 @@ from langslice.core.sections import (
     render_cache_key,
     render_slice,
 )
-from langslice.linear.workspace import Workspace
-from langslice.space import Plane
+from langslice.core.space import Plane
+from langslice.core.workspace import Workspace
 
 if TYPE_CHECKING:
-    from langslice.linear.state import StackState
+    from langslice.core.state import StackState
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ def linear_placement_matrix(
     """``(atlas_to_slice, geometry)``: the linear placement as one matrix.
 
     *atlas_to_slice* (3x3) maps native atlas-plane pixel centres ``[x, y, 1]``
-    (the plane :func:`langslice.atlas.render.annotation_slice` draws at
+    (the plane :func:`langslice.core.atlas.render.annotation_slice` draws at
     *position_mm*, *plane* and the cutting angles) onto pixel centres of the
     oriented, unframed section render of *image_size* that the six stored
     numbers *params* are normalized against, at *um_per_px* (the render's).

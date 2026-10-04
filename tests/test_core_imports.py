@@ -4,7 +4,7 @@ framework or any model client.
 Each core module is imported in a fresh interpreter (a module another test
 loaded would hide the leak) and must leave no ``google.adk``,
 ``google.genai``, ``litellm`` or ``openai`` module behind. Those belong to
-the ADK and MCP doors (``langslice.adk``, the MCP server), the agent driver
+the ADK and MCP doors (``langslice.doors.tools``, the MCP server), the agent driver
 and the providers; the tool door itself (the toolbox, the ``view`` options)
 returns plain pictures and is checked too. The operations
 (``langslice.ops``) must also leave no door module behind, and the job
@@ -21,23 +21,23 @@ import sys
 import pytest
 
 CORE_MODULES = (
-    "langslice.linear.workspace",
+    "langslice.core.workspace",
     "langslice.linear.render",
-    "langslice.linear.display",
-    "langslice.linear.transform",
-    "langslice.linear.deformation",
-    "langslice.linear.appearance",
-    "langslice.linear.atlas_fetch",
-    "langslice.linear.opening",
-    "langslice.linear.job",
-    "langslice.registration_handoff",
-    "langslice.registration_tool",
+    "langslice.core.display",
+    "langslice.core.transform",
+    "langslice.core.deformation",
+    "langslice.core.appearance",
+    "langslice.core.atlas_fetch",
+    "langslice.core.opening",
+    "langslice.job.job",
+    "langslice.core.nonlinear.registration_handoff",
+    "langslice.core.nonlinear.registration_tool",
     "langslice.core.handoff",
     "langslice.providers.registry",
-    "langslice.deformable",
-    "langslice.space",
-    "langslice.affine",
-    "langslice.atlas",
+    "langslice.core.deformable",
+    "langslice.core.space",
+    "langslice.core.affine",
+    "langslice.core.atlas",
     "langslice.core",
     "langslice.core.pictures",
     "langslice.core.placement",
@@ -78,10 +78,10 @@ CORE_MODULES = (
 
 #: The doors: an operation (``langslice.ops``) must load none of them.
 DOORS = (
-    "langslice.linear.toolbox",
-    "langslice.linear.view_options",
-    "langslice.adk",
-    "langslice.mcp_server",
+    "langslice.doors.tools.toolbox",
+    "langslice.doors.tools.view_options",
+    "langslice.doors.tools",
+    "langslice.doors.mcp",
     "langslice.doors",
 )
 
@@ -90,8 +90,8 @@ FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 #: Doors that return plain pictures and data (the ADK driver and the MCP
 #: server package them): they load no agent framework or model client either.
 PLAIN_DOORS = (
-    "langslice.linear.toolbox",
-    "langslice.linear.view_options",
+    "langslice.doors.tools.toolbox",
+    "langslice.doors.tools.view_options",
     "langslice.doors.declarations",
     "langslice.doors.jobs",
     "langslice.doors.library",
@@ -146,7 +146,7 @@ from pathlib import Path
 import langslice
 from tests.golden.record import PIXEL_SIZE_UM, atlas_loader, write_sections
 from langslice.doors.jobs import create
-from langslice.linear.spec import JobSpec
+from langslice.core.spec import JobSpec
 
 images = Path(sys.argv[1])
 write_sections(images)

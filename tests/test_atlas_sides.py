@@ -7,7 +7,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from langslice.atlas.sides import (
+from langslice.core.atlas.sides import (
     SideError,
     has_sides,
     ml_halves,
@@ -15,9 +15,9 @@ from langslice.atlas.sides import (
     overlapping,
     split_side,
 )
-from langslice.deformable import FitSettings, draw_warped_borders, fit_section, prepare_fit
-from langslice.deformable.atlas_images import regions_mask, whole_region_ids
-from langslice.deformable.record import (
+from langslice.core.deformable import FitSettings, draw_warped_borders, fit_section, prepare_fit
+from langslice.core.deformable.atlas_images import regions_mask, whole_region_ids
+from langslice.core.deformable.record import (
     OUTSIZED_MAX_FRACTION,
     OUTSIZED_MEDIAN_MM,
     diagnose,

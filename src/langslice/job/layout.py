@@ -245,7 +245,7 @@ class JobLayout:
     def _siblings(self) -> list[str]:
         if self.image_folder is None or not self.image_folder.is_dir():
             return []
-        from langslice.linear.discovery import discover_slices
+        from langslice.core.discovery import discover_slices
 
         return [os.path.basename(path) for path in discover_slices(str(self.image_folder))]
 
@@ -276,7 +276,7 @@ class JobLayout:
     def relative(self, path: str | os.PathLike[str]) -> str:
         """*path* as job files store it: relative to the job folder (POSIX
         separators) when inside it; an outside path stays absolute."""
-        from langslice.linear.checkpoint import relative_to
+        from langslice.job.checkpoint import relative_to
 
         return relative_to(self.folder)(os.path.abspath(os.fspath(path)))
 
@@ -331,7 +331,7 @@ def read_job_file(layout: JobLayout) -> dict[str, Any] | None:
 def write_job_file(layout: JobLayout, **fields: Any) -> dict[str, Any]:
     """Write ``job.json``: *fields* over what it holds (``created_at`` and any
     field not given are kept), at the current format version."""
-    from langslice.linear.checkpoint import write_json_atomic
+    from langslice.job.checkpoint import write_json_atomic
 
     held = read_job_file(layout) or {}
     record = {**held, **fields, FORMAT_KEY: JOB_FORMAT_VERSION}

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from langslice.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
+    from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
 
 CANONICAL_PROVIDERS = ("gemini-api", "openai-api", "openai-oauth", "none")
 
@@ -94,7 +94,7 @@ def default_image_model(provider: str) -> str | None:
 def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
     """Resolve a provider name (any accepted spelling) to its image-edit call.
 
-    The transport (``langslice.nonlinear.providers``) is imported when the
+    The transport (``langslice.providers.images``) is imported when the
     call runs, not here, so resolving loads no model client. ``none`` and
     unknown names are refused: there is no image model to call.
     """
@@ -105,7 +105,7 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
         raise ValueError(f"Unknown provider: {provider}")
 
     def call(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
-        from langslice.nonlinear.providers import generate_warped_segmentation_image
+        from langslice.providers.images import generate_warped_segmentation_image
 
         return generate_warped_segmentation_image(request)
 

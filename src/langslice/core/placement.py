@@ -3,7 +3,7 @@
 The core of `view_placement`, `set_positions`, `fit_affine` and
 `adjust_transforms`'s pictures, taken out of the tool door (layered refactor,
 phase 3b). Plain inputs in (the workspace, the stack state, a section
-record, numbers, the call's :class:`~langslice.linear.display.DisplayOptions`),
+record, numbers, the call's :class:`~langslice.core.display.DisplayOptions`),
 plain PIL pictures with their captions burned in out, plus the metadata a
 door words its reply from. No undo, no gates, no message types.
 
@@ -34,7 +34,7 @@ from typing import Any, cast
 import numpy as np
 from PIL import Image
 
-from langslice.affine import denormalized_affine, physical_affine_matrix
+from langslice.core.affine import denormalized_affine, physical_affine_matrix
 from langslice.core.canvas import (
     VIEW_MODES,
     CanvasGeometry,
@@ -44,6 +44,14 @@ from langslice.core.canvas import (
     pivot_on_canvas,
 )
 from langslice.core.captions import caption
+from langslice.core.display import (
+    MODE_RULES,
+    DisplayOptions,
+    atlas_caption,
+    atlas_image_picture,
+    framed_atlas,
+    framed_section,
+)
 from langslice.core.layers import note
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
 from langslice.core.sections import (
@@ -53,18 +61,10 @@ from langslice.core.sections import (
     shown_section,
 )
 from langslice.core.sheets import stacked
-from langslice.linear.display import (
-    MODE_RULES,
-    DisplayOptions,
-    atlas_caption,
-    atlas_image_picture,
-    framed_atlas,
-    framed_section,
-)
-from langslice.linear.state import IDENTITY_PARAMS, SliceState, StackState
-from langslice.linear.transform import calibrate
-from langslice.linear.workspace import Workspace
-from langslice.space import Plane
+from langslice.core.space import Plane
+from langslice.core.state import IDENTITY_PARAMS, SliceState, StackState
+from langslice.core.transform import calibrate
+from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ def draw_canvas(
     this placement) resamples the section into its placed-atlas frame
     first, so the picture shows the full registration: linear placement
     plus deformation. *left* is a fit's own side split for one-sided
-    regions (:class:`~langslice.linear.transform.FitFrame`).
+    regions (:class:`~langslice.core.transform.FitFrame`).
     """
     edge = int(long_edge or options.long_edge)
     window = options.window
@@ -199,7 +199,7 @@ def draw_canvas(
         spline=spline, warp=warp, zoom=options.window, long_edge=edge,
     )
     if warp is not None:
-        from langslice.deformable import warp_section_image
+        from langslice.core.deformable import warp_section_image
 
         shown = warp_section_image(shown, warp)
     panels: list[PanelFrame] = []
@@ -240,7 +240,7 @@ def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
 
 def current_warp(store: Any, state: StackState, record: SliceState) -> Any:
     """The section's applied deformation record from *store* (a
-    :class:`~langslice.linear.deformation.RecordStore`), or None (none held,
+    :class:`~langslice.core.deformation.RecordStore`), or None (none held,
     stale, or unreadable)."""
     if not record.deformation:
         return None
@@ -493,7 +493,7 @@ def fit_picture(
     """A fitted section under its new transform (``fit_affine``'s picture).
 
     Drawn from the fit's working frame and matrix (*frame*, a
-    :class:`~langslice.linear.transform.FitFrame`). One-sided regions are
+    :class:`~langslice.core.transform.FitFrame`). One-sided regions are
     highlighted with the sides the fit resolved (``frame.left``), so the
     picture shows what the fit used even after a large turn.
     """

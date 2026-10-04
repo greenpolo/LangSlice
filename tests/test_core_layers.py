@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core import canvas, layers
-from langslice.oblique import plane_index_affine, plane_index_coordinates
+from langslice.core.oblique import plane_index_affine, plane_index_coordinates
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
 

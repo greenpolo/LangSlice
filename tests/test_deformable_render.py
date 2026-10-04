@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from langslice.deformable import (
+from langslice.core.deformable import (
     FitSettings,
     draw_warped_borders,
     fit_section,
@@ -36,7 +36,7 @@ def test_borders_are_drawn_only_over_tissue(case):
 def test_smooth_borders_follow_the_nearest_label_edges(case):
     atlas, _, record = case
     _, strong = warped_border_coverage(record, atlas)
-    from langslice.atlas.render import family_labels
+    from langslice.core.atlas.render import family_labels
 
     merged = family_labels(record.labels, atlas)
     edge = np.zeros(merged.shape, np.uint8)
@@ -64,7 +64,7 @@ def test_highlight_is_strong_over_a_faint_outline(case):
 
 
 def test_marked_regions_get_their_own_layer_and_outlines_limit_the_rest(case):
-    from langslice.deformable import warped_border_layers
+    from langslice.core.deformable import warped_border_layers
 
     atlas, image, record = case
     layers = warped_border_layers(record, atlas, highlight=["STR"], marked=["HY"])
@@ -85,7 +85,7 @@ def test_marked_regions_get_their_own_layer_and_outlines_limit_the_rest(case):
 
 
 def test_resampled_record_draws_the_same_borders_smaller(case):
-    from langslice.deformable import resampled_record
+    from langslice.core.deformable import resampled_record
 
     atlas, _, record = case
     width, height = record.section_size
@@ -104,7 +104,7 @@ def test_resampled_record_draws_the_same_borders_smaller(case):
 def test_warping_the_section_by_a_zero_field_changes_nothing(case):
     from dataclasses import replace
 
-    from langslice.deformable import warp_section_image
+    from langslice.core.deformable import warp_section_image
 
     _, image, record = case
     still = replace(record, field_mm=np.zeros_like(record.field_mm),

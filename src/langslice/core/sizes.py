@@ -10,12 +10,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from langslice.linear.workspace import Workspace
+    from langslice.core.workspace import Workspace
 
 #: Long edge, in pixels, of every picture the agent is SHOWN, per
 #: ``JobSpec.image_resolution``: ``(opening, later)``. *Opening* is each tile
 #: of the opening strips (every section, every atlas section beneath it or in
-#: the atlas reference; :mod:`langslice.linear.opening`);
+#: the atlas reference; :mod:`langslice.core.opening`);
 #: *later* is each picture a tool returns (each panel of a multi-panel
 #: picture). "auto" opens at 256 and lets the agent pass ``resolution`` per
 #: call (:data:`MIN_RESOLUTION` up to the driver model's own largest image,
@@ -60,7 +60,7 @@ def picture_edge(ctx: Workspace, requested: int | None = None) -> int:
     """Long edge of each later picture: the level's, or *requested* at "auto".
 
     *requested* must already be clamped (:data:`MIN_RESOLUTION` up to the
-    driver model's maximum; :func:`langslice.linear.view_options.parse_view`
+    driver model's maximum; :func:`langslice.doors.tools.view_options.parse_view`
     does it); every level but
     "auto" ignores it.
     """

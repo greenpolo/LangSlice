@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.image_prep import (
+from langslice.core.image_prep import (
     FRAME_MARGIN,
     crop_to_mask,
     crop_to_tissue,
@@ -121,7 +121,7 @@ def test_crop_to_mask_scales_the_mask_and_adds_the_margin() -> None:
 def test_read_working_image_takes_the_smallest_pyramid_level_large_enough(tmp_path) -> None:
     import tifffile
 
-    from langslice.image_prep import read_working_image
+    from langslice.core.image_prep import read_working_image
 
     path = tmp_path / "scan.tif"
     base = np.random.default_rng(0).integers(0, 255, (4000, 6000, 3), dtype=np.uint8)
@@ -135,7 +135,7 @@ def test_read_working_image_takes_the_smallest_pyramid_level_large_enough(tmp_pa
 
 
 def test_read_working_image_downsamples_a_plain_file_once(tmp_path) -> None:
-    from langslice.image_prep import read_working_image
+    from langslice.core.image_prep import read_working_image
 
     path = tmp_path / "plain.png"
     Image.fromarray(np.zeros((1000, 5000), dtype=np.uint8)).save(path)

@@ -15,13 +15,13 @@ import os
 
 import pytest
 
-from langslice.integrations.abba_linear import (
+from langslice.core.state import SliceState, StackState
+from langslice.hosts.integrations.abba_linear import (
     FLIP_ROTATION_AXIS,
     QUARTER_TURN_AXIS,
     QUARTER_TURN_SIGN,
     AbbaStackMirror,
 )
-from langslice.linear.state import SliceState, StackState
 
 # --- a fake ABBA facade ----------------------------------------------------
 
@@ -447,10 +447,10 @@ def test_attached_position_job_preserves_orientation_registration_and_angles(mon
 def test_existing_runner_seeds_host_state_without_reset_or_resume(tmp_path, monkeypatch):
     from PIL import Image
 
-    from langslice.integrations.abba_linear import run_existing_in_abba
-    from langslice.linear import engine
-    from langslice.linear.job import apply_host_inputs
-    from langslice.linear.spec import JobSpec
+    from langslice.agent import engine
+    from langslice.core.spec import JobSpec
+    from langslice.hosts.integrations.abba_linear import run_existing_in_abba
+    from langslice.job.job import apply_host_inputs
 
     abba = FakeAbba()
     first, second = FakeSlice("first", 6), FakeSlice("second", 3)
@@ -501,8 +501,8 @@ def test_existing_runner_seeds_host_state_without_reset_or_resume(tmp_path, monk
 
 
 def test_existing_runner_refuses_orientation_on_registered_slice(tmp_path, monkeypatch):
-    from langslice.integrations.abba_linear import run_existing_in_abba
-    from langslice.linear.spec import JobSpec
+    from langslice.core.spec import JobSpec
+    from langslice.hosts.integrations.abba_linear import run_existing_in_abba
 
     abba = FakeAbba()
     sl = FakeSlice("existing", 4)
@@ -515,8 +515,8 @@ def test_existing_runner_refuses_orientation_on_registered_slice(tmp_path, monke
 
 @pytest.mark.parametrize("unsupported", ["atlas", "plane", "angle"])
 def test_existing_runner_rejects_unverified_atlas_geometry(tmp_path, unsupported):
-    from langslice.integrations.abba_linear import run_existing_in_abba
-    from langslice.linear.spec import JobSpec
+    from langslice.core.spec import JobSpec
+    from langslice.hosts.integrations.abba_linear import run_existing_in_abba
 
     abba = FakeAbba()
     abba.mp._slices = [FakeSlice("existing", 4)]

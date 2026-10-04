@@ -7,12 +7,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from langslice.agent.engine import build_context
 from langslice.core.captions import caption
 from langslice.core.sections import render_slice
+from langslice.core.spec import JobSpec
 from langslice.core.status import status_rows, status_text
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.spec import JobSpec
+from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -140,8 +140,8 @@ def test_compact_rows_drops_null_and_empty_fields_only():
 def test_render_scale_counts_file_pixels_through_the_working_copy(tmp_path: Path):
     """A large file is rendered from a smaller working copy; the recorded scale
     (and so the canvas calibration) still counts pixels of the FILE."""
+    from langslice.core.image_prep import WORKING_MAX_EDGE
     from langslice.core.sections import render_cache_key
-    from langslice.image_prep import WORKING_MAX_EDGE
 
     width = WORKING_MAX_EDGE * 2
     Image.fromarray(np.full((width // 2, width, 3), 90, dtype=np.uint8)).save(tmp_path / "big.png")

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from langslice.atlas.recolor import MERGE_EPS, MIN_SEPARATION, _allen_join, color_lut
+from langslice.core.atlas.recolor import MERGE_EPS, MIN_SEPARATION, _allen_join, color_lut
 
 
 def _atlas(rows: dict[int, dict], name: str | None = None) -> SimpleNamespace:

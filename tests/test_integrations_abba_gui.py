@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from langslice.integrations.abba_gui import MenuController, MenuSettings, protocol_defaults
+from langslice.hosts.integrations.abba_gui import MenuController, MenuSettings, protocol_defaults
 
 
 def _abba(positions=(), thicknesses=()):
@@ -85,7 +85,7 @@ def test_controller_prevents_overlapping_runs_and_snapshots_settings(monkeypatch
         assert release.wait(5)
         return state
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", run)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", run)
     controller = MenuController(_abba())
     statuses = []
     thread = controller.start(on_status=statuses.append)
@@ -109,7 +109,7 @@ def test_failed_run_reports_error_and_allows_retry(monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("Atlas unavailable")
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", fail)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", fail)
     controller = MenuController(_abba())
     statuses, errors = [], []
     thread = controller.start(on_status=statuses.append, on_error=errors.append)
@@ -121,7 +121,7 @@ def test_failed_run_reports_error_and_allows_retry(monkeypatch):
     assert statuses == ["Agent working…", "Run failed"]
 
     monkeypatch.setattr(
-        "langslice.integrations.abba_linear.run_existing_in_abba",
+        "langslice.hosts.integrations.abba_linear.run_existing_in_abba",
         lambda *args, **kwargs: SimpleNamespace(submitted=False),
     )
     retry = controller.start(on_status=statuses.append)
@@ -159,7 +159,7 @@ def test_popup_factory_failure_releases_run_guard_and_allows_retry(monkeypatch):
     def fail_factory(model):
         raise RuntimeError("Unable to create activity window")
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", run)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", run)
     controller = MenuController(_abba(), activity_factory=fail_factory)
     with pytest.raises(RuntimeError, match="Unable to create activity window"):
         controller.start()
@@ -204,7 +204,7 @@ def test_popup_receives_stream_progress_and_completion_while_abba_writes_continu
         on_write(state)
         return state
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", run)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", run)
     controller = MenuController(_abba(), activity_factory=factory)
     writes, statuses = [], []
     thread = controller.start(on_write=writes.append, on_status=statuses.append)
@@ -235,7 +235,7 @@ def test_new_run_disposes_previous_popup_before_creating_replacement(monkeypatch
         return SimpleNamespace(submitted=True)
 
     controller.activity_factory = factory
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", run)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", run)
     thread = controller.start()
     thread.join(5)
     assert not thread.is_alive()
@@ -252,7 +252,7 @@ def test_agent_failure_is_visible_in_popup_and_releases_run_guard(monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("Atlas unavailable")
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", fail)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", fail)
     controller = MenuController(_abba(), activity_factory=lambda model: activity)
     errors = []
     thread = controller.start(on_error=errors.append)
@@ -280,7 +280,7 @@ def test_comparison_is_lazy_retained_after_run_and_replaced_on_next_run(monkeypa
             assert comparison_factory() is first
         return SimpleNamespace(submitted=True)
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", run)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", run)
     controller = MenuController(_abba(), comparison_factory=factory)
     thread = controller.start()
     thread.join(5)
@@ -351,7 +351,7 @@ def test_independent_viewer_and_log_options_preserve_registration(
         on_write(state)
         return state
 
-    monkeypatch.setattr("langslice.integrations.abba_linear.run_existing_in_abba", run)
+    monkeypatch.setattr("langslice.hosts.integrations.abba_linear.run_existing_in_abba", run)
     controller = MenuController(
         _abba(),
         settings=MenuSettings(open_agent_viewer=open_viewer, open_agent_log=open_log),
@@ -381,7 +381,7 @@ def test_disabled_log_disposes_previous_even_without_factory(monkeypatch):
         _abba(), MenuSettings(open_agent_log=False), activity_window=old,
     )
     monkeypatch.setattr(
-        "langslice.integrations.abba_linear.run_existing_in_abba",
+        "langslice.hosts.integrations.abba_linear.run_existing_in_abba",
         lambda *args, **kwargs: SimpleNamespace(submitted=True),
     )
     thread = controller.start()

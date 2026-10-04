@@ -1,7 +1,7 @@
 """Convenience adapters for testing one entry of the public batch tool."""
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.linear.arguments import ViewAuto
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.arguments import ViewAuto
 
 #: Keys that go into the call's ``view`` rather than the entry.
 VIEW_KEYS = frozenset(ViewAuto.__annotations__)

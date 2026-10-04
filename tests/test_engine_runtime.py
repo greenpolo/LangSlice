@@ -6,15 +6,15 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from langslice.api import runtime
-from langslice.api.models import RegisterRequest
+from langslice.hosts.api import runtime
+from langslice.hosts.api.models import RegisterRequest
 
 
 def _stub_image_prep(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr("PIL.Image.open", lambda _p: Image.new("RGB", (32, 24), "white"))
-    monkeypatch.setattr("langslice.image_prep.normalize_image", lambda img: img)
+    monkeypatch.setattr("langslice.core.image_prep.normalize_image", lambda img: img)
     monkeypatch.setattr(
-        "langslice.image_prep.prepare_image_for_vlm",
+        "langslice.core.image_prep.prepare_image_for_vlm",
         lambda img, **_kwargs: SimpleNamespace(image=img, effective_pixel_size_um=None),
     )
 
@@ -50,11 +50,11 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
     )
 
     monkeypatch.setattr(
-        "langslice.nonlinear.runtime.estimate_registration",
+        "langslice.core.nonlinear.runtime.estimate_registration",
         lambda **_kwargs: fake_result,
     )
     monkeypatch.setattr(
-        "langslice.nonlinear.types.annotation_session_to_dict",
+        "langslice.core.nonlinear.types.annotation_session_to_dict",
         lambda _session: {
             "metadata": {
                 "warped_atlas_path": "/tmp/warped_atlas.png",
@@ -100,11 +100,11 @@ def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> N
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
     monkeypatch.setattr(
-        "langslice.nonlinear.runtime.estimate_registration",
+        "langslice.core.nonlinear.runtime.estimate_registration",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("register failed")),
     )
     monkeypatch.setattr(
-        "langslice.nonlinear.types.annotation_session_to_dict",
+        "langslice.core.nonlinear.types.annotation_session_to_dict",
         lambda _session: {"metadata": {}},
     )
     request = RegisterRequest(
@@ -148,11 +148,11 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
         annotation_session=SimpleNamespace(metadata={}),
     )
     monkeypatch.setattr(
-        "langslice.nonlinear.runtime.estimate_registration",
+        "langslice.core.nonlinear.runtime.estimate_registration",
         lambda **_kwargs: fake_result,
     )
     monkeypatch.setattr(
-        "langslice.nonlinear.types.annotation_session_to_dict",
+        "langslice.core.nonlinear.types.annotation_session_to_dict",
         lambda _session: {"metadata": {}},
     )
 
