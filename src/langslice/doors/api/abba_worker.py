@@ -299,10 +299,13 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     # Observers are deliberately isolated by the engine. A final explicit
     # conversion ensures a failed native geometry export cannot report success.
     checkpoint(state)
-    from langslice.job.layout import job_folder_for
+    from langslice.job.layout import locate_job_folder
 
-    # The run's files: the job folder next to the snapshots.
-    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(job_folder_for(folder)),
+    # The run's files: the job folder the engine used (the spec's job_dir,
+    # else next to the snapshots, else the read-only fallback under
+    # ~/.langslice/jobs/), found as the engine found it.
+    output_dir, _fallback = locate_job_folder(folder, spec.job_dir, register=False)
+    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(output_dir),
                               "final_updates": prepared.final_updates}
     if trace_dir is not None:
         result["trace_files"] = sorted(
