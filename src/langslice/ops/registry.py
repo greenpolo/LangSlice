@@ -31,6 +31,7 @@ from langslice.ops import (
     atlas,
     damage,
     deformable,
+    exports,
     history,
     notes,
     order,
@@ -66,6 +67,10 @@ class Verb:
     #: to apply, re-checking each section's inputs (``ops.inputs``); every
     #: other verb runs whole under the lock (the doors hold it).
     long: bool = False
+    #: A scripting verb is offered by the doors a script or a coding agent
+    #: uses (the agent CLI, the library) and never to a model through the
+    #: agent tools or MCP (:func:`enabled` with ``scripting``).
+    scripting: bool = False
 
 
 def _verbs(*verbs: Verb) -> dict[str, Verb]:
@@ -116,13 +121,19 @@ VERBS: dict[str, Verb] = _verbs(
          alternates={"keep_linear": deformable.keep_linear},
          when=lambda spec: spec.has("nonlinear")),
     Verb("submit", submit.submit, "write", "Common"),
+    # The job folder's derived files on demand (submit writes them too):
+    # changes no state, so a read; for scripts, not for a model.
+    Verb("export_maps", exports.export_maps, "read", "Common", scripting=True),
 )
 
 
-def enabled(spec: Any) -> list[str]:
+def enabled(spec: Any, *, scripting: bool = False) -> list[str]:
     """The verbs a run of *spec* (a :class:`~langslice.linear.spec.JobSpec`)
-    has, in :data:`VERBS` order: the tools every door builds for it."""
-    return [name for name, verb in VERBS.items() if verb.when(spec)]
+    has, in :data:`VERBS` order: the tools every door builds for it. The
+    scripting verbs (``Verb.scripting``) only with *scripting*: the agent
+    CLI's and the library's toolbox, never the agent tools or MCP."""
+    return [name for name, verb in VERBS.items()
+            if verb.when(spec) and (scripting or not verb.scripting)]
 
 
 def table() -> list[dict[str, str]]:
