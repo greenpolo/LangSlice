@@ -132,9 +132,14 @@ pixels and `nr` the corrected index + 1.
   space (x left to right, y posterior to anterior, z inferior to superior;
   voxel edges) through `brainglobe_space`. The conversion is SliceBench's,
   checked there against DeepSlice and human QUINT registrations on the Allen
-  CCFv3 25 µm atlas; for other atlases the QuickNII target is assumed to
-  share the BrainGlobe voxel grid. `target` is the `.cutlas` name for known
-  atlases.
+  CCFv3 25 µm atlas. QuickNII and VisuAlign ship the Allen CCFv3 at 25 µm
+  only, so a job on `allen_mouse_10um`, `_50um` or `_100um` is exported to
+  `ABA_Mouse_CCFv3_2017_25um.cutlas` with its anchoring rescaled to that
+  target's voxels (voxel-edge coordinates scale with the voxel size; the
+  volumes span the same millimetres). The rat target is DeepSlice's name
+  (`WHS_Rat_v4_39um.cutlas`); for other atlases the QuickNII target is
+  assumed to share the BrainGlobe voxel grid (untested). `target` is the
+  `.cutlas` name for known atlases.
 - `visualign.json`: the same, plus VisuAlign markers of each applied
   deformation: `[x, y, nx, ny]` on a regular grid (1/36 of the long edge, at
   least 32 px), in the image's continuous pixel coordinates (top-left corner

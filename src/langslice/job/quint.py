@@ -54,14 +54,27 @@ logger = logging.getLogger(__name__)
 #
 # We map: BG axis-0 -> QN y, BG axis-1 -> QN z, BG axis-2 -> QN x
 
+#: The QuickNII ``.cutlas`` target of a BrainGlobe atlas. QuickNII and
+#: VisuAlign ship the Allen CCFv3 at 25 um only
+#: (``ABA_Mouse_CCFv3_2017_25um.cutlas``; DeepSlice writes the same name),
+#: so every Allen resolution is exported to it (:data:`_TARGET_RESOLUTION_UM`).
+#: The rat name is DeepSlice's, the one its QuickNII files open with. The
+#: Kim atlas is a guess (no QUINT bundle checked).
 _KNOWN_TARGETS: dict[str, str] = {
     "allen_mouse_25um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
-    "allen_mouse_10um": "ABA_Mouse_CCFv3_2017_10um.cutlas",
-    "allen_mouse_50um": "ABA_Mouse_CCFv3_2017_50um.cutlas",
-    "allen_mouse_100um": "ABA_Mouse_CCFv3_2017_100um.cutlas",
-    "whs_sd_rat": "WHS_SD_Rat_v4_39um.cutlas",
-    "whs_sd_rat_39um": "WHS_SD_Rat_v4_39um.cutlas",
+    "allen_mouse_10um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
+    "allen_mouse_50um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
+    "allen_mouse_100um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
+    "whs_sd_rat": "WHS_Rat_v4_39um.cutlas",
+    "whs_sd_rat_39um": "WHS_Rat_v4_39um.cutlas",
     "kim_unified_25um": "Kim_UnifiedMouse_v1_25um.cutlas",
+}
+#: A target whose voxels differ from the BrainGlobe atlas's: its voxel size.
+#: QuickNII coordinates are voxel EDGES (physical / voxel size), so an
+#: anchoring moves to the target's grid by the factor of the two sizes (the
+#: Allen volumes at every resolution span the same 13.2 x 8.0 x 11.4 mm).
+_TARGET_RESOLUTION_UM: dict[str, float] = {
+    "ABA_Mouse_CCFv3_2017_25um.cutlas": 25.0,
 }
 
 CORONAL_FRAME_PADDING_FACTOR = 1.1
@@ -217,6 +230,20 @@ def _resolve_target(atlas_name: str) -> str:
     return f"{atlas_name}.cutlas"
 
 
+def to_target_grid(anchoring: AnchoringVector, atlas_name: str,
+                   resolution_um: Sequence[float]) -> AnchoringVector:
+    """*anchoring*, in the voxel space of the atlas *atlas_name* (voxels of
+    *resolution_um*), in its QuickNII target's voxel space."""
+    target = _TARGET_RESOLUTION_UM.get(_resolve_target(atlas_name))
+    sizes = {float(value) for value in resolution_um}
+    if target is None or sizes == {target}:
+        return anchoring
+    if len(sizes) != 1:
+        raise ValueError(f"{atlas_name}: anisotropic voxels cannot be exported to its target")
+    factor = sizes.pop() / target
+    return AnchoringVector(*(round(float(value) * factor, 6) for value in anchoring.to_list()))
+
+
 def compute_anchoring(
     position_mm: float,
     atlas_shape: Sequence[int],
@@ -360,7 +387,7 @@ def build_quint_export(
     )
     slice_entry = SliceExport(
         filename=os.path.basename(filename),
-        anchoring=anchoring,
+        anchoring=to_target_grid(anchoring, atlas_name, atlas_resolution),
         width=image_width,
         height=image_height,
         nr=nr,
@@ -470,14 +497,16 @@ def job_export(
 
     Each of *sections* gives ``filename``, ``width``, ``height``, ``nr``,
     ``pixel_to_atlas_um`` and optionally ``markers`` (VisuAlign's
-    ``[x, y, nx, ny]`` in the image's pixel units, from
+    ``[x_overlay, y_overlay, x_image, y_image]`` in the image's pixels, from
     :func:`langslice.core.maps.residual_markers`).
     """
     slices = [
         SliceExport(
             filename=os.path.basename(str(entry["filename"])),
-            anchoring=anchoring_from_pixel_map(entry["pixel_to_atlas_um"], int(entry["width"]),
-                                               int(entry["height"]), atlas),
+            anchoring=to_target_grid(
+                anchoring_from_pixel_map(entry["pixel_to_atlas_um"], int(entry["width"]),
+                                         int(entry["height"]), atlas),
+                str(atlas["name"]), atlas["resolution_um"]),
             width=int(entry["width"]), height=int(entry["height"]), nr=int(entry["nr"]),
             markers=list(entry.get("markers") or []),
         )
