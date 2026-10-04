@@ -695,7 +695,7 @@ def ants_enhance(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
     """ANTs N4 bias-field correction and/or denoising of one 8-bit plane.
 
     antspyx ships in LangSlice's optional ``registration`` extra and is
-    imported on first use (``deformable.engines.import_ants``); without it
+    imported on first use (``core.deformable.engines.import_ants``); without it
     this raises with the install hint.
     Intensities are shifted positive first (N4 works on their logarithm) and
     the result is scaled back to the plane's own mean inside the tissue, so a

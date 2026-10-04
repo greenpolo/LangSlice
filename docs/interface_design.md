@@ -26,10 +26,10 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
 | Image model / provider | image transport and model for nonlinear, or none | `nonlinear.provider`, `nonlinear.image_model`; provider `none` (CLI `--image-provider none`) runs the Nonlinear task without the image model: no `trace_borders`, deformations fitted to the stain alone |
 | Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for each section in the opening strips (more strips at a higher level) and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`core.sizes.PICTURE_EDGES`); display only, fits and stored transforms unchanged; CLI `--image-resolution` |
-| Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
-| View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`integrations/abba_chat.py`) |
+| Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`agent/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
+| View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`hosts/integrations/abba_chat.py`) |
 | Save traces | full record of what the agent was shown, said and did, saved to a chosen folder | worker `trace_dir` (`LANGSLICE_TRACE_DIR` for one run); ABBA dialog checkbox + folder |
-| Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | built for the Python-started ABBA launcher (`integrations/abba_compare.py`, `abba_overview.py`, `abba_follow.py`); the Fiji connector shows the checkbox disabled until it is ported |
+| Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | built for the Python-started ABBA launcher (`hosts/integrations/abba_compare.py`, `abba_overview.py`, `abba_follow.py`); the Fiji connector shows the checkbox disabled until it is ported |
 | Atlas, plane, preprocess | as today | `atlas`, `plane`, `preprocess` |
 
 ## 1. Positioning (absorbs reorder)
@@ -192,12 +192,12 @@ separate: a person drives them.
 ## Agent tool surface (locked 2026-10-01; one shape per tool 2026-10-03)
 
 The linear stack agent's tools, as declared (`doors/declarations.py`; the
-bodies are `linear/toolbox.py`). Every write is
+bodies are `doors/tools/toolbox.py`). Every write is
 undoable and checkpointed. Operation arguments are top-level; every tool that
 returns a picture takes ALL its picture options in one argument, `view`
 (below). The slice list is `slices` on every tool, a single section is `id`
 (as in every `entries` dict), and arguments, `view` keys and entry keys are
-typed (`linear/arguments.py`), so the tool schema the model is sent names
+typed (`doors/tools/arguments.py`), so the tool schema the model is sent names
 every key and its type.
 
 | Tool | Built when | Signature (top level) | `view` modes |
@@ -228,11 +228,11 @@ key, or an unknown key in any `entries` / `candidates` dict is refused
 elsewhere (`` `mode` belongs inside `view` ``), and the accepted keys listed;
 nothing runs. One rule (`arguments.argument_refusal`) is applied at every
 door: the toolbox's own wrapper, the ADK plugin
-(`adk.plugins.StrictArgumentsPlugin`; ADK drops unknown top-level arguments
-before a tool runs) and the MCP server (`mcp_server.server.strict_arguments`;
+(`agent.plugins.StrictArgumentsPlugin`; ADK drops unknown top-level arguments
+before a tool runs) and the MCP server (`doors.mcp.server.strict_arguments`;
 FastMCP drops them too).
 
-**`fit_deformable`** (`linear/deformation.py` over `src/langslice/deformable/`).
+**`fit_deformable`** (`core/deformation.py` over `src/langslice/core/deformable/`).
 A library deformable fit on top of a section's linear placement (position and
 transform required). Fit inputs: `slices` (≤4, ≤8 fits per call),
 `include` (fit only these regions plus a 300 µm margin) and `exclude`
@@ -311,9 +311,9 @@ damaged sections are fitted (the submit gate on damaged sections still wants
 an interactive transform). Included regions are highlighted in the pictures
 unless `view.regions` names others.
 
-**`view`: the picture options** (`linear/view_options.py`: `parse_view`
+**`view`: the picture options** (`doors/tools/view_options.py`: `parse_view`
 validates one call's `view` against the tool's `Profile` into
-`linear/display.py`'s `DisplayOptions`; the job statement describes
+`core/display.py`'s `DisplayOptions`; the job statement describes
 it once and each tool's description lists only its modes; a call's options
 never change any stored setting). Its keys:
 

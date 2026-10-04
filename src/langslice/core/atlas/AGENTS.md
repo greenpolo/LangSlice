@@ -1,6 +1,6 @@
-# LangSlice `atlas/ — atlas access and colored region maps`
+# LangSlice `core/atlas/` — atlas access and colored region maps
 
-Package guide for `src/langslice/atlas/`. The repo-level `CLAUDE.md` holds the
+Package guide for `src/langslice/core/atlas/`. The repo-level `CLAUDE.md` holds the
 project-wide rules; this file holds what is specific to this package. `AGENTS.md`
 here is a verbatim copy — edit one, mirror to the other.
 
@@ -30,21 +30,21 @@ here is a verbatim copy — edit one, mirror to the other.
   included, confetti dropped), `family_outlines` (one `(family color,
   polyline)` per family region, in atlas-native pixels), and the shade rules
   `border_color` / `darker` / `BORDER_DARKEN` / `is_dark_background`. It moved
-  here from `nonlinear/render.py` and `nonlinear/image_gen_helpers.py` when
+  here from `core/nonlinear/render.py` and `core/nonlinear/image_gen_helpers.py` when
   `linear`'s physical overlay started drawing the same lines: two methods
   disagreeing about where a boundary is would be a bug neither could see.
-  `nonlinear.render` re-exports the shade rules and `region_contours`, so it
+  `core.nonlinear.render` re-exports the shade rules and `region_contours`, so it
   stays the one import for review rendering.
   Also `recolor.py`: organized structure colors for atlases whose native
   palettes are visually confusing. Nonlinear's two border-based routes never
   show an image-generation model any colored atlas render — the model-facing
   atlas reference on route "atlas" is a grayscale plate with thin yellow
-  boundaries only (`nonlinear.image_gen_registration.outlined_atlas_template`).
+  boundaries only (`core.nonlinear.image_gen_registration.outlined_atlas_template`).
   This LUT still colors renders people (not models) look at: the atlas
   package's own colored region maps, the family grouping behind linear's
   physical overlay (whose lines are drawn in one color, yellow by default), and
   nonlinear's human-review warped-atlas overlay
-  (`nonlinear.image_gen_helpers._classified_to_rgb`). `color_lut(atlas)` keeps native colors
+  (`core.nonlinear.image_gen_helpers._classified_to_rgb`). `color_lut(atlas)` keeps native colors
   when they are hierarchy-organized, joins the true Allen CCF colors
   (vendored `allen_colors.json`) for trees with
   enough Allen overlap — the all-white atlases (Osten, Princeton, adult Kim)
@@ -59,9 +59,9 @@ here is a verbatim copy — edit one, mirror to the other.
   family colors, because few flat colors IS the Allen convention. Auto-
   detection is data-driven — degenerate = one color for
   everything; disorganized = child colors uncorrelated with parents — and
-  flat or small trees always keep native colors. `atlas/core.py`'s colored
+  flat or small trees always keep native colors. `core/atlas/core.py`'s colored
   region-map render and nonlinear's human-review warped-atlas render
-  (`nonlinear/image_gen_helpers.py`'s `_classified_to_rgb`) both draw from
+  (`core/nonlinear/image_gen_helpers.py`'s `_classified_to_rgb`) both draw from
   this one LUT; border fitting warps the existing label map by
   nearest-neighbor sampling and never classifies model-output pixels.
   A DERIVED palette (Allen join or generated) is then organized: leaf-level

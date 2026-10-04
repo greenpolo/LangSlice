@@ -1,4 +1,8 @@
-"""Nonlinear registration: matrix-first affine/nonlinear types plus the image-gen harness."""
+"""Nonlinear registration: matrix-first affine/nonlinear types plus the image-gen harness.
+
+The image-model border route's core half (``CLAUDE.md`` in this package);
+the model transport is :mod:`langslice.providers.images`.
+"""
 
 from __future__ import annotations
 

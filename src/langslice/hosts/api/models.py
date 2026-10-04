@@ -22,11 +22,11 @@ Provider = Literal[
 ]
 # Adaptive CLAHE + tissue-coverage-weighted grayscale on the section before it is sent.
 PreprocessMode = Literal["none", "auto"]
-# The fit after the model's border correction (see nonlinear.types.Deformation):
+# The fit after the model's border correction (see core.nonlinear.types.Deformation):
 # the deformable package's fit of the model's lines, or none.
 Deformation = Literal["none", "deformable"]
 # Route "atlas" (no supplied placement) draws once, or twice with a
-# self-correction call (see nonlinear.image_gen_registration).
+# self-correction call (see core.nonlinear.image_gen_registration).
 Passes = Literal[1, 2]
 EngineMethod = Literal[
     "version",

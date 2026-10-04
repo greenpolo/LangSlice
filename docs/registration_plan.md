@@ -8,26 +8,26 @@ linear agent or the host. Route "atlas" remains for experiments.
 
 ## Active files
 
-- `nonlinear/image_gen_registration.py`: model-facing canvas geometry, the
+- `core/nonlinear/image_gen_registration.py`: model-facing canvas geometry, the
   outlined-atlas template, and `generate_registration_candidate` (public
   dispatcher).
-- `nonlinear/border_registration.py`: route selection, rough placement, the
+- `core/nonlinear/border_registration.py`: route selection, rough placement, the
   one/two atlas-route model calls, and transform composition.
-- `nonlinear/border_refinement.py`: the shared correction request and line
+- `core/nonlinear/border_refinement.py`: the shared correction request and line
   extraction both routes use.
-- `nonlinear/border_fit.py`: the fit of the corrected lines, through the
+- `core/nonlinear/border_fit.py`: the fit of the corrected lines, through the
   deformable package (`deformable/`).
-- `nonlinear/prompts.py`: the three prompt texts (route "supplied", and route
+- `core/nonlinear/prompts.py`: the three prompt texts (route "supplied", and route
   "atlas" pass 1 / pass 2).
-- `core/handoff.py` (re-exported by `registration_handoff.py`): bridge from
+- `core/handoff.py` (re-exported by `core/nonlinear/registration_handoff.py`): bridge from
   linear state without coupling the sibling methods.
-- `registration_tool.py`: the linear agent's `trace_borders` tool, which
+- `core/nonlinear/registration_tool.py`: the linear agent's `trace_borders` tool, which
   runs route "supplied" on the handoff and keeps the first reply (no fit).
-- `integrations/abba.py`: host-placed borders through the shared correction
+- `hosts/integrations/abba.py`: host-placed borders through the shared correction
   core and fit (route "supplied" only).
-- `nonlinear/runtime.py`: orchestration and debug artifacts.
-- `nonlinear/types.py`: result and annotation data classes.
-- `nonlinear/providers.py`: image-generation transport adapters.
+- `core/nonlinear/runtime.py`: orchestration and debug artifacts.
+- `core/nonlinear/types.py`: result and annotation data classes.
+- `providers/images.py`: image-generation transport adapters.
 
 ## Pipeline
 

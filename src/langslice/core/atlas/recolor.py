@@ -78,7 +78,7 @@ Rgb = tuple[int, int, int]
 RecolorMode = Literal["auto", "always", "never"]
 
 #: Colors closer than this are one registration unit: it is the merge radius
-#: ``nonlinear.image_gen_helpers._family_mapping`` folds a classified map
+#: ``core.nonlinear.image_gen_helpers._family_mapping`` folds a classified map
 #: down to, so a palette distinction below it is invisible to the pipeline.
 MERGE_EPS = 40.0
 

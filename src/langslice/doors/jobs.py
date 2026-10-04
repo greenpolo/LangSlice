@@ -1,10 +1,10 @@
 """Opening a job folder without an agent: the CLI's and the library's way in.
 
-The agent driver opens its job through ``linear.engine.build_context``,
+The agent driver opens its job through ``agent.engine.build_context``,
 which brings the agent framework along. A coding agent's CLI call and a
 script open the same job folder here instead, with nothing but the core and
 the job layer loaded: :func:`open_folder` reads an existing job as it stands
-(``linear.job.Job.load``: nothing rewritten, so a call beside a running
+(``job.job.Job.load``: nothing rewritten, so a call beside a running
 agent changes nothing until its first write) and :func:`create` makes one
 from an image folder through the same ingest every host uses
 (``Job.open``). Both write the job folder's reference card

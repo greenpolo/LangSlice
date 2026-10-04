@@ -1,11 +1,17 @@
-# LangSlice `integrations/ — ABBA / QUINT`
+# LangSlice `hosts/integrations/` — ABBA (and the QUINT writer in `job/`)
 
-Package guide for `src/langslice/integrations/`. The repo-level `CLAUDE.md` holds the
+Package guide for `src/langslice/hosts/integrations/`. The repo-level `CLAUDE.md` holds the
 project-wide rules; this file holds what is specific to this package. `AGENTS.md`
 here is a verbatim copy — edit one, mirror to the other.
 
-- `integrations/` — one module per external registration ecosystem.
-  `quint.py`: QUINT/QuickNII/VisuAlign-compatible JSON export (anchoring
+This was the top-level `integrations/` package until the folder move
+(2026-10-04). Its ABBA modules moved here, into the hosts layer;
+`quint.py` moved down to the job layer as `src/langslice/job/quint.py`,
+because an operation (`ops.exports`) writes it and an operation may not
+import a host. The QUINT entry below describes that file.
+
+- `hosts/integrations/` — one module per external registration ecosystem.
+  `job/quint.py`: QUINT/QuickNII/VisuAlign-compatible JSON export (anchoring
   vectors; file-based, formerly top-level `export.py`). A job's export
   (formats phase, 2026-10-04): `job_export(sections, atlas)`,
   `anchoring_from_pixel_map` (the anchoring from a section's exact file
@@ -27,7 +33,7 @@ here is a verbatim copy — edit one, mirror to the other.
   plus the clean histology for ONE image-model correction call. There is no
   standalone color-map initialization or silhouette refit in this adapter.
   The fit of the corrected lines is the deformable package's
-  (`nonlinear/border_fit.fit_border_lines`, Elastix lines against the family
+  (`core/nonlinear/border_fit.fit_border_lines`, Elastix lines against the family
   borders; ABBA's labels are given as the native grid, placed by an identity
   at `voxel_size_um`; since 2026-10-04, replacing the Elastix residual fit),
   and the provider is resolved here (`providers.registry.resolve_image_model`).
@@ -52,7 +58,7 @@ here is a verbatim copy — edit one, mirror to the other.
   `abba_linear.py`: a live mirror for the LINEAR agent (the nonlinear plugin
   above is a different door). `langslice abba --linear FOLDER [linear
   flags]` (`run_linear_in_abba`) launches the ABBA GUI with the nonlinear
-  plugin installed too, imports the folder's images in `linear/discovery.py`
+  plugin installed too, imports the folder's images in `core/discovery.py`
   order, and runs the linear agent with `AbbaStackMirror.on_write` attached
   to `engine.run`'s `on_write` hook (fired by `checkpoint.observe_checkpoints`
   after every tool write). The mirror diffs each `StackState` against the
@@ -78,7 +84,7 @@ here is a verbatim copy — edit one, mirror to the other.
   rotation signs are −1 and the translation signs are +1. COMPOSITION ORDER
   matters as much as sign: every ImgLib2 `scale`/`rotate`/`translate` acts
   after the transform built so far, LangSlice's `affine_matrix` is translate
-  ∘ rotate ∘ scale and `linear/render.py` turns before it flips — so the
+  ∘ rotate ∘ scale and `core/sections.py` turns before it flips — so the
   mirror calls scale, rotate, translate (affine) and quarter-turn, then flip
   (pre-transform). The first live M01 run (2026-09-10) caught the affine
   order: with unequal scales rotate-then-scale differs, and single-knob
@@ -152,7 +158,7 @@ The Swing fallback retains its adjustable vertical split, bounded image history,
 and off-EDT image decoding.
 
 `abba_follow.py::AbbaFollower` consumes seed and actual `tool_start`/`tool_end`
-events. `linear.toolbox._serialized` emits execution events inside its lock,
+events. `doors.tools.toolbox._serialized` emits execution events inside its lock,
 resolving corrected-index references to stable filenames before each operation.
 Model `tool_call` announcements may be batched ahead of execution and must not
 drive navigation. The existing-session adapter owns the explicit mapping and
@@ -245,7 +251,7 @@ not use `abba_python` or PyCommandBuilder. Setup loads without Python and owns
 environment selection; authentication runs in the worker. The existing modules
 above remain the Python-started ABBA route.
 
-`api/abba_worker.py` reuses the linear engine and nonlinear
+`hosts/api/abba_worker.py` reuses the linear engine and nonlinear
 `compute_registration_landmarks` without importing Java. Linear snapshots are
 centred/calibrated; host AP mapping is measured, ingestion emits no mutations,
 and streamed updates express complete replacement corrections in world mm.
@@ -263,7 +269,7 @@ agent's `view.channels` and `preprocess`. Without either, the engine's own
 `auto` path runs on the snapshots as before. A `trace_dir` param points the session trace (`LANGSLICE_TRACE_DIR`) at that
 folder for the one run and returns the new files as `trace_files`.
 `linear.estimate` prices a spec from
-`linear/cost.py` (percent of the usage window per section, measured runs only;
+`agent/cost.py` (percent of the usage window per section, measured runs only;
 refused at medium/high/auto resolution) without importing the engine. The Java host owns native actions and persistence. Read
 `docs/abba_plugin_design.md` and `docs/abba_installation.md` for the protocol,
 current source-preview installation, and publication requirements.
@@ -271,7 +277,7 @@ current source-preview installation, and publication requirements.
 ### Claude mode in the independent connector
 
 The Fiji dialog's Claude choice saves a job via `claude.prepare` and copies
-a prompt for Claude Desktop/Code. `api.abba_worker.prepare_linear` and
+a prompt for Claude Desktop/Code. `hosts.api.abba_worker.prepare_linear` and
 `checkpoint_callback` are shared by ADK and MCP; never duplicate their
 calibration or checkpoint-to-native geometry translation. An authenticated
 loopback listener passes MCP checkpoints to the same `AbbaHostSession.apply`

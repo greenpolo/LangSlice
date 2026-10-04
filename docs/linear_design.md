@@ -46,7 +46,7 @@ JobSpec
     thickness_um, interval_um     # cutting protocol; passed as facts
     strict_interval: bool = False # sections must sit exactly one interval apart
     deepslice: bool = False       # run_deepslice tool available (coronal mouse/rat only)
-    bayesian: bool = False        # search_position tool available (oblique.py fitter)
+    bayesian: bool = False        # search_position tool available (core/oblique.py fitter)
     notes: str = ""               # user notes, shown under this task in the job statement
   transform:
     flip: bool = True             # may mirror sections left-right (orient_slices)
@@ -97,7 +97,7 @@ section with `LOCKED`; `mark_damaged` refuses to clear a host flag with
 | auto | 256 px | the agent's `view.resolution` per call, 128 px up to the driver model's largest image (2048 px on the OpenAI lanes, 2000 px for a Claude host); 512 px when it gives none |
 
 Opening = each tile of the opening strips. The seed message shows the stack
-the way ABBA's slice strip does (`linear/opening.py`, 2026-10-03): horizontal
+the way ABBA's slice strip does (`core/opening.py`, 2026-10-03): horizontal
 strips in corrected order, the sections on top and, directly beneath each,
 the atlas at that section's current position and the stack's cutting angles
 (drawn to the section's size). Every tile is labelled in its pixels
@@ -134,7 +134,7 @@ Same JSON shape for all three; the checkpoint adds `format_version` (1 since
 2026-10-03; an unversioned checkpoint is read as it is, and a newer format is
 refused).
 
-The job layer (`linear/job.py`, 2026-10-03) owns it: one `Job` holds the
+The job layer (`job/job.py`, 2026-10-03) owns it: one `Job` holds the
 state and the spec, the host's locked and damaged sections, undo/redo, the
 checkpoint and its observers, the submit gates, the stale-deformation rule,
 the deformation records and the background image corrections. `Job.open`
@@ -230,14 +230,14 @@ the wording. The module map:
 | layer | module | holds |
 | --- | --- | --- |
 | door | `doors/declarations.py` | every verb's one declaration: arguments and the description a model reads, per run variant (`view` with `resolution`, `fit_deformable` per image model, preprocess and fixed engine) |
-| door | `linear/toolbox.py`, `linear/view_options.py`, `linear/arguments.py` | the tool bodies: argument checking, `view` parsing, the gates (`compared`/`reviewed`), delivery bookkeeping, `transform_history`, every reply's wording; `build_tools` builds the verbs `ops.registry.enabled(spec)` names, each `declare`d |
+| door | `doors/tools/toolbox.py`, `doors/tools/view_options.py`, `doors/tools/arguments.py` | the tool bodies: argument checking, `view` parsing, the gates (`compared`/`reviewed`), delivery bookkeeping, `transform_history`, every reply's wording; `build_tools` builds the verbs `ops.registry.enabled(spec)` names, each `declare`d |
 | door | `doors/cli/`, `doors/library.py`, `doors/jobs.py`, `doors/card.py` | the agent CLI and the script door over the same tools (gates off), opening a job without the agent, the job folder's reference card |
-| door | `adk/media.py`, `mcp_server/` | packaging: JPEG message parts (`packaged`), MCP image blocks |
+| door | `doors/tools/media.py`, `doors/mcp/` | packaging: JPEG message parts (`packaged`), MCP image blocks |
 | ops | `ops/views.py` | the read verbs: `status`, `view_slices`, `view_atlas`, `view_placement`, `view_stack` |
 | ops | `ops/positions.py`, `order.py`, `orientation.py`, `damage.py`, `appearance.py`, `notes.py`, `history.py` | positions and cutting angles (+ `search_position`, `run_deepslice`), reorder, flip/rotation, damage, `preprocess`, notes, undo/redo |
 | ops | `ops/transforms.py`, `ops/deformable.py`, `ops/traces.py`, `ops/atlas.py`, `ops/submit.py` | `fit_affine`, `adjust_transforms`, the deformable fit and `keep_linear`, `trace_borders` (the image-model call passed in), `grep_atlas`, `submit` |
 | ops | `ops/registry.py` | every verb -> its operation, read/write, task group, the specs that have it (`enabled`): the list every door is built from |
-| job | `linear/job.py`, `job/` | state, undo, checkpoint, submit gates, image-correction jobs; the job folder and its saved pictures (`Job.views.shown`, the one saving hook) |
+| job | `job/job.py`, `job/` | state, undo, checkpoint, submit gates, image-correction jobs; the job folder and its saved pictures (`Job.views.shown`, the one saving hook) |
 | core | `core/pictures.py`, `core/placement.py`, `core/layers.py` | the viewing pictures, every placement picture (`draw_canvas`, `fit_picture`, `transform_views`) and its layers |
 | core | `core/sections.py`, `captions.py`, `canvas.py`, `sheets.py`, `status.py`, `sizes.py` | renders and their cache, captions, the physical canvas, stack sheets, the status table, picture sizes (was `linear/render.py`, now a shim for SliceBench) |
 
@@ -263,16 +263,16 @@ model SDK.
 | `run_deepslice(slices, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `search_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(slices, method=elastix\|silhouette, fit_atlas="", include=[], exclude=[], view)` | transform | per-section in-plane affine against its atlas section, written as the section's transform (`kind` = the method). `elastix` (default, 2026-10-03) is a local refinement of the section's CURRENT transform (identity without one), never a search from scratch: the deformable package's stain-fit inputs (the `fit` appearance against `fit_atlas`, the ARA template by default or ABBA's Nissl where installed, tissue and atlas masks, the edge channel, excluded regions blanked; an intact section gets no torn-edge band) and an Elastix `AffineTransform` (mutual information + edges, fixed seed and threads, so identical inputs give identical numbers; `transform.fit_elastix`, `deformable.engines.run_elastix_affine`). A full affine: the six stored numbers carry its shear exactly, and `physical` reports it as `shear`. `silhouette` is the moments fit of the outlines from scratch. Returns iou (for `elastix`: tissue against the kept atlas footprint under the fitted placement), the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned panel (default `overlay`; any physical mode) for every successful fit, mapped by `image_indexes`. Damaged sections are refused unless regions are given. `include`/`exclude` (as in `fit_deformable`, one-sided entries such as `"CTX:left"` included) restrict the fit to the kept atlas regions and the tissue the current placement lays on them — silhouette on the true-scale canvas (`transform.region_silhouette_fit`), elastix through the same masks `fit_deformable` builds — with a `regions` report; without them the fit is unchanged. The silhouette fit reads the default appearance, the Elastix fit the `fit` appearance. |
+| `fit_affine(slices, method=elastix\|silhouette, fit_atlas="", include=[], exclude=[], view)` | transform | per-section in-plane affine against its atlas section, written as the section's transform (`kind` = the method). `elastix` (default, 2026-10-03) is a local refinement of the section's CURRENT transform (identity without one), never a search from scratch: the deformable package's stain-fit inputs (the `fit` appearance against `fit_atlas`, the ARA template by default or ABBA's Nissl where installed, tissue and atlas masks, the edge channel, excluded regions blanked; an intact section gets no torn-edge band) and an Elastix `AffineTransform` (mutual information + edges, fixed seed and threads, so identical inputs give identical numbers; `transform.fit_elastix`, `core.deformable.engines.run_elastix_affine`). A full affine: the six stored numbers carry its shear exactly, and `physical` reports it as `shear`. `silhouette` is the moments fit of the outlines from scratch. Returns iou (for `elastix`: tissue against the kept atlas footprint under the fitted placement), the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned panel (default `overlay`; any physical mode) for every successful fit, mapped by `image_indexes`. Damaged sections are refused unless regions are given. `include`/`exclude` (as in `fit_deformable`, one-sided entries such as `"CTX:left"` included) restrict the fit to the kept atlas regions and the tissue the current placement lays on them — silhouette on the true-scale canvas (`transform.region_silhouette_fit`), elastix through the same masks `fit_deformable` builds — with a `regions` report; without them the fit is unchanged. The silhouette fit reads the default appearance, the Elastix fit the `fit` appearance. |
 | `adjust_transforms(entries, view)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales, millimetre shifts and an optional `shear` (2026-10-03; `affine.decompose_affine`'s convention: linear part `R(rotation) . [[scale_x, shear*scale_x], [0, scale_y]]`, a unitless slant before the rotation in units of `scale_x`, the number `fit_affine` reports; left out, the section's current shear is kept, 0 when it has none; an explicit value, 0 included, sets it). Per-entry pivot and note; one `view` draws every entry (modes as the physical views plus `ab`); `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including any spline; a shear left out is kept. Inspect before a dependent correction in a later call. |
 | `trace_borders(id, prompt)` | nonlinear, unless provider `none` | one image-model correction (agent edits the base prompt per section) of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
 | `grep_atlas(query, id)` | nonlinear | text lookup of atlas regions by acronym, name substring or id (40 rows max): acronym, id, name, ancestry as acronyms, descendant count; with a positioned section `id`, whether each region or a descendant is in the atlas plane at its placement. Writes nothing; for choosing regions to exclude from a later fit. |
-| `fit_deformable(slices, include=[], exclude=[], start="linear", fit_section="fit", fit_atlas="", engine="", stiffness="medium", candidates=[{stiffness, fit_section, fit_atlas, engine}], keep_linear="", view)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab | nonlinear | a library deformable fit (ANTs SyN or Elastix B-spline, `src/langslice/deformable/`) on top of each section's linear placement. `include` restricts the fit to those regions plus a margin, `exclude` removes regions from the atlas side; either may name one side of the section, `"CTX:left"` / `"CTX:right"`; `start="current"` composes onto the applied deformation. `fit_section`: the `fit` appearance (one raw channel is a fit appearance `preprocess` sets) or (image model only) the section's `trace_borders` result at this placement (`traced_borders` = named regions, ANTs; `traced_lines` = lines vs borders); `fit_atlas` `ara`/`nissl` for the fit appearance, `borders` for traced fit sections only; stiffness soft/medium/firm; detail and line softening fixed. Defaults: fit appearance, ara, ANTs, medium; with a completed trace the description recommends traced_borders + ANTs + medium; a call waits up to 300 s for a trace still running and adds the trace drawn on the section (`traces`). `keep_linear="reason"` fits nothing and records that the named sections' linear placement stands. 2–4 `candidates` preview and write nothing; one setting applies (one undo step), reusing an identical cached result. Returns per result the final borders drawn on the section image (included strong, excluded pink; `view.atlas_channels` with `ara`/`nissl` blends that atlas image, warped, under the lines), displacement, fold fraction, flags and engine numbers. A later change to position, orientation, cutting angles or transform clears the deformation (`deformation_cleared` in that reply). |
+| `fit_deformable(slices, include=[], exclude=[], start="linear", fit_section="fit", fit_atlas="", engine="", stiffness="medium", candidates=[{stiffness, fit_section, fit_atlas, engine}], keep_linear="", view)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab | nonlinear | a library deformable fit (ANTs SyN or Elastix B-spline, `src/langslice/core/deformable/`) on top of each section's linear placement. `include` restricts the fit to those regions plus a margin, `exclude` removes regions from the atlas side; either may name one side of the section, `"CTX:left"` / `"CTX:right"`; `start="current"` composes onto the applied deformation. `fit_section`: the `fit` appearance (one raw channel is a fit appearance `preprocess` sets) or (image model only) the section's `trace_borders` result at this placement (`traced_borders` = named regions, ANTs; `traced_lines` = lines vs borders); `fit_atlas` `ara`/`nissl` for the fit appearance, `borders` for traced fit sections only; stiffness soft/medium/firm; detail and line softening fixed. Defaults: fit appearance, ara, ANTs, medium; with a completed trace the description recommends traced_borders + ANTs + medium; a call waits up to 300 s for a trace still running and adds the trace drawn on the section (`traces`). `keep_linear="reason"` fits nothing and records that the named sections' linear placement stands. 2–4 `candidates` preview and write nothing; one setting applies (one undo step), reusing an identical cached result. Returns per result the final borders drawn on the section image (included strong, excluded pink; `view.atlas_channels` with `ara`/`nissl` blends that atlas image, warped, under the lines), displacement, fold fraction, flags and engine numbers. A later change to position, orientation, cutting angles or transform clears the deformation (`deformation_cleared` in that reply). |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
-**`view`: the picture options** (`linear/view_options.py`: `parse_view`
+**`view`: the picture options** (`doors/tools/view_options.py`: `parse_view`
 validates one call's `view` against the tool's `Profile` into a
-`linear/display.py` `DisplayOptions`, which the renderers draw; the same typed
+`core/display.py` `DisplayOptions`, which the renderers draw; the same typed
 object, `arguments.View`, on every picture tool; `ViewAuto` adds `resolution`
 where the caller sizes the pictures, image resolution `auto` and the agent CLI,
 through the verb's declaration, `doors/declarations.py`):
@@ -300,7 +300,7 @@ once, with this run's raw channel names and the atlas channels this host has
 (`prompt.display_facts`, `prompt.display_lines`); tool descriptions list only
 their modes.
 
-**Raw channels and appearance** (`linear/appearance.py`). A section's DEFAULT
+**Raw channels and appearance** (`core/appearance.py`). A section's DEFAULT
 appearance is today's: `preprocess` auto (`adaptive_preprocess`) for a plain
 file, or the host's blend (`host_preprocess`) when `host_preprocessing` is set
 — the ABBA worker no longer stages blended copies; it passes its settings and
@@ -474,7 +474,7 @@ up front, on the opened state, so a host sees the stack before the agent has
 touched it. The agent itself never knows a host is watching:
 nothing about the toolbox, the job statement, or the render path changes.
 
-`langslice.integrations.abba_linear.AbbaStackMirror` is the first such host:
+`langslice.hosts.integrations.abba_linear.AbbaStackMirror` is the first such host:
 `langslice abba --linear FOLDER` runs the ordinary headless agent — it still
 renders its own BrainGlobe pictures — inside a live ABBA session, and on
 every `on_write` call diffs the new state against the last one it saw and
@@ -483,7 +483,7 @@ the quarter-turn as the slice's pre-transform, the in-plane affine as a
 registration step, cutting angles onto the resliced atlas), so a person
 watches the stack move in BigDataViewer as the agent works. ABBA is display
 plus the final home of the result; see
-`src/langslice/integrations/CLAUDE.md` for what is and is not verified about
+`src/langslice/hosts/integrations/CLAUDE.md` for what is and is not verified about
 its sign/axis conventions.
 
 ## Interactive transform: physical space and atlas outlines (2026-09-05, Nash)
@@ -527,7 +527,7 @@ Automatic fit feedback uses the same default.
 The separate native ABBA viewer retains ABBA's own display settings.
 The contour
 code (`region_contours`, `_smooth_closed`, family mapping, annotation slice
-at cutting angles) moves from `nonlinear/` to `atlas/render.py` so both
+at cutting angles) moves from `core/nonlinear/` to `core/atlas/render.py` so both
 methods draw the same lines from the same source.
 
 **The screen.** `adjust_transforms` returns the transformed section

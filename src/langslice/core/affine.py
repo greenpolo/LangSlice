@@ -298,8 +298,8 @@ def silhouette_affine(
     """Fit a 2x3 affine aligning *image* to the atlas section at *position_mm*.
 
     The one silhouette wrapper: the linear ``fit_affine`` silhouette method
-    (``linear.transform.fit_silhouette``) and the viewer preview
-    (``nonlinear.quick_affine``) both call it. The atlas tissue silhouette is
+    (``core.transform.fit_silhouette``) and the viewer preview
+    (``core.nonlinear.quick_affine``) both call it. The atlas tissue silhouette is
     the root mask of the plane at *position_mm* and the cutting angles
     (:func:`langslice.core.atlas.core.get_root_mask`), so an angled stack is
     measured against the plane every other picture in the run shows (until

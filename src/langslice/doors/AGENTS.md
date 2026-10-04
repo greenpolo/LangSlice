@@ -10,8 +10,8 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 
 | Door | Built by | Driver |
 |---|---|---|
-| agent tools (ADK) | `linear/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
-| MCP tools | the same toolbox (`mcp_server/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs | Claude Desktop, Claude Code locked to it |
+| agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
+| MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs | Claude Desktop, Claude Code locked to it |
 | agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`) | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`) over the same toolbox, the scripting verbs included | a script |
 
@@ -22,12 +22,29 @@ and MCP doors declare, byte for byte.
 ## The layer rule
 
 Doors translate; they hold no registration logic. They import the core, the
-job layer and the operations; never `google.*`, `litellm` or `openai` (the
-ADK packaging is `adk/`, the driver `linear/engine.py`).
+job layer, the operations, the agent driver (`agent/`, the same layer: the
+CLI's `linear run` and the MCP server start its engine) and the providers
+(a door resolves a provider name); never a host (`hosts/`). Only the ADK
+packaging (`tools/media.py`) imports `google.*`. import-linter's layers
+contract (`pyproject.toml`, `tests/test_import_layers.py`) checks it.
+Known violations, listed in its `ignore_imports`: the CLI's host commands
+(`cli/__init__.py` -> `hosts.api.setup`; `cli/hosts.py` -> `hosts.api` and
+`hosts.integrations`; `cli/register.py` -> `hosts.api.models`/`runtime`)
+and the MCP door (`mcp/server.py`, `mcp/host_channel.py` ->
+`hosts.api.claude_jobs`, `hosts.api.abba_worker.prepare_linear`).
 `tests/test_core_imports.py` loads `declarations`, `jobs`, `library`, `card`,
-`cli` and `cli.job` in a fresh interpreter and checks, and runs
-`import langslice; langslice.open_job(...)` with a verb or two. An
-operation (`ops/`) never imports a door.
+`cli`, `cli.job`, `tools.toolbox` and `tools.view_options` in a fresh
+interpreter and checks, and runs `import langslice;
+langslice.open_job(...)` with a verb or two. An operation (`ops/`) never
+imports a door.
+
+Two sub-packages moved in with the folder move (2026-10-04), each described
+in the linear agent environment's guide (`src/langslice/agent/CLAUDE.md`):
+`tools/` (formerly in `linear/` and `adk/`): `toolbox.py` (the tool
+bodies), `arguments.py`, `view_options.py`, `media.py` (the ADK message
+parts) and, in `__init__.py`, the media keys; `mcp/` (formerly
+`mcp_server/`): the MCP server (`server.py`, `prompt.py`,
+`host_channel.py`; `connectors/claude-desktop/`).
 
 ## Files
 
@@ -64,7 +81,7 @@ operation (`ops/`) never imports a door.
   door's; the scripting verbs too), `verbs`, `folder`, `job`, `state`,
   `workspace`, `close`, a
   context manager. `langslice/__init__.py` exposes `open_job`,
-  `coordinate_map` (`core.layers`) and `load_atlas` (`atlas.core`), each
+  `coordinate_map` (`core.layers`) and `load_atlas` (`core.atlas.core`), each
   imported on first use.
 - `card.py` — the job folder's reference card, `AGENTS.md` and
   `CLAUDE.md` (identical; Codex reads one, Claude Code the other):
@@ -75,7 +92,7 @@ operation (`ops/`) never imports a door.
   (writes where missing or worded differently; never raises). Written by
   every door that opens or makes a job: the CLI and the library
   (`jobs.open_folder`, `jobs.create`), the agent run (`engine.run`), the MCP
-  door (`open_job`) and a saved Claude job (`api.claude_jobs._write_job`).
+  door (`open_job`) and a saved Claude job (`hosts.api.claude_jobs._write_job`).
 - `cli/` — every `langslice` command, one module per group;
   `langslice/cli.py` keeps the entry point `langslice.cli:main`.
   `__init__.py` (`build_parser`, `main`: the agent commands return their

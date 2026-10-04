@@ -11,8 +11,8 @@ and add them. A refusal is :class:`~langslice.ops.refusal.Refused`, carrying
 its code and the plain facts behind it.
 
 The layer rule (``tests/test_core_imports.py``): this package imports the
-core and the job layer only, never a door (``linear.toolbox``,
-``linear.view_options``, ``adk``, ``mcp_server``) and never an agent
+core and the job layer only, never a door (``doors.tools.toolbox``,
+``doors.tools.view_options``, ``doors.tools``, ``doors.mcp``) and never an agent
 framework or model client (``google.*``, ``litellm``, ``openai``).
 
 Modules, one verb group each: :mod:`.positions` (positions and the stack's

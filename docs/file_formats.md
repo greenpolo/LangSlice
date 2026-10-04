@@ -8,7 +8,7 @@ Change a registration through the verbs (`langslice job FOLDER VERB`, or
 
 Code: `src/langslice/core/maps.py` (the geometry), `src/langslice/job/formats.py`
 (the files), `src/langslice/ops/exports.py` (the `export_maps` verb),
-`src/langslice/integrations/quint.py` (QuickNII / VisuAlign JSON).
+`src/langslice/job/quint.py` (QuickNII / VisuAlign JSON).
 
 ## Conventions
 
@@ -69,11 +69,11 @@ is the section's WORKING COPY (the image every picture is drawn from: a
 whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
 file downsampled to at most 3072 px), or with `full_resolution` the file's
 own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
-(`langslice.affine.pixel_center_map`); `maps.json` gives the grid's own
+(`langslice.core.affine.pixel_center_map`); `maps.json` gives the grid's own
 `pixel_to_atlas_um`.
 
 The maps cover the section's FOOTPRINT, its filled outline: the deformable
-fit's foreground rule (`deformable.masks.tissue_masks`, against the slide
+fit's foreground rule (`core.deformable.masks.tissue_masks`, against the slide
 background) on the working copy, closed over gaps up to 0.3 mm wide
 (`core.maps.FOOTPRINT_CLOSING_MM` 0.15 mm, a radius) and with every hole
 filled. Nothing inside the outline is cut: dim fibre tracts, enlarged

@@ -82,45 +82,131 @@ or pure docs/API verification (a research agent is faster).
 
 ### Runtime (`src/langslice/`)
 
-Two methods live as sibling subpackages, connected through top-level registration
-bridges rather than direct imports of each other:
+The package is laid out by LAYER, not by method (folder move, 2026-10-04).
+Each layer imports only the layers below it: `core/` < `job/` < `ops/` <
+`doors/` : `agent/` (one level; they may import each other) < `hosts/`.
+`providers/` (model access) sits beside them: core, job and ops never import
+it, nor `google.*`, `litellm`, `openai` or `mcp`; doors, the agent and hosts
+may. import-linter enforces this (`[tool.importlinter]` in `pyproject.toml`,
+run by `tests/test_import_layers.py` and CI); every `ignore_imports` entry
+there is a known violation to be removed by moving code, never a place to
+add one. `tests/test_core_imports.py` checks what a fresh interpreter loads.
+The two methods are task groups over this one stack, not packages: the
+linear agent environment (Positioning / Linear, plus the opt-in Nonlinear
+deformation) and the image-model border route (`core/nonlinear/`).
 
-- `linear/` — order, position and one in-plane transform per section, as ONE
-  agent environment (`langslice linear run FOLDER`): one `StackState`, one
-  toolbox built from a `JobSpec`, one job statement, one ADK session that ends
-  at `submit` or the turn budget. Tasks (`reorder`/`position`/`transform`, plus
-  the opt-in `nonlinear`: a deformation per section via `fit_deformable`, with
-  the image tool unless its provider is `none`) are switched on task by task; a task that
-  is OFF builds no tools and takes its answer from the host instead. Users see
-  them as Positioning / Linear / Nonlinear: `docs/interface_design.md` is the
-  target user-facing design and what each host exposes. Every write checkpoints and is undoable, order
-  and position must agree at submit, and in-plane alignment happens in the
-  main session through the transform tools (`fit_affine`: by default an
-  Elastix intensity affine refining the current placement, or the
-  silhouette fit; `adjust_transforms`); there is no nested per-section session. Spec: `docs/linear_design.md`. Code map, the lean-
-  harness rule, the submit gates and the known ceilings:
-  `src/langslice/linear/CLAUDE.md` (loads when working there).
-- `nonlinear/` — generative-image registration (image model → optional fit of its
-  lines by `deformable/` → report).
-  Exactly two border-based routes (a supplied placement corrected in one model
-  call, the production path; or a placement-free route, kept for experiments,
-  that draws boundaries against an outlined grayscale atlas template), its
-  measured design choices, and the cutting-angle lever: `src/langslice/nonlinear/CLAUDE.md` (loads when
-  working there).
-
-Shared, top-level:
-
-- `registration_tool.py` — optional stack-agent image tool, enabled by task
-  `nonlinear` with an image provider (not `none`): corrects a supplied linear placement using the fixed prompt plus
-  per-slice additional notes. No atlas search, replacement prompt, agent rejection
-  or fit. Saves the first result and exact artifacts separately from transforms.
-  The image model is an argument (`providers.registry.ImageModel`, resolved by a
-  door), so it imports no provider. The calibrated geometry and the correction
-  fingerprint are the core's (`core/handoff.py`); `registration_handoff.py`
-  re-exports `prepare_linear_registration` for SliceBench and holds
-  `run_linear_registration`, which takes the model as an argument; see
-  `docs/nonlinear_image_tool.md`.
-
+- `core/` — the core library: plain inputs (`core.workspace.Workspace`, the
+  `core.state.StackState`, ids, numbers) in, PIL pictures with captions
+  burned in, numpy arrays and plain records out; never the job layer, ops,
+  a door, the driver, a host or a model client:
+  `src/langslice/core/CLAUDE.md` (loads when working there). It holds:
+  - the linear method's core: `state.py` (`StackState`/`SliceState`),
+    `spec.py` (`JobSpec`: every checkbox a host shows), `workspace.py`,
+    `display.py`, `appearance.py`, `atlas_fetch.py`, `atlas_grep.py`,
+    `opening.py`, `transform.py` (the silhouette fit and the interactive
+    transform arithmetic), `deformation.py` (`fit_deformable`'s machinery),
+    `discovery.py`, `deepslice.py`; the pictures the tools send
+    (`pictures.py`, `placement.py`: every placement picture and the frame it
+    is drawn in), the renders that were `linear/render.py` (`sections.py`,
+    `captions.py`, `canvas.py` the physical canvas, `sheets.py`,
+    `status.py`, `sizes.py`), `jpeg.py` (the one encoding), `layers.py` (a
+    placement picture's atlas labels, border mask and frame,
+    `pixel_to_atlas_um` in BrainGlobe µm, and `coordinate_map`), `maps.py`,
+    and `handoff.py` (a written linear placement as a section render plus
+    the native atlas plane mapped onto it: `prepare_linear_registration`,
+    what the trace and every deformable fit start from, and
+    `correction_fingerprint`). The map of the whole linear method, file by
+    file across the layers, is `src/langslice/agent/CLAUDE.md`.
+  - `core/atlas/` — BrainGlobe loading, slice extraction, colored region
+    maps, borders, the organized-color LUT for human-review renders, and one
+    side of a region (`"CTX:left"`, the section's displayed side,
+    `sides.py`): `src/langslice/core/atlas/CLAUDE.md`.
+  - `core/deformable/` — the deformable-fit engine behind the linear agent's
+    `fit_deformable` tool (task `nonlinear`) and behind the fit of the image
+    model's lines in `langslice nonlinear register --deformation deformable`
+    and the ABBA registration plugin (`core/nonlinear/border_fit.py`; no
+    export adapter reads its records yet), whose prepared images and Elastix
+    plumbing (the one itk-elastix wrapper, `engines.py`) also run
+    `fit_affine`'s Elastix affine: ANTs SyN (optional `registration` extra)
+    or Elastix B-spline residual fit of a linearly placed atlas plane onto
+    one section — stain vs reference/ABBA Nissl, model lines vs merged
+    borders, ANTs label-map channels, sequential per-structure steps, masks
+    for tissue/torn edges/exclusions, and the canonical per-section record
+    with plausibility diagnostics. Belongs to neither method:
+    `src/langslice/core/deformable/CLAUDE.md`.
+    `oblique.plane_index_coordinates` gives any co-registered volume the
+    annotation plane's exact pixel grid.
+  - `core/nonlinear/` — generative-image registration (image model →
+    optional fit of its lines by `core/deformable/` → report). Exactly two
+    border-based routes (a supplied placement corrected in one model call,
+    the production path; or a placement-free route, kept for experiments,
+    that draws boundaries against an outlined grayscale atlas template), its
+    measured design choices, and the cutting-angle lever:
+    `src/langslice/core/nonlinear/CLAUDE.md`. Also here:
+    `registration_tool.py`, the optional stack-agent image tool, enabled by
+    task `nonlinear` with an image provider (not `none`): corrects a
+    supplied linear placement using the fixed prompt plus per-slice
+    additional notes. No atlas search, replacement prompt, agent rejection
+    or fit. Saves the first result and exact artifacts separately from
+    transforms. The image model is an argument
+    (`providers.registry.ImageModel`, resolved by a door); the calibrated
+    geometry and the correction fingerprint are `core/handoff.py`'s;
+    `registration_handoff.py` holds `run_linear_registration`, which takes
+    the model as an argument; see `docs/nonlinear_image_tool.md`.
+    Known layer violations (listed in the contracts): `spec.py`,
+    `nonlinear/prompts.py`, `model_prompts.py`, `border_refinement.py` and
+    `border_registration.py` import `providers.registry.canonical_provider`,
+    and the two border modules fall back to `providers.images` when no
+    `image_call` is passed.
+  - `oblique.py` — arbitrary-plane sampling out of an atlas volume plus
+    (pitch, yaw) fitting (vendored from brainglobe-registration, BSD-3).
+    `sample_oblique_annotation` is the label-safe entry point: sampling
+    happens in float32, whose mantissa cannot hold the larger Allen ids, so
+    it compacts the volume to dense indices first. THE largest lever
+    measured on the nonlinear fit — see the `core/nonlinear/` entry.
+  - `space.py` — coordinate and orientation conventions.
+  - `affine.py` — shared in-plane affine core: the silhouette (moments) fit
+    of a section onto an atlas section (`silhouette_affine`, the one
+    wrapper, cutting angles included), plus the rotation/scale/translate
+    matrix builder, the normalized 6-number parameter convention and
+    `pixel_center_map` (pixel centres through a resize and offset). Used by
+    `core/transform.py`, `core/nonlinear/` and `core/deformable/`; belongs
+    to neither method.
+  - `image_prep.py` — image normalization, pixel-size detection, VLM
+    downsampling, and foreground framing (`crop_to_tissue`,
+    `crop_to_mask`), used by the linear visual path so histology and atlas
+    sections fill their frames comparably. Tissue framing keeps every blob
+    at least a fifth the size of the biggest (both bulbs, cerebellum and
+    brainstem, a torn piece), so a speck elsewhere on the slide cannot widen
+    the box. `host_preprocess` blends a host's multi-page snapshot (one page
+    per channel) into a section's DEFAULT appearance (the worker's
+    `preprocess.preview` writes that same image for the host's preview); the
+    pages stay raw channels (`read_working_pages`, `channel_planes`) for the
+    agent's picture options (`view.channels`), its optional `preprocess`
+    tool (`custom_appearance`: weights, CLAHE, ANTs N4/denoise) and fitting.
+    `read_working_image` gives each section file's small working copy (the
+    smallest TIFF pyramid level of at least 1536 px, a JPEG draft decode,
+    otherwise one downsample to 3072 px); the linear renders are drawn from
+    it (`core.workspace.Workspace.working_source`) and count file pixels
+    through its scale, so a whole-slide scan is never decoded at full size.
+  - `landmark_warp.py`, `landmark_elastix.py` — landmark deformations
+    (saved spline compatibility).
+- `job/` — the job layer: the `Job` (`job.py`: state, undo/redo, the
+  checkpoint `checkpoint.py`, the submit gates, background corrections) and
+  the job folder. Everything a job writes lives in `<images>/langslice/`,
+  next to the images every host hands LangSlice (`job.json` settings +
+  format version, `state.json`, `history/` one file per undo step,
+  `sections/<stem>/`, `views/` + `views.jsonl`: every picture the model was
+  shown, as the JPEG it received, placement pictures with atlas labels,
+  border mask and frame, `exports/`, `logs/`, and the reference card
+  `AGENTS.md` = `CLAUDE.md`). Paths in job files are relative to it; old
+  layouts are moved in on open, newer ones refused; `--job-dir` /
+  `JobSpec.job_dir` puts it elsewhere (a folder holding another image
+  folder's job is refused); a read-only image folder falls back to
+  `~/.langslice/jobs/<id>/`; saved Claude jobs are found by id through
+  `~/.langslice/jobs/<id>.json`. `formats.py` and `quint.py`
+  (QUINT/QuickNII/VisuAlign JSON) write the public files:
+  `src/langslice/job/CLAUDE.md` (loads when working there).
 - `ops/` — the verbs: every write to a stack (positions, order, orientation,
   damage, appearance, notes, undo/redo, the in-plane transform and its fits,
   the image-model trace with the model call passed in, the deformable fit
@@ -136,95 +222,40 @@ Shared, top-level:
 - `doors/` — the doors over the verbs (layered refactor, phase 5).
   `declarations.py` is each verb's ONE declaration (arguments and the
   description a model reads); the agent tools and the MCP tools are built
-  from it and the registry (`linear/toolbox.py` defines only the tool
-  bodies). The agent CLI for coding agents (`doors/cli/`: `langslice job
-  FOLDER VERB`, `langslice ops`, `langslice schema`; one JSON envelope on
-  stdout, exit codes 0/2/3/4, pictures as file paths, `--dry-run`,
-  `--background`), the script door (`import langslice;
-  langslice.open_job(folder)`, `coordinate_map`, `load_atlas`; no agent
-  framework loaded) and the job folder's reference card (`AGENTS.md` +
-  `CLAUDE.md`, written into every job folder). `doors/cli/` also holds
-  every other command, one module per group (`langslice/cli.py` keeps the
-  entry point): `src/langslice/doors/CLAUDE.md` (loads when working there);
+  from it and the registry. `doors/tools/` is the native agent-tool door
+  (`toolbox.py` the tool bodies, `arguments.py`, `view_options.py`,
+  `media.py` the ADK message parts, the media keys in `__init__.py`);
+  `doors/mcp/` the MCP server (`langslice mcp`). The agent CLI for coding
+  agents (`doors/cli/`: `langslice job FOLDER VERB`, `langslice ops`,
+  `langslice schema`; one JSON envelope on stdout, exit codes 0/2/3/4,
+  pictures as file paths, `--dry-run`, `--background`), the script door
+  (`import langslice; langslice.open_job(folder)`, `coordinate_map`,
+  `load_atlas`; no agent framework loaded) and the job folder's reference
+  card (`AGENTS.md` + `CLAUDE.md`, written into every job folder).
+  `doors/cli/` also holds every other command, one module per group
+  (`langslice/cli.py` keeps the entry point). Known layer violations: the
+  CLI's host commands and the MCP door import `hosts/`:
+  `src/langslice/doors/CLAUDE.md` (loads when working there);
   `docs/agent_cli.md`.
-- `core/` — the core library's new home (layered refactor): the pictures
-  the tools send (`pictures.py`, `placement.py`: every placement picture and
-  the frame it is drawn in), plain PIL images with captions burned in, and
-  what was `linear/render.py` (`sections.py` renders, `captions.py`,
-  `canvas.py` the physical canvas, `sheets.py`, `status.py`, `sizes.py`;
-  `linear/render.py` is a re-export shim for SliceBench); the doors package
-  the pictures (ADK parts, MCP blocks; `jpeg.py` the one encoding). `layers.py`: a placement picture's atlas labels, border
-  mask and frame (`pixel_to_atlas_um`, BrainGlobe µm), and
-  `coordinate_map`, each picture pixel's atlas position on demand.
-  `handoff.py`: a written linear placement as a section render plus the
-  native atlas plane mapped onto it (`prepare_linear_registration`, what the
-  trace and every deformable fit start from) and `correction_fingerprint`. Never
-  imports the job layer, ops, a door or a model client:
-  `src/langslice/core/CLAUDE.md` (loads when working there).
-- `job/` — the job folder: everything a job writes lives in
-  `<images>/langslice/`, next to the images every host hands LangSlice
-  (`job.json` settings + format version, `state.json`, `history/` one file
-  per undo step, `sections/<stem>/`, `views/` + `views.jsonl`: every
-  picture the model was shown, as the JPEG it received, placement pictures
-  with atlas labels, border mask and frame, `exports/`, `logs/`, and the
-  reference card `AGENTS.md` = `CLAUDE.md`). Paths in
-  job files are relative to it; old layouts are moved in on open, newer
-  ones refused; `--job-dir` / `JobSpec.job_dir` puts it elsewhere (a folder
-  holding another image folder's job is refused); a read-only image folder
-  falls back to `~/.langslice/jobs/<id>/`; saved Claude jobs are found by id through
-  `~/.langslice/jobs/<id>.json`: `src/langslice/job/CLAUDE.md` (loads when
-  working there).
-- `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
-  the organized-color LUT for human-review renders, and one side of a region
-  (`"CTX:left"`, the section's displayed side, `sides.py`):
-  `src/langslice/atlas/CLAUDE.md` (loads when working there).
-- `integrations/` — QUINT JSON export and the ABBA registration plugin:
-  `src/langslice/integrations/CLAUDE.md` (loads when working there).
-- `oblique.py` — arbitrary-plane sampling out of an atlas volume plus
-  (pitch, yaw) fitting (vendored from brainglobe-registration, BSD-3).
-  `sample_oblique_annotation` is the label-safe entry point: sampling
-  happens in float32, whose mantissa cannot hold the larger Allen ids, so
-  it compacts the volume to dense indices first. THE largest lever measured
-  on the nonlinear fit — see the `nonlinear/` entry
-- `space.py` — coordinate and orientation conventions
-- `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
-  section onto an atlas section (`silhouette_affine`, the one wrapper, cutting
-  angles included), plus the rotation/scale/translate matrix builder, the
-  normalized 6-number parameter convention and `pixel_center_map` (pixel
-  centres through a resize and offset). Used by `linear/transform.py`,
-  `nonlinear/` and `deformable/`; belongs to neither method
-- `deformable/` — the deformable-fit engine behind the linear agent's
-  `fit_deformable` tool (task `nonlinear`) and behind the fit of the image
-  model's lines in `langslice nonlinear register --deformation deformable`
-  and the ABBA registration plugin (`nonlinear/border_fit.py`; no export
-  adapter reads its records yet), whose prepared images and Elastix plumbing
-  (the one itk-elastix wrapper, `engines.py`) also run
-  `fit_affine`'s Elastix affine: ANTs SyN (optional
-  `registration` extra) or Elastix B-spline residual fit of a linearly placed
-  atlas plane onto one section — stain vs reference/ABBA Nissl, model lines
-  vs merged borders, ANTs label-map channels, sequential per-structure steps,
-  masks for tissue/torn edges/exclusions, and the canonical per-section
-  record with plausibility diagnostics. Belongs to neither method:
-  `src/langslice/deformable/CLAUDE.md` (loads when working there).
-  `oblique.plane_index_coordinates` gives any co-registered volume the
-  annotation plane's exact pixel grid
-- `image_prep.py` — image normalization, pixel-size detection, VLM
-  downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
-  by the linear visual path so histology and atlas sections fill their
-  frames comparably. Tissue framing keeps every blob at least a fifth the
-  size of the biggest (both bulbs, cerebellum and brainstem, a torn piece), so
-  a speck elsewhere on the slide cannot widen the box.
-  `host_preprocess` blends a host's multi-page snapshot (one page per channel)
-  into a section's DEFAULT appearance (the worker's `preprocess.preview` writes
-  that same image for the host's preview); the pages stay raw channels
-  (`read_working_pages`, `channel_planes`) for the agent's picture options (`view.channels`),
-  its optional `preprocess` tool (`custom_appearance`: weights, CLAHE, ANTs
-  N4/denoise) and fitting. `read_working_image` gives
-  each section file's small working copy (the smallest TIFF pyramid level of
-  at least 1536 px, a JPEG draft decode, otherwise one downsample to 3072 px);
-  the linear renders are drawn from it (`linear.workspace.Workspace.working_source`) and
-  count file pixels through its scale, so a whole-slide scan is never decoded
-  at full size
+- `agent/` — the ADK driver of the linear agent environment (`langslice
+  linear run FOLDER`): one `StackState`, one toolbox built from a
+  `JobSpec`, one job statement (`prompt.py`), one ADK session
+  (`session.py`, `engine.py`) that ends at `submit` or the turn budget,
+  plus `trace.py`, `cost.py`, `live.py`, the ADK plugins and model
+  resolver. Tasks (`reorder`/`position`/`transform`, plus the opt-in
+  `nonlinear`: a deformation per section via `fit_deformable`, with the
+  image tool unless its provider is `none`) are switched on task by task; a
+  task that is OFF builds no tools and takes its answer from the host
+  instead. Users see them as Positioning / Linear / Nonlinear:
+  `docs/interface_design.md` is the target user-facing design and what each
+  host exposes. Every write checkpoints and is undoable, order and position
+  must agree at submit, and in-plane alignment happens in the main session
+  through the transform tools (`fit_affine`: by default an Elastix
+  intensity affine refining the current placement, or the silhouette fit;
+  `adjust_transforms`); there is no nested per-section session. Spec:
+  `docs/linear_design.md`. Code map of the whole method across the layers,
+  the lean-harness rule, the submit gates and the known ceilings:
+  `src/langslice/agent/CLAUDE.md` (loads when working there).
 - `providers/` — model ACCESS methods, never task logic. `registry.py` is
   the taxonomy: canonical names pair vendor with auth — `gemini-api` (Google
   API key, `vlm_config.py`), `openai-api` (API key / endpoint,
@@ -232,26 +263,43 @@ Shared, top-level:
   `openai_oauth.py`: `langslice login`, the `openai-oauth/*` ADK model
   strings — legacy `chatgpt/*` accepted — and gpt-image-2), and `none` (no
   model at all: nonlinear retains a supplied placement or fits a silhouette
-  prior, so there is nothing to authenticate). `registry.resolve_image_model`
-  is the one place a provider name becomes an image-edit call
-  (`ImageModel`: provider, model, `call`); only a door resolves it (the
-  toolbox binding `build_tools(image_model=...)`, the CLI and API runtime,
-  the ABBA plugin), and the operations (`registration_tool`, `ops.traces`,
-  `run_linear_registration`) receive it. The OAuth path is
-  NOT the OpenAI API: it talks to the separate Codex backend
+  prior, so there is nothing to authenticate). `images.py` is the image
+  transport (`generate_warped_segmentation_image`, formerly
+  `nonlinear/providers.py`). `registry.resolve_image_model` is the one place
+  a provider name becomes an image-edit call (`ImageModel`: provider,
+  model, `call`); only a door resolves it (the toolbox binding
+  `build_tools(image_model=...)`, the CLI and API runtime, the ABBA plugin),
+  and the operations (`registration_tool`, `ops.traces`,
+  `run_linear_registration`) receive it. The OAuth path is NOT the OpenAI
+  API: it talks to the separate Codex backend
   (`chatgpt.com/backend-api/codex`), whose image tool ignores
   `model`/`size`/`quality` and matches the input image's aspect exactly.
-  Registration uses the raw `codex/images/edits`
-  endpoint (`edit_image`), which delivers the prompt verbatim with no
-  routing model in between (the hosted-router Responses path was deleted;
-  see the nonlinear section). Default review model:
-  `openai_oauth.DEFAULT_REVIEW_MODEL` (`openai-oauth/gpt-5.6-sol`) —
-  and future providers (anthropic-api, openrouter-api, qwen-api, ...) are
-  added there and nowhere else; legacy spellings google/openai/chatgpt
-  resolve as aliases. Task-level semantics stay OUT of providers: the
-  registration edit-vs-generate decision is `SegmentationGenerationRequest.mode`
-  (nonlinear), and each transport merely translates it (`images.edit`
-  endpoint, `action` on the Responses image_generation tool)
+  Registration uses the raw `codex/images/edits` endpoint (`edit_image`),
+  which delivers the prompt verbatim with no routing model in between (the
+  hosted-router Responses path was deleted; see the nonlinear section).
+  Default review model: `openai_oauth.DEFAULT_REVIEW_MODEL`
+  (`openai-oauth/gpt-5.6-sol`) — and future providers (anthropic-api,
+  openrouter-api, qwen-api, ...) are added there and nowhere else; legacy
+  spellings google/openai/chatgpt resolve as aliases. Task-level semantics
+  stay OUT of providers: the registration edit-vs-generate decision is
+  `SegmentationGenerationRequest.mode` (`core/nonlinear/`), and each
+  transport merely translates it (`images.edit` endpoint, `action` on the
+  Responses image_generation tool). Known layer violation:
+  `openai_oauth.py` reads `doors.tools.MEDIA_LAYOUT_ATTR`.
+- `hosts/` — host connectors that run in LangSlice's own environment:
+  `hosts/integrations/` (the ABBA registration plugin, the live linear
+  mirror, the ABBA viewer and log: `src/langslice/hosts/integrations/CLAUDE.md`)
+  and `hosts/api/` (the JSON-lines worker protocol, desktop
+  setup/authentication, the ABBA worker, saved Claude jobs, the
+  registration runtime): `src/langslice/hosts/CLAUDE.md`.
+- Compatibility shims, for the sibling repos only (LangSlice imports none;
+  import-linter's `no-shims-inside` contract): `linear/` (`JobSpec` & co.,
+  `run`, `engine`, `spec`, `state`, `toolbox`, `trace`, `transform`,
+  `render`), `atlas/` (+ `core`), `nonlinear/` (+ `image_gen_helpers`,
+  `image_gen_registration`, `border_refinement`), `integrations/` (+
+  `abba_linear`), `adk/` (the media keys), `space.py`, `oblique.py`,
+  `affine.py`, `image_prep.py`, `registration_handoff.py`. Each hands back
+  the moved module (or re-exports a package's public names).
 
 ### Sibling repos (split out 2026-08-25)
 
@@ -271,14 +319,14 @@ training or benchmark code happens in those repos, not here.
 
 `connectors/` holds what is installed into, or configured in, someone else's
 program. Code that runs in LangSlice's own environment lives in
-`src/langslice/` instead (`integrations/`, `api/`, `mcp_server/`).
+`src/langslice/` instead (`hosts/`, `doors/mcp/`).
 
 - `connectors/fiji/` — Java/SciJava connector loaded into the user's existing
   ABBA. It starts a separate LangSlice Python environment, provides setup and
   account dialogs, and applies worker results through native ABBA actions.
 - `connectors/napari/` — planned napari connectors (`docs/napari_plugin_design.md`).
 - `connectors/claude-desktop/` — host configuration for `langslice mcp`
-  (`src/langslice/mcp_server/`). This is the linear toolbox served over MCP to
+  (`src/langslice/doors/mcp/`). This is the linear toolbox served over MCP to
   a host that brings its own model: Claude Desktop, or Claude Code locked to
   this one server. ABBA's Claude mode copies a saved-job prompt, and without a
   host `langslice claude prepare FOLDER` saves the same kind of job (in the
@@ -290,7 +338,7 @@ program. Code that runs in LangSlice's own environment lives in
   The host owns the loop, so there is no turn budget, nudges or image working
   set. This is the subscription-legal route for Claude; LangSlice never
   handles Claude credentials.
-- `src/langslice/api/` — JSON-lines worker protocol, desktop setup/authentication,
+- `src/langslice/hosts/api/` — JSON-lines worker protocol, desktop setup/authentication,
   and JVM-free host adapters. Existing `abba_python` launchers remain separate.
 - `packaging/`, `environment.yml` — worker distribution and wheel checks.
   Publication status and the accepted installation design are in
@@ -316,7 +364,7 @@ program. Code that runs in LangSlice's own environment lives in
   fit are composed in exported coordinates. See `docs/nonlinear_design.md`;
   there is no hosted-router retry loop.
 - Positions are atlas-native millimeters from the anterior edge of the volume.
-- Atlas orientation assumptions are centralized in `src/langslice/space.py`,
+- Atlas orientation assumptions are centralized in `src/langslice/core/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via
   `brainglobe_space` and requires the AP axis to increase anterior→posterior.
 - A job folder's public files (`registration.json` on every write; per

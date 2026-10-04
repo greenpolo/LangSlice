@@ -1,4 +1,10 @@
-"""Google ADK integration: plugins, model resolution, and SDK helpers."""
+"""The native agent tools: the toolbox, its arguments, the ``view`` options, ADK packaging.
+
+The tool door (:mod:`.toolbox`, :mod:`.arguments`, :mod:`.view_options`,
+:mod:`.media`). The ADK driver that runs them is :mod:`langslice.agent`.
+These keys are how the tools hand back media, shared by the door, the driver
+and the OAuth transport.
+"""
 
 from __future__ import annotations
 

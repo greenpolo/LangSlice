@@ -1,19 +1,20 @@
-# LangSlice `deformable/` — library deformable fit of a placed atlas plane
+# LangSlice `core/deformable/` — library deformable fit of a placed atlas plane
 
-Package guide; `AGENTS.md` is a verbatim twin of this file. Shared top-level
-package, like `affine.py`: it belongs to neither `linear/` nor `nonlinear/`
-and imports neither. It is the engine behind the linear agent's
-`fit_deformable` tool (`linear/deformation.py`, task `nonlinear`) and, since
+Package guide for `src/langslice/core/deformable/`; `AGENTS.md` is a verbatim
+twin of this file. A core sub-package (top-level `deformable/` until the
+folder move, 2026-10-04), like `core/affine.py`: it belongs to neither the
+linear method nor `core/nonlinear/` and imports neither. It is the engine behind the linear agent's
+`fit_deformable` tool (`core/deformation.py`, task `nonlinear`) and, since
 2026-10-03, behind `fit_affine`'s default Elastix method
-(`linear/transform.elastix_affine`: `prepare_fit` builds its images and
+(`core/transform.elastix_affine`: `prepare_fit` builds its images and
 masks, `engines.run_elastix_affine` fits), and since 2026-10-04 behind the
 fit of the image model's lines in `langslice nonlinear register
 --deformation deformable` and the ABBA registration plugin
-(`nonlinear/border_fit.py`, which replaced the old Elastix residual fit). The
+(`core/nonlinear/border_fit.py`, which replaced the old Elastix residual fit). The
 job folder's maps and VisuAlign markers read an applied record
 (`core/maps.py`, formats phase 2026-10-04); no ABBA or BrainGlobe export
 adapter reads it yet. `engines.py` is LangSlice's one
-itk-elastix registration wrapper (`landmark_elastix.py`, the landmark-pair
+itk-elastix registration wrapper (`core/landmark_elastix.py`, the landmark-pair
 spline of old checkpoints, is separate).
 
 ## What it does
@@ -49,12 +50,12 @@ and returns a `record.DeformableRecord`. No custom solver.
 - Route B (image model): the model's extracted line mask (`lines=`, on the
   section grid, e.g. `trace_borders`' `extracted_lines.png` with its
   `atlas_to_canvas`) against `borders_merged` (the same color-family set the
-  model was shown, `atlas.render.family_labels`) or `borders`; both softened
+  model was shown, `core.atlas.render.family_labels`) or `borders`; both softened
   by the same Gaussian ridge (`settings.LINE_SOFTENING_UM`, fixed at 60 µm).
   Mean squares. `settings.traced_settings(engine)` is the traced-lines
   setting in one call: ANTs with the lines as named regions too
   (`labels="model"`), or Elastix lines against borders; `engine=None` picks
-  ANTs when installed (`nonlinear/border_fit.py` passes Elastix).
+  ANTs when installed (`core/nonlinear/border_fit.py` passes Elastix).
 - Caller-supplied labels (`prepare_fit(native=...)`, through `fit_section`):
   a host's own leaf-label grid stands in for the atlas plane, placed by the
   placement's matrix (the ABBA plugin: labels sampled at ABBA's per-pixel
@@ -68,7 +69,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   one-to-one renaming) and pairs each region's indicator with the atlas's;
   `auto` adds the stain's tissue footprint and empty interior holes near
   placed ventricles (the linear tool adds `auto` to every ANTs stain fit,
-  `linear/deformation.Choice`). Built as `ants.registration`
+  `core/deformation.Choice`). Built as `ants.registration`
   `multivariate_extras` (the same per-label MeanSquares construction
   `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
   so would ignore stiffness); the edge channel is the first extra.
@@ -169,7 +170,7 @@ surface rim with every engine and stiffness, where `ara` followed the edge
 stays available, untested on brightfield Nissl stains.
 
 **One side of a region.** Any `exclude` or `structures` entry may name one
-side, `"CTX:left"` / `"CTX:right"` (`atlas.sides`): left and right of the
+side, `"CTX:left"` / `"CTX:right"` (`core.atlas.sides`): left and right of the
 SECTION as displayed (the fit grid: oriented render, rotation and flip
 applied), carried to the native plane through the placement's
 `atlas_to_section` (`atlas_images.placement_left`). Exclusion is therefore a
@@ -250,7 +251,7 @@ linear-only borders, region by region; diagnostics and synthetic recovery are
 secondary. Use `render.draw_warped_borders(image, record, atlas, highlight=...,
 warped=...)` (exported from the package): it composes the linear placement and
 the residual field and draws per-region blurred indicators sampled bilinearly
-on a 3x supersampled grid (the approach of `atlas.render.placed_border_coverage`,
+on a 3x supersampled grid (the approach of `core.atlas.render.placed_border_coverage`,
 which is affine-only, so the composed sampling lives here), one shared line per
 edge, antialiased, clipped to tissue. `highlight` (acronyms/ids, descendants
 included, one-sided entries drawn on that side of the record's placement)

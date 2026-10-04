@@ -475,7 +475,7 @@ def _fit_payload(
 #: outline on the fluorescent sections' bright rim, where ABBA's Nissl sat
 #: 40-80 um inside it.
 ELASTIX_ATLAS_IMAGE = "ara"
-#: Working grid of the Elastix affine (``deformable.settings.DETAIL``: 20 um).
+#: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um).
 ELASTIX_DETAIL = "standard"
 #: The identity transform's six normalized numbers.
 IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
