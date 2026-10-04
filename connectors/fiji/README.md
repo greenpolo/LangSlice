@@ -4,14 +4,14 @@ This independently distributed Java plugin connects an existing ABBA installatio
 with a separately installed LangSlice Python environment. Python and model accounts
 are not needed to load the plugin or open Setup.
 
-The connector targets ABBA **0.11.0** and Java **11 or newer**. Newer ABBA versions
-must be checked before advertising compatibility: upstream has changed source
-processor package names. Runtime dependencies are supplied by ABBA/Fiji and are
-not bundled into the plugin JAR.
+The connector targets ABBA **0.24.x** (built and tested against 0.24.1) and **Java 21**,
+the Java level ABBA 0.24 itself requires. Older ABBA versions (0.11 and earlier) are
+not supported: upstream renamed the registration and source-processor packages.
+Runtime dependencies are supplied by ABBA/Fiji and are not bundled into the plugin JAR.
 
 ## Build
 
-With JDK 11+ and Maven:
+With JDK 21+ and Maven:
 
 ```bash
 cd connectors/fiji
@@ -22,7 +22,7 @@ After Maven has written the resolved dependency classpath, subsequent developmen
 builds can run offline:
 
 ```bash
-python connectors/fiji/build.py --java-home /path/to/jdk --test
+python connectors/fiji/build.py --java-home /path/to/jdk21 --test
 ```
 
 The offline build starts from empty `target/classes` and `target/test-classes`
@@ -32,20 +32,37 @@ the Maven cache.
 
 The offline smoke checks start real fake-worker subprocesses to exercise event and
 result delivery, timeout handling, secret-safe authentication errors, and paths
-containing spaces. They also check: the ABBA menu registration (one `LangSlice`
-entry) and its callable alias; the job spec, preprocessing and exported channel
-order built from the dialog's choices, and that every choice persists; multi-page
-snapshot TIFFs; the `preprocess.preview` request; `linear.estimate` detection;
-that `linear.run` checkpoints are only remembered while `final_updates` is the one
-application, with a stopped run keeping its last `updates_since_start`; and native
-affine/spline registration geometry and serialization. They do not replace live
-Fiji testing of registration, cancellation, undo and saved state.
+containing spaces. They also check: the ABBA menu registration (one plain
+`LangSlice Registration…` entry) and its callable alias; the job spec, preprocessing,
+exported channel order and channel names built from the dialog's choices, and that
+every choice persists; the image-model list read from `setup.status`; the cost line
+for estimates and plain refusals; multi-page snapshot TIFFs; the `preprocess.preview`
+request; that every saved checkpoint (not the initial one) reaches the live hook
+while the run goes on, including after a stop; that event listeners receive
+checkpoints and agent events in order and that a failing listener harms nothing;
+native affine/spline registration geometry and serialization; the warp step's
+direction, both coordinate layouts, its serialization and that BigWarp can reopen
+it; the cutting-angle signs; and how a kept row merges with a newer one.
 
-`HostSessionSmokeTest` is opt-in and needs ABBA's cached Allen V3p1 atlas (see its
-class comment). It imports a synthetic section into a real headless ABBA session and
-checks calibration, `locked`/`damaged` request fields, multi-page export, the preview
-snapshot, one final application reverted and restored by a single Undo/Redo, refusal
-after an outside registration change, and native save/reload.
+`HostSessionSmokeTest` is opt-in and needs ABBA's cached Allen V3p1 atlas (normally
+`~/cached_atlas`; see its class comment). It runs a real headless ABBA 0.24.1:
+
+```bash
+java -Djava.awt.headless=true --add-opens=java.base/java.lang=ALL-UNNAMED \
+  -cp "target/test-classes:target/classes:$(cat target/test-classpath.txt)" \
+  org.langslice.fiji.HostSessionSmokeTest ~/cached_atlas
+```
+
+It imports two synthetic sections and checks: AP positions from ABBA's own
+`toAtlasZ` against the former atlas-coordinate measurement; a tilted session's
+`angles_deg`; `existing_warp` for a user's own BigWarp step; live checkpoints
+(position, affine step, warp step, cutting angles) read back from ABBA; that a new
+placement removes the warp before replacing the affine; that one ABBA Undo reverts
+exactly one checkpoint (angles included) and Redo restores it; that a slice changed
+outside the run is refused, kept and applied on retry; and native save. It then
+reopens the saved project in a second JVM without the connector on the classpath
+(`ReloadCheck`): both steps, the warp's landmarks, BigWarp editing, the position and
+the angles survive.
 
 `DialogPreview OUTPUT_FOLDER` (needs a display, no ABBA) renders the Registration
 dialog's three tabs and both run windows from fake slices and a fake worker, as
@@ -53,7 +70,7 @@ dialog's three tabs and both run windows from fake slices and a fake worker, as
 `dialog_run_log.png` and `dialog_run_compact.png`. `SetupPreview` does the same for
 Setup.
 
-Copy `target/langslice-fiji-0.1.0.jar` into your Fiji `jars` folder and restart
+Copy `target/langslice-fiji-0.2.0.jar` into your Fiji `jars` folder and restart
 Fiji. This manual JAR installation is the development route; a public Fiji update
 site has not been published. Do not copy the Maven dependency jars into Fiji.
 
@@ -73,61 +90,129 @@ without requiring an open terminal. Otherwise the environment's Python is invoke
 directly. Worker processes and their descendants are terminated on cancellation.
 
 `LangSliceService` registers one named command with ABBA's existing registration UI
-registry before the ABBA window is built: ABBA shows it as **Register → LangSlice →
-LangSlice Registration…**, a submenu in the same Register menu as ABBA's DeepSlice
-submenu, and passes the live session as `mp`. ABBA places externally registered
-entries at the end of the Register menu, after a separator; a plugin cannot choose
-the position. No `PyCommandBuilder`, `abba_python`, or upstream ABBA modifications
-are required.
+registry before the ABBA window is built: ABBA shows it as one plain entry,
+**Register → LangSlice Registration…**, and passes the live session as `mp`. ABBA
+places externally registered entries at the end of the Register menu, after a
+separator below its own entries (after the Spline entries); a plugin cannot choose the
+position. No `PyCommandBuilder`, `abba_python`, or upstream ABBA modifications are
+required.
 
 ## The Registration dialog
 
 The dialog works on the slices selected in ABBA when it opens, or on every slice
-when none is selected. It is not modal; the run starts from **Run**.
+when none is selected. It is not modal; the run starts from **Run** (**Copy prompt**
+in Claude mode).
 
-- **Top:** provider (ChatGPT only), agent model (from the worker's `setup.status`
-  list, editable; the connector's own list when an older worker gives none), image
-  model, reasoning level, image resolution (Low/Medium/High/Auto), **Show agent log**,
-  **Open agent viewer** (disabled, "Coming soon"), and **Save traces to** a folder
-  (default `~/LangSlice/traces`), which keeps the run's full agent trace; the final
-  message names the file.
-- **Tasks tab:** *Positioning* (hemisphere flipping with an optional hemisphere cue,
-  section thickness and interval prefilled from ABBA's slices, notes for the agent;
-  DeepSlice and Bayesian position fit shown disabled). *Linear* (affine tool, max
-  parallel slice transforms 1–4, notes for the agent; slice angle estimation shown
-  disabled). *Nonlinear* is shown disabled: "Not yet available in ABBA".
+- **Top:** provider (ChatGPT or Claude), agent model (from the worker's `setup.status`
+  list, editable; the connector's own list when an older worker gives none), reasoning
+  level, image resolution (Low/Medium/High/Auto), **Show agent log**, **Open agent
+  viewer**, the image model, and **Save traces to** a folder (default
+  `~/LangSlice/traces`), which keeps the run's full agent trace; the final message names
+  the file. The image model list comes from `setup.status` (`image_models`, in the
+  worker's order; older workers: the ChatGPT image model) and always offers **None (fit
+  to the stain only)**; an entry whose account is not connected says "(not set up)". It
+  is enabled whenever Nonlinear is ticked, in both modes. **Open agent viewer** is
+  enabled only when ABBA was started from Python (`langslice abba`), which registers a
+  `LangSliceEvents` listener; otherwise it is disabled with the tooltip "Available when
+  ABBA is started with `langslice abba`".
+- **Tasks tab:** *Positioning* (section thickness and interval prefilled from ABBA's
+  slices, notes for the agent; DeepSlice and Bayesian position fit shown disabled).
+  *Linear* (**Enable hemisphere flipping** with an optional hemisphere cue, the affine
+  tool, max parallel slice transforms 1–4, **Enable slice angle estimation**, notes for
+  the agent). *Nonlinear* (deformable-fit engine: Either, ANTs or Elastix; notes for the
+  agent). Any combination of the three may run, Nonlinear alone included. When
+  Nonlinear is on, Linear is off and some listed slices have no ABBA registration, Run
+  asks "Slices … have no linear registration. Let the agent align them first?": Yes
+  switches Linear on; No leaves them out of Nonlinear (out of the run entirely when
+  Positioning is off too; otherwise listed in `nonlinear_skip`).
 - **Slices tab:** one row per slice with its name, the number of ABBA registrations
   and a **Damaged** checkbox with an optional note; **Let the agent flag damaged
   slices**; **Allow the agent to overwrite existing transforms** (off by default:
   every listed slice that has registrations is sent as `locked`, so the agent keeps
-  its in-plane alignment while its position may still move).
+  its in-plane alignment while its position may still move; a slice that carries the
+  user's own spline or BigWarp step also keeps that warp).
 - **Preprocessing tab:** Auto or Custom; in Custom a weight from 0 to 1 per channel,
-  CLAHE on/off and CLAHE strength; the snapshot pixel size (µm); the tip "Try to
-  maximize contrast between different regions."; and a before/after preview of a
-  chosen slice. Before is the snapshot as exported from ABBA (one channel in gray,
-  several as a coloured overlay); after is the worker's `preprocess.preview` output,
-  the grayscale image the agent sees.
-- **Bottom:** the estimated cost from `linear.estimate`, or "estimate unavailable"
-  when the worker does not offer that method; **Setup…**, **Cancel** and **Run**.
+  CLAHE on/off and CLAHE strength; **Let the agent drive preprocessing**; the snapshot
+  pixel size (µm); the tip "Try to maximize contrast between different regions."; and a
+  before/after preview of a chosen slice. Before is the snapshot as exported from ABBA
+  (one channel in gray, several as a coloured overlay); after is the worker's
+  `preprocess.preview` output, the grayscale image the agent sees.
+- **Bottom:** the estimated cost from `linear.estimate`; when the worker gives no
+  number, its plain reason ("Estimated cost: no estimate (…)"); "estimate unavailable"
+  only for a worker without the method. **Setup…**, **Cancel** and **Run**.
 
 Every choice except the per-slice damage checks is saved (Java preferences, node
 `org/langslice/fiji/registration`) when a run starts, and restored next time; section
 thickness and interval come from ABBA whenever ABBA's slices give them.
 
-Snapshots are multi-page TIFFs with one page per exported channel: every channel in
-Auto, only channels with a weight above 0 in Custom, in channel order, matching the
-request's `channel_weights`.
+| Control | Request |
+| --- | --- |
+| Agent model; reasoning | `spec.model` (`openai-oauth/…`), `spec.reasoning` (omitted for "default") |
+| Image model | `spec.nonlinear.provider` (`none` for None) and `spec.nonlinear.image_model` (null for None or the provider's default) |
+| Image resolution | `spec.image_resolution` |
+| Positioning | `spec.tasks` += `reorder`, `position`; `position.thickness_um`, `position.interval_um`, `position.notes` |
+| Linear | `spec.tasks` += `transform`; `transform.flip`, `transform.hemisphere_cue`, `transform.automatic` (affine tool), `transform.interactive` true, `transform.angles`, `transform.max_parallel`, `transform.notes` |
+| Nonlinear | `spec.tasks` += `nonlinear`; `nonlinear.engine` (`either`, `ants`, `elastix`), `nonlinear.notes` |
+| Let the agent flag damaged slices; Damaged + note | `spec.agent_damage`; `damaged` |
+| Allow the agent to overwrite existing transforms (off) | off: every listed slice with registrations is in `locked` |
+| Let the agent drive preprocessing | `spec.agent_preprocessing`; every channel is exported |
+| Auto/Custom, weights, CLAHE, strength | `preprocessing`; Custom exports only weighted channels unless the agent drives preprocessing |
+| Snapshot pixel size (µm) | `pixel_size_um` |
+| Save traces to | `trace_dir` |
 
-During a run the user's ABBA session is not changed. Checkpoints are only
-remembered. When the run ends, the result's `final_updates` are applied once, as one
-undoable ABBA step. If the user stops the run (or it fails) after at least one
-checkpoint, the run window offers **Apply partial result to ABBA**, which applies the
-last checkpoint's `updates_since_start` the same way. The safety checks stay: a
-slice whose registration count changed outside the run is refused. With **Show agent
-log** on, the run window shows the agent's activity; with it off, a compact window
-shows the status, the Stop button and the final message.
+The connector also sends, from ABBA: `positions_mm` (ABBA's `toAtlasZ` of each slice,
+BrainGlobe AP millimetres), `z_offset_mm` (`ReslicedAtlas.getZOffset()`), `angles_deg`
+(the session's stack-wide cutting angles, pitch = −degrees(rotateX), yaw =
+−degrees(rotateY)), `registered_slices`, `existing_warp` (slices carrying a spline or
+BigWarp step that is not LangSlice's) and `channel_names` (one per exported page).
+
+Snapshots are multi-page TIFFs with one page per exported channel: every channel in
+Auto or when the agent drives preprocessing, only channels with a weight above 0 in
+Custom, in channel order, matching the request's `channel_weights`.
+
+## The run: live in ABBA
+
+The agent's work lands in ABBA as it goes, in ChatGPT and Claude mode alike: every
+checkpoint after the initial one is applied when it arrives, as **one ABBA undo step**,
+through ABBA's native actions. A checkpoint may carry, per slice, a position, a new
+placement (flip, quarter turn, affine) and a warp, and for the stack new cutting
+angles (`host_angles`). Each slice carries at most two LangSlice steps on top of the
+registrations it had when the run started: a **LangSlice affine** step (ABBA's
+`AffineRegistration`) and on top of it a **LangSlice warp** step (ABBA's BigWarp
+thin-plate spline, `BigWarpSource2DRegistration`). A replacement deletes the newest
+steps (the warp first, then the affine when the placement changed) and appends new
+ones; it is done only while LangSlice's steps are still the slice's newest
+registrations. Cutting angles are applied through a small undoable action of the
+connector's own, since ABBA's own angle command cannot be undone.
+
+A slice whose registrations were changed in ABBA during the run (a registration added,
+removed or undone) is refused and named in the log. Rows ABBA could not take are kept,
+merged with the next checkpoint and retried; a failure never ends the run. At the end
+the kept rows get one more try, and the run window offers **Retry failed updates**.
+**Stop run** ends the agent; everything it saved before the stop is already in ABBA.
+
+Saved projects contain only ABBA's own registration types, so they reopen in ABBA
+without LangSlice, and the warp step opens in BigWarp like any BigWarp registration.
+Save the project with ABBA's normal Save command.
+
+With **Show agent log** on, the run window shows the agent's activity; with it off, a
+compact window shows the status, the Stop button and the final message.
+
+## Events for the agent viewer
+
+`org.langslice.fiji.LangSliceEvents` is a small public registry for an in-JVM listener,
+normally the Python launcher's JPype proxy when ABBA was started with `langslice abba`:
+`addListener(Consumer<String>)`, `removeListener`, `hasListeners()`, `slices()` (the run's
+snapshot filename to ABBA slice map) and `session()`. In both modes the connector passes
+on every worker message verbatim (`checkpoint`, `agent_event`, `log`, each a JSON object
+with its `kind`) and adds `run_started` (mode, viewer, image folder, sections), `job`
+(Claude mode), `applied` (what reached ABBA) and `run_finished`. Delivery runs on one
+background thread, in order; a failing listener is logged and never affects the run.
+
+## Protocol
 
 The connector uses protocol version 1. A request is one JSON line sent to
 `python -m langslice serve --stdio`; the worker streams events and then a result or
 error. Images and registration outputs remain local files. No local HTTP server or
-listening port is required for the connector itself.
+listening port is required for ChatGPT mode; Claude mode listens on one loopback port
+with a random token for the live channel.
