@@ -570,6 +570,90 @@ def read_working_pages(
     return pages, full_width / float(pages[0].shape[1])
 
 
+def working_size(
+    path: str | Path, *, pages: bool = False,
+    min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
+) -> tuple[tuple[int, int], float] | None:
+    """``((width, height), file pixels per working pixel)`` of a file's working
+    copy, read from its header: nothing is decoded.
+
+    The size :func:`read_working_image` (or, with *pages*,
+    :func:`read_working_pages`) would return, for the layouts they read
+    directly: a plain or pyramidal TIFF, a multi-page TIFF, PNG, JPEG (its
+    draft size). None for anything else; the caller decodes instead.
+    """
+    try:
+        if pages and page_count(path) > 1:
+            return _pages_working_size(path, min_edge, max_edge)
+        size: tuple[int, int] | None = None
+        full_width = 0
+        if Path(path).suffix.lower() in (".tif", ".tiff"):
+            size, full_width = _tiff_level_size(path, min_edge)
+        if size is None:
+            with Image.open(path) as handle:
+                full_width = handle.size[0]
+                if handle.format == "JPEG":
+                    handle.draft("RGB", (max_edge, max_edge))
+                size = (int(handle.size[0]), int(handle.size[1]))
+        if max(size) > max_edge:
+            scale = max_edge / float(max(size))
+            size = (max(1, round(size[0] * scale)), max(1, round(size[1] * scale)))
+        return size, full_width / float(size[0])
+    except Exception:  # an odd layout: the caller decodes
+        return None
+
+
+def _tiff_level_size(path: str | Path, min_edge: int) -> tuple[tuple[int, int] | None, int]:
+    """:func:`_read_tiff_level`'s choice, from the header: ``(size, full width)``."""
+    import tifffile
+
+    with tifffile.TiffFile(path) as handle:
+        if not handle.series:
+            return None, 0
+        series = handle.series[0]
+        if series.axes not in ("YX", "YXS") or series.dtype not in (np.uint8, np.uint16):
+            return None, 0
+        levels = list(series.levels)
+        full_width = int(levels[0].shape[1])
+        chosen = levels[0]
+        for level in levels[1:]:
+            if max(level.shape[0], level.shape[1]) >= min_edge:
+                chosen = level
+        shape = tuple(int(v) for v in chosen.shape)
+    if len(shape) == 3 and shape[-1] not in (3, 4):
+        return None, 0
+    return (shape[1], shape[0]), full_width
+
+
+def _pages_working_size(
+    path: str | Path, min_edge: int, max_edge: int,
+) -> tuple[tuple[int, int], float]:
+    """:func:`read_working_pages`' page size for a multi-page file, from the header."""
+    import tifffile
+
+    with tifffile.TiffFile(path) as handle:
+        series = handle.series[0] if handle.series else None
+        levels = list(series.levels) if series is not None else []
+        if (series is not None and len(levels) > 1 and len(series.axes) == 3
+                and series.axes.endswith("YX")):
+            full_width = int(levels[0].shape[-1])
+            chosen = levels[0]
+            for level in levels[1:]:
+                if max(level.shape[-2], level.shape[-1]) >= min_edge:
+                    chosen = level
+            height, width = (int(v) for v in chosen.shape[-2:])
+            return (width, height), full_width / float(width)
+        shape = tuple(int(v) for v in handle.pages[0].shape)  # type: ignore[union-attr]
+    if len(shape) == 3 and shape[-1] not in (1, 3, 4):
+        raise ValueError(f"Unsupported page shape {shape}")
+    height, width = shape[0], shape[1]
+    full_width = width
+    if max(width, height) > max_edge:
+        scale = max_edge / float(max(width, height))
+        width, height = max(1, round(width * scale)), max(1, round(height * scale))
+    return (width, height), full_width / float(width)
+
+
 def _shrink_channel(channel: np.ndarray, max_edge: int) -> np.ndarray:
     if max(channel.shape) <= max_edge:
         return channel
@@ -828,6 +912,28 @@ def foreground_mask(
     return _largest_component(mask)
 
 
+def prepared_size(
+    size: tuple[int, int],
+    *,
+    max_pixels: int = DEFAULT_VLM_MAX_PIXELS,
+    max_long_edge: int = DEFAULT_VLM_MAX_LONG_EDGE,
+) -> tuple[int, int]:
+    """The ``(width, height)`` :func:`prepare_image_for_vlm` gives an image of
+    *size*: aspect kept, never upsampled, each side floored."""
+    if max_pixels <= 0 or max_long_edge <= 0:
+        raise ValueError("max_pixels and max_long_edge must be positive")
+    width, height = int(size[0]), int(size[1])
+    if width <= 0 or height <= 0:
+        raise ValueError("image dimensions must be positive")
+    pixel_scale = math.sqrt(min(1.0, max_pixels / float(width * height)))
+    edge_scale = min(1.0, max_long_edge / float(max(width, height)))
+    scale_factor = min(1.0, pixel_scale, edge_scale)
+    if scale_factor >= 0.999999:
+        return width, height
+    return (max(1, int(math.floor(width * scale_factor))),
+            max(1, int(math.floor(height * scale_factor))))
+
+
 def prepare_image_for_vlm(
     image: Image.Image,
     *,
@@ -840,14 +946,9 @@ def prepare_image_for_vlm(
         raise ValueError("max_pixels and max_long_edge must be positive")
 
     width, height = image.size
-    if width <= 0 or height <= 0:
-        raise ValueError("image dimensions must be positive")
-
-    pixel_scale = math.sqrt(min(1.0, max_pixels / float(width * height)))
-    edge_scale = min(1.0, max_long_edge / float(max(width, height)))
-    scale_factor = min(1.0, pixel_scale, edge_scale)
-
-    if scale_factor >= 0.999999:
+    new_width, new_height = prepared_size(
+        (width, height), max_pixels=max_pixels, max_long_edge=max_long_edge)
+    if (new_width, new_height) == (width, height):
         return PreparedImage(
             image=image,
             original_size=(width, height),
@@ -856,8 +957,6 @@ def prepare_image_for_vlm(
             effective_pixel_size_um=float(pixel_size_um) if pixel_size_um is not None else None,
         )
 
-    new_width = max(1, int(math.floor(width * scale_factor)))
-    new_height = max(1, int(math.floor(height * scale_factor)))
     resized = image.resize((new_width, new_height), _RESAMPLE_LANCZOS)
 
     effective_pixel_size_um = None

@@ -79,6 +79,11 @@ class Workspace:
     #: (:mod:`langslice.core.pictures`); a section's keeps the caption of its
     #: first display. Shared: read only.
     picture_cache: dict[tuple[Any, ...], Image.Image] = field(default_factory=dict, repr=False)
+    #: Each placed section's linear frame (:func:`langslice.core.maps.section_frame`:
+    #: file pixels to atlas micrometres), keyed by everything it depends on,
+    #: so ``registration.json`` is rewritten on every write without
+    #: recomputing the sections that did not move. Shared: read only.
+    frame_cache: dict[tuple[Any, ...], Any] = field(default_factory=dict, repr=False)
     _atlas: Any = field(default=None, repr=False)
     #: ABBA's cached Allen atlas when it matches this run's atlas (the
     #: ``nissl`` atlas image); looked up once.
