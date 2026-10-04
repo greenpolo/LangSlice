@@ -171,3 +171,44 @@ def test_cli_processes_writing_at_once_all_land(images):
     notes = json.loads((images / "langslice" / "state.json").read_text())["notes"]
     assert sorted(note for note in notes if note.startswith("note ")) == [
         f"note {number}" for number in range(4)]
+
+
+def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch: Any):
+    """Two view stores on one job folder (a running agent and a CLI call, two
+    processes) queue pictures before either is written: each picture still
+    gets its own number, so neither overwrites the other's files (review
+    finding 11)."""
+    import threading
+
+    from PIL import Image
+
+    from langslice.job import views
+    from langslice.job.layout import JobLayout
+
+    layout = JobLayout(tmp_path / "job")
+    layout.ensure()
+    release = threading.Event()
+    real = views.ViewStore._write_call
+
+    def held(self: Any, call: Any) -> None:
+        release.wait(10)
+        real(self, call)
+
+    monkeypatch.setattr(views.ViewStore, "_write_call", held)
+    first, second = views.ViewStore(layout), views.ViewStore(layout)
+    picture = Image.new("RGB", (8, 8), "red")
+    names = (first.save(tool="view_slices", pictures=[(picture, None)])
+             + second.save(tool="view_slices", pictures=[(picture, None), (picture, None)])
+             + first.save(tool="view_atlas", pictures=[(picture, None)]))
+    release.set()
+    first.flush()
+    second.flush()
+    seqs = [int(name.split("_")[0]) for name in names]
+    assert len(set(seqs)) == len(seqs) == 4, names
+    entries = [json.loads(line) for line in layout.views_index.read_text().splitlines()]
+    assert sorted(entry["seq"] for entry in entries) == sorted(seqs)
+    assert len({entry["path"] for entry in entries}) == 4
+    # A reopened store continues after every number handed out.
+    third = views.ViewStore(layout)
+    assert int(third.save(tool="note", pictures=[(picture, None)])[0][:6]) == max(seqs) + 1
+    third.flush()
