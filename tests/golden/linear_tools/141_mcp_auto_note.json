@@ -1,0 +1,15 @@
+{
+ "call": {
+  "arguments": {
+   "text": "Before the opening."
+  },
+  "tool": "note"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"refused\", \"error\": \"OPENING_NOT_READ\", \"pages\": [1], \"detail\": \"Read every opening page before the first write: show_stack(page=1) (the pictures of the stack the job statement asks for).\"}"
+  }
+ ],
+ "door": "mcp_auto",
+ "images": []
+}

@@ -51,9 +51,18 @@ class StackStatus:
 
 
 def status(job: Job) -> StackStatus:
-    """The status table (``status``)."""
+    """The status table (``status``). A section the user locked (its
+    in-plane alignment done, ``inputs.locked``) carries ``locked: true``,
+    one whose damage flag the user set (``inputs.damaged``, which cannot
+    be cleared) ``damage_by_user: true``; the others carry neither."""
     state = job.state
-    return StackStatus(rows=status_rows(state), cutting_angles_deg=stack_angles_entry(state),
+    rows = status_rows(state)
+    for row in rows:
+        if row["id"] in job.locked:
+            row["locked"] = True
+        if row["id"] in job.host_damaged:
+            row["damage_by_user"] = True
+    return StackStatus(rows=rows, cutting_angles_deg=stack_angles_entry(state),
                        interval_breaks=list(state.interval_breaks))
 
 

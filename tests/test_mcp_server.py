@@ -259,8 +259,12 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
     assert entry["job_folder"] == str(path)
     assert prepared["job_id"] in prepared["prompt"]
-    assert "Keep the supplied positions." in prepared["prompt"]
+    # The user's notes live in job.json, read by every door; the statement
+    # carries them, the copy prompt does not repeat them.
+    assert record["notes"] == "Keep the supplied positions."
+    assert "Keep the supplied positions." not in prepared["prompt"]
     job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    assert job.notes == "Keep the supplied positions."
     assert job.spec.tasks == ["transform"]
     assert job.state.in_order()[0].damaged
     assert Path(job.ctx.image_folder).name != "agent_view"  # snapshots are read as they are
@@ -391,7 +395,7 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     prompt = capsys.readouterr().out
     job_id = next(iter((tmp_path / "jobs").iterdir())).stem
     assert f'start_job(job_id="{job_id}")' in prompt
-    assert "interval 150 µm" in prompt and "Section 2 is torn." in prompt
+    assert "interval 150 µm" in prompt and "Section 2 is torn." not in prompt
 
     def server() -> Any:
         return build_server(lambda _folder: (_ for _ in ()).throw(
@@ -401,12 +405,19 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     async def first(client: Any) -> Any:
         briefing = await client.call_tool("start_job", {"job_id": job_id})
         tools = {tool.name for tool in (await client.list_tools()).tools}
+        # Every write waits until the opening pages were read.
+        early = await client.call_tool("note", {"text": "too early"})
+        await client.call_tool("show_stack", {"page": 1})
         note = await client.call_tool("note", {"text": "checked s0"})
-        return briefing, tools, note
+        return briefing, tools, early, note
 
-    briefing, tools, note = _session(server(), first)
+    briefing, tools, early, note = _session(server(), first)
     assert not briefing.isError and not note.isError
+    refused = json.loads(early.content[0].text)
+    assert refused["error"] == "OPENING_NOT_READ" and refused["pages"] == [1]
+    assert "show_stack(page=1)" in refused["detail"]
     assert "0.150 mm" in briefing.content[0].text  # the saved interval, not a default
+    assert "User notes:\nSection 2 is torn." in briefing.content[0].text
     assert "set_positions" in tools and "adjust_transforms" not in tools
     job_dir = folder / "langslice"
     assert (job_dir / "state.json").exists()
@@ -490,3 +501,114 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
     # The ABBA session's facts are kept with the job.
     record = json.loads((Path(prepared["job_dir"]) / "job.json").read_text())
     assert record["host"]["abba"]["z_offset_mm"] == 5.7
+
+
+# --- door parity: reply budget, parallel calls, closing, the opening at its size ---------
+
+
+def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
+    from langslice.doors.mcp.server import page_size, result_blocks
+    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools.media import REPLY_BYTES
+
+    rng = np.random.default_rng(3)
+    noise = [Image.fromarray(rng.integers(0, 256, (1500, 2000, 3), dtype=np.uint8))
+             for _ in range(4)]
+    blocks = result_blocks({"status": "ok", TOOL_MEDIA_DELIVERY_ID_KEY: "abc",
+                            TOOL_MEDIA_PARTS_KEY: ["four pictures", *noise]})
+    assert page_size(blocks) <= REPLY_BYTES
+    body = json.loads(blocks[0].text)
+    assert TOOL_MEDIA_DELIVERY_ID_KEY not in body and body["images_attached"] == 5
+    images = [block for block in blocks if isinstance(block, ImageContent)]
+    assert len(images) == 4  # nothing dropped
+    note = blocks[-1]
+    assert isinstance(note, TextContent) and "shrunk together" in note.text
+    assert "from 2000 to" in note.text and "fewer sections" in note.text
+    # A reply that fits is untouched and says nothing.
+    small = result_blocks({"status": "ok", TOOL_MEDIA_PARTS_KEY: [noise[0].resize((200, 150))]})
+    assert len(small) == 2 and isinstance(small[1], ImageContent)
+
+
+def test_pictures_are_not_taken_as_seen_while_another_call_is_in_flight():
+    from langslice.doors.tools.toolbox import ToolBox
+
+    box = ToolBox(job=None)  # type: ignore[arg-type]
+    key = ("s0.png", 0.1, False, 0, 0.0, 0.0)
+    box.pending_placement_views["__direct__"] = {key}
+    with box.in_flight():  # a call the host sent beside this one is running
+        box.begin_model_call()
+    assert key not in box.seen_placement_views
+    box.begin_model_call()  # nothing in flight: the earlier pictures reached the host
+    assert key in box.seen_placement_views
+
+
+def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, monkeypatch):
+    from concurrent.futures import Future
+
+    from langslice.doors.mcp import server as door
+
+    sessions: dict[str, Any] = {}
+    first, second = _folder(tmp_path, "one"), _folder(tmp_path, "two")
+    built = build_server(_spec_for, str(first), atlas_loader=lambda _n: _ATLAS,
+                         sessions=sessions)
+    job = sessions["job"].job
+    settled: list[str] = []
+    done: Future[dict[str, Any]] = Future()
+    done.set_result({})
+    job.image_jobs["s0.png"] = ("fingerprint", done)
+    monkeypatch.setattr(job, "settle_image_corrections", lambda: settled.append("one") or True)
+
+    async def body(client: Any) -> Any:
+        return await client.call_tool("start_job", {"image_folder": str(second)})
+
+    _session(built, body)
+    assert settled == ["one"]  # replaced: its calls landed before the new job opened
+    assert sessions["job"].ctx.image_folder == str(second)
+    sessions["job"].close()  # what serve() does when the host goes away
+    assert door.Session.close is not None
+
+
+def test_opening_strips_are_composed_within_the_page_budget(tmp_path: Path):
+    from langslice.core.jpeg import encode_jpeg
+    from langslice.core.opening import CLAUDE_IMAGE_LIMIT, opening_items
+    from langslice.doors.mcp.server import open_job, opening_pages
+    from langslice.doors.tools.media import strip_bytes
+
+    folder = _folder(tmp_path, n=12)
+    rng = np.random.default_rng(5)
+    for path in folder.glob("*.png"):
+        Image.fromarray(rng.integers(0, 256, (900, 1200, 3), dtype=np.uint8)).save(path)
+    positions = {f"s{index}.png": 0.1 + 0.05 * index for index in range(12)}
+    session = open_job(JobSpec(image_folder=str(folder), preprocess="none",
+                               image_resolution="high", inputs={"positions": positions}),
+                       atlas_loader=lambda _n: _ATLAS)
+    pages = opening_pages(session)
+    sent = [base64.b64decode(block.data) for page in pages
+            for block in page if isinstance(block, ImageContent)]
+    # Noise does not compress: three high tiles a strip, each over its atlas,
+    # would pass the budget, so the strips hold fewer sections (more than 4).
+    strips = [block.text for page in pages for block in page
+              if isinstance(block, TextContent) and block.text.startswith("Strip ")]
+    assert len(strips) > 4
+    composed = [encode_jpeg(item) for item in opening_items(
+        session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT, max_bytes=strip_bytes())
+        if not isinstance(item, str)]
+    # The strips the host gets are the composed ones, never shrunk after.
+    assert sent == composed
+    assert all(len(data) <= strip_bytes() for data in sent)
+
+
+def test_a_refused_argument_is_traced(tmp_path: Path, monkeypatch):
+    traces = tmp_path / "traces"
+    monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(traces))
+    server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return await client.call_tool("view_slices", {"slices": ["s0.png"], "glow": 1})
+
+    _session(server, body)
+    records = [json.loads(line) for file in traces.glob("mcp_*.jsonl")
+               for line in file.read_text().splitlines()]
+    refused = [record for record in records if record["kind"] == "tool_result"]
+    assert refused and refused[-1]["name"] == "view_slices"
+    assert "UNKNOWN_ARGUMENTS" in refused[-1]["content"][0]["text"]

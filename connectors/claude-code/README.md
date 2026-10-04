@@ -39,12 +39,10 @@ minimal system prompt that defers to LangSlice's own job statement and the
 job card (`AGENTS.md` in the job folder). The skills are not preloaded into the
 subagents (`skills` is empty and `Skill` is not in their `tools`).
 
-**Depends on a verb that has not landed:** the prompts tell the subagent to
-start with `langslice job <folder> brief` (it returns LangSlice's job
-statement and saves the opening pictures). That verb is being built on another
-branch and its name is not final; until it lands the subagents cannot follow
-their first step, and the name must be updated in `agents/*.md` and the
-`register-brain` skill if it changes.
+The subagents start with `langslice job <folder> brief`: LangSlice's job
+statement for the job (the one its own agent gets), the user's notes, the
+status table and the opening pictures saved as files, also written to
+`BRIEF.md` in the job folder ([`docs/agent_cli.md`](../../docs/agent_cli.md)).
 
 ## Sandboxing
 
@@ -83,4 +81,3 @@ session needs whatever else it should be allowed to do.
 ## Uncertain
 
 - Not run against a live model; `claude plugin validate` and JSON checks pass.
-- The `brief` verb (above).

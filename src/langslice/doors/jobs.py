@@ -37,10 +37,40 @@ if TYPE_CHECKING:
     from langslice.doors.tools.toolbox import ToolBox
     from langslice.providers.registry import ImageModel
 
-#: The largest picture a CLI or script call may ask for (``view.resolution``):
-#: no model's limit applies, only the source's own pixels (nothing is
-#: upsampled past them) and :data:`langslice.core.sizes.MIN_RESOLUTION`.
+#: The largest picture a script call may ask for (``view.resolution``): no
+#: model's limit applies, only the source's own pixels (nothing is upsampled
+#: past them) and :data:`langslice.core.sizes.MIN_RESOLUTION`. The agent
+#: CLI's pictures are read by a model: its job's viewer sets the cap
+#: (:func:`job_viewer`, :data:`langslice.core.opening.VIEWER_LIMITS`).
 OPEN_MAX_VIEW_EDGE = 1 << 15
+
+#: ``job.json``'s field naming the agent CLI's viewer (``init --viewer``).
+VIEWER_KEY = "viewer"
+
+
+def job_viewer(layout: JobLayout) -> str:
+    """The job's viewer for the agent CLI's pictures (``job.json``
+    ``viewer``, written by ``langslice job FOLDER init --viewer``), else
+    :data:`langslice.core.opening.DEFAULT_VIEWER`."""
+    from langslice.core.opening import DEFAULT_VIEWER, VIEWER_LIMITS
+
+    try:
+        held = (read_job_file(layout) or {}).get(VIEWER_KEY)
+    except (OSError, ValueError):
+        held = None
+    return held if held in VIEWER_LIMITS else DEFAULT_VIEWER
+
+
+def close_job(job: Job) -> None:
+    """Finish a job's background work when a door lets it go: its running
+    image-model calls settle (each landed result recorded), then its
+    pictures are flushed. Every door ends a job through it: the agent CLI
+    and the library (:meth:`Opened.close`), the MCP door (a replaced
+    session, the end of ``serve``) and LangSlice's own agent
+    (``agent.engine.run``)."""
+    if job.image_jobs:
+        job.settle_image_corrections()
+    job.close()
 
 
 class NoJob(LookupError):
@@ -132,37 +162,72 @@ class Opened:
     #: No ``trace_borders`` whatever the spec says (a library job made with
     #: an untested profile, reopened without it).
     traces_off: bool = False
+    #: Who reads the tools' declarations (``agent``: a script, the library;
+    #: ``cli``: the agent CLI; :data:`langslice.doors.declarations.DOORS`).
+    door: str = "agent"
+    #: The model that reads the pictures, which sets their largest size
+    #: (:data:`langslice.core.opening.VIEWER_LIMITS`; None: a script, no cap
+    #: but the source's pixels). The agent CLI's is the job's (:func:`job_viewer`).
+    viewer: str | None = None
     _box: ToolBox | None = field(default=None, repr=False)
 
     @property
     def spec(self) -> JobSpec:
         return self.job.spec
 
+    @property
+    def max_view_edge(self) -> int:
+        """The largest picture a call may ask for: the viewer's, or
+        :data:`OPEN_MAX_VIEW_EDGE` for a script."""
+        if self.viewer is None:
+            return OPEN_MAX_VIEW_EDGE
+        from langslice.core.opening import VIEWER_LIMITS
+
+        return VIEWER_LIMITS[self.viewer][1]
+
+    @property
+    def image_model_connected(self) -> bool:
+        """Whether ``trace_borders`` can reach the job's image model here:
+        a model handed in, else the spec's provider with its key or login
+        present (:func:`langslice.doors.api.setup.image_model_connected`, the
+        MCP door's check; a ``custom`` provider is a script's own model and
+        needs it handed in), and not :attr:`traces_off`."""
+        if self.traces_off:
+            return False
+        if self.image_model is not None:
+            return True
+        if not self.spec.nonlinear.uses_image_model:
+            return True  # nothing to reach; the spec declares no image model
+        from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
+        from langslice.doors.api.setup import image_model_connected
+
+        provider = self.spec.nonlinear.provider
+        return (canonical_provider(provider) != CUSTOM_PROVIDER
+                and image_model_connected(provider))
+
     def tools(self) -> ToolBox:
         """The verbs this job's spec has, as the tool door builds them (one
         toolbox per open job), with the gates off, the pictures sized by
-        the caller (``view.resolution`` up to :data:`OPEN_MAX_VIEW_EDGE`) and
+        the caller (``view.resolution`` up to :attr:`max_view_edge`) and
         the scripting verbs (``export_maps``) added; ``trace_borders`` calls
-        :attr:`image_model` when one was handed in."""
+        :attr:`image_model` when one was handed in, and is offered only when
+        the image model is connected (:attr:`image_model_connected`)."""
         if self._box is None:
-            from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
             from langslice.core.sizes import AUTO_RESOLUTION
             from langslice.doors.tools.toolbox import build_tools
 
-            custom = canonical_provider(self.spec.nonlinear.provider) == CUSTOM_PROVIDER
             self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
-                                    job=self.job, max_view_edge=OPEN_MAX_VIEW_EDGE,
+                                    job=self.job, max_view_edge=self.max_view_edge,
                                     gates=False, level=AUTO_RESOLUTION, scripting=True,
                                     image_model=self.image_model,
-                                    image_model_connected=not self.traces_off and (
-                                        self.image_model is not None or not custom))
+                                    image_model_connected=self.image_model_connected,
+                                    door=self.door)
         return self._box
 
     def close(self) -> None:
-        """Finish the job's background writes (pictures, image corrections)."""
-        if self.job.image_jobs:
-            self.job.settle_image_corrections()
-        self.job.close()
+        """Finish the job's background writes (image corrections, pictures):
+        :func:`close_job`."""
+        close_job(self.job)
 
 
 def open_folder(
@@ -171,12 +236,15 @@ def open_folder(
     emit: Callable[[str], None] | None = None,
     persist: bool = True,
     image_model: ImageModel | None = None,
+    door: str = "agent",
 ) -> Opened:
     """Open the job *path* names (:func:`find`) as it stands on disk.
 
     *persist* False opens it for a dry run: nothing is written. Otherwise the
     reference card is brought up to date (not in a lean job). *image_model*
-    is the model ``trace_borders`` calls (None: the spec's provider).
+    is the model ``trace_borders`` calls (None: the spec's provider). *door*
+    ``cli`` opens it for the agent CLI: its declarations worded for the CLI,
+    its pictures capped at the job's viewer's (:func:`job_viewer`).
     """
     from langslice.doors.api.setup import load_credentials
 
@@ -187,7 +255,8 @@ def open_folder(
     job = Job.load(spec, ctx, folder=folder, results_path=ctx.results_path, persist=persist)
     if persist and not job.lean:
         write_card(job.layout)
-    return Opened(job, ctx, image_model)
+    return Opened(job, ctx, image_model, door=door,
+                  viewer=job_viewer(job.layout) if door == "cli" else None)
 
 
 def create(
@@ -195,19 +264,21 @@ def create(
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
     image_model: ImageModel | None = None,
+    door: str = "agent",
 ) -> Opened:
     """A job for *spec*'s image folder, as every host makes one
     (``Job.open``: the job folder beside the images or ``spec.job_dir``,
     ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
-    with its reference card (not in a lean job). *image_model* as in
-    :func:`open_folder`."""
+    with its reference card (not in a lean job). *image_model* and *door*
+    as in :func:`open_folder`."""
     folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
                                           emit=emit or log_progress)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
     if not job.lean:
         write_card(job.layout)
-    return Opened(job, ctx, image_model)
+    return Opened(job, ctx, image_model, door=door,
+                  viewer=job_viewer(job.layout) if door == "cli" else None)
 
 
 #: The supplied inputs a registration made elsewhere replaces, by the option

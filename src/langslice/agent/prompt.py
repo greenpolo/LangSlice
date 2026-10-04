@@ -59,7 +59,7 @@ TOOL_LINES: dict[str, str] = {
     "positions (or none for its current one), up to 4 pairs per call; e.g. one "
     "section at 4.6, 4.8 and 5.0 mm. view modes: template (default: the atlas at "
     "that position on the section's own canvas and scale; the section itself is "
-    "in the opening message), overlay, checkerboard, outlines or section (the "
+    "in {opening}), overlay, checkerboard, outlines or section (the "
     "section under its registration on that canvas, one image per pair), "
     "stacked (the section as corrected over the atlas, each tissue-framed) or "
     "side_by_side (separate original section plus atlas references, one section "
@@ -147,9 +147,41 @@ _FIT_SECTIONS_TRACED = (
 _FIT_SECTIONS_STAIN = "(the fit appearance)"
 
 
-def tool_line(name: str, spec: JobSpec) -> str:
-    """The job statement's line for one tool, worded for this run's settings."""
+#: Where each door's opening pictures are, as the tool lines name them
+#: (:data:`langslice.doors.declarations.DOORS`: the ADK agent's seed message,
+#: the MCP door's ``show_stack`` pages, the agent CLI's ``brief`` files).
+OPENING_PLACES: dict[str, str] = {
+    "agent": "the opening message",
+    "mcp": "the opening pictures (show_stack)",
+    "cli": "the opening pictures (brief)",
+}
+
+#: Tool lines worded for the agent CLI, which answers an image-model verb
+#: once its call has landed (``langslice job FOLDER trace_borders``) unless
+#: it runs with ``--background``.
+_CLI_LINES: dict[str, tuple[str, str]] = {
+    "trace_borders": (
+        "The image call runs in the background and the tool returns "
+        "at once; the result is saved for the user and checked at submit, which waits "
+        "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
+        "it too.",
+        "The command answers once the image call has landed (with --background it "
+        "answers at once and `wait` collects the answer); the result is saved for the "
+        "user and checked at submit, and `fit_deformable` with a traced `fit_section` "
+        "waits for a call still running.",
+    ),
+}
+
+
+def tool_line(name: str, spec: JobSpec, door: str = "agent") -> str:
+    """The job statement's line for one tool, worded for this run's settings
+    and for the *door* that reads it (``agent``, ``mcp`` or ``cli``)."""
     line = TOOL_LINES[name]
+    if name == "view_placement":
+        line = line.format(opening=OPENING_PLACES[door])
+    if door == "cli" and name in _CLI_LINES:
+        old, new = _CLI_LINES[name]
+        line = line.replace(old, new)
     if name == "fit_deformable":
         traced = spec.nonlinear.uses_image_model
         line = line.format(
@@ -332,12 +364,21 @@ def build_job_statement(
     channels: list[str] | dict[str, list[str]] | None = None,
     atlas_channels: tuple[str, ...] | None = None,
     max_resolution: int | None = None,
+    door: str = "agent",
+    auto: bool | None = None,
+    gates: bool = True,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
     *max_resolution* is the largest picture the driver model takes, the
     top of ``view.resolution`` at image resolution "auto" (None: the OpenAI
-    lanes', ``opening.DEFAULT_IMAGE_LIMIT``). *axis_ends* is ``(low, high)`` from
+    lanes', ``opening.DEFAULT_IMAGE_LIMIT``). *door* is who reads it
+    (``agent``, ``mcp``, ``cli``: where the opening pictures are, how a long
+    call answers); *auto* whether the caller sizes each picture
+    (``view.resolution``; None: the spec's image resolution is "auto", the
+    agent CLI always does); *gates* False leaves out the look-before-commit
+    gates (``position.gated``), which a door without them (the agent CLI)
+    never applies. *axis_ends* is ``(low, high)`` from
     :func:`langslice.core.space.slice_axis_ends` — what the two ends of the slicing
     axis are anatomically in THIS atlas.
     """
@@ -371,15 +412,16 @@ def build_job_statement(
     facts = run_facts(spec, state, species=species, pos_lo=pos_lo, pos_hi=pos_hi,
                       axis_ends=axis_ends)
 
-    tools = [f"- `{name}`: {tool_line(name, spec)}" for name in tool_names
+    tools = [f"- `{name}`: {tool_line(name, spec, door)}" for name in tool_names
              if name in TOOL_LINES]
-    if spec.image_resolution == "auto" and max_resolution is None:
+    sized = spec.image_resolution == "auto" if auto is None else auto
+    if sized and max_resolution is None:
         from langslice.core.opening import DEFAULT_IMAGE_LIMIT
 
         max_resolution = DEFAULT_IMAGE_LIMIT[0]
     tools += display_lines(
         tool_names, channels=channels, atlas_channels=atlas_channels,
-        resolution=max_resolution if spec.image_resolution == "auto" else None,
+        resolution=max_resolution if sized else None,
     )
 
     constraints: list[str] = []
@@ -392,7 +434,7 @@ def build_job_statement(
             "- `submit` is refused unless the positions run one way along the "
             "corrected order."
         )
-        if spec.position.gated:
+        if spec.position.gated and gates:
             constraints.append(
                 "- `set_positions` is refused for a section that has not been "
                 "compared since it was last written."

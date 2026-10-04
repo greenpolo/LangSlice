@@ -92,9 +92,13 @@ def _no_network(*_args: Any, **_kwargs: Any) -> Any:
 @pytest.fixture
 def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A fresh copy of the stack; the synthetic atlas wherever a door opens a
-    job; the stub image model wherever a door resolves one; no network."""
+    job; the stub image model wherever a door resolves one, which counts as
+    connected (a test of the opposite says so: :func:`connected`); no network."""
     import langslice.doors.tools.toolbox as toolbox
     import langslice.providers.images as transport
+    from langslice.doors.api import setup
+
+    monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     apply_patches()
@@ -814,6 +818,12 @@ def _mcp_names_and_statement(server: Any) -> tuple[set[str], str]:
             started = await client.call_tool("start_job", {})
             first = started.content[0]
             assert isinstance(first, TextContent), started
+            # A host reads every opening page before it writes (the gate).
+            import re
+
+            pages = int(re.findall(r"show_stack\(page=(\d+)\)", first.text)[-1])
+            for page in range(1, pages + 1):
+                await client.call_tool("show_stack", {"page": page})
             return {tool.name for tool in listed.tools}, first.text
 
     return asyncio.run(body())
@@ -826,7 +836,7 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
     verb only when the job's provider is not none AND its key or login is
     present. Without it, trace_borders is simply not listed, the statement
     says why, and submit does not wait for traces."""
-    from langslice.doors.mcp.prompt import IMAGE_MODEL_OFF
+    from langslice.doors.statement import IMAGE_MODEL_OFF
 
     connected(monkeypatch, linked)
     server = _mcp_server(spec_for(images, ["nonlinear"], provider="openai-oauth",

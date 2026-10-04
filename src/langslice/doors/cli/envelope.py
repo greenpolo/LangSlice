@@ -86,6 +86,52 @@ FIXES: dict[str, str] = {
     "INPUTS_CHANGED": "Rerun `langslice job {job} init` with --fresh to start a new job "
                       "from these inputs (the old one's work is replaced), or with the "
                       "inputs the job was made from (job.json, spec.inputs) to continue it.",
+    "IMAGE_MODEL_OFF": "Connect the job's image model to LangSlice (`langslice login` for "
+                       "openai-oauth, or its API key) and call it again; without it, fit "
+                       "each section's deformation to its stain with fit_deformable.",
+    "NO_IMAGE_MODEL": "This job has no image model: use fit_section \"fit\" (the stain).",
+    "MISSING_IMAGE_CORRECTIONS": "Run trace_borders for each section listed under "
+                                 "result.sections at its current placement (a placement "
+                                 "change makes an earlier trace stale), then submit again.",
+    "NOTHING_TRACED": "Each section's row under result.results names its problem; a "
+                      "section needs a position and a transform (fit_affine or "
+                      "adjust_transforms) before trace_borders.",
+    "NO_TRACE": "Run trace_borders for the section at its current placement first, or fit "
+                "with fit_section \"fit\".",
+    "TRACE_STALE": "The section moved since its trace: run trace_borders again for it.",
+    "TRACE_RUNNING": "The section's trace is still running: wait for it (fit_deformable "
+                     "with a traced fit_section waits), or run trace_borders again.",
+    "TRACE_TIMEOUT": "The trace did not land in time: call fit_deformable again later.",
+    "TRACE_FAILED": "The image model failed (see the message): run trace_borders again, or "
+                    "fit with fit_section \"fit\".",
+    "NOT_REVIEWED": "Run view_stack after the last set_positions write, then submit again.",
+    "INTERVAL_BREAKS_UNSUPPORTED": "Report a break only where the written spacing exceeds "
+                                   "1.5x the stack's median spacing; check the positions "
+                                   "on both sides first.",
+    "STRICT_INTERVAL": "Make every spacing within 10% of the nominal interval and report "
+                       "no break (the user asked for a strict interval).",
+    "DAMAGED_REQUIRES_MANUAL_TRANSFORM": "Align each damaged section listed with "
+                                         "adjust_transforms (a non-identity manual "
+                                         "transform on its surviving anatomy).",
+    "DAMAGED": "fit_affine refuses a damaged section unless given include or exclude "
+               "regions; or align it with adjust_transforms.",
+    "DAMAGE_SET_BY_USER": "The user marked this section damaged; leave the flag as it is.",
+    "FLIP_DISABLED": "Flipping is switched off for this job; leave flip out.",
+    "KEEPS_HOST_WARP": "The user keeps this section's own deformation; leave it out of "
+                       "the nonlinear verbs.",
+    "NONLINEAR_SKIPPED": "The user left this section out of the nonlinear task; leave it "
+                         "out.",
+    "INVALID_LINEAR_PLACEMENT": "Give the section a position and a transform (fit_affine "
+                                "or adjust_transforms) first.",
+    "NO_DEFORMATION": "start \"current\" needs an applied deformation; use start "
+                      "\"linear\".",
+    "FIT_FAILED": "See the message; try other settings, regions or engine.",
+    "RENDER_FAILED": "See the message; check the section file opens, then retry.",
+    "UNAVAILABLE": "Not installed on this host (see the message); use what the job "
+                   "statement offers instead.",
+    "FIT_ATLAS_UNAVAILABLE": "Use fit_atlas \"ara\" (the reference template).",
+    "NOTHING_EXPORTED": "Each skipped section's reason is under result.skipped; place it "
+                        "first.",
 }
 
 
@@ -102,11 +148,14 @@ class Envelope:
 
     ok: bool = True
     result: Any = None
-    artifacts: list[dict[str, str]] = field(default_factory=list)
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     next: list[str] = field(default_factory=list)
     error: dict[str, Any] | None = None
     exit: int = EXIT_OK
+    #: The call's arguments as the verb read them (the trace's ``args``);
+    #: never printed.
+    call: dict[str, Any] | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"ok": self.ok, "result": self.result,

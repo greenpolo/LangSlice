@@ -1026,14 +1026,16 @@
     "sections/s2/labels_fiji.tif",
     "sections/s2/maps.json",
     "sections/s2/tissue.png",
-    "sections/s2/views/000003_adjust_transforms_overlay/borders.png",
-    "sections/s2/views/000003_adjust_transforms_overlay/labels.tif",
-    "sections/s2/views/000003_adjust_transforms_overlay/view.jpg",
-    "sections/s2/views/000003_adjust_transforms_overlay/view.json",
+    "sections/s2/views/000004_adjust_transforms_overlay/borders.png",
+    "sections/s2/views/000004_adjust_transforms_overlay/labels.tif",
+    "sections/s2/views/000004_adjust_transforms_overlay/view.jpg",
+    "sections/s2/views/000004_adjust_transforms_overlay/view.json",
     "state.json",
     "views.jsonl",
     "views.seq",
-    "views.seq.lock"
+    "views.seq.lock",
+    "views/000003_show_stack/view.jpg",
+    "views/000003_show_stack/view.json"
    ],
    "job_file": {
     "format_version": 1,
@@ -1116,7 +1118,7 @@
      ],
      "view_json": "<hex>"
     },
-    "sections/s2/views/000003_adjust_transforms_overlay": {
+    "sections/s2/views/000004_adjust_transforms_overlay": {
      "borders": "<hex>",
      "labels": "<hex>",
      "labels_dtype": "uint32",
@@ -1125,9 +1127,12 @@
       314
      ],
      "view_json": "<hex>"
+    },
+    "views/000003_show_stack": {
+     "view_json": "<hex>"
     }
    },
-   "pictures_sent": 3,
+   "pictures_sent": 4,
    "saved_jpegs_equal_sent": true,
    "views_index": [
     {
@@ -1156,14 +1161,24 @@
     },
     {
      "call": 3,
+     "layers": false,
+     "mode": null,
+     "name": "000003_show_stack",
+     "path": "views/000003_show_stack",
+     "sections": [],
+     "seq": 3,
+     "tool": "show_stack"
+    },
+    {
+     "call": 4,
      "layers": true,
      "mode": "overlay",
-     "name": "000003_adjust_transforms_overlay",
-     "path": "sections/s2/views/000003_adjust_transforms_overlay",
+     "name": "000004_adjust_transforms_overlay",
+     "path": "sections/s2/views/000004_adjust_transforms_overlay",
      "sections": [
       "s2.png"
      ],
-     "seq": 3,
+     "seq": 4,
      "tool": "adjust_transforms"
     }
    ]
