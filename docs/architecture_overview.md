@@ -111,7 +111,7 @@ The Python package is the source of truth for LangSlice runtime behavior. The
 engine contract is defined with Pydantic models in `src/langslice/doors/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
-accepts `version`, `register.run`, `quick_affine.run`, and `export.run`, plus
+accepts `version`, `quick_affine.run`, and `export.run`, plus
 `setup.status`, `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
 `preprocess.preview` and `nonlinear.abba` for the independent Fiji connector. It emits progress/log/data event envelopes
 and returns either result or error envelopes. The connector starts a worker in

@@ -13,7 +13,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 from PIL import Image
 
 
@@ -112,39 +111,3 @@ def test_in_range_aspect_ratio_is_left_untouched():
     assert canvas.size == (24, 9)
     assert unpadded == (24, 9)
     assert (ox, oy) == (0.0, 0.0)
-
-
-def test_register_cli_parses_passes_deformation_and_mirror():
-    from langslice.doors.cli import build_parser
-
-    args = build_parser().parse_args(
-        [
-            "nonlinear", "register", "tests/fixture.png", "--position", "5.0",
-            "--passes", "2", "--deformation", "deformable", "--mirror-atlas-lr",
-        ]
-    )
-    assert args.passes == 2
-    assert args.deformation == "deformable"
-    assert args.mirror_atlas_lr is True
-
-    defaults = build_parser().parse_args(
-        ["nonlinear", "register", "tests/fixture.png", "--position", "5.0"]
-    )
-    assert defaults.passes == 1
-    assert defaults.deformation == "none"
-    assert defaults.mirror_atlas_lr is False
-
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(
-            [
-                "nonlinear", "register", "tests/fixture.png", "--position", "5.0",
-                "--passes", "3",
-            ]
-        )
-    # The Elastix residual fit's stages are gone (2026-10-04).
-    for retired in ("bspline", "affine"):
-        with pytest.raises(SystemExit):
-            build_parser().parse_args(
-                ["nonlinear", "register", "tests/fixture.png", "--position", "5.0",
-                 "--deformation", retired]
-            )

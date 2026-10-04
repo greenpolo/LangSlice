@@ -45,8 +45,9 @@ New methods:
 | `preprocess.preview` | Write the grayscale image the agent would see for one snapshot and preprocessing choice |
 | `nonlinear.abba` | Refine the host's current placement and return atlas-to-tissue pairs (kept for later use; the dialog does not call it) |
 
-The older `version`, `register.run`, `quick_affine.run` and `export.run` methods
-remain available. Host-specific payloads use `event.kind = data` and
+The older `version`, `quick_affine.run` and `export.run` methods remain
+available (`register.run`, a one-shot nonlinear registration outside the job,
+was removed on 2026-10-04). Host-specific payloads use `event.kind = data` and
 `event.payload.kind` to distinguish checkpoints, agent activity and login URLs.
 
 Linear inputs are an image folder, pixel size, filename-to-BrainGlobe-AP positions,

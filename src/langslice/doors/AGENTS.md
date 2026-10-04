@@ -56,8 +56,10 @@ parts) and, in `__init__.py`, the media keys re-exported from
 `host_channel.py`; `connectors/claude-desktop/`). And `api/` (formerly in
 `hosts/api/`, moved down 2026-10-04 because the MCP door and the CLI use
 it and none of it drives a host): `models.py` (the engine contract's
-Pydantic models, `export_schema_bundle`), `runtime.py` (`register.run`,
-`quick_affine.run`, `export.run`, `nonlinear register`'s runtime),
+Pydantic models, `export_schema_bundle`), `runtime.py` (`version`,
+`quick_affine.run`, `export.run`; `register.run` and the `nonlinear
+register` command, a one-shot pipeline outside the job, were removed
+2026-10-04),
 `setup.py` (offline setup status, saved credentials, login, and
 `image_model_connected(provider)`: the provider is not `none` and its key
 or login is present, an offline presence check the MCP door and Claude
@@ -128,7 +130,7 @@ plugin's `nonlinear.abba` worker stay in `hosts/api/`.
   `__init__.py` (`build_parser`, `main`: the agent commands return their
   exit code), `linear.py` (`linear run`, `linear quick-affine`, and the job
   flags every stack-opening command shares: `add_linear_arguments`,
-  `build_linear_spec`), `register.py` (`nonlinear register`), `claude.py`
+  `build_linear_spec`), `claude.py`
   (`mcp`, `claude prepare`), the host commands by module path
   (`HOST_COMMANDS`: `abba`, `serve` in `hosts/cli.py`), and the agent CLI
   (`docs/agent_cli.md`):

@@ -17,7 +17,6 @@ from PIL import Image
 
 from langslice.core.affine import _affine_from_pose, _moments_pose, silhouette_iou
 from langslice.core.nonlinear.prior import place_plane_on_tissue, tissue_mask
-from langslice.doors.cli import build_parser
 
 _H, _W = 120, 160
 _ROWS = {
@@ -201,25 +200,3 @@ def test_model_free_backbone_registers_the_silhouette_placement_end_to_end(
     tissue = tissue_mask(section, section.size) > 0
     warped_foreground = candidate.warped_labels != 0
     assert silhouette_iou(warped_foreground, tissue) > 0.9
-
-
-def test_cli_parses_the_model_free_backbone() -> None:
-    args = build_parser().parse_args(
-        [
-            "nonlinear", "register", "slice.png", "--position", "5.2",
-            "--provider", "none", "--deformation", "deformable",
-        ]
-    )
-    assert args.provider == "none"
-    assert args.deformation == "deformable"
-
-
-def test_register_request_carries_the_model_free_provider() -> None:
-    from langslice.doors.api.models import RegisterRequest
-
-    request = RegisterRequest(
-        image_path="slice.png", atlas="toy", position_mm=1.0,
-        provider="none", deformation="deformable",
-    )
-    assert request.provider == "none"
-    assert request.deformation == "deformable"

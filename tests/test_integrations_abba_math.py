@@ -192,7 +192,7 @@ def test_model_free_abba_registration_fits_nothing(monkeypatch):
 def test_abba_fit_recovers_a_shift_the_reply_moves_the_lines_by(monkeypatch):
     """The model's reply draws its lines on the CLEAN section (the request's
     reference image; its ``slice_image`` carries the rough lines): the ABBA
-    path's fit then recovers the shift it imposes, as ``nonlinear register``
+    path's fit then recovers the shift it imposes, as the core border route
     does (review finding 8: the under-recovery measured there came from a
     stub that drew the true lines over the rough ones, so both sets were
     extracted and the fit split the difference)."""
