@@ -47,6 +47,9 @@ resumes from the checkpoint with its undo history. The job id leads to the
 folder through `~/.langslice/jobs/<job-id>.json`. A folder already holding a
 job (from `langslice linear run` or an earlier prepare) is continued: one
 image folder, one job, and a new prepare's id replaces the earlier one. A job
+made from other supplied inputs (`--positions`, `--transforms`, ...) is not
+continued with the new ones: opening it is refused, naming the inputs that
+differ. A job
 saved by an earlier version under
 `~/.langslice/jobs/<job-id>/` is moved next to its sections when it is next
 opened. `--job-dir PATH` puts the job folder elsewhere; when the sections'

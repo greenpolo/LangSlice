@@ -250,6 +250,30 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         )
 
 
+class InputsChanged(ValueError):
+    """A job folder's checkpoint was made from other supplied inputs
+    (``JobSpec.inputs``) than the spec opening it: resuming would keep the
+    old ones and drop the new without a word (:meth:`Job.open`)."""
+
+
+#: How a caller starts over instead of resuming (the CLI flag and the spec field).
+START_FRESH = "start a fresh job instead (`--fresh` on the command line, resume=False in a spec)"
+
+
+def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
+    """The ``inputs`` keys whose values differ between a checkpoint's spec
+    (*saved_spec*, the dict it stores) and *spec*; none when the checkpoint
+    records no spec inputs."""
+    if not isinstance(saved_spec, dict) or "inputs" not in saved_spec:
+        return []
+
+    def plain(value: Any) -> dict[str, Any]:
+        return json.loads(json.dumps(value or {}, sort_keys=True, default=str))
+
+    old, new = plain(saved_spec.get("inputs")), plain(spec.inputs)
+    return sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
+
+
 def emit_results(
     state: StackState, results_path: str, progress: Callable[[str], None] | None = None,
 ) -> StackState:
@@ -664,7 +688,11 @@ class Job:
         the folder ingested, and the first checkpoint written. A resumed job
         keeps its undo history; a fresh one starts without one (a history
         left by an earlier job here is emptied). A job folder or checkpoint
-        from a newer LangSlice is refused (``ValueError``).
+        from a newer LangSlice is refused (``ValueError``). A resume whose
+        spec supplies other ``inputs`` than the checkpoint was made from is
+        refused (:class:`InputsChanged`, naming the keys and how to start
+        fresh) before anything is written: the old checkpoint would keep the
+        old inputs and drop the new ones.
         """
         if folder is None:
             folder, _fallback = locate_job_folder(workspace.image_folder, spec.job_dir,
@@ -675,13 +703,20 @@ class Job:
         if layout.folder == job_folder_for(images):
             migrate.migrate_beside_images(layout)
         layout.ensure()
-        write_job_file(layout, spec=spec.to_dict())
         lock = FolderLock(layout.folder)
         with lock.held():  # read and first checkpoint as one write
             state = None
             if spec.resume:
                 data = read_checkpoint(str(layout.state_file))
                 state = None if data is None else StackState.from_dict(data)
+                changed = [] if state is None else changed_inputs(state.spec, spec)
+                if changed:
+                    raise InputsChanged(
+                        f"The job in {layout.folder} was made from other supplied inputs "
+                        f"({', '.join(changed)} differ); resuming it would ignore the new "
+                        f"ones. Open it with the inputs it was made from, or {START_FRESH}."
+                    )
+            write_job_file(layout, spec=spec.to_dict())
             history = History(layout.history_dir)
             undo: list[dict[str, Any]] = []
             redo: list[dict[str, Any]] = []
