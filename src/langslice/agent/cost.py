@@ -8,9 +8,16 @@ picture at the atlas's 25 um, roughly 200-450 px), so the estimate is a linear
 extrapolation in stack size and is offered only at "low". Since 2026-10-01
 "low" opens at 256 px and draws later pictures at 512 px
 (``render.PICTURE_EDGES``), larger than those runs saw: no run has been
-measured at the new sizes yet. Medium, high and auto are refused. The window
-reading is shared by the whole account and has one-percent resolution, so every
-figure here is an estimate, not a meter.
+measured at the new sizes yet. The window reading is shared by the whole
+account and has one-percent resolution, so every figure here is an estimate,
+not a meter.
+
+Where no honest number exists (medium, high or auto resolution; a run with
+only the Nonlinear task) the result says why in plain language instead of
+refusing: ``low`` and ``high`` are None, ``available`` False and ``basis``
+the reason. Nonlinear alongside Positioning or Linear is priced as the run
+without it, and ``basis`` says that its agent work and image-model calls are
+not included (none has been measured).
 """
 
 from __future__ import annotations
@@ -69,12 +76,25 @@ def _rate(model: str, reasoning: str, transform: bool) -> tuple[float, float, st
     return min(lows), max(highs), "no runs with this model; range over all models"
 
 
+#: ``estimate``'s unit.
+UNIT = "percent_of_usage_window"
+#: Added to ``basis`` when the Nonlinear task is on beside the priced ones.
+NONLINEAR_NOT_INCLUDED = ("; the Nonlinear task's agent work and image-model calls are not "
+                          "included (not measured yet)")
+
+
+def unavailable(reason: str) -> dict[str, Any]:
+    """An estimate that cannot be given, with the plain-language reason."""
+    return {"low": None, "high": None, "unit": UNIT, "basis": reason, "available": False}
+
+
 def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, Any]:
     """Estimated usage-window share for *n_slices* sections under *spec*.
 
     *spec* uses JobSpec field names. *locked* sections need no transform
-    work; when positioning is off they need no work at all. Raises
-    ``ValueError`` where no estimate can honestly be given.
+    work; when positioning is off they need no work at all. Where no
+    estimate can honestly be given, :func:`unavailable` with the reason
+    (module text); ``ValueError`` only for malformed inputs.
     """
     from langslice.core.spec import DEFAULT_MAX_QUOTA_PERCENT, JobSpec
 
@@ -83,13 +103,18 @@ def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, 
     if not 0 <= locked <= n_slices:
         raise ValueError("locked must be between 0 and n_slices")
     parsed = JobSpec.from_dict({**spec, "image_folder": spec.get("image_folder") or "."})
-    if parsed.image_resolution != "low":
-        raise ValueError("No runs have been measured at this image resolution")
     tasks = set(parsed.tasks)
     positioning = bool(tasks & {"reorder", "position"})
     transform = "transform" in tasks
+    nonlinear = "nonlinear" in tasks
     if not (positioning or transform):
-        raise ValueError("No agent task is switched on")
+        if nonlinear:
+            return unavailable("No estimate for a Nonlinear-only run: its agent work and "
+                               "image-model calls have not been measured yet.")
+        return unavailable("No agent task is switched on.")
+    if parsed.image_resolution != "low":
+        return unavailable(f"No estimate at {parsed.image_resolution} image resolution: runs "
+                           "have been measured only at low.")
     model = _model_name(parsed.model or "")
     if not model:
         from langslice.providers.openai_oauth import DEFAULT_REVIEW_MODEL
@@ -105,9 +130,10 @@ def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, 
     # Every measured run positioned the whole stack, so a transform-only run
     # is priced as a full run over the sections it aligns: an upper bound.
     sections = n_slices if positioning else n_slices - locked
+    extra = NONLINEAR_NOT_INCLUDED if nonlinear else ""
     if sections == 0:
-        return {"low": 0.0, "high": 0.0, "unit": "percent_of_usage_window",
-                "basis": "every section is locked"}
+        return {"low": 0.0, "high": 0.0, "unit": UNIT,
+                "basis": "every section is locked" + extra, "available": True}
     low, high = low_rate * sections, high_rate * sections
     cap = float(spec.get("max_quota_percent", DEFAULT_MAX_QUOTA_PERCENT))
     if high > cap:
@@ -116,5 +142,5 @@ def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, 
     low = min(low, high)
     if n_slices < 20 or n_slices > 60:
         basis += "; measured stacks had 36-38 sections"
-    return {"low": round(low, 1), "high": round(high, 1),
-            "unit": "percent_of_usage_window", "basis": basis}
+    return {"low": round(low, 1), "high": round(high, 1), "unit": UNIT,
+            "basis": basis + extra, "available": True}

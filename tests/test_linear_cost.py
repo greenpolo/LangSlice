@@ -48,11 +48,26 @@ def test_locked_sections_cost_nothing_without_positioning():
     assert estimate(FULL, 10, locked=4) == estimate(FULL, 10)
 
 
-def test_unmeasured_resolutions_and_empty_runs_are_refused():
-    with pytest.raises(ValueError, match="resolution"):
-        estimate({**FULL, "image_resolution": "high"}, 38)
-    with pytest.raises(ValueError, match="task"):
-        estimate({**FULL, "tasks": ["nonlinear"]}, 38)
+@pytest.mark.parametrize("resolution", ["medium", "high", "auto"])
+def test_unmeasured_resolutions_say_why_instead_of_refusing(resolution):
+    result = estimate({**FULL, "image_resolution": resolution}, 38)
+    assert result["available"] is False and result["low"] is None and result["high"] is None
+    assert resolution in result["basis"] and "low" in result["basis"]
+
+
+def test_a_nonlinear_only_run_says_why_it_has_no_estimate():
+    result = estimate({**FULL, "tasks": ["nonlinear"],
+                       "nonlinear": {"provider": "openai-oauth"}}, 38)
+    assert result["available"] is False and "Nonlinear" in result["basis"]
+    assert estimate({**FULL, "tasks": []}, 38)["available"] is False
+
+
+def test_nonlinear_beside_the_priced_tasks_is_estimated_without_it():
+    on = estimate({**FULL, "tasks": [*FULL["tasks"], "nonlinear"],
+                   "nonlinear": {"provider": "openai-oauth"}}, 10)
+    off = estimate(FULL, 10)
+    assert on["available"] and (on["low"], on["high"]) == (off["low"], off["high"])
+    assert "not included" in on["basis"] and "not included" not in off["basis"]
 
 
 def test_stack_sizes_far_from_the_measured_ones_are_flagged():
@@ -73,9 +88,17 @@ def test_the_worker_method_returns_the_estimate():
     assert message["result"] == estimate(FULL, 10)
 
 
-def test_an_unestimable_setting_is_a_runtime_error_not_a_validation_error():
-    # The connector treats validation errors as "old worker without this method"
-    # and stops asking; a setting it cannot price must stay retryable.
+def test_an_unestimable_setting_is_a_result_with_its_reason():
+    # Never a bare refusal: the dialog shows the reason (`basis`).
     message = _request({"id": "e", "method": "linear.estimate", "params": {
         "spec": {**FULL, "image_resolution": "medium"}, "n_slices": 10}})
+    assert message["result"]["available"] is False
+    assert message["result"]["low"] is None and "medium" in message["result"]["basis"]
+
+
+def test_a_malformed_setting_is_a_runtime_error_not_a_validation_error():
+    # The connector treats validation errors as "old worker without this method"
+    # and stops asking; a setting it cannot read must stay retryable.
+    message = _request({"id": "e", "method": "linear.estimate", "params": {
+        "spec": {**FULL, "reasoning": "galactic"}, "n_slices": 10}})
     assert message["error"]["code"] == "runtime_error"
