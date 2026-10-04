@@ -431,3 +431,97 @@ def test_the_footprint_keeps_dark_tissue_and_tears_inside_the_outline():
     assert not tissue[200, 300] and footprint[200, 300]      # the dark band
     assert not tissue[300, 300] and footprint[300, 300]      # the tear
     assert not footprint[5, 5] and not footprint[395, 590]   # the slide
+
+
+# --- sections without a pixel size (review findings 1 and 3, 2026-10-04) -------------
+
+
+def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """The golden stack with no pixel size anywhere (no host input, the PNGs
+    carry none), on an atlas whose anatomy is narrower at AP index 5, so
+    the tissue-width estimate differs between 0.10 and 0.25 mm."""
+    import langslice
+    from langslice.core.spec import NonlinearSpec
+    from langslice.doors.jobs import create
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    apply_patches()
+    folder = tmp_path / "stack"
+    write_sections(folder)
+    loader = atlas_loader()
+    loader("x").annotation[5][:, 10:50] = 0
+    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
+                               agent_preprocessing=False, inputs={})
+    create(spec, atlas_loader=loader).close()
+    return langslice.open_job(str(folder), atlas_loader=loader)
+
+
+def _picture_um_per_section_px(root: Path, section: str) -> float:
+    """Micrometres per section-render pixel (along a column step) in the
+    last placement picture of *section*."""
+    entries = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
+    view = [e for e in entries if e["tool"] == "view_placement" and section in e["sections"]][-1]
+    frame = json.loads((root / view["path"] / "view.json").read_text())["frame"]
+    to_atlas = np.asarray(frame["pixel_to_atlas_um"]) @ np.asarray(frame["section_to_picture"])
+    return float(np.linalg.norm(to_atlas[:, 1]))
+
+
+def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, monkeypatch):
+    """No pixel size: the pictures estimate one from the tissue width at the
+    section's CURRENT position; registration.json (and so the maps and the
+    exports, the same frame) uses that same scale, not the one stored with
+    a transform written at another position."""
+    job = _uncalibrated_job(tmp_path, monkeypatch)
+    job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
+    job.adjust_transforms(entries=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
+                                    "scale_y": 1.0, "translate_x_mm": 0.0,
+                                    "translate_y_mm": 0.0}])
+    job.set_positions(entries=[{"id": ID0, "position_mm": 0.25}])
+    job.view_placement(entries=[{"id": ID0, "positions_mm": [0.25]}],
+                       view={"mode": "overlay", "resolution": 512})
+    job.close()
+    root = Path(job.folder)
+    entry = {e["id"]: e for e in json.loads(
+        (root / "registration.json").read_text())["sections"]}[ID0]
+    render = prepared_render_size(root.parent / ID0)
+    file_size = entry["image"]["size"]
+    reg_um_per_render_px = (np.linalg.norm(np.asarray(entry["pixel_to_atlas_um"])[:, 1])
+                            * file_size[0] / render[0])
+    picture = _picture_um_per_section_px(root, ID0)
+    assert abs(reg_um_per_render_px - picture) < 0.01, (reg_um_per_render_px, picture)
+    assert entry["image"]["pixel_size_source"] == "estimated"
+    assert "pixel size" in (entry["problem"] or "")
+
+
+def prepared_render_size(path: Path) -> tuple[int, int]:
+    from langslice.core.image_prep import prepared_size
+    from langslice.core.sections import PREVIEW_LONG_EDGE
+
+    with Image.open(path) as image:
+        return prepared_size(image.size, max_long_edge=PREVIEW_LONG_EDGE)
+
+
+def test_an_uncalibrated_section_without_a_transform_is_the_identity(tmp_path, monkeypatch,
+                                                                     caplog):
+    """No pixel size and no transform: the identity at the estimated scale,
+    as its pictures draw it, the scale stated as unknown; no traceback per
+    section per checkpoint."""
+    import logging
+
+    job = _uncalibrated_job(tmp_path, monkeypatch)
+    with caplog.at_level(logging.WARNING):
+        job.set_positions(entries=[{"id": ID2, "position_mm": 0.2}])
+        job.view_placement(entries=[{"id": ID2, "positions_mm": [0.2]}],
+                           view={"mode": "overlay", "resolution": 512})
+    job.close()
+    assert not [r for r in caplog.records if r.exc_info], [r.getMessage() for r in caplog.records]
+    root = Path(job.folder)
+    entry = {e["id"]: e for e in json.loads(
+        (root / "registration.json").read_text())["sections"]}[ID2]
+    assert entry["pixel_to_atlas_um"] is not None
+    assert entry["mapping"].startswith("linear (identity")
+    assert "pixel size" in entry["problem"] and "unknown" in entry["problem"]
+    render = prepared_render_size(root.parent / ID2)
+    reg = (np.linalg.norm(np.asarray(entry["pixel_to_atlas_um"])[:, 1])
+           * entry["image"]["size"][0] / render[0])
+    assert abs(reg - _picture_um_per_section_px(root, ID2)) < 0.01
