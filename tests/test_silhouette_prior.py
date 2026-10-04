@@ -215,7 +215,7 @@ def test_cli_parses_the_model_free_backbone() -> None:
 
 
 def test_register_request_carries_the_model_free_provider() -> None:
-    from langslice.hosts.api.models import RegisterRequest
+    from langslice.doors.api.models import RegisterRequest
 
     request = RegisterRequest(
         image_path="slice.png", atlas="toy", position_mm=1.0,

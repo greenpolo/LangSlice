@@ -5,7 +5,7 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 
-from langslice.hosts.api.models import (
+from langslice.doors.api.models import (
     ENGINE_METHODS,
     EngineError,
     EngineEventEnvelope,

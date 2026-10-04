@@ -236,7 +236,7 @@ def test_the_job_statement_names_locked_sections_and_why(tmp_path: Path):
 
 
 def test_the_worker_never_emits_geometry_for_locked_sections():
-    from langslice.hosts.api.abba_worker import _host_updates
+    from langslice.doors.api.abba_worker import _host_updates
 
     def row(transform, flip=False, position=4.0):
         return {"id": "a.tif", "position_mm": position, "index_corrected": 0,

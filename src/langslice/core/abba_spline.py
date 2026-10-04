@@ -1,7 +1,9 @@
-"""Native BigWarp registrations from calibrated pairs or sampled Elastix maps.
+"""A stored landmark spline as ABBA's centred-millimetre landmark pairs.
 
 The stored spline is the complete mapping, including its affine component.
-ABBA resamples using a fixed-to-moving TPS, exactly as BigWarp does.
+ABBA resamples using a fixed-to-moving TPS, exactly as BigWarp does. Pure
+geometry (no Java): the native BigWarp registration built from these pairs
+is :func:`langslice.hosts.integrations.abba.prepare_spline_registration`.
 """
 from __future__ import annotations
 
@@ -111,32 +113,3 @@ def spline_world_landmarks(
                 or np.linalg.matrix_rank(np.column_stack([points, np.ones(len(points))])) < 3):
             raise ValueError("Spline landmarks must be distinct and non-collinear")
     return (source - .5) * extent, (target - .5) * extent
-
-
-def prepare_spline_registration(abba: Any, source_mm: np.ndarray, target_mm: np.ndarray) -> Any:
-    """Prepare a serializable, completed native BigWarp step without opening UI.
-
-    Building and round-tripping it happens before removing any previous step.
-    ``setTransform`` marks the native plugin complete; RegisterSliceAction then
-    appends it directly instead of calling its interactive ``register`` method.
-    """
-    from scyjava import jimport  # pyright: ignore[reportMissingImports]
-
-    from langslice.hosts.integrations.abba import _build_java_tps
-
-    BigWarp = jimport(
-        "ch.epfl.biop.registration.sourceandconverter.bigwarp.SacBigWarp2DRegistration"
-    )
-    ctx = abba.ij.context()
-    service = ctx.getService(jimport("org.scijava.plugin.PluginService").class_)
-    registration = service.getPlugin(BigWarp.class_).createInstance()
-    registration.setScijavaContext(ctx)
-    # Legacy TPS pairs reproduce the Python pullback exactly. Elastix pairs
-    # approximate its exact pullback within the checked export tolerance.
-    registration.setRealTransform(_build_java_tps(target_mm, source_mm))
-    registration.setTransform(registration.getTransform())
-    registration.setRegistrationParameters(jimport("java.util.HashMap")())
-    registration.setRegistrationName("LangSlice landmarks")
-    if not registration.isRegistrationDone():
-        raise RuntimeError("ABBA could not prepare the landmark spline registration")
-    return registration

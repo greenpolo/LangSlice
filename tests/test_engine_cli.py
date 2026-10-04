@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from langslice.doors.cli import build_parser, main
-from langslice.doors.cli.hosts import run_abba
 from langslice.doors.cli.linear import build_linear_spec
+from langslice.hosts.cli import run_abba
 
 
 def test_parser_supports_serve_command() -> None:

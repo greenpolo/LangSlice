@@ -229,8 +229,8 @@ def _saved_job(root: Path, folder: Path, job_id: str) -> Path:
 
 
 def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkeypatch: Any):
+    from langslice.doors.api import claude_jobs
     from langslice.doors.mcp.server import open_saved_job
-    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     folder = _folder(tmp_path / "stack")
@@ -252,7 +252,7 @@ def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkey
 
 
 def test_an_old_saved_job_does_not_move_onto_another_job(tmp_path: Path, monkeypatch: Any):
-    from langslice.hosts.api import claude_jobs
+    from langslice.doors.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     folder = _folder(tmp_path / "stack")
@@ -460,8 +460,8 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
 def test_a_claude_job_on_a_read_only_folder_lives_under_its_id(
     tmp_path: Path, read_only: Path, monkeypatch: Any,
 ):
+    from langslice.doors.api import claude_jobs
     from langslice.doors.mcp.server import open_saved_job
-    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     prepared = claude_jobs.prepare_folder(

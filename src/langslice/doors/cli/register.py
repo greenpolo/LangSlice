@@ -169,8 +169,8 @@ def run_register(args: argparse.Namespace) -> None:
     import json
     import os
 
-    from langslice.hosts.api.models import RegisterRequest
-    from langslice.hosts.api.runtime import run_register
+    from langslice.doors.api.models import RegisterRequest
+    from langslice.doors.api.runtime import run_register
 
     initial_alignment = None
     alignment_path = getattr(args, "initial_alignment", None)

@@ -21,7 +21,7 @@ from langslice.core.image_prep import (
     normalize_image,
     read_pages,
 )
-from langslice.hosts.api.abba_worker import run_linear
+from langslice.doors.api.abba_worker import run_linear
 from langslice.hosts.api.service import run_stdio
 
 

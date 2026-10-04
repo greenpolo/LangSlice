@@ -13,9 +13,12 @@ product name. Canonical names:
   to authenticate, so it needs no transport module.
 
 Future providers (``anthropic-api``, ``openrouter-api``, ``qwen-api``, ...)
-are added HERE and nowhere else; downstream code compares canonical names
-only. Legacy spellings ("google", "openai", "chatgpt") resolve here so old
-CLIs, saved configs, and sibling repos keep working.
+are added HERE and nowhere else (their names and aliases in the
+provider-free table :mod:`langslice.core.provider_names`, which this module
+re-exports, so the core compares names without importing a provider);
+downstream code compares canonical names only. Legacy spellings ("google",
+"openai", "chatgpt") resolve here so old CLIs, saved configs, and sibling
+repos keep working.
 """
 
 from __future__ import annotations
@@ -24,20 +27,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from langslice.core.provider_names import CANONICAL_PROVIDERS, canonical_provider
+
 if TYPE_CHECKING:
     from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
-
-CANONICAL_PROVIDERS = ("gemini-api", "openai-api", "openai-oauth", "none")
-
-_ALIASES = {
-    "google": "gemini-api",
-    "openai": "openai-api",
-    "chatgpt": "openai-oauth",
-    "flux": "openai-api",
-    "openai-compatible": "openai-api",
-    "openai_compatible": "openai-api",
-}
-
 
 #: Agent models a host may offer on the ``openai-oauth`` lane (host dialogs
 #: list these; any other ``openai-oauth/*`` string still works). Defined here,
@@ -55,12 +48,6 @@ OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-5.6-sol"
 #: Image models on the ``openai-oauth`` lane, and the default.
 OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2",)
 OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = "gpt-image-2"
-
-
-def canonical_provider(name: str) -> str:
-    """Resolve any accepted provider spelling to its canonical name."""
-    normalized = (name or "").strip().lower()
-    return _ALIASES.get(normalized, normalized)
 
 
 #: One image edit: the request in (prompt, images in order, provider, model),
@@ -110,3 +97,16 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
         return generate_warped_segmentation_image(request)
 
     return ImageModel(provider=canonical, model=model or default_image_model(canonical), call=call)
+
+__all__ = [
+    "CANONICAL_PROVIDERS",
+    "OPENAI_OAUTH_AGENT_MODELS",
+    "OPENAI_OAUTH_DEFAULT_AGENT_MODEL",
+    "OPENAI_OAUTH_DEFAULT_IMAGE_MODEL",
+    "OPENAI_OAUTH_IMAGE_MODELS",
+    "ImageCall",
+    "ImageModel",
+    "canonical_provider",
+    "default_image_model",
+    "resolve_image_model",
+]

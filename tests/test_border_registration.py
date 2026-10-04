@@ -138,9 +138,9 @@ def test_atlas_route_draws_boundaries_then_places_and_fits(case, monkeypatch):
         calls.append(request)
         return SimpleNamespace(image=drawn, route="test")
 
-    monkeypatch.setattr(registration, "generate_warped_segmentation_image", fake_generate)
     result = registration.generate_border_registration_candidate(
-        image, atlas_name="test", position_mm=1, provider="openai-oauth"
+        image, atlas_name="test", position_mm=1, provider="openai-oauth",
+        image_call=fake_generate,
     )
     assert len(calls) == 1, "passes defaults to 1: exactly one model call"
     assert calls[0].reference_images == [outlined]
@@ -174,9 +174,9 @@ def test_atlas_route_passes_two_corrects_against_pass_one_and_the_template(case,
             return SimpleNamespace(image=pass1_reply, route="test")
         return SimpleNamespace(image=image.copy(), route="test")
 
-    monkeypatch.setattr(registration, "generate_warped_segmentation_image", fake_generate)
     registration.generate_border_registration_candidate(
         image, atlas_name="test", position_mm=1, provider="openai-oauth", passes=2,
+        image_call=fake_generate,
     )
     assert len(calls) == 2
     # Pass 2's Image 1 is the clean tissue, Image 2 pass 1's lines redrawn on
@@ -214,10 +214,9 @@ def test_replay_route_atlas_skips_every_model_call(case, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("A replayed atlas-route output must not call the model")
 
-    monkeypatch.setattr(registration, "generate_warped_segmentation_image", forbidden)
     result = registration.generate_border_registration_candidate(
         image, atlas_name="test", position_mm=1, provider="openai-oauth",
-        generated_image=image,
+        generated_image=image, image_call=forbidden,
     )
     assert result.metadata["prior"]["source"] == "silhouette_moments_atlas_route"
     assert result.metadata["prior"]["atlas_route_model_calls"] == 0

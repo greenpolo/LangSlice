@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from langslice.hosts.api.abba_worker import prepare_linear
+from langslice.doors.api.abba_worker import prepare_linear
 from langslice.job import index, migrate
 from langslice.job.layout import (
     JobLayout,

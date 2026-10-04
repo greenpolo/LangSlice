@@ -68,7 +68,7 @@ from google.adk.models.registry import LLMRegistry
 from google.genai import types
 from pydantic import Field, field_validator
 
-from langslice.doors.tools import MEDIA_LAYOUT_ATTR
+from langslice.core.media_keys import MEDIA_LAYOUT_ATTR
 from langslice.providers.registry import (
     OPENAI_OAUTH_DEFAULT_AGENT_MODEL,
     OPENAI_OAUTH_DEFAULT_IMAGE_MODEL,

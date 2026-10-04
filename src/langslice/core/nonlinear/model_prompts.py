@@ -93,7 +93,7 @@ def native_output_size(
     - gemini-api: the model's fixed frame for the nearest legal aspect at the
       requested tier (``quality`` = 1K | 512; 2K/4K frames not measured).
     """
-    from langslice.providers.registry import canonical_provider
+    from langslice.core.provider_names import canonical_provider
 
     w, h = canvas_size
     aspect = w / h

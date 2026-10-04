@@ -2,32 +2,17 @@
 
 The tool door (:mod:`.toolbox`, :mod:`.arguments`, :mod:`.view_options`,
 :mod:`.media`). The ADK driver that runs them is :mod:`langslice.agent`.
-These keys are how the tools hand back media, shared by the door, the driver
-and the OAuth transport.
+The media keys (how the tools hand back pictures) live in
+:mod:`langslice.core.media_keys`, so the OAuth transport can read them too;
+they are re-exported here.
 """
 
 from __future__ import annotations
 
-# Key under which LangSlice tools hand back media. The tools put their plain
-# pictures (PIL images) and lines of text there, in order; each door packages
-# them: the ADK agent through ``langslice.doors.tools.media.packaged`` (JPEG
-# ``types.Part``s), the MCP server as content blocks.
-#
-# Since google-adk 2.7.0 a tool result may carry ``types.Part`` objects with
-# ``inline_data``; ADK moves them into ``FunctionResponsePart``s on the
-# function-response Event (persisted in session history, so the model keeps
-# seeing them on later turns) and drops the now-empty key from the JSON the
-# model reads. Media is only found one container deep -- a list of Parts
-# directly under a dict key works, a list of lists does not -- so tools put
-# their parts in a flat list under exactly this key. Text belongs in ordinary
-# JSON fields: text Parts are not media and would leak into the JSON result.
-TOOL_MEDIA_PARTS_KEY = "images"
+from langslice.core.media_keys import (
+    MEDIA_LAYOUT_ATTR,
+    TOOL_MEDIA_DELIVERY_ID_KEY,
+    TOOL_MEDIA_PARTS_KEY,
+)
 
-# Opaque JSON field tying media to the tool call that produced it. Some ADK
-# providers strip generated FunctionResponse ids from replayed history, while
-# ordinary response JSON remains intact.
-TOOL_MEDIA_DELIVERY_ID_KEY = "media_delivery_id"
-
-# Private FunctionResponse attribute: original attachment count and surviving
-# slot indices. Transports preserve their generated text when media is retired.
-MEDIA_LAYOUT_ATTR = "_langslice_media_layout"
+__all__ = ["MEDIA_LAYOUT_ATTR", "TOOL_MEDIA_DELIVERY_ID_KEY", "TOOL_MEDIA_PARTS_KEY"]

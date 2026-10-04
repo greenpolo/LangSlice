@@ -1,5 +1,9 @@
-"""LangSlice engine API package."""
+"""The engine service a host starts, and the ABBA-plugin worker it serves.
 
-from langslice.hosts.api.models import export_schema_bundle
-
-__all__ = ["export_schema_bundle"]
+:mod:`.service` (``langslice serve --stdio``: the newline-delimited JSON
+service the Fiji connector starts) and :mod:`.nonlinear_worker`
+(``nonlinear.abba``: the image-model refinement of ABBA's placement, through
+the ABBA plugin). The protocol models, the runtime handlers, setup, saved
+Claude jobs and the linear snapshot worker are door-level:
+:mod:`langslice.doors.api`.
+"""

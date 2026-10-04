@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.hosts.api.abba_worker import run_linear, run_nonlinear
+from langslice.doors.api.abba_worker import run_linear
+from langslice.hosts.api.nonlinear_worker import run_nonlinear
 
 
 @pytest.fixture
@@ -156,7 +157,7 @@ def test_no_trace_dir_means_no_trace(params, monkeypatch):
 
 @pytest.mark.parametrize(("tasks", "sent"), [(["transform"], True), (["reorder"], False)])
 def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
-    from langslice.hosts.api.abba_worker import _host_updates
+    from langslice.doors.api.abba_worker import _host_updates
 
     before = {"slices": [{"id": "a.tif", "position_mm": 4.0, "index_corrected": 0,
                           "flip": False, "rotation_deg": 0, "transform": None}]}
@@ -169,7 +170,7 @@ def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
 
 
 def test_nonlinear_without_an_image_model_is_accepted(params):
-    from langslice.hosts.api.abba_worker import prepare_linear
+    from langslice.doors.api.abba_worker import prepare_linear
 
     params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
     spec = prepare_linear(params).spec

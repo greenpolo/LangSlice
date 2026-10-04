@@ -34,14 +34,14 @@ from langslice.agent.trace import TRACE_DIR_ENV
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
+from langslice.doors.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
+from langslice.doors.api.claude_jobs import load_job
 from langslice.doors.card import write_card
 from langslice.doors.mcp.host_channel import HostChannel
 from langslice.doors.mcp.prompt import job_statement
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.media import encode_jpeg
 from langslice.doors.tools.toolbox import ToolBox, build_tools
-from langslice.hosts.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
-from langslice.hosts.api.claude_jobs import load_job
 from langslice.job.job import Job
 from langslice.ops.registry import VERBS
 

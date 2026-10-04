@@ -387,9 +387,9 @@ def generate_registration_candidate(
     at module load time).
 
     *image_call* is the image model's edit, resolved by the caller
-    (:class:`langslice.providers.registry.ImageModel`'s ``call``); without
-    it the request goes to the transport adapter for *provider*
-    (:func:`langslice.providers.images.generate_warped_segmentation_image`).
+    (:class:`langslice.providers.registry.ImageModel`'s ``call``); a model
+    call without it is refused (``provider="none"`` and a replayed
+    *generated_image* need none).
     """
     from langslice.core.nonlinear.border_registration import generate_border_registration_candidate
 

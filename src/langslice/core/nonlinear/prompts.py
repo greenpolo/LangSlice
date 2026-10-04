@@ -33,8 +33,8 @@ may lightly edit for one section.
 
 from __future__ import annotations
 
+from langslice.core.provider_names import canonical_provider
 from langslice.core.space import Plane
-from langslice.providers.registry import canonical_provider
 
 
 def _for_plane(text: str, plane: Plane) -> str:

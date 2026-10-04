@@ -46,15 +46,11 @@ def test_two_inputs_and_corrected_lines_never_replace_the_photograph(case, monke
     assert result.metadata["model_called"] is True
 
 
-def test_without_an_injected_call_the_transport_adapter_is_used(case, monkeypatch):
+def test_a_model_call_without_an_injected_call_is_refused(case):
+    """The core never picks a transport: the caller passes the resolved call."""
     photo, labels, atlas = case
-    reply = borders.border_overlay(photo, borders._extract_borders_from_classified(labels) > 0)
-    calls = []
-    monkeypatch.setattr(borders, "generate_warped_segmentation_image",
-                        lambda request: calls.append(request) or SimpleNamespace(
-                            image=reply, route="test"))
-    borders.refine_borders(photo, labels, atlas)
-    assert len(calls) == 1
+    with pytest.raises(ValueError, match="no image_call"):
+        borders.refine_borders(photo, labels, atlas)
 
 
 def test_replay_crops_letterbox_before_resampling(case, monkeypatch):
@@ -76,8 +72,7 @@ def test_model_free_calls_nothing_and_keeps_the_rough_borders(case, monkeypatch)
     def forbidden(*args, **kwargs):
         pytest.fail("Model-free placement must not generate")
 
-    monkeypatch.setattr(borders, "generate_warped_segmentation_image", forbidden)
-    result = borders.refine_borders(photo, labels, atlas, provider="none")
+    result = borders.refine_borders(photo, labels, atlas, provider="none", image_call=forbidden)
     assert result.metadata["model_free"] is True
     np.testing.assert_array_equal(result.model_border_mask,
                                   borders._extract_borders_from_classified(labels) > 0)
