@@ -188,6 +188,56 @@ def test_model_free_abba_registration_fits_nothing(monkeypatch):
     assert len(src) >= 4
     np.testing.assert_array_equal(src, tgt)
 
+
+def test_abba_fit_recovers_a_shift_the_reply_moves_the_lines_by(monkeypatch):
+    """The model's reply draws its lines on the CLEAN section (the request's
+    reference image; its ``slice_image`` carries the rough lines): the ABBA
+    path's fit then recovers the shift it imposes, as ``nonlinear register``
+    does (review finding 8: the under-recovery measured there came from a
+    stub that drew the true lines over the rough ones, so both sets were
+    extracted and the fit split the difference)."""
+    import dataclasses
+
+    import langslice.providers.registry as registry
+    from langslice.core.atlas import core
+    from langslice.core.nonlinear.border_refinement import border_overlay
+    from langslice.core.nonlinear.image_gen_helpers import (
+        _extract_borders_from_classified,
+        _merge_classified,
+        line_width_px,
+    )
+    from langslice.core.nonlinear.types import GeneratedSegmentation
+    from langslice.hosts.integrations.abba import (
+        LangSliceAbbaConfig,
+        compute_registration_landmarks,
+    )
+    from tests.deformable_synthetic import SyntheticAtlas
+
+    atlas = SyntheticAtlas()
+    yy, xx = np.indices((120, 160))
+    coords = np.stack((np.full(xx.shape, 0.125), yy * 0.05 + 0.025, xx * 0.05 + 0.025), axis=-1)
+    _, _, ids = render_atlas_at_coords(atlas, coords)
+    shift = (4, -3)
+    tissue_ids = np.roll(ids, (shift[1], shift[0]), axis=(0, 1))
+    histology = np.where(tissue_ids > 0, 180.0, 20.0)
+    true_lines = _extract_borders_from_classified(_merge_classified(tissue_ids, atlas)) > 0
+
+    def reply(request):
+        clean = request.reference_images[0].convert("RGB")
+        return GeneratedSegmentation(
+            image=border_overlay(clean, true_lines, line_width_px(max(clean.size))),
+            provider="openai-oauth", model="stub", route="stub")
+
+    resolve = registry.resolve_image_model
+    monkeypatch.setattr(registry, "resolve_image_model",
+                        lambda p, m=None: dataclasses.replace(resolve(p, m), call=reply))
+    monkeypatch.setattr(core, "load_atlas", lambda _: atlas)
+    src, tgt = compute_registration_landmarks(
+        coords, histology, LangSliceAbbaConfig(provider="openai-oauth", voxel_size_um=50.0,
+                                               landmark_grid=8))
+    moved = np.median(tgt - src, axis=0)
+    assert np.abs(moved - shift).max() < 0.8, moved
+
 def test_border_refinement_rejects_multiple_draws_before_loading_atlas(monkeypatch):
     from langslice.core.atlas import core
     from langslice.core.nonlinear import border_refinement
