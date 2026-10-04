@@ -179,3 +179,32 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     job.close()
     assert os.environ["GEMINI_API_KEY"] == "saved-gemini"
     assert os.environ["OPENAI_API_KEY"] == "from-the-environment"
+
+
+def test_status_lists_every_image_model_choice_with_its_connection(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dialog's image-model choices, in its order, connected or not, from
+    offline presence checks only."""
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENAI_IMAGE_API_KEY",
+                 "OPENAI_IMAGE_BASE_URL", "OPENAI_BASE_URL", "LANGSLICE_OPENAI_AUTH"):
+        monkeypatch.delenv(name, raising=False)
+    choices = setup.setup_status()["image_models"]
+    assert [c["provider"] for c in choices] == ["openai-oauth", "gemini-api", "openai-api",
+                                                "none"]
+    connected = {c["provider"]: c["connected"] for c in choices}
+    assert connected == {"openai-oauth": False, "gemini-api": False, "openai-api": False,
+                         "none": True}
+    oauth = choices[0]
+    assert oauth["models"] == ["gpt-image-2"] and oauth["default_model"] == "gpt-image-2"
+    gemini = choices[1]
+    assert gemini["models"] and all("-image" in m for m in gemini["models"])
+    assert gemini["default_model"] in gemini["models"]
+    assert choices[3]["models"] == [] and choices[3]["default_model"] is None
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    path = isolated_home / ".langslice" / "openai_auth.json"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps({"tokens": {"access_token": "token"}}))
+    connected = {c["provider"]: c["connected"] for c in setup.setup_status()["image_models"]}
+    assert connected["gemini-api"] and connected["openai-oauth"]
+    assert not connected["openai-api"]

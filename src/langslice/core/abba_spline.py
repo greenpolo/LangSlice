@@ -2,8 +2,10 @@
 
 The stored spline is the complete mapping, including its affine component.
 ABBA resamples using a fixed-to-moving TPS, exactly as BigWarp does. Pure
-geometry (no Java): the native BigWarp registration built from these pairs
-is :func:`langslice.hosts.integrations.abba.prepare_spline_registration`.
+geometry (no Java): the Fiji connector builds the native BigWarp step from
+these pairs (legacy ``spline_source_mm`` / ``spline_target_mm`` rows, read
+for old checkpoints, never emitted for new jobs; a deformation is
+:mod:`langslice.core.abba_warp`'s warp step instead).
 """
 from __future__ import annotations
 

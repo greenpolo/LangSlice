@@ -495,17 +495,16 @@ up front, on the opened state, so a host sees the stack before the agent has
 touched it. The agent itself never knows a host is watching:
 nothing about the toolbox, the job statement, or the render path changes.
 
-`langslice.hosts.integrations.abba_linear.AbbaStackMirror` is the first such host:
-`langslice abba --linear FOLDER` runs the ordinary headless agent — it still
-renders its own BrainGlobe pictures — inside a live ABBA session, and on
-every `on_write` call diffs the new state against the last one it saw and
-pushes only what changed into ABBA (order/position as `moveSlice`, flip and
-the quarter-turn as the slice's pre-transform, the in-plane affine as a
-registration step, cutting angles onto the resliced atlas), so a person
-watches the stack move in BigDataViewer as the agent works. ABBA is display
-plus the final home of the result; see
-`src/langslice/hosts/integrations/CLAUDE.md` for what is and is not verified about
-its sign/axis conventions.
+The ABBA worker (`doors/api/abba_worker.py`, started by the Fiji
+connector) is the host that does: on every `on_write` call it diffs the new
+state against the last one and emits replacement rows in ABBA's centred
+world millimetres (positions, flip and quarter turn, the affine, with the
+`nonlinear` task a warp step on top of it, and the stack-wide cutting
+angles), which the connector applies live as one ABBA undo step each.
+`engine.run(on_open=...)` gives it the opened job and workspace first. The
+agent still renders its own BrainGlobe pictures; see
+`src/langslice/hosts/integrations/CLAUDE.md`. (The Python live mirror,
+`langslice abba --linear`, was removed 2026-10-04.)
 
 ## Interactive transform: physical space and atlas outlines (2026-09-05, Nash)
 

@@ -120,6 +120,23 @@ def locked_ids(spec: JobSpec) -> set[str]:
     return {str(name) for name in (spec.inputs or {}).get("locked") or []}
 
 
+def keep_warp_ids(spec: JobSpec) -> set[str]:
+    """Sections whose own deformation in the host the agent may not replace."""
+    return {str(name) for name in (spec.inputs or {}).get("keep_warp") or []}
+
+
+def nonlinear_skip_ids(spec: JobSpec) -> set[str]:
+    """Sections the user left out of the Nonlinear task."""
+    return {str(name) for name in (spec.inputs or {}).get("nonlinear_skip") or []}
+
+
+#: Why Nonlinear refuses a section the host kept out of it: code, message.
+KEEPS_HOST_WARP = ("KEEPS_HOST_WARP", "This section carries the user's own deformation in the "
+                   "host, which the user did not let the agent overwrite.")
+NONLINEAR_SKIPPED = ("NONLINEAR_SKIPPED", "The user chose not to have this section aligned "
+                     "first, so the Nonlinear task leaves it alone.")
+
+
 def host_damaged_ids(spec: JobSpec) -> set[str]:
     """Sections the host marked damaged; the agent cannot clear these flags."""
     return {str(name) for name in ((spec.inputs or {}).get("damaged") or {})}
@@ -293,6 +310,18 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         state.notes.append(
             f"inputs: {len(locked)} section(s) locked by the host (in-plane alignment done)"
         )
+
+    for key, note in (("keep_warp", "keep their own deformation in the host"),
+                      ("nonlinear_skip", "left out of the Nonlinear task by the host")):
+        names = inputs.get(key) or []
+        if not names:
+            continue
+        if not isinstance(names, (list, tuple)):
+            raise ValueError(f"inputs.{key} must be a list of section filenames")
+        for name in names:
+            if state.by_id(str(name)) is None:
+                raise ValueError(f"inputs.{key} names an unknown section: {name!r}")
+        state.notes.append(f"inputs: {len(names)} section(s) {note}")
 
 
 class InputsChanged(ValueError):
@@ -712,6 +741,12 @@ class Job:
         self.lock = FolderLock(layout.folder)
         #: Sections whose flip, rotation and transform the host locked.
         self.locked = frozenset(locked_ids(spec))
+        #: Sections whose own deformation in the host stays (``fit_deformable``
+        #: refuses them, ``KEEPS_HOST_WARP``).
+        self.keep_warp = frozenset(keep_warp_ids(spec))
+        #: Sections the user left out of Nonlinear (``fit_deformable`` and
+        #: ``trace_borders`` refuse them, ``NONLINEAR_SKIPPED``).
+        self.nonlinear_skip = frozenset(nonlinear_skip_ids(spec))
         #: Sections the host marked damaged; their flags cannot be cleared.
         self.host_damaged = frozenset(host_damaged_ids(spec))
         #: Whole states, oldest first; the last one is what ``undo`` restores.
@@ -1024,6 +1059,16 @@ class Job:
     def submit_errors(self, breaks: list[int]) -> dict[str, Any] | None:
         """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
         return submit_errors(self.state, self.spec, breaks)
+
+    def nonlinear_refusal(self, section_id: str) -> tuple[str, str] | None:
+        """``(code, message)`` when the host kept *section_id* out of the
+        Nonlinear task (:data:`KEEPS_HOST_WARP`, :data:`NONLINEAR_SKIPPED`),
+        else None."""
+        if section_id in self.keep_warp:
+            return KEEPS_HOST_WARP
+        if section_id in self.nonlinear_skip:
+            return NONLINEAR_SKIPPED
+        return None
 
     def clear_stale_deformations(self) -> list[str]:
         """Drop deformations whose linear placement changed; checkpoint; their ids.

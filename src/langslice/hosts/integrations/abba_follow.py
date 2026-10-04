@@ -9,14 +9,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_TRANSFORMS = {"adjust_transforms", "fit_affine"}
+#: Tools that work on sections in place: the viewer shows them registered
+#: (review mode). The deformable fit and the image model's trace are
+#: in-plane work on the targets, like the affine tools.
+_TRANSFORMS = {"adjust_transforms", "fit_affine", "fit_deformable", "trace_borders"}
+#: Tools that look at or move sections along the stack (positioning mode);
+#: marking damage and changing a section's appearance are about which
+#: sections, so the viewer shows them in the stack.
 _POSITIONING = {
     "view_slices", "view_placement", "view_stack", "set_positions", "search_position",
     "run_deepslice", "orient_slices", "reorder_slices", "set_cutting_angles",
-    "undo", "redo",
+    "undo", "redo", "mark_damaged", "preprocess",
 }
+#: Tools after whose end the viewer refreshes its targets (ABBA has applied
+#: the checkpoint's rows by then): everything but the pure looks.
 _WRITES = _TRANSFORMS | (_POSITIONING - {
-    "view_slices", "view_placement", "view_stack",
+    "view_slices", "view_placement", "view_stack", "preprocess",
 })
 
 

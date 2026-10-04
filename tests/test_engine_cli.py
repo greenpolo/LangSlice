@@ -41,58 +41,35 @@ def test_serve_requires_stdio() -> None:
         main(["serve"])
 
 
-def test_abba_and_linear_run_parse_the_same_flags_to_the_same_jobspec() -> None:
+def test_abba_takes_no_linear_job_options_any_more() -> None:
+    """`langslice abba` only starts ABBA with the connector: the fresh-import
+    `--linear` run and `--save-state` were removed (2026-10-04)."""
     parser = build_parser()
-    linear_args = parser.parse_args(
-        ["linear", "run", "/stack", "--thickness", "40", "--interval", "150", "--angles"]
-    )
-    abba_args = parser.parse_args(
-        ["abba", "--linear", "/stack", "--thickness", "40", "--interval", "150", "--angles"]
-    )
-
-    linear_spec = build_linear_spec(linear_args, linear_args.image_folder)
-    abba_spec = build_linear_spec(abba_args, abba_args.linear)
-
-    assert linear_spec == abba_spec
-    assert linear_spec.image_folder == "/stack"
-    assert linear_spec.position.thickness_um == 40
-    assert linear_spec.position.interval_um == 150
-    assert linear_spec.transform.angles is True
+    args = parser.parse_args(["abba", "--no-log"])
+    assert args.no_log and not args.no_viewer and args.connector_jar is None
+    for removed in (["--linear", "/stack"], ["--save-state", "/out.abba"]):
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abba", *removed])
 
 
-def test_abba_parser_accepts_save_state_and_defaults_linear_off() -> None:
-    parser = build_parser()
-    args = parser.parse_args(["abba", "--save-state", "/out.abba"])
-    assert args.linear is None
-    assert args.save_state == "/out.abba"
-
-
-def test_run_abba_dispatches_to_run_linear_in_abba_when_linear_is_given(monkeypatch) -> None:
-    import sys
-    import types
+def test_run_abba_starts_abba_with_the_connector_jar(monkeypatch, tmp_path) -> None:
     from typing import Any
 
-    from langslice.core.spec import JobSpec
+    from langslice.hosts.integrations import abba_launch
 
+    jar = tmp_path / "langslice-fiji-0.1.jar"
+    jar.write_bytes(b"PK")
     calls: dict[str, Any] = {}
+    monkeypatch.setattr(abba_launch, "run_abba_session", lambda **kw: calls.update(kw))
+    run_abba(build_parser().parse_args(["abba", "--connector-jar", str(jar), "--no-viewer"]))
+    assert calls == {"abba_atlas": "Adult Mouse Brain - Allen Brain Atlas V3p1",
+                     "jar": str(jar.resolve()), "viewer": False, "log": True}
 
-    fake_abba_python = types.ModuleType("abba_python")
-    monkeypatch.setitem(sys.modules, "abba_python", fake_abba_python)
 
-    fake_module = types.ModuleType("langslice.hosts.integrations.abba_linear")
+def test_run_abba_without_a_connector_jar_says_how_to_get_one(monkeypatch, tmp_path) -> None:
+    from langslice.hosts.integrations import abba_launch
 
-    def fake_run_linear_in_abba(spec: JobSpec, **kwargs: Any) -> None:
-        calls["spec"] = spec
-        calls["kwargs"] = kwargs
-
-    fake_module.run_linear_in_abba = fake_run_linear_in_abba  # pyright: ignore[reportAttributeAccessIssue]
-    monkeypatch.setitem(sys.modules, "langslice.hosts.integrations.abba_linear", fake_module)
-
-    parser = build_parser()
-    args = parser.parse_args(["abba", "--linear", "/stack", "--save-state", "/out.abba"])
-    run_abba(args)
-
-    spec = calls["spec"]
-    assert isinstance(spec, JobSpec)
-    assert spec.image_folder == "/stack"
-    assert calls["kwargs"]["save_state"] == "/out.abba"
+    monkeypatch.delenv(abba_launch.CONNECTOR_JAR_ENV, raising=False)
+    monkeypatch.setattr(abba_launch, "repository_root", lambda: tmp_path)
+    with pytest.raises(SystemExit, match="mvn package"):
+        run_abba(build_parser().parse_args(["abba"]))
