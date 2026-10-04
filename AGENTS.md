@@ -88,9 +88,9 @@ Each layer imports only the layers below it: `core/` < `job/` < `ops/` <
 `providers/` (model access) sits beside them: core, job and ops never import
 it, nor `google.*`, `litellm`, `openai` or `mcp`; doors, the agent and hosts
 may. import-linter enforces this (`[tool.importlinter]` in `pyproject.toml`,
-run by `tests/test_import_layers.py` and CI); every `ignore_imports` entry
-there is a known violation to be removed by moving code, never a place to
-add one. `tests/test_core_imports.py` checks what a fresh interpreter loads.
+run by `tests/test_import_layers.py` and CI) with no exceptions listed: a
+violation is fixed by moving code, never by an `ignore_imports` entry.
+`tests/test_core_imports.py` checks what a fresh interpreter loads.
 The two methods are task groups over this one stack, not packages: the
 linear agent environment (Positioning / Linear, plus the opt-in Nonlinear
 deformation) and the image-model border route (`core/nonlinear/`).
@@ -152,12 +152,9 @@ deformation) and the image-model border route (`core/nonlinear/`).
     (`providers.registry.ImageModel`, resolved by a door); the calibrated
     geometry and the correction fingerprint are `core/handoff.py`'s;
     `registration_handoff.py` holds `run_linear_registration`, which takes
-    the model as an argument; see `docs/nonlinear_image_tool.md`.
-    Known layer violations (listed in the contracts): `spec.py`,
-    `nonlinear/prompts.py`, `model_prompts.py`, `border_refinement.py` and
-    `border_registration.py` import `providers.registry.canonical_provider`,
-    and the two border modules fall back to `providers.images` when no
-    `image_call` is passed.
+    the model as an argument; see `docs/nonlinear_image_tool.md`. A model
+    call is only ever the `image_call` a door passes in (refused without
+    one); provider names are the core's own table, `core/provider_names.py`.
   - `oblique.py` — arbitrary-plane sampling out of an atlas volume plus
     (pitch, yaw) fitting (vendored from brainglobe-registration, BSD-3).
     `sample_oblique_annotation` is the label-safe entry point: sampling
@@ -191,6 +188,12 @@ deformation) and the image-model border route (`core/nonlinear/`).
     through its scale, so a whole-slide scan is never decoded at full size.
   - `landmark_warp.py`, `landmark_elastix.py` — landmark deformations
     (saved spline compatibility).
+  - plain shared tables: `provider_names.py` (canonical provider names and
+    aliases, re-exported by `providers.registry`) and `media_keys.py` (the
+    keys a tool's media travels under, re-exported by `doors.tools`).
+  - `abba_affine.py`, `abba_spline.py` — a stored affine or landmark spline
+    in ABBA's centred world millimetres: the host rows the linear snapshot
+    worker (`doors/api/abba_worker.py`) emits.
 - `job/` — the job layer: the `Job` (`job.py`: state, undo/redo, the
   checkpoint `checkpoint.py`, the submit gates, background corrections) and
   the job folder. Everything a job writes lives in `<images>/langslice/`,
@@ -224,8 +227,11 @@ deformation) and the image-model border route (`core/nonlinear/`).
   description a model reads); the agent tools and the MCP tools are built
   from it and the registry. `doors/tools/` is the native agent-tool door
   (`toolbox.py` the tool bodies, `arguments.py`, `view_options.py`,
-  `media.py` the ADK message parts, the media keys in `__init__.py`);
-  `doors/mcp/` the MCP server (`langslice mcp`). The agent CLI for coding
+  `media.py` the ADK message parts); `doors/mcp/` the MCP server
+  (`langslice mcp`); `doors/api/` what the MCP door, the CLI and the engine
+  service share (the engine contract's Pydantic models, the
+  register/quick-affine/export runtime, setup and credentials, saved Claude
+  jobs, the JVM-free linear snapshot worker `abba_worker.py`). The agent CLI for coding
   agents (`doors/cli/`: `langslice job FOLDER VERB`, `langslice ops`,
   `langslice schema`; one JSON envelope on stdout, exit codes 0/2/3/4,
   pictures as file paths, `--dry-run`, `--background`), the script door
@@ -233,9 +239,10 @@ deformation) and the image-model border route (`core/nonlinear/`).
   `load_atlas`; no agent framework loaded) and the job folder's reference
   card (`AGENTS.md` + `CLAUDE.md`, written into every job folder).
   `doors/cli/` also holds every other command, one module per group
-  (`langslice/cli.py` keeps the entry point). Known layer violations: the
-  CLI's host commands and the MCP door import `hosts/`:
-  `src/langslice/doors/CLAUDE.md` (loads when working there);
+  (`langslice/cli.py` keeps the entry point); the host commands (`abba`,
+  `serve`) are `hosts/cli.py`, reached by module path
+  (`doors.cli.HOST_COMMANDS`): `src/langslice/doors/CLAUDE.md` (loads when
+  working there);
   `docs/agent_cli.md`.
 - `agent/` — the ADK driver of the linear agent environment (`langslice
   linear run FOLDER`): one `StackState`, one toolbox built from a
@@ -284,14 +291,13 @@ deformation) and the image-model border route (`core/nonlinear/`).
   stay OUT of providers: the registration edit-vs-generate decision is
   `SegmentationGenerationRequest.mode` (`core/nonlinear/`), and each
   transport merely translates it (`images.edit` endpoint, `action` on the
-  Responses image_generation tool). Known layer violation:
-  `openai_oauth.py` reads `doors.tools.MEDIA_LAYOUT_ATTR`.
+  Responses image_generation tool).
 - `hosts/` — host connectors that run in LangSlice's own environment:
   `hosts/integrations/` (the ABBA registration plugin, the live linear
   mirror, the ABBA viewer and log: `src/langslice/hosts/integrations/CLAUDE.md`)
-  and `hosts/api/` (the JSON-lines worker protocol, desktop
-  setup/authentication, the ABBA worker, saved Claude jobs, the
-  registration runtime): `src/langslice/hosts/CLAUDE.md`.
+  `hosts/api/` (the engine service the Fiji connector starts, and the ABBA
+  plugin's `nonlinear.abba` worker) and `hosts/cli.py` (`abba`, `serve`):
+  `src/langslice/hosts/CLAUDE.md`.
 - Compatibility shims, for the sibling repos only (LangSlice imports none;
   import-linter's `no-shims-inside` contract): `linear/` (`JobSpec` & co.,
   `run`, `engine`, `spec`, `state`, `toolbox`, `trace`, `transform`,
@@ -338,8 +344,9 @@ program. Code that runs in LangSlice's own environment lives in
   The host owns the loop, so there is no turn budget, nudges or image working
   set. This is the subscription-legal route for Claude; LangSlice never
   handles Claude credentials.
-- `src/langslice/hosts/api/` — JSON-lines worker protocol, desktop setup/authentication,
-  and JVM-free host adapters. Existing `abba_python` launchers remain separate.
+- `src/langslice/hosts/api/` (the engine service) and
+  `src/langslice/doors/api/` (its JSON-lines protocol models, desktop
+  setup/authentication and the JVM-free host adapters). Existing `abba_python` launchers remain separate.
 - `packaging/`, `environment.yml` — worker distribution and wheel checks.
   Publication status and the accepted installation design are in
   `docs/abba_installation.md` and `docs/abba_plugin_design.md`.

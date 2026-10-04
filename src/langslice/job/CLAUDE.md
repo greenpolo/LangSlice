@@ -181,7 +181,7 @@ paths). The trace identity in a deformation cache key is the stored
   path rewritten to its new relative place, including each moved call's
   saved `result.json`). Skipped (logged) when the job folder already holds a
   checkpoint. `migrate_saved_job(root, id)` (called by
-  `hosts.api.claude_jobs.load_job`): a phase-2 saved job under
+  `doors.api.claude_jobs.load_job`): a phase-2 saved job under
   `~/.langslice/jobs/<id>/` moves into the job folder next to its images
   (plus `prompt.txt` and `result.json` → `exports/`), its `job.json`
   becomes the folder's (`host`), the index entry is written and the old

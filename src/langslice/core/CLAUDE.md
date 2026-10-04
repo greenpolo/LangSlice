@@ -19,7 +19,16 @@ other module whose imports are core-only:
   `appearance.py`, `atlas_fetch.py`, `atlas_grep.py`, `display.py`,
   `opening.py`, `transform.py`, `deformation.py`, `discovery.py`,
   `deepslice.py`. Their entries are in the linear agent environment's guide
-  (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method.
+  (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method;
+- plain tables several layers share: `provider_names.py` (above) and
+  `media_keys.py` (the keys a tool's media travels under, read by the tool
+  door, the ADK driver, MCP and the OAuth transport);
+- the host-row geometry the linear snapshot worker emits
+  (`doors/api/abba_worker.py`): `abba_affine.py` (a normalized affine in
+  ABBA's centred world millimetres) and `abba_spline.py` (a stored landmark
+  spline as ABBA landmark pairs; the Java BigWarp step built from them is
+  `hosts/integrations/abba.py`'s `prepare_spline_registration`). Both moved
+  down from `hosts/integrations/` (2026-10-04) because a door uses them.
 
 ## The layer rule
 
@@ -34,12 +43,12 @@ other module whose imports are core-only:
   import-linter's contracts (`pyproject.toml`, run by
   `tests/test_import_layers.py`) check the imports;
   `tests/test_core_imports.py` loads each module in a fresh interpreter and
-  checks what it loads. Known violations, listed in the contracts'
-  `ignore_imports`: `spec.py` and `nonlinear/` (`prompts`, `model_prompts`,
-  `border_refinement`, `border_registration`) import
-  `providers.registry.canonical_provider`, and the two border modules fall
-  back to the image transport (`providers.images`) when no `image_call` is
-  passed.
+  checks what it loads. Provider NAMES are the core's own plain-string
+  table, `provider_names.py` (`CANONICAL_PROVIDERS`, the aliases,
+  `canonical_provider`; `providers.registry` re-exports it): `spec.py`
+  validates against it and `nonlinear/` picks the GPT or Gemini prompt
+  wording with it. A model call is only ever the `image_call` a door
+  passes in; the border routes refuse a call without one.
 - No undo, no checkpoint, no look-before-commit gates, no wording for a
   model beyond the captions burned into a picture. Something that writes the
   stack is an operation (`ops/`); something that words a reply is a door.

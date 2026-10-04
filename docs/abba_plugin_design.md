@@ -11,10 +11,12 @@ ABBA's distribution is optional.
 - `connectors/fiji/`: discover/select the environment, setup/account dialogs, the
   Registration dialog, start and stop worker processes, snapshot selected sections
   with calibration, and apply returned geometry using ABBA's native actions.
-- `src/langslice/hosts/api/setup.py`: offline installation/credential status, saved
+- `src/langslice/doors/api/setup.py`: offline installation/credential status, saved
   API keys, and the existing browser OAuth login with a structured URL callback.
-- `src/langslice/hosts/api/abba_worker.py`: JVM-free linear and nonlinear registration
-  requests. The scientific engines remain in their existing packages.
+- `src/langslice/doors/api/abba_worker.py`: JVM-free linear registration requests;
+  `src/langslice/hosts/api/nonlinear_worker.py`: nonlinear registration requests
+  (through the ABBA plugin's code). The scientific engines remain in their
+  existing packages.
 - `src/langslice/hosts/api/service.py`: JSON-lines transport. Standard output carries
   protocol messages only; Python and native diagnostic output goes to stderr.
 

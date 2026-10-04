@@ -130,7 +130,8 @@ GUI cutting-angle control is not exposed yet.
 Human edits during a run are not read back. Save results through ABBA's normal
 state-save UI.
 
-`abba_affine.py` converts the stored normalized six-number affine to ABBA world
+`core/abba_affine.py` (moved to the core 2026-10-04: the door-level snapshot
+worker emits its rows) converts the stored normalized six-number affine to ABBA world
 millimetres for these snapshots, preserving pivot displacement and shear. The
 normalization refers to the oriented section frame, not the padded atlas
 canvas. Use original snapshot physical dimensions, swapping axes after a
@@ -213,7 +214,7 @@ controls these window options. Native ABBA APIs verified against installed
 The linear agent no longer exposes paired-landmark tools. Historical applied
 spline checkpoints retain paired source/target points normalized to the oriented
 section frame; Elastix payloads save authoritative parameters and an explicit
-affine. `abba_spline.py` samples their complete target-to-source
+affine. `core/abba_spline.py` samples their complete target-to-source
 pullback into a dense TPS carrier, refining from 9² to at most 33² grid points
 and requiring at most 5 µm error at independent probes, with sampled fold
 checks. Failure refuses export before replacing the old registration. This
@@ -251,8 +252,9 @@ not use `abba_python` or PyCommandBuilder. Setup loads without Python and owns
 environment selection; authentication runs in the worker. The existing modules
 above remain the Python-started ABBA route.
 
-`hosts/api/abba_worker.py` reuses the linear engine and nonlinear
-`compute_registration_landmarks` without importing Java. Linear snapshots are
+`doors/api/abba_worker.py` reuses the linear engine, and
+`hosts/api/nonlinear_worker.py` the nonlinear
+`compute_registration_landmarks`, without importing Java. Linear snapshots are
 centred/calibrated; host AP mapping is measured, ingestion emits no mutations,
 and streamed updates express complete replacement corrections in world mm.
 Every checkpoint also carries `updates_since_start` (ingested state to that
@@ -277,7 +279,7 @@ current source-preview installation, and publication requirements.
 ### Claude mode in the independent connector
 
 The Fiji dialog's Claude choice saves a job via `claude.prepare` and copies
-a prompt for Claude Desktop/Code. `hosts.api.abba_worker.prepare_linear` and
+a prompt for Claude Desktop/Code. `doors.api.abba_worker.prepare_linear` and
 `checkpoint_callback` are shared by ADK and MCP; never duplicate their
 calibration or checkpoint-to-native geometry translation. An authenticated
 loopback listener passes MCP checkpoints to the same `AbbaHostSession.apply`
