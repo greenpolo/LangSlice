@@ -19,10 +19,18 @@ records and corrections into their section folders, the results to
 the job folder, and the checkpoint is written at the current format (state
 format 2; ``job.json`` format 1). Each migration is one line in
 ``logs/events.jsonl``. A newer format is refused before anything moves.
+
+Resumable: a journal (:data:`JOURNAL_FILE`) is written before anything moves
+and removed last, and the old files are removed only after their converted
+copies are written, so the next open finishes an interrupted migration. A
+folder is never removed unless its copy is known complete (the journal's
+mark) or found identical (every file's size and SHA-256); a different folder
+already at the target keeps both (``conflicts`` in the report).
 """
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -103,15 +111,144 @@ def _section_ids(*states: dict[str, Any]) -> list[str]:
     return ids
 
 
-def _move_folders(base: Path, layout: JobLayout, ids: list[str]) -> dict[str, str]:
-    """Move ``deformable/`` and ``nonlinear/`` into the section folders.
+#: The migration's journal, in the job folder while a migration runs: what
+#: it moves and which moves are complete, written BEFORE anything moves, so
+#: an interrupted migration is finished by the next open instead of leaving
+#: stored paths pointing at folders that already moved.
+JOURNAL_FILE = "migration.json"
+#: A copy in progress (another file system) is made under this suffix and
+#: renamed into place only when complete.
+PARTIAL_SUFFIX = ".partial"
 
-    Returns old absolute folder -> new absolute folder, per moved key folder.
-    A key folder already present in the job folder is kept (the same key is
-    the same content) and the old one removed.
+
+def _rename(src: Path, dst: Path) -> None:
+    os.rename(src, dst)
+
+
+def _copy_tree(src: Path, dst: Path) -> None:
+    if src.is_dir():
+        shutil.copytree(src, dst)
+    else:
+        shutil.copy2(src, dst)
+
+
+def _remove_tree(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _digest_tree(path: Path) -> list[tuple[str, int, str]]:
+    """Every file under *path* (or *path* itself): relative name, size, SHA-256."""
+    import hashlib
+
+    files = [path] if path.is_file() else sorted(p for p in path.rglob("*") if p.is_file())
+    found = []
+    for item in files:
+        digest = hashlib.sha256()
+        with item.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        name = "" if item == path else item.relative_to(path).as_posix()
+        found.append((name, item.stat().st_size, digest.hexdigest()))
+    return found
+
+
+def _same_content(a: Path, b: Path) -> bool:
+    try:
+        return a.is_dir() == b.is_dir() and _digest_tree(a) == _digest_tree(b)
+    except OSError:
+        return False
+
+
+class _Journal:
+    """``<job folder>/migration.json``: the planned moves and the done ones."""
+
+    def __init__(self, layout: JobLayout, data: dict[str, Any]) -> None:
+        self.path = layout.folder / JOURNAL_FILE
+        self.data = data
+
+    @classmethod
+    def read(cls, layout: JobLayout) -> _Journal | None:
+        path = layout.folder / JOURNAL_FILE
+        try:
+            data = _load_json(path)
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{path} (an interrupted migration's journal) does not read; "
+                             "move it away to open the job") from exc
+        if not isinstance(data, dict) or not isinstance(data.get("moves"), list):
+            raise ValueError(f"{path} is not a migration journal")
+        return cls(layout, data)
+
+    @property
+    def base(self) -> str:
+        return str(self.data.get("from") or "")
+
+    def save(self) -> None:
+        write_json_atomic(str(self.path), self.data)
+
+    def plan(self, old: Path, target: Path) -> None:
+        spelled = str(old.absolute())
+        if any(move["from"] == spelled for move in self.data["moves"]):
+            return
+        self.data["moves"].append({"from": spelled, "aliases": [os.path.realpath(old)],
+                                   "to": str(target), "state": "planned"})
+
+    def remove(self) -> None:
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _move_one(journal: _Journal, move: dict[str, Any]) -> None:
+    """One planned move, resumable: renamed in one step on one file system;
+    across file systems copied under :data:`PARTIAL_SUFFIX`, renamed into
+    place, marked done in the journal, and only then the original removed.
+    A target that exists without the journal's mark is compared with the
+    original (every file's size and SHA-256): the same, the original goes;
+    different, both stay and the move is a ``conflict``."""
+    old, target = Path(move["from"]), Path(move["to"])
+    partial = target.with_name(target.name + PARTIAL_SUFFIX)
+    if move["state"] == "planned":
+        if partial.exists() and not old.exists():
+            os.replace(partial, target)  # renamed whole before the interruption
+        elif partial.exists():
+            _remove_tree(partial)  # a partial copy: start it again
+        if old.exists() and target.exists():
+            move["state"] = "done" if _same_content(old, target) else "conflict"
+        elif old.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                _rename(old, partial)
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    raise
+                _copy_tree(old, partial)
+            os.replace(partial, target)
+            move["state"] = "done"
+        elif target.exists():
+            move["state"] = "done"
+        else:
+            move["state"] = "missing"
+        journal.save()
+    if move["state"] == "done" and old.exists():
+        _remove_tree(old)
+
+
+def _move_folders(base: Path, layout: JobLayout, ids: list[str],
+                  journal: _Journal) -> tuple[dict[str, str], list[str]]:
+    """Move ``deformable/`` and ``nonlinear/`` into the section folders,
+    through *journal* (planned first, then each move, resumable).
+
+    Returns old absolute folder -> new absolute folder per moved key folder
+    (every spelling), and the old folders kept because a different folder
+    already sat at their target (``conflicts``).
     """
     by_name = {_sanitized(section_id): section_id for section_id in ids}
-    moves: dict[str, str] = {}
     for old_name, new_name in _LEGACY_FOLDERS:
         root = base / old_name
         if not root.is_dir():
@@ -121,19 +258,27 @@ def _move_folders(base: Path, layout: JobLayout, ids: list[str]) -> dict[str, st
                 continue
             section_id = by_name.get(section_folder.name, section_folder.name)
             target_root = layout.section_dir(section_id) / new_name
-            target_root.mkdir(parents=True, exist_ok=True)
             for key_folder in sorted(section_folder.iterdir()):
-                target = target_root / key_folder.name
-                if target.exists():
-                    shutil.rmtree(key_folder) if key_folder.is_dir() else key_folder.unlink()
-                else:
-                    shutil.move(str(key_folder), str(target))
-                for spelled in dict.fromkeys((str(key_folder.absolute()),
-                                              os.path.realpath(key_folder))):
-                    moves[spelled] = str(target)
-            _remove_if_empty(section_folder)
-        _remove_if_empty(root)
-    return moves
+                if key_folder.name.endswith(PARTIAL_SUFFIX):
+                    continue
+                journal.plan(key_folder, target_root / key_folder.name)
+    journal.save()
+    moves: dict[str, str] = {}
+    conflicts: list[str] = []
+    for move in journal.data["moves"]:
+        _move_one(journal, move)
+        if move["state"] == "conflict":
+            conflicts.append(move["from"])
+            continue
+        for spelled in dict.fromkeys((move["from"], *move.get("aliases", []))):
+            moves[spelled] = move["to"]
+    for old_name, _new_name in _LEGACY_FOLDERS:
+        root = base / old_name
+        if root.is_dir():
+            for section_folder in root.iterdir():
+                _remove_if_empty(section_folder)
+            _remove_if_empty(root)
+    return moves, conflicts
 
 
 def _remove_if_empty(folder: Path) -> None:
@@ -175,7 +320,17 @@ def _rewrite_correction_results(layout: JobLayout, convert: Callable[[str], str]
 def _move_state_files(
     base: Path, layout: JobLayout, *, source: str, extra: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
-    """Move one old layout's state files and folders from *base*; the report."""
+    """Move one old layout's state files and folders from *base*; the report.
+
+    Resumable (:data:`JOURNAL_FILE`): the journal is written before anything
+    moves; the folders move; the converted checkpoint, history and results
+    are written while the old files still exist; the old files go; the
+    journal goes last. An interruption anywhere is finished by the next call.
+    """
+    journal = _Journal.read(layout)
+    if journal is not None and journal.base != str(base):
+        raise ValueError(f"{layout.folder} holds an interrupted migration from "
+                         f"{journal.base}, not from {base}; open that job first")
     state_path = base / CHECKPOINT_FILENAME
     undo_path = base / LEGACY_UNDO_FILENAME
     results_path = base / LEGACY_RESULTS_FILENAME
@@ -187,18 +342,17 @@ def _move_state_files(
         state = upgrade_state(raw)  # refuses a newer format before anything moves
     undo, redo = read_legacy_history(undo_path) if undo_path.exists() else ([], [])
     layout.ensure()
+    if journal is None:
+        journal = _Journal(layout, {"from": str(base), "source": source, "moves": []})
     ids = _section_ids(*([state] if state else []), *undo, *redo)
-    moves = _move_folders(base, layout, ids)
+    moves, conflicts = _move_folders(base, layout, ids, journal)
     convert = _converter(moves, layout)
     if state is not None:
         write_json_atomic(str(layout.state_file),
                           {FORMAT_KEY: STATE_FORMAT_VERSION, **state_paths(state, convert)})
-        state_path.unlink()
     if undo or redo:
         History(layout.history_dir).save([state_paths(entry, convert) for entry in undo],
                                           [state_paths(entry, convert) for entry in redo])
-    if undo_path.exists():
-        undo_path.unlink()
     if results_path.exists():
         try:
             results = _load_json(results_path)
@@ -209,17 +363,34 @@ def _move_state_files(
             results_path.unlink()
         except (OSError, ValueError):
             logger.warning("Old results %s not migrated", results_path, exc_info=True)
+    for path in (state_path, undo_path):
+        if path.exists():
+            path.unlink()
     for target, old in (extra or {}).items():
-        if old.exists():
-            destination = layout.folder / target
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(old), str(destination))
+        destination = layout.folder / target
+        move = {"from": str(old.absolute()), "to": str(destination), "state": "planned"}
+        if old.exists() or destination.with_name(destination.name + PARTIAL_SUFFIX).exists():
+            _move_one(journal, move)
+            if move["state"] == "conflict":
+                conflicts.append(move["from"])
     _rewrite_correction_results(layout, convert)
     report = {"source": source, "from": str(base), "state": state is not None,
-              "undo_steps": len(undo), "redo_steps": len(redo), "folders_moved": len(moves)}
+              "undo_steps": len(undo), "redo_steps": len(redo),
+              "folders_moved": sum(1 for m in journal.data["moves"] if m["state"] == "done"),
+              "resumed": bool(journal.data.get("resumed")), "conflicts": conflicts}
+    if conflicts:
+        logger.warning("Migration of %s kept %d old folder(s) whose target in %s already "
+                       "held different content: %s", base, len(conflicts), layout.folder,
+                       ", ".join(conflicts))
     layout.log_event("migrated", **report)
+    journal.remove()
     logger.info("Migrated the old LangSlice files in %s into %s", base, layout.folder)
     return report
+
+
+def interrupted(layout: JobLayout) -> bool:
+    """Whether *layout* holds an interrupted migration's journal."""
+    return (layout.folder / JOURNAL_FILE).exists()
 
 
 def has_legacy_files(folder: Path) -> bool:
@@ -236,7 +407,11 @@ def migrate_beside_images(layout: JobLayout) -> dict[str, Any] | None:
     (logged).
     """
     base = layout.image_folder
-    if base is None or not has_legacy_files(base):
+    if base is None:
+        return None
+    if interrupted(layout):  # finish what an interrupted open started
+        return _move_state_files(base, layout, source="beside the images")
+    if not has_legacy_files(base):
         return None
     if layout.state_file.exists():
         logger.warning("%s holds old LangSlice files, but %s already holds a job; "
@@ -265,7 +440,8 @@ def migrate_saved_job(root: Path, job_id: str) -> dict[str, Any]:
     if not isinstance(image_folder, str) or not image_folder:
         raise ValueError(f"Saved job {job_id} names no image folder")
     layout = JobLayout.for_images(Path(image_folder).expanduser())
-    if layout.state_file.exists() and (old / CHECKPOINT_FILENAME).exists():
+    resuming = interrupted(layout) and _Journal.read(layout).base == str(old)  # type: ignore[union-attr]
+    if not resuming and layout.state_file.exists() and (old / CHECKPOINT_FILENAME).exists():
         raise ValueError(
             f"Saved job {job_id} cannot move into {layout.folder}: that folder already "
             "holds a LangSlice job. Move it away and open the saved job again.")
