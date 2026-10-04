@@ -10,6 +10,7 @@ session handoffs.
 - [`architecture_overview.md`](architecture_overview.md) - package boundaries, major modules, and end-to-end control flow.
 - [`current_workflow.md`](current_workflow.md) - current CLI workflows.
 - [`agent_cli.md`](agent_cli.md) - the agent CLI: one verb on a job folder, the JSON envelope, exit codes, the job folder's reference card and `langslice.open_job`.
+- [`file_formats.md`](file_formats.md) - the job folder's public files: `registration.json`, each section's coordinate, label and residual maps, the QuickNII / VisuAlign exports.
 - [`interface_design.md`](interface_design.md) - the target user-facing design: the Positioning, Linear and Nonlinear tasks, their options, and what each host exposes, with what is on main today.
 
 ## Runtime References

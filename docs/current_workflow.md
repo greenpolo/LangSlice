@@ -170,8 +170,12 @@ starts over, with an empty history. A script may edit `langslice/state.json`
 while a run is going: the run reloads it before its next tool call, and the
 edit is one undo step. Every picture the agent is shown is saved under
 `langslice/sections/<stem>/views/` (one section) or `langslice/views/`, with
-its atlas labels, border mask and frame for placement pictures, and listed in
-`langslice/views.jsonl`. A folder with the old files beside the images
+its atlas labels, border mask and frame for placement and `fit_deformable`
+pictures, and listed in `langslice/views.jsonl`. Every write also rewrites
+`langslice/registration.json` (the registrations in BrainGlobe
+micrometres), and submit writes each section's coordinate, label and
+residual maps and `exports/quicknii.json` / `exports/visualign.json`
+(`docs/file_formats.md`). A folder with the old files beside the images
 (`linear_state.json`, `linear_undo.json`, `deformable/`, `nonlinear/`) is
 moved into the job folder the next time it is opened. `--job-dir PATH` puts
 the job folder there instead (one per benchmark arm on one dataset folder; a

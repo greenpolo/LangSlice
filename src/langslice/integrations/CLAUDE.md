@@ -6,7 +6,16 @@ here is a verbatim copy — edit one, mirror to the other.
 
 - `integrations/` — one module per external registration ecosystem.
   `quint.py`: QUINT/QuickNII/VisuAlign-compatible JSON export (anchoring
-  vectors; file-based, formerly top-level `export.py`).
+  vectors; file-based, formerly top-level `export.py`). A job's export
+  (formats phase, 2026-10-04): `job_export(sections, atlas)`,
+  `anchoring_from_pixel_map` (the anchoring from a section's exact file
+  pixel -> BrainGlobe µm matrix, any plane and cutting angle) and
+  `atlas_um_to_quicknii_points` (SliceBench's conversion: `brainglobe_space`
+  to the `lpi` QuickNII axes, voxel centres to edges); written by
+  `ops.exports.export_maps` as `exports/quicknii.json` and
+  `exports/visualign.json` (VisuAlign markers of each applied deformation,
+  `core.maps.residual_markers`). The older coronal-frame
+  `compute_anchoring` path is unchanged.
   `abba.py`: LangSlice as an abba-python registration plugin
   (`enable_langslice_registration`, `register_selected_slices`). Implements
   ABBA's `SimpleRegistrationPlugin` socket from Python via JPype: the fixed

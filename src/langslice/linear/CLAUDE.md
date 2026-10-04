@@ -848,7 +848,8 @@ but unreadable or stale record says `deformation_drawn: false`.
 (2026-10-03: Astra asked for a read-only view of the complete
 registration). Records are written
 at apply time under the results folder and referenced from the results JSON;
-export adapters (ABBA, VisuAlign, BrainGlobe) are to read them, none exist.
+the job folder's maps and VisuAlign markers read them (`core/maps.py`,
+`docs/file_formats.md`); ABBA and BrainGlobe adapters are still to be built.
 
 Default task/tool counts stay
 unchanged; `DEFAULT_TASKS` is separate from `ALL_TASKS`. Hosts may supply calibrated

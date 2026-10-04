@@ -319,6 +319,11 @@ program. Code that runs in LangSlice's own environment lives in
 - Atlas orientation assumptions are centralized in `src/langslice/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via
   `brainglobe_space` and requires the AP axis to increase anterior→posterior.
+- A job folder's public files (`registration.json` on every write; per
+  section `coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
+  `residual.tif`; QuickNII/VisuAlign JSON in `exports/`, at submit and by the
+  CLI/library verb `export_maps`) are derived from `state.json` and never read
+  back: `docs/file_formats.md`.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
 - A job's files live in its job folder, `<images>/langslice/`
   (`src/langslice/job/CLAUDE.md`; `--job-dir` moves it, a read-only image

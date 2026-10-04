@@ -94,7 +94,20 @@ wording; `registry.py` lists which.
   deformation), then the door's *gate*; then ONE undo step: the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
   `submit: <summary>` note, `submitted`; then every queued picture written
-  (`job.views.flush`). Returns `Submitted`.
+  (`job.views.flush`) and, with the workspace, every placed section's maps
+  and the exports (`exports.export_maps`; a failure is logged, the submit
+  stands). Returns `Submitted` (`exported`).
+- `exports.py` (formats phase) — `export_maps(job, workspace, ids=,
+  full_resolution=)`: the job folder's derived files from the stack as it
+  stands, no undo step: per placed section the maps
+  (`core.maps.section_maps` through the applied deformation record, written
+  by `job.formats.write_section_maps`; a section without a position, or
+  whose record or file cannot be read, is `skipped` with its reason), then
+  `exports/quicknii.json` and `exports/visualign.json` for every placed
+  section (`integrations.quint.job_export`, markers from
+  `core.maps.residual_markers`), then `registration.json`. A job that
+  persists nothing writes nothing and lists what it would (`written`
+  False). `UNKNOWN_SLICE_IDS`. Returns `Exported`.
 - `transforms.py` — the stored transform: `interactive_transform` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (`fit_affine`'s record), `set_transforms(job, {id: record})` (one undo step
@@ -169,9 +182,13 @@ wording; `registry.py` lists which.
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", alternates, when, long)`, in the order every door lists them;
-  `enabled(spec)` (phase 5): the verbs a run of the spec has (`when`: the
-  task switches and host switches that were `build_tools`' if-chain);
+  "Nonlinear", alternates, when, long, scripting)`, in the order every door
+  lists them; `enabled(spec, scripting=)` (phase 5): the verbs a run of the
+  spec has (`when`: the task switches and host switches that were
+  `build_tools`' if-chain). A `scripting` verb (`export_maps`, a "read":
+  it changes no state) is the agent CLI's and the library's only
+  (`build_tools(scripting=True)`), never offered to a model, so the agent
+  tools and MCP declare exactly what they did;
   `table()` as plain rows. `fit_deformable`'s alternate is `keep_linear`.
   Every door is built from it (phase 5): `build_tools` makes the tools
   `enabled(spec)` names (the ADK and MCP doors), the MCP door's

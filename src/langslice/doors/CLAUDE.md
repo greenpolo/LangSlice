@@ -12,8 +12,8 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 |---|---|---|
 | agent tools (ADK) | `linear/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
 | MCP tools | the same toolbox (`mcp_server/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs | Claude Desktop, Claude Code locked to it |
-| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"` | Claude Code, Codex |
-| library | `library.py` (`langslice.open_job`) over the same toolbox | a script |
+| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`) | Claude Code, Codex |
+| library | `library.py` (`langslice.open_job`) over the same toolbox, the scripting verbs included | a script |
 
 A verb is never renamed once shipped (scripts and agents call it by name).
 The goldens (`tests/golden/linear_tools/*_declarations_*`) pin what the ADK
@@ -55,20 +55,22 @@ operation (`ops/`) never imports a door.
   resume), `open_folder(path, persist=)` (`Job.load`: nothing rewritten;
   the card brought up to date), `create(spec)` (`Job.open`: the ingest
   every host uses; the card), `Opened.tools()` (the toolbox with
-  `gates=False`, `level="auto"`, `max_view_edge` `OPEN_MAX_VIEW_EDGE`:
+  `gates=False`, `level="auto"`, `scripting=True`, `max_view_edge` `OPEN_MAX_VIEW_EDGE`:
   no model's cap, the source's pixels bound every picture), `Opened.close`
   (image corrections settled, pictures flushed).
 - `library.py` — `open_job(folder, atlas_loader=, emit=)` -> `JobHandle`:
   every verb the job has as a method (the tool itself: same arguments,
   the reply dict with plain PIL pictures under `images`, saved like every
-  door's), `verbs`, `folder`, `job`, `state`, `workspace`, `close`, a
+  door's; the scripting verbs too), `verbs`, `folder`, `job`, `state`,
+  `workspace`, `close`, a
   context manager. `langslice/__init__.py` exposes `open_job`,
   `coordinate_map` (`core.layers`) and `load_atlas` (`atlas.core`), each
   imported on first use.
 - `card.py` — the job folder's reference card, `AGENTS.md` and
   `CLAUDE.md` (identical; Codex reads one, Claude Code the other):
-  `card_text(layout)` (one screen: the folder's files, state as truth and
-  pictures as derived, the coordinate map and convention, the CLI with
+  `card_text(layout)` (one screen: the folder's files, one line each for
+  `registration.json` and each section's maps, state as truth and the
+  rest derived, the coordinate map and convention, the CLI with
   every verb from the registry, the Python entry point), `write_card`
   (writes where missing or worded differently; never raises). Written by
   every door that opens or makes a job: the CLI and the library
@@ -105,7 +107,9 @@ operation (`ops/`) never imports a door.
     `linear run`, `jobs.create`), `runs` (`runs [ID]`, `wait [ID]`; `status`
     is only the verb).
     `CHECKED_ONLY`: `trace_borders` and `fit_deformable` are checked, not
-    run, by `--dry-run`.
+    run, by `--dry-run`. After `submit` the derived files
+    (`job.formats.derived_files`) and after `export_maps` the files it
+    wrote are listed as artifacts by kind.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` + `job FOLDER VERB --args
     ... --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish`
