@@ -133,11 +133,17 @@ paths). The trace identity in a deformation cache key is the stored
   checkpoint. A checkpoint from a newer LangSlice is refused before
   anything moves. Each migration is a line in `logs/events.jsonl`.
 - `views.py` — `ViewStore` (`Job.views`): every picture the model was
-  shown. The tool door (`toolbox._saves_views`, around every tool) queues
-  each returned picture with what `core.layers` noted about it; the ADK
-  driver queues the opening's message images (`engine.save_opening`), the
-  MCP door each `show_stack` page's image blocks (`server.save_page`), as
-  the bytes sent. Per picture a folder `<seq>_<tool>[_<mode>]` (six-digit
+  shown. The hook every door uses (phase 3d) is `ViewStore.shown(tool,
+  atlas_of=)`: a context manager that collects what `core.layers` notes
+  while the door's operation runs; the door hands it the pictures it sends
+  (`Shown.show(pictures, arguments=, call_id=)`) and the store queues each
+  with its note (the atlas, for a placement picture's layers, asked of
+  `atlas_of` only then; a block that raises saves nothing; a failed queue is
+  logged, never raised). The tool door's `toolbox._saves_views` wraps every
+  tool in it, so the ADK and MCP tools save the same way, and a CLI or
+  script would too. The ADK driver queues the opening's message images
+  (`engine.save_opening`), the MCP door each `show_stack` page's image
+  blocks (`server.save_page`), as the bytes sent, through `save`. Per picture a folder `<seq>_<tool>[_<mode>]` (six-digit
   sequence across the job's life, continued on reopen) with `view.jpg` (the
   exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
@@ -146,7 +152,7 @@ paths). The trace identity in a deformation cache key is the stored
   `borders.png` (8-bit coverage). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`). One background
-  thread per store, ending when its queue is empty; `flush` (submit,
+  thread per store, ending when its queue is empty; `flush` (`ops.submit`,
   `Job.emit_results`, `Job.close`) and `flush_all` (interpreter exit) wait
   for it. A failed write is logged and skipped. Measured (2026-10-03,
   synthetic atlas): numbering and queueing 0.2-0.3 ms per call on the tool

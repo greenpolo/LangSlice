@@ -35,7 +35,7 @@ JobSpec
                                 # channel: the DEFAULT appearance; pages stay raw channels
   agent_preprocessing: bool = False # build `preprocess` (agent-set appearance)
   image_resolution: low|medium|high|auto = low # long edge of each opening-strip
-                                # tile and of every later picture (render.PICTURE_EDGES);
+                                # tile and of every later picture (core.sizes.PICTURE_EDGES);
                                 # auto: the agent's `view.resolution` per call; display
                                 # only, fits and stored transforms unchanged
   agent_damage: bool = True     # build mark_damaged; host flags can never be cleared
@@ -87,7 +87,7 @@ is exempt from the damaged-section transform gate, and its position still
 moves. `orient_slices`, `fit_affine` and `adjust_transforms` refuse it per
 section with `LOCKED`; `mark_damaged` refuses to clear a host flag with
 `DAMAGE_SET_BY_USER`. `image_resolution` sizes the pictures only
-(`render.PICTURE_EDGES`, long edges):
+(`core.sizes.PICTURE_EDGES`, long edges):
 
 | level | opening strip tiles (seed message) | every later picture |
 | --- | --- | --- |
@@ -217,17 +217,26 @@ what changed; every write is undoable; every write checkpoints; fits write
 their result. Tools report data. No advice, no interpretation, no strategy
 in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 
-**Code layout (layered refactor, 2026-10-03).** A tool is a door: argument
-checking, the look-before-commit gates, one operation and the wording. The
-writes are operations (`src/langslice/ops/`: positions, order, orientation,
-damage, appearance, notes, transforms, the deformable fit and `keep_linear`),
-the job (`linear/job.py`) owns state, undo, checkpoint and the submit gates,
-and the pictures are built by the core (`src/langslice/core/`: `pictures.py`
-for the viewing tools, `placement.py` for every placement picture, whose
-`draw_canvas` also returns the `CanvasFrame` the picture was drawn in). The
-tools return plain PIL pictures; the ADK driver packages them as JPEG message
-parts (`adk/media.py` `packaged`) and the MCP server as image blocks, so the
-toolbox imports no model SDK.
+**Code layout (layered refactor, 2026-10-03; phase 3d 2026-10-04).** A tool
+is a door: argument checking, the look-before-commit gates, ONE operation and
+the wording. The module map:
+
+| layer | module | holds |
+| --- | --- | --- |
+| door | `linear/toolbox.py`, `linear/view_options.py`, `linear/arguments.py` | the tools: arguments, `view` parsing, the gates (`compared`/`reviewed`), delivery bookkeeping, `transform_history`, every reply's wording |
+| door | `adk/media.py`, `mcp_server/` | packaging: JPEG message parts (`packaged`), MCP image blocks |
+| ops | `ops/views.py` | the read verbs: `status`, `view_slices`, `view_atlas`, `view_placement`, `view_stack` |
+| ops | `ops/positions.py`, `order.py`, `orientation.py`, `damage.py`, `appearance.py`, `notes.py`, `history.py` | positions and cutting angles (+ `search_position`, `run_deepslice`), reorder, flip/rotation, damage, `preprocess`, notes, undo/redo |
+| ops | `ops/transforms.py`, `ops/deformable.py`, `ops/traces.py`, `ops/atlas.py`, `ops/submit.py` | `fit_affine`, `adjust_transforms`, the deformable fit and `keep_linear`, `trace_borders` (the image-model call passed in), `grep_atlas`, `submit` |
+| ops | `ops/registry.py` | every tool -> its operation, read/write, task group |
+| job | `linear/job.py`, `job/` | state, undo, checkpoint, submit gates, image-correction jobs; the job folder and its saved pictures (`Job.views.shown`, the one saving hook) |
+| core | `core/pictures.py`, `core/placement.py`, `core/layers.py` | the viewing pictures, every placement picture (`draw_canvas`, `fit_picture`, `transform_views`) and its layers |
+| core | `core/sections.py`, `captions.py`, `canvas.py`, `sheets.py`, `status.py`, `sizes.py` | renders and their cache, captions, the physical canvas, stack sheets, the status table, picture sizes (was `linear/render.py`, now a shim for SliceBench) |
+
+Every operation that shows its result takes the call's `DisplayOptions` and
+returns the core's plain PIL pictures; the ADK driver packages them as JPEG
+message parts and the MCP server as image blocks, so the toolbox imports no
+model SDK.
 
 | tool | task gate | does |
 | --- | --- | --- |
@@ -298,7 +307,7 @@ silhouette fit, calibration, the tissue pivot, `search_position` and
 
 `view_atlas` and `view_slices` frame tissue the same way so apparent scale is
 not a cue. Every image a tool returns carries its label burned into the pixels
-(`render.caption`): tool images reach the model as bare attachments, so the
+(`core.captions.caption`): tool images reach the model as bare attachments, so the
 text that ties an image to a section or a position has to ride in the image.
 The image a fit MEASURES is never captioned — only what is shown. Seed
 message: every section as its own labelled image in corrected order plus the
@@ -516,8 +525,8 @@ methods draw the same lines from the same source.
 (display-preprocessed grayscale) with the family outlines on top at true
 scale, a 1 mm scale bar, and a caption (section id, position, angles, the
 params). `fit_affine`'s panels use the same renderer
-(`core.placement.draw_canvas` over `render.physical_views`; was
-`render.physical_overlay`, its `overlay` view), so every look at a section
+(`core.placement.draw_canvas` over `core.canvas.physical_views`; was
+`core.canvas.physical_overlay`, its `overlay` view), so every look at a section
 is the same picture.
 
 **View controls (2026-09-06).** Four sessions of gpt-5.6-luna aligning damaged

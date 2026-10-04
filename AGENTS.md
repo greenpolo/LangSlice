@@ -117,16 +117,23 @@ Shared, top-level:
   `docs/nonlinear_image_tool.md`.
 
 - `ops/` — the verbs: every write to a stack (positions, order, orientation,
-  damage, appearance, notes, the in-plane transform, the deformable fit and
-  `keep_linear`) as a function on the job, one undo step each, returning a
-  plain record; no pictures, no model wording, no gates. Imports the core and
-  the job layer only, never a door:
+  damage, appearance, notes, undo/redo, the in-plane transform and its fits,
+  the image-model trace with the model call passed in, the deformable fit
+  and `keep_linear`, submit) and every viewing tool's read, as a function
+  on the job: a write is one undo step, each returns a plain record, and
+  given the call's display options the core's pictures; no model wording,
+  no look-before-commit gates. Each agent tool is argument checking, one
+  call here and its wording; `registry.py` maps every tool to its
+  operation, read or write, and task group. Imports the core and the job
+  layer only, never a door:
   `src/langslice/ops/CLAUDE.md` (loads when working there).
-- `core/` — the core library's new home (layered refactor): for now the
-  pictures the tools send (`pictures.py`, `placement.py`: every placement
-  picture and the frame it is drawn in), plain PIL images with captions
-  burned in; the doors package them (ADK parts, MCP blocks; `jpeg.py` the
-  one encoding). `layers.py`: a placement picture's atlas labels, border
+- `core/` — the core library's new home (layered refactor): the pictures
+  the tools send (`pictures.py`, `placement.py`: every placement picture and
+  the frame it is drawn in), plain PIL images with captions burned in, and
+  what was `linear/render.py` (`sections.py` renders, `captions.py`,
+  `canvas.py` the physical canvas, `sheets.py`, `status.py`, `sizes.py`;
+  `linear/render.py` is a re-export shim for SliceBench); the doors package
+  the pictures (ADK parts, MCP blocks; `jpeg.py` the one encoding). `layers.py`: a placement picture's atlas labels, border
   mask and frame (`pixel_to_atlas_um`, BrainGlobe µm), and
   `coordinate_map`, each picture pixel's atlas position on demand. Never
   imports the job layer, ops, a door or a model client:
