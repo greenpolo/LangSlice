@@ -115,9 +115,9 @@ def test_in_range_aspect_ratio_is_left_untouched():
 
 
 def test_register_cli_parses_passes_deformation_and_mirror():
-    from langslice.cli import _build_parser
+    from langslice.doors.cli import build_parser
 
-    args = _build_parser().parse_args(
+    args = build_parser().parse_args(
         [
             "nonlinear", "register", "tests/fixture.png", "--position", "5.0",
             "--passes", "2", "--deformation", "deformable", "--mirror-atlas-lr",
@@ -127,7 +127,7 @@ def test_register_cli_parses_passes_deformation_and_mirror():
     assert args.deformation == "deformable"
     assert args.mirror_atlas_lr is True
 
-    defaults = _build_parser().parse_args(
+    defaults = build_parser().parse_args(
         ["nonlinear", "register", "tests/fixture.png", "--position", "5.0"]
     )
     assert defaults.passes == 1
@@ -135,7 +135,7 @@ def test_register_cli_parses_passes_deformation_and_mirror():
     assert defaults.mirror_atlas_lr is False
 
     with pytest.raises(SystemExit):
-        _build_parser().parse_args(
+        build_parser().parse_args(
             [
                 "nonlinear", "register", "tests/fixture.png", "--position", "5.0",
                 "--passes", "3",
@@ -144,7 +144,7 @@ def test_register_cli_parses_passes_deformation_and_mirror():
     # The Elastix residual fit's stages are gone (2026-10-04).
     for retired in ("bspline", "affine"):
         with pytest.raises(SystemExit):
-            _build_parser().parse_args(
+            build_parser().parse_args(
                 ["nonlinear", "register", "tests/fixture.png", "--position", "5.0",
                  "--deformation", retired]
             )

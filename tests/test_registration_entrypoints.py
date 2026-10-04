@@ -188,13 +188,14 @@ def test_api_returns_prepared_frame_provenance_without_remapping_markers(
 
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_cli_alignment_json_and_mirror(tmp_path, monkeypatch, wrapped):
-    from langslice import cli
+    from langslice.doors.cli.register import add_register_parser
+    from langslice.doors.cli.register import run_register as run_register_cli
 
     matrix = [[1, 0.1, 4], [0.2, 1, 2], [0, 0, 1]]
     path = tmp_path / "alignment.json"
     path.write_text(json.dumps({"atlas_to_slice": matrix} if wrapped else matrix))
     parser = argparse.ArgumentParser()
-    cli._add_register_parser(parser.add_subparsers())
+    add_register_parser(parser.add_subparsers())
     args = parser.parse_args([
         "register", "unused.png", "--position", "2", "--provider", "none",
         "--initial-alignment", str(path), "--mirror-atlas-lr", "--passes", "2",
@@ -208,7 +209,7 @@ def test_cli_alignment_json_and_mirror(tmp_path, monkeypatch, wrapped):
 
     monkeypatch.setattr("langslice.api.runtime.run_register", capture)
     with pytest.raises(CapturedRequest):
-        cli._run_register(args)
+        run_register_cli(args)
     assert received[0].initial_atlas_to_slice == matrix
     assert received[0].atlas_mirror_lr is True
     assert received[0].passes == 2

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from langslice.cli import _build_parser
+from langslice.doors.cli import build_parser
 
 
 def _parse(args: list[str]):
-    return _build_parser().parse_args(args)
+    return build_parser().parse_args(args)
 
 
 def test_linear_run_default_plane_is_coronal():
@@ -28,7 +28,7 @@ def test_linear_run_accepts_horizontal_plane():
 
 
 def test_linear_run_rejects_unknown_plane(capsys):
-    parser = _build_parser()
+    parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["linear", "run", "sections/", "--plane", "axial"])
     err = capsys.readouterr().err
@@ -59,7 +59,7 @@ def test_register_accepts_horizontal_plane():
 
 
 def test_register_rejects_unknown_plane(capsys):
-    parser = _build_parser()
+    parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(
             ["nonlinear", "register", "tests/fixture.png", "--position", "5.0", "--plane", "axial"]

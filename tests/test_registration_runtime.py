@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-import langslice.cli as cli
 import langslice.nonlinear.runtime as runtime
+from langslice.doors.cli.register import resolve_register_models
 from langslice.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
 
 
@@ -161,7 +161,7 @@ def test_registration_runtime_direct_image_gen_registration_emits_runtime_trace_
     assert result.debug_dir is None
     assert any(event.get("title") == "Registration solve completed" for event in trace_events)
 def test_resolve_register_models_defaults_review_to_effective_model() -> None:
-    image_model, review_model = cli._resolve_register_models(
+    image_model, review_model = resolve_register_models(
         default_image_model="gpt-image-2",
         default_review_model="gpt-4.1",
         image_model=None,
@@ -172,7 +172,7 @@ def test_resolve_register_models_defaults_review_to_effective_model() -> None:
 
 
 def test_resolve_register_models_keeps_explicit_review_model() -> None:
-    image_model, review_model = cli._resolve_register_models(
+    image_model, review_model = resolve_register_models(
         default_image_model="gpt-image-1.5",
         default_review_model="gpt-4.1",
         image_model="gpt-image-2",

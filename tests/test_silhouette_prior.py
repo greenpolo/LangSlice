@@ -16,7 +16,7 @@ import pytest
 from PIL import Image
 
 from langslice.affine import _affine_from_pose, _moments_pose, silhouette_iou
-from langslice.cli import _build_parser
+from langslice.doors.cli import build_parser
 from langslice.nonlinear.prior import place_plane_on_tissue, tissue_mask
 
 _H, _W = 120, 160
@@ -204,7 +204,7 @@ def test_model_free_backbone_registers_the_silhouette_placement_end_to_end(
 
 
 def test_cli_parses_the_model_free_backbone() -> None:
-    args = _build_parser().parse_args(
+    args = build_parser().parse_args(
         [
             "nonlinear", "register", "slice.png", "--position", "5.2",
             "--provider", "none", "--deformation", "deformable",
