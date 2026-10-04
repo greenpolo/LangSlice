@@ -148,7 +148,13 @@ the residual alone.
   verb (`start_atlas_correction`, route "atlas"), both sharing the call-key
   folders and attempts, taking the image model as an argument too, and
   leaves fitting to `fit_deformable` and transformation export to the
-  separate registration stage.
+  separate registration stage. In route "supplied" a model profile's
+  own prompt and attachment order (`ImageModel.prompt` / `photograph_first`,
+  `providers/profiles.py`) replace the base prompt (`profile_prompt`)
+  and join the call key; an untested profile marks its request and result
+  `untested` (`profile_marks`). Without a profile prompt the wording is
+  unchanged (`border_correction_tool_prompt`). Route "atlas" sends its own
+  fixed pass prompts whatever the profile.
 
 ## Visual review is essential
 

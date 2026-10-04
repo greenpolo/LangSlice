@@ -186,7 +186,7 @@ read or write, task group and the specs that have it (`ops/registry.py`,
 | Agent tools (ADK) | LangSlice's own agent | the verbs `enabled(spec)` names, declared for the run (`build_tools`); pictures as message images; the look-before-commit gates |
 | MCP (`langslice mcp`) | Claude Desktop, Claude Code locked to the server | the same tools (plus the door's own `start_job`, `show_stack`); pictures as image blocks; `readOnlyHint` on the read verbs; with Nonlinear, `trace_borders` only when the job's image model is connected (its key or login present), else not listed and the statement says why |
 | Agent CLI (`langslice job FOLDER VERB`, `ops`, `schema`) | a coding agent (Claude Code, Codex) | the same tools on a job folder, one JSON envelope per call, pictures as saved file paths, no gates, any picture size (`docs/agent_cli.md`) |
-| Library (`import langslice`) | a script | `langslice.open_job(folder)`: the same verbs as methods; `coordinate_map`, `load_atlas` |
+| Library (`import langslice`) | a script, a scripted pipeline | `langslice.open_job(folder)` / `create_job(images, ...)`: the same verbs as methods; `register_section` / `register_job`: the image model's trace and the deformable fit without the agent, with a model profile (`image_model`) and a lean job folder (`docs/library.md`); `coordinate_map`, `load_atlas` |
 
 A verb is never renamed once shipped. Every job folder carries a reference
 card for coding agents (`AGENTS.md` = `CLAUDE.md`, generated from the

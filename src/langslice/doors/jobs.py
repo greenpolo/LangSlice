@@ -35,6 +35,7 @@ from langslice.job.layout import (
 
 if TYPE_CHECKING:
     from langslice.doors.tools.toolbox import ToolBox
+    from langslice.providers.registry import ImageModel
 
 #: The largest picture a CLI or script call may ask for (``view.resolution``):
 #: no model's limit applies, only the source's own pixels (nothing is
@@ -124,6 +125,13 @@ class Opened:
 
     job: Job
     ctx: JobContext
+    #: The image model ``trace_borders`` calls (None: the spec's provider,
+    #: resolved by the tool door; a ``custom`` provider without one offers no
+    #: ``trace_borders``).
+    image_model: ImageModel | None = None
+    #: No ``trace_borders`` whatever the spec says (a library job made with
+    #: an untested profile, reopened without it).
+    traces_off: bool = False
     _box: ToolBox | None = field(default=None, repr=False)
 
     @property
@@ -134,14 +142,20 @@ class Opened:
         """The verbs this job's spec has, as the tool door builds them (one
         toolbox per open job), with the gates off, the pictures sized by
         the caller (``view.resolution`` up to :data:`OPEN_MAX_VIEW_EDGE`) and
-        the scripting verbs (``export_maps``) added."""
+        the scripting verbs (``export_maps``) added; ``trace_borders`` calls
+        :attr:`image_model` when one was handed in."""
         if self._box is None:
+            from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
             from langslice.core.sizes import AUTO_RESOLUTION
             from langslice.doors.tools.toolbox import build_tools
 
+            custom = canonical_provider(self.spec.nonlinear.provider) == CUSTOM_PROVIDER
             self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
                                     job=self.job, max_view_edge=OPEN_MAX_VIEW_EDGE,
-                                    gates=False, level=AUTO_RESOLUTION, scripting=True)
+                                    gates=False, level=AUTO_RESOLUTION, scripting=True,
+                                    image_model=self.image_model,
+                                    image_model_connected=not self.traces_off and (
+                                        self.image_model is not None or not custom))
         return self._box
 
     def close(self) -> None:
@@ -156,11 +170,13 @@ def open_folder(
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
     persist: bool = True,
+    image_model: ImageModel | None = None,
 ) -> Opened:
     """Open the job *path* names (:func:`find`) as it stands on disk.
 
     *persist* False opens it for a dry run: nothing is written. Otherwise the
-    reference card is brought up to date.
+    reference card is brought up to date (not in a lean job). *image_model*
+    is the model ``trace_borders`` calls (None: the spec's provider).
     """
     from langslice.doors.api.setup import load_credentials
 
@@ -169,23 +185,26 @@ def open_folder(
     load_credentials()  # the image model's keys, as every door loads them
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.load(spec, ctx, folder=folder, results_path=ctx.results_path, persist=persist)
-    if persist:
+    if persist and not job.lean:
         write_card(job.layout)
-    return Opened(job, ctx)
+    return Opened(job, ctx, image_model)
 
 
 def create(
     spec: JobSpec, *,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
+    image_model: ImageModel | None = None,
 ) -> Opened:
     """A job for *spec*'s image folder, as every host makes one
     (``Job.open``: the job folder beside the images or ``spec.job_dir``,
     ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
-    with its reference card."""
+    with its reference card (not in a lean job). *image_model* as in
+    :func:`open_folder`."""
     folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
                                           emit=emit or log_progress)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
-    write_card(job.layout)
-    return Opened(job, ctx)
+    if not job.lean:
+        write_card(job.layout)
+    return Opened(job, ctx, image_model)

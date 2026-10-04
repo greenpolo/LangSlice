@@ -13,7 +13,7 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 | agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
 | MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`) | Claude Desktop, Claude Code locked to it |
 | agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) | Claude Code, Codex |
-| library | `library.py` (`langslice.open_job`) over the same toolbox, the scripting verbs included | a script |
+| library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `pipeline.py` (`register_section`, `register_job`) calls those verbs in a fixed order | a script, a scripted pipeline |
 
 A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
 placement-free image-model trace kept for experiments) is built by the
@@ -40,10 +40,12 @@ no exceptions listed. The host commands (`abba`, `serve`) live in
 `hosts/cli.py`; `cli/__init__.py` names them by module path
 (`HOST_COMMANDS`) and imports that module when it builds the parser, never
 statically.
-`tests/test_core_imports.py` loads `declarations`, `jobs`, `library`, `card`,
-`cli`, `cli.job`, `tools.toolbox` and `tools.view_options` in a fresh
-interpreter and checks, and runs `import langslice;
-langslice.open_job(...)` with a verb or two. An operation (`ops/`) never
+`tests/test_core_imports.py` loads `declarations`, `jobs`, `library`,
+`pipeline`, `providers.profiles`, `card`, `cli`, `cli.job`, `tools.toolbox`
+and `tools.view_options` in a fresh interpreter (this tree's `src/` first on
+the path) and checks, and runs `import langslice; langslice.open_job(...)`
+with a verb or two, then a scripted `register_section` with a model of the
+script's own. An operation (`ops/`) never
 imports a door.
 
 Two sub-packages moved in with the folder move (2026-10-04), each described
@@ -109,19 +111,53 @@ own jobs are flat). The engine service stays in
   the card brought up to date; the model keys loaded by
   `api.setup.load_credentials`, `.env` then the keys saved by setup, the one
   loader the CLI's `main` uses too), `create(spec)` (`Job.open`: the ingest
-  every host uses; the card), `Opened.tools()` (the toolbox with
-  `gates=False`, `level="auto"`, `scripting=True`, `max_view_edge` `OPEN_MAX_VIEW_EDGE`:
-  no model's cap, the source's pixels bound every picture), `Opened.close`
+  every host uses; the card), both taking `image_model=` (kept on
+  `Opened.image_model`) and writing no card for a lean job, `Opened.tools()`
+  (the toolbox with `gates=False`, `level="auto"`, `scripting=True`,
+  `max_view_edge` `OPEN_MAX_VIEW_EDGE`: no model's cap, the source's pixels
+  bound every picture; `image_model` handed to `build_tools`; without one a
+  `custom`-provider job, or one with `Opened.traces_off`, gets
+  `image_model_connected=False`: no `trace_borders`), `Opened.close`
   (image corrections settled, pictures flushed).
-- `library.py` — `open_job(folder, atlas_loader=, emit=)` -> `JobHandle`:
-  every verb the job has as a method (the tool itself: same arguments,
-  the reply dict with plain PIL pictures under `images`, saved like every
-  door's; the scripting verbs too, the hidden one by name), `verbs` (the
-  listed ones), `folder`, `job`, `state`,
-  `workspace`, `close`, a
-  context manager. `langslice/__init__.py` exposes `open_job`,
-  `coordinate_map` (`core.layers`) and `load_atlas` (`core.atlas.core`), each
-  imported on first use.
+- `library.py` — `open_job(folder, image_model=, atlas_loader=, emit=)` ->
+  `JobHandle`: every verb the job has as a method (the tool itself: same
+  arguments, the reply dict with plain PIL pictures under `images`, saved
+  like every door's; the scripting verbs too, the hidden one by name),
+  `verbs` (the listed ones), `folder`,
+  `image_model`, `job`, `state`, `workspace`, `close`, a context manager.
+  `create_job(images | JobSpec, atlas=, plane=, tasks=, image_model=,
+  job_dir=, output=, positions=, transforms=, angles=, orientation=,
+  pixel_size_um=, inputs=, fresh=, **JobSpec fields)`: the job of a folder
+  through `jobs.create` (keys loaded as `open_job` loads them), the same
+  handle; supplied transforms as six numbers become `{"kind":
+  "interactive", "params", "mirrored"}` (`_transform`); `angles` in either
+  `inputs.angles` form, the stack's or per section (`_angles`, checked by
+  `core.spec.supplied_angles`); `tasks` None is
+  `pipeline_tasks` (`nonlinear`, plus `transform` unless every section has
+  a transform); `image_model` None is provider `none`, else the model's
+  provider (`custom` for a model of the caller's own) and `job.json`
+  records the profile under `image_model` (`profile_record`). `open_job` of
+  a job whose record says untested, without `image_model=`, sets
+  `Opened.traces_off`. `as_image_model` normalizes every `image_model=`
+  through `providers.profiles.image_model`. `langslice/__init__.py` exposes
+  `open_job`, `create_job`, `image_model`, `default_prompt`
+  (`providers.profiles`), `register_section`, `register_job`,
+  `RegistrationError` (`pipeline`), `coordinate_map` (`core.layers`) and
+  `load_atlas` (`core.atlas.core`), each imported on first use.
+- `pipeline.py` — the scripted nonlinear registration on the job layer
+  (`docs/library.md`). `register_job(job, sections=, affine_method=, fit=,
+  full_resolution=, arrays=)`: per section `fit_affine` where no transform,
+  `trace_borders` when the job has the verb, `fit_deformable` applied
+  (`TRACED_FIT`: traced lines, Elastix, medium; `STAIN_FIT` without an image
+  model; `FIT_BATCH` 4 per call), then `submit` (or, with a problem,
+  `export_maps`); each step checked on the state, a failure kept per
+  section in `problems`. `register_section(image, position_mm=, ...)`: the
+  section linked, copied or (an array) written as a TIFF into a folder of
+  its own (`_place_image`; other sections there refused), `create_job` (its
+  `pitch_deg`/`yaw_deg` that section's own angles)
+  (`fresh=True`), `register_job`; `RegistrationError` on a problem.
+  `RegistrationResult` / `SectionOutput` (paths, trace, `untested`,
+  `problem`, `read()` the maps as arrays).
 - `card.py` — the job folder's reference card, `AGENTS.md` and
   `CLAUDE.md` (identical; Codex reads one, Claude Code the other):
   `card_text(layout)` (one screen: the folder's files, one line each for
