@@ -4,7 +4,9 @@ Both read the registry (:data:`langslice.ops.registry.VERBS`) and the
 verbs' declarations (:mod:`langslice.doors.declarations`), the same ones the
 agent and MCP tools are built from, so the list and the schemas are what
 ``langslice job FOLDER VERB`` accepts. ``schema`` is versioned
-(:data:`SCHEMA_VERSION`); a verb is never renamed once shipped.
+(:data:`SCHEMA_VERSION`); a verb is never renamed once shipped. A hidden
+verb (``registry.Verb.hidden``) is in neither list; ``schema VERB`` still
+answers for it by name.
 """
 
 from __future__ import annotations
@@ -36,10 +38,10 @@ def canonical_verb(name: str) -> str:
 def verbs_table() -> list[dict[str, str]]:
     """Every verb: name, kind, group, one-line description."""
     from langslice.doors.declarations import summary
-    from langslice.ops.registry import VERBS
+    from langslice.ops.registry import listed
 
     return [{"name": name, "kind": verb.kind, "group": verb.group, "summary": summary(name)}
-            for name, verb in VERBS.items()]
+            for name, verb in listed().items()]
 
 
 def schema_of(name: str, job: str | None = None) -> dict[str, Any]:
@@ -75,12 +77,12 @@ def run_ops(_args: argparse.Namespace) -> int:
 
 def run_schema(args: argparse.Namespace) -> int:
     from langslice.doors.jobs import NoJob
-    from langslice.ops.registry import VERBS
+    from langslice.ops.registry import VERBS, listed
 
     try:
-        if args.verb is None:
+        if args.verb is None:  # every listed verb; a hidden one only by name
             result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "verbs": {
-                name: schema_of(name, args.job) for name in VERBS}}
+                name: schema_of(name, args.job) for name in listed()}}
         else:
             name = canonical_verb(args.verb)
             if name not in VERBS:

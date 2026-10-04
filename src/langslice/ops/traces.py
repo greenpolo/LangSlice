@@ -96,3 +96,104 @@ def trace_borders(
             now.image_correction = result
             job.commit(before)
     return TraceStarted(id=record.id, record=result, started=call is not None)
+
+
+@dataclass(frozen=True)
+class AtlasTraces:
+    """What :func:`trace_from_atlas` did: one row per section asked for."""
+
+    #: Per section, in call order: ``id``, ``status`` ("running", "ok" for a
+    #: reused reply, or "error" with ``error`` / ``message``), ``cached``,
+    #: ``attempt``, ``started``.
+    rows: list[dict[str, Any]]
+    #: The sections whose image-correction record this call wrote.
+    written: list[str]
+
+
+def trace_from_atlas(
+    job: Job,
+    workspace: Workspace,
+    refs: list[object],
+    *,
+    image_model: ImageModel,
+    passes: int = 1,
+    workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
+) -> AtlasTraces:
+    """The placement-free trace (route "atlas") of each section in *refs*.
+
+    A scripting verb, hidden from every listing (``registry.Verb.hidden``):
+    the model is shown each clean section and the outlined grayscale atlas
+    plane at its position and cutting angles, never its placement
+    (``registration_tool.start_atlas_correction``; *passes* 2 adds the
+    corrective second call). The result is the section's
+    ``image_correction`` record exactly as :func:`trace_borders` writes it,
+    so ``fit_deformable`` with a traced fit section (starting from the
+    section's written linear placement), the submit gate and the maps read
+    it unchanged. Each section needs a position and a written transform.
+
+    Long-verb semantics, as :func:`trace_borders`: every edit is prepared
+    outside the job's write lock; under it each section's geometry is
+    checked again (a changed one is its row ``STALE_INPUT``), its call
+    started on the job's image executor and its record written; every
+    changed record is ONE undo step. A call already running for a section
+    at its geometry is not started again (``running``). Per-section problems
+    are rows: ``UNKNOWN_SECTION``, ``INVALID_LINEAR_PLACEMENT``,
+    ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``. Refused (nothing
+    written): ``BAD_ARGS`` (no sections, or *passes* not 1 or 2).
+    """
+    if passes not in (1, 2):
+        raise Refused("BAD_ARGS", message="passes must be 1 or 2.")
+    if not refs:
+        raise Refused("BAD_ARGS", message="Name the sections to trace (slices).")
+    rows: list[dict[str, Any]] = []
+    prepared: list[tuple[int, str, dict[str, Any], Any]] = []
+    for ref in refs:
+        record = job.state.resolve(ref)
+        if record is None:
+            rows.append({"id": str(ref), "status": "error", "error": "UNKNOWN_SECTION"})
+            continue
+        try:
+            current = handoff.correction_fingerprint(job.state, workspace, record.id)
+            if job.image_job_running(record.id, current):
+                rows.append({"id": record.id, "status": "running", "started": False,
+                             "message": "This section's image correction is already running."})
+                continue
+            result, call = registration_tool.start_atlas_correction(
+                job.state, workspace, record.id, passes=passes, image_model=image_model,
+                calls_dir=job.layout.image_correction_dir(record.id))
+        except ValueError as exc:
+            rows.append({"id": record.id, "status": "error",
+                         "error": "INVALID_LINEAR_PLACEMENT", "message": str(exc)})
+            continue
+        except OSError as exc:
+            rows.append({"id": record.id, "status": "error",
+                         "error": "IMAGE_CORRECTION_IO_ERROR", "message": str(exc)})
+            continue
+        rows.append({"id": record.id})
+        prepared.append((len(rows) - 1, record.id, result, call))
+    written: list[str] = []
+    if not prepared:
+        return AtlasTraces(rows=rows, written=written)
+    with job.writing():  # prepared outside the lock; started and written under it
+        before = job.snapshot()
+        for index, section_id, result, call in prepared:
+            now = job.state.by_id(section_id)
+            if now is None or handoff.correction_fingerprint(
+                    job.state, workspace, section_id) != result["geometry_fingerprint"]:
+                rows[index] = {"id": section_id, "status": "error", "error": STALE_INPUT,
+                               "message": "The section's placement changed while the image "
+                               "call was prepared; nothing was started or written for it."}
+                continue
+            if call is not None:
+                job.start_image_job(section_id, result["geometry_fingerprint"], call,
+                                    workers=workers)
+            portable = job.portable(result)
+            if portable != now.image_correction:
+                now.image_correction = portable
+                written.append(section_id)
+            rows[index] = {"id": section_id, "started": call is not None, **{
+                key: portable[key] for key in ("status", "error", "message", "cached", "attempt")
+                if key in portable}}
+        if written:
+            job.commit(before)
+    return AtlasTraces(rows=rows, written=written)

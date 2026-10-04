@@ -26,6 +26,7 @@ for and the code does not do yet. Its reason says where it is blocked.
 | 5 | Nonlinear without an image model | nonlinear | none |
 | 6 | Nonlinear on a supplied (external) linear registration | nonlinear | stub |
 | 7 | The agent, every task, no image model | all four | none |
+| 8 | The placement-free trace (hidden ``trace_from_atlas``), then the fit | nonlinear | stub |
 """
 
 from __future__ import annotations
@@ -831,6 +832,7 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
     names, statement = _mcp_names_and_statement(server)
     assert {"grep_atlas", "fit_deformable", "view_placement"} <= names
     assert ("trace_borders" in names) is linked
+    assert "trace_from_atlas" not in names  # a hidden scripting verb, never a model's
     assert (IMAGE_MODEL_OFF in statement) is not linked
     assert ("Base image-model prompt" in statement) is linked
     if not linked:
@@ -954,3 +956,105 @@ def test_7_every_task_and_no_image_model_through_mcp(images):
     ])
     assert [reply["status"] for reply in replies] == ["ok"] * 5, replies
     assert_exported(images / "langslice", residual=(ID0,))
+
+
+# --- 8. The placement-free trace: a hidden scripting verb -----------------------------------
+
+
+def test_8_trace_from_atlas_through_the_library_then_fit_and_submit(images):
+    """Route "atlas" as a job verb: called by name, listed nowhere; its reply
+    is recorded as trace_borders' is, so the traced fit, the submit gate and
+    the maps read it unchanged."""
+    import langslice
+
+    create(spec_for(images, ["nonlinear"], provider="openai-oauth", **external_inputs()))
+    with langslice.open_job(images) as job:
+        assert "trace_from_atlas" not in job.verbs and "trace_from_atlas" not in dir(job)
+        traced = job.trace_from_atlas(slices=[ID0], passes=2)
+        assert traced["status"] == "ok", traced
+        assert traced["results"][0]["status"] == "running" and traced["results"][0]["started"]
+        rest = job.trace_from_atlas(slices=[ID1, ID2])
+        assert [row["status"] for row in rest["results"]] == ["running", "running"], rest
+        fit = job.fit_deformable(slices=[ID0], fit_section="traced_lines", engine="elastix")
+        assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
+        assert job.fit_deformable(slices=[ID1, ID2], keep_linear="kept")["status"] == "ok"
+        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
+        held = job.state.by_id(ID0).image_correction
+        assert held["status"] == "ok" and held["trace_route"] == "atlas"
+        assert held["passes"] == 2 and held["model_calls"] == 2
+        attempt = images / "langslice" / held["artifact_dir"]
+        for name in ("input_slice.png", "outlined_atlas.png", "raw_reply.png",
+                     "extracted_lines.png", "lines_on_original.png", "prompt.txt",
+                     "pass2_prompt.txt", "pass1_raw_correction.png",
+                     "pass1_lines_on_tissue.png", "request.json", "result.json"):
+            assert (attempt / name).is_file(), name
+        request = json.loads((attempt / "request.json").read_text())
+        assert request["trace_route"] == "atlas" and len(request["atlas_to_canvas"]) == 3
+        # The model is never shown the placement: clean tissue and the atlas only.
+        assert [item["role"] for item in request["attachments"]] == [
+            "Image 1: clean photograph", "Image 2: outlined atlas"]
+        # The same call again reuses the first reply at this geometry.
+        again = job.trace_from_atlas(slices=[ID0], passes=2)
+        assert again["results"][0]["cached"] is True and not again["results"][0]["started"]
+    assert_exported(images / "langslice", residual=(ID0,))
+    card = (images / "langslice" / "AGENTS.md").read_text()
+    assert "`trace_from_atlas`" not in card and "`trace_borders`" in card
+
+
+def test_8_trace_from_atlas_through_the_cli_is_callable_and_unlisted(capsys, images):
+    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
+               "--transforms", transforms_file(images), provider="openai-oauth")
+    assert "`trace_from_atlas`" not in (job / "CLAUDE.md").read_text()
+    dry = ok(capsys, images, "trace-from-atlas", "--slices", ID0, "--dry-run")
+    assert dry["result"]["simulated"] is False
+    envelope = ok(capsys, images, "trace-from-atlas", "--slices", ID0, "--slices", ID1)
+    rows = envelope["result"]["results"]
+    # The CLI settles the calls before answering: each landed outcome is shown.
+    assert [row["image_correction"]["status"] for row in rows] == ["ok", "ok"], rows
+    status = ok(capsys, images, "status")
+    assert "trace_from_atlas" not in status["result"]["verbs"]
+    assert "trace_borders" in status["result"]["verbs"]
+    code, refused = cli(capsys, "job", str(images), "trace_from_atlas", "--passes", "3",
+                        "--slices", ID0)
+    assert code == 2 and refused["error"]["code"] == "BAD_ARGS", refused
+
+
+def test_8_trace_from_atlas_needs_the_image_model_in_the_job(capsys, images):
+    init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
+         "--transforms", transforms_file(images))
+    code, envelope = cli(capsys, "job", str(images), "trace_from_atlas", "--slices", ID0)
+    assert code == 3 and envelope["error"]["code"] == "VERB_OFF", envelope
+    assert "trace_from_atlas" not in envelope["result"]["verbs"]
+
+
+def test_8_trace_from_atlas_rows_per_section(images, monkeypatch):
+    """Per-section problems are rows: no transform, an unknown section, and a
+    placement moved while the call was prepared (STALE_INPUT, nothing
+    started or written for it)."""
+    import langslice
+    from langslice.core import handoff
+
+    create(spec_for(images, ["nonlinear"], provider="openai-oauth",
+                    positions=dict(POSITIONS)))
+    with langslice.open_job(images) as job:
+        reply = job.trace_from_atlas(slices=[ID0, "nope.png"])
+        assert reply["status"] == "error" and reply["error"] == "NOTHING_TRACED", reply
+        assert [row["error"] for row in reply["results"]] == [
+            "INVALID_LINEAR_PLACEMENT", "UNKNOWN_SECTION"]
+        assert "fit_affine" in reply["results"][0]["message"]
+    fresh = spec_for(images, ["nonlinear"], provider="openai-oauth", **external_inputs())
+    fresh.resume = False
+    create(fresh)
+    real = handoff.correction_fingerprint
+    calls = {"n": 0}
+
+    def moved(state: Any, ctx: Any, section_id: str) -> str:
+        calls["n"] += 1  # the second reading (under the lock) sees a moved section
+        return real(state, ctx, section_id) + ("-moved" if calls["n"] == 2 else "")
+
+    with langslice.open_job(images) as job:
+        monkeypatch.setattr(handoff, "correction_fingerprint", moved)
+        reply = job.trace_from_atlas(slices=[ID0])
+        assert reply["results"][0]["error"] == "STALE_INPUT", reply
+        assert job.state.by_id(ID0).image_correction is None
+        assert not job.job.image_jobs

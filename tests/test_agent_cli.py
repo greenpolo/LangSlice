@@ -79,7 +79,10 @@ def test_ops_lists_every_verb_with_kind_group_and_one_line(capsys):
     code, envelope = cli(capsys, "ops")
     assert code == 0 and envelope["ok"] is True
     listed = envelope["result"]["verbs"]
-    assert [row["name"] for row in listed] == list(VERBS)
+    # Every verb but the hidden ones (Verb.hidden: called by name only).
+    assert [row["name"] for row in listed] == [
+        name for name, verb in VERBS.items() if not verb.hidden]
+    assert "trace_from_atlas" not in [row["name"] for row in listed]
     for row in listed:
         assert row["kind"] == VERBS[row["name"]].kind
         assert row["group"] == VERBS[row["name"]].group
@@ -97,6 +100,10 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     assert "resolution" in schema["$defs"]["ViewAuto"]["properties"]
     code, everything = cli(capsys, "schema")
     assert code == 0 and "fit_deformable" in everything["result"]["verbs"]
+    # A hidden verb: not in the listing, its schema by name.
+    assert "trace_from_atlas" not in everything["result"]["verbs"]
+    code, hidden = cli(capsys, "schema", "trace-from-atlas")
+    assert code == 0 and hidden["result"]["arguments"]["required"] == ["slices"]
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
     assert "langslice ops" in unknown["error"]["fix"]

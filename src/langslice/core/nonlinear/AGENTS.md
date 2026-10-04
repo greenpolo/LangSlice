@@ -16,7 +16,9 @@ The stack agent's optional `nonlinear` task uses a supplied linear placement via
 edited copy of the base prompt (blank = base), one retained reply per geometry,
 raw and extracted images returned separately, no fit, atlas search or rejection.
 See `docs/nonlinear_image_tool.md` for its contract and prompt sentence review.
-The standalone atlas route below is not available through this agent tool.
+The atlas route below is not an agent tool: it is the job's HIDDEN scripting
+verb `trace_from_atlas` (`ops/traces.py`; the agent CLI and the library call
+it by name, no listing or public doc shows it), kept for experiments.
 
 Exactly two border-based routes, chosen by whether a placement is supplied.
 No model is ever shown a colored region map: the model-facing atlas is a
@@ -38,8 +40,18 @@ never matters.
   tissue, Image 3 the outlined atlas. The rough placement for the fit is the
   local silhouette-moments fit (`prior.place_plane_on_tissue_with_matrix`); the
   model's lines then go through the SAME fit as route "supplied".
-  Metadata: `prior["source"] = "silhouette_moments_atlas_route"`, `passes`,
-  `prior["atlas_route_model_calls"]`. Pass 2 is optional: on clean coronal
+  The model calls are `border_registration.draw_from_atlas` (shared with
+  the job verb below). Metadata: `prior["source"] =
+  "silhouette_moments_atlas_route"`, `passes`,
+  `prior["atlas_route_model_calls"]`. On a job, `trace_from_atlas`
+  (`registration_tool.start_atlas_correction`) makes the same calls on the
+  section render `trace_borders` uses and records the reply as
+  `trace_borders` records its own (`trace_route: "atlas"`, `passes`,
+  `model_calls`; `request.json`'s `atlas_to_canvas` is the section's
+  written linear placement, never shown to the model), so a traced
+  `fit_deformable` starts the fit of the lines from that placement instead
+  of the silhouette fit; it needs a written transform (`fit_affine` with
+  `method="silhouette"` is the job's silhouette placement). Pass 2 is optional: on clean coronal
   sections it moves lines by about a pixel; its value on large sagittal and
   heavily damaged sections is untested. Kept for experiments, not the
   production direction (Nash, 2026-09-23): the silhouette placement it starts
@@ -84,7 +96,8 @@ the residual alone.
   `generate_registration_candidate`, the public dispatcher (thin; routing lives
   in `border_registration.py`, imported lazily to avoid a circular import).
 - `border_registration.py` — `generate_border_registration_candidate`: route
-  selection, rough placement, the atlas-route model calls, the fit (through
+  selection, rough placement, the atlas-route model calls
+  (`draw_from_atlas`, `AtlasDrawing`), the fit (through
   `border_fit`), coordinate composition (`composed_correspondences`,
   `composed_native_map`, `marker_spacing_px`), `native_to_oriented_map` and
   the candidate contract. Candidate metadata: `deformation`, `fit` (the fit's
@@ -128,9 +141,12 @@ the residual alone.
   (`prepare_linear_registration`, re-exported by the top-level
   `core/nonlinear/registration_handoff.py`, which also holds `run_linear_registration`:
   route "supplied" for one section, the image model an argument).
-  `core/nonlinear/registration_tool.py` uses it for the opt-in annotation tool, taking the
-  image model as an argument too, and leaves fitting to `fit_deformable` and
-  transformation export to the separate registration stage.
+  `core/nonlinear/registration_tool.py` uses it for the opt-in annotation tool
+  (`start_correction`, route "supplied") and the hidden `trace_from_atlas`
+  verb (`start_atlas_correction`, route "atlas"), both sharing the call-key
+  folders and attempts, taking the image model as an argument too, and
+  leaves fitting to `fit_deformable` and transformation export to the
+  separate registration stage.
 
 ## Visual review is essential
 
