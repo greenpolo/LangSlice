@@ -82,7 +82,8 @@ job's `host.abba`, `locked`, `damaged`, `existing_warp` & `locked` ->
 `inputs.keep_warp`, `nonlinear_skip` -> `inputs.nonlinear_skip`,
 `channel_names`, `preprocessing`), `checkpoint_callback` (a
 `HostCheckpoints` tracker: ABBA-world linear rows, a job with the
-`nonlinear` task adds `warp` rows from `core/abba_warp.py`, `host_angles`
+`nonlinear` task adds `warp` rows from `core/abba_warp.py`, each logged with
+its measured `max_error_mm`/`p99_error_mm`, `host_angles`
 on a stack-wide angle change; `attach(job, workspace)` gives it the job's
 records), `run_linear` (ends with a checkpoint of the final state),
 `public_event` (an event without bytes or private reasoning),

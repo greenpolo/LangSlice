@@ -35,14 +35,22 @@ millimetres. ABBA resamples with the pull-back ``target -> source``, a TPS
 interpolating these pairs; :func:`warp_world_landmarks` checks that TPS,
 not the pairs.
 
-Accuracy and folds, as ``abba_spline._sample_elastix_landmarks`` checks an
-Elastix map: the exact map (the record's bilinear field) must not fold
-(sampled Jacobian of the residual > 0 on a 65x65 screen of the snapshot);
-then a regular grid over the snapshot of 9x9, 17x17, 25x25 and at most
-33x33 file points is tried, the first whose TPS pull-back reproduces the
-exact one within *tolerance_mm* (5 um) at three independent off-grid probe
-sets (a denser grid with the edges, and two offset grids) with no
-non-positive sampled Jacobian is returned. Otherwise ``ValueError``.
+Accuracy and folds. A regular grid over the snapshot of 9x9, 17x17, 25x25
+and at most 33x33 file points is tried (33x33 = 1089 points: ABBA's cost
+grows fast with the point count, measured 2026-10-04 in headless ABBA
+0.24.1: building the step ~3 s at 1089 points against ~5 min at 4225).
+Each grid's TPS pull-back is compared with the exact one (the record's
+bilinear field) at three independent off-grid probe sets (a denser grid with
+the edges, and two offset grids), and its Jacobian is sampled there. The
+first non-folding grid within *tolerance_mm* (5 um) is returned; otherwise
+the largest non-folding grid is returned ANYWAY, its error measured and
+reported (``max_error_mm``, ``p99_error_mm``, ``within_tolerance``): the
+product chose a warp in ABBA with a recorded error over no warp
+(2026-10-04; on six real sections Elastix and ANTs fits measured 7-100 um
+maximum at 33x33, 3-31 um p99 inside the tissue). Only when every grid's
+TPS folds (a sampled Jacobian determinant at or below ``MIN_JACOBIAN``) is
+``ValueError`` raised. The exact map's own smallest sampled Jacobian (a
+65x65 screen) is reported, not enforced.
 """
 
 from __future__ import annotations
@@ -62,9 +70,10 @@ logger = logging.getLogger(__name__)
 
 #: Grids tried, in file points per side (the last is ABBA's 1089-point cap).
 GRID_SIDES = (9, 17, 25, 33)
-#: Largest off-grid error accepted, in millimetres.
+#: Off-grid error at which the grid stops growing, in millimetres (a larger
+#: error is reported, never refused).
 TOLERANCE_MM = 0.005
-#: Points per side of the fold screen of the exact map.
+#: Points per side of the screen of the exact map's Jacobian (reported).
 SCREEN_SIDE = 65
 #: Smallest Jacobian determinant accepted (a fold or collapse below it).
 MIN_JACOBIAN = 1e-6
@@ -108,10 +117,12 @@ def warp_world_landmarks(
     """``(source, target)``, N-by-2 centred ABBA world millimetres: the
     warp step's landmark pairs on top of the affine step (module text).
     *params* are the section's six stored numbers (the ones *frame* was
-    built from: :func:`langslice.core.maps.stored_params`). ``ValueError``
-    when the deformation folds, or no grid up to 33x33 meets *tolerance_mm*.
-    *diagnostics* receives the grid, point count, measured error and
-    smallest sampled Jacobian."""
+    built from: :func:`langslice.core.maps.stored_params`). The first grid
+    within *tolerance_mm*, else the largest grid whose TPS does not fold,
+    with its error measured; ``ValueError`` only when every grid's TPS
+    folds. *diagnostics* receives the grid, point count, measured maximum
+    and 99th-percentile error, whether the tolerance was met and the
+    smallest sampled Jacobians (the TPS's and the exact map's)."""
     from langslice.core.landmark_warp import _ThinPlateKernel
     from langslice.core.maps import native_points
 
@@ -138,7 +149,7 @@ def warp_world_landmarks(
     def pairs(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return _apply(file_to_world, points), _apply(native_to_world, warped_native(points))
 
-    # The exact map must not fold: the residual's Jacobian in file pixels.
+    # The exact map's own Jacobian (the residual's, in file pixels): reported.
     fit_px = float(frame.file_size[0]) / float(max(1, int(warp.section_size[0])))
     epsilon = 0.25 * max(fit_px, 1e-3)
     screen = grid(SCREEN_SIDE)
@@ -149,10 +160,9 @@ def warp_world_landmarks(
         behind = _apply(to_linear, warped_native(screen - axis))
         columns.append((ahead - behind) / (2.0 * epsilon))
     exact = np.linalg.det(np.stack(columns, axis=2))
-    if not np.isfinite(exact).all() or np.any(exact <= MIN_JACOBIAN):
-        raise ValueError("The deformation folds or collapses on the sampled snapshot")
+    exact_min = float(np.min(exact)) if np.isfinite(exact).all() else float("nan")
 
-    last_error = float("inf")
+    best: tuple[np.ndarray, np.ndarray, dict[str, Any]] | None = None
     for n in GRID_SIDES:
         source, target = pairs(grid(n))
         try:
@@ -162,21 +172,23 @@ def warp_world_landmarks(
         probes = np.vstack((grid(2 * n - 1), grid(n, 0.37), grid(n, 0.71)))
         probe_source, probe_target = pairs(probes)
         error = np.linalg.norm(pullback.forward(probe_target) - probe_source, axis=1)
-        last_error = float(np.max(error))
         determinant = np.linalg.det(pullback.jacobian(probe_target))
         if not np.isfinite(determinant).all() or np.any(determinant <= MIN_JACOBIAN):
             continue
-        if last_error <= tolerance_mm:
-            report = {"grid_size": n, "points": len(source), "max_error_mm": last_error,
-                      "tolerance_mm": float(tolerance_mm),
-                      "min_sampled_jacobian": float(determinant.min()),
-                      "min_exact_jacobian": float(exact.min()),
-                      "validation_points": len(probes)}
-            if diagnostics is not None:
-                diagnostics.update(report)
-            logger.info("ABBA warp approximation of %s: %s", frame.section_id, report)
-            return source, target
-    raise ValueError(
-        "The deformation could not be expressed as ABBA's thin-plate spline within "
-        f"{tolerance_mm * 1000:g} um using at most {GRID_SIDES[-1] ** 2} points (last "
-        f"maximum error {last_error * 1000:.3g} um)")
+        max_error = float(np.max(error))
+        best = (source, target, {
+            "grid_size": n, "points": len(source), "max_error_mm": max_error,
+            "p99_error_mm": float(np.percentile(error, 99)),
+            "tolerance_mm": float(tolerance_mm), "within_tolerance": max_error <= tolerance_mm,
+            "min_sampled_jacobian": float(determinant.min()),
+            "min_exact_jacobian": exact_min, "validation_points": len(probes)})
+        if max_error <= tolerance_mm:
+            break
+    if best is None:
+        raise ValueError("the deformation's thin-plate spline folds at every grid up to "
+                         f"{GRID_SIDES[-1]}x{GRID_SIDES[-1]} points")
+    source, target, report = best
+    if diagnostics is not None:
+        diagnostics.update(report)
+    logger.info("ABBA warp approximation of %s: %s", frame.section_id, report)
+    return source, target
