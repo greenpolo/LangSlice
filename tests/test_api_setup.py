@@ -150,3 +150,32 @@ def test_login_forwards_url_callback(isolated_home: Path, monkeypatch: pytest.Mo
     assert urls == ["https://example.test/login"]
     assert result["configured"]
     assert "private-token" not in json.dumps(result)
+
+
+def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
+                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    """A script's ``langslice.open_job`` gets the keys saved by the setup
+    dialog (``setup.api_key``) the way every CLI command does, through one
+    shared loader (review finding 13); an explicit environment key wins."""
+    import dataclasses
+
+    import langslice
+    from langslice.core.spec import NonlinearSpec
+    from langslice.doors.jobs import create
+    from tests.golden.record import atlas_loader, full_spec, write_sections
+
+    monkeypatch.setenv("HOME", str(isolated_home))
+    monkeypatch.setattr(setup, "load_dotenv", lambda: None)  # no developer .env here
+    setup.save_api_key("gemini-api", "saved-gemini")
+    setup.save_api_key("openai-api", "saved-openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "from-the-environment")
+    folder = isolated_home / "stack"
+    write_sections(folder)
+    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
+                               agent_preprocessing=False)
+    create(spec, atlas_loader=atlas_loader()).close()
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
+    job.close()
+    assert os.environ["GEMINI_API_KEY"] == "saved-gemini"
+    assert os.environ["OPENAI_API_KEY"] == "from-the-environment"

@@ -162,8 +162,11 @@ def open_folder(
     *persist* False opens it for a dry run: nothing is written. Otherwise the
     reference card is brought up to date.
     """
+    from langslice.doors.api.setup import load_credentials
+
     folder = find(path)
     spec = read_spec(folder)
+    load_credentials()  # the image model's keys, as every door loads them
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.load(spec, ctx, folder=folder, results_path=ctx.results_path, persist=persist)
     if persist:
