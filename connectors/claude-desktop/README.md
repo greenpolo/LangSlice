@@ -49,7 +49,9 @@ job (from `langslice linear run` or an earlier prepare) is continued: one
 image folder, one job, and a new prepare's id replaces the earlier one. A job
 saved by an earlier version under
 `~/.langslice/jobs/<job-id>/` is moved next to its sections when it is next
-opened.
+opened. `--job-dir PATH` puts the job folder elsewhere; when the sections'
+folder cannot be written, the job folder is `~/.langslice/jobs/<job-id>/`
+(the index entry says so).
 
 For development, ask Claude to register a folder of sections. Claude calls
 `start_job` with the folder path. `langslice mcp` takes every `langslice linear

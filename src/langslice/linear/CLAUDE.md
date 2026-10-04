@@ -167,7 +167,9 @@ those it received before (the goldens check).
 folder=..., results_path=...)` upgrades an old layout first
 (`job.migrate`), writes `job.json`, then resumes or ingests;
 `engine.EngineContext` carries `job_folder` (`checkpoint_path` and
-`layout` are derived). Every path the state stores is relative to the job
+`layout` are derived; `build_context` takes it from
+`job.layout.locate_job_folder`: `spec.job_dir` / `--job-dir`, next to the
+images, or `~/.langslice/jobs/<id>/` for a read-only image folder). Every path the state stores is relative to the job
 folder (state format 2). Every picture a tool returns is saved there with
 its layers (`toolbox._saves_views` around every tool, `Job.views`; the
 ADK opening through `engine.save_opening`, MCP pages through

@@ -164,7 +164,10 @@ atlas labels (uint32 TIFF), its border mask (PNG) and its frame
 in BrainGlobe micrometres), from which `langslice.core.layers.coordinate_map`
 computes each pixel's atlas position. An old layout (the files beside the
 images, or a saved Claude job under `~/.langslice/jobs/<id>/`) is moved in on
-open; a newer one is refused.
+open; a newer one is refused. `JobSpec.job_dir` (`--job-dir`) puts the job
+folder elsewhere, refusing one that holds another image folder's job; a
+read-only image folder falls back to `~/.langslice/jobs/<id>/`, said once in
+the run log and recorded in the id's index entry.
 
 ```
 StackState

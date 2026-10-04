@@ -19,7 +19,14 @@ from typing import Any
 
 from langslice.api.abba_worker import prepare_linear
 from langslice.job import index, migrate
-from langslice.job.layout import JobLayout, read_job_file, write_job_file
+from langslice.job.layout import (
+    JobLayout,
+    check_owner,
+    job_folder_for,
+    locate_job_folder,
+    read_job_file,
+    write_job_file,
+)
 
 #: The saved job's own format inside ``job.json`` (``host``). 2 (2026-10-03):
 #: the job folder next to the images; 1 was the whole job under
@@ -135,12 +142,17 @@ def _write_job(
     channel: dict[str, Any] | None,
 ) -> tuple[str, JobLayout]:
     job_id = index.new_id()
-    layout = JobLayout.for_images(image_folder)
-    migrate.migrate_beside_images(layout)
+    images = Path(image_folder).expanduser().resolve()
+    folder, fallback = locate_job_folder(images, spec.get("job_dir"), root=jobs_root(),
+                                         job_id=job_id, register=False)
+    layout = JobLayout(folder, images)
+    check_owner(layout)
+    if layout.folder == job_folder_for(images):
+        migrate.migrate_beside_images(layout)
     layout.ensure()
     write_job_file(layout, job_id=job_id, spec=spec,
                    host={"format": FORMAT_VERSION, **host})
-    index.register(jobs_root(), job_id, layout.folder, host_channel=channel)
+    index.register(jobs_root(), job_id, layout.folder, host_channel=channel, fallback=fallback)
     return job_id, layout
 
 

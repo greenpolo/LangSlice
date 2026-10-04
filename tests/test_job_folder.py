@@ -382,3 +382,88 @@ def test_saving_does_not_hold_up_a_tool(tmp_path: Path):
     assert views.queue_seconds / 6 < 0.02  # numbering and queueing only
     flush_all()
     assert views.write_seconds > 0
+
+
+# --- where the job folder goes: an explicit folder, a read-only image folder ----------------
+
+
+def test_an_explicit_job_folder_per_arm_on_one_image_folder(tmp_path: Path):
+    folder = _folder(tmp_path / "dataset")
+    first, _ = _open(folder, job_dir=str(tmp_path / "arm-a"))
+    second, _ = _open(folder, job_dir=str(tmp_path / "arm-b"))
+    assert first.folder == tmp_path / "arm-a" and second.folder == tmp_path / "arm-b"
+    assert (tmp_path / "arm-a" / "state.json").exists()
+    assert not (folder / "langslice").exists()  # the dataset folder is never written
+    before = first.snapshot()
+    first.state.notes.append("arm a")
+    first.commit(before)
+    again, _ = _open(folder, job_dir=str(tmp_path / "arm-a"))  # the same images continue
+    assert again.state.notes[-1] == "arm a"
+    assert "job_dir" not in JobSpec(image_folder=str(folder)).to_dict()
+
+
+def test_a_job_folder_holding_another_image_folders_job_is_refused(tmp_path: Path):
+    _open(_folder(tmp_path / "one"), job_dir=str(tmp_path / "shared"))
+    with pytest.raises(ValueError, match="already holds the job of"):
+        _open(_folder(tmp_path / "two"), job_dir=str(tmp_path / "shared"))
+
+
+def test_the_cli_takes_a_job_folder(tmp_path: Path):
+    from langslice.cli import _build_linear_spec, _build_parser
+
+    args = _build_parser().parse_args(
+        ["linear", "run", str(tmp_path), "--job-dir", str(tmp_path / "arm")])
+    assert _build_linear_spec(args, str(tmp_path)).job_dir == str(tmp_path / "arm")
+
+
+@pytest.fixture
+def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
+    import os
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root writes into read-only folders")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    folder = _folder(tmp_path / "shared-drive")
+    folder.chmod(0o555)
+    yield folder
+    folder.chmod(0o755)
+
+
+def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
+    tmp_path: Path, read_only: Path,
+):
+    from langslice.job import index
+
+    messages: list[str] = []
+    spec = JobSpec(image_folder=str(read_only), model="fake-model", preprocess="none")
+    ctx = build_context(spec, emit=messages.append, atlas_loader=lambda _n: _ATLAS)
+    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+    job_id = index.folder_id(read_only)
+    target = tmp_path / "home" / ".langslice" / "jobs" / job_id
+    assert job.folder == target and (target / "state.json").exists()
+    assert len([m for m in messages if "cannot be created or written" in m]) == 1
+    entry = json.loads((tmp_path / "home" / ".langslice" / "jobs" / f"{job_id}.json").read_text())
+    assert entry["job_folder"] == str(target)
+    assert entry["fallback"]["image_folder"] == str(read_only)
+    before = job.snapshot()
+    job.state.notes.append("kept")
+    job.commit(before)
+    again, _ = _open(read_only)  # found again on reopen
+    assert again.folder == target and again.state.notes[-1] == "kept"
+
+
+def test_a_claude_job_on_a_read_only_folder_lives_under_its_id(
+    tmp_path: Path, read_only: Path, monkeypatch: Any,
+):
+    from langslice.api import claude_jobs
+    from langslice.mcp_server.server import open_saved_job
+
+    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    prepared = claude_jobs.prepare_folder(
+        JobSpec(image_folder=str(read_only), preprocess="none", tasks=["position"]))
+    target = tmp_path / "jobs" / prepared["job_id"]
+    assert Path(prepared["job_dir"]) == target and (target / "prompt.txt").exists()
+    entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
+    assert entry["fallback"]["image_folder"] == str(read_only)
+    session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    assert session.job.folder == target

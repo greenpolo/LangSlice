@@ -167,7 +167,11 @@ edit is one undo step. Every picture the agent is shown is saved under
 its atlas labels, border mask and frame for placement pictures, and listed in
 `langslice/views.jsonl`. A folder with the old files beside the images
 (`linear_state.json`, `linear_undo.json`, `deformable/`, `nonlinear/`) is
-moved into the job folder the next time it is opened. `--trace-dir PATH` writes a full-content JSONL
+moved into the job folder the next time it is opened. `--job-dir PATH` puts
+the job folder there instead (one per benchmark arm on one dataset folder; a
+folder holding another image folder's job is refused). When the image folder
+cannot be written, the job folder is `~/.langslice/jobs/<id>/` (the id fixed
+by the folder's path, so a rerun finds it), and the run log says so once. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
 With tracing enabled, the subscription provider also records content-free usage

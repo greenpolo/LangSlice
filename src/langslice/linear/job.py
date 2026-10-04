@@ -58,7 +58,13 @@ import numpy as np
 from langslice.job import migrate
 from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
 from langslice.job.history import History
-from langslice.job.layout import JobLayout, write_job_file
+from langslice.job.layout import (
+    JobLayout,
+    check_owner,
+    job_folder_for,
+    locate_job_folder,
+    write_job_file,
+)
 from langslice.job.views import ViewStore
 from langslice.linear import deformation
 from langslice.linear.checkpoint import (
@@ -634,9 +640,14 @@ class Job:
         cls, spec: JobSpec, workspace: Workspace, *, folder: str | os.PathLike[str] | None = None,
         results_path: str | None = None,
     ) -> Job:
-        """Open the job folder (*folder*; default ``<images>/langslice``).
+        """Open the job folder (*folder*; default
+        :func:`~langslice.job.layout.locate_job_folder`: ``spec.job_dir``, else
+        ``<images>/langslice``, else, when that cannot be written,
+        ``~/.langslice/jobs/<id>/``).
 
-        An old layout beside the images is upgraded into it first
+        A folder holding the job of another image folder is refused
+        (``ValueError``). An old layout beside the images is upgraded into the
+        default job folder first
         (:func:`langslice.job.migrate.migrate_beside_images`), ``job.json``
         gets this spec, then the checkpoint is resumed (``spec.resume``) or
         the folder ingested, and the first checkpoint written. A resumed job
@@ -644,9 +655,14 @@ class Job:
         left by an earlier job here is emptied). A job folder or checkpoint
         from a newer LangSlice is refused (``ValueError``).
         """
-        layout = (JobLayout(Path(os.path.abspath(folder)), Path(workspace.image_folder))
-                  if folder is not None else JobLayout.for_images(workspace.image_folder))
-        migrate.migrate_beside_images(layout)
+        if folder is None:
+            folder, _fallback = locate_job_folder(workspace.image_folder, spec.job_dir,
+                                                  emit=workspace.progress)
+        images = Path(os.path.abspath(workspace.image_folder))
+        layout = JobLayout(Path(os.path.abspath(folder)), images)
+        check_owner(layout)
+        if layout.folder == job_folder_for(images):
+            migrate.migrate_beside_images(layout)
         layout.ensure()
         write_job_file(layout, spec=spec.to_dict())
         state = None
