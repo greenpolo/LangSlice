@@ -153,7 +153,8 @@ one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job
 folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit):
 the tool door wraps every verb in it, except the long ones
-(`VERBS[name].long`: `fit_affine`, `fit_deformable`, `trace_borders`),
+(`VERBS[name].long`: `fit_affine`, `fit_deformable`, `trace_borders`,
+`export_maps`),
 which compute outside it and take it to apply, refusing a section whose
 inputs changed (`ops.inputs`, `STALE_INPUT`); `job.lock` timing out is
 `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write during

@@ -550,3 +550,74 @@ def test_the_frame_cache_is_bounded(placed, monkeypatch):
     for name in (ID0, ID1, ID2):
         maps.section_frame(job.state, workspace, job.state.by_id(name))
     assert len(workspace.frame_cache) == 2
+
+
+# --- export_maps beside other writers (review finding 6, 2026-10-04) -----------------
+
+
+def _two_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: Any) -> tuple[Any, Any]:
+    import shutil
+
+    import langslice
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    _job, root, _exported = placed
+    images = tmp_path / "stack"
+    shutil.copytree(root.parent, images)
+    first = langslice.open_job(str(images), atlas_loader=atlas_loader())
+    second = langslice.open_job(str(images), atlas_loader=atlas_loader())
+    return first, second
+
+
+def test_export_maps_syncs_before_it_writes(placed, tmp_path, monkeypatch):
+    """The operation itself (not only the doors around it) reloads what
+    another writer saved before it writes registration.json and the maps."""
+    from langslice.ops.exports import export_maps
+
+    first, second = _two_jobs(tmp_path, monkeypatch, placed)
+    first.status()  # first holds the state as it was
+    second.set_positions(entries=[{"id": ID2, "position_mm": 0.25}])
+    done = export_maps(first.job, first.workspace, [ID2])
+    first.close()
+    second.close()
+    assert done.sections == [ID2]
+    root = Path(first.folder)
+    entry = {e["id"]: e for e in json.loads(
+        (root / "registration.json").read_text())["sections"]}[ID2]
+    assert entry["parameters"]["plane"]["position_mm"] == 0.25
+    assert entry["maps"]["current"] is True
+
+
+def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
+    placed, tmp_path, monkeypatch,
+):
+    """The heavy maps are computed outside the job lock (another writer
+    gets it meanwhile); a section that writer changed is not written
+    (``STALE_INPUT``), the others are."""
+    from langslice.core import maps as core_maps
+    from langslice.job.lock import FolderLock
+    from langslice.ops.exports import export_maps
+
+    first, second = _two_jobs(tmp_path, monkeypatch, placed)
+    real = core_maps.section_maps
+    seen: list[bool] = []
+
+    def meanwhile(workspace: Any, frame: Any, warp: Any, **kwargs: Any) -> Any:
+        # Another process could take the lock now; this thread does not hold it.
+        other = FolderLock(Path(first.folder), timeout=0.5)
+        with other.held():
+            seen.append(True)
+        if frame.section_id == ID1 and len(seen) == 2:
+            second.set_positions(entries=[{"id": ID1, "position_mm": 0.2}])
+        return real(workspace, frame, warp, **kwargs)
+
+    monkeypatch.setattr(core_maps, "section_maps", meanwhile)
+    stamp = (Path(first.folder) / "sections" / "s1" / "maps.json").read_text()
+    done = export_maps(first.job, first.workspace, [ID0, ID1, ID2])
+    first.close()
+    second.close()
+    assert seen == [True, True, True]
+    assert done.sections == [ID0, ID2]
+    assert [row["id"] for row in done.skipped] == [ID1]
+    assert "STALE_INPUT" in done.skipped[0]["reason"]
+    assert (Path(first.folder) / "sections" / "s1" / "maps.json").read_text() == stamp

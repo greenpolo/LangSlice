@@ -122,8 +122,9 @@ VERBS: dict[str, Verb] = _verbs(
          when=lambda spec: spec.has("nonlinear")),
     Verb("submit", submit.submit, "write", "Common"),
     # The job folder's derived files on demand (submit writes them too):
-    # changes no state, so a read; for scripts, not for a model.
-    Verb("export_maps", exports.export_maps, "read", "Common", scripting=True),
+    # changes no state, so a read; for scripts, not for a model. Long: the
+    # maps are computed outside the job lock and written under it.
+    Verb("export_maps", exports.export_maps, "read", "Common", scripting=True, long=True),
 )
 
 
