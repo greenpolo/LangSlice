@@ -11,7 +11,7 @@ Three things are separate and stay separate:
 2. **Agent environment** — the stack agent and its toolbox. Tools wrap
    operations; every policy (undo, submit gates, damage marks, "linear before
    nonlinear") lives here as a default.
-3. **Hosts** — CLI, ABBA plugin, napari plugin, JSON-lines worker. A host
+3. **Hosts** — CLI, the ABBA (Fiji) connector, napari plugin, JSON-lines worker. A host
    fills a job spec, supplies what the user already did, and renders results.
    Hosts hold no registration logic.
 
@@ -24,12 +24,12 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | --- | --- | --- |
 | Provider | ChatGPT (default) or Claude | ChatGPT runs through `openai-oauth`; Claude changes Run to Copy prompt and uses the LangSlice MCP connector in Claude Desktop or Claude Code |
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
-| Image model / provider | image transport and model for nonlinear, or none | `nonlinear.provider`, `nonlinear.image_model`; provider `none` (CLI `--image-provider none`) runs the Nonlinear task without the image model: no `trace_borders`, deformations fitted to the stain alone |
+| Image model / provider | image transport and model for nonlinear, or none | `nonlinear.provider`, `nonlinear.image_model`; provider `none` (CLI `--image-provider none`) runs the Nonlinear task without the image model: no `trace_borders`, deformations fitted to the stain alone. The worker's `setup.status` lists the choices a dialog shows (`image_models`: ChatGPT image lane, Gemini API, OpenAI API, None), each connected or not from offline checks, with its models |
 | Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for each section in the opening strips (more strips at a higher level) and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`core.sizes.PICTURE_EDGES`); display only, fits and stored transforms unchanged; CLI `--image-resolution` |
-| Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`agent/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
-| View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`hosts/integrations/abba_chat.py`) |
+| Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`agent/cost.py`): percent of the usage window from measured runs, at low resolution only (measured before the 2026-10-01 sizes); at medium/high/auto, or with Nonlinear alone, it answers `available: false` with the reason in plain words; Nonlinear beside the other tasks is priced without it, and says so |
+| View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). When ABBA was started with `langslice abba`, the browser log (`hosts/integrations/abba_chat.py`) also follows the connector's runs, its pictures read from the saved views the events name |
 | Save traces | full record of what the agent was shown, said and did, saved to a chosen folder | worker `trace_dir` (`LANGSLICE_TRACE_DIR` for one run); ABBA dialog checkbox + folder |
-| Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | built for the Python-started ABBA launcher (`hosts/integrations/abba_compare.py`, `abba_overview.py`, `abba_follow.py`); the Fiji connector shows the checkbox disabled until it is ported |
+| Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | a passive listener of the connector's runs when ABBA was started with `langslice abba` (`hosts/integrations/abba_launch.py` feeding `abba_follow.py`, `abba_compare.py`, `abba_overview.py`); the dialog enables the checkbox only when such a listener is registered (`LangSliceEvents.hasListeners`), and the run's `run_started` message says whether it was ticked |
 | Atlas, plane, preprocess | as today | `atlas`, `plane`, `preprocess` |
 
 ## 1. Positioning (absorbs reorder)
@@ -118,7 +118,7 @@ edits); a bounded redo with new notes per section.
 
 - **Placement object.** Atlas + calibration, position, cutting angles, in-plane
   transform, and later the deformation. The pieces exist (slice record, stack
-  state, transform record, the ABBA offset fitted at startup) but are assembled
+  state, transform record, ABBA's `z_offset_mm`) but are assembled
   ad hoc by the nonlinear handoff. Name it once, validate it once; it is the
   contract every host produces and the deformation algorithm is designed against.
 - **Host-supplied answers.** By default positions and transforms a host supplies
@@ -137,6 +137,10 @@ edits); a bounded redo with new notes per section.
   (`inputs.angles` per section): the job keeps each section's plane, and
   setting the stack-wide angle gives every section that one (undoable).
   ABBA shows one atlas angle per stack, so its doors refuse such a job.
+  In ABBA the session's current angles are the job's stack-wide input
+  (`angles_deg`), tilted sessions included, and an angle the agent sets
+  reaches ABBA as `host_angles` on the next checkpoint (applied to the
+  resliced atlas, undoable with the rest of that checkpoint).
 - **Output format follows the fit (agreed).** The border output is settled only
   once the deformation algorithm's input is chosen: raster lines need extraction and
   matching, which discarded the model's placement in every Elastix fit, while
@@ -435,38 +439,51 @@ never a full-size whole-slide decode) and kept as named 8-bit planes
 same working copy, so every look shares one frame, crop and size; a look only
 changes intensities.
 
-## ABBA host (settled 2026-09-28)
+## ABBA host (settled 2026-09-28; one integration, 2026-10-04)
 
-- Menu: ABBA's Register menu, like DeepSlice: **Register > LangSlice > LangSlice
-  Registration…**. ABBA appends external entries at the end of that menu, so it
-  cannot sit directly beside DeepSlice.
+- One integration, ABBA 0.24.x only: the Java Fiji connector (the dialog)
+  plus LangSlice as its own Python worker. `langslice abba` only starts ABBA
+  from Python with the connector on its classpath and adds the passive
+  viewer and browser log; the older abba-python plugin, its settings menu
+  and its live mirror were removed.
+- Menu: **Register > LangSlice Registration…** (a plain entry at the end
+  of ABBA's Register menu).
 - Selected slices are the slices sent to LangSlice.
 - Existing transforms: any ABBA registration step counts as linear; spline
-  steps (BigWarp, Elastix spline) are the only nonlinear ones.
-- In ChatGPT mode, results land in the user's ABBA when the agent is done, as one undoable step;
-  a stopped run can apply its last checkpoint. The agent viewer, once ported to
-  the connector, shows the work along the way.
-- Nonlinear is a facade in ABBA for now: shown, does nothing.
+  steps (BigWarp, Elastix spline) are the only nonlinear ones. A section
+  that carries the user's own spline step keeps it, and Nonlinear leaves
+  it alone, unless "Allow the agent to overwrite existing transforms" is
+  ticked (`existing_warp`; the worker's `inputs.keep_warp`). Slices without
+  a linear registration that the user chose not to have aligned first are
+  positioned but left out of Nonlinear (`nonlinear_skip`).
+- Every agent write lands in ABBA live, in both modes, as one undoable step
+  per checkpoint: positions, LangSlice's affine step, and with Nonlinear an
+  ABBA BigWarp warp step on top of it (`warp` rows, `core/abba_warp.py`); a
+  placement change removes LangSlice's warp step (`warp: null`). The run's
+  last checkpoint carries the final state.
 - DeepSlice and Bayesian checkboxes are added later.
 - No over-saturation warning.
 
 ### Claude mode
 
-Choose **Claude**, configure Positioning / Linear, and click **Copy prompt**.
+Choose **Claude**, configure the tasks, and click **Copy prompt**.
 The dialog exports the same calibrated snapshots and preprocessing settings as
 Run, saves a local job, and copies a Python-generated prompt. Paste it into
 Claude Desktop or Claude Code with only the LangSlice connector enabled.
 No Claude credentials are collected by LangSlice and no ChatGPT sign-in is needed.
-Agent model, reasoning and image model controls are disabled; Nonlinear remains
-unavailable. Image resolution and preprocessing still control LangSlice's pictures
-(auto gives Claude's tools the `view.resolution` key).
-Usage belongs to Claude, so there is no LangSlice cost estimate.
+Agent model and reasoning controls are disabled; the image model stays
+available for Nonlinear (`trace_borders` is offered only when that model is
+connected on this computer). Image resolution and preprocessing still
+control LangSlice's pictures (auto gives Claude's tools the
+`view.resolution` key). Usage belongs to Claude, so there is no LangSlice
+cost estimate.
 
 Keep the progress window open: section changes appear live in ABBA through its
-native actions. Close or Disconnect ends only the live connection, not Claude's
-work; checkpoints and completed results remain in the job folder next to the
-exported snapshots (`~/.langslice/snapshots/claude-*/langslice/`).
-Each live checkpoint is an undoable ABBA step, unlike ChatGPT's single final apply.
+native actions, and the tool events (with the saved pictures' paths) reach
+the viewer and log as in ChatGPT mode. Close or Disconnect ends only the
+live connection, not Claude's work; checkpoints and completed results remain
+in the job folder next to the exported snapshots
+(`~/.langslice/snapshots/claude-*/langslice/`).
 Avoid editing the selected slices until the connection is finished.
 The log shows LangSlice activity, not Claude's conversation. Saved MCP traces
 likewise record tool calls and pictures shown, not Claude's intervening words.

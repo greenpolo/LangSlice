@@ -63,7 +63,7 @@ Besides the verbs, `FOLDER` takes:
   cannot be read, whose entries match the sections ambiguously, or that
   places no section is refused with `BAD_REGISTRATION` (exit 2). The other
   commands that open a stack with these flags (`linear run`, `mcp`,
-  `claude prepare`, `abba --linear`) take `--registration` the same way.
+  `claude prepare`) take `--registration` the same way.
 - `runs [ID]`: the background runs, newest first, or one run's state
   (running, finished with its answer, or lost). `status` is only the verb.
 - `wait [ID]`: wait for a background run (the latest without ID);
