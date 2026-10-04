@@ -14,8 +14,11 @@ import org.scijava.service.Service;
 public final class LangSliceService extends AbstractService {
     /** ABBA groups external entries under this key; the key itself is never shown. */
     static final String MENU = "LangSlice";
-    /** ABBA shows each registered command string as "Register>" + string: a LangSlice submenu beside DeepSlice. */
-    static final String REGISTRATION = "LangSlice>LangSlice Registration…";
+    /**
+     * ABBA shows each registered command string as "Register>" + string: one plain entry in the Register menu,
+     * after a separator below ABBA's own entries (a plugin cannot choose the position).
+     */
+    static final String REGISTRATION = "LangSlice Registration…";
     /** Setup lives in Fiji's Plugins>LangSlice menu and behind the dialog's Setup… button. */
     static final String SETUP = "LangSlice setup";
     private static boolean registered;

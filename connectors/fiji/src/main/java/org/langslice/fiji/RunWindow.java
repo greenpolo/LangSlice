@@ -3,22 +3,22 @@ package org.langslice.fiji;
 import java.awt.*;
 import javax.swing.*;
 
-/** Run progress: the agent log, or only a status line. Stop, and an optional partial apply after a stop. */
+/** Run progress: the agent log, or only a status line. Stop, and a retry of updates ABBA could not take yet. */
 final class RunWindow implements AgentRunner.Progress {
     final JFrame frame = new JFrame("LangSlice Registration");
     final JTextArea log;
     final JTextArea status = new JTextArea(3, 46);
-    final JButton stop = new JButton("Stop run"), partial = new JButton("Apply partial result to ABBA"), close = new JButton("Close");
+    final JButton stop = new JButton("Stop run"), retry = new JButton("Retry failed updates"), close = new JButton("Close");
 
     RunWindow(boolean showLog) {
         status.setEditable(false); status.setFocusable(false); status.setOpaque(false);
         status.setLineWrap(true); status.setWrapStyleWord(true);
         status.setFont(UIManager.getFont("Label.font"));
         status.setText("Starting…");
-        partial.setVisible(false); close.setEnabled(false);
+        retry.setVisible(false); close.setEnabled(false);
         close.addActionListener(e -> frame.dispose());
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        buttons.add(partial); buttons.add(stop); buttons.add(close);
+        buttons.add(retry); buttons.add(stop); buttons.add(close);
         JPanel root = new JPanel(new BorderLayout(0, 10));
         root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         if (showLog) {
@@ -51,8 +51,6 @@ final class RunWindow implements AgentRunner.Progress {
         });
     }
 
-    /** The results are about to change ABBA: stopping is no longer offered. */
-    void applying() { SwingUtilities.invokeLater(() -> stop.setEnabled(false)); }
 
     void finish(String message) {
         line(message);
@@ -62,17 +60,18 @@ final class RunWindow implements AgentRunner.Progress {
         });
     }
 
-    /** After a stop or failure: apply the last checkpoint once, on request. */
-    void offerPartial(Runnable apply) {
+    /** After the run: updates ABBA refused or could not take are kept; offer to try them again, once per click. */
+    void offerRetry(Runnable apply) {
         SwingUtilities.invokeLater(() -> {
-            partial.setVisible(true);
-            partial.addActionListener(e -> { partial.setEnabled(false); close.setEnabled(false); apply.run(); });
+            for (java.awt.event.ActionListener old : retry.getActionListeners()) retry.removeActionListener(old);
+            retry.setVisible(true); retry.setEnabled(true);
+            retry.addActionListener(e -> { retry.setEnabled(false); close.setEnabled(false); apply.run(); });
             frame.pack();
         });
     }
 
-    void partialDone(String message) {
+    void retryDone(String message, boolean again) {
         finish(message);
-        SwingUtilities.invokeLater(() -> partial.setVisible(false));
+        SwingUtilities.invokeLater(() -> { retry.setVisible(again); retry.setEnabled(again); });
     }
 }

@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
-/** Opens the Registration dialog and runs the worker, leaving the user's ABBA untouched until the end. */
+/** Opens the Registration dialog and runs the worker; every saved step of the agent lands live in ABBA. */
 public final class AgentRunner {
     private static final Set<MultiSlicePositioner> RUNNING = Collections.newSetFromMap(new WeakHashMap<>());
     private AgentRunner() { }
@@ -75,7 +75,7 @@ public final class AgentRunner {
         }
         String caption = chosen ? selected.size() + " slice" + (selected.size() == 1 ? "" : "s") + " selected in ABBA."
                 : "No slices selected in ABBA, so all " + selected.size() + " slices are used.";
-        new RegistrationDialog(status, rows, caption, names, settings, new AbbaHost(mp, selected, names.size())).setVisible(true);
+        new RegistrationDialog(status, rows, caption, names, settings, new AbbaHost(mp, selected, names)).setVisible(true);
     }
 
     /** Section interval and thickness in µm from ABBA's slices; 0 when ABBA gives no value. */
@@ -100,10 +100,10 @@ public final class AgentRunner {
 
     /** The dialog's view of a live ABBA session. */
     private static final class AbbaHost implements RegistrationDialog.Host {
-        final MultiSlicePositioner mp; final List<SliceSources> slices; final int channels;
+        final MultiSlicePositioner mp; final List<SliceSources> slices; final List<String> channels;
         final Map<String, BufferedImage> exported = new HashMap<>();
         Path previews;
-        AbbaHost(MultiSlicePositioner mp, List<SliceSources> slices, int channels) { this.mp = mp; this.slices = slices; this.channels = channels; }
+        AbbaHost(MultiSlicePositioner mp, List<SliceSources> slices, List<String> channels) { this.mp = mp; this.slices = slices; this.channels = channels; }
 
         public BufferedImage[] preview(int index, List<Integer> pages, JsonObject preprocessing, double pixelSize) throws Exception {
             synchronized (this) { if (previews == null) previews = Files.createTempDirectory("langslice-preview-"); }
@@ -125,10 +125,16 @@ public final class AgentRunner {
             try (WorkerClient worker = new WorkerClient(environment())) { return worker.request("setup.status", new JsonObject(), null, Duration.ofSeconds(60)); }
         }
         public void setup() { SetupDialog.show(mp); }
-        public void run(RegistrationSettings settings, Map<Integer, String> damaged) {
+        public void run(RegistrationSettings settings, Map<Integer, String> damaged, Set<Integer> nonlinearSkip) {
             Map<SliceSources, String> marked = new HashMap<>();
             damaged.forEach((row, note) -> marked.put(slices.get(row), note));
-            start(mp, settings, slices, marked, channels);
+            Set<SliceSources> skip = new HashSet<>();
+            nonlinearSkip.forEach(row -> skip.add(slices.get(row)));
+            List<SliceSources> sent = new ArrayList<>(slices);
+            // Nonlinear alone has nothing to do on a slice it skips: leave it out of the run.
+            if (!settings.positioning && !settings.linear) { sent.removeAll(skip); skip.clear(); }
+            if (sent.isEmpty()) { JOptionPane.showMessageDialog(null, "No slice is left for LangSlice to work on."); return; }
+            start(mp, settings, sent, marked, skip, channels);
         }
         public void close() {
             Path folder = previews;
@@ -160,56 +166,118 @@ public final class AgentRunner {
         } finally { Files.deleteIfExists(written); }
     }
 
-    /** Runs linear.run to its result without touching ABBA; remembers each checkpoint's updates_since_start. */
-    static JsonObject runLinear(WorkerClient connection, JsonObject request, AtomicReference<JsonArray> partial,
-            Progress progress, AtomicBoolean stopping) throws Exception {
+    /**
+     * Runs linear.run to its result. Each saved checkpoint goes to live (applied to ABBA as it arrives),
+     * and every checkpoint and agent event to registered {@link LangSliceEvents} listeners.
+     */
+    static JsonObject runLinear(WorkerClient connection, JsonObject request, Progress progress,
+            AtomicBoolean stopping, java.util.function.Consumer<JsonObject> live) throws Exception {
         int[] checkpoints = {0};
         return connection.request("linear.run", request,
-                event -> handleEvent(event, partial, progress, stopping, checkpoints, null), Duration.ofHours(12));
+                event -> handleEvent(event, progress, stopping, checkpoints, live), Duration.ofHours(12));
     }
 
-    /** Shared event handling; the external Claude session also applies each host update live. */
-    static void handleEvent(JsonObject event, AtomicReference<JsonArray> partial, Progress progress,
-            AtomicBoolean stopping, int[] checkpoints, java.util.function.Consumer<JsonArray> live) {
+    /** Shared event handling for both modes: every checkpoint after the initial one is applied live. */
+    static void handleEvent(JsonObject event, Progress progress, AtomicBoolean stopping, int[] checkpoints,
+            java.util.function.Consumer<JsonObject> live) {
         if (stopping.get()) throw new CancellationException();
         if (event.has("payload")) {
             JsonObject payload = event.getAsJsonObject("payload");
             String kind = payload.has("kind") ? payload.get("kind").getAsString() : "";
+            if (!kind.isEmpty()) LangSliceEvents.forward(payload);
             if (kind.equals("checkpoint")) {
-                if (payload.has("updates_since_start") && payload.get("updates_since_start").isJsonArray())
-                    partial.set(payload.getAsJsonArray("updates_since_start"));
                 boolean initial = payload.has("initial") && payload.get("initial").getAsBoolean();
                 if (!initial) {
-                    if (live != null && payload.has("host_updates")) live.accept(payload.getAsJsonArray("host_updates"));
+                    if (live != null) live.accept(payload);
                     progress.status("The agent is working. Saved steps: " + (++checkpoints[0])
-                            + (live == null ? ". ABBA changes when the run ends." : ". Changes are live in ABBA."));
+                            + ". Changes are live in ABBA; each saved step is one ABBA Undo.");
                 }
             } else if (kind.equals("log") && payload.has("message")) progress.line(payload.get("message").getAsString());
-            else if (kind.equals("agent_event")) { String text = agentText(payload.getAsJsonObject("event")); if (!text.isEmpty()) progress.fragment(text); }
+            else if (kind.equals("agent_event") && payload.has("event") && payload.get("event").isJsonObject()) {
+                String text = agentText(payload.getAsJsonObject("event"));
+                if (!text.isEmpty()) progress.fragment(text);
+            }
         } else if (event.has("message")) progress.line(event.get("message").getAsString());
     }
 
-    /** Initial-to-final updates; older workers without final_updates fall back to the last checkpoint. */
-    static JsonArray finalUpdates(JsonObject result, JsonArray lastCheckpoint) {
-        if (result.has("final_updates") && result.get("final_updates").isJsonArray()) return result.getAsJsonArray("final_updates");
-        if (lastCheckpoint != null) return lastCheckpoint;
-        throw new IllegalStateException("This LangSlice version does not report final results. Update LangSlice and the Fiji plugin together.");
+    /** One checkpoint into ABBA; rows ABBA could not take are reported and retried with the next checkpoint. */
+    static AbbaHostSession.ApplyReport applyLive(AbbaHostSession host, JsonObject payload, Progress progress) {
+        JsonArray rows = payload.has("host_updates") && payload.get("host_updates").isJsonArray() ? payload.getAsJsonArray("host_updates") : new JsonArray();
+        JsonObject angles = payload.has("host_angles") && payload.get("host_angles").isJsonObject() ? payload.getAsJsonObject("host_angles") : null;
+        AbbaHostSession.ApplyReport report;
+        try { report = host.applyCheckpoint(rows, angles); }
+        catch (RuntimeException failure) {
+            // Never end the run over ABBA: the rows stay pending in the session and are retried next time.
+            progress.line("This step could not reach ABBA: " + failure.getMessage() + " It is retried with the next step.");
+            return null;
+        }
+        if (!report.failed.isEmpty() || report.anglesFailed)
+            progress.line("Not in ABBA yet (retried with the next step): " + report.summary());
+        LangSliceEvents.publish("applied", report.toJson());
+        return report;
+    }
+
+    /** "" when everything reached ABBA; otherwise what is still missing, for the final message. */
+    static String pendingText(AbbaHostSession host) {
+        if (host == null || !host.hasPending()) return "";
+        Map<String, String> reasons = host.pendingReasons();
+        StringBuilder text = new StringBuilder(" Some changes are not in ABBA: ");
+        if (reasons.isEmpty()) text.append("the cutting angles. ");
+        reasons.forEach((id, reason) -> text.append(id).append(" (").append(host.slices.get(id) == null ? "?" : host.slices.get(id).getName())
+                .append("): ").append(reason).append(' '));
+        return text.append("Use Retry failed updates to try again.").toString();
+    }
+
+    private static String outputs(JsonObject result) {
+        String outputs = result.has("output_dir") ? " Run files: " + result.get("output_dir").getAsString() : "";
+        if (result.has("trace_files") && result.getAsJsonArray("trace_files").size() > 0) {
+            StringBuilder saved = new StringBuilder(" Trace saved: ");
+            for (int i = 0; i < result.getAsJsonArray("trace_files").size(); i++)
+                saved.append(i == 0 ? "" : ", ").append(result.getAsJsonArray("trace_files").get(i).getAsString());
+            outputs += saved;
+        }
+        return outputs;
+    }
+
+    /** Prepares snapshots and the request shared by both modes; registers the run with event listeners. */
+    private static JsonObject prepareRun(AbbaHostSession host, MultiSlicePositioner mp, RegistrationSettings settings,
+            List<SliceSources> selected, Map<SliceSources, String> damaged, Set<SliceSources> nonlinearSkip,
+            List<String> channelNames, String mode) throws IOException {
+        JsonObject request = host.prepare(settings.spec(), selected, settings.exportChannels(channelNames.size()), channelNames,
+                settings.pixelSize, damaged, !settings.overwrite);
+        request.add("preprocessing", settings.preprocessing(channelNames.size()));
+        if (settings.saveTraces) request.addProperty("trace_dir", settings.traceDir);
+        JsonArray skip = new JsonArray();
+        host.slices.forEach((file, slice) -> { if (nonlinearSkip.contains(slice)) skip.add(file); });
+        if (skip.size() > 0) request.add("nonlinear_skip", skip);
+        JsonObject started = new JsonObject();
+        started.addProperty("mode", mode);
+        started.addProperty("viewer", settings.viewer);
+        started.addProperty("image_folder", host.folder.toString());
+        LangSliceEvents.runStarted(mp, host.slices, started);
+        return request;
+    }
+
+    private static void ended(String message, String jobDir) {
+        JsonObject body = new JsonObject(); body.addProperty("message", message);
+        if (jobDir != null) body.addProperty("job_dir", jobDir);
+        LangSliceEvents.publish("run_finished", body);
     }
 
     private static void start(MultiSlicePositioner mp, RegistrationSettings settings, List<SliceSources> selected,
-            Map<SliceSources, String> damaged, int channels) {
+            Map<SliceSources, String> damaged, Set<SliceSources> nonlinearSkip, List<String> channelNames) {
         if (RUNNING.contains(mp)) { JOptionPane.showMessageDialog(null, "A LangSlice run is already active in this session."); return; }
         final Path environment;
         try { environment = environment(); } catch (IllegalStateException missing) { JOptionPane.showMessageDialog(null, missing.getMessage()); return; }
-        if (settings.claude) { startClaude(mp, environment, settings, selected, damaged, channels); return; }
+        if (settings.claude) { startClaude(mp, environment, settings, selected, damaged, nonlinearSkip, channelNames); return; }
         RUNNING.add(mp);
         RunWindow window = new RunWindow(settings.showLog);
         window.open();
         AtomicReference<WorkerClient> client = new AtomicReference<>();
         AtomicReference<Thread> runningThread = new AtomicReference<>();
-        AtomicReference<JsonArray> partial = new AtomicReference<>();
         AtomicReference<AbbaHostSession> session = new AtomicReference<>();
-        AtomicBoolean stopping = new AtomicBoolean(), applying = new AtomicBoolean();
+        AtomicReference<String> jobDir = new AtomicReference<>();
+        AtomicBoolean stopping = new AtomicBoolean();
         SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
             protected String doInBackground() throws Exception {
                 runningThread.set(Thread.currentThread());
@@ -217,69 +285,61 @@ public final class AgentRunner {
                 Path folder = Files.createTempDirectory("langslice-abba-");
                 window.status("Preparing calibrated snapshots…");
                 window.line("Preparing calibrated snapshots in " + folder);
-                window.line("Your ABBA session is not changed until the run ends. Avoid editing the listed slices meanwhile.");
+                window.line("The agent's changes appear in ABBA as it saves them; each saved step is one ABBA Undo. "
+                        + "Avoid editing the listed slices while the agent works.");
                 AbbaHostSession host = new AbbaHostSession(mp, folder);
-                JsonObject request = host.prepare(settings.spec(), selected, settings.exportChannels(channels),
-                        settings.pixelSize, damaged, !settings.overwrite);
-                request.add("preprocessing", settings.preprocessing(channels));
-                if (settings.saveTraces) request.addProperty("trace_dir", settings.traceDir);
+                JsonObject request = prepareRun(host, mp, settings, selected, damaged, nonlinearSkip, channelNames, "chatgpt");
                 session.set(host);
                 AbbaHostSession.checkInterrupted();
-                window.status("The agent is working. ABBA changes when the run ends.");
+                window.status("The agent is working. Changes are live in ABBA.");
                 JsonObject result;
                 try (WorkerClient connection = new WorkerClient(environment)) {
                     client.set(connection);
-                    result = runLinear(connection, request, partial, window, stopping);
+                    result = runLinear(connection, request, window, stopping, payload -> applyLive(host, payload, window));
                 } finally { client.set(null); }
-                JsonArray updates = finalUpdates(result, partial.get());
+                if (result.has("output_dir")) jobDir.set(result.get("output_dir").getAsString());
+                // Every checkpoint, the final one included, has already reached ABBA; retry what did not, once.
+                if (host.hasPending()) host.applyCheckpoint(null, null);
                 boolean submitted = result.has("state") && result.getAsJsonObject("state").has("submitted")
                         && result.getAsJsonObject("state").get("submitted").getAsBoolean();
-                applying.set(true); window.applying();
-                window.status("Applying the result to ABBA…");
-                host.apply(updates);
-                String outputs = result.has("output_dir") ? " Run files: " + result.get("output_dir").getAsString() : "";
-                if (result.has("trace_files") && result.getAsJsonArray("trace_files").size() > 0) {
-                    StringBuilder saved = new StringBuilder(" Trace saved: ");
-                    for (int i = 0; i < result.getAsJsonArray("trace_files").size(); i++)
-                        saved.append(i == 0 ? "" : ", ").append(result.getAsJsonArray("trace_files").get(i).getAsString());
-                    outputs += saved;
-                }
                 return (submitted ? "Finished. " : "The agent stopped before submitting; review the result. ")
-                        + (updates.size() == 0 ? "The agent made no changes." : "The result was applied to ABBA as one step; ABBA's Undo reverts it.")
-                        + " Save the project with ABBA's normal Save command." + outputs;
+                        + "The agent's changes are in ABBA; each saved step is one ABBA Undo."
+                        + pendingText(host) + " Save the project with ABBA's normal Save command." + outputs(result);
             }
             protected void done() {
                 RUNNING.remove(mp);
-                try { window.finish(get()); }
+                AbbaHostSession host = session.get();
+                String message;
+                try { message = get(); }
                 catch (Exception e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
                     boolean stopped = stopping.get() || e instanceof CancellationException || cause instanceof CancellationException;
-                    JsonArray last = partial.get();
-                    AbbaHostSession host = session.get();
-                    boolean offer = !applying.get() && host != null && last != null && last.size() > 0;
-                    String message = applying.get()
-                            ? "Applying the result to ABBA failed: " + cause.getMessage() + " Use ABBA's Undo to revert any partial change."
-                            : (stopped ? "Stopped. Your ABBA session was not changed." : "Run stopped: " + cause.getMessage() + " Your ABBA session was not changed.");
-                    if (offer) message += " You can apply the last saved step of the run to ABBA as one undoable step.";
+                    message = (stopped ? "Stopped." : "Run stopped: " + cause.getMessage())
+                            + (host == null ? " Your ABBA session was not changed."
+                                : " The changes the agent saved before that are in ABBA; each saved step is one ABBA Undo.")
+                            + pendingText(host);
                     if (settings.saveTraces) message += " The trace so far is in " + settings.traceDir + ".";
-                    window.finish(message);
-                    if (offer) window.offerPartial(() -> applyPartial(window, host, last));
                 }
+                window.finish(message);
+                ended(message, jobDir.get());
+                if (host != null && host.hasPending()) window.offerRetry(() -> retry(window, host));
             }
         };
         window.stop.addActionListener(event -> {
             stopping.set(true); window.stop.setEnabled(false);
             WorkerClient connection = client.get(); if (connection != null) connection.close();
-            Thread thread = runningThread.get(); if (connection == null && thread != null && !applying.get()) thread.interrupt();
+            Thread thread = runningThread.get(); if (connection == null && thread != null) thread.interrupt();
         });
         worker.execute();
     }
 
     private static void startClaude(MultiSlicePositioner mp, Path environment, RegistrationSettings settings,
-            List<SliceSources> selected, Map<SliceSources, String> damaged, int channels) {
+            List<SliceSources> selected, Map<SliceSources, String> damaged, Set<SliceSources> nonlinearSkip, List<String> channelNames) {
         RUNNING.add(mp);
         RunWindow window = new RunWindow(settings.showLog);
         AtomicReference<ClaudeHostChannel> listener = new AtomicReference<>();
+        AtomicReference<AbbaHostSession> session = new AtomicReference<>();
+        AtomicReference<String> jobDir = new AtomicReference<>();
         AtomicBoolean stopping = new AtomicBoolean();
         Runnable stop = () -> {
             stopping.set(true);
@@ -299,10 +359,8 @@ public final class AgentRunner {
                 Path folder = Files.createTempDirectory(root, "claude-");
                 window.status("Preparing calibrated snapshots…");
                 AbbaHostSession host = new AbbaHostSession(mp, folder);
-                JsonObject request = host.prepare(settings.spec(), selected, settings.exportChannels(channels),
-                        settings.pixelSize, damaged, !settings.overwrite);
-                request.add("preprocessing", settings.preprocessing(channels));
-                if (settings.saveTraces) request.addProperty("trace_dir", settings.traceDir);
+                JsonObject request = prepareRun(host, mp, settings, selected, damaged, nonlinearSkip, channelNames, "claude");
+                session.set(host);
                 request.addProperty("notes", "");
                 if (stopping.get()) throw new CancellationException();
                 try (ClaudeHostChannel channel = new ClaudeHostChannel()) {
@@ -314,42 +372,60 @@ public final class AgentRunner {
                         prepared = worker.request("claude.prepare", request, null, Duration.ofMinutes(5));
                     }
                     if (stopping.get()) throw new CancellationException();
+                    JsonObject job = new JsonObject();
+                    if (prepared.has("job_id")) job.add("job_id", prepared.get("job_id"));
+                    job.add("job_dir", prepared.get("job_dir"));
+                    jobDir.set(prepared.get("job_dir").getAsString());
+                    LangSliceEvents.publish("job", job);
                     String prompt = prepared.get("prompt").getAsString();
                     SwingUtilities.invokeAndWait(() -> java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
                             .setContents(new java.awt.datatransfer.StringSelection(prompt), null));
                     window.status("Prompt copied. Paste it into Claude Desktop or Claude Code. Keep this window open for live ABBA updates.");
                     window.line("Saved job: " + prepared.get("job_dir").getAsString());
                     window.line("Avoid editing the selected slices while Claude is working. Closing this window disconnects ABBA; Claude can continue saving results.");
-                    AtomicReference<JsonArray> partial = new AtomicReference<>(); int[] checkpoints = {0};
-                    JsonObject result = channel.receive(event -> handleEvent(event, partial, window, stopping, checkpoints, host::apply));
-                    // Checkpoints already applied every delta, including changes that were later undone.
-                    finalUpdates(result, partial.get());
-                    return "Claude submitted. Changes are live in ABBA; save using ABBA's Save command. Results: "
-                            + prepared.get("job_dir").getAsString();
+                    int[] checkpoints = {0};
+                    channel.receive(event -> handleEvent(event, window, stopping, checkpoints, payload -> applyLive(host, payload, window)));
+                    // Checkpoints already applied every change, including changes that were later undone.
+                    if (host.hasPending()) host.applyCheckpoint(null, null);
+                    return "Claude submitted. Changes are live in ABBA; each saved step is one ABBA Undo." + pendingText(host)
+                            + " Save using ABBA's Save command. Results: " + prepared.get("job_dir").getAsString();
                 } finally { listener.set(null); }
             }
             protected void done() {
                 RUNNING.remove(mp);
-                if (stopping.get()) { window.status("Disconnected. Applied changes remain in ABBA; Claude can continue saving results."); return; }
-                try { window.finish(get()); }
-                catch (Exception e) {
-                    Throwable cause = e.getCause() == null ? e : e.getCause();
-                    window.finish("Claude connection ended: " + cause.getMessage()
-                            + " Applied changes remain in ABBA; results remain in the saved job directory.");
+                AbbaHostSession host = session.get();
+                String message;
+                if (stopping.get()) message = "Disconnected. Applied changes remain in ABBA; Claude can continue saving results." + pendingText(host);
+                else {
+                    try { message = get(); }
+                    catch (Exception e) {
+                        Throwable cause = e.getCause() == null ? e : e.getCause();
+                        message = "Claude connection ended: " + cause.getMessage()
+                                + " Applied changes remain in ABBA; results remain in the saved job directory." + pendingText(host);
+                    }
                 }
+                if (stopping.get()) window.status(message); else window.finish(message);
+                ended(message, jobDir.get());
+                if (host != null && host.hasPending()) window.offerRetry(() -> retry(window, host));
             }
         }.execute();
     }
 
-    private static void applyPartial(RunWindow window, AbbaHostSession host, JsonArray updates) {
-        window.status("Applying the partial result to ABBA…");
-        new SwingWorker<Void, Void>() {
-            protected Void doInBackground() { host.apply(updates); return null; }
+    /** Applies the updates kept after failures, as one ABBA undo step. */
+    private static void retry(RunWindow window, AbbaHostSession host) {
+        window.status("Applying the kept updates to ABBA…");
+        new SwingWorker<AbbaHostSession.ApplyReport, Void>() {
+            protected AbbaHostSession.ApplyReport doInBackground() { return host.applyCheckpoint(null, null); }
             protected void done() {
-                try { get(); window.partialDone("The partial result was applied to ABBA as one step; ABBA's Undo reverts it. Save the project with ABBA's normal Save command."); }
-                catch (Exception e) {
+                try {
+                    AbbaHostSession.ApplyReport report = get();
+                    LangSliceEvents.publish("applied", report.toJson());
+                    boolean again = host.hasPending();
+                    window.retryDone(again ? "Still not in ABBA: " + report.summary()
+                            : "The kept updates are in ABBA as one step; ABBA's Undo reverts it. Save the project with ABBA's normal Save command.", again);
+                } catch (Exception e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
-                    window.partialDone("Applying the partial result failed: " + cause.getMessage() + " Use ABBA's Undo to revert any partial change.");
+                    window.retryDone("Applying the kept updates failed: " + cause.getMessage(), host.hasPending());
                 }
             }
         }.execute();

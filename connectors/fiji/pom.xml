@@ -1,15 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>org.langslice</groupId><artifactId>langslice-fiji</artifactId><version>0.1.0</version>
+  <groupId>org.langslice</groupId><artifactId>langslice-fiji</artifactId><version>0.2.0</version>
   <name>LangSlice connector for ABBA</name>
-  <description>Connect an existing ABBA session to a separate LangSlice Python environment.</description>
-  <properties><maven.compiler.release>11</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+  <description>Connect an existing ABBA 0.24 session to a separate LangSlice Python environment.</description>
+  <!-- ABBA 0.24.1 is built for Java 21 (pom-scijava 45.1.0, scijava.jvm.version 21). Every
+       ABBA dependency below is supplied by the user's Fiji/ABBA at run time: none is bundled. -->
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <abba.version>0.24.1</abba.version>
+  </properties>
   <repositories><repository><id>scijava.public</id><url>https://maven.scijava.org/content/groups/public</url></repository></repositories>
   <dependencies>
-    <dependency><groupId>ch.epfl.biop</groupId><artifactId>ImageToAtlasRegister</artifactId><version>0.11.0</version><scope>provided</scope></dependency>
-    <dependency><groupId>org.scijava</groupId><artifactId>scijava-common</artifactId><version>2.99.0</version><scope>provided</scope></dependency>
-    <dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>2.10.1</version><scope>provided</scope></dependency>
+    <!-- Brings the versions ABBA 0.24.1 itself depends on: bigdataviewer-biop-tools 0.24.1,
+         atlas 0.23.4, bigdataviewer-playground 0.23.1, imglib2-realtransform 4.0.6, scijava-common. -->
+    <dependency><groupId>ch.epfl.biop</groupId><artifactId>ImageToAtlasRegister</artifactId><version>${abba.version}</version><scope>provided</scope></dependency>
   </dependencies>
-  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin></plugins></build>
+  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>
+    <!-- The SciJava annotation processor writes META-INF/json/org.scijava.plugin.Plugin (the menu entry and service). -->
+    <configuration><proc>full</proc></configuration></plugin></plugins></build>
 </project>
