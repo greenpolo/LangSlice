@@ -169,7 +169,7 @@ profiles, `register_section` / `register_job`): [`library.md`](library.md).
 ## Ready-made agent setups
 
 `connectors/claude-code/` (a Claude Code plugin: skills for the main session and
-registration subagents with MCP, CLI or scripting access) and
-`connectors/codex/` (skills, custom agents, rules) wrap this CLI and the MCP
-server for one-brain registration runs; their READMEs say how to restrict the
+registration subagents with CLI or scripting access) and
+`connectors/codex/` (skills, custom agents, rules) wrap this CLI for
+one-brain registration runs; their READMEs say how to restrict the
 shell.

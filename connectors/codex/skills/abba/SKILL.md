@@ -1,27 +1,24 @@
 ---
 name: abba
-description: Work with ABBA (Aligning Big Brains and Atlases, in Fiji) from a coding agent: import section images, save and load state, export registrations, regions and QuickNII datasets. Use when the user mentions ABBA, Fiji, QuPath projects or QuickNII alongside a LangSlice job.
+description: Work with ABBA (Aligning Big Brains and Atlases, in Fiji) from a coding agent: import section images, save and load state, export registrations, regions and QuickNII datasets, and bring a LangSlice job's files into or out of ABBA. Use when the user mentions ABBA, Fiji, QuPath projects or QuickNII.
 ---
 
 # ABBA from a coding agent
 
-This is for the main session. Registration itself belongs to the LangSlice
-subagents (`register-brain` skill), not to this skill.
+For the main session. ABBA is handled with ABBA's own commands; LangSlice does
+not mirror or drive ABBA here. Registration of a LangSlice job is the
+subagent's work (`register-brain` skill).
 
-## Two ways to reach a running ABBA
+## Reaching a running ABBA
 
-1. The LangSlice dialog inside ABBA ("LangSlice Registration"): the user picks
-   tasks, atlas and model there and LangSlice applies the result through ABBA's
-   own actions. Prefer this when the user is sitting at ABBA.
-2. Fiji's own MCP server (fiji/fiji-llm, a preview): in Fiji, run
-   `Help > Assistants > Manage Fiji MCP Server...`, start the server (default
-   port 9090, URL `http://localhost:9090/mcp`) and register it, for example
-   `claude mcp add --transport http fiji http://localhost:9090/mcp`. The dialog's
-   "Copy" selector gives the exact registration text. Fiji must be running;
-   the tools fail while it is closed. The Fiji tools are separate from
-   LangSlice's: never give them to a registration subagent.
-
-Without either, ABBA is driven by the user; give them the exact menu steps.
+Fiji's own MCP server (fiji/fiji-llm, a preview): in Fiji, run
+`Help > Assistants > Manage Fiji MCP Server...`, start the server (default port
+9090, URL `http://localhost:9090/mcp`) and register it with the coding agent;
+the dialog's "Copy" selector gives the registration text (for Codex, for
+example, `codex mcp add fiji --url http://localhost:9090/mcp`).
+Fiji must be running; the tools fail while it is closed. Never give these Fiji
+tools to a registration subagent. Without the server, ABBA is driven by the
+user: give them the exact menu steps.
 
 ## ABBA 0.24.x commands (menu path under Plugins > BIOP > Atlas)
 
@@ -43,14 +40,14 @@ ABBA session.
 Names and parameters were read from the ABBA source at tag
 `ImageToAtlasRegister-0.24.1`; other ABBA versions may differ.
 
-## Using LangSlice results with ABBA
+## With a LangSlice job
 
-- Register in ABBA's frame inside the LangSlice dialog, or register a folder
-  with the `register-brain` skill and import the result: `langslice job
-  FOLDER init --registration FILE` takes a QuickNII or VisuAlign file or a
-  LangSlice `registration.json`; `langslice job FOLDER export_maps` writes
-  `exports/quicknii.json` and `exports/visualign.json`.
+- Into LangSlice: export from ABBA (QuickNII dataset, or the registration
+  file) and start the job from it: `langslice job FOLDER init --registration
+  FILE`.
+- Out of LangSlice: `langslice job FOLDER export_maps` writes
+  `exports/quicknii.json` and `exports/visualign.json`; import them with
+  ABBA's own commands above.
 - ABBA's coordinates differ from BrainGlobe's by a measured offset of about
-  0.985 mm; LangSlice's ABBA integration fits it at start-up. Never hardcode
-  it, and never convert positions between the two by hand.
+  0.985 mm. Never hardcode it or convert positions by hand.
 - Save State before any bulk change.
