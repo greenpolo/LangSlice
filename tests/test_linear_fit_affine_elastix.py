@@ -270,7 +270,7 @@ def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Pa
     def tweak(**entry: Any) -> list[float]:
         result = _tool(box, "adjust_transforms")([{"id": ID, **entry}])
         assert result["status"] == "ok", result
-        assert result["results"][0]["physical"]["shear"] == entry.get("shear", 0.0)
+        assert result["results"][0]["physical"]["shear"] == entry["shear"]
         return list(state.slices[0].transform["params"])
 
     kept = _error_vs(_px(fitted), tweak(**knobs))
@@ -284,3 +284,25 @@ def _px(params: list[float]) -> np.ndarray:
     from langslice.affine import denormalized_affine
 
     return np.vstack([denormalized_affine(params, SECTION_SIZE), [0, 0, 1]])
+
+
+def test_a_tweak_that_leaves_shear_out_keeps_the_fits_shear(tmp_path: Path, atlas):
+    """Only the five knobs changed: the fit's shear stays (an explicit 0 drops it)."""
+    centre = np.array([WIDTH / 2.0, HEIGHT / 2.0])
+    slant = np.eye(3)
+    slant[0, 1] = 0.06
+    slant[:2, 2] = centre - slant[:2, :2] @ centre
+    state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, _step(3.0, 1.02, 4.0, -2.0)
+                                                         @ slant))
+    fitted = _tool(box, "fit_affine")([])["results"][0]["physical"]
+    assert abs(fitted["shear"]) > 0.03
+    knobs = {key: fitted[key] for key in ("rotation_deg", "scale_x", "scale_y",
+                                          "translate_x_mm", "translate_y_mm")}
+    adjust = _tool(box, "adjust_transforms")
+    reply = adjust([{"id": ID, **knobs, "rotation_deg": knobs["rotation_deg"] + 0.5}])
+    assert reply["results"][0]["physical"]["shear"] == fitted["shear"]
+    assert state.slices[0].transform["physical"]["shear"] == fitted["shear"]
+    assert decompose_affine(state.slices[0].transform["params"], SECTION_SIZE)["shear"] == \
+        pytest.approx(fitted["shear"], abs=2e-3)
+    dropped = adjust([{"id": ID, **knobs, "shear": 0.0}])
+    assert dropped["results"][0]["physical"]["shear"] == 0.0

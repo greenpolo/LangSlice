@@ -13,7 +13,7 @@
     "cached": false,
     "displacement_mm": {
      "max": 0.188,
-     "median": 0.098
+     "median": 0.097
     },
     "engine_settings": {
      "bending_weight": 0.2,
@@ -39,8 +39,8 @@
     },
     "status": "ok",
     "step_displacement_mm": {
-     "max": 0.137,
-     "median": 0.032
+     "max": 0.135,
+     "median": 0.033
     },
     "steps": 2,
     "written": true

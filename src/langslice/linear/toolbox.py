@@ -2072,6 +2072,10 @@ def build_tools(
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [slice_id]}
         if record.position_mm is None:
             return {"status": "error", "error": "NO_POSITION", "id": record.id}
+        if shear is None:
+            # Left out: the shear the section's transform already has stays.
+            held = (record.transform or {}).get("physical") or {}
+            shear = held.get("shear") or 0.0
         try:
             params = {
                 "rotation_deg": float(rotation_deg),
@@ -2297,7 +2301,7 @@ def build_tools(
         """Set and show one to four independent sections in one undoable call.
 
         Each entry replaces the complete transform, including any previous
-        spline or shear: to keep a fit's shear, give it again. A section may
+        spline; a shear left out is kept from the current transform. A section may
         appear once per call; inspect its result before making a dependent
         correction in a later call. Call it as often as you need, on any
         section that has a position; the last call is what stays.
@@ -2309,9 +2313,10 @@ def build_tools(
                 translate_y_mm (down). Optional per entry: shear (a unitless
                 slant applied before the rotation: each point moves sideways
                 by shear times its distance below the pivot, in units of
-                scale_x; 0, the default, is none; the same number fit_affine
-                reports), pivot ("canvas", "tissue" or [fx, fy] fractions of
-                the canvas) and note.
+                scale_x; the number fit_affine reports; left out, the
+                section's current shear is kept, 0 sets none), pivot
+                ("canvas", "tissue" or [fx, fy] fractions of the canvas) and
+                note.
             view: Picture options (described once in the job statement), one
                 for every entry's picture. Modes: "overlay" (default: the section
                 with the atlas lines on it), "side_by_side" (two images: the

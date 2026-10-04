@@ -36,7 +36,7 @@
      "rotation_deg": -1.0,
      "scale_x": 0.99,
      "scale_y": 1.0,
-     "shear": 0.0,
+     "shear": 0.0014,
      "translate_x_mm": 0.02,
      "translate_y_mm": 0.0
     },
@@ -58,7 +58,7 @@
      "rotation_deg": 1.0,
      "scale_x": 1.0,
      "scale_y": 1.01,
-     "shear": 0.0,
+     "shear": -0.009,
      "translate_x_mm": 0.0,
      "translate_y_mm": 0.01
     },

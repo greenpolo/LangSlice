@@ -196,7 +196,7 @@ every key and its type.
 | `search_position` | position.bayesian | `search_position(id, window_mm, angles)` (was `fit_position`) | — |
 | `orient_slices` | transform | `orient_slices(entries, view)`; entry: id, flip, rotate_deg | section |
 | `fit_affine` | transform.automatic | `fit_affine(slices, method="elastix", fit_atlas="", include=[], exclude=[], view)` | overlay (default), side_by_side, checkerboard, outlines, section, template |
-| `adjust_transforms` | transform.interactive | `adjust_transforms(entries, view)`; entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, shear (optional, default 0: the unitless slant `fit_affine` reports, so a fit's map can be kept), pivot, note; one `view` draws every entry | as `fit_affine`, plus ab |
+| `adjust_transforms` | transform.interactive | `adjust_transforms(entries, view)`; entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, shear (optional: the unitless slant `fit_affine` reports; left out, the section's current shear is kept, 0 sets none), pivot, note; one `view` draws every entry | as `fit_affine`, plus ab |
 | `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` | — |
 | `trace_borders`, `grep_atlas` | nonlinear (`trace_borders` not with provider `none`) | `trace_borders(id, prompt="")`, `grep_atlas(query, id="")` | — |
 | `fit_deformable` | nonlinear | `fit_deformable(slices, include=[], exclude=[], start="linear", fit_section="fit", fit_atlas="", engine="", stiffness="medium", candidates=[], keep_linear="", view)`; candidate: stiffness, fit_section, fit_atlas, engine; `engine` only when `nonlinear.engine` is `either` | borders (default), ab |

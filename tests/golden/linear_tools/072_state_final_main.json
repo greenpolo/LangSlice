@@ -53,8 +53,8 @@
      ],
      "summary": {
       "displacement_mm": {
-       "max": 0.179,
-       "median": 0.097
+       "max": 0.178,
+       "median": 0.095
       },
       "flags": [],
       "fold_fraction": 0.0
@@ -79,7 +79,7 @@
      "geometry_fingerprint": "<hex>",
      "id": "s0.png",
      "model": "gpt-image-2",
-     "model_border_pixels": 7380,
+     "model_border_pixels": 7405,
      "output_kind": "border_annotation",
      "prompt_edited": false,
      "provider": "openai-oauth",
@@ -105,11 +105,11 @@
      "note": "",
      "params": [
       0.9998476951563913,
-      0.01347941744244309,
-      -0.006663556299417153,
+      0.006598112716954985,
+      -0.003222903936673075,
       -0.022822377648755363,
-      1.0098461721079552,
-      0.008026564308861573
+      1.0100032437658908,
+      0.007948028479893808
      ],
      "physical": {
       "pivot": [
@@ -119,7 +119,7 @@
       "rotation_deg": 1.0,
       "scale_x": 1.0,
       "scale_y": 1.01,
-      "shear": 0.0,
+      "shear": -0.009,
       "translate_x_mm": 0.0,
       "translate_y_mm": 0.01
      }
@@ -162,13 +162,13 @@
      "summary": {
       "displacement_mm": {
        "max": 0.188,
-       "median": 0.098
+       "median": 0.097
       },
       "flags": [],
       "fold_fraction": 0.0,
       "step_displacement_mm": {
-       "max": 0.137,
-       "median": 0.032
+       "max": 0.135,
+       "median": 0.033
       }
      }
     },
@@ -191,7 +191,7 @@
      "geometry_fingerprint": "<hex>",
      "id": "s1.png",
      "model": "gpt-image-2",
-     "model_border_pixels": 14634,
+     "model_border_pixels": 14615,
      "output_kind": "border_annotation",
      "prompt_edited": false,
      "provider": "openai-oauth",
@@ -217,11 +217,11 @@
      "note": "",
      "params": [
       0.9898492182048273,
-      -0.013345957863805038,
-      0.014101311005959478,
+      -0.012286236936079872,
+      0.013571450542096896,
       0.022594153872267805,
-      0.9998476951563913,
-      -0.011220924514329562
+      0.9998718841917134,
+      -0.011233019031990579
      ],
      "physical": {
       "pivot": [
@@ -231,7 +231,7 @@
       "rotation_deg": -1.0,
       "scale_x": 0.99,
       "scale_y": 1.0,
-      "shear": 0.0,
+      "shear": 0.0014,
       "translate_x_mm": 0.02,
       "translate_y_mm": 0.0
      }
