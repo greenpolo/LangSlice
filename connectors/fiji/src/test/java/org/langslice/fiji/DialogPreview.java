@@ -18,12 +18,17 @@ public final class DialogPreview {
         File folder = new File(args.length > 0 ? args[0] : ".");
         JsonObject status = JsonParser.parseString("{\"protocol_version\":1,\"providers\":{\"openai-oauth\":{\"configured\":true,"
                 + "\"agent_models\":[\"openai-oauth/gpt-6-astra\",\"openai-oauth/gpt-6-sol\",\"openai-oauth/gpt-6-luna\",\"openai-oauth/gpt-5.6-sol\",\"openai-oauth/gpt-5.6-terra\",\"openai-oauth/gpt-5.6-luna\"],"
-                + "\"default_agent_model\":\"openai-oauth/gpt-5.6-sol\",\"image_models\":[\"gpt-image-2\"],\"default_image_model\":\"gpt-image-2\"}}}").getAsJsonObject();
+                + "\"default_agent_model\":\"openai-oauth/gpt-5.6-sol\",\"image_models\":[\"gpt-image-2\"],\"default_image_model\":\"gpt-image-2\"},"
+                + "\"gemini-api\":{\"configured\":true},\"openai-api\":{\"configured\":false},\"none\":{\"configured\":true}},"
+                + "\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,\"models\":[\"gpt-image-2\"],\"default_model\":\"gpt-image-2\"},"
+                + "{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":true,\"models\":[\"gemini-3-pro-image\"],\"default_model\":\"gemini-3-pro-image\"},"
+                + "{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":false,\"models\":[\"gpt-image-2\"],\"default_model\":\"gpt-image-2\"},"
+                + "{\"provider\":\"none\",\"label\":\"None\",\"connected\":true,\"models\":[],\"default_model\":null}]}").getAsJsonObject();
         List<RegistrationDialog.SliceRow> rows = new ArrayList<>();
         for (int i = 1; i <= 12; i++) rows.add(new RegistrationDialog.SliceRow("M03_B_" + String.format("%02d", i) + ".vsi - 10x_01", i % 5 == 0 ? 2 : 0));
         List<String> channels = Arrays.asList("DAPI", "NeuN-AF488", "Iba1-AF647 (a long channel name from the scanner)");
         RegistrationSettings settings = new RegistrationSettings();
-        settings.interval = 120; settings.thickness = 40;
+        settings.interval = 120; settings.thickness = 40; settings.nonlinear = true; settings.angles = true;
         RegistrationDialog.Host host = new RegistrationDialog.Host() {
             public BufferedImage[] preview(int slice, List<Integer> pages, JsonObject preprocessing, double pixelSize) {
                 return new BufferedImage[]{section(460, 320, true), section(460, 320, false)};
@@ -33,7 +38,8 @@ public final class DialogPreview {
             }
             public JsonObject status() { return status; }
             public void setup() { }
-            public void run(RegistrationSettings s, Map<Integer, String> damaged) { }
+            public void run(RegistrationSettings s, Map<Integer, String> damaged, Set<Integer> skip) { }
+            public boolean viewerAvailable() { return false; }
         };
         RegistrationDialog[] dialog = new RegistrationDialog[1];
         SwingUtilities.invokeAndWait(() -> {
@@ -56,8 +62,10 @@ public final class DialogPreview {
             SwingUtilities.invokeAndWait(() -> { window[0] = new RunWindow(log); window[0].open(); });
             window[0].line("Preparing calibrated snapshots in /tmp/langslice-abba-123");
             window[0].fragment("\nWorking: place slices\nThe first slices look like olfactory bulb; moving them anterior.\n");
-            window[0].finish("Stopped. Your ABBA session was not changed. You can apply the last saved step of the run to ABBA as one undoable step.");
-            window[0].offerPartial(() -> { });
+            window[0].finish("Stopped. The changes the agent saved before that are in ABBA; each saved step is one ABBA Undo."
+                    + " Some changes are not in ABBA: section_0004.tif (M03_B_04.vsi - 10x_01): its registrations were changed in ABBA during the run."
+                    + " Use Retry failed updates to try again.");
+            window[0].offerRetry(() -> { });
             Thread.sleep(400);
             SwingUtilities.invokeAndWait(() -> capture(window[0].frame, new File(folder, log ? "dialog_run_log.png" : "dialog_run_compact.png")));
             SwingUtilities.invokeAndWait(() -> window[0].frame.dispose());

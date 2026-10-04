@@ -17,7 +17,13 @@ final class RegistrationDialog extends JDialog {
         JsonObject estimate(JsonObject params) throws Exception;
         JsonObject status() throws Exception;
         void setup();
-        void run(RegistrationSettings settings, Map<Integer, String> damaged);
+        /**
+         * Starts the run. nonlinearSkip: listed rows without an ABBA registration that Nonlinear leaves alone
+         * (the user declined letting the agent align them first); empty otherwise.
+         */
+        void run(RegistrationSettings settings, Map<Integer, String> damaged, Set<Integer> nonlinearSkip);
+        /** Whether LangSlice's agent viewer can open: ABBA was started from Python, which listens for run events. */
+        default boolean viewerAvailable() { return LangSliceEvents.hasListeners(); }
         default void close() { }
     }
 
@@ -28,6 +34,7 @@ final class RegistrationDialog extends JDialog {
 
     static final String TIP = "Tip: try to maximize contrast between different regions.";
     static final String SOON = "Coming soon";
+    static final String VIEWER_UNAVAILABLE = "Available when ABBA is started with `langslice abba`";
     private static final int PREVIEW_W = 340, PREVIEW_H = 230;
     private final Host host;
     private final List<SliceRow> rows;
@@ -37,7 +44,8 @@ final class RegistrationDialog extends JDialog {
 
     final JComboBox<String> provider = new JComboBox<>(new String[]{"ChatGPT", "Claude"});
     final JLabel account = new JLabel();
-    final JComboBox<String> model = new JComboBox<>(), imageModel = new JComboBox<>();
+    final JComboBox<String> model = new JComboBox<>();
+    final JComboBox<RegistrationSettings.ImageChoice> imageModel = new JComboBox<>();
     final JComboBox<String> reasoning = new JComboBox<>(RegistrationSettings.REASONING);
     final JComboBox<String> resolution = new JComboBox<>(new String[]{"Low", "Medium", "High", "Auto"});
     final JCheckBox showLog = new JCheckBox("Show agent log"), viewer = new JCheckBox("Open agent viewer");
@@ -45,7 +53,7 @@ final class RegistrationDialog extends JDialog {
     final JTextField traceDir = new JTextField(24);
     final JButton browseTraces = new JButton("Browse…");
 
-    final JCheckBox positioning = header("Positioning"), flip = new JCheckBox("Allow hemisphere flipping");
+    final JCheckBox positioning = header("Positioning"), flip = new JCheckBox("Enable hemisphere flipping");
     final JTextField cue = new JTextField(16);
     final JSpinner thickness = new JSpinner(new SpinnerNumberModel(50, 1, 100000, 10));
     final JSpinner interval = new JSpinner(new SpinnerNumberModel(200, 1, 100000, 10));
@@ -56,6 +64,7 @@ final class RegistrationDialog extends JDialog {
     final JSpinner parallel = new JSpinner(new SpinnerNumberModel(4, 1, 4, 1));
     final JTextArea linearNotes = notes();
     final JCheckBox nonlinear = header("Nonlinear");
+    final JComboBox<String> engine = new JComboBox<>(new String[]{"Either (the agent chooses)", "ANTs", "Elastix"});
     final JTextArea nonlinearNotes = notes();
 
     final DefaultTableModel table;
@@ -63,6 +72,7 @@ final class RegistrationDialog extends JDialog {
     final JCheckBox overwrite = new JCheckBox("Allow the agent to overwrite existing transforms");
 
     final JRadioButton auto = new JRadioButton("Auto"), custom = new JRadioButton("Custom");
+    final JCheckBox agentPreprocessing = new JCheckBox("Let the agent drive preprocessing");
     final JSpinner[] weights;
     final JCheckBox clahe = new JCheckBox("CLAHE (local contrast)");
     final JComboBox<String> strength = new JComboBox<>(new String[]{"Low", "Medium", "High"});
@@ -137,9 +147,9 @@ final class RegistrationDialog extends JDialog {
         provider.setToolTipText("Claude uses the LangSlice connector in Claude Desktop or Claude Code.");
         model.setEditable(true);
         model.setToolTipText("The model that runs the registration agent. You can type another model name.");
-        imageModel.setToolTipText("The image model used by nonlinear registration.");
+        imageModel.setToolTipText("The image model Nonlinear uses to trace region borders. None: deformations are fitted to the stain alone.");
         resolution.setToolTipText("How detailed the pictures the agent looks at are. Low is usually enough and costs least; Auto lets the agent choose each picture's size.");
-        viewer.setToolTipText(SOON);
+        viewer.setToolTipText(host.viewerAvailable() ? "Show LangSlice's agent viewer: the agent's work in an ABBA-style display, as it happens." : VIEWER_UNAVAILABLE);
         cell(top, label("Provider"), 0, 0, 1, false); cell(top, account, 1, 0, 1, true);
         cell(top, label("Agent model"), 2, 0, 1, false); cell(top, model, 3, 0, 1, true);
         cell(top, label("Image resolution"), 0, 1, 1, false); cell(top, left(resolution), 1, 1, 1, true);
@@ -164,29 +174,30 @@ final class RegistrationDialog extends JDialog {
         JPanel grid = new JPanel(new GridBagLayout());
         int y = 0;
         cell(grid, positioning, 0, y++, 4, true);
-        cell(grid, indent(flip), 0, y, 2, false); cell(grid, label("Hemisphere cue"), 2, y, 1, false); cell(grid, cue, 3, y++, 1, true);
         cell(grid, indent(label("Section thickness (µm)")), 0, y, 1, false); cell(grid, left(thickness), 1, y, 1, false);
         cell(grid, label("Section interval (µm)"), 2, y, 1, false); cell(grid, left(interval), 3, y++, 1, false);
         cell(grid, indent(left(deepslice, bayesian)), 0, y++, 4, true);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(positionNotes), 1, y++, 3, true);
         cell(grid, new JSeparator(), 0, y++, 4, true);
-        cue.setToolTipText("Optional: how to tell left from right, for example 'ink mark on the right hemisphere'.");
-        for (JCheckBox soon : new JCheckBox[]{deepslice, bayesian, angles}) { soon.setEnabled(false); soon.setToolTipText(SOON); soon.setText(soon.getText() + " (coming soon)"); }
+        for (JCheckBox soon : new JCheckBox[]{deepslice, bayesian}) { soon.setEnabled(false); soon.setToolTipText(SOON); soon.setText(soon.getText() + " (coming soon)"); }
 
         cell(grid, linear, 0, y++, 4, true);
+        cell(grid, indent(flip), 0, y, 2, false); cell(grid, label("Hemisphere cue"), 2, y, 1, false); cell(grid, cue, 3, y++, 1, true);
         cell(grid, indent(affine), 0, y, 2, false); cell(grid, label("Max parallel slice transforms"), 2, y, 1, false); cell(grid, left(parallel), 3, y++, 1, false);
         cell(grid, indent(angles), 0, y++, 4, true);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(linearNotes), 1, y++, 3, true);
         cell(grid, new JSeparator(), 0, y++, 4, true);
+        flip.setToolTipText("The agent may mirror slices left-right; a mirror is part of the in-plane alignment.");
+        cue.setToolTipText("Optional: how to tell left from right, for example 'ink mark on the right hemisphere'.");
         affine.setToolTipText("Off: the agent moves and scales each slice by hand only.");
         parallel.setToolTipText("How many slices the agent may transform in one step (1 = one slice at a time).");
+        angles.setToolTipText("The agent may change the atlas cutting angles of the whole stack (ABBA's slicing angles).");
 
-        JLabel unavailable = label("Not yet available in ABBA.");
-        JLabel notesLabel = label("Notes for the agent");
         cell(grid, nonlinear, 0, y++, 4, true);
-        cell(grid, indent(unavailable), 0, y++, 4, true);
-        cell(grid, indent(notesLabel), 0, y, 1, false); cell(grid, scroll(nonlinearNotes), 1, y, 3, true);
-        for (JComponent off : new JComponent[]{nonlinear, nonlinearNotes, unavailable, notesLabel}) { off.setEnabled(false); off.setToolTipText("Not yet available in ABBA"); }
+        cell(grid, indent(label("Deformable-fit engine")), 0, y, 1, false); cell(grid, left(engine), 1, y++, 3, true);
+        cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(nonlinearNotes), 1, y++, 3, true);
+        nonlinear.setToolTipText("A deformation per slice on top of its linear placement, added to ABBA as a BigWarp step.");
+        engine.setToolTipText("The library that fits each deformation. Either lets the agent choose per slice.");
         return padded(grid);
     }
 
@@ -225,6 +236,9 @@ final class RegistrationDialog extends JDialog {
             weights[c].setToolTipText("0 leaves this channel out.");
         }
         cell(controls, indent(clahe), 0, y, 1, false); cell(controls, left(label("Strength"), strength), 1, y++, 3, true);
+        cell(controls, agentPreprocessing, 0, y++, 4, true);
+        agentPreprocessing.setToolTipText("The agent may set channel weights, contrast and other steps for what it sees and what a fit reads. "
+                + "Every channel is then sent, including those weighted 0.");
         cell(controls, label("Snapshot pixel size (µm)"), 0, y, 1, false); cell(controls, left(pixel), 1, y++, 3, true);
         pixel.setToolTipText("Size of one pixel in the images LangSlice exports from ABBA.");
         JLabel tip = label(TIP); tip.setFont(tip.getFont().deriveFont(Font.ITALIC));
@@ -251,19 +265,21 @@ final class RegistrationDialog extends JDialog {
         String defaultModel = RegistrationSettings.defaultValue(status, "default_agent_model", RegistrationSettings.DEFAULT_MODEL);
         String defaultImage = RegistrationSettings.defaultValue(status, "default_image_model", RegistrationSettings.DEFAULT_IMAGE_MODEL);
         for (String id : RegistrationSettings.models(status, "agent_models", RegistrationSettings.FALLBACK_MODELS)) model.addItem(RegistrationSettings.modelLabel(id));
-        for (String id : RegistrationSettings.models(status, "image_models", Collections.singletonList(RegistrationSettings.DEFAULT_IMAGE_MODEL))) imageModel.addItem(id);
+        fillImageModels(s.fresh ? RegistrationSettings.PROVIDER : s.imageProvider, s.fresh ? defaultImage : s.imageModel);
         select(model, RegistrationSettings.modelLabel(s.fresh ? defaultModel : s.model));
-        select(imageModel, s.fresh ? defaultImage : s.imageModel);
         reasoning.setSelectedItem(s.reasoning);
         resolution.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.RESOLUTIONS).indexOf(s.resolution)));
-        showLog.setSelected(s.showLog); viewer.setSelected(false);
+        showLog.setSelected(s.showLog); viewer.setSelected(s.viewer && host.viewerAvailable());
         saveTraces.setSelected(s.saveTraces); traceDir.setText(s.traceDir);
         positioning.setSelected(s.positioning); flip.setSelected(s.flip); cue.setText(s.cue);
         thickness.setValue(s.thickness); interval.setValue(s.interval); positionNotes.setText(s.positionNotes);
-        linear.setSelected(s.linear); affine.setSelected(s.affine); parallel.setValue(s.maxParallel); linearNotes.setText(s.linearNotes);
-        nonlinearNotes.setText(s.nonlinearNotes);
+        linear.setSelected(s.linear); affine.setSelected(s.affine); angles.setSelected(s.angles);
+        parallel.setValue(s.maxParallel); linearNotes.setText(s.linearNotes);
+        nonlinear.setSelected(s.nonlinear); nonlinearNotes.setText(s.nonlinearNotes);
+        engine.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.ENGINES).indexOf(s.engine)));
         agentDamage.setSelected(s.agentDamage); overwrite.setSelected(s.overwrite);
         (s.custom ? custom : auto).setSelected(true);
+        agentPreprocessing.setSelected(s.agentPreprocessing);
         double[] w = s.weightsFor(weights.length);
         for (int c = 0; c < weights.length; c++) weights[c].setValue(Math.max(0, Math.min(1, w[c])));
         clahe.setSelected(s.clahe);
@@ -277,17 +293,20 @@ final class RegistrationDialog extends JDialog {
         s.claude = "Claude".equals(provider.getSelectedItem());
         Object typed = model.getEditor().getItem();
         s.model = RegistrationSettings.modelId(typed == null ? "" : typed.toString());
-        s.imageModel = String.valueOf(imageModel.getSelectedItem());
+        RegistrationSettings.ImageChoice image = (RegistrationSettings.ImageChoice) imageModel.getSelectedItem();
+        if (image != null) { s.imageProvider = image.provider; s.imageModel = image.model; }
         s.reasoning = String.valueOf(reasoning.getSelectedItem());
         s.resolution = RegistrationSettings.RESOLUTIONS[resolution.getSelectedIndex()];
-        s.showLog = showLog.isSelected();
+        s.showLog = showLog.isSelected(); s.viewer = viewer.isSelected() && viewer.isEnabled();
         s.saveTraces = saveTraces.isSelected(); s.traceDir = traceDir.getText().trim();
         s.positioning = positioning.isSelected(); s.flip = flip.isSelected(); s.cue = cue.getText();
         s.thickness = (Integer) thickness.getValue(); s.interval = (Integer) interval.getValue(); s.positionNotes = positionNotes.getText();
-        s.linear = linear.isSelected(); s.affine = affine.isSelected(); s.maxParallel = (Integer) parallel.getValue(); s.linearNotes = linearNotes.getText();
-        s.nonlinearNotes = nonlinearNotes.getText();
+        s.linear = linear.isSelected(); s.affine = affine.isSelected(); s.angles = angles.isSelected();
+        s.maxParallel = (Integer) parallel.getValue(); s.linearNotes = linearNotes.getText();
+        s.nonlinear = nonlinear.isSelected(); s.nonlinearNotes = nonlinearNotes.getText();
+        s.engine = RegistrationSettings.ENGINES[Math.max(0, engine.getSelectedIndex())];
         s.agentDamage = agentDamage.isSelected(); s.overwrite = overwrite.isSelected();
-        s.custom = custom.isSelected(); s.clahe = clahe.isSelected();
+        s.custom = custom.isSelected(); s.clahe = clahe.isSelected(); s.agentPreprocessing = agentPreprocessing.isSelected();
         s.strength = RegistrationSettings.LEVELS[strength.getSelectedIndex()];
         s.pixelSize = ((Number) pixel.getValue()).doubleValue();
         s.weights = new double[weights.length];
@@ -304,31 +323,48 @@ final class RegistrationDialog extends JDialog {
     }
 
     private void sync() {
-        boolean p = positioning.isSelected(), l = linear.isSelected(), c = custom.isSelected();
-        for (JComponent field : new JComponent[]{flip, thickness, interval}) field.setEnabled(p);
-        cue.setEnabled(p && flip.isSelected());
-        for (JComponent field : new JComponent[]{affine, parallel}) field.setEnabled(l);
-        enable(positionNotes, p); enable(linearNotes, l); enable(nonlinearNotes, false);
+        boolean p = positioning.isSelected(), l = linear.isSelected(), n = nonlinear.isSelected(), c = custom.isSelected();
+        for (JComponent field : new JComponent[]{thickness, interval}) field.setEnabled(p);
+        for (JComponent field : new JComponent[]{flip, affine, parallel, angles}) field.setEnabled(l);
+        cue.setEnabled(l && flip.isSelected());
+        engine.setEnabled(n);
+        enable(positionNotes, p); enable(linearNotes, l); enable(nonlinearNotes, n);
         for (JSpinner weight : weights) weight.setEnabled(c);
         clahe.setEnabled(c); strength.setEnabled(c && clahe.isSelected());
-        viewer.setEnabled(false);
+        viewer.setEnabled(host.viewerAvailable());
         traceDir.setEnabled(saveTraces.isSelected()); browseTraces.setEnabled(saveTraces.isSelected());
         boolean claude = "Claude".equals(provider.getSelectedItem());
-        model.setEnabled(!claude); reasoning.setEnabled(!claude); imageModel.setEnabled(!claude);
-        nonlinear.setEnabled(false);
+        model.setEnabled(!claude); reasoning.setEnabled(!claude);
+        // The image model belongs to Nonlinear, in both modes (Claude's job uses it through LangSlice).
+        imageModel.setEnabled(n);
         run.setText(claude ? "Copy prompt" : "Run");
         updateAccount();
-        run.setEnabled(p || l);
+        run.setEnabled(p || l || n);
+    }
+
+    /** The image-model list from setup.status, keeping the given choice selected (added when the worker lists it no more). */
+    private void fillImageModels(String provider, String model) {
+        imageModel.removeAllItems();
+        RegistrationSettings.ImageChoice chosen = null;
+        for (RegistrationSettings.ImageChoice choice : RegistrationSettings.imageChoices(status)) {
+            imageModel.addItem(choice);
+            if (chosen == null && choice.matches(provider, model)) chosen = choice;
+        }
+        if (chosen == null && provider != null && !provider.isEmpty()) {
+            chosen = new RegistrationSettings.ImageChoice(provider, model, provider + (model == null ? "" : ": " + model), true);
+            imageModel.addItem(chosen);
+        }
+        if (chosen != null) imageModel.setSelectedItem(chosen);
     }
 
     private void listen() {
         ActionListener tasks = e -> { sync(); estimateTimer.restart(); };
-        for (AbstractButton b : new AbstractButton[]{positioning, flip, linear, affine, overwrite, agentDamage}) b.addActionListener(tasks);
+        for (AbstractButton b : new AbstractButton[]{positioning, flip, linear, affine, angles, nonlinear, overwrite, agentDamage}) b.addActionListener(tasks);
         saveTraces.addActionListener(e -> sync());
-        for (JComboBox<?> box : Arrays.asList(provider, model, reasoning, resolution)) box.addActionListener(tasks);
+        for (JComboBox<?> box : Arrays.asList(provider, model, reasoning, resolution, imageModel, engine)) box.addActionListener(tasks);
         parallel.addChangeListener(e -> estimateTimer.restart());
         ActionListener prep = e -> { sync(); estimateTimer.restart(); schedulePreview(); };
-        for (AbstractButton b : new AbstractButton[]{auto, custom, clahe}) b.addActionListener(prep);
+        for (AbstractButton b : new AbstractButton[]{auto, custom, clahe, agentPreprocessing}) b.addActionListener(prep);
         strength.addActionListener(prep);
         previewSlice.addActionListener(e -> schedulePreview());
         for (JSpinner weight : weights) weight.addChangeListener(e -> schedulePreview());
@@ -353,18 +389,59 @@ final class RegistrationDialog extends JDialog {
         RegistrationSettings s = read();
         String problem = s.problem(channelNames.size());
         if (problem != null) { JOptionPane.showMessageDialog(this, problem); return; }
-        if (s.claude || RegistrationSettings.signedIn(status)) { launch(s); return; }
+        Set<Integer> skip = new LinkedHashSet<>();
+        if (!askLinearFirst(s, skip)) return;
+        if (s.claude || RegistrationSettings.signedIn(status)) { launch(s, skip); return; }
         refreshStatus(() -> {
-            if (RegistrationSettings.signedIn(status)) launch(s);
+            if (RegistrationSettings.signedIn(status)) launch(s, skip);
             else { JOptionPane.showMessageDialog(this, "Sign in with ChatGPT in LangSlice Setup first."); statusStale = true; host.setup(); }
         });
     }
 
-    private void launch(RegistrationSettings s) {
+    /** Listed rows without any ABBA registration: they have no linear placement for Nonlinear to build on. */
+    List<Integer> unregistered() {
+        List<Integer> missing = new ArrayList<>();
+        for (int r = 0; r < rows.size(); r++) if (rows.get(r).registrations == 0) missing.add(r);
+        return missing;
+    }
+
+    /**
+     * Nonlinear needs a linear placement for every slice. With Linear off and some slices unregistered, ask:
+     * yes switches Linear on; no leaves those slices out of Nonlinear (filled into skip). False: cancelled.
+     */
+    private boolean askLinearFirst(RegistrationSettings s, Set<Integer> skip) {
+        List<Integer> missing = unregistered();
+        if (!s.nonlinear || s.linear || missing.isEmpty()) return true;
+        int answer = JOptionPane.showConfirmDialog(this, linearFirstQuestion(missing), "Nonlinear needs a linear step",
+                JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (answer == JOptionPane.YES_OPTION) { s.linear = true; linear.setSelected(true); sync(); return true; }
+        if (answer == JOptionPane.NO_OPTION) {
+            if (missing.size() == rows.size() && !s.positioning) {
+                JOptionPane.showMessageDialog(this, "No listed slice has a linear registration, so Nonlinear has nothing to work on.");
+                return false;
+            }
+            skip.addAll(missing); return true;
+        }
+        return false;
+    }
+
+    String linearFirstQuestion(List<Integer> missing) {
+        StringBuilder names = new StringBuilder();
+        for (int i = 0; i < missing.size() && i < 8; i++) names.append(i == 0 ? "" : ", ").append(rows.get(missing.get(i)).name);
+        if (missing.size() > 8) names.append(" and ").append(missing.size() - 8).append(" more");
+        return "<html><body width='420'>" + (missing.size() == 1 ? "Slice " : "Slices ") + escape(names.toString())
+                + (missing.size() == 1 ? " has" : " have") + " no linear registration. Let the agent align "
+                + (missing.size() == 1 ? "it" : "them") + " first?<br><br>Yes switches on Linear. No leaves "
+                + (missing.size() == 1 ? "it" : "them") + " out of Nonlinear.</body></html>";
+    }
+
+    private static String escape(String text) { return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"); }
+
+    private void launch(RegistrationSettings s, Set<Integer> skip) {
         s.save(RegistrationSettings.PREFS);
         Map<Integer, String> marked = damaged();
         dispose();
-        host.run(s, marked);
+        host.run(s, marked, skip);
     }
 
     private void refreshStatus(Runnable then) {
@@ -372,7 +449,11 @@ final class RegistrationDialog extends JDialog {
         new SwingWorker<JsonObject, Void>() {
             @Override protected JsonObject doInBackground() throws Exception { return host.status(); }
             @Override protected void done() {
-                try { status = get(); } catch (Exception ignored) { }
+                try {
+                    status = get();
+                    RegistrationSettings.ImageChoice chosen = (RegistrationSettings.ImageChoice) imageModel.getSelectedItem();
+                    if (chosen != null) fillImageModels(chosen.provider, chosen.model);
+                } catch (Exception ignored) { }
                 updateAccount(); sync();
                 if (then != null && isDisplayable()) then.run();
             }
@@ -423,11 +504,12 @@ final class RegistrationDialog extends JDialog {
                     JsonObject result = get();
                     if ("Claude".equals(provider.getSelectedItem())) { refreshEstimate(); return; }
                     cost.setText(costText(result));
-                    cost.setToolTipText(result.has("basis") ? result.get("basis").getAsString() : null);
+                    cost.setToolTipText(result.has("basis") && result.get("basis").isJsonPrimitive() ? result.get("basis").getAsString() : null);
                 } catch (Exception failure) {
                     Throwable cause = failure.getCause() != null ? failure.getCause() : failure;
-                    if (unsupported(cause)) estimateSupported = false;
-                    cost.setText("Estimated cost: estimate unavailable"); cost.setToolTipText(null);
+                    if (unsupported(cause)) { estimateSupported = false; cost.setText("Estimated cost: estimate unavailable"); }
+                    else cost.setText(refusalText(cause, s));
+                    cost.setToolTipText(null);
                 }
                 if (estimateAgain) { estimateAgain = false; refreshEstimate(); }
             }
@@ -440,7 +522,43 @@ final class RegistrationDialog extends JDialog {
         return text != null && (text.contains("validation_error") || text.contains("invalid_request"));
     }
 
+    /**
+     * A plain reason when the worker gives no estimate for these settings: its own reason when it sends one,
+     * otherwise what is known not to be measured (pictures above Low, Nonlinear).
+     */
+    static String refusalText(Throwable error, RegistrationSettings s) {
+        String reason = workerReason(error);
+        if (reason == null || reason.isEmpty()) {
+            if (!"low".equals(s.resolution)) reason = "only runs at Low image resolution have been measured";
+            else if (s.nonlinear) reason = "runs with Nonlinear have not been measured";
+            else reason = "LangSlice could not estimate these settings";
+        } else if (reason.startsWith("No runs have been measured at this image resolution")) {
+            reason = "only runs at Low image resolution have been measured";
+        }
+        return "Estimated cost: no estimate (" + reason + ")";
+    }
+
+    /** The reason inside a worker error ({code, message, details: {error}}), or null. */
+    static String workerReason(Throwable error) {
+        String text = error == null ? null : error.getMessage();
+        if (text == null) return null;
+        try {
+            JsonObject parsed = JsonParser.parseString(text).getAsJsonObject();
+            if (parsed.has("details") && parsed.get("details").isJsonObject() && parsed.getAsJsonObject("details").has("error"))
+                return parsed.getAsJsonObject("details").get("error").getAsString().trim();
+            String message = parsed.has("message") ? parsed.get("message").getAsString() : null;
+            return message == null || message.equals("Runtime request handling failed") ? null : message.trim();
+        } catch (RuntimeException notJson) { return null; }
+    }
+
+    /** The estimate line; a worker that gives no number (available false, low/high null) gets its plain reason shown. */
     static String costText(JsonObject result) {
+        boolean available = !result.has("available") || !result.get("available").isJsonPrimitive() || result.get("available").getAsBoolean();
+        boolean numbers = result.has("low") && result.get("low").isJsonPrimitive() && result.has("high") && result.get("high").isJsonPrimitive();
+        if (!available || !numbers) {
+            String basis = result.has("basis") && result.get("basis").isJsonPrimitive() ? result.get("basis").getAsString().trim() : "";
+            return "Estimated cost: no estimate" + (basis.isEmpty() ? "" : " (" + basis + ")");
+        }
         double low = result.get("low").getAsDouble(), high = result.get("high").getAsDouble();
         String range = Math.abs(high - low) < 1e-9 ? format(low) : format(low) + "–" + format(high);
         String unit = result.has("unit") ? result.get("unit").getAsString() : "";

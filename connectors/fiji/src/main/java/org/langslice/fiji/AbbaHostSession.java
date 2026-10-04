@@ -4,12 +4,12 @@ import bdv.viewer.SourceAndConverter;
 import ch.epfl.biop.atlas.aligner.*;
 import ch.epfl.biop.atlas.aligner.action.MarkActionSequenceBatchAction;
 import ch.epfl.biop.registration.Registration;
-import ch.epfl.biop.registration.plugin.SimpleRegistrationPlugin;
-import ch.epfl.biop.registration.plugin.SimpleRegistrationWrapper;
-import ch.epfl.biop.registration.sourceandconverter.affine.AffineRegistration;
-import ch.epfl.biop.registration.sourceandconverter.bigwarp.SacBigWarp2DRegistration;
-import ch.epfl.biop.sourceandconverter.processor.SourcesChannelsSelect;
-import ch.epfl.biop.sourceandconverter.processor.SourcesProcessorHelper;
+import ch.epfl.biop.registration.source.mirror.MirrorXRegistration;
+import ch.epfl.biop.registration.source.affine.AffineRegistration;
+import ch.epfl.biop.registration.source.bigwarp.BigWarpSource2DRegistration;
+import ch.epfl.biop.registration.source.spline.RealTransformSourceRegistration;
+import ch.epfl.biop.source.processor.SourcesChannelsSelect;
+import ch.epfl.biop.source.processor.SourcesProcessorHelper;
 import com.google.gson.*;
 import ij.ImagePlus;
 import ij.ImageStack;
@@ -24,15 +24,33 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 
-/** Calibrated snapshots and native, undoable registrations in an existing ABBA session. */
+/**
+ * Calibrated snapshots and native, undoable registrations in an existing ABBA 0.24 session.
+ *
+ * <p>Each section may carry at most two LangSlice steps, on top of whatever registrations it had
+ * when the run started: LangSlice's affine step and, on top of it, LangSlice's warp step (a BigWarp
+ * thin-plate spline, ABBA's own registration type, so a saved project reopens and edits without
+ * LangSlice). A replacement deletes the newest steps and appends new ones; that is only done while
+ * LangSlice's steps are still the newest of the section. Every checkpoint is one ABBA undo step.
+ */
 final class AbbaHostSession {
+    static final String AFFINE_NAME = "LangSlice affine";
+    static final String WARP_NAME = "LangSlice warp";
+    /** Steps whose name starts with this belong to LangSlice (this run or an earlier one). */
+    static final String OWNED_PREFIX = "LangSlice";
+
     final MultiSlicePositioner mp;
     final Path folder;
     final LinkedHashMap<String, SliceSources> slices = new LinkedHashMap<>();
     private final Map<String, Integer> baseline = new HashMap<>();
-    private final Map<String, Registration<SourceAndConverter<?>[]>> owned = new HashMap<>();
+    private final Map<String, Registration<SourceAndConverter<?>[]>> ownedAffine = new HashMap<>(), ownedWarp = new HashMap<>();
     private final Map<String, JsonObject> transforms = new HashMap<>();
-    private double axisScale, axisOffset;
+    /** Rows that could not be applied yet, merged into the next checkpoint and retried. */
+    private final LinkedHashMap<String, JsonObject> pending = new LinkedHashMap<>();
+    private final Map<String, String> pendingReasons = new LinkedHashMap<>();
+    private JsonObject pendingAngles;
+    /** Whether the current checkpoint has opened its ABBA batch (opened lazily, at its first real change). */
+    private boolean batchOpen;
 
     AbbaHostSession(MultiSlicePositioner mp, Path folder) {
         this.mp = mp;
@@ -42,9 +60,11 @@ final class AbbaHostSession {
     /**
      * Exports the listed slices as calibrated snapshots and builds the linear.run request.
      * Each snapshot has one page per exported channel, in the order given. Nothing in ABBA changes.
+     *
+     * @param channelNames every channel's name (all channels, not only the exported ones), or empty
      */
-    JsonObject prepare(JsonObject spec, List<SliceSources> chosen, List<Integer> channels, double pixelSize,
-            Map<SliceSources, String> damaged, boolean lockRegistered) throws IOException {
+    JsonObject prepare(JsonObject spec, List<SliceSources> chosen, List<Integer> channels, List<String> channelNames,
+            double pixelSize, Map<SliceSources, String> damaged, boolean lockRegistered) throws IOException {
         validateSession();
         if (!Double.isFinite(pixelSize) || pixelSize <= 0 || channels.isEmpty() || channels.stream().anyMatch(c -> c < 0))
             throw new IllegalArgumentException("Choose a positive pixel size and at least one channel.");
@@ -59,11 +79,10 @@ final class AbbaHostSession {
                 if (channel >= slice.getRegisteredSources().length)
                     throw new IllegalArgumentException("Channel " + (channel + 1) + " is missing from " + slice.getName());
         }
-        measureAxis(selected.get(0));
         double[] half = frame(pixelSize);
         Files.createDirectories(folder);
         JsonObject positions = new JsonObject();
-        JsonArray registered = new JsonArray(), locked = new JsonArray();
+        JsonArray registered = new JsonArray(), locked = new JsonArray(), warped = new JsonArray();
         JsonObject marked = new JsonObject();
         JsonObject mapping = new JsonObject();
         for (int index = 0; index < selected.size(); index++) {
@@ -79,8 +98,9 @@ final class AbbaHostSession {
                 // Their snapshot already carries the registration: the agent keeps its in-plane geometry.
                 if (lockRegistered) locked.add(name);
             }
+            if (hasForeignWarp(slice)) warped.add(name);
             if (damaged.containsKey(slice)) marked.addProperty(name, damaged.get(slice) == null ? "" : damaged.get(slice));
-            positions.addProperty(name, (slice.getSlicingAxisPosition() - axisOffset) / axisScale);
+            positions.addProperty(name, mp.toAtlasZ(slice.getSlicingAxisPosition()));
             mapping.addProperty(name, slice.getName());
         }
         Files.writeString(folder.resolve("abba_sections.json"), new GsonBuilder().setPrettyPrinting().create().toJson(mapping));
@@ -88,11 +108,45 @@ final class AbbaHostSession {
         request.addProperty("image_folder", folder.toString());
         request.addProperty("pixel_size_um", pixelSize);
         request.add("positions_mm", positions);
+        request.addProperty("z_offset_mm", mp.getReslicedAtlas().getZOffset());
+        request.add("angles_deg", anglesDeg(mp.getReslicedAtlas().getRotateX(), mp.getReslicedAtlas().getRotateY()));
         request.add("registered_slices", registered);
         request.add("locked", locked);
+        request.add("existing_warp", warped);
         request.add("damaged", marked);
+        request.add("channel_names", exportedNames(channels, channelNames));
         request.add("spec", spec);
         return request;
+    }
+
+    /** The exported pages' names, in page order: never empty, never repeated (the worker refuses duplicates). */
+    static JsonArray exportedNames(List<Integer> channels, List<String> names) {
+        JsonArray out = new JsonArray();
+        Set<String> used = new HashSet<>();
+        for (int page = 0; page < channels.size(); page++) {
+            int channel = channels.get(page);
+            String name = channel < names.size() && names.get(channel) != null ? names.get(channel).trim() : "";
+            if (name.isEmpty()) name = "ch" + (channel + 1);
+            String unique = name;
+            for (int n = 2; !used.add(unique); n++) unique = name + " (" + n + ")";
+            out.add(unique);
+        }
+        return out;
+    }
+
+    /** ABBA's rotations (radians) as the job's stack-wide angles; signs pinned by test_integrations_abba_math.py. */
+    static JsonObject anglesDeg(double rotateX, double rotateY) {
+        JsonObject angles = new JsonObject();
+        angles.addProperty("pitch_deg", -Math.toDegrees(rotateX));
+        angles.addProperty("yaw_deg", -Math.toDegrees(rotateY));
+        return angles;
+    }
+
+    /** {rotateX, rotateY} in radians for a host_angles row: rotateX = -radians(pitch), rotateY = -radians(yaw). */
+    static double[] rotations(JsonObject angles) {
+        double pitch = angles.has("pitch_deg") ? finite(angles.get("pitch_deg")) : 0;
+        double yaw = angles.has("yaw_deg") ? finite(angles.get("yaw_deg")) : 0;
+        return new double[]{-Math.toRadians(pitch), -Math.toRadians(yaw)};
     }
 
     /** Half extents of the snapshot frame: ABBA's image region, centred, on the pixel grid. */
@@ -177,116 +231,234 @@ final class AbbaHostSession {
         if (!atlas.equals("Adult Mouse Brain - Allen Brain Atlas V3p1") && !atlas.equals("Adult Mouse Brain - Allen Brain Atlas V3"))
             throw new IllegalArgumentException("LangSlice currently requires ABBA's Allen Mouse V3 atlas.");
         double x = mp.getReslicedAtlas().getRotateX(), y = mp.getReslicedAtlas().getRotateY();
-        if (!Double.isFinite(x + y) || Math.abs(x) > 1e-8 || Math.abs(y) > 1e-8)
-            throw new IllegalArgumentException("Set atlas cutting angles to zero before this run.");
+        if (!Double.isFinite(x + y)) throw new IllegalArgumentException("ABBA's atlas cutting angles are not finite.");
     }
 
-    /** Uses ABBA's fixed coordinate images, not an assumed anterior-edge offset. */
-    private void measureAxis(SliceSources slice) {
-        double ap1 = probeAt(slice,3.0), ap2 = probeAt(slice,9.0);
-        axisScale = (3.0-9.0)/(ap1-ap2);
-        axisOffset = 3.0-axisScale*ap1;
-        if (!Double.isFinite(axisScale+axisOffset) || Math.abs(axisScale)<0.5 || Math.abs(axisScale)>2)
-            throw new IllegalStateException("Could not calibrate ABBA's AP axis. Use a flat coronal session.");
+    // ---- what a section already carries ---------------------------------------------------------
+
+    /** The section's registrations still in effect, oldest first, compiled from its actions as ABBA's Remove Last does. */
+    List<Registration<SourceAndConverter<?>[]>> activeRegistrations(SliceSources slice) {
+        List<CancelableAction> actions = mp.getActionsFromSlice(slice);
+        List<Registration<SourceAndConverter<?>[]>> active = new ArrayList<>();
+        if (actions == null) return active;
+        for (CancelableAction action : new ArrayList<>(actions)) {
+            if (action instanceof RegisterSliceAction) {
+                Registration<SourceAndConverter<?>[]> registration = ((RegisterSliceAction) action).getRegistration();
+                if (action.isValid() && registration != null) active.add(registration);
+            } else if (action instanceof DeleteLastRegistrationAction && action.isValid() && !active.isEmpty())
+                active.remove(active.size() - 1);
+        }
+        return active;
     }
 
-    private double probeAt(SliceSources slice, double z) {
-        final double[] measured = {Double.NaN};
-        SimpleRegistrationPlugin probe = new SimpleRegistrationPlugin() {
-            public double getVoxelSizeInMicron() { return 40; }
-            public void setRegistrationParameters(Map<String, String> parameters) { }
-            public InvertibleRealTransform register(ImagePlus fixed, ImagePlus moving, ImagePlus fm, ImagePlus mm) {
-                float center = fixed.getStack().getProcessor(1).getf(fixed.getWidth()/2, fixed.getHeight()/2);
-                float left = fixed.getStack().getProcessor(1).getf(fixed.getWidth()/3, fixed.getHeight()/2);
-                float above = fixed.getStack().getProcessor(1).getf(fixed.getWidth()/2, fixed.getHeight()/3);
-                if (Float.isFinite(center) && Math.abs(center-left)<1e-4 && Math.abs(center-above)<1e-4)
-                    measured[0] = center;
-                return new AffineTransform3D();
-            }
-        };
-        SimpleRegistrationWrapper wrapper = new SimpleRegistrationWrapper("LangSlice axis probe",probe);
-        wrapper.setScijavaContext(mp.getContext());
-        // This is the same -z translation as SourcesZOffset(slice), without moving the slice.
-        AffineTransform3D offset = new AffineTransform3D();
-        offset.translate(0,0,-z);
-        double[] roi = mp.getROI();
-        Map<String,Object> parameters = new HashMap<>();
-        parameters.put("px",roi[0]); parameters.put("py",roi[1]);
-        parameters.put("sx",roi[2]); parameters.put("sy",roi[3]); parameters.put("pz",0);
-        wrapper.setRegistrationParameters(MultiSlicePositioner.convertToString(mp.getContext(),parameters));
-        wrapper.setTimePoint(0);
-        wrapper.setFixedImage(SourcesProcessorHelper.compose(new SourcesZOffset(offset),
-                new SourcesChannelsSelect(Arrays.asList(3,4,5))).apply(mp.getReslicedAtlas().nonExtendedSlicedSources));
-        wrapper.setMovingImage(SourcesProcessorHelper.compose(new SourcesZOffset(slice),
-                new SourcesChannelsSelect(0)).apply(slice.getRegisteredSources()));
-        if (!wrapper.register() || !Double.isFinite(measured[0]))
-            throw new IllegalStateException("ABBA coordinate calibration failed. A flat coronal session is required.");
-        return measured[0];
+    /** A spline / BigWarp step that is not LangSlice's own: ABBA's only nonlinear registrations. */
+    static boolean isWarp(Registration<?> registration) {
+        if (registration instanceof MirrorXRegistration) return false;
+        if (registration instanceof RealTransformSourceRegistration) return true;
+        String type = registration.getRegistrationTypeName();
+        return type != null && (type.contains("Spline") || type.contains("BigWarp"));
     }
 
-    void apply(JsonArray updates) {
-        if (updates.size() == 0) return;
-        checkInterrupted();
-        new MarkActionSequenceBatchAction(mp).runRequest();
-        try {
-            for (JsonElement element : updates) {
-                JsonObject update = element.getAsJsonObject();
-                String id = update.get("id").getAsString();
-                SliceSources slice = slices.get(id);
-                if (slice == null) throw new IllegalArgumentException("Unknown section in worker result: " + id);
-                int expected = baseline.get(id) + (owned.containsKey(id) ? 1 : 0);
-                if (slice.getNumberOfRegistrations() != expected)
-                    throw new IllegalStateException("Registration changed outside this run. Stop and restart LangSlice.");
-                if (update.has("position_mm")) {
-                    double ap = finite(update.get("position_mm"));
-                    mp.moveSlice(slice, axisScale * ap + axisOffset);
-                }
-                boolean changed = update.has("flip") || update.has("rotation_deg") || update.has("affine_mm") || update.has("spline_source_mm");
-                if (!changed) continue;
-                JsonObject transform = transforms.containsKey(id) ? transforms.get(id).deepCopy() : new JsonObject();
-                if (update.has("affine_mm")) {
-                    transform.remove("spline_source_mm"); transform.remove("spline_target_mm");
-                }
-                if (update.has("spline_source_mm")) transform.remove("affine_mm");
-                for (Map.Entry<String, JsonElement> value : update.entrySet()) transform.add(value.getKey(), value.getValue());
-                Registration<SourceAndConverter<?>[]> next = prepareRegistration(transform);
-                Registration<SourceAndConverter<?>[]> previous = owned.get(id);
-                if (previous != null) {
-                    new DeleteLastRegistrationAction(mp, slice).runRequest();
-                    mp.waitForTasks();
-                    if (slice.getNumberOfRegistrations()!=baseline.get(id))
-                        throw new IllegalStateException("Could not replace the previous correction.");
-                }
-                try {
-                    if (next != null) {
-                        appendRegistration(slice,next);
-                        if (slice.getNumberOfRegistrations()!=baseline.get(id)+1)
-                            throw new IllegalStateException("ABBA did not retain the new correction.");
-                        owned.put(id,next);
-                    } else owned.remove(id);
-                } catch (RuntimeException failure) {
-                    // Recover the last completed correction before reporting the failed revision.
-                    if (slice.getNumberOfRegistrations()==baseline.get(id)+1) {
-                        new DeleteLastRegistrationAction(mp,slice).runRequest();
-                        mp.waitForTasks();
-                    }
-                    if (previous!=null && slice.getNumberOfRegistrations()==baseline.get(id))
-                        appendRegistration(slice,previous);
-                    throw failure;
-                }
-                transforms.put(id, transform);
-            }
-        } finally {
-            new MarkActionSequenceBatchAction(mp).runRequest();
-            mp.waitForTasks();
+    static boolean isOwned(Registration<?> registration) {
+        String name = registration.getRegistrationName();
+        return name != null && name.startsWith(OWNED_PREFIX);
+    }
+
+    boolean hasForeignWarp(SliceSources slice) {
+        for (Registration<SourceAndConverter<?>[]> registration : activeRegistrations(slice))
+            if (isWarp(registration) && !isOwned(registration)) return true;
+        return false;
+    }
+
+    // ---- live application -----------------------------------------------------------------------
+
+    /** What one application did: rows applied and rows kept for the next attempt, with the reason. */
+    static final class ApplyReport {
+        final List<String> applied = new ArrayList<>();
+        final LinkedHashMap<String, String> failed = new LinkedHashMap<>();
+        boolean angles, anglesFailed;
+        String anglesReason;
+
+        boolean changedAnything() { return !applied.isEmpty() || angles; }
+
+        String summary() {
+            StringBuilder text = new StringBuilder();
+            if (anglesFailed) text.append("Cutting angles not applied yet: ").append(anglesReason).append(' ');
+            failed.forEach((id, reason) -> text.append(id).append(": ").append(reason).append(' '));
+            return text.toString().trim();
+        }
+
+        JsonObject toJson() {
+            JsonObject json = new JsonObject();
+            JsonArray done = new JsonArray(); applied.forEach(done::add);
+            JsonObject kept = new JsonObject(); failed.forEach(kept::addProperty);
+            json.add("applied", done); json.add("failed", kept);
+            json.addProperty("angles", angles);
+            if (anglesFailed) json.addProperty("angles_failed", anglesReason);
+            return json;
         }
     }
 
+    boolean hasPending() { return !pending.isEmpty() || pendingAngles != null; }
+
+    /** Rows kept after a failure, and why, for the run window. */
+    synchronized Map<String, String> pendingReasons() { return new LinkedHashMap<>(pendingReasons); }
+
+    /**
+     * Applies one checkpoint live, as ONE ABBA undo step: its stack-wide cutting angles (when present),
+     * then every row (position, affine step, warp step). Rows kept from an earlier failed attempt are merged
+     * in first and retried. A row that fails is reported and kept; it never stops the others.
+     */
+    synchronized ApplyReport applyCheckpoint(JsonArray updates, JsonObject hostAngles) {
+        ApplyReport report = new ApplyReport();
+        LinkedHashMap<String, JsonObject> rows = new LinkedHashMap<>();
+        pending.forEach((id, row) -> rows.put(id, row.deepCopy()));
+        if (updates != null) for (JsonElement element : updates) {
+            JsonObject update = element.getAsJsonObject();
+            String id = update.get("id").getAsString();
+            rows.put(id, merge(rows.get(id), update));
+        }
+        JsonObject angles = hostAngles != null ? hostAngles : pendingAngles;
+        if (rows.isEmpty() && angles == null) return report;
+        pending.clear(); pendingReasons.clear(); pendingAngles = null;
+        mp.waitForTasks();
+        batchOpen = false;
+        try {
+            if (angles != null) {
+                try { applyAngles(angles); report.angles = true; }
+                catch (RuntimeException failure) {
+                    report.anglesFailed = true; report.anglesReason = reason(failure); pendingAngles = angles;
+                }
+            }
+            for (Map.Entry<String, JsonObject> row : rows.entrySet()) {
+                try { applyRow(row.getKey(), row.getValue()); report.applied.add(row.getKey()); }
+                catch (RuntimeException failure) {
+                    String why = reason(failure);
+                    report.failed.put(row.getKey(), why);
+                    pending.put(row.getKey(), row.getValue());
+                    pendingReasons.put(row.getKey(), why);
+                }
+            }
+        } finally {
+            // Nothing changed: no marks at all, so ABBA's Redo history is left as it was.
+            if (batchOpen) new MarkActionSequenceBatchAction(mp).runRequest();
+            batchOpen = false;
+            mp.waitForTasks();
+        }
+        return report;
+    }
+
+    /** One older row with a newer one on top: the newer keys win; a new placement replaces an older one. */
+    static JsonObject merge(JsonObject older, JsonObject newer) {
+        if (older == null) return newer.deepCopy();
+        JsonObject merged = older.deepCopy();
+        if (newer.has("affine_mm") || newer.has("spline_source_mm")) {
+            merged.remove("affine_mm"); merged.remove("spline_source_mm"); merged.remove("spline_target_mm");
+        }
+        for (Map.Entry<String, JsonElement> value : newer.entrySet()) merged.add(value.getKey(), value.getValue().deepCopy());
+        return merged;
+    }
+
+    private static String reason(RuntimeException failure) {
+        return failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+    }
+
+    /** Opens the checkpoint's undo batch right before its first change in ABBA. */
+    private void begin() {
+        if (batchOpen) return;
+        new MarkActionSequenceBatchAction(mp).runRequest();
+        batchOpen = true;
+    }
+
+    private void applyAngles(JsonObject angles) {
+        double[] rotation = rotations(angles);
+        begin();
+        new SlicingAnglesAction(mp, rotation[0], rotation[1]).runRequest();
+        ReslicedAtlas atlas = mp.getReslicedAtlas();
+        if (Math.abs(atlas.getRotateX() - rotation[0]) > 1e-9 || Math.abs(atlas.getRotateY() - rotation[1]) > 1e-9)
+            throw new IllegalStateException("ABBA's atlas slicing is locked; the cutting angles were not changed.");
+    }
+
+    private void applyRow(String id, JsonObject update) {
+        SliceSources slice = slices.get(id);
+        if (slice == null) throw new IllegalArgumentException("Unknown section in the worker's result.");
+        if (!mp.getSlices().contains(slice)) throw new IllegalStateException("The slice was removed from ABBA.");
+        boolean placement = update.has("flip") || update.has("rotation_deg") || update.has("affine_mm") || update.has("spline_source_mm");
+        boolean warpChange = update.has("warp");
+        Registration<SourceAndConverter<?>[]> previousAffine = ownedAffine.get(id), previousWarp = ownedWarp.get(id);
+        if (placement || warpChange) {
+            slice.waitForEndOfTasks();
+            requireOwnStepsNewest(id, slice);
+        }
+        // Build every new step before anything in ABBA changes.
+        JsonObject transform = transforms.containsKey(id) ? transforms.get(id).deepCopy() : new JsonObject();
+        Registration<SourceAndConverter<?>[]> nextAffine = previousAffine, nextWarp = previousWarp;
+        if (placement) {
+            if (update.has("affine_mm")) { transform.remove("spline_source_mm"); transform.remove("spline_target_mm"); }
+            if (update.has("spline_source_mm")) transform.remove("affine_mm");
+            for (String key : new String[]{"flip", "rotation_deg", "affine_mm", "spline_source_mm", "spline_target_mm"})
+                if (update.has(key)) transform.add(key, update.get(key).deepCopy());
+            nextAffine = prepareRegistration(transform);
+        }
+        if (warpChange) nextWarp = update.get("warp").isJsonNull() ? null : prepareWarp(update.getAsJsonObject("warp"));
+
+        if (update.has("position_mm")) { begin(); mp.moveSlice(slice, mp.fromAtlasZ(finite(update.get("position_mm")))); }
+        if (!placement && !warpChange) return;
+        begin();
+
+        // Remove from the top: the warp first, then (only when the placement changes) the affine.
+        int base = baseline.get(id);
+        if (previousWarp != null) deleteLast(slice);
+        if (placement && previousAffine != null) deleteLast(slice);
+        int expected = base + (!placement && previousAffine != null ? 1 : 0);
+        if (slice.getNumberOfRegistrations() != expected)
+            throw new IllegalStateException("Could not remove LangSlice's previous steps; use ABBA's Undo to restore them.");
+        try {
+            if (placement && nextAffine != null) appendRegistration(slice, nextAffine);
+            if (nextWarp != null) appendRegistration(slice, nextWarp);
+        } catch (RuntimeException failure) {
+            // Put back the steps that were there before this row, then report the row as failed.
+            while (slice.getNumberOfRegistrations() > expected) deleteLast(slice);
+            if (placement && previousAffine != null) appendRegistration(slice, previousAffine);
+            if (previousWarp != null) appendRegistration(slice, previousWarp);
+            throw failure;
+        }
+        if (placement) {
+            if (nextAffine != null) ownedAffine.put(id, nextAffine); else ownedAffine.remove(id);
+            transforms.put(id, transform);
+        }
+        if (nextWarp != null) ownedWarp.put(id, nextWarp); else ownedWarp.remove(id);
+    }
+
+    /** LangSlice may replace its steps only while they are the section's newest; anything else was changed in ABBA. */
+    private void requireOwnStepsNewest(String id, SliceSources slice) {
+        List<Registration<SourceAndConverter<?>[]>> owned = new ArrayList<>();
+        if (ownedAffine.containsKey(id)) owned.add(ownedAffine.get(id));
+        if (ownedWarp.containsKey(id)) owned.add(ownedWarp.get(id));
+        boolean counted = slice.getNumberOfRegistrations() == baseline.get(id) + owned.size();
+        List<Registration<SourceAndConverter<?>[]>> active = activeRegistrations(slice);
+        boolean newest = owned.isEmpty();
+        if (!newest && active.size() == slice.getNumberOfRegistrations())
+            // The same objects LangSlice appended, on top (identity, not equality of transforms).
+            newest = active.size() >= owned.size() && active.subList(active.size() - owned.size(), active.size()).equals(owned);
+        else if (!newest) newest = counted; // ABBA's action list disagrees with its count: rely on the count alone.
+        if (!counted || !newest)
+            throw new IllegalStateException("Its registrations were changed in ABBA during the run, so LangSlice's steps are no longer "
+                    + "the newest; LangSlice leaves this slice alone.");
+    }
+
+    private void deleteLast(SliceSources slice) {
+        new DeleteLastRegistrationAction(mp, slice).runRequest();
+        slice.waitForEndOfTasks();
+        mp.waitForTasks();
+    }
+
     private void appendRegistration(SliceSources slice, Registration<SourceAndConverter<?>[]> registration) {
-        RegisterSliceAction action = new RegisterSliceAction(mp,slice,registration,
-                SourcesProcessorHelper.Identity(),SourcesProcessorHelper.Identity());
+        int before = slice.getNumberOfRegistrations();
+        RegisterSliceAction action = new RegisterSliceAction(mp, slice, registration,
+                SourcesProcessorHelper.Identity(), SourcesProcessorHelper.Identity());
         action.runRequest();
-        if (!slice.waitForEndOfAction(action) || !registration.isRegistrationDone())
+        if (!slice.waitForEndOfAction(action) || !registration.isRegistrationDone() || slice.getNumberOfRegistrations() != before + 1)
             throw new IllegalStateException("ABBA could not apply the registration for " + slice.getName());
     }
 
@@ -305,7 +477,8 @@ final class AbbaHostSession {
         return matrix;
     }
 
-    private Registration<SourceAndConverter<?>[]> prepareRegistration(JsonObject transform) {
+    /** The affine step (null for the identity) or, for a legacy spline row, the complete legacy BigWarp step. */
+    Registration<SourceAndConverter<?>[]> prepareRegistration(JsonObject transform) {
         AffineTransform3D orient = orientation(transform);
         PluginService service = mp.getContext().getService(PluginService.class);
         if (transform.has("spline_source_mm")) {
@@ -315,36 +488,83 @@ final class AbbaHostSession {
             InvertibleRealTransformSequence pullback = new InvertibleRealTransformSequence();
             pullback.add(tps(target, source));
             pullback.add(orient.inverse());
-            SacBigWarp2DRegistration reg = instance(service, SacBigWarp2DRegistration.class);
+            BigWarpSource2DRegistration reg = instance(service, BigWarpSource2DRegistration.class);
             reg.setRealTransform(pullback);
             reg.setTransform(reg.getTransform());
             reg.setRegistrationParameters(new HashMap<>());
-            reg.setRegistrationName("LangSlice agent");
+            reg.setRegistrationName(AFFINE_NAME);
             if (!reg.isRegistrationDone()) throw new IllegalStateException("Spline serialization failed.");
             return reg;
         }
+        AffineTransform3D affine = affineMatrix(transform);
+        if (affine == null) return null;
+        AffineRegistration reg = instance(service, AffineRegistration.class);
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put(AffineRegistration.TRANSFORM_KEY, AffineRegistration.affineTransform3DToString(affine));
+        parameters.put("pz", 0);
+        reg.setRegistrationParameters(MultiSlicePositioner.convertToString(mp.getContext(), parameters));
+        reg.setRegistrationName(AFFINE_NAME);
+        if (!reg.register()) throw new IllegalStateException("ABBA could not read the affine registration.");
+        return reg;
+    }
+
+    /** affine_mm with the orientation applied first; null when the result is the identity. */
+    static AffineTransform3D affineMatrix(JsonObject transform) {
         AffineTransform3D affine = new AffineTransform3D();
         if (transform.has("affine_mm") && !transform.get("affine_mm").isJsonNull()) {
             JsonArray rows = transform.getAsJsonArray("affine_mm");
             if (rows.size() != 3) throw new IllegalArgumentException("Invalid affine dimensions.");
-            for (int r=0; r<3; r++) {
+            for (int r = 0; r < 3; r++) {
                 JsonArray row = rows.get(r).getAsJsonArray();
                 if (row.size() != 4) throw new IllegalArgumentException("Invalid affine dimensions.");
-                for (int c=0; c<4; c++) affine.set(finite(row.get(c)), r, c);
+                for (int c = 0; c < 4; c++) affine.set(finite(row.get(c)), r, c);
             }
         }
-        double determinant = affine.get(0,0)*affine.get(1,1)-affine.get(0,1)*affine.get(1,0);
-        if (!Double.isFinite(determinant) || Math.abs(determinant)<1e-12)
+        double determinant = affine.get(0, 0) * affine.get(1, 1) - affine.get(0, 1) * affine.get(1, 0);
+        if (!Double.isFinite(determinant) || Math.abs(determinant) < 1e-12)
             throw new IllegalArgumentException("Affine registration is singular.");
-        affine.concatenate(orient);
-        if (affine.isIdentity()) return null;
-        AffineRegistration reg = instance(service, AffineRegistration.class);
-        Map<String,Object> parameters = new HashMap<>();
-        parameters.put("transform", AffineRegistration.affineTransform3DToString(affine));
-        parameters.put("pz", 0);
-        reg.setRegistrationParameters(MultiSlicePositioner.convertToString(mp.getContext(), parameters));
-        reg.setRegistrationName("LangSlice agent");
+        affine.concatenate(orientation(transform));
+        return affine.isIdentity() ? null : affine;
+    }
+
+    /**
+     * The warp step: a BigWarp thin-plate spline from the row's landmark pairs, in the same centred ABBA
+     * world-mm frame and pull-back direction as the legacy spline rows, applied AFTER the affine step.
+     * The plain wrapped TPS (no orientation inside) is what BigWarp reopens for editing.
+     */
+    BigWarpSource2DRegistration prepareWarp(JsonObject warp) {
+        BigWarpSource2DRegistration reg = instance(mp.getContext().getService(PluginService.class), BigWarpSource2DRegistration.class);
+        reg.setRealTransform(warpTransform(warp));
+        reg.setTransform(reg.getTransform());
+        Map<String, String> parameters = new HashMap<>();
+        if (warp.has("record") && warp.get("record").isJsonPrimitive()) parameters.put("langslice_record", warp.get("record").getAsString());
+        if (warp.has("max_error_mm") && warp.get("max_error_mm").isJsonPrimitive()) parameters.put("langslice_max_error_mm", warp.get("max_error_mm").getAsString());
+        reg.setRegistrationParameters(parameters);
+        reg.setRegistrationName(WARP_NAME);
+        if (!reg.isRegistrationDone()) throw new IllegalStateException("Warp serialization failed.");
         return reg;
+    }
+
+    /** source_mm / target_mm as a TPS mapping target points to source points (the legacy pull-back). */
+    static InvertibleRealTransform warpTransform(JsonObject warp) {
+        if (!warp.has("source_mm") || !warp.has("target_mm")) throw new IllegalArgumentException("A warp needs source_mm and target_mm.");
+        double[][] source = coordinates(warp.getAsJsonArray("source_mm"));
+        double[][] target = coordinates(warp.getAsJsonArray("target_mm"));
+        if (source[0].length != target[0].length) throw new IllegalArgumentException("Unpaired warp points.");
+        if (warp.has("points") && warp.get("points").isJsonPrimitive() && warp.get("points").getAsInt() != source[0].length)
+            throw new IllegalArgumentException("The warp's point count does not match its coordinates.");
+        return tps(target, source);
+    }
+
+    /** XY coordinates as [[x...],[y...]] (two rows) or as [[x, y], ...] (one pair per point); at least three points. */
+    static double[][] coordinates(JsonArray value) {
+        boolean rows = value.size() == 2 && value.get(0).isJsonArray() && value.get(0).getAsJsonArray().size() >= 3;
+        if (!rows) return points(value);
+        JsonArray xs = value.get(0).getAsJsonArray(), ys = value.get(1).getAsJsonArray();
+        if (xs.size() != ys.size()) throw new IllegalArgumentException("Warp coordinate rows differ in length.");
+        double[][] output = new double[2][xs.size()];
+        for (int i = 0; i < xs.size(); i++) { output[0][i] = finite(xs.get(i)); output[1][i] = finite(ys.get(i)); }
+        return output;
     }
 
     private <T extends Registration<SourceAndConverter<?>[]> & org.scijava.plugin.SciJavaPlugin> T instance(PluginService service, Class<T> type) {
@@ -356,29 +576,29 @@ final class AbbaHostSession {
     }
 
     static double[][] points(JsonArray rows) {
-        if (rows.size()<3) throw new IllegalArgumentException("At least three paired points are required.");
+        if (rows.size() < 3) throw new IllegalArgumentException("At least three paired points are required.");
         double[][] output = new double[2][rows.size()];
-        for (int i=0;i<rows.size();i++) {
+        for (int i = 0; i < rows.size(); i++) {
             JsonArray point = rows.get(i).getAsJsonArray();
-            if (point.size()!=2) throw new IllegalArgumentException("Expected XY points.");
-            output[0][i]=finite(point.get(0)); output[1][i]=finite(point.get(1));
+            if (point.size() != 2) throw new IllegalArgumentException("Expected XY points.");
+            output[0][i] = finite(point.get(0)); output[1][i] = finite(point.get(1));
         }
         return output;
     }
 
     static InvertibleRealTransform tps(double[][] source, double[][] target) {
-        ThinplateSplineTransform spline = new ThinplateSplineTransform(source,target);
-        if (!interpolates(spline,source,target)) spline = new ThinplateSplineTransform(target,source);
-        if (!interpolates(spline,source,target)) throw new IllegalArgumentException("Spline does not reproduce its paired coordinates.");
+        ThinplateSplineTransform spline = new ThinplateSplineTransform(source, target);
+        if (!interpolates(spline, source, target)) spline = new ThinplateSplineTransform(target, source);
+        if (!interpolates(spline, source, target)) throw new IllegalArgumentException("Spline does not reproduce its paired coordinates.");
         return new InvertibleWrapped2DTransformAs3D(new WrappedIterativeInvertibleRealTransform<>(spline));
     }
 
-    private static boolean interpolates(ThinplateSplineTransform spline,double[][] source,double[][] target) {
+    private static boolean interpolates(ThinplateSplineTransform spline, double[][] source, double[][] target) {
         double[] sample = new double[2];
-        for (int i=0;i<source[0].length;i++) {
-            spline.apply(new double[]{source[0][i],source[1][i]},sample);
-            double error=Math.hypot(sample[0]-target[0][i],sample[1]-target[1][i]);
-            if (!Double.isFinite(error) || error>1e-3) return false;
+        for (int i = 0; i < source[0].length; i++) {
+            spline.apply(new double[]{source[0][i], source[1][i]}, sample);
+            double error = Math.hypot(sample[0] - target[0][i], sample[1] - target[1][i]);
+            if (!Double.isFinite(error) || error > 1e-3) return false;
         }
         return true;
     }
