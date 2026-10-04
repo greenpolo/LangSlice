@@ -457,7 +457,6 @@ count failed renders, and works across providers that omit generated call ids.
 
 ```
 langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]] ...
-langslice linear quick-affine ...   (unchanged)
 ```
 
 The full flag list is in `docs/current_workflow.md`. `agent_damage`, the

@@ -59,9 +59,10 @@ parts) and, in `__init__.py`, the media keys re-exported from
 `hosts/api/`, moved down 2026-10-04 because the MCP door and the CLI use
 it and none of it drives a host): `models.py` (the engine contract's
 Pydantic models, `export_schema_bundle`), `runtime.py` (`version`,
-`quick_affine.run`, `export.run`; `register.run` and the `nonlinear
-register` command, a one-shot pipeline outside the job, were removed
-2026-10-04),
+`export.run`; `register.run` and the `nonlinear register` command, a
+one-shot pipeline outside the job, and `quick_affine.run` with `langslice
+linear quick-affine`, a one-shot silhouette alignment outside the job
+(the job verb `fit_affine` covers it), were removed 2026-10-04),
 `setup.py` (offline setup status, saved credentials, login, and
 `image_model_connected(provider)`: the provider is not `none` and its key
 or login is present, an offline presence check the MCP door and Claude
@@ -181,7 +182,7 @@ own jobs are flat). The engine service stays in
 - `cli/` — every `langslice` command, one module per group;
   `langslice/cli.py` keeps the entry point `langslice.cli:main`.
   `__init__.py` (`build_parser`, `main`: the agent commands return their
-  exit code), `linear.py` (`linear run`, `linear quick-affine`, and the job
+  exit code), `linear.py` (`linear run` and the job
   flags every stack-opening command shares: `add_linear_arguments`,
   `build_linear_spec`; `--tasks` defaults to `DEFAULT_TASKS`, or with
   `--registration FILE` to `REGISTRATION_TASKS` (`nonlinear`);

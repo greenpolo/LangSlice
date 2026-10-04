@@ -42,9 +42,10 @@ New methods:
 | `linear.estimate` | Estimated cost of a `linear.run` spec; the connector shows "estimate unavailable" when a worker rejects the method |
 | `preprocess.preview` | Write the grayscale image the agent would see for one snapshot and preprocessing choice |
 
-The older `version`, `quick_affine.run` and `export.run` methods remain
-available (`register.run`, a one-shot nonlinear registration outside the job,
-was removed on 2026-10-04). Host-specific payloads use `event.kind = data` and
+The older `version` and `export.run` methods remain available
+(`register.run`, a one-shot nonlinear registration outside the job, and
+`quick_affine.run`, a one-shot silhouette alignment outside the job, were
+removed on 2026-10-04). Host-specific payloads use `event.kind = data` and
 `event.payload.kind` to distinguish checkpoints, agent activity and login URLs.
 
 Linear inputs are an image folder, pixel size, filename-to-BrainGlobe-AP positions,

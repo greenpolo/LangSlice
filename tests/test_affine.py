@@ -4,7 +4,6 @@ No model calls and no Elastix: the fit is closed-form OpenCV moments against a
 tiny synthetic atlas built here.
 """
 
-import inspect
 
 import cv2
 import numpy as np
@@ -22,24 +21,6 @@ from langslice.core.affine import (
 from tests.fakes import EllipseAtlas, ellipse_section
 
 # --- the move ------------------------------------------------------------
-
-
-def test_the_affine_core_is_shared_and_nonlinears_api_is_unchanged():
-    from langslice.core.nonlinear import quick_affine
-
-    # quick_affine now wraps the shared core rather than owning it.
-    assert quick_affine.silhouette_affine is silhouette_affine
-    signature = inspect.signature(quick_affine.quick_affine_register)
-    assert list(signature.parameters) == [
-        "image",
-        "atlas_name",
-        "position_mm",
-        "plane",
-        "pitch_deg",
-        "yaw_deg",
-        "out_path",
-    ]
-    assert signature.parameters["plane"].default == "coronal"
 
 
 def test_the_atlas_root_mask_kept_its_old_name_in_nonlinear():

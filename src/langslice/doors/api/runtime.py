@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 from langslice.doors.api.models import (
     EngineLogEvent,
     EngineProgressEvent,
     ExportRequest,
     ExportResult,
-    QuickAffineRequest,
-    QuickAffineResult,
     VersionResult,
 )
 
@@ -35,31 +32,6 @@ def get_version() -> VersionResult:
     import langslice
 
     return VersionResult(version=langslice.__version__)
-
-
-def run_quick_affine(
-    request: QuickAffineRequest,
-    emit: EngineEmit | None = None,
-) -> QuickAffineResult:
-    from PIL import Image
-
-    from langslice.core.nonlinear.quick_affine import quick_affine_register
-
-    _progress(emit, f"Loading image: {request.image_path}", stage="quick_affine")
-    raw_image = Image.open(request.image_path)
-    output_path = request.output_path
-    if output_path is None:
-        out_dir = Path(request.output_dir or ".")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        output_path = str((out_dir / "quick_affine.png").resolve())
-    result = quick_affine_register(
-        raw_image,
-        atlas_name=request.atlas,
-        position_mm=request.position_mm,
-        plane=request.plane,
-        out_path=Path(output_path),
-    )
-    return QuickAffineResult.model_validate(result)
 
 
 def run_export(request: ExportRequest, emit: EngineEmit | None = None) -> ExportResult:
