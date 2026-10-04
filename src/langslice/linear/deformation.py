@@ -31,6 +31,7 @@ import json
 import logging
 import re
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -213,14 +214,16 @@ def stain_image(
 
 def traced_lines(
     state: StackState, ctx: Workspace, grid: Grid, *, running: bool = False,
-    waited_s: float = TRACE_WAIT_S,
+    waited_s: float = TRACE_WAIT_S, root: Path | None = None,
 ) -> tuple[np.ndarray, str]:
     """The image model's lines from ``trace_borders`` at THIS placement, on the grid.
 
     Refused unless the section holds a completed trace whose geometry is the
     current one. *running* means the caller waited *waited_s* seconds for the
-    section's trace call and it is still running. Returns the line mask and
-    the trace's artifact directory.
+    section's trace call and it is still running. *root* is the job folder a
+    stored relative artifact directory is under. Returns the line mask and
+    the trace's artifact directory as stored (so a cache key built on it
+    survives a move of the job folder).
     """
     from langslice.registration_tool import correction_fingerprint
 
@@ -245,12 +248,15 @@ def traced_lines(
         raise FitRefusal("TRACE_STALE", f"{record.id}'s trace_borders result was made at "
                          "a different placement; trace the current placement first.",
                          id=record.id)
-    directory = Path(str(held.get("artifact_dir", "")))
+    stored = str(held.get("artifact_dir", ""))
+    directory = Path(stored)
+    if not directory.is_absolute() and root is not None:
+        directory = Path(root) / directory
     lines_path = directory / "extracted_lines.png"
     request_path = directory / "request.json"
     if not lines_path.exists() or not request_path.exists():
         raise FitRefusal("NO_TRACE", f"{record.id}'s trace_borders artifacts are missing "
-                         f"({directory}).", id=record.id)
+                         f"({stored}).", id=record.id)
     atlas_to_canvas = np.asarray(json.loads(request_path.read_text())["atlas_to_canvas"],
                                  dtype=np.float64)
     with Image.open(lines_path) as opened:
@@ -258,7 +264,7 @@ def traced_lines(
     section_from_canvas = grid.placement.atlas_to_section @ np.linalg.inv(atlas_to_canvas)
     warped = cv2.warpAffine(lines, section_from_canvas[:2], grid.image.size,
                             flags=cv2.INTER_LINEAR, borderValue=0)
-    return warped > 0.05, str(directory)
+    return warped > 0.05, stored
 
 
 # --- one candidate's choices ----------------------------------------------
@@ -347,12 +353,20 @@ def cache_key(
 
 @dataclass
 class RecordStore:
-    """Fitted records by input key (memory, most recent first) and on disk."""
+    """Fitted records by input key (memory, most recent first) and on disk.
+
+    On disk a record is ``<folder>/<key[:24]>``: *folder_of* gives a
+    section's folder (the job's ``sections/<name>/deformable``); without it,
+    ``<root>/<section filename>``.
+    """
 
     root: Path
     cache: OrderedDict[str, DeformableRecord] = field(default_factory=OrderedDict)
+    folder_of: Callable[[str], Path] | None = None
 
     def directory(self, section_id: str, key: str) -> Path:
+        if self.folder_of is not None:
+            return Path(self.folder_of(section_id)) / key[:24]
         name = re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
         return self.root / name / key[:24]
 
@@ -431,11 +445,15 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
 
 
 def reference(
-    *, folder: Path, key: str, linear: str, record: DeformableRecord, choice: Choice,
+    *, folder: Path | str, key: str, linear: str, record: DeformableRecord, choice: Choice,
     include: tuple[str, ...], exclude: tuple[str, ...], start: str,
     previous: dict[str, Any] | None, numbers: dict[str, Any],
 ) -> dict[str, Any]:
-    """What ``SliceState.deformation`` holds for an applied record."""
+    """What ``SliceState.deformation`` holds for an applied record.
+
+    *folder* is where the record lives as the job stores it: relative to the
+    job folder (the caller makes it so).
+    """
     step = {"start": start, **choice.echo(), "include": list(include), "exclude": list(exclude)}
     steps = list((previous or {}).get("steps") or []) if start == "current" else []
     return {

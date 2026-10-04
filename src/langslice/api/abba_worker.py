@@ -299,7 +299,10 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     # Observers are deliberately isolated by the engine. A final explicit
     # conversion ensures a failed native geometry export cannot report success.
     checkpoint(state)
-    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(folder),
+    from langslice.job.layout import job_folder_for
+
+    # The run's files: the job folder next to the snapshots.
+    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(job_folder_for(folder)),
                               "final_updates": prepared.final_updates}
     if trace_dir is not None:
         result["trace_files"] = sorted(

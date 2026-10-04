@@ -250,9 +250,14 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
               "preprocessing": {"mode": "auto"}, "notes": "Keep the supplied positions."}
     prepared = claude_jobs.prepare_claude(params)
     path = Path(prepared["job_dir"])
+    assert path == folder / "langslice"  # the job folder next to the snapshots
     record = json.loads((path / "job.json").read_text())
-    assert record["params"] == {key: value for key, value in params.items() if key != "notes"}
-    assert record["format_version"] == 1
+    assert record["host"]["params"] == {key: value for key, value in params.items()
+                                        if key != "notes"}
+    assert record["format_version"] == 1 and record["host"]["format"] == 2
+    assert record["job_id"] == prepared["job_id"]
+    entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
+    assert entry["job_folder"] == str(path)
     assert prepared["job_id"] in prepared["prompt"]
     assert "Keep the supplied positions." in prepared["prompt"]
     job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
@@ -263,11 +268,11 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     submit = next(tool for tool in job.box.tools if tool.__name__ == "submit")
     result = asyncio.run(host_tool(job, submit)(summary="done", notes=[], interval_breaks=[]))
     assert result and job.state.submitted
-    saved = json.loads((path / "result.json").read_text())
+    saved = json.loads((path / "exports" / "result.json").read_text())
     assert saved["state"]["submitted"] is True
     assert saved["final_updates"] == []
-    assert (path / "linear_state.json").exists()
-    assert (path / "linear_results.json").exists()
+    assert (path / "state.json").exists()
+    assert (path / "exports" / "linear_results.json").exists()
 
 
 def test_host_channel_loopback_envelopes_and_disconnect():
@@ -345,7 +350,7 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     assert {"adjust_transforms", "show_stack", "submit"} <= tools
 
 
-def test_cli_prepared_folder_job_keeps_the_folder_clean_and_resumes(
+def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     tmp_path: Path, monkeypatch: Any, capsys: Any
 ):
     from langslice.api import claude_jobs
@@ -356,7 +361,7 @@ def test_cli_prepared_folder_job_keeps_the_folder_clean_and_resumes(
     main(["claude", "prepare", str(folder), "--tasks", "position", "--interval", "150",
           "--preprocess", "none", "--notes", "Section 2 is torn."])
     prompt = capsys.readouterr().out
-    job_id = next(iter((tmp_path / "jobs").iterdir())).name
+    job_id = next(iter((tmp_path / "jobs").iterdir())).stem
     assert f'start_job(job_id="{job_id}")' in prompt
     assert "interval 150 µm" in prompt and "Section 2 is torn." in prompt
 
@@ -375,9 +380,11 @@ def test_cli_prepared_folder_job_keeps_the_folder_clean_and_resumes(
     assert not briefing.isError and not note.isError
     assert "0.150 mm" in briefing.content[0].text  # the saved interval, not a default
     assert "set_positions" in tools and "adjust_transforms" not in tools
-    job_dir = tmp_path / "jobs" / job_id
-    assert (job_dir / "linear_state.json").exists()
-    assert sorted(path.name for path in folder.iterdir()) == ["s0.png", "s1.png", "s2.png"]
+    job_dir = folder / "langslice"
+    assert (job_dir / "state.json").exists()
+    # The sections are untouched; the job folder sits beside them.
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "langslice", "s0.png", "s1.png", "s2.png"]
 
     # A new server (a restarted Claude Desktop) resumes the saved checkpoint.
     async def again(client: Any) -> Any:
@@ -385,7 +392,7 @@ def test_cli_prepared_folder_job_keeps_the_folder_clean_and_resumes(
         return await client.call_tool("status", {})
 
     _session(server(), again)
-    saved = json.loads((job_dir / "linear_state.json").read_text())
+    saved = json.loads((job_dir / "state.json").read_text())
     assert any("checked s0" in line for line in saved["notes"])
 
 

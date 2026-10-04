@@ -31,7 +31,6 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -39,7 +38,7 @@ from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.affine import denormalized_affine
-from langslice.core import placement
+from langslice.core import layers, placement
 from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
 from langslice.core.placement import (
     FRAMED_PLACEMENT_MODES,
@@ -392,6 +391,50 @@ def _clears_stale_deformations(tool: Any, job: Job) -> Any:
     return run
 
 
+def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
+    """Save every picture *tool* returns in the job folder, with its layers.
+
+    What the pictures show is noted while the tool runs
+    (:func:`langslice.core.layers.collecting`); the job's view store
+    (:class:`langslice.job.views.ViewStore`) encodes and writes them in the
+    background, in the doors' encoding, so the doors' bytes are untouched.
+    A successful `submit` waits for every picture to be written.
+    """
+    signature = inspect.signature(tool)
+
+    @functools.wraps(tool)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        with layers.collecting() as notes:
+            result = tool(*args, **kwargs)
+        media = result.get(TOOL_MEDIA_PARTS_KEY) if isinstance(result, dict) else None
+        pictures = ([item for item in media if isinstance(item, Image.Image)]
+                    if isinstance(media, list) else [])
+        if pictures:
+            try:
+                bound = signature.bind(*args, **kwargs)
+                bound.apply_defaults()
+                arguments = dict(bound.arguments)
+            except TypeError:
+                arguments = dict(kwargs)
+            context = arguments.pop("tool_context", None)
+            noted = [(picture, layers.note_for(picture, notes)) for picture in pictures]
+            placed = any(held is not None and held.panel is not None for _p, held in noted)
+            try:
+                job.views.save(
+                    tool=tool.__name__, pictures=list(noted), arguments=_plain(arguments),
+                    call_id=_plain(getattr(context, "function_call_id", None)),
+                    atlas=ctx.atlas if placed else None,
+                )
+            except Exception:  # saving must never break a tool
+                logger.warning("Could not queue the pictures of %s", tool.__name__,
+                               exc_info=True)
+        if tool.__name__ == "submit" and job.state.submitted:
+            job.views.flush()
+        return result
+
+    return run
+
+
 def _strict(tool: Any) -> Any:
     """Refuse unknown or misplaced arguments before *tool* runs.
 
@@ -542,15 +585,14 @@ def build_tools(
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
-    The tools sit on *job*; without one, a job is made around *state* at the
-    context's checkpoint and results paths (an empty undo history, nothing
-    written until the first write). *max_view_edge* is the largest picture
+    The tools sit on *job*; without one, a job is made around *state* in the
+    context's job folder (an empty undo history, nothing written until the
+    first write). *max_view_edge* is the largest picture
     the driver model takes (None: the run model's lane,
     :func:`langslice.linear.view_options.view_edge_limit`).
     """
     if job is None:
-        job = Job(state, spec, checkpoint_path=ctx.checkpoint_path,
-                  results_path=ctx.results_path)
+        job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
     if job.state is not state or job.spec is not spec:
         raise ValueError("build_tools: the job must hold this state and spec")
     box = ToolBox(job, max_view_edge=int(max_view_edge or view_edge_limit(ctx)))
@@ -999,10 +1041,13 @@ def build_tools(
             for record, was, picture in earlier:
                 now = ops_appearance.planned_settings(state, pictured, ids, settings, record.id)
                 label = f"{record.index_corrected}: {record.id}  {pictured} appearance"
-                parts.append(caption(picture, f"{label}  BEFORE ({looks.describe(was)})"))
-                parts.append(caption(
+                parts.append(layers.note(
+                    caption(picture, f"{label}  BEFORE ({looks.describe(was)})"),
+                    sections=(record.id,), mode="before", extra={"target": pictured}))
+                parts.append(layers.note(caption(
                     framed_section(ctx, state, record, options, look=now),
-                    f"{label}  AFTER ({looks.describe(now)})"))
+                    f"{label}  AFTER ({looks.describe(now)})"),
+                    sections=(record.id,), mode="after", extra={"target": pictured}))
         except Exception as exc:
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
         written = ops_appearance.set_appearance(job, targets, ids, settings)
@@ -2142,7 +2187,7 @@ def build_tools(
             result, call = registration_tool.start_correction(
                 state, ctx, record.id,
                 prompt=prompt,
-                out=Path(job.results_path).parent / "nonlinear",
+                calls_dir=job.layout.image_correction_dir(record.id),
                 provider=spec.nonlinear.provider,
                 image_model=spec.nonlinear.image_model,
             )
@@ -2157,6 +2202,7 @@ def build_tools(
                 record.id, result["geometry_fingerprint"], call,
                 workers=registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
             )
+        result = job.portable(result)
         if result != record.image_correction:
             before = job.snapshot()
             record.image_correction = result
@@ -2398,6 +2444,10 @@ def build_tools(
                             ctx, fit.image, outcome, warped=False, style=style,
                             atlas_images=shown_atlas,
                             title=f"{record.id}  before: the linear placement"))
+                for index, image in enumerate(images):
+                    layers.note(image, sections=(record.id,),
+                                mode=("after" if index == 0 else "before")
+                                if options.mode == "ab" else options.mode)
                 parts.extend(images)
             except Exception as exc:
                 logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
@@ -2417,7 +2467,7 @@ def build_tools(
                 failed.append({"id": section_id, "message": str(exc)})
                 continue
             traces.append({"id": section_id, "image_indexes": [len(parts)]})
-            parts.append(picture)
+            parts.append(layers.note(picture, sections=(section_id,), mode="trace"))
         succeeded = [row for row in rows if row.get("status") == "ok"]
         result: dict[str, Any] = {
             "status": "ok" if succeeded else "error",
@@ -2578,8 +2628,10 @@ def build_tools(
     # `view.resolution` exists only where the user left picture size to the agent.
     level = resolution_level(ctx)
     box.tools = [
-        _serialized(_clears_stale_deformations(_strict(view_schema(tool, level)), job),
-                    lock, state=state, on_event=on_event, before=sync_job)
+        _serialized(
+            _saves_views(_clears_stale_deformations(_strict(view_schema(tool, level)), job),
+                         job, ctx),
+            lock, state=state, on_event=on_event, before=sync_job)
         for tool in box.tools
     ]
     return box

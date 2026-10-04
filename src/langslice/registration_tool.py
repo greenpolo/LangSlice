@@ -152,9 +152,10 @@ def start_correction(
     section_id: str,
     *,
     prompt: str = "",
-    out: Path,
+    out: Path | None = None,
     provider: str = "openai-oauth",
     image_model: str | None = None,
+    calls_dir: Path | None = None,
 ) -> tuple[dict[str, Any], Callable[[], dict[str, Any]] | None]:
     """Prepare one image edit from an existing calibrated linear placement.
 
@@ -166,7 +167,9 @@ def start_correction(
 
     *prompt* is the agent's edited copy of the base prompt (blank sends the
     base); the base, the prompt sent and their word diff are saved with the
-    attempt. There is no
+    attempt. The calls are saved in *calls_dir* (the section's own folder,
+    one subfolder per call key; the job's ``sections/<name>/image_correction``)
+    or, without it, in ``<out>/<section filename>``. There is no
     atlas search, model veto, or selection step. Repeated calls at the same
     geometry return the first image reply. Failed transports that returned no
     image may be retried; no reply is discarded. Different edits cannot
@@ -185,8 +188,11 @@ def start_correction(
     call_key = _digest({
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     })
-    name = re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
-    call_directory = Path(out).resolve() / name / call_key[:24]
+    if calls_dir is None:
+        if out is None:
+            raise ValueError("start_correction needs calls_dir or an out folder")
+        calls_dir = Path(out) / re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
+    call_directory = Path(calls_dir).resolve() / call_key[:24]
     result_path = call_directory / "result.json"
     previous: dict[str, Any] | None = None
     if result_path.exists():

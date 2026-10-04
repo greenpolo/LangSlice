@@ -1,15 +1,18 @@
 """The job: one stack's state and everything that keeps it consistent.
 
-The job layer of the layered core (``_local`` plan, phase 2). A :class:`Job`
-owns the :class:`~langslice.linear.state.StackState` and the
-:class:`~langslice.linear.spec.JobSpec`, the host's locked and damaged
-sections, undo/redo (persisted next to the checkpoint), the checkpoint and its
-observers, the submit gates, the stale-deformation rule, the deformation
-record store, the transform-count cap and the background image-correction
-jobs. ``ingest``, ``apply_host_inputs`` and ``emit_results`` open and close
-it. It imports the core only: no agent framework, no message types, no
-provider. The doors (the ADK toolbox, the MCP server) sit on it; a script
-can drive it directly.
+The job layer of the layered core (``_local`` plan, phases 2 and 3c). A
+:class:`Job` owns the :class:`~langslice.linear.state.StackState` and the
+:class:`~langslice.linear.spec.JobSpec`, its job folder
+(:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
+host's locked and damaged sections, undo/redo (persisted in the job folder),
+the checkpoint and its observers, the submit gates, the stale-deformation
+rule, the deformation record store, the store of the pictures the model was
+shown (:class:`langslice.job.views.ViewStore`), the transform-count cap and
+the background image-correction jobs. ``ingest``, ``apply_host_inputs`` and
+``emit_results`` open and close it. It imports the core and the job folder
+package (``langslice.job``) only: no agent framework, no message types, no
+provider. The doors (the ADK toolbox, the MCP server) sit on it; a script can
+drive it directly.
 
 What a Job never holds: the look-before-commit gates (``view_placement``
 before ``set_positions``, ``view_stack`` before ``submit``) and the
@@ -22,9 +25,13 @@ is never gated.
 checkpoint). A step is the whole state, so undo restores everything on it,
 the deformation references in the section records included (the records
 themselves are content-addressed on disk and never change). The history is
-the plain file :data:`UNDO_FILENAME` beside the checkpoint, versioned
-(:data:`UNDO_FORMAT_VERSION`), depth :data:`UNDO_DEPTH`; a resumed job reads
-it back, a fresh one starts empty.
+the job folder's ``history/`` (:mod:`langslice.job.history`: an index and one
+file per step), depth :data:`UNDO_DEPTH`; a resumed job reads it back, a
+fresh one starts empty.
+
+**Paths.** Every path the state stores (a deformation's ``record``, an image
+correction's artifacts) is relative to the job folder (state format 2);
+:meth:`Job.open` upgrades an old layout first (:mod:`langslice.job.migrate`).
 
 **Live shared editing.** :meth:`Job.sync` notices that the state file changed
 on disk since this job last read or wrote it (a script edited it, or another
@@ -48,15 +55,18 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from langslice.job import migrate
+from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
+from langslice.job.history import History
+from langslice.job.layout import JobLayout, write_job_file
+from langslice.job.views import ViewStore
 from langslice.linear import deformation
 from langslice.linear.checkpoint import (
-    FORMAT_KEY,
-    STATE_FORMAT_VERSION,
     notify_observers,
     read_checkpoint,
-    upgrade_state,
+    relative_to,
+    state_paths,
     write_checkpoint,
-    write_json_atomic,
 )
 from langslice.linear.discovery import discover_slices
 from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
@@ -66,14 +76,6 @@ if TYPE_CHECKING:
     from langslice.linear.workspace import Workspace
 
 logger = logging.getLogger(__name__)
-
-#: Undo steps kept (and saved). One tool call is one step, a batch included.
-UNDO_DEPTH = 50
-#: The undo history, beside the checkpoint.
-UNDO_FILENAME = "linear_undo.json"
-#: The history file's format. 1 (2026-10-03): ``undo`` and ``redo``, oldest
-#: first, each a whole state at ``state_format_version``.
-UNDO_FORMAT_VERSION = 1
 
 #: A reported interval break must exceed this multiple of the median spacing.
 INTERVAL_BREAK_MIN_RATIO = 1.5
@@ -244,63 +246,14 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
 def emit_results(
     state: StackState, results_path: str, progress: Callable[[str], None] | None = None,
 ) -> StackState:
-    """Write the results JSON — the same shape as the checkpoint, unversioned."""
+    """Write the results JSON — the same shape as the checkpoint, unversioned
+    (its paths relative to the job folder, as the checkpoint's)."""
     os.makedirs(os.path.dirname(os.path.abspath(results_path)), exist_ok=True)
     with open(results_path, "w", encoding="utf-8") as handle:
         json.dump(state.to_dict(), handle, indent=2)
     if progress is not None:
         progress(f"[emit] results -> {results_path}")
     return state
-
-
-# --- the undo history file ------------------------------------------------------
-
-
-def undo_path_for(checkpoint_path: str) -> str:
-    """The undo history beside *checkpoint_path*."""
-    return os.path.join(os.path.dirname(os.path.abspath(checkpoint_path)), UNDO_FILENAME)
-
-
-def read_history(path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """``(undo, redo)`` from a history file, each upgraded; empty without one.
-
-    An unreadable file is logged and read as empty: the history is a
-    convenience, the checkpoint is the record.
-    """
-    try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-    except FileNotFoundError:
-        return [], []
-    except (OSError, ValueError):
-        logger.warning("Undo history %s unreadable; starting without it", path, exc_info=True)
-        return [], []
-    version = data.get(FORMAT_KEY) if isinstance(data, dict) else None
-    if not isinstance(version, int) or version > UNDO_FORMAT_VERSION:
-        logger.warning("Undo history %s has format %r; starting without it", path, version)
-        return [], []
-    state_version = data.get("state_format_version", 0)
-
-    def upgraded(entries: Any) -> list[dict[str, Any]]:
-        return [upgrade_state({**entry, FORMAT_KEY: state_version})
-                for entry in entries or [] if isinstance(entry, dict)]
-
-    try:
-        return upgraded(data.get("undo")), upgraded(data.get("redo"))
-    except ValueError:
-        logger.warning("Undo history %s unreadable; starting without it", path, exc_info=True)
-        return [], []
-
-
-def write_history(path: str, undo: list[dict[str, Any]], redo: list[dict[str, Any]]) -> None:
-    """Write the history atomically (compact JSON: it is rewritten every step)."""
-    write_json_atomic(path, {
-        FORMAT_KEY: UNDO_FORMAT_VERSION,
-        "state_format_version": STATE_FORMAT_VERSION,
-        "depth": UNDO_DEPTH,
-        "undo": undo,
-        "redo": redo,
-    }, indent=None)
 
 
 # --- the submit gates ------------------------------------------------------------
@@ -629,11 +582,12 @@ def _land(state: StackState, section_id: str, fingerprint: str, result: dict[str
 class Job:
     """One stack being registered: its state, its rules and its files.
 
-    Build one with :meth:`open` (resume or ingest, then the first
-    checkpoint), or around a state already in hand (``Job(state, spec,
-    checkpoint_path=..., results_path=...)``: an empty history, nothing read
-    or written until the first operation; the files as they stand on disk at
-    that moment count as already seen).
+    Build one with :meth:`open` (upgrade an old layout, resume or ingest,
+    then the first checkpoint), or around a state already in hand
+    (``Job(state, spec, layout=...)``: an empty history, nothing read or
+    written until the first operation; the files as they stand on disk at
+    that moment count as already seen). *results_path* None is the job
+    folder's ``exports/linear_results.json``.
     """
 
     def __init__(
@@ -641,15 +595,19 @@ class Job:
         state: StackState,
         spec: JobSpec,
         *,
-        checkpoint_path: str,
-        results_path: str,
+        layout: JobLayout,
+        results_path: str | None = None,
         undo: list[dict[str, Any]] | None = None,
         redo: list[dict[str, Any]] | None = None,
+        history: History | None = None,
     ) -> None:
         self.state = state
         self.spec = spec
-        self.checkpoint_path = str(checkpoint_path)
-        self.results_path = str(results_path)
+        self.layout = layout
+        self.results_path = str(results_path or layout.results_file)
+        self.history = history or History(layout.history_dir)
+        #: The pictures the model was shown, saved with their layers.
+        self.views = ViewStore(layout)
         #: Sections whose flip, rotation and transform the host locked.
         self.locked = frozenset(locked_ids(spec))
         #: Sections the host marked damaged; their flags cannot be cleared.
@@ -673,37 +631,67 @@ class Job:
 
     @classmethod
     def open(
-        cls, spec: JobSpec, workspace: Workspace, *, checkpoint_path: str, results_path: str,
+        cls, spec: JobSpec, workspace: Workspace, *, folder: str | os.PathLike[str] | None = None,
+        results_path: str | None = None,
     ) -> Job:
-        """Resume the checkpoint (``spec.resume``) or ingest the folder; checkpoint.
+        """Open the job folder (*folder*; default ``<images>/langslice``).
 
-        A resumed job keeps its undo history; a fresh one starts without one
-        (a history file left by an earlier job here is emptied).
+        An old layout beside the images is upgraded into it first
+        (:func:`langslice.job.migrate.migrate_beside_images`), ``job.json``
+        gets this spec, then the checkpoint is resumed (``spec.resume``) or
+        the folder ingested, and the first checkpoint written. A resumed job
+        keeps its undo history; a fresh one starts without one (a history
+        left by an earlier job here is emptied). A job folder or checkpoint
+        from a newer LangSlice is refused (``ValueError``).
         """
+        layout = (JobLayout(Path(os.path.abspath(folder)), Path(workspace.image_folder))
+                  if folder is not None else JobLayout.for_images(workspace.image_folder))
+        migrate.migrate_beside_images(layout)
+        layout.ensure()
+        write_job_file(layout, spec=spec.to_dict())
         state = None
         if spec.resume:
-            data = read_checkpoint(checkpoint_path)
+            data = read_checkpoint(str(layout.state_file))
             state = None if data is None else StackState.from_dict(data)
+        history = History(layout.history_dir)
         undo: list[dict[str, Any]] = []
         redo: list[dict[str, Any]] = []
         if state is not None:
-            workspace.progress(f"[ingest] resuming from {checkpoint_path}")
+            workspace.progress(f"[ingest] resuming from {layout.state_file}")
             state.spec = spec.to_dict()
             state.submitted = False
-            undo, redo = read_history(undo_path_for(checkpoint_path))
+            undo, redo = history.load()
         else:
             state = ingest(spec, workspace)
             apply_host_inputs(state, spec)
-        job = cls(state, spec, checkpoint_path=checkpoint_path, results_path=results_path,
-                  undo=undo, redo=redo)
-        if not undo and not redo and os.path.exists(job.undo_path):
+        job = cls(state, spec, layout=layout, results_path=results_path,
+                  undo=undo, redo=redo, history=history)
+        if not undo and not redo and history.exists():
             job._save_history()
         job.checkpoint()
+        layout.log_event("open", resumed=bool(undo or redo or spec.resume))
         return job
 
     @property
+    def folder(self) -> Path:
+        """The job folder."""
+        return self.layout.folder
+
+    @property
+    def checkpoint_path(self) -> str:
+        """The state checkpoint, ``<job folder>/state.json``."""
+        return str(self.layout.state_file)
+
+    @property
     def undo_path(self) -> str:
-        return undo_path_for(self.checkpoint_path)
+        """The undo history's index (``history/index.json``)."""
+        return str(self.history.index_path)
+
+    def portable(self, correction: dict[str, Any]) -> dict[str, Any]:
+        """An image correction's record with its paths relative to the job folder."""
+        converted = state_paths({"slices": [{"image_correction": correction}]},
+                                relative_to(self.folder))
+        return converted["slices"][0]["image_correction"]
 
     # --- checkpoint and observers ------------------------------------------------
 
@@ -771,7 +759,7 @@ class Job:
         return True
 
     def _save_history(self) -> None:
-        write_history(self.undo_path, self.undo_stack, self.redo_stack)
+        self.history.save(self.undo_stack, self.redo_stack)
         self._undo_stamp = _stamp(self.undo_path)
 
     # --- live shared editing -------------------------------------------------------
@@ -791,7 +779,7 @@ class Job:
         undo_stamp = _stamp(self.undo_path)
         history_changed = undo_stamp != self._undo_stamp
         if history_changed:
-            self.undo_stack, self.redo_stack = read_history(self.undo_path)
+            self.undo_stack, self.redo_stack = self.history.load()
             self._undo_stamp = undo_stamp
         if state_stamp == self._state_stamp:
             return None
@@ -855,10 +843,11 @@ class Job:
 
     @property
     def deformations(self) -> deformation.RecordStore:
-        """Fitted records, saved under the results folder (made on first use)."""
+        """Fitted records, saved in each section's folder
+        (``sections/<name>/deformable/<key>``; made on first use)."""
         if self._deformations is None:
             self._deformations = deformation.RecordStore(
-                root=Path(self.results_path).parent / "deformable")
+                root=self.layout.sections_dir, folder_of=self.layout.deformable_dir)
         return self._deformations
 
     # --- image corrections ----------------------------------------------------------
@@ -889,8 +878,8 @@ class Job:
         """
         changed = False
         for section_id, (fingerprint, future) in list(self.image_jobs.items()):
-            changed |= _land(self.state, section_id, fingerprint, _job_result(
-                section_id, fingerprint, future, None))
+            changed |= _land(self.state, section_id, fingerprint, self.portable(_job_result(
+                section_id, fingerprint, future, None)))
         self.image_jobs.clear()
         if self.image_executor is not None:
             self.image_executor.shutdown(wait=True)
@@ -915,7 +904,7 @@ class Job:
         except TimeoutError:
             return False
         del self.image_jobs[section_id]
-        _land(self.state, section_id, fingerprint, result)
+        _land(self.state, section_id, fingerprint, self.portable(result))
         return True
 
     def missing_image_corrections(
@@ -948,5 +937,10 @@ class Job:
     # --- results ----------------------------------------------------------------------
 
     def emit_results(self, progress: Callable[[str], None] | None = None) -> StackState:
-        """Write the results JSON (:func:`emit_results`)."""
+        """Write the results JSON (:func:`emit_results`); every picture saved."""
+        self.views.flush()
         return emit_results(self.state, self.results_path, progress)
+
+    def close(self) -> None:
+        """Finish the job's background writes (the pictures); the job stays usable."""
+        self.views.flush()

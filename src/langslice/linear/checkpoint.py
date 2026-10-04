@@ -7,8 +7,9 @@ checkpoint and re-seed the agent with the state it had. The job
 
 The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next to
 the state's own fields. A checkpoint without it predates versioning (version
-0) and reads unchanged; :func:`upgrade_state` is where a later version's
-conversion goes. A file from a newer LangSlice is refused, never guessed at.
+0); :func:`upgrade_state` converts older versions (version 2 made the paths
+on the section records relative to the job folder) and refuses a file from a
+newer LangSlice, never guessing at it.
 
 Every checkpoint funnels through :func:`save_checkpoint` (or the job's
 :meth:`~langslice.linear.job.Job.checkpoint`, which calls
@@ -32,13 +33,18 @@ from langslice.linear.state import StackState
 
 logger = logging.getLogger(__name__)
 
+#: The checkpoint of the old layout, beside the images (before the job
+#: folder; :mod:`langslice.job.migrate` moves it to ``langslice/state.json``).
 CHECKPOINT_FILENAME = "linear_state.json"
 
 #: The key a job-folder file carries its format version under.
 FORMAT_KEY = "format_version"
 #: The checkpoint's format. 1 (2026-10-03): the first versioned checkpoint,
-#: the same fields as the unversioned ones before it.
-STATE_FORMAT_VERSION = 1
+#: the same fields as the unversioned ones before it. 2 (2026-10-03, the job
+#: folder): every path on a section record (a deformation's ``record``, an
+#: image correction's ``artifact_dir`` and ``artifact_paths``) is relative to
+#: the job folder (:func:`state_paths`).
+STATE_FORMAT_VERSION = 2
 
 #: Called with the state after every atomic write. A list, not a single slot,
 #: so nested runs (tests, a resumed session) can each hold their own observer
@@ -47,8 +53,10 @@ _observers: list[Callable[[StackState], None]] = []
 
 
 def default_checkpoint_path(image_folder: str) -> str:
-    """``<image_folder>/linear_state.json``."""
-    return os.path.join(image_folder, CHECKPOINT_FILENAME)
+    """``<image_folder>/langslice/state.json``: the job folder's checkpoint."""
+    from langslice.job.layout import JobLayout
+
+    return str(JobLayout.for_images(image_folder).state_file)
 
 
 def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
@@ -111,10 +119,65 @@ def observe_checkpoints(fn: Callable[[StackState], None]) -> Iterator[None]:
         _observers.remove(fn)
 
 
-def upgrade_state(data: dict[str, Any]) -> dict[str, Any]:
+def state_paths(
+    data: dict[str, Any], convert: Callable[[str], str],
+) -> dict[str, Any]:
+    """*data* (a state's fields) with every stored path passed through *convert*.
+
+    The paths a state holds: each section's deformation ``record`` and its
+    image correction's ``artifact_dir`` and ``artifact_paths``. Everything
+    else is returned as it is (the input is not changed).
+    """
+    slices = []
+    for row in data.get("slices") or []:
+        if not isinstance(row, dict):
+            slices.append(row)
+            continue
+        row = dict(row)
+        held = row.get("deformation")
+        if isinstance(held, dict) and isinstance(held.get("record"), str):
+            row["deformation"] = {**held, "record": convert(held["record"])}
+        correction = row.get("image_correction")
+        if isinstance(correction, dict):
+            correction = dict(correction)
+            if isinstance(correction.get("artifact_dir"), str):
+                correction["artifact_dir"] = convert(correction["artifact_dir"])
+            paths = correction.get("artifact_paths")
+            if isinstance(paths, dict):
+                correction["artifact_paths"] = {
+                    key: convert(value) if isinstance(value, str) else value
+                    for key, value in paths.items()}
+            row["image_correction"] = correction
+        slices.append(row)
+    return {**data, "slices": slices} if "slices" in data else dict(data)
+
+
+def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
+    """A path converter: absolute paths inside *root* become relative to it
+    (POSIX separators); every other path is kept as it is."""
+    bases = list(dict.fromkeys((os.path.abspath(root), os.path.realpath(root))))
+
+    def convert(value: str) -> str:
+        if not os.path.isabs(value):
+            return value
+        for base in bases:
+            for spelled in dict.fromkeys((os.path.abspath(value), os.path.realpath(value))):
+                if os.path.commonpath([spelled, base]) == base:
+                    return os.path.relpath(spelled, base).replace(os.sep, "/")
+        return value
+
+    return convert
+
+
+def upgrade_state(
+    data: dict[str, Any], root: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
     """A checkpoint's fields at the current format, without the version key.
 
     Unversioned (version 0) checkpoints have the version-1 fields already.
+    Version 1 stored absolute paths: those inside *root* (the job folder)
+    become relative to it, the rest stay as they are (the job folder's
+    migration, :mod:`langslice.job.migrate`, moves the old folders first).
     Raises ``ValueError`` for a version this LangSlice does not know.
     """
     version = data.get(FORMAT_KEY, 0)
@@ -124,18 +187,26 @@ def upgrade_state(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"This checkpoint was written by a newer LangSlice (format {version}; this "
             f"version reads up to {STATE_FORMAT_VERSION}). Update LangSlice to open it.")
-    return {key: value for key, value in data.items() if key != FORMAT_KEY}
+    fields = {key: value for key, value in data.items() if key != FORMAT_KEY}
+    if version < 2 and root is not None:
+        fields = state_paths(fields, relative_to(root))
+    return fields
 
 
-def read_checkpoint(path: str) -> dict[str, Any] | None:
-    """A checkpoint's state fields, upgraded; ``None`` if there is no file."""
+def read_checkpoint(path: str, root: str | os.PathLike[str] | None = None) -> dict[str, Any] | None:
+    """A checkpoint's state fields, upgraded; ``None`` if there is no file.
+
+    *root* is the job folder its paths are relative to (default: the
+    checkpoint's own folder, where the job folder keeps it).
+    """
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not hold a stack state")
-    return upgrade_state(data)
+    return upgrade_state(data, root if root is not None else os.path.dirname(
+        os.path.abspath(path)))
 
 
 def load_checkpoint(path: str) -> StackState | None:

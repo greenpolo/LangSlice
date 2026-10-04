@@ -24,7 +24,7 @@ def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: boo
         inputs={"pixel_size_um": 10.0} if known else {},
     )
     context = EngineContext(
-        spec=spec, image_folder=str(tmp_path), checkpoint_path=str(tmp_path / "state.json"),
+        spec=spec, image_folder=str(tmp_path), job_folder=str(tmp_path / "langslice"),
         results_path=str(tmp_path / "result.json"), model="unused", atlas_loader=lambda _: object(),
     )
     labels = np.zeros((70, 90), dtype=np.int32)

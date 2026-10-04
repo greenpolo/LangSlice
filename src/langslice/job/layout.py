@@ -1,0 +1,256 @@
+"""Where a job's files live: the job folder beside the images, and its names.
+
+One stack, one job folder: ``<images>/langslice/``. Every host puts it next
+to the images it hands LangSlice (the CLI's folder, a Claude job's folder,
+the snapshots ABBA exports), so a job travels with its images and is found
+without an id. Inside::
+
+    job.json             settings (the JobSpec) + format_version; a saved
+                         host job's own fields under "host"
+    state.json           the state checkpoint (StackState, versioned)
+    history/             undo/redo: index.json + one file per step
+    sections/<name>/     per section (<name>: the image filename's stem)
+        deformable/<key>/          applied deformation records
+        image_correction/<key>/    trace_borders calls and their attempts
+        views/<seq>_<tool>_<mode>/ pictures of this section the model saw
+    views/<seq>_<tool>_<mode>/     pictures of several sections (stack level)
+    views.jsonl          append-only index of every saved picture
+    exports/             linear_results.json, a host's result.json
+    logs/                events.jsonl (migrations, opens)
+    prompt.txt           a saved Claude job's copy prompt
+
+Reserved for the formats phase, not written yet: ``registration.json`` (the
+truth: plane, affine, residual) at the top and ``residual.tif``,
+``coords.tif``, ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv`` in each
+section folder.
+
+Every path a job file stores is relative to the job folder
+(:meth:`JobLayout.relative`), so the folder can move with its images.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+#: The job folder's name, next to the images.
+JOB_DIRNAME = "langslice"
+JOB_FILE = "job.json"
+STATE_FILE = "state.json"
+HISTORY_DIR = "history"
+SECTIONS_DIR = "sections"
+VIEWS_DIR = "views"
+VIEWS_INDEX = "views.jsonl"
+EXPORTS_DIR = "exports"
+LOGS_DIR = "logs"
+EVENTS_FILE = "events.jsonl"
+PROMPT_FILE = "prompt.txt"
+#: Under ``exports/``: the run's result (the state's shape, unversioned) and
+#: a host job's final result (state + host updates).
+RESULTS_FILE = "linear_results.json"
+HOST_RESULT_FILE = "result.json"
+#: Under ``sections/<name>/``.
+DEFORMABLE_DIR = "deformable"
+IMAGE_CORRECTION_DIR = "image_correction"
+SECTION_VIEWS_DIR = "views"
+#: Reserved names (the formats phase writes them; nothing does yet).
+REGISTRATION_FILE = "registration.json"
+SECTION_RESERVED = ("residual.tif", "coords.tif", "labels.tif", "labels_fiji.tif",
+                    "labels.csv")
+
+#: The job folder's format, carried by ``job.json``. 1 (2026-10-03): this
+#: layout. A folder without ``job.json`` (the files beside the images, or a
+#: saved Claude job under ``~/.langslice/jobs/<id>/``) is the old layout and
+#: is upgraded on open (:mod:`langslice.job.migrate`).
+JOB_FORMAT_VERSION = 1
+FORMAT_KEY = "format_version"
+
+_UNSAFE = re.compile(r"[\x00-\x1f/\\:*?\"<>|]")
+
+
+def job_folder_for(image_folder: str | os.PathLike[str]) -> Path:
+    """``<image_folder>/langslice`` (absolute)."""
+    return Path(os.path.abspath(os.fspath(image_folder))) / JOB_DIRNAME
+
+
+def _safe(name: str) -> str:
+    cleaned = _UNSAFE.sub("_", name).strip().lstrip(".")
+    return cleaned or "_"
+
+
+def section_dirname(section_id: str, siblings: list[str] | tuple[str, ...] = ()) -> str:
+    """A section's folder name: its image filename's stem.
+
+    The whole filename when another image among *siblings* shares the stem
+    (``s1.png`` and ``s1.tif``), so two sections never share a folder.
+    Characters a file system refuses become ``_``.
+    """
+    name = Path(section_id).name
+    stem = Path(name).stem
+    clash = sum(1 for other in siblings if Path(Path(other).name).stem == stem) > 1
+    return _safe(name if clash else stem)
+
+
+@dataclass
+class JobLayout:
+    """The job folder of one stack and the names inside it."""
+
+    folder: Path
+    #: The images this job registers; section folder names come from them.
+    image_folder: Path | None = None
+    _names: dict[str, str] | None = field(default=None, repr=False)
+
+    @classmethod
+    def for_images(cls, image_folder: str | os.PathLike[str]) -> JobLayout:
+        """The job folder next to *image_folder*."""
+        return cls(job_folder_for(image_folder), Path(os.path.abspath(os.fspath(image_folder))))
+
+    @property
+    def job_file(self) -> Path:
+        return self.folder / JOB_FILE
+
+    @property
+    def state_file(self) -> Path:
+        return self.folder / STATE_FILE
+
+    @property
+    def history_dir(self) -> Path:
+        return self.folder / HISTORY_DIR
+
+    @property
+    def sections_dir(self) -> Path:
+        return self.folder / SECTIONS_DIR
+
+    @property
+    def views_dir(self) -> Path:
+        return self.folder / VIEWS_DIR
+
+    @property
+    def views_index(self) -> Path:
+        return self.folder / VIEWS_INDEX
+
+    @property
+    def exports_dir(self) -> Path:
+        return self.folder / EXPORTS_DIR
+
+    @property
+    def logs_dir(self) -> Path:
+        return self.folder / LOGS_DIR
+
+    @property
+    def results_file(self) -> Path:
+        return self.exports_dir / RESULTS_FILE
+
+    @property
+    def host_result_file(self) -> Path:
+        return self.exports_dir / HOST_RESULT_FILE
+
+    @property
+    def prompt_file(self) -> Path:
+        return self.folder / PROMPT_FILE
+
+    # --- sections ---------------------------------------------------------------
+
+    def _siblings(self) -> list[str]:
+        if self.image_folder is None or not self.image_folder.is_dir():
+            return []
+        from langslice.linear.discovery import discover_slices
+
+        return [os.path.basename(path) for path in discover_slices(str(self.image_folder))]
+
+    def section_name(self, section_id: str) -> str:
+        """The folder name of *section_id* under ``sections/``."""
+        if self._names is None:
+            siblings = self._siblings()
+            self._names = {name: section_dirname(name, siblings) for name in siblings}
+        name = self._names.get(Path(section_id).name)
+        return name if name is not None else section_dirname(section_id)
+
+    def section_dir(self, section_id: str) -> Path:
+        return self.sections_dir / self.section_name(section_id)
+
+    def deformable_dir(self, section_id: str) -> Path:
+        """Where a section's applied deformation records live (one per key)."""
+        return self.section_dir(section_id) / DEFORMABLE_DIR
+
+    def image_correction_dir(self, section_id: str) -> Path:
+        """Where a section's ``trace_borders`` calls live (one per call key)."""
+        return self.section_dir(section_id) / IMAGE_CORRECTION_DIR
+
+    def section_views_dir(self, section_id: str) -> Path:
+        return self.section_dir(section_id) / SECTION_VIEWS_DIR
+
+    # --- paths in job files ------------------------------------------------------
+
+    def relative(self, path: str | os.PathLike[str]) -> str:
+        """*path* as job files store it: relative to the job folder (POSIX
+        separators) when inside it; an outside path stays absolute."""
+        from langslice.linear.checkpoint import relative_to
+
+        return relative_to(self.folder)(os.path.abspath(os.fspath(path)))
+
+    def resolve(self, ref: str | os.PathLike[str]) -> Path:
+        """A stored path as a real one: relative ones are under the job folder."""
+        path = Path(os.fspath(ref))
+        return path if path.is_absolute() else self.folder / path
+
+    def ensure(self) -> None:
+        """Create the job folder and its fixed subfolders."""
+        for folder in (self.folder, self.history_dir, self.sections_dir, self.views_dir,
+                       self.exports_dir, self.logs_dir):
+            folder.mkdir(parents=True, exist_ok=True)
+
+    def log_event(self, kind: str, **fields: Any) -> None:
+        """Append one line to ``logs/events.jsonl``; a failure is not fatal."""
+        try:
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+            record = {"kind": kind, **fields,
+                      "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            with (self.logs_dir / EVENTS_FILE).open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, default=str) + "\n")
+        except OSError:
+            pass
+
+
+# --- job.json --------------------------------------------------------------------
+
+
+def read_job_file(layout: JobLayout) -> dict[str, Any] | None:
+    """``job.json``, or None when the folder has none.
+
+    Raises ``ValueError`` for a folder written by a newer LangSlice: it is
+    refused, never guessed at.
+    """
+    try:
+        data = json.loads(layout.job_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    if not isinstance(data, dict):
+        raise ValueError(f"{layout.job_file} does not hold a LangSlice job")
+    version = data.get(FORMAT_KEY)
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise ValueError(f"{layout.job_file} has an unreadable format_version {version!r}")
+    if version > JOB_FORMAT_VERSION:
+        raise ValueError(
+            f"This job folder was written by a newer LangSlice (format {version}; this "
+            f"version reads up to {JOB_FORMAT_VERSION}). Update LangSlice to open it.")
+    return data
+
+
+def write_job_file(layout: JobLayout, **fields: Any) -> dict[str, Any]:
+    """Write ``job.json``: *fields* over what it holds (``created_at`` and any
+    field not given are kept), at the current format version."""
+    from langslice.linear.checkpoint import write_json_atomic
+
+    held = read_job_file(layout) or {}
+    record = {**held, **fields, FORMAT_KEY: JOB_FORMAT_VERSION}
+    record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    if layout.image_folder is not None:
+        record["image_folder"] = str(layout.image_folder)
+    write_json_atomic(str(layout.job_file), dict(sorted(record.items())))
+    return record

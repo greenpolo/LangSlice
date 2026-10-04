@@ -1,0 +1,259 @@
+"""Every picture the model was shown, saved in the job folder with its layers.
+
+Per picture, one folder ``<seq>_<tool>[_<mode>]`` (``seq`` zero-padded, one
+number per picture across the job's life):
+
+- ``view.jpg`` — the exact JPEG bytes the model received (the doors' one
+  encoding, :func:`langslice.core.jpeg.encode_jpeg`, applied to the same
+  picture; a door that sends its own bytes, the opening, hands them over);
+- for a placement picture (a section on its physical canvas), lossless
+  layers on the same pixel grid (:mod:`langslice.core.layers`):
+  ``labels.tif`` (atlas ids, uint32, deflate-compressed) and
+  ``borders.png`` (the drawn borders' coverage, 8-bit);
+- ``view.json`` — the tool, call, arguments, sections and mode, the
+  picture's size and, for a placement picture, its frame: plane, µm/px,
+  placement, ``pixel_to_atlas_um`` (BrainGlobe µm, atlas axis order) and
+  the applied deformation's folder (relative to the job folder).
+  :func:`langslice.core.layers.coordinate_map` turns it into a per-pixel
+  atlas coordinate map on demand.
+
+A picture of one section goes under ``sections/<name>/views/``, one of
+several (or none: an atlas section) under ``views/``. ``views.jsonl`` at the
+top of the job folder lists every saved picture, one line each, appended in
+order.
+
+Saving never touches what the doors send and never slows a tool: the tool
+thread only numbers the pictures and queues them; one background thread per
+store encodes and writes, in order, and ends when the queue is empty.
+:meth:`ViewStore.flush` waits for it (the job calls it at submit, results and
+close; :func:`flush_all` runs at interpreter exit). A failed write is logged
+and skipped; it never reaches a tool.
+"""
+
+from __future__ import annotations
+
+import atexit
+import json
+import logging
+import queue
+import re
+import threading
+import time
+import weakref
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from PIL import Image
+
+from langslice.core.jpeg import encode_jpeg
+from langslice.core.layers import PictureNote, picture_layers
+from langslice.job.layout import JobLayout
+
+logger = logging.getLogger(__name__)
+
+#: ``view.json``'s format. 1 (2026-10-03).
+VIEW_FORMAT_VERSION = 1
+VIEW_FILE = "view.json"
+PICTURE_FILE = "view.jpg"
+LABELS_FILE = "labels.tif"
+BORDERS_FILE = "borders.png"
+
+_NAME_PART = re.compile(r"[^a-zA-Z0-9_]+")
+
+#: Every store with pictures queued at some point (for :func:`flush_all`).
+_STORES: weakref.WeakSet[ViewStore] = weakref.WeakSet()
+
+
+def flush_all() -> None:
+    """Wait until every store's queued pictures are written."""
+    for store in list(_STORES):
+        store.flush()
+
+
+atexit.register(flush_all)
+
+
+def view_name(seq: int, tool: str, mode: str | None) -> str:
+    """``<seq>_<tool>[_<mode>]``: six-digit sequence, then what drew it."""
+    parts = [f"{seq:06d}", _NAME_PART.sub("-", tool).strip("-") or "picture"]
+    if mode:
+        parts.append(_NAME_PART.sub("-", str(mode)).strip("-"))
+    return "_".join(part for part in parts if part)
+
+
+@dataclass
+class _Picture:
+    seq: int
+    name: str
+    index: int
+    image: Image.Image | bytes
+    note: PictureNote | None
+
+
+@dataclass
+class _Call:
+    tool: str
+    call: int
+    call_id: str | None
+    arguments: Any
+    pictures: list[_Picture]
+    atlas: Any
+
+
+class ViewStore:
+    """The job folder's saved pictures (see the module text)."""
+
+    def __init__(self, layout: JobLayout) -> None:
+        self.layout = layout
+        self._lock = threading.Lock()
+        self._queue: queue.Queue[_Call] = queue.Queue()
+        self._running = False
+        self._seq: int | None = None
+        self._call = 0
+        #: Seconds the calling threads spent in :meth:`save` (numbering and
+        #: queueing), and the writer spent per call: kept for measuring.
+        self.queue_seconds = 0.0
+        self.write_seconds = 0.0
+
+    # --- numbering ----------------------------------------------------------------
+
+    def _next_numbers(self) -> tuple[int, int]:
+        """The next picture and call numbers, continuing a reopened job's."""
+        if self._seq is None:
+            self._seq, self._call = 1, 0
+            try:
+                with self.layout.views_index.open(encoding="utf-8") as handle:
+                    for line in handle:
+                        try:
+                            entry = json.loads(line)
+                        except ValueError:
+                            continue
+                        self._seq = max(self._seq, int(entry.get("seq", 0)) + 1)
+                        self._call = max(self._call, int(entry.get("call", 0)))
+            except OSError:
+                pass
+        return self._seq, self._call
+
+    # --- saving -------------------------------------------------------------------
+
+    def save(
+        self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
+        arguments: Any = None, call_id: str | None = None, atlas: Any = None,
+    ) -> list[str]:
+        """Queue one call's pictures (in the order the model received them).
+
+        Each is a PIL picture (encoded here as the doors encode it) or the
+        JPEG bytes a door sent, with its note (None: nothing known but the
+        tool). *atlas* draws placement pictures' layers. Returns the
+        pictures' names, at once; the files follow in the background.
+        """
+        if not pictures:
+            return []
+        started = time.perf_counter()
+        with self._lock:
+            seq, call = self._next_numbers()
+            call += 1
+            items: list[_Picture] = []
+            for index, (image, held) in enumerate(pictures):
+                mode = held.mode if held is not None else None
+                items.append(_Picture(seq, view_name(seq, tool, mode), index, image, held))
+                seq += 1
+            self._seq, self._call = seq, call
+            self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))
+            if not self._running:
+                self._running = True
+                _STORES.add(self)
+                threading.Thread(target=self._work, name="langslice-views",
+                                 daemon=True).start()
+        self.queue_seconds += time.perf_counter() - started
+        return [item.name for item in items]
+
+    def flush(self) -> None:
+        """Wait until every queued picture is written."""
+        self._queue.join()
+
+    # --- the writer ------------------------------------------------------------------
+
+    def _work(self) -> None:
+        """Write queued calls in order; end once the queue is empty."""
+        while True:
+            with self._lock:
+                try:
+                    item = self._queue.get_nowait()
+                except queue.Empty:
+                    self._running = False
+                    return
+            try:
+                started = time.perf_counter()
+                self._write_call(item)
+                self.write_seconds += time.perf_counter() - started
+            except Exception:
+                logger.warning("Could not save the pictures of a %s call", item.tool,
+                               exc_info=True)
+            finally:
+                self._queue.task_done()
+
+    def _folder(self, note: PictureNote | None, name: str) -> Path:
+        sections = note.sections if note is not None else ()
+        if len(sections) == 1:
+            return self.layout.section_views_dir(sections[0]) / name
+        return self.layout.views_dir / name
+
+    def _write_call(self, call: _Call) -> None:
+        lines: list[str] = []
+        for picture in call.pictures:
+            try:
+                lines.append(self._write_picture(call, picture))
+            except Exception:
+                logger.warning("Could not save picture %s", picture.name, exc_info=True)
+        if lines:
+            with self.layout.views_index.open("a", encoding="utf-8") as handle:
+                handle.write("".join(lines))
+
+    def _write_picture(self, call: _Call, picture: _Picture) -> str:
+        import tifffile
+
+        note = picture.note
+        folder = self._folder(note, picture.name)
+        folder.mkdir(parents=True, exist_ok=True)
+        data = (picture.image if isinstance(picture.image, bytes)
+                else encode_jpeg(picture.image))
+        (folder / PICTURE_FILE).write_bytes(data)
+        if isinstance(picture.image, bytes):
+            from io import BytesIO
+
+            with Image.open(BytesIO(data)) as opened:
+                size = list(opened.size)
+        else:
+            size = list(picture.image.size)
+        record: dict[str, Any] = {
+            "format_version": VIEW_FORMAT_VERSION,
+            "seq": picture.seq, "name": picture.name, "tool": call.tool,
+            "call": call.call, "call_id": call.call_id,
+            "index": picture.index, "of": len(call.pictures),
+            "arguments": call.arguments,
+            "sections": list(note.sections) if note is not None else [],
+            "mode": note.mode if note is not None else None,
+            "picture": {"file": PICTURE_FILE, "size": size, "bytes": len(data)},
+            "layers": {},
+            "frame": None,
+        }
+        if note is not None and note.extra:
+            record["extra"] = note.extra
+        if note is not None and note.panel is not None and note.frame is not None \
+                and call.atlas is not None:
+            labels, borders, frame = picture_layers(call.atlas, note)
+            tifffile.imwrite(folder / LABELS_FILE, labels, compression="zlib")
+            Image.fromarray(np.ascontiguousarray(borders)).save(
+                folder / BORDERS_FILE, format="PNG", optimize=True)
+            record["layers"] = {"labels": LABELS_FILE, "borders": BORDERS_FILE}
+            record["frame"] = frame
+        (folder / VIEW_FILE).write_text(json.dumps(record, indent=1, default=str) + "\n",
+                                        encoding="utf-8")
+        entry = {"seq": picture.seq, "name": picture.name,
+                 "path": self.layout.relative(folder), "tool": call.tool, "call": call.call,
+                 "sections": record["sections"], "mode": record["mode"],
+                 "layers": bool(record["layers"])}
+        return json.dumps(entry) + "\n"

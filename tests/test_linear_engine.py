@@ -201,11 +201,11 @@ def test_run_places_the_stack_and_writes_results(tmp_path: Path, monkeypatch):
     assert state.submitted is True
     assert [s.position_mm for s in state.in_order()] == list(positions.values())
 
-    results = json.loads((tmp_path / "linear_results.json").read_text())
+    results = json.loads((tmp_path / "langslice" / "exports" / "linear_results.json").read_text())
     assert [row["id"] for row in results["slices"]] == names
     assert results["submitted"] is True
 
-    checkpoint = load_checkpoint(str(tmp_path / "linear_state.json"))
+    checkpoint = load_checkpoint(str(tmp_path / "langslice" / "state.json"))
     assert checkpoint is not None and checkpoint.submitted is True
 
 
@@ -294,7 +294,7 @@ def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypat
     assert state.submitted is False
     assert state.by_id(names[0]).position_mm == 4.0
     assert any("no submission" in note for note in state.notes)
-    assert (tmp_path / "linear_results.json").exists()
+    assert (tmp_path / "langslice" / "exports" / "linear_results.json").exists()
 
 
 def test_one_request_over_the_input_context_limit_stops_with_grace(

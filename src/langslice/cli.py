@@ -474,7 +474,7 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--out",
         default=None,
-        help="Results JSON path. Default: <image_folder>/linear_results.json",
+        help="Results JSON path. Default: <image_folder>/langslice/exports/linear_results.json",
     )
     p.add_argument(
         "--trace-dir",

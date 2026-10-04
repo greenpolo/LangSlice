@@ -11,16 +11,18 @@ replayed.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from google.genai import types
 
 from langslice.adk.media import opening_parts, packaged_tools
 from langslice.atlas.core import load_atlas
-from langslice.linear.checkpoint import default_checkpoint_path
+from langslice.job.layout import JobLayout, job_folder_for
 from langslice.linear.job import Job
 
 # Re-exported for the sibling SliceBench adapters, which import them from here;
@@ -40,7 +42,7 @@ from langslice.linear.state import StackState
 from langslice.linear.toolbox import ToolBox, build_tools
 from langslice.linear.workspace import Workspace, log_progress
 
-RESULTS_FILENAME = "linear_results.json"
+logger = logging.getLogger(__name__)
 
 _RUN_LABEL = "linear_stack"
 
@@ -74,13 +76,23 @@ DEBRIEF_PROMPT = (
 @dataclass(kw_only=True)
 class EngineContext(Workspace):
     """The agent driver's context: the core :class:`Workspace` plus what only
-    the driver needs — where the job's files go (the paths the
-    :class:`~langslice.linear.job.Job` is opened at; the job owns them from
-    then on) and the model."""
+    the driver needs — where the job's files go (the job folder and results
+    path the :class:`~langslice.linear.job.Job` is opened at; the job owns
+    them from then on) and the model."""
 
-    checkpoint_path: str
+    #: The job folder (``<images>/langslice``, :mod:`langslice.job.layout`).
+    job_folder: str
     results_path: str
     model: str
+
+    @property
+    def layout(self) -> JobLayout:
+        return JobLayout(Path(self.job_folder), Path(self.image_folder))
+
+    @property
+    def checkpoint_path(self) -> str:
+        """The job folder's state checkpoint."""
+        return str(self.layout.state_file)
 
 
 def build_context(
@@ -93,11 +105,12 @@ def build_context(
     from langslice.providers.openai_oauth import DEFAULT_REVIEW_MODEL
 
     folder = os.path.abspath(spec.image_folder)
+    job_folder = job_folder_for(folder)
     return EngineContext(
         spec=spec,
         image_folder=folder,
-        checkpoint_path=default_checkpoint_path(folder),
-        results_path=spec.out or os.path.join(folder, RESULTS_FILENAME),
+        job_folder=str(job_folder),
+        results_path=spec.out or str(JobLayout(job_folder).results_file),
         model=spec.model or DEFAULT_REVIEW_MODEL,
         emit=emit or log_progress,
         atlas_loader=atlas_loader or load_atlas,
@@ -122,6 +135,16 @@ def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
         )
     )
     return types.Content(role="user", parts=parts)
+
+
+def save_opening(box: ToolBox, seed: types.Content) -> None:
+    """Save the opening's pictures in the job folder, as the bytes sent."""
+    pictures = [part.inline_data.data for part in seed.parts or []
+                if part.inline_data is not None and part.inline_data.data]
+    try:
+        box.job.views.save(tool="opening", pictures=[(data, None) for data in pictures])
+    except Exception:  # saving must never break the run
+        logger.warning("Could not queue the opening pictures", exc_info=True)
 
 
 async def run_session(
@@ -154,9 +177,11 @@ async def run_session(
         reasoning=spec.reasoning,
     )
     sink: list[str] = []
+    seed = build_seed_message(state, ctx)
+    save_opening(box, seed)
     outcome = await run_agent_session(
         agent=agent,
-        seed_message=build_seed_message(state, ctx),
+        seed_message=seed,
         done=lambda: state.submitted,
         nudge_no_tool=_NUDGE_NO_TOOL,
         nudge_continue=_NUDGE_CONTINUE,
@@ -193,8 +218,7 @@ async def run(
     :meth:`langslice.linear.job.Job.observe`), through to the final result.
     """
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
-    job = Job.open(spec, ctx, checkpoint_path=ctx.checkpoint_path,
-                   results_path=ctx.results_path)
+    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     state = job.state
     if on_write is not None:
         on_write(state)

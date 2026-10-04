@@ -1,5 +1,5 @@
 {
- "calls": 121,
+ "calls": 122,
  "tools_auto_spec": [
   "adjust_transforms",
   "fit_affine",
