@@ -68,8 +68,7 @@ runs the nonlinear task without this tool.
 The edited prompt is an agent tool argument. A host may also pass user notes for
 this task as `JobSpec.nonlinear.notes`; they appear under the task in the job
 statement. The ABBA Registration dialog shows the Nonlinear task but keeps it
-disabled ("Not yet available in ABBA") until the deformation stage exists, and
-the connector's older `nonlinear.abba` worker method is not called by the dialog.
+disabled ("Not yet available in ABBA") until the deformation stage exists.
 
 ## Retention and state
 

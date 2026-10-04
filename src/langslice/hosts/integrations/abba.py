@@ -234,8 +234,8 @@ def compute_registration_landmarks(
         image_call=image_model.call if image_model else None,
     )
     if result.metadata.get("model_free"):
-        # No model call: ABBA's placement stands, as `nonlinear register`'s
-        # model-free route returns an identity residual (fitting the rough
+        # No model call: ABBA's placement stands, as the core route's
+        # model-free diagnostic returns an identity residual (fitting the rough
         # borders against themselves would only drift them).
         field = np.zeros((*ids.shape, 2), dtype=np.float64)
         fitted_labels = ids

@@ -4,7 +4,7 @@ A coding agent (Claude Code reads ``CLAUDE.md``, Codex ``AGENTS.md``) that
 opens a job folder reads this first: what the folder holds, which file is
 the truth and which are derived, how to get atlas coordinates for a
 picture, the CLI verbs and the Python import path. Generated from code (the
-verbs from :data:`langslice.ops.registry.VERBS` and their declarations), so
+listed verbs, :func:`langslice.ops.registry.listed`, and their declarations), so
 it cannot drift from what the doors offer; written when a job folder is
 created and rewritten whenever a LangSlice that would word it differently
 opens the folder (:func:`write_card`). One screen: the details are one
@@ -19,7 +19,7 @@ from pathlib import Path
 import langslice
 from langslice.doors.declarations import summary
 from langslice.job.layout import JobLayout
-from langslice.ops.registry import VERBS
+from langslice.ops.registry import listed
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def card_text(layout: JobLayout) -> str:
     images = str(layout.image_folder) if layout.image_folder is not None else "the images"
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}): {summary(name)}"
-        for name, verb in VERBS.items()
+        for name, verb in listed().items()
     )
     return f"""# LangSlice job folder
 

@@ -505,6 +505,25 @@ def trace_borders(id: str, prompt: str = "") -> dict[str, Any]:
     ...
 
 
+def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
+    """Trace sections' atlas borders with the image model, shown no placement.
+
+    The model sees each clean section and the outlined atlas plane at its
+    position and cutting angles; passes=2 adds a corrective second call. The
+    reply is recorded as trace_borders records its own, so fit_deformable's
+    traced fit sections start it from the section's linear transform.
+
+    Args:
+        slices: Filenames or corrected indices, each with a position and
+            linear transform.
+        passes: 1, or 2 for the corrective second call.
+
+    Starts the image calls in the background and returns at once; the
+    results are saved and checked at submit. Does not fit a deformation.
+    """
+    ...
+
+
 def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
     """Look regions up in the atlas hierarchy, like grepping the ontology.
 
@@ -650,7 +669,7 @@ STUBS: dict[str, Callable[..., Any]] = {
         status, view_slices, view_atlas, note, undo, redo, mark_damaged, preprocess,
         reorder_slices, set_positions, view_placement, view_stack, run_deepslice,
         search_position, orient_slices, fit_affine, adjust_transforms, set_cutting_angles,
-        trace_borders, grep_atlas, fit_deformable, submit, export_maps,
+        trace_borders, trace_from_atlas, grep_atlas, fit_deformable, submit, export_maps,
     )
 }
 

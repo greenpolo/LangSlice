@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -153,6 +154,90 @@ def composed_native_map(field: np.ndarray, atlas_to_canvas: np.ndarray) -> np.nd
     ], axis=-1)
 
 
+@dataclass(frozen=True)
+class AtlasDrawing:
+    """Route "atlas"'s model calls on one canvas (:func:`draw_from_atlas`)."""
+
+    #: The final reply (pass 2's when there was one): the lines to extract.
+    image: Image.Image
+    #: Model calls made (0 for a replayed reply).
+    model_calls: int
+    #: Each call's transport route, in call order.
+    transports: list[str | None]
+    #: Saved inputs and intermediate replies by file name: the outlined atlas
+    #: and, with two passes, pass 1's reply and its lines on the tissue.
+    artifacts: dict[str, Image.Image]
+    #: The prompts sent, ``pass1`` and with two passes ``pass2``.
+    prompts: dict[str, str]
+
+
+def draw_from_atlas(
+    canvas: Image.Image,
+    outlined_atlas: Image.Image,
+    *,
+    plane: Plane,
+    provider: str,
+    model: str | None,
+    passes: int,
+    edit: Callable[[SegmentationGenerationRequest], GeneratedSegmentation],
+    image_prompt: str | None = None,
+    generated_image: Image.Image | None = None,
+    review_model: str | None = None,
+    openai_image_route: str = "images",
+    thinking_level: str | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> AtlasDrawing:
+    """Route "atlas"'s model calls: boundaries drawn from nothing on the clean tissue.
+
+    Pass 1 sends *canvas* (Image 1, the clean tissue) and *outlined_atlas*
+    (Image 2, :func:`~langslice.core.nonlinear.image_gen_registration.outlined_atlas_template`)
+    with :func:`~langslice.core.nonlinear.prompts.pass1_atlas_prompt` (or
+    *image_prompt* in its place). With *passes* 2 a second call sends the
+    clean tissue, pass 1's extracted lines redrawn on it, and the outlined
+    atlas, with :func:`~langslice.core.nonlinear.prompts.pass2_atlas_prompt`.
+    No placement is shown to the model. *edit* is the image model's call. A
+    supplied *generated_image* is this route's final reply, replayed with no
+    model call. Shared by :func:`generate_border_registration_candidate` and
+    the job's ``trace_from_atlas`` (``registration_tool.start_atlas_correction``).
+    """
+    if passes not in (1, 2):
+        raise ValueError("passes must be 1 or 2")
+    artifacts: dict[str, Image.Image] = {"outlined_atlas.png": outlined_atlas}
+    prompts = {"pass1": image_prompt or pass1_atlas_prompt(plane, provider)}
+    if generated_image is not None:
+        return AtlasDrawing(generated_image, 0, [], artifacts, prompts)
+    if on_progress:
+        on_progress("Drawing atlas boundaries on the clean tissue (pass 1)...")
+    reply = edit(SegmentationGenerationRequest(
+        slice_image=canvas.convert("RGB"), reference_images=[outlined_atlas],
+        prompt=prompts["pass1"], provider=provider, model=model, review_model=review_model,
+        openai_image_route=openai_image_route, thinking_level=thinking_level,
+        metadata={"workflow": "border_registration", "route": "atlas", "pass": 1},
+    ))
+    transports: list[str | None] = [reply.route]
+    if passes == 1:
+        return AtlasDrawing(reply.image, 1, transports, artifacts, prompts)
+    pass1_lines = extract_thinned_lines(reply.image, canvas.size)
+    if not pass1_lines.any():
+        raise ValueError(
+            "Pass 1 returned no usable yellow anatomical boundaries; pass 2 has nothing to correct"
+        )
+    if on_progress:
+        on_progress("Correcting atlas boundaries (pass 2)...")
+    lines_on_tissue = border_overlay(canvas, pass1_lines, line_width_px(max(canvas.size)))
+    artifacts["pass1_raw_correction.png"] = reply.image
+    artifacts["pass1_lines_on_tissue.png"] = lines_on_tissue
+    prompts["pass2"] = pass2_atlas_prompt(plane, provider)
+    reply = edit(SegmentationGenerationRequest(
+        slice_image=canvas.convert("RGB"), reference_images=[lines_on_tissue, outlined_atlas],
+        prompt=prompts["pass2"], provider=provider, model=model, review_model=review_model,
+        openai_image_route=openai_image_route, thinking_level=thinking_level,
+        metadata={"workflow": "border_registration", "route": "atlas", "pass": 2},
+    ))
+    transports.append(reply.route)
+    return AtlasDrawing(reply.image, 2, transports, artifacts, prompts)
+
+
 def generate_border_registration_candidate(
     image: Image.Image,
     *,
@@ -280,50 +365,18 @@ def generate_border_registration_candidate(
             image_axes=image_axes, atlas_mirror_lr=atlas_mirror_lr,
             section_aspect=canvas.width / canvas.height, native_labels=labels,
         )
-        atlas_route_artifacts["outlined_atlas.png"] = outlined_atlas
-        # A caller's image_prompt replaces the pass-1 text on this route.
-        atlas_route_prompts["pass1"] = image_prompt or pass1_atlas_prompt(plane, provider)
-        if generated_image is not None:
-            atlas_route_output = generated_image
-        else:
-            if on_progress:
-                on_progress("Drawing atlas boundaries on the clean tissue (pass 1)...")
-            reply = edit(SegmentationGenerationRequest(
-                slice_image=canvas.convert("RGB"), reference_images=[outlined_atlas],
-                prompt=atlas_route_prompts["pass1"],
-                provider=provider, model=image_model, review_model=review_model,
-                openai_image_route=openai_image_route, thinking_level=thinking_level,
-                metadata={"workflow": "border_registration", "route": "atlas", "pass": 1},
-            ))
-            atlas_route_output = reply.image
-            atlas_route_transports.append(reply.route)
-            atlas_route_model_calls = 1
-            if passes == 2:
-                pass1_lines = extract_thinned_lines(atlas_route_output, canvas.size)
-                if not pass1_lines.any():
-                    raise ValueError(
-                        "Pass 1 returned no usable yellow anatomical boundaries; "
-                        "pass 2 has nothing to correct"
-                    )
-                if on_progress:
-                    on_progress("Correcting atlas boundaries (pass 2)...")
-                lines_on_tissue = border_overlay(
-                    canvas, pass1_lines, line_width_px(max(canvas.size))
-                )
-                atlas_route_artifacts["pass1_raw_correction.png"] = atlas_route_output
-                atlas_route_artifacts["pass1_lines_on_tissue.png"] = lines_on_tissue
-                atlas_route_prompts["pass2"] = pass2_atlas_prompt(plane, provider)
-                reply = edit(SegmentationGenerationRequest(
-                    slice_image=canvas.convert("RGB"),
-                    reference_images=[lines_on_tissue, outlined_atlas],
-                    prompt=atlas_route_prompts["pass2"],
-                    provider=provider, model=image_model, review_model=review_model,
-                    openai_image_route=openai_image_route, thinking_level=thinking_level,
-                    metadata={"workflow": "border_registration", "route": "atlas", "pass": 2},
-                ))
-                atlas_route_output = reply.image
-                atlas_route_transports.append(reply.route)
-                atlas_route_model_calls = 2
+        drawing = draw_from_atlas(
+            canvas, outlined_atlas, plane=plane, provider=provider, model=image_model,
+            passes=passes, edit=edit, image_prompt=image_prompt,
+            generated_image=generated_image, review_model=review_model,
+            openai_image_route=openai_image_route, thinking_level=thinking_level,
+            on_progress=on_progress,
+        )
+        atlas_route_output = drawing.image
+        atlas_route_artifacts.update(drawing.artifacts)
+        atlas_route_prompts.update(drawing.prompts)
+        atlas_route_transports.extend(drawing.transports)
+        atlas_route_model_calls = drawing.model_calls
         generated_image = atlas_route_output
         rough, signs, iou, atlas_to_canvas = place_plane_on_tissue_with_matrix(
             labels, tissue_mask(canvas, canvas.size)

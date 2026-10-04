@@ -25,7 +25,12 @@ from PIL import Image
 
 from langslice.core.affine import pixel_center_map
 from langslice.core.atlas.render import annotation_slice
-from langslice.core.handoff import correction_fingerprint, digest, prepare_linear_registration
+from langslice.core.handoff import (
+    LinearRegistrationInput,
+    correction_fingerprint,
+    digest,
+    prepare_linear_registration,
+)
 from langslice.core.nonlinear.border_refinement import (
     border_overlay,
     extract_thinned_lines,
@@ -37,6 +42,8 @@ from langslice.core.nonlinear.image_gen_helpers import (
 from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 from langslice.core.nonlinear.prompts import (
     border_correction_tool_prompt,
+    pass1_atlas_prompt,
+    pass2_atlas_prompt,
     supplied_prompt_is_gpt_twin,
 )
 from langslice.core.nonlinear.types import SegmentationGenerationRequest
@@ -86,6 +93,89 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
     temporary.replace(path)
+
+
+def _saved_result(result_path: Path) -> dict[str, Any] | None:
+    """The result saved under one call key, if any."""
+    if not result_path.exists():
+        return None
+    saved = json.loads(result_path.read_text())
+    if not isinstance(saved, dict):
+        raise ValueError("Saved image correction result must be an object")
+    return saved
+
+
+def _open_attempt(
+    call_directory: Path, previous: dict[str, Any] | None, section_id: str, fingerprint: str,
+) -> tuple[Path, Path, int] | dict[str, Any]:
+    """``(in_progress, attempt directory, attempt)`` for a new attempt under a
+    call key, or the error record when one is in progress or was interrupted.
+
+    Exclusive creation detects interrupted requests with no known outcome. A
+    recorded transport failure may start another attempt under the same key.
+    """
+    in_progress = call_directory / ".in_progress"
+    try:
+        call_directory.mkdir(parents=True, exist_ok=previous is not None)
+        with in_progress.open("x") as handle:
+            handle.write("Request in progress; no completed outcome recorded yet.\n")
+    except FileExistsError:
+        return {
+            "status": "error", "error": "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED",
+            "id": section_id, "geometry_fingerprint": fingerprint,
+            "artifact_dir": str(call_directory),
+        }
+    attempt = int((previous or {}).get("attempt", 0)) + 1
+    directory = call_directory / f"attempt-{attempt:02d}"
+    directory.mkdir()
+    return in_progress, directory, attempt
+
+
+def _finish_attempt(
+    directory: Path, result_path: Path, in_progress: Path, result: dict[str, Any],
+) -> dict[str, Any]:
+    """Save an attempt's outcome (its own and the call key's) and release the key."""
+    _write_json(directory / "result.json", result)
+    _write_json(result_path, result)
+    in_progress.unlink()
+    return dict(result)
+
+
+def _calls_folder(calls_dir: Path | None, out: Path | None, section_id: str) -> Path:
+    if calls_dir is not None:
+        return Path(calls_dir)
+    if out is None:
+        raise ValueError("start_correction needs calls_dir or an out folder")
+    return Path(out) / re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
+
+
+def _canvas_and_placement(
+    prepared: LinearRegistrationInput, ctx: Workspace, provider: str, model: str | None,
+) -> tuple[Image.Image, np.ndarray, np.ndarray]:
+    """``(canvas, labels, atlas_to_canvas)``: the model-facing canvas of the
+    section render, the native atlas plane at its position and cutting angles,
+    and the section's linear placement of that plane on the canvas (native
+    atlas pixel centres to canvas pixel centres; what ``fit_deformable``
+    maps the traced lines back through, ``core.deformation.traced_lines``)."""
+    canvas, unpadded, ox, oy, _ = prepare_canvas(
+        prepared.image, provider=provider, image_model=model, canvas_pad=0,
+        native_canvas=True,
+    )
+    labels = np.asarray(annotation_slice(
+        ctx.atlas, prepared.position_mm, plane=prepared.plane,
+        pitch_deg=prepared.pitch_deg, yaw_deg=prepared.yaw_deg,
+    ))
+    if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
+        raise ValueError("Atlas annotation must be a two-dimensional integer label map")
+    placement = pixel_center_map(prepared.image.size, unpadded, (ox, oy)) @ prepared.atlas_to_slice
+    # float64 preserves large atlas IDs across nearest-neighbour projection.
+    placed = cv2.warpAffine(
+        labels.astype(np.float64), placement[:2], canvas.size,
+        flags=cv2.INTER_NEAREST, borderValue=0,
+    ).astype(labels.dtype)
+    if not placed.any():
+        raise ValueError("The supplied linear placement contains no atlas regions on the image")
+    return canvas, labels, placement
 
 
 #: Image-model requests one stack session keeps in flight at once. The agent
@@ -155,39 +245,14 @@ def start_correction(
     call_key = digest({
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     })
-    if calls_dir is None:
-        if out is None:
-            raise ValueError("start_correction needs calls_dir or an out folder")
-        calls_dir = Path(out) / re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
-    call_directory = Path(calls_dir).resolve() / call_key[:24]
+    call_directory = _calls_folder(calls_dir, out, section_id).resolve() / call_key[:24]
     result_path = call_directory / "result.json"
-    previous: dict[str, Any] | None = None
-    if result_path.exists():
-        saved = json.loads(result_path.read_text())
-        if not isinstance(saved, dict):
-            raise ValueError("Saved image correction result must be an object")
-        previous = saved
-        if previous.get("status") == "ok" or previous.get("raw_received"):
-            return {**previous, "cached": True}, None
+    previous = _saved_result(result_path)
+    if previous is not None and (previous.get("status") == "ok"
+                                 or previous.get("raw_received")):
+        return {**previous, "cached": True}, None
 
-    canvas, unpadded, ox, oy, _ = prepare_canvas(
-        prepared.image, provider=provider, image_model=model, canvas_pad=0,
-        native_canvas=True,
-    )
-    labels = np.asarray(annotation_slice(
-        ctx.atlas, prepared.position_mm, plane=prepared.plane,
-        pitch_deg=prepared.pitch_deg, yaw_deg=prepared.yaw_deg,
-    ))
-    if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
-        raise ValueError("Atlas annotation must be a two-dimensional integer label map")
-    placement = pixel_center_map(prepared.image.size, unpadded, (ox, oy)) @ prepared.atlas_to_slice
-    # float64 preserves large atlas IDs across nearest-neighbour projection.
-    placed = cv2.warpAffine(
-        labels.astype(np.float64), placement[:2], canvas.size,
-        flags=cv2.INTER_NEAREST, borderValue=0,
-    ).astype(labels.dtype)
-    if not placed.any():
-        raise ValueError("The supplied linear placement contains no atlas regions on the image")
+    canvas, labels, placement = _canvas_and_placement(prepared, ctx, provider, model)
     rough = smooth_border_overlay(
         canvas, _merge_classified(labels, ctx.atlas), placement,
         width_px=BORDER_WIDTH_PX * max(canvas.size) / 1536,
@@ -196,22 +261,10 @@ def start_correction(
     base_prompt = border_correction_tool_prompt(prepared.plane, provider=provider)
     sent = prompt.strip() or base_prompt
 
-    # Exclusive creation detects interrupted requests with no known outcome.
-    # A recorded transport failure may start another attempt under the same key.
-    in_progress = call_directory / ".in_progress"
-    try:
-        call_directory.mkdir(parents=True, exist_ok=previous is not None)
-        with in_progress.open("x") as handle:
-            handle.write("Request in progress; no completed outcome recorded yet.\n")
-    except FileExistsError:
-        return {
-            "status": "error", "error": "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED",
-            "id": section_id, "geometry_fingerprint": fingerprint,
-            "artifact_dir": str(call_directory),
-        }, None
-    attempt = int((previous or {}).get("attempt", 0)) + 1
-    directory = call_directory / f"attempt-{attempt:02d}"
-    directory.mkdir()
+    opened = _open_attempt(call_directory, previous, section_id, fingerprint)
+    if isinstance(opened, dict):
+        return opened, None
+    in_progress, directory, attempt = opened
     paths = {key: str(directory / filename) for key, filename in {
         "original": "input_slice.png", "rough_overlay": "rough_border_overlay.png",
         "raw_reply": "raw_reply.png", "lines_on_original": "lines_on_original.png",
@@ -264,9 +317,126 @@ def start_correction(
             )
         except Exception as exc:
             result.update(status="error", error=type(exc).__name__, message=str(exc))
-        _write_json(directory / "result.json", result)
-        _write_json(result_path, result)
-        in_progress.unlink()
-        return dict(result)
+        return _finish_attempt(directory, result_path, in_progress, result)
+
+    return submitted, job
+
+
+#: Changes whenever route "atlas"'s model inputs change for the same geometry
+#: (prompt text, attachments, the outlined atlas), like :data:`INPUT_VERSION`.
+ATLAS_INPUT_VERSION = "2026-10-04 route atlas as a job verb"
+
+
+def start_atlas_correction(
+    state: StackState,
+    ctx: Workspace,
+    section_id: str,
+    *,
+    passes: int = 1,
+    image_model: ImageModel,
+    calls_dir: Path,
+) -> tuple[dict[str, Any], Callable[[], dict[str, Any]] | None]:
+    """Prepare one section's placement-free trace: route "atlas" on the job.
+
+    The model is shown the clean section and the outlined grayscale atlas
+    plane at the section's position and cutting angles
+    (:func:`~langslice.core.nonlinear.border_registration.draw_from_atlas`:
+    pass 1, and with *passes* 2 a corrective pass 2), never the section's
+    placement. The result is recorded exactly as :func:`start_correction`'s
+    (same keys, same call-key folders and attempts under *calls_dir*, the
+    extracted lines and ``request.json``'s ``atlas_to_canvas``), so
+    ``fit_deformable``'s traced fit sections, the submit gate and the maps
+    read it unchanged: the section's written linear placement is where the
+    fit of the lines starts (``atlas_to_canvas``), as for a
+    ``trace_borders`` reply. Requires a position and a written transform
+    (:func:`langslice.core.handoff.prepare_linear_registration`). Returns
+    ``(record, job)`` like :func:`start_correction`; the first reply at a
+    geometry and pass count is reused (``cached``).
+    """
+    from langslice.core.nonlinear.border_registration import draw_from_atlas
+    from langslice.core.nonlinear.image_gen_registration import outlined_atlas_template
+
+    if passes not in (1, 2):
+        raise ValueError("passes must be 1 or 2")
+    provider, model = image_model.provider, image_model.model
+    prepared = prepare_linear_registration(state, ctx, section_id)
+    fingerprint = correction_fingerprint(state, ctx, section_id)
+    call_key = digest({
+        "geometry": fingerprint, "provider": provider, "model": model,
+        "inputs": ATLAS_INPUT_VERSION, "route": "atlas", "passes": passes,
+    })
+    call_directory = Path(calls_dir).resolve() / call_key[:24]
+    result_path = call_directory / "result.json"
+    previous = _saved_result(result_path)
+    if previous is not None and (previous.get("status") == "ok"
+                                 or previous.get("raw_received")):
+        return {**previous, "cached": True}, None
+
+    canvas, labels, placement = _canvas_and_placement(prepared, ctx, provider, model)
+    outlined = outlined_atlas_template(
+        ctx.atlas, prepared.position_mm, prepared.plane, pitch_deg=prepared.pitch_deg,
+        yaw_deg=prepared.yaw_deg, section_aspect=canvas.width / canvas.height,
+        native_labels=labels,
+    )
+    opened = _open_attempt(call_directory, previous, section_id, fingerprint)
+    if isinstance(opened, dict):
+        return opened, None
+    in_progress, directory, attempt = opened
+    paths = {key: str(directory / filename) for key, filename in {
+        "original": "input_slice.png", "outlined_atlas": "outlined_atlas.png",
+        "raw_reply": "raw_reply.png", "lines_on_original": "lines_on_original.png",
+        "prompt": "prompt.txt", **({"pass2_prompt": "pass2_prompt.txt"} if passes == 2 else {}),
+    }.items()}
+    canvas.save(paths["original"])
+    outlined.save(paths["outlined_atlas"])
+    # The exact text each pass sends (draw_from_atlas sends these).
+    Path(paths["prompt"]).write_text(pass1_atlas_prompt(prepared.plane, provider))
+    if passes == 2:
+        Path(paths["pass2_prompt"]).write_text(pass2_atlas_prompt(prepared.plane, provider))
+    request = {
+        "id": section_id, "geometry_fingerprint": fingerprint, "trace_route": "atlas",
+        "passes": passes, "provider": provider, "model": model,
+        "linear_handoff": prepared.metadata, "atlas_to_canvas": placement.tolist(),
+        "attachments": [
+            {"role": role, "path": paths[key],
+             "sha256": hashlib.sha256(Path(paths[key]).read_bytes()).hexdigest()}
+            for role, key in (("Image 1: clean photograph", "original"),
+                              ("Image 2: outlined atlas", "outlined_atlas"))
+        ],
+    }
+    _write_json(directory / "request.json", request)
+    result: dict[str, Any] = {
+        "id": section_id, "geometry_fingerprint": fingerprint, "prompt_edited": False,
+        "provider": provider, "model": model, "trace_route": "atlas", "passes": passes,
+        "output_kind": "border_annotation", "fit_performed": False,
+        "artifact_dir": str(directory), "artifact_paths": paths, "cached": False,
+        "attempt": attempt, "raw_received": False,
+    }
+    submitted = {**result, "artifact_paths": dict(paths), "status": "running"}
+
+    def job() -> dict[str, Any]:
+        try:
+            drawing = draw_from_atlas(
+                canvas, outlined, plane=prepared.plane, provider=provider, model=model,
+                passes=passes, edit=image_model.call,
+            )
+            for filename, image in drawing.artifacts.items():
+                if filename != "outlined_atlas.png":  # saved with the request
+                    paths[Path(filename).stem] = str(directory / filename)
+                    image.save(directory / filename)
+            result["raw_received"] = True
+            raw = drawing.image.convert("RGB")
+            raw.save(paths["raw_reply"])
+            mask = extract_thinned_lines(raw, canvas.size)
+            Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
+            border_overlay(canvas, mask).save(paths["lines_on_original"])
+            # Even an empty drawing is retained; anatomy is not a submit gate.
+            result.update(
+                status="ok", route=drawing.transports, model_calls=drawing.model_calls,
+                raw_size=list(raw.size), model_border_pixels=int(mask.sum()),
+            )
+        except Exception as exc:
+            result.update(status="error", error=type(exc).__name__, message=str(exc))
+        return _finish_attempt(directory, result_path, in_progress, result)
 
     return submitted, job

@@ -8,8 +8,9 @@ linear method nor `core/nonlinear/` and imports neither. It is the engine behind
 2026-10-03, behind `fit_affine`'s default Elastix method
 (`core/transform.elastix_affine`: `prepare_fit` builds its images and
 masks, `engines.run_elastix_affine` fits), and since 2026-10-04 behind the
-fit of the image model's lines in `langslice nonlinear register
---deformation deformable` and the ABBA registration plugin
+fit of the image model's lines in the core border routes
+(`generate_border_registration_candidate`, `deformation="deformable"`) and
+the ABBA registration plugin
 (`core/nonlinear/border_fit.py`, which replaced the old Elastix residual fit). The
 job folder's maps and VisuAlign markers read an applied record
 (`core/maps.py`, formats phase 2026-10-04); no ABBA or BrainGlobe export
