@@ -513,6 +513,7 @@ def build_tools(
     level: str | None = None,
     scripting: bool = False,
     image_model_connected: bool = True,
+    door: str = "agent",
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
@@ -539,7 +540,9 @@ def build_tools(
     model (MCP with none connected, ``doors.api.setup.image_model_connected``),
     so the tools are those of a run without one: no ``trace_borders``,
     ``fit_deformable`` declared and checked for the stain alone, ``submit``
-    not waiting for traces. The spec itself is left as it is.
+    not waiting for traces. The spec itself is left as it is. *door* is who
+    reads the declarations (``agent``, ``mcp``, ``cli``:
+    :data:`langslice.doors.declarations.DOORS`).
     """
     if job is None:
         job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
@@ -1692,7 +1695,7 @@ def build_tools(
         "fit_deformable": fit_deformable, "submit": submit, "export_maps": export_maps,
     }
     # `view.resolution` exists only where the caller chooses the picture size.
-    variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on)
+    variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on, door=door)
     lock = threading.Lock()
     box.tools = [
         _serialized(

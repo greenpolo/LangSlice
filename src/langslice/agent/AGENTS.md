@@ -647,7 +647,13 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   tool that exists, hard constraints. Nothing else. `display_facts` reads
   the run's raw channels and atlas channels off the workspace for it. `tool_line` words the
   `fit_deformable` line for the run (traced fit sections only with an image
-  model). `display_lines` describes `view` ONCE, with the raw channels (and
+  model) and, for the door that reads it (`door`: `agent`, `mcp`, `cli`),
+  where the opening pictures are (`OPENING_PLACES`: the seed message, the
+  `show_stack` pages, the `brief` files) and, for the CLI, that
+  `trace_borders` answers once its call has landed (`_CLI_LINES`); `auto`
+  (None: the spec's image resolution is "auto") adds the `view.resolution`
+  range, which the CLI always states. Every door's statement is assembled
+  in `doors/statement.py` (its own `CLAUDE.md` in `doors/`). `display_lines` describes `view` ONCE, with the raw channels (and
   that their names may not identify the stain; `view_slices` mode channels
   shows each) and the atlas channels this host has, each with one line
   (`ATLAS_CHANNEL_LINES`); `PICTURE_TOOLS` includes `fit_deformable`.
@@ -662,7 +668,10 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
 - `agent/engine.py` — `EngineContext` (`doors.jobs.JobContext`: the `Workspace`
   plus the job folder and results path the job is opened at; it adds the
   model), `run_session` (the
-  agent gets the tools `doors.tools.media.packaged`), and `run(spec)` (`Job.open`, the
+  agent gets the tools `doors.tools.media.packaged`; its system instruction
+  is `build_job_statement` plus the user's notes from `job.json`,
+  `doors.statement.read_notes`, when there are any; the seed message is the
+  opening strips and `doors.statement.status_and_notes`), and `run(spec)` (`Job.open`, the
   job folder's reference card, the toolbox on it, the session,
   `Job.emit_results`). `ingest` and
   `apply_host_inputs` are re-exported from `job.py` for the SliceBench
@@ -1185,9 +1194,14 @@ host must enable at least one transform method when enabling that task.
 
 ## Claude host briefing
 
-`prompt.run_facts` is shared with `doors/mcp/prompt.py`; keep the factual
-range, axis direction, protocol and calibration text identical across hosts.
-Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
+The statement is the ADK agent's (`build_job_statement`, worded for the
+door `mcp`), assembled by `doors.statement.job_statement` exactly as the
+agent CLI's `brief` assembles its own: the job statement, the door's
+opening paragraph (`opening_for_mcp`: read every `show_stack` page before
+any write), `IMAGE_MODEL_OFF` when the image model is not connected, the
+user's notes (`job.json` `notes`, `doors.statement.read_notes`; the copy
+prompt no longer repeats them) and the status table with its header and
+the recent run notes (`status_and_notes`, the ADK seed's own text). MCP opens saved ABBA
 jobs through `doors.api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies the opening strips separately with `show_stack` pages
 (`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
@@ -1201,7 +1215,7 @@ connected (`doors.mcp.server.image_model_off`, asking
 login present). When it is not, the toolbox is built with
 `image_model_connected=False` (no `trace_borders`, `fit_deformable` stain-only,
 `submit` not waiting for traces), the statement is that of provider `none`
-plus `doors.mcp.prompt.IMAGE_MODEL_OFF`, and the copy prompt says so too;
+plus `doors.statement.IMAGE_MODEL_OFF`, and the copy prompt says so too;
 the job's spec keeps its provider. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule
 (`doors.mcp.server.strict_arguments`; a nested object Claude Desktop sends

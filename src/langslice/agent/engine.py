@@ -30,10 +30,10 @@ from langslice.agent.session import (
 from langslice.core.atlas.core import load_atlas
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
-from langslice.core.status import status_text
 from langslice.core.workspace import log_progress
 from langslice.doors.card import write_card
 from langslice.doors.jobs import JobContext
+from langslice.doors.statement import read_notes, status_and_notes, user_notes_lines
 from langslice.doors.tools.media import opening_parts, packaged_tools
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
@@ -122,17 +122,7 @@ def build_context(
 def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
     """The stack as ABBA-style strips (:mod:`langslice.core.opening`), the table."""
     parts: list[types.Part] = opening_parts(state, ctx)
-    parts.append(
-        types.Part.from_text(
-            text=(
-                "Status table (corrected index, filename, position, spacing to "
-                "the next placed section, flags):\n"
-                f"{status_text(state)}\n\n"
-                "Recent run notes:\n"
-                + ("\n".join(f"- {note}" for note in state.notes[-12:]) or "- (none)")
-            )
-        )
-    )
+    parts.append(types.Part.from_text(text=status_and_notes(state)))
     return types.Content(role="user", parts=parts)
 
 
@@ -178,20 +168,23 @@ async def run_session(
 ) -> tuple[int, int]:
     """Drive the one stack session; return ``(tool_calls, turns)``."""
     pos_lo, pos_hi = ctx.position_range
+    statement = build_job_statement(
+        spec,
+        state,
+        tool_names=box.names,
+        species=ctx.species,
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+        axis_ends=ctx.axis_ends,
+        max_resolution=box.max_view_edge,
+        **display_facts(ctx, state),
+    )
+    # The user's notes for the job (job.json), as every door says them.
+    notes = user_notes_lines(read_notes(box.job.layout))
     agent = build_agent(
         model=ctx.model,
         name="linear_stack",
-        instruction=build_job_statement(
-            spec,
-            state,
-            tool_names=box.names,
-            species=ctx.species,
-            pos_lo=pos_lo,
-            pos_hi=pos_hi,
-            axis_ends=ctx.axis_ends,
-            max_resolution=box.max_view_edge,
-            **display_facts(ctx, state),
-        ),
+        instruction="\n".join([statement, *notes]) if notes else statement,
         # The tools return plain pictures; ADK takes them as message parts.
         tools=packaged_tools(box.tools),
         reasoning=spec.reasoning,

@@ -259,8 +259,12 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
     assert entry["job_folder"] == str(path)
     assert prepared["job_id"] in prepared["prompt"]
-    assert "Keep the supplied positions." in prepared["prompt"]
+    # The user's notes live in job.json, read by every door; the statement
+    # carries them, the copy prompt does not repeat them.
+    assert record["notes"] == "Keep the supplied positions."
+    assert "Keep the supplied positions." not in prepared["prompt"]
     job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    assert job.notes == "Keep the supplied positions."
     assert job.spec.tasks == ["transform"]
     assert job.state.in_order()[0].damaged
     assert Path(job.ctx.image_folder).name != "agent_view"  # snapshots are read as they are
@@ -391,7 +395,7 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     prompt = capsys.readouterr().out
     job_id = next(iter((tmp_path / "jobs").iterdir())).stem
     assert f'start_job(job_id="{job_id}")' in prompt
-    assert "interval 150 µm" in prompt and "Section 2 is torn." in prompt
+    assert "interval 150 µm" in prompt and "Section 2 is torn." not in prompt
 
     def server() -> Any:
         return build_server(lambda _folder: (_ for _ in ()).throw(
@@ -407,6 +411,7 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     briefing, tools, note = _session(server(), first)
     assert not briefing.isError and not note.isError
     assert "0.150 mm" in briefing.content[0].text  # the saved interval, not a default
+    assert "User notes:\nSection 2 is torn." in briefing.content[0].text
     assert "set_positions" in tools and "adjust_transforms" not in tools
     job_dir = folder / "langslice"
     assert (job_dir / "state.json").exists()

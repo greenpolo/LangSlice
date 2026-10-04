@@ -54,8 +54,9 @@ in the linear agent environment's guide (`src/langslice/agent/CLAUDE.md`):
 bodies), `arguments.py`, `view_options.py`, `media.py` (the ADK message
 parts) and, in `__init__.py`, the media keys re-exported from
 `core/media_keys.py`; `mcp/` (formerly
-`mcp_server/`): the MCP server (`server.py`, `prompt.py`,
-`host_channel.py`; `connectors/claude-desktop/`). And `api/` (formerly in
+`mcp_server/`): the MCP server (`server.py`, `host_channel.py`;
+`connectors/claude-desktop/`; its statement, formerly `mcp/prompt.py`, is
+`statement.py`'s). And `api/` (formerly in
 `hosts/api/`, moved down 2026-10-04 because the MCP door and the CLI use
 it and none of it drives a host): `models.py` (the engine contract's
 Pydantic models, `export_schema_bundle`), `runtime.py` (`version`,
@@ -104,8 +105,12 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   (signature = the arguments, docstring = the description a model reads).
   `model_doc` re-indents the docstring to the eight spaces the tool closures
   gave it, so models read the same bytes as before phase 5. `Variant`
-  (`traces`, `preprocessing`, `engine`, `auto`; `Variant.of(spec, auto=)`)
-  is what of a run changes a declaration: `view` typed `ViewAuto` (with
+  (`traces`, `preprocessing`, `engine`, `auto`, `door`; `Variant.of(spec,
+  auto=, door=)`) is what of a run changes a declaration: the door that
+  reads it (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: where
+  `view_placement` says the section is, the opening message, the
+  `show_stack` pages or the `brief` files, and the CLI's `trace_borders` /
+  `trace_from_atlas`, which answer once their calls have landed); `view` typed `ViewAuto` (with
   `resolution`) where the caller sizes pictures; `fit_deformable`'s
   description without the image model (`_STAIN_ONLY_DOC`), with
   `preprocess` (`_PREPROCESS_DOC`), and with the engine fixed (no `engine`
@@ -117,6 +122,23 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   the body takes it; a body lacking a declared argument is a `TypeError`),
   `arguments_schema(name, variant)` (pydantic JSON schema, unknown keys
   refused). `FULL` is the variant of a caller without a job.
+- `statement.py` — the job statement every door gives a registration
+  agent, in one place: `job_statement(spec, state, ctx, door=, tool_names=,
+  opening=, notes=, max_resolution=, image_model_off=, auto=)` (the ADK
+  agent's `agent.prompt.build_job_statement` worded for the door, then the
+  door's opening paragraph, `IMAGE_MODEL_OFF` when the job's image model is
+  not connected, the user's notes, `status_and_notes`), used by the MCP
+  door (`opening_for_mcp`: the `show_stack` pages) and the agent CLI's
+  `brief` and `init` (`opening_for_cli`: the saved picture files and how
+  the commands behave: `--dry-run`, `--background` for the long verbs,
+  `long_verbs()`, parallel calls). `status_and_notes(state)` (the status
+  table with its header and the newest `RECENT_NOTES` run notes) is the ADK
+  seed message's text too. `read_notes(layout)`: the user's notes,
+  `job.json` `notes` (written by `claude prepare --notes`, ABBA's Claude
+  mode and `langslice job FOLDER init --notes`; a saved job from before
+  2026-10-04 holds them under `host`), read by every door, the ADK agent
+  included. `image_model_state(spec, connected=)`: the image model as the
+  CLI's `status` and `brief` report it.
 - `jobs.py` — opening a job without the agent: `JobContext` (the
   workspace plus the job folder and results path; the driver's
   `EngineContext` adds only the model), `find(path)` (a job folder, or the

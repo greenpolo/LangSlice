@@ -44,7 +44,7 @@ from langslice.doors.api.abba_worker import (
 from langslice.doors.api.claude_jobs import load_job
 from langslice.doors.card import write_card
 from langslice.doors.mcp.host_channel import HostChannel
-from langslice.doors.mcp.prompt import job_statement
+from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.media import encode_jpeg
 from langslice.doors.tools.toolbox import ToolBox, build_tools
@@ -238,7 +238,7 @@ def open_job(
     # The host is Claude: its pictures are capped at Claude's largest image.
     events = EventRelay()
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
-                      image_model_connected=not off, on_event=events)
+                      image_model_connected=not off, on_event=events, door="mcp")
     return Session(job, ctx, box, trace, image_model_off=off, events=events)
 
 
@@ -316,9 +316,9 @@ def briefing(session: Session) -> list[ContentBlock]:
     if not session.pages:
         session.pages = opening_pages(session)
     return [TextContent(type="text", text=job_statement(
-        session.spec, session.state, session.ctx, len(session.pages), session.notes,
-        session.box.names, max_resolution=session.box.max_view_edge,
-        image_model_off=session.image_model_off,
+        session.spec, session.state, session.ctx, door="mcp", tool_names=session.box.names,
+        opening=opening_for_mcp(len(session.pages)), notes=session.notes,
+        max_resolution=session.box.max_view_edge, image_model_off=session.image_model_off,
     ))]
 
 
@@ -329,7 +329,7 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     prepared = prepare_linear(record["params"])
     session = open_job(prepared.spec, atlas_loader, folder)
     session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
-    session.notes = record.get("notes", "")
+    session.notes = read_notes(session.job.layout)
     trace_dir = prepared.trace_dir
     if trace_dir:
         session.trace = McpTrace(trace_dir, session.ctx.image_folder)
@@ -366,7 +366,7 @@ def open_folder_job(
         host.pop("fresh", None)
         write_job_file(layout, host=host)
     session.job_id, session.job_dir = job_id, folder
-    session.notes = record.get("notes", "")
+    session.notes = read_notes(session.job.layout)
     if record.get("trace_dir"):
         session.trace = McpTrace(record["trace_dir"], session.ctx.image_folder)
     return session

@@ -131,8 +131,10 @@ It returns `{job_id, job_dir, prompt}`. Java copies `prompt` verbatim.
 Exported snapshots are retained under `~/.langslice/snapshots/claude-*`; there
 is no automatic cleanup. The job lives in the job folder next to them,
 `~/.langslice/snapshots/claude-*/langslice/` (`src/langslice/job/CLAUDE.md`):
-its `job.json` records the `job_id`, UTC `created_at`, the settings and, under
-`host`, the original request `params` and `notes`; `prompt.txt` holds the copy
+its `job.json` records the `job_id`, UTC `created_at`, the settings, the
+user's `notes` (read by every door: `start_job`'s statement, the agent CLI's
+`brief`, LangSlice's own agent; the copy prompt does not repeat them) and,
+under `host`, the original request `params`; `prompt.txt` holds the copy
 prompt. The id leads there through `~/.langslice/jobs/<12-hex-id>.json`, which
 records the job folder and `host_channel` and is owner-only on POSIX. A job
 saved by an earlier version (the whole job under `~/.langslice/jobs/<id>/`) is
@@ -141,8 +143,9 @@ The job file, not prose from the clipboard, enforces the selected tools,
 calibration, positions, locked geometry, damage and preprocessing.
 
 `langslice mcp` starts without a folder. `start_job(job_id=...)` loads the
-saved request and returns a Claude-specific factual statement and status table,
-without pictures. `show_stack(page)` serves the opening strips (as in the ADK
+saved request and returns the job statement LangSlice's own agent gets
+(`doors/statement.py`), worded for this door, with the status table, its
+header and the recent run notes, without pictures. `show_stack(page)` serves the opening strips (as in the ADK
 seed, `core/opening.py`, at Claude's 1568 px long edge): labelled sections in
 corrected order with the atlas at each current position beneath it, then atlas
 reference strips when a section has no position. Pages are 1-based and bounded
