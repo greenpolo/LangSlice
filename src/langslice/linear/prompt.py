@@ -11,8 +11,13 @@ species and plane.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.linear.state import StackState
+
+if TYPE_CHECKING:
+    from langslice.linear.workspace import Workspace
 
 _PLANE_AXIS_LABEL: dict[str, str] = {
     "coronal": "AP",
@@ -189,6 +194,28 @@ ATLAS_CHANNEL_LINES: dict[str, str] = {
     "nissl": "a Nissl-stained reference, ABBA's cached Allen atlas",
     "borders": "the atlas regions, drawn as lines",
 }
+
+
+def display_facts(
+    ctx: Workspace, state: StackState,
+) -> dict[str, Any]:
+    """The job statement's display facts: raw channels and atlas channels here.
+
+    ``channels`` is one list when every section shares it, else a mapping
+    filename -> names. Unreadable files contribute nothing (the seed will
+    report them).
+    """
+    from langslice.linear.display import available_atlas_channels
+
+    named: dict[str, list[str]] = {}
+    for record in state.in_order():
+        try:
+            named[record.id] = list(ctx.section_channels(record.id)[0])
+        except Exception:
+            continue
+    distinct = {tuple(names) for names in named.values()}
+    channels: Any = list(next(iter(distinct))) if len(distinct) == 1 else named
+    return {"channels": channels or None, "atlas_channels": available_atlas_channels(ctx)}
 
 
 def display_lines(

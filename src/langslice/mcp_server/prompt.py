@@ -1,9 +1,8 @@
 """Claude's job statement: the ADK agent's, plus how the opening pictures arrive."""
 from __future__ import annotations
 
-from langslice.linear.display import display_facts
 from langslice.linear.engine import EngineContext
-from langslice.linear.prompt import build_job_statement
+from langslice.linear.prompt import build_job_statement, display_facts
 from langslice.linear.render import status_text
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState

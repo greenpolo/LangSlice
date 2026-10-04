@@ -110,7 +110,7 @@ def picture_edge(ctx: Workspace, requested: int | None = None) -> int:
     """Long edge of each later picture: the level's, or *requested* at "auto".
 
     *requested* must already be clamped into :data:`RESOLUTION_RANGE`
-    (:func:`langslice.linear.display.parse_view` does it); every level but
+    (:func:`langslice.linear.view_options.parse_view` does it); every level but
     "auto" ignores it.
     """
     level = resolution_level(ctx)
