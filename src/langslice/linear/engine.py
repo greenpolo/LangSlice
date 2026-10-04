@@ -13,12 +13,12 @@ from __future__ import annotations
 import contextlib
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from google.genai import types
 
-from langslice.adk.media import opening_parts
+from langslice.adk.media import opening_parts, packaged_tools
 from langslice.atlas.core import load_atlas
 from langslice.linear.checkpoint import default_checkpoint_path
 from langslice.linear.job import Job
@@ -76,14 +76,11 @@ class EngineContext(Workspace):
     """The agent driver's context: the core :class:`Workspace` plus what only
     the driver needs — where the job's files go (the paths the
     :class:`~langslice.linear.job.Job` is opened at; the job owns them from
-    then on), the model, and the cache of encoded message images
-    (:mod:`langslice.adk.media`)."""
+    then on) and the model."""
 
     checkpoint_path: str
     results_path: str
     model: str
-    #: Encoded, captioned reference images shared by the seed and comparison tools.
-    reference_parts: dict[tuple[Any, ...], types.Part] = field(default_factory=dict, repr=False)
 
 
 def build_context(
@@ -152,7 +149,8 @@ async def run_session(
             max_resolution=box.max_view_edge,
             **display_facts(ctx, state),
         ),
-        tools=box.tools,
+        # The tools return plain pictures; ADK takes them as message parts.
+        tools=packaged_tools(box.tools),
         reasoning=spec.reasoning,
     )
     sink: list[str] = []

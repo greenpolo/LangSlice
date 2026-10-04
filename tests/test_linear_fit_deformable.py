@@ -12,6 +12,7 @@ import pytest
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.adk.media import package_result
 from langslice.deformable import DeformableRecord
 from langslice.linear import deformation
 from langslice.linear.checkpoint import load_checkpoint
@@ -64,7 +65,9 @@ def _tool(box: Any, name: str) -> Any:
 
 
 def _media(result: dict[str, Any]) -> list[bytes]:
-    return [part.inline_data.data for part in result.get(TOOL_MEDIA_PARTS_KEY, [])]
+    # What the ADK agent receives: the door's JPEG parts.
+    return [part.inline_data.data
+            for part in package_result(result).get(TOOL_MEDIA_PARTS_KEY, [])]
 
 
 def _apply(box: Any, **kwargs: Any) -> dict[str, Any]:

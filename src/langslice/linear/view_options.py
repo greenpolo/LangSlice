@@ -38,6 +38,7 @@ from langslice.linear.display import (
     DisplayOptions,
     available_atlas_channels,
 )
+from langslice.linear.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS
 from langslice.linear.render import (
     AUTO_RESOLUTION,
     MIN_RESOLUTION,
@@ -47,6 +48,7 @@ from langslice.linear.render import (
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
+from langslice.providers.registry import canonical_provider
 
 #: Every key ``view`` may carry (the strict wrapper refuses anything else).
 VIEW_KEYS: tuple[str, ...] = tuple(ViewAuto.__annotations__)
@@ -78,6 +80,23 @@ class Profile:
 
     def atlas_default(self, mode: str) -> tuple[str, ...]:
         return self.atlas_defaults.get(mode, MODE_RULES[mode].atlas_default)
+
+
+def image_limit(ctx: Any) -> tuple[int, int]:
+    """``(long edge, patch budget)`` of one image for this run's model lane
+    (:data:`langslice.linear.opening.IMAGE_LIMITS`), read off the driver
+    context's ``model`` (a ``provider/name`` string)."""
+    model = str(getattr(ctx, "model", "") or "")
+    provider = canonical_provider(model.split("/", 1)[0]) if "/" in model else ""
+    return IMAGE_LIMITS.get(provider, DEFAULT_IMAGE_LIMIT)
+
+
+def view_edge_limit(ctx: Any) -> int:
+    """Largest picture the agent may ask for per call (``view.resolution``):
+    the model lane's largest image edge (:func:`image_limit`). On the OpenAI
+    lanes a near-square picture past ~1600 px still meets the patch budget,
+    which shrinks it."""
+    return image_limit(ctx)[0]
 
 
 def clamp_resolution(value: Any, max_edge: int) -> tuple[int | None, str]:

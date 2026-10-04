@@ -1,40 +1,33 @@
 """Pictures as message images: the one place core pictures become ``types.Part``.
 
-The core (:mod:`langslice.linear.render`, :mod:`langslice.linear.atlas_fetch`,
-:mod:`langslice.linear.opening`) draws plain PIL images, captions burned in,
-and the opening as a sequence of texts and strips. The doors turn them into
-what their host reads: the ADK toolbox and seed message through this module
-(JPEG ``types.Part``), the MCP server through :func:`encode_jpeg` straight
-into MCP image blocks. ``google.genai`` is ADK's message format, so nothing
-in the core imports it.
-
-The encoded section and atlas pictures the comparison tools send are cached
-on the driver's context (``EngineContext.reference_parts``), so a picture
-asked for again is not re-encoded.
+The core (:mod:`langslice.core`, :mod:`langslice.linear.render`,
+:mod:`langslice.linear.atlas_fetch`, :mod:`langslice.linear.opening`) draws
+plain PIL images, captions burned in, and the opening as a sequence of texts
+and strips. The tools (:mod:`langslice.linear.toolbox`) return those plain
+pictures and texts under ``TOOL_MEDIA_PARTS_KEY``. The doors turn them into
+what their host reads: the ADK agent through this module (:func:`packaged`
+wraps each tool; JPEG ``types.Part``), the MCP server through
+:func:`encode_jpeg` straight into MCP image blocks. ``google.genai`` is
+ADK's message format, so nothing in the core or the tools imports it.
 """
 
 from __future__ import annotations
 
+import functools
 import io
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any
 
 from google.genai import types
 from PIL import Image
 
-from langslice.linear.appearance import Look
-from langslice.linear.atlas_fetch import atlas_picture
-from langslice.linear.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS, opening_items
-from langslice.linear.render import (
-    opening_edge,
-    picture_edge,
-    reference_slice_picture,
-    render_cache_key,
-)
-from langslice.linear.state import SliceState, StackState
-from langslice.providers.registry import canonical_provider
+from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.linear.opening import opening_items
+from langslice.linear.state import StackState
+from langslice.linear.view_options import image_limit as image_limit
+from langslice.linear.view_options import view_edge_limit as view_edge_limit
 
-if TYPE_CHECKING:  # the driver's context imports the toolbox, which imports this
+if TYPE_CHECKING:  # the driver's context imports the toolbox
     from langslice.linear.engine import EngineContext
 
 #: JPEG quality of every picture a tool or the opening sends.
@@ -53,69 +46,52 @@ def image_to_part(img: Image.Image, *, quality: int = JPEG_QUALITY) -> types.Par
     return types.Part.from_bytes(mime_type="image/jpeg", data=encode_jpeg(img, quality=quality))
 
 
-def items_to_parts(items: Sequence[str | Image.Image]) -> list[types.Part]:
-    """Texts and pictures, in order, as message parts."""
+def items_to_parts(items: Sequence[Any]) -> list[types.Part]:
+    """Texts and pictures, in order, as message parts (a part passes through)."""
     return [
-        types.Part.from_text(text=item) if isinstance(item, str) else image_to_part(item)
+        item if isinstance(item, types.Part)
+        else types.Part.from_text(text=item) if isinstance(item, str)
+        else image_to_part(item)
         for item in items
     ]
 
 
-def reference_slice_part(
-    ctx: EngineContext, record: SliceState, *, long_edge: int | None = None,
-    look: Look = None,
-) -> types.Part:
-    """:func:`langslice.linear.render.reference_slice_picture`, encoded and
-    cached per display state.
+# --- tool results ----------------------------------------------------------------
 
-    The cached caption retains the index/flags at first display; current
-    state is carried separately in tool text. *long_edge* None is the run's
-    opening size; another size is its own entry.
+
+def package_result(result: Any) -> Any:
+    """A tool's result as ADK takes it: its media list (plain pictures and
+    texts under ``TOOL_MEDIA_PARTS_KEY``) as message parts, in order.
+
+    ADK moves image parts into the function response and drops the key from
+    the JSON the model reads (:mod:`langslice.adk`). Everything else is
+    returned as it is; a result without a media list is returned unchanged.
     """
-    long_edge = long_edge or opening_edge(ctx)
-    key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True, look=look))
-    if key not in ctx.reference_parts:
-        ctx.reference_parts[key] = image_to_part(
-            reference_slice_picture(ctx, record, long_edge=long_edge, look=look)
-        )
-    return ctx.reference_parts[key].model_copy(deep=True)
+    if not isinstance(result, dict):
+        return result
+    media = result.get(TOOL_MEDIA_PARTS_KEY)
+    if not isinstance(media, list):
+        return result
+    return {**result, TOOL_MEDIA_PARTS_KEY: items_to_parts(media)}
 
 
-def atlas_part(
-    ctx: EngineContext, state: StackState, position_mm: float, *,
-    long_edge: int | None = None, prepared: Image.Image | None = None,
-) -> types.Part:
-    """:func:`langslice.linear.atlas_fetch.atlas_picture`, encoded and cached
-    by position, plane, angles and size."""
-    long_edge = long_edge or picture_edge(ctx)
-    key = ("atlas", state.plane, float(position_mm), state.pitch_deg, state.yaw_deg,
-           int(long_edge))
-    if key in ctx.reference_parts:
-        return ctx.reference_parts[key].model_copy(deep=True)
-    part = image_to_part(
-        atlas_picture(ctx, state, position_mm, long_edge=long_edge, prepared=prepared)
-    )
-    ctx.reference_parts[key] = part
-    return part.model_copy(deep=True)
+def packaged(tool: Callable[..., Any]) -> Callable[..., Any]:
+    """*tool* for the ADK agent: same name, docstring and signature, its
+    pictures packaged by :func:`package_result`."""
+
+    @functools.wraps(tool)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        return package_result(tool(*args, **kwargs))
+
+    return run
+
+
+def packaged_tools(tools: Sequence[Callable[..., Any]]) -> list[Callable[..., Any]]:
+    """Every tool of a toolbox, :func:`packaged`."""
+    return [packaged(tool) for tool in tools]
 
 
 # --- the opening ---------------------------------------------------------------
-
-
-def image_limit(ctx: EngineContext) -> tuple[int, int]:
-    """``(long edge, patch budget)`` of one image for this run's model lane
-    (:data:`langslice.linear.opening.IMAGE_LIMITS`)."""
-    model = str(getattr(ctx, "model", "") or "")
-    provider = canonical_provider(model.split("/", 1)[0]) if "/" in model else ""
-    return IMAGE_LIMITS.get(provider, DEFAULT_IMAGE_LIMIT)
-
-
-def view_edge_limit(ctx: EngineContext) -> int:
-    """Largest picture the agent may ask for per call (``view.resolution``):
-    the model lane's largest image edge (:func:`image_limit`). On the OpenAI
-    lanes a near-square picture past ~1600 px still meets the patch budget,
-    which shrinks it."""
-    return image_limit(ctx)[0]
 
 
 def strip_edge(ctx: EngineContext) -> int:

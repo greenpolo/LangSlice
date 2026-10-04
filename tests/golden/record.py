@@ -275,15 +275,22 @@ class Recorder:
 
     def tool(self, door: str, tools: dict[str, Any], name: str, *args: Any,
              **kwargs: Any) -> dict[str, Any]:
-        """Call one toolbox tool and record what it returned."""
+        """Call one toolbox tool and record what the ADK agent receives from it.
+
+        The tools return plain pictures; the ADK door packages them as
+        message parts (:func:`langslice.adk.media.package_result`), which
+        are what is recorded.
+        """
         from google.genai import types
 
         from langslice.adk import TOOL_MEDIA_PARTS_KEY
+        from langslice.adk.media import package_result
 
         result = tools[name](*args, **kwargs)
         self.called.add(name)
         stem = self._name(door, name)
-        body = dict(result) if isinstance(result, dict) else {"<result>": result}
+        packaged = package_result(result)
+        body = dict(packaged) if isinstance(packaged, dict) else {"<result>": packaged}
         media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
         images: list[Image.Image] = []
         texts: list[str] = []

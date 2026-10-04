@@ -72,7 +72,7 @@ PICTURE_EDGES: dict[str, tuple[int, int]] = {
 AUTO_RESOLUTION = "auto"
 #: Smallest long edge the agent may ask for at "auto". The largest is the
 #: driver model's own maximum image (the door knows the model:
-#: ``adk.media.view_edge_limit``; the MCP host is Claude,
+#: ``view_options.view_edge_limit``; the MCP host is Claude,
 #: ``opening.CLAUDE_MAX_VIEW_EDGE``). A value outside is clamped and the
 #: reply says so.
 MIN_RESOLUTION = 128
@@ -590,10 +590,10 @@ def reference_slice_picture(
     """One captioned, tissue-framed section picture for the comparison tools.
 
     Ordering and damage annotations do not change the pixels being compared;
-    the caption carries the index and flags as they stand now (the encoded
-    copy the doors cache keeps its first caption,
-    :func:`langslice.adk.media.reference_slice_part`). Filename remains the
-    stable identity. *long_edge* None is the run's opening size.
+    the caption carries the index and flags as they stand now (the cached
+    copy keeps its first caption,
+    :func:`langslice.core.pictures.reference_section_picture`). Filename
+    remains the stable identity. *long_edge* None is the run's opening size.
     """
     long_edge = long_edge or opening_edge(ctx)
     label = f"{record.index_corrected}: {record.id}"

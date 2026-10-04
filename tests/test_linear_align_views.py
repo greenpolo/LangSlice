@@ -497,9 +497,9 @@ def test_batch_border_style_changes_only_the_render(tmp_path: Path):
     assert first["status"] == second["status"] == "ok"
     assert state.to_dict() == before
     assert len(box.job.undo_stack) == undo_depth
-    first_image = first[TOOL_MEDIA_PARTS_KEY][0].inline_data.data
-    second_image = second[TOOL_MEDIA_PARTS_KEY][0].inline_data.data
-    assert first_image != second_image
+    first_image = np.asarray(first[TOOL_MEDIA_PARTS_KEY][0])
+    second_image = np.asarray(second[TOOL_MEDIA_PARTS_KEY][0])
+    assert not np.array_equal(first_image, second_image)
 
 
 @pytest.mark.parametrize("mode", ["overlay", "side_by_side", "checkerboard", "outlines"])

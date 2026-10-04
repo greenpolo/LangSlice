@@ -10,6 +10,14 @@ every benchmark failure worth tracing came back to harness text telling the
 model what to think. The submit gates are the exception, and a constraint that
 states a number is not coaching: refusals name the numbers that caused them and
 stop there.
+
+The tools are a door over the core and the job: they check arguments, keep
+the look-before-commit gates and the delivery bookkeeping, call the
+operations (:mod:`langslice.ops`) and the core picture builders
+(:mod:`langslice.core`), and word the reply. Their pictures are plain PIL
+images (and lines of text) under ``TOOL_MEDIA_PARTS_KEY``; the ADK driver
+packages them as message parts (:func:`langslice.adk.media.packaged`), the
+MCP server as content blocks, so this module never imports ``google.genai``.
 """
 
 from __future__ import annotations
@@ -27,10 +35,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-from google.genai import types
+from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import image_to_part, view_edge_limit
 from langslice.affine import denormalized_affine
 from langslice.core import placement
 from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
@@ -87,7 +94,7 @@ from langslice.linear.transform import (
     fit_elastix,
     fit_silhouette,
 )
-from langslice.linear.view_options import Profile, parse_view, view_schema
+from langslice.linear.view_options import Profile, parse_view, view_edge_limit, view_schema
 from langslice.ops import appearance as ops_appearance
 from langslice.ops import damage as ops_damage
 from langslice.ops import deformable as ops_deformable
@@ -103,6 +110,12 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
     from langslice.linear.engine import EngineContext
 
 logger = logging.getLogger(__name__)
+
+#: One item of a tool's media list (under ``TOOL_MEDIA_PARTS_KEY``): a
+#: picture (captioned PIL image) or a line of text, in reading order. The
+#: doors package them: the ADK tools through
+#: :func:`langslice.adk.media.packaged`, MCP as content blocks.
+Media = Image.Image | str
 
 #: Sections one ``view_slices`` call may return, or candidate pairs per compare.
 #: Separate reference comparisons return up to two images per candidate pair.
@@ -232,9 +245,8 @@ def make_view_atlas(state: StackState, ctx: EngineContext, max_view_edge: int):
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
-        parts: list[types.Part] = [
-            image_to_part(atlas_view_picture(ctx, state, position, options))
-            for position in positions
+        parts: list[Media] = [
+            atlas_view_picture(ctx, state, position, options) for position in positions
         ]
         plural = "s" if len(positions) != 1 else ""
         result: dict[str, Any] = {
@@ -534,7 +546,7 @@ def build_tools(
     context's checkpoint and results paths (an empty undo history, nothing
     written until the first write). *max_view_edge* is the largest picture
     the driver model takes (None: the run model's lane,
-    :func:`langslice.adk.media.view_edge_limit`).
+    :func:`langslice.linear.view_options.view_edge_limit`).
     """
     if job is None:
         job = Job(state, spec, checkpoint_path=ctx.checkpoint_path,
@@ -677,9 +689,9 @@ def build_tools(
         return {"status": "error", "error": "BAD_ARGS",
                 "message": "A region cannot be both included and excluded: " + ", ".join(overlap)}
 
-    def section_part(record: SliceState, options: DisplayOptions) -> types.Part:
+    def section_part(record: SliceState, options: DisplayOptions) -> Image.Image:
         """One section as corrected (:func:`langslice.core.pictures.section_picture`)."""
-        return image_to_part(section_picture(ctx, state, record, options))
+        return section_picture(ctx, state, record, options)
 
     def absent_regions(position: float, options: DisplayOptions) -> list[str]:
         present = regions_in_plane(ctx, state, position, options)
@@ -973,7 +985,7 @@ def build_tools(
 
         pictured = targets[0]  # "both" writes one setting to both targets
         ids = [record.id for record in scope] if slices else None
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         try:
             # BEFORE is drawn first, from the settings as they stand; AFTER
             # from the settings the write will leave. Written only once every
@@ -987,11 +999,10 @@ def build_tools(
             for record, was, picture in earlier:
                 now = ops_appearance.planned_settings(state, pictured, ids, settings, record.id)
                 label = f"{record.index_corrected}: {record.id}  {pictured} appearance"
-                parts.append(image_to_part(caption(
-                    picture, f"{label}  BEFORE ({looks.describe(was)})")))
-                parts.append(image_to_part(caption(
+                parts.append(caption(picture, f"{label}  BEFORE ({looks.describe(was)})"))
+                parts.append(caption(
                     framed_section(ctx, state, record, options, look=now),
-                    f"{label}  AFTER ({looks.describe(now)})")))
+                    f"{label}  AFTER ({looks.describe(now)})"))
         except Exception as exc:
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
         written = ops_appearance.set_appearance(job, targets, ids, settings)
@@ -1065,7 +1076,7 @@ def build_tools(
             return options
         done = ops_orientation.orient_sections(job, entries)
         applied = done.applied
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         failed: list[dict[str, str]] = []
         for name in applied[:MAX_VIEW_SLICES]:
             record = state.by_id(name)
@@ -1124,7 +1135,7 @@ def build_tools(
         record: SliceState,
         position: float,
         options: DisplayOptions,
-        parts: list[types.Part],
+        parts: list[Media],
         section_indexes: dict[str, int],
         working: placement.Working,
     ) -> dict[str, Any]:
@@ -1141,14 +1152,14 @@ def build_tools(
         row = placed.row
         if placed.separate:
             # Encode both before mutating delivery bookkeeping.
-            tissue_part, atlas_part = (image_to_part(image) for image in placed.images)
+            tissue_image, atlas_image = placed.images
             if record.id not in section_indexes:
                 section_indexes[record.id] = len(parts)
-                parts.append(tissue_part)
+                parts.append(tissue_image)
             row["image_indexes"] = {"section": section_indexes[record.id], "atlas": len(parts)}
-            parts.append(atlas_part)
+            parts.append(atlas_image)
             return row
-        parts.extend(image_to_part(image) for image in placed.images)
+        parts.extend(placed.images)
         return row
 
     def set_positions(
@@ -1246,7 +1257,7 @@ def build_tools(
             and placement_view_key(record, position)
             not in box.seen_placement_views
         ]
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         failed: list[dict[str, str]] = []
         rendered: list[str] = []
         delivery_id: str | None = None
@@ -1464,7 +1475,7 @@ def build_tools(
 
         working: dict[str, tuple[Any, float, str]] = {}
         compared: list[dict[str, Any]] = []
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         failed: list[dict[str, Any]] = []
         delivery_id: str | None = None
         full_atlas_view = (options.mode != "section" and options.full_view
@@ -1553,16 +1564,12 @@ def build_tools(
 
         sheet, plot = stack_review(ctx, state, options)
         parts = [
-            types.Part.from_text(
-                text=(
-                    f"The {len(state.slices)} sections in the order of their "
-                    "written positions (unplaced last), each captioned "
-                    "'<index>: <filename>  <position>', over its atlas match:"
-                )
-            ),
-            image_to_part(sheet),
-            types.Part.from_text(text="Position against corrected index:"),
-            image_to_part(plot),
+            f"The {len(state.slices)} sections in the order of their "
+            "written positions (unplaced last), each captioned "
+            "'<index>: <filename>  <position>', over its atlas match:",
+            sheet,
+            "Position against corrected index:",
+            plot,
         ]
         ordered = sorted(
             status_rows(state), key=lambda r: (r["position_mm"] is None, r["position_mm"] or 0.0)
@@ -1732,7 +1739,7 @@ def build_tools(
             ).images
 
         results: list[dict[str, Any]] = []
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         fits: list[tuple[SliceState, dict[str, Any]]] = []
         for record in targets:
             if record.id in locked:
@@ -1758,7 +1765,7 @@ def build_tools(
             # Every fit returns its picture (run 15, 2026-09-10: a
             # 25-section fit pictured 4 and the model never saw 21).
             outcome["image_indexes"] = list(range(len(parts), len(parts) + len(panels)))
-            parts.extend(image_to_part(panel) for panel in panels)
+            parts.extend(panels)
 
         payload: dict[str, Any] = {
             "status": "ok" if fits else "error",
@@ -1927,14 +1934,6 @@ def build_tools(
             logger.warning("adjust_transform failed for %s: %s", record.id, exc)
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}, None
 
-        # Encoding is part of producing feedback: a section whose picture
-        # cannot be encoded is not written.
-        try:
-            media_parts = [image_to_part(image) for image in images]
-        except Exception as exc:
-            logger.warning("adjust_transform encode failed for %s: %s", record.id, exc)
-            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}, None
-
         history = box.transform_history.setdefault(record.id, [])
         history.append(dict(staged.params))
         image = f"atlas {options.atlas_name()}"
@@ -1986,7 +1985,7 @@ def build_tools(
             **({"ab_reference": reference} if reference is not None else {}),
             **({"regions_not_in_plane": absent} if absent else {}),
             "description": f"{record.id} under the transform above, {described}. {lines}",
-            TOOL_MEDIA_PARTS_KEY: media_parts,
+            TOOL_MEDIA_PARTS_KEY: images,
         }, (written if wrote else None)
 
     def adjust_transforms(
@@ -2064,7 +2063,7 @@ def build_tools(
             return options
 
         results: list[dict[str, Any]] = []
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         writes: dict[str, dict[str, Any]] = {}
         for entry in entries:
             if not isinstance(entry, dict):
@@ -2364,7 +2363,7 @@ def build_tools(
         applying = done.applied
         rows = done.rows
 
-        parts: list[types.Part] = []
+        parts: list[Media] = []
         failed: list[dict[str, str]] = []
         highlight = [name for name, _ids in options.regions] or list(kept)
         color, thickness = normalize_border_style(options.border_color, options.border_thickness)
@@ -2399,7 +2398,7 @@ def build_tools(
                             ctx, fit.image, outcome, warped=False, style=style,
                             atlas_images=shown_atlas,
                             title=f"{record.id}  before: the linear placement"))
-                parts.extend(image_to_part(image) for image in images)
+                parts.extend(images)
             except Exception as exc:
                 logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
                 del parts[first:]
@@ -2418,7 +2417,7 @@ def build_tools(
                 failed.append({"id": section_id, "message": str(exc)})
                 continue
             traces.append({"id": section_id, "image_indexes": [len(parts)]})
-            parts.append(image_to_part(picture))
+            parts.append(picture)
         succeeded = [row for row in rows if row.get("status") == "ok"]
         result: dict[str, Any] = {
             "status": "ok" if succeeded else "error",
