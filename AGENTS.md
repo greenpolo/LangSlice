@@ -295,8 +295,10 @@ deformation) and the image-model border route (`core/nonlinear/`).
 - `hosts/` — host connectors that run in LangSlice's own environment:
   `hosts/integrations/` (the ABBA registration plugin, the live linear
   mirror, the ABBA viewer and log: `src/langslice/hosts/integrations/CLAUDE.md`)
-  `hosts/api/` (the engine service the Fiji connector starts, and the ABBA
-  plugin's `nonlinear.abba` worker) and `hosts/cli.py` (`abba`, `serve`):
+  `hosts/api/` (the engine service the Fiji connector starts; its
+  `nonlinear.abba` worker and the Fiji connector's uncalled Java
+  `nonlinear(...)` were removed 2026-10-04) and `hosts/cli.py` (`abba`,
+  `serve`):
   `src/langslice/hosts/CLAUDE.md`.
 - Compatibility shims, for the sibling repos only (LangSlice imports none;
   import-linter's `no-shims-inside` contract): `linear/` (`JobSpec` & co.,

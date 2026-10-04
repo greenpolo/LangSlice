@@ -9,7 +9,6 @@ import pytest
 from PIL import Image
 
 from langslice.doors.api.abba_worker import run_linear
-from langslice.hosts.api.nonlinear_worker import run_nonlinear
 
 
 @pytest.fixture
@@ -82,30 +81,6 @@ def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypa
     params.update(change)
     with pytest.raises(ValueError, match=message):
         run_linear(params, lambda event: None)
-
-
-def test_nonlinear_retains_pair_direction_and_grid(tmp_path, monkeypatch):
-    import tifffile
-
-    from langslice.hosts.integrations import abba
-
-    coords = np.zeros((10, 12, 3), dtype=np.float32)
-    np.save(tmp_path / "coords.npy", coords)
-    tifffile.imwrite(tmp_path / "image.tif", np.ones((10, 12), dtype=np.uint8))
-    source = np.array([[0., 0.], [1., 0.], [0., 1.]])
-    target = source + 3
-
-    def compute(actual_coords, histology, config):
-        np.testing.assert_array_equal(actual_coords, coords)
-        assert histology.shape == (10, 12)
-        return source, target
-
-    monkeypatch.setattr(abba, "compute_registration_landmarks", compute)
-    result = run_nonlinear({"coords_path": str(tmp_path / "coords.npy"),
-                            "histology_path": str(tmp_path / "image.tif")}, lambda event: None)
-    assert result["source_points"] == source.tolist()
-    assert result["target_points"] == target.tolist()
-    assert result["coordinate_frame"] == "fixed_grid_pixels"
 
 
 def test_trace_dir_saves_this_runs_trace_and_names_it(params, monkeypatch, tmp_path):

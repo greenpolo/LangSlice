@@ -71,8 +71,8 @@ inputs, `job.refuse_changed_inputs`, and with `--fresh` marks the job
 clears the mark)
 and `abba_worker.py` (the JVM-free linear snapshot worker:
 `prepare_linear`, `checkpoint_callback` with its ABBA-world host rows,
-`run_linear`, `preview_preprocess`). The engine service and the ABBA
-plugin's `nonlinear.abba` worker stay in `hosts/api/`.
+`run_linear`, `preview_preprocess`). The engine service stays in
+`hosts/api/`.
 
 ## Files
 

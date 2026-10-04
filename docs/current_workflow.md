@@ -324,7 +324,7 @@ langslice serve --stdio
 The service accepts `version`, `quick_affine.run`, and
 `export.run` request envelopes, plus the Fiji connector's `setup.status`,
 `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
-`preprocess.preview` and `nonlinear.abba` (see
+and `preprocess.preview` (see
 [the connector design](abba_plugin_design.md)). It streams progress/log
 events and returns typed JSON result or error envelopes. The contract is
 defined by the Pydantic models in `src/langslice/doors/api/models.py`.
