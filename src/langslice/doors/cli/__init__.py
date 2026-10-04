@@ -1,0 +1,130 @@
+"""The ``langslice`` command, one module per command group.
+
+``langslice.cli:main`` (the installed entry point) is :func:`main` here.
+Groups: :mod:`~langslice.doors.cli.linear` (``linear run``, ``linear
+quick-affine`` and the shared job flags), :mod:`~langslice.doors.cli.register`
+(``nonlinear register``), :mod:`~langslice.doors.cli.hosts` (``abba``,
+``serve``, ``mcp``, ``claude prepare``), and the agent CLI:
+:mod:`~langslice.doors.cli.job` (``job FOLDER VERB``) and
+:mod:`~langslice.doors.cli.catalog` (``ops``, ``schema``).
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+import langslice
+from langslice.doors.cli.hosts import (
+    add_abba_parser,
+    add_claude_prepare_parser,
+    add_mcp_parser,
+    add_serve_parser,
+    run_abba,
+    run_claude_prepare,
+    run_mcp,
+    run_serve,
+)
+from langslice.doors.cli.linear import (
+    add_quick_affine_parser,
+    add_run_parser,
+    run_linear,
+    run_quick_affine,
+)
+from langslice.doors.cli.register import add_register_parser, run_register
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="langslice",
+        description="Register brain sections to BrainGlobe atlases with VLM agents and image-gen",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # langslice version
+    subparsers.add_parser("version", help="Print version info")
+
+    # langslice login
+    subparsers.add_parser(
+        "login",
+        help="Sign in with ChatGPT (OAuth) so LangSlice can use your subscription",
+    )
+
+    # langslice linear <cmd> — position / affine estimation
+    linear = subparsers.add_parser(
+        "linear",
+        help="Linear methods: section order, position and in-plane alignment",
+    )
+    linear_sub = linear.add_subparsers(dest="subcommand", required=True)
+    add_run_parser(linear_sub)
+    add_quick_affine_parser(linear_sub)
+
+    # langslice nonlinear <cmd> — image-gen registration
+    nonlinear = subparsers.add_parser(
+        "nonlinear",
+        help="Nonlinear methods: image-gen registration",
+    )
+    nonlinear_sub = nonlinear.add_subparsers(dest="subcommand", required=True)
+    add_register_parser(nonlinear_sub)
+
+    # langslice abba
+    add_abba_parser(subparsers)
+
+    # langslice serve
+    add_serve_parser(subparsers)
+
+    # langslice mcp
+    add_mcp_parser(subparsers)
+
+    # langslice claude <cmd> — jobs for the Claude connector
+    claude = subparsers.add_parser(
+        "claude",
+        help="Claude connector: prepare a job to paste into Claude Desktop or Claude Code",
+    )
+    claude_sub = claude.add_subparsers(dest="subcommand", required=True)
+    add_claude_prepare_parser(claude_sub)
+
+    return parser
+
+
+def main(argv: list[str] | None = None):
+    # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
+    # reads it, not only the one whose module happens to be imported.
+    from langslice.providers.openai_config import _load_dotenv
+
+    _load_dotenv()
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command not in {"serve", "login", "version"}:
+        from langslice.api.setup import apply_saved_credentials
+
+        apply_saved_credentials()
+
+    # Group commands (`linear`, `nonlinear`) carry the leaf name in
+    # `subcommand`; top-level commands only set `command`. Leaf names are
+    # unique across groups, so one dispatch chain covers both.
+    command = getattr(args, "subcommand", None) or args.command
+
+    if command == "version":
+        print(f"langslice {langslice.__version__}")
+    elif command == "login":
+        from langslice.providers.openai_oauth import login
+
+        print(f"Signed in. Credentials saved to {login()}")
+    elif command == "abba":
+        run_abba(args)
+    elif command == "register":
+        run_register(args)
+    elif command == "quick-affine":
+        run_quick_affine(args)
+    elif command == "run":
+        run_linear(args)
+    elif command == "serve":
+        run_serve(args)
+    elif command == "mcp":
+        run_mcp(args)
+    elif command == "prepare":
+        run_claude_prepare(args)
+    else:
+        parser.print_help()
+        sys.exit(1)

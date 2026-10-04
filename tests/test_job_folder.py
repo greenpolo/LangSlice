@@ -409,11 +409,12 @@ def test_a_job_folder_holding_another_image_folders_job_is_refused(tmp_path: Pat
 
 
 def test_the_cli_takes_a_job_folder(tmp_path: Path):
-    from langslice.cli import _build_linear_spec, _build_parser
+    from langslice.doors.cli import build_parser
+    from langslice.doors.cli.linear import build_linear_spec
 
-    args = _build_parser().parse_args(
+    args = build_parser().parse_args(
         ["linear", "run", str(tmp_path), "--job-dir", str(tmp_path / "arm")])
-    assert _build_linear_spec(args, str(tmp_path)).job_dir == str(tmp_path / "arm")
+    assert build_linear_spec(args, str(tmp_path)).job_dir == str(tmp_path / "arm")
 
 
 @pytest.fixture
