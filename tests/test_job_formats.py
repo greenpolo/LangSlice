@@ -525,3 +525,28 @@ def test_an_uncalibrated_section_without_a_transform_is_the_identity(tmp_path, m
     reg = (np.linalg.norm(np.asarray(entry["pixel_to_atlas_um"])[:, 1])
            * entry["image"]["size"][0] / render[0])
     assert abs(reg - _picture_um_per_section_px(root, ID2)) < 0.01
+
+
+def test_the_frame_cache_is_bounded(placed, monkeypatch):
+    """A section's frame is memoized under everything it depends on; moving
+    it many times keeps one frame per section, and the cache never holds
+    more than ``FRAME_CACHE_SECTIONS`` sections (review finding 9)."""
+    import dataclasses as dc
+
+    from langslice.core import maps
+
+    job, _root, _exported = placed
+    workspace = job.workspace
+    record = job.state.by_id(ID2)
+    workspace.frame_cache.clear()
+    for step in range(40):
+        moved = dc.replace(record, position_mm=0.002 * step)
+        maps.section_frame(job.state, workspace, moved)
+    assert len(workspace.frame_cache) == 1
+    # The current key is a hit: the same frame object comes back.
+    first = maps.section_frame(job.state, workspace, moved)
+    assert maps.section_frame(job.state, workspace, moved) is first
+    monkeypatch.setattr(maps, "FRAME_CACHE_SECTIONS", 2)
+    for name in (ID0, ID1, ID2):
+        maps.section_frame(job.state, workspace, job.state.by_id(name))
+    assert len(workspace.frame_cache) == 2

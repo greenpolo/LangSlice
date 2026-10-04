@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -82,8 +83,11 @@ class Workspace:
     #: Each placed section's linear frame (:func:`langslice.core.maps.section_frame`:
     #: file pixels to atlas micrometres), keyed by everything it depends on,
     #: so ``registration.json`` is rewritten on every write without
-    #: recomputing the sections that did not move. Shared: read only.
-    frame_cache: dict[tuple[Any, ...], Any] = field(default_factory=dict, repr=False)
+    #: recomputing the sections that did not move: section id -> (key, frame),
+    #: one per section, least recently used first (bounded by
+    #: ``core.maps.FRAME_CACHE_SECTIONS``). Shared: read only.
+    frame_cache: OrderedDict[str, tuple[tuple[Any, ...], Any]] = field(
+        default_factory=OrderedDict, repr=False)
     _atlas: Any = field(default=None, repr=False)
     #: ABBA's cached Allen atlas when it matches this run's atlas (the
     #: ``nissl`` atlas image); looked up once.
