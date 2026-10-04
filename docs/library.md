@@ -127,7 +127,11 @@ at the same placement reuse the first reply.
 
 A job made with an untested profile and reopened with `open_job` without
 `image_model=` offers no `trace_borders`, so it is never traced again with a
-different prompt by accident; pass the profile again to trace.
+different prompt by accident; pass the profile again to trace. Without
+`image_model=`, a job whose provider has no key or login on this machine
+offers no `trace_borders` either (the check the MCP door and the agent CLI
+make: `doors.api.setup.image_model_connected`, offline, presence only), so
+`register_job` fits such a job to the stain.
 
 ## One section: `register_section`
 
