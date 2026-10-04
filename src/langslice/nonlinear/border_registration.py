@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.affine import pixel_center_map
 from langslice.atlas import load_atlas
 from langslice.atlas.render import annotation_slice
 from langslice.nonlinear.border_refinement import (
@@ -41,20 +42,6 @@ from langslice.space import Plane, atlas_space_context, orient_slice_to_axes
 
 if TYPE_CHECKING:
     from langslice.providers.registry import ImageCall
-
-
-def pixel_center_map(
-    source_size: tuple[int, int],
-    resized_size: tuple[int, int],
-    offset: tuple[float, float] = (0.0, 0.0),
-) -> np.ndarray:
-    """Map pixel centers through resize and padding, including rounding per axis."""
-    sx, sy = resized_size[0] / source_size[0], resized_size[1] / source_size[1]
-    return np.array([
-        [sx, 0.0, offset[0] + (sx - 1.0) / 2.0],
-        [0.0, sy, offset[1] + (sy - 1.0) / 2.0],
-        [0.0, 0.0, 1.0],
-    ])
 
 
 def canonical_atlas_map(native_size: tuple[int, int], canvas_size: tuple[int, int]) -> np.ndarray:

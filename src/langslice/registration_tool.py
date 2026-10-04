@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.affine import pixel_center_map
 from langslice.atlas.render import annotation_slice
 from langslice.core.handoff import correction_fingerprint, digest, prepare_linear_registration
 from langslice.linear.workspace import Workspace
@@ -31,7 +32,6 @@ from langslice.nonlinear.border_refinement import (
     extract_thinned_lines,
     smooth_border_overlay,
 )
-from langslice.nonlinear.border_registration import pixel_center_map
 from langslice.nonlinear.image_gen_helpers import (
     _merge_classified,
 )
