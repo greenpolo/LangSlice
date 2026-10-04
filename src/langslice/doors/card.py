@@ -66,7 +66,7 @@ as files, also written to `{BRIEF_FILE}` here. Open every picture, then work as 
   - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation;
     `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.
 - `views/`, `views.jsonl` (pictures, their index); `exports/` (results, `quicknii.json`,
-  `visualign.json`); `logs/` (events, background runs).
+  `visualign.json`); `logs/` (events, CLI calls, background runs).
 Maps and pictures are derived, never read back: editing one changes no registration.
 
 ## Pictures and coordinates

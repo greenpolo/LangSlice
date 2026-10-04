@@ -34,6 +34,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 import typing
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,7 @@ from langslice.doors.cli.envelope import (
     EXIT_OK,
     EXIT_REFUSED,
     Envelope,
+    dumps,
     emit,
     stdout_to_stderr,
 )
@@ -106,26 +108,13 @@ def run(args: argparse.Namespace) -> int:
 
 def execute(folder: str, verb: str, rest: list[str], *,
             atlas_loader: Any = None) -> Envelope:
-    """One agent-CLI call (see the module text); never raises."""
+    """One agent-CLI call (see the module text); never raises. Every call on
+    a job is logged in its folder (:func:`record`)."""
+    started = time.perf_counter()
     name = canonical_verb(verb)
-    run_id: str | None = None
+    run_id = None if name == "init" else _run_id(rest)
     try:
-        if name == "init":
-            return init(folder, rest, atlas_loader=atlas_loader)
-        options, arguments, positional = parse(rest)
-        if name == "brief":
-            if arguments or positional:
-                raise _Refusal(Envelope.failure(
-                    "BAD_ARGUMENTS", "brief takes no arguments.", verb=name))
-            return brief(folder, atlas_loader=atlas_loader)
-        run_id = options.get("run_id")
-        if name in ("runs", "wait"):
-            return runs(folder, name, positional, options)
-        if positional:
-            raise _Refusal(Envelope.failure(
-                "BAD_ARGUMENTS", f"Unexpected value(s) {positional}: give arguments as "
-                "--name value or --args JSON.", verb=name))
-        envelope = call(folder, name, arguments, options, atlas_loader=atlas_loader)
+        envelope = _execute(folder, name, rest, atlas_loader=atlas_loader)
     except _Refusal as refusal:
         envelope = refusal.envelope
     except JobBusy as exc:
@@ -136,7 +125,79 @@ def execute(folder: str, verb: str, rest: list[str], *,
                                     exit=EXIT_INTERNAL)
     if run_id:
         _finish_run(folder, run_id, envelope)
+    record(folder, name, rest, envelope, seconds=time.perf_counter() - started, run_id=run_id)
     return envelope
+
+
+def _run_id(rest: list[str]) -> str | None:
+    """A background child's ``--run-id`` (:mod:`langslice.doors.cli.background`)."""
+    for index, token in enumerate(rest):
+        if token.startswith("--run-id="):
+            return token.partition("=")[2] or None
+        if token in ("--run-id", "--run_id") and index + 1 < len(rest):
+            return rest[index + 1]
+    return None
+
+
+def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> Envelope:
+    if name == "init":
+        return init(folder, rest, atlas_loader=atlas_loader)
+    options, arguments, positional = parse(rest)
+    if name == "brief":
+        if arguments or positional:
+            raise _Refusal(Envelope.failure(
+                "BAD_ARGUMENTS", "brief takes no arguments.", verb=name))
+        return brief(folder, atlas_loader=atlas_loader)
+    if name in ("runs", "wait"):
+        return runs(folder, name, positional, options)
+    if positional:
+        raise _Refusal(Envelope.failure(
+            "BAD_ARGUMENTS", f"Unexpected value(s) {positional}: give arguments as "
+            "--name value or --args JSON.", verb=name))
+    return call(folder, name, arguments, options, atlas_loader=atlas_loader)
+
+
+def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
+           seconds: float, run_id: str | None = None) -> None:
+    """Log one call in the job folder (``logs/calls.jsonl``: the verb, its
+    arguments as given, the envelope's outcome, the artifacts' paths) and,
+    with ``LANGSLICE_TRACE_DIR`` set, trace it as the MCP door traces a tool
+    call (:mod:`langslice.doors.trace`). Never raises; a folder without a
+    job, or a lean job (which keeps no logs), logs nothing."""
+    import os
+
+    from langslice.doors.jobs import NoJob, find
+    from langslice.doors.trace import TRACE_DIR_ENV, cli_trace, log_call
+    from langslice.job.layout import JobLayout, read_job_file
+
+    try:
+        layout = JobLayout(find(folder))
+        held = read_job_file(layout) or {}
+    except (NoJob, OSError, ValueError):
+        return
+    try:
+        if (held.get("spec") or {}).get("output_level") == "lean":
+            return
+        paths = [str(item.get("path")) for item in envelope.artifacts]
+        log_call(layout.logs_dir, {
+            "verb": verb, "arguments": list(rest), "ok": envelope.ok, "exit": envelope.exit,
+            **({"error": envelope.error.get("code")} if envelope.error else {}),
+            **({"run": run_id} if run_id else {}),
+            "warnings": len(envelope.warnings), "artifacts": paths,
+            "seconds": round(seconds, 3),
+        })
+        trace = cli_trace(layout.folder, os.environ.get(TRACE_DIR_ENV))
+        if trace is not None:
+            content: list[dict[str, Any]] = [{"text": dumps(envelope)}]
+            for item in envelope.artifacts:
+                if item.get("kind") in ("view", "opening"):
+                    path = Path(str(item.get("path")))
+                    content.append({"image": "image/jpeg", "path": str(path),
+                                    "bytes": path.stat().st_size if path.exists() else None})
+            trace.write("tool_result", name=verb, args=envelope.call or {"argv": list(rest)},
+                        content=content)
+    except Exception:
+        logger.warning("Could not log the call %s %s", folder, verb, exc_info=True)
 
 
 def _finish_run(folder: str, run_id: str, envelope: Envelope) -> None:
@@ -315,17 +376,31 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         arguments = arguments_for(tool, options, flags, verb)
         if options.get("run_id"):
             background.begin(opened.job.layout, options["run_id"])
-        elif options.get("background"):
+        if options.get("background") and not options.get("run_id"):
             run_id = background.start(opened.job.layout, verb, arguments,
                                       verbose=bool(options.get("verbose")))
-            return Envelope(result={"run": run_id, "verb": verb, "state": "running"},
-                            next=[f"langslice job {job_folder} wait {run_id}"])
-        if dry_run and verb in CHECKED_ONLY:
-            return _checked(opened, verb, arguments)
-        return _run(opened, verb, tool, arguments, dry_run=dry_run,
-                    verbose=bool(options.get("verbose")))
+            envelope = Envelope(result={"run": run_id, "verb": verb, "state": "running"},
+                                next=[f"langslice job {job_folder} wait {run_id}"])
+        elif dry_run and verb in CHECKED_ONLY:
+            envelope = _checked(opened, verb, arguments)
+        else:
+            envelope = _run(opened, verb, tool, arguments, dry_run=dry_run,
+                            verbose=bool(options.get("verbose")))
+        if dry_run and envelope.ok and VERBS[verb].long:
+            # A long verb: the real call may take minutes; --background
+            # answers at once and `wait` collects the answer.
+            envelope.next = [*envelope.next, _command(job_folder, verb, arguments)
+                             + " --background"]
+        envelope.call = arguments
+        return envelope
     finally:
         opened.close()
+
+
+def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
+    """The command line that calls *verb* with *arguments* on the job."""
+    return (f"langslice job {job_folder} {verb} --args "
+            f"'{json.dumps(arguments, default=str)}'")
 
 
 def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
@@ -356,7 +431,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         reply = tool(**arguments)
     if VERBS[verb].image_model:
         job.settle_image_corrections()  # this process ends: the calls land now
-    artifacts: list[dict[str, str]] = []
+    artifacts: list[dict[str, Any]] = []
     warnings: list[str] = []
     ok = not (isinstance(reply, dict) and reply.get("status") in ("error", "refused"))
     if ok and verb == "submit" and not dry_run:
@@ -370,9 +445,13 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         artifacts += [dict(item) for item in reply.get("files") or []]
     job.views.flush()
     for picture in saved:
+        # ``index`` is the picture's place among the call's pictures, the
+        # number the reply's ``image_indexes`` give; ``label`` what it shows.
+        label = ", ".join(picture.sections) + (f" ({picture.mode})" if picture.mode else "")
         for path, kind in picture.files():
             if path.exists():
-                artifacts.append({"path": str(path), "kind": kind})
+                artifacts.append({"path": str(path), "kind": kind, "index": picture.index,
+                                  **({"label": label or verb} if kind == "view" else {})})
             elif kind == "view":
                 warnings.append(f"picture not saved: {path}")
     result = shape(verb, reply, verbose=verbose)
@@ -426,16 +505,16 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         failed = Envelope.failure(code, message, result=result, job=job_folder, verb=verb)
         failed.artifacts, failed.warnings = artifacts, warnings
         return failed
-    nexts = ([f"langslice job {job_folder} {verb} --args "
-              f"'{json.dumps(arguments, default=str)}'"] if dry_run
+    nexts = ([_command(job_folder, verb, arguments)] if dry_run
              and VERBS[verb].kind == "write" else [])
     return Envelope(result=result, artifacts=artifacts, warnings=warnings, next=nexts)
 
 
 def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     """A tool reply for the CLI: pictures out (they are artifacts); concise
-    unless *verbose* (no model-facing descriptions, no whole-stack rows on a
-    write)."""
+    unless *verbose* (no whole-stack rows on a write; a reply with pictures
+    keeps what they are as one line, ``picture_note``; *verbose* keeps the
+    description and the pictures' text lines as written for a model)."""
     from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 
     if not isinstance(reply, dict):
@@ -449,7 +528,11 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
         if texts:
             body["media_texts"] = texts
         return body
-    body.pop("description", None)
+    description = body.pop("description", None)
+    pictured = isinstance(media, list) and any(not isinstance(item, str) for item in media)
+    if pictured and isinstance(description, str) and description.strip():
+        # What the pictures are, on one line (the artifacts list them).
+        body["picture_note"] = " ".join(description.split())
     if verb not in ROW_VERBS and isinstance(body.get("rows"), list):
         body["n_rows"] = len(body.pop("rows"))
     if body.get("files_written") and isinstance(body.get("files"), list):

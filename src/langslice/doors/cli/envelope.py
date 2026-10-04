@@ -148,11 +148,14 @@ class Envelope:
 
     ok: bool = True
     result: Any = None
-    artifacts: list[dict[str, str]] = field(default_factory=list)
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     next: list[str] = field(default_factory=list)
     error: dict[str, Any] | None = None
     exit: int = EXIT_OK
+    #: The call's arguments as the verb read them (the trace's ``args``);
+    #: never printed.
+    call: dict[str, Any] | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"ok": self.ok, "result": self.result,

@@ -122,6 +122,13 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   the body takes it; a body lacking a declared argument is a `TypeError`),
   `arguments_schema(name, variant)` (pydantic JSON schema, unknown keys
   refused). `FULL` is the variant of a caller without a job.
+- `trace.py` — what a host-owned door records of its calls:
+  `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`, also `agent.trace`'s),
+  `HostTrace` (the MCP door's trace, formerly `mcp.server.McpTrace`, still
+  that name there: one JSON line per record, images as descriptors; one file
+  per MCP session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
+  file per job folder, `cli_<images>_<digest>.jsonl`) and `log_call`
+  (`logs/calls.jsonl`).
 - `statement.py` — the job statement every door gives a registration
   agent, in one place: `job_statement(spec, state, ctx, door=, tool_names=,
   opening=, notes=, max_resolution=, image_model_off=, auto=)` (the ADK
@@ -253,10 +260,20 @@ them). The engine service stays in `hosts/api/`. The MCP door's
     kind `opening` with `index` and `label`), the facts (`viewer`,
     `resolution` range, `image_model`), all written to `BRIEF.md`.
   - `catalog.py` — `langslice ops` (the listed verbs: name, kind, group,
-    summary; the job commands) and `langslice schema [VERB] [--job FOLDER]`
-    (`SCHEMA_VERSION` 1; `canonical_verb`: kebab-case accepted; every
-    listed verb, or one verb by name, a hidden one included).
-  - `job.py` — `langslice job FOLDER VERB`: `execute` (never raises),
+    summary, `long`; the job commands, `brief` among them) and `langslice
+    schema [VERB] [--job FOLDER]` (`SCHEMA_VERSION` 2; `canonical_verb`:
+    kebab-case accepted; every listed verb, or one verb by name, a hidden
+    one included; per verb `Declared.entry`: `summary`, the whole
+    `description`, `kind`, `group`, `long`, `arguments`, and for a picture
+    verb `picture_options`, `agent.prompt.display_lines` with the
+    resolution range; declared for `--job`'s job, or the job of the current
+    folder, through `jobs.open_folder(persist=False, door="cli")`, else
+    `FULL` with a `hint`; a long verb's `next` is its `--background` call).
+  - `job.py` — `langslice job FOLDER VERB`: `execute` (never raises; every
+    call logged by `record`: `logs/calls.jsonl` through `trace.log_call`,
+    and with `LANGSLICE_TRACE_DIR` a `tool_result` record per call in
+    `trace.cli_trace`'s one file per job; `Envelope.call` holds the
+    arguments as the verb read them, never printed),
     `parse` (`--args`, `--name value`, `--dry-run`, `--background`,
     `--verbose`, `--timeout`, the child's `--run-id`), `arguments_for`
     (flags read as the verb declares them; `argument_refusal`, missing
@@ -266,10 +283,14 @@ them). The engine service stays in `hosts/api/`. The MCP door's
     an image-model verb's calls (`Verb.image_model`: `trace_borders`,
     `trace_from_atlas`) settled before answering, each landed outcome
     shown; `submit` writes the results;
-    pictures flushed and listed as artifacts; `would_change` from the state
-    before and after on a job that writes nothing), `shape` (concise:
-    no `description`, a write's whole-stack `rows` as `n_rows`; verbose:
-    everything and the picture texts), `changes`, `init` (the job flags of
+    pictures flushed and listed as artifacts, each with `index` (the
+    picture's place in the call, as `image_indexes` count) and, on its
+    `view` entry, `label` (sections and mode, `job.views.Saved`);
+    `would_change` from the state before and after on a job that writes
+    nothing; a dry run of a long verb adds its `--background` command to
+    `next`), `shape` (concise: a reply with pictures keeps its description
+    on one line as `picture_note`, a write's whole-stack `rows` as
+    `n_rows`; verbose: everything and the picture texts), `changes`, `init` (the job flags of
     `linear run`, `jobs.create`; with `--registration` the import report
     under `result.registration` and its warnings as the envelope's,
     `BAD_REGISTRATION` when the file cannot be read, matched one to one or

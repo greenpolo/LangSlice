@@ -59,11 +59,13 @@ from langslice.agent.live import _model_name
 from langslice.agent.model_resolver import _env
 from langslice.agent.plugins import part_summary
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.trace import TRACE_DIR_ENV as _TRACE_DIR_ENV
 
 logger = logging.getLogger(__name__)
 
-#: Directory for full-content session traces. Unset means no tracing at all.
-TRACE_DIR_ENV = "LANGSLICE_TRACE_DIR"
+#: Directory for full-content session traces. Unset means no tracing at all
+#: (the one switch every door's trace reads, :mod:`langslice.doors.trace`).
+TRACE_DIR_ENV = _TRACE_DIR_ENV
 
 
 def _describe_parts(parts: Any) -> list[dict[str, Any]]:

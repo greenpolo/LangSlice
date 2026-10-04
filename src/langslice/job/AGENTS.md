@@ -92,6 +92,7 @@ exports/             linear_results.json (the run's result; spec.out overrides
                      quicknii.json and visualign.json (with the maps)
 logs/events.jsonl    one line per open and per migration
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
+logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, artifacts)
 prompt.txt           a saved Claude job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
@@ -309,7 +310,8 @@ longer exist be taken over by the images it is opened with.
   `labels.tif` ~10 KB, `borders.png` ~1 KB, `view.json` ~2.5 KB (a real
   atlas's labels compress less). `captured()` (phase 5) collects every
   picture any store queues inside the block (`Saved`: its folder,
-  whether it gets layers and a residual; `files()` lists `view.jpg`,
+  whether it gets layers and a residual, its note's sections and mode, its
+  index among the call's pictures; `files()` lists `view.jpg`,
   `view.json` and the layers with their kinds): the agent CLI's `artifacts`. The numbering reads the index as it grows
   (each save reads the lines appended since the last), so two stores on one
   folder (a running agent and a CLI call) continue each other's numbers, and the numbers are reserved

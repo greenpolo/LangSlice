@@ -201,7 +201,9 @@ wording; `registry.py` lists which.
   hierarchy searched like text (`core/atlas_grep.py`), with `in_section`
   per row for a placed section.
 - `views.py` — the read verbs, one per viewing tool: `status(job)`
-  (`StackStatus`: the status rows, angles, breaks), `view_slices(job,
+  (`StackStatus`: the status rows, angles, breaks; a row the user locked
+  carries `locked: true`, one whose damage flag the user set
+  `damage_by_user: true`), `view_slices(job,
   workspace, records, options, keep_going=)` (`SectionsView`),
   `view_atlas(job, workspace, positions, options)` (`AtlasView`, with
   `regions_not_in_plane`), `view_placement(job, workspace, pairs, options)`
