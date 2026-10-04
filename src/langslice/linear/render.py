@@ -7,17 +7,15 @@ are applied in one order everywhere: ROTATE first, then FLIP left-right.
 
 from __future__ import annotations
 
-import io
 import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 import numpy as np
-from google.genai import types
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from langslice.affine import (
@@ -45,9 +43,6 @@ from langslice.image_prep import (
 from langslice.linear.appearance import Look, look_token, view_look
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
-
-if TYPE_CHECKING:  # interim: the media module takes these next
-    from langslice.linear.engine import EngineContext
 from langslice.space import Plane
 
 #: Working frame for transform fits and their preview panels. A COMPUTE
@@ -122,13 +117,6 @@ def picture_edge(ctx: Workspace, requested: int | None = None) -> int:
     if level == AUTO_RESOLUTION and requested:
         return int(requested)
     return PICTURE_EDGES[level][1]
-
-
-def image_to_part(img: Image.Image, *, quality: int = 85) -> types.Part:
-    """One PIL image as a JPEG ``types.Part``."""
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=quality)
-    return types.Part.from_bytes(mime_type="image/jpeg", data=buf.getvalue())
 
 
 @lru_cache(maxsize=1)
@@ -590,30 +578,24 @@ def stack_pictures(
     return out
 
 
-def reference_slice_part(
-    ctx: EngineContext, record: SliceState, *, long_edge: int | None = None,
+def reference_slice_picture(
+    ctx: Workspace, record: SliceState, *, long_edge: int | None = None,
     look: Look = None,
-) -> types.Part:
-    """One captioned, tissue-framed section picture, cached per display state.
+) -> Image.Image:
+    """One captioned, tissue-framed section picture for the comparison tools.
 
-    Ordering and damage annotations do not change the pixels being compared.
-    The cached caption retains the index/flags at first display; current state
-    is carried separately in tool text. Filename remains the stable identity.
-    *long_edge* None is the run's opening size; another size is its own entry.
-    (Since 2026-10-03 the opening shows sections in strips,
-    :mod:`langslice.linear.opening`, so this cache is the tools' own.)
+    Ordering and damage annotations do not change the pixels being compared;
+    the caption carries the index and flags as they stand now (the encoded
+    copy the doors cache keeps its first caption,
+    :func:`langslice.adk.media.reference_slice_part`). Filename remains the
+    stable identity. *long_edge* None is the run's opening size.
     """
     long_edge = long_edge or opening_edge(ctx)
-    key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True, look=look))
-    if key not in ctx.reference_parts:
-        label = f"{record.index_corrected}: {record.id}"
-        flags = slice_flags(record)
-        if flags:
-            label += f"  [{'; '.join(flags)}]"
-        ctx.reference_parts[key] = image_to_part(caption(
-            render_slice(ctx, record, long_edge=long_edge, frame=True, look=look), label,
-        ))
-    return ctx.reference_parts[key].model_copy(deep=True)
+    label = f"{record.index_corrected}: {record.id}"
+    flags = slice_flags(record)
+    if flags:
+        label += f"  [{'; '.join(flags)}]"
+    return caption(render_slice(ctx, record, long_edge=long_edge, frame=True, look=look), label)
 
 
 def stack_sheet(
