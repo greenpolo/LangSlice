@@ -66,7 +66,7 @@ def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
     v = field_mm[..., 1].astype(np.float64) / mm_per_px
     du_dy, du_dx = np.gradient(u)
     dv_dy, dv_dx = np.gradient(v)
-    return (1.0 + du_dx) * (1.0 + dv_dy) - du_dy * dv_dx
+    return np.asarray((1.0 + du_dx) * (1.0 + dv_dy) - du_dy * dv_dx, dtype=np.float64)
 
 
 def displacement_report(

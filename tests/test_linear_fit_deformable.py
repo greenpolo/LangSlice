@@ -586,7 +586,8 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     release = threading.Event()
 
     def job() -> dict[str, Any]:
-        release.wait(5)
+        # Held until released, so a slow first fit still finds it running.
+        release.wait(120)
         return {"status": "error", "error": "TransportError", "message": "no image",
                 "geometry_fingerprint": "now"}
 
