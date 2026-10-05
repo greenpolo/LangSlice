@@ -109,14 +109,7 @@ def linear_placement_matrix(
         raise ValueError("The written affine cannot be inverted to finite coordinates")
     geometry = canvas_geometry(image_size, um_per_px, atlas, position_mm, plane,
                                pitch_deg, yaw_deg)
-    sx, sy = geometry.section_offset
-    ax, ay = geometry.atlas_offset
-    atlas_to_section_frame = np.array(
-        [[geometry.atlas_scale, 0.0, ax - sx],
-         [0.0, geometry.atlas_scale, ay - sy], [0.0, 0.0, 1.0]],
-        dtype=np.float64,
-    )
-    atlas_to_slice = inverse @ atlas_to_section_frame
+    atlas_to_slice = inverse @ geometry.atlas_to_section_frame()
     if not np.isfinite(atlas_to_slice).all():
         raise ValueError("Atlas placement produced non-finite coordinates")
     return atlas_to_slice, geometry
@@ -222,8 +215,9 @@ def prepare_linear_registration(
 
 
 def digest(value: object) -> str:
-    """SHA-256 of a JSON value (sorted keys, no NaN): the fingerprints' hash."""
-    return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+    """SHA-256 of a JSON value (sorted keys; a value JSON cannot hold is
+    hashed as its text): the fingerprints' and call keys' hash."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -> str:

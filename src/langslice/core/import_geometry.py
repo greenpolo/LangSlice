@@ -242,10 +242,7 @@ def placement_from_pixel_map(
             geometries[render_size] = canvas_geometry(render_size, render_um, atlas, position,
                                                       plane, pitch, yaw)
         geometry = geometries[render_size]
-        sx, sy = geometry.section_offset
-        ax, ay = geometry.atlas_offset
-        atlas_to_frame = np.array([[geometry.atlas_scale, 0.0, ax - sx],
-                                   [0.0, geometry.atlas_scale, ay - sy], [0.0, 0.0, 1.0]])
+        atlas_to_frame = geometry.atlas_to_section_frame()
         file_to_render = orientation_matrix(unturned, rotation, flip) @ file_to_unturned
         atlas_to_render = file_to_render @ np.linalg.inv(file_to_native)
         return atlas_to_frame @ np.linalg.inv(atlas_to_render), render_size, geometry
