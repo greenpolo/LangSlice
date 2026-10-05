@@ -91,25 +91,20 @@ beside the maps as `tissue.png`, for a script that wants to mask with it.
 | `residual.tif` | only with an applied deformation. float32, ImageJ, axes CYX, `(2, rows, cols)`: `(d_row, d_col)` in grid pixels, defined on the whole grid, such that `atlas_um = pixel_to_atlas_um @ [row + d_row, col + d_col, 1]` (`maps.json`'s matrix). Its source is the deformation record named in `registration.json`. |
 | `maps.json` | `format_version` 1, `section`, `grid_size` (`[width, height]`), `full_resolution`, `um_per_px`, `pixel_to_atlas_um` (the grid's), `parameters_digest` (what they were written from; `registration.json` compares it), `tissue_found`, `footprint_fraction` and `tissue_fraction` (of the grid), `deformation_record`, `files`. |
 
-Float maps are deflate-compressed WITHOUT TIFF's floating-point predictor:
-ImageJ 1.x cannot decode it. Measured 2026-10-04 on LSD_910 M02 (whole-slide
-TIFFs, 12540 x 8417 px, working copy about 3072 x 2060): `coords.tif` 26-28
-MB, `residual.tif` 46 MB, `labels.tif` 0.2 MB, `labels_fiji.tif` 0.1 MB per
-section, about 0.6 s per section; at full resolution `coords.tif` 426 MB,
-`residual.tif` 750 MB, 13 s.
+Float maps are deflate-compressed without TIFF's floating-point predictor,
+which ImageJ 1.x cannot decode. At working size a section's `coords.tif` is
+tens of MB; at full resolution of a whole-slide scan, hundreds.
 
-Agreement (tests/test_job_formats.py, synthetic atlas): `labels.tif` equals
-the atlas read at `coords.tif` on over 99% of the footprint's pixels (99.9998%
-on the LSD_910 sections; exact but for
-ties at half voxels); `coords = matrix @ (p + residual)` to 0.01 µm; a
+Consistency (`tests/test_job_formats.py`, synthetic atlas): `labels.tif` equals
+the atlas read at `coords.tif` on over 99% of the footprint's pixels (the rest
+are ties at half voxels); `coords = matrix @ (p + residual)` to 0.01 um; a
 placement picture's coordinate map and `registration.json`'s matrix agree to
-0.05 µm; a `fit_deformable` picture's (its residual layer included) and the
-section maps' to under 1 µm on a 31 µm/px section.
+0.05 um.
 
 ## Pictures
 
 Each picture a door showed is saved under `views/` (`job/views.py`); a
-placement picture and, since this phase, a `fit_deformable` picture carry
+placement picture and a `fit_deformable` picture carry
 `labels.tif` (the atlas id under every pixel below the caption, no tissue
 rule), `borders.png` and a frame in `view.json`.
 `langslice.coordinate_map(".../view.json")` gives every pixel's atlas
@@ -147,7 +142,7 @@ pixels and `nr` the corrected index + 1.
   linearly anchored plane: the direction of VisuAlign's triangulation as the
   QUINT team's reference code reads it (`triangulate` on `(nx, ny)`, mapped to
   `(x, y)`). Each marker reproduces the section's maps exactly at its own
-  point (tests). Not yet opened in VisuAlign itself.
+  point (tests).
 
 ## Importing a registration made elsewhere
 
@@ -176,7 +171,7 @@ an orientation is refused. Entries matching no section image (`unmatched`),
 sections no entry names (`missing`: no placement, so they block `submit`
 until placed), sections that could not be placed (`refused`, with the
 reason) and each section's problems are reported as warnings. VisuAlign
-markers are never imported (product decision 2026-10-04): the warning says
+markers are never imported: the warning says
 the file's nonlinear markers were not imported and LangSlice's nonlinear
 step replaces them; the raw markers stay available on the `ImportResult`.
 
@@ -224,7 +219,4 @@ is not the job atlas's, are refused.
 ## Edited maps and labels
 
 An edited `coords.tif`, `labels.tif` or painted label image changes no
-registration: nothing reads them back. Bringing one in needs a fit that takes
-it as its target, e.g. a `fit_deformable` section input that reads a label
-image from a file and pairs it with the atlas regions (as `traced_borders`
-does with the image model's lines); that input does not exist yet.
+registration: nothing reads them back.
