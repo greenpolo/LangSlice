@@ -4,7 +4,8 @@ Starts a JVM with ``abba_launch.ABBA_JAVA_DEPENDENCIES`` in a subprocess and
 checks that every ABBA, BigDataViewer and bdv-playground member the viewer
 (``abba_compare``, ``abba_overview``) and the launcher use exists, copies a
 real source the way the viewer does, and, when the connector jar is built,
-delivers a connector message into the Python ``RunListener``. The fakes in
+has the connector's ``LangSliceEvents`` deliver a message to the Python
+``RunListener``. The fakes in
 the other viewer tests cannot catch a renamed Java class.
 
 Needs a Python with JPype and scyjava: this interpreter, or the one named by
@@ -95,9 +96,19 @@ if jar is not None:
     forward = abba_launch._java_listener(listener)
     events = jimport(abba_launch.EVENTS_CLASS)
     events.addListener(forward)
-    forward.accept('{"kind": "log", "message": "probe"}')
+    # The connector's own (package-private) publish, as a run calls it.
+    String, JsonObject = jimport("java.lang.String"), jimport("com.google.gson.JsonObject")
+    publish = Class.forName(abba_launch.EVENTS_CLASS).getDeclaredMethod(
+        "publish", String.class_, JsonObject.class_)
+    publish.setAccessible(True)
+    body = JsonObject()
+    body.addProperty("message", "probe")
+    publish.invoke(None, "log", body)
+    flush = Class.forName(abba_launch.EVENTS_CLASS).getDeclaredMethod("flush")
+    flush.setAccessible(True)
+    flush.invoke(None)
     listener.close()
-    delivered = received
+    delivered = [json.loads(text) for text in received]
 print(json.dumps({"missing": missing, "copied": str(copied.getSpimSource().getName()),
                   "delivered": delivered}))
 '''
@@ -125,4 +136,4 @@ def test_viewer_and_launcher_java_members_exist_in_abba_0_24_1():
     assert report["missing"] == []
     assert report["copied"] == "probe"
     if report["delivered"] is not None:
-        assert report["delivered"] == ['{"kind": "log", "message": "probe"}']
+        assert report["delivered"] == [{"message": "probe", "kind": "log"}]
