@@ -91,7 +91,7 @@ $('close-image').onclick=()=>$('lightbox').close();
 async function poll(){
   try{const response=await fetch('events?since='+sequence,{cache:'no-store'});if(!response.ok)throw new Error('unavailable');const state=await response.json();
     if(state.reset){sequence=0;active=null;messages.replaceChildren();tools.clear();pendingTools.clear();batches=[];batchIndex=-1;showImages();return;}
-    $('model').textContent=state.model;$('status').textContent=state.status;$('connection').textContent='Connected locally';
+    $('status').textContent=state.status;$('connection').textContent='Connected locally';
     if(!sequence&&state.trimmed)note('Earlier activity was removed from the live history.');
     const stick=follow;for(const event of state.events)render(event);sequence=state.sequence;
     // Bound the visible transcript too; server replay bounds do not constrain a long-open tab.

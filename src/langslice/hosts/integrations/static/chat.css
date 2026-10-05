@@ -18,12 +18,10 @@ body {
 }
 button { font: inherit; cursor: pointer; }
 button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-header { padding: 16px 20px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+header { padding: 16px 20px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 header strong { font-size: 14px; }
 header strong span { color: var(--muted); font-weight: normal; }
 .status { color: var(--muted); font-size: 11px; text-align: right; }
-.modelbar { padding: 0 20px 12px; display: flex; gap: 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.modelbar > span:first-child { color: #777; }
 main { flex: 1; overflow-y: auto; scrollbar-gutter: stable; min-height: 150px; padding: 0 20px 24px; }
 .welcome { padding: 24px 0; color: var(--muted); }
 .message { padding-top: 22px; }
@@ -87,7 +85,7 @@ dialog p { font-size: 11px; margin: 8px 5px 0; }
 @media (max-width: 450px) {
   header { padding: 12px 14px 8px; }
   header strong { font-size: 12px; }
-  main, .modelbar { padding-left: 14px; padding-right: 14px; }
+  main { padding-left: 14px; padding-right: 14px; }
   .visuals { padding-left: 12px; padding-right: 12px; }
   #image-label { max-width: 130px; }
   footer { flex-wrap: wrap; gap: 0 12px; }
