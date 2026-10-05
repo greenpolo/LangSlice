@@ -2,263 +2,172 @@
 
 `langslice job FOLDER VERB` runs one verb on a job folder and answers with one
 JSON object on stdout. It is built for coding agents (Claude Code, Codex)
-working in their own sandbox; no person is expected to use it over a GUI.
-Code: `src/langslice/doors/cli/` (`job.py`, `brief.py`, `catalog.py`,
-`envelope.py`, `background.py`).
-
-## Start with `brief`
-
-`langslice job FOLDER brief` gives a coding agent what LangSlice's own agent
-gets when it starts (`src/langslice/doors/statement.py`, shared by every
-door): the job statement (the job, the run facts, one line per tool, the
-constraints, the method; worded for this door where it says where the
-opening pictures are and how a long command answers), the user's notes
-(`job.json` `notes`), and the status table with the recent run notes, under
-`result.statement`; the opening pictures (the strips the agent's first
-message carries, same captions and order) saved in the job folder and listed
-under `artifacts` as kind `opening` with `index` (reading order) and `label`
-(the strip's text), and under `result.opening` with every text in reading
-order. All of it is also written to `BRIEF.md` in the job folder, which the
-job folder's card names first. `result` also says the `viewer`, the
-`resolution` range a call may ask for and the job's `image_model` (provider,
-`connected`, `trace_borders`). Run it again for the stack as it stands.
-
-## The verbs
-
-The verbs are the agent tools, under the same names, with the same arguments
-and descriptions: one declaration per verb (`src/langslice/doors/declarations.py`)
-feeds the agent tools, the MCP tools, this CLI and the library, and one
-registry (`src/langslice/ops/registry.py`) lists them with their kind (read or
-write) and group (Common, Positioning, Linear, Nonlinear). A job has the verbs
-its tasks switch on (`status` lists them under `verbs`). A verb is never
-renamed once shipped. Kebab-case is accepted (`set-positions`).
-
-One verb is the CLI's and the library's only, never a model's tool
-(`Verb.scripting` in the registry): `export_maps` (`--slices`, empty for
-every section; `--full-resolution`) writes each placed section's maps
-(`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
-`tissue.png`, `residual.tif`, `maps.json`), `exports/quicknii.json`,
-`exports/visualign.json` and `registration.json`, from the job as it
-stands; nothing in the state changes. `submit` writes the same files.
-`docs/file_formats.md` describes every file.
+working in their own shell. Code: `src/langslice/doors/cli/`.
 
 ```bash
-langslice ops                         # every verb: name, kind, group, one line, long
-langslice schema                      # every verb as a model reads it (versioned)
-langslice schema fit_deformable       # one verb's
-langslice schema fit_deformable --job FOLDER   # as that job declares it
+langslice job sections/ init --tasks position,transform --pixel-size-um 0.65
+langslice job sections/ brief                      # the job statement, opening pictures, status
+langslice ops                                      # every verb: name, kind, group, one line, long
+langslice schema fit_deformable                    # one verb's description and arguments
+langslice job sections/ set_positions --entries '[{"id": "s01.tif", "position_mm": 5.2}]'
+langslice job sections/ view_slices --slices s01.tif --view '{"resolution": 1200}'
+langslice job sections/ fit_deformable --slices s01.tif --background   # then: wait
 ```
-
-`schema` (version 2) gives per verb what a model reads of it: the whole
-declared `description` (the docstring the agent and MCP tools carry, worded
-for this door), its `summary`, `kind`, `group`, `long`, the argument
-schema under `arguments`, and for a verb that returns pictures
-`picture_options`, the job statement's text on `view` with the
-`view.resolution` range. With `--job FOLDER`, or run inside a job folder, it
-declares the verbs as that job's settings do (no `engine` where the user
-fixed it, the job's channels and viewer) and says which job under `job`;
-otherwise every argument, with a `hint`. A long verb (`fit_affine`,
-`fit_deformable`, `trace_borders`, `export_maps`) computes outside the job
-lock and may take minutes: `ops` marks it `long`, and `schema` and a dry
-run of it give the `--background` command under `next`.
-
-Besides the verbs, `FOLDER` takes:
-
-- `init`: create the job for a folder of section images, with the job flags
-  of `langslice linear run` (`--tasks`, `--atlas`, `--plane`,
-  `--pixel-size-um`, `--image-provider none`, ...), through the same ingest
-  every host uses; no agent runs. An existing job there is continued
-  (`--fresh` starts over); one made from other supplied inputs
-  (`--positions`, `--transforms`, `--orientation`, `--order`,
-  `--pitch`/`--yaw`, `--section-angles`, `--locked`, `--damaged`, `--pixel-size-um`, ...) is refused with `INPUTS_CHANGED` (exit 3), which
-  names the inputs that differ and `--fresh`. `--notes TEXT` keeps the
-  user's notes for the job in `job.json` (every door gives them to the
-  registration agent); `--viewer claude|codex|openai` (see "Pictures")
-  says which model reads the pictures. The answer carries the job
-  statement (`result.statement`, without opening pictures: `brief` saves
-  them) and `BRIEF.md` is written; `next` is `brief`.
-
-  `--registration FILE` starts from a linear registration made elsewhere: a
-  QuickNII or VisuAlign JSON/XML, a DeepSlice CSV/JSON/XML, or a LangSlice
-  `registration.json`. Its entries are matched to the section images (exact
-  file name, then the name without extension ignoring case, then one
-  QuickNII `_sNNN` section number) and each matched section gets the
-  file's position, cutting angles (per section), orientation and in-plane
-  transform as supplied inputs (`docs/file_formats.md`, "Importing a
-  registration made elsewhere"). Without `--tasks` the job's tasks are
-  `nonlinear` only: the imported placement is kept and only the nonlinear
-  step (`trace_borders`, `fit_deformable`) runs on top. Not with
-  `--positions`, `--transforms`, `--orientation`, `--pitch`/`--yaw`,
-  `--section-angles` or `--angles` (`BAD_ARGUMENTS`). The result carries
-  `registration` (the format, each placed section with how it matched and
-  its placement, `unmatched` entries, `missing` sections, `refused` ones
-  with the reason, the pixel size and its source); the envelope's
-  `warnings` say what was not placed and that VisuAlign markers in the file
-  were not imported (LangSlice's nonlinear step replaces them). A file that
-  cannot be read, whose entries match the sections ambiguously, or that
-  places no section is refused with `BAD_REGISTRATION` (exit 2). The other
-  commands that open a stack with these flags (`linear run`, `mcp`,
-  `claude prepare`) take `--registration` the same way.
-- `runs [ID]`: the background runs, newest first, or one run's state
-  (running, finished with its answer, or lost). `status` is only the verb.
-- `wait [ID]`: wait for a background run (the latest without ID);
-  `--timeout SECONDS`.
 
 `FOLDER` is the job folder or the image folder beside it.
 
+## The verbs
+
+The verbs are the agent tools, with the same names, arguments and
+descriptions: one declaration per verb (`src/langslice/doors/declarations.py`)
+feeds the agent tools, the MCP tools, this CLI and the library, and
+`src/langslice/ops/registry.py` lists them with their kind (read or write) and
+group (Common, Positioning, Linear, Nonlinear). A job has the verbs its tasks
+switch on (`status` lists them). Kebab-case is accepted (`set-positions`).
+`export_maps` exists only here and in the library (`Verb.scripting`): it
+writes each placed section's maps and the exports from the job as it stands
+([file_formats.md](file_formats.md)).
+
+`langslice schema [VERB] [--job FOLDER]` gives, per verb, its `description`,
+`summary`, `kind`, `group`, `long`, the argument schema and, for a verb that
+returns pictures, `picture_options`. With `--job` (or run inside a job
+folder) it declares the verbs as that job's settings do. A long verb
+(`fit_affine`, `fit_deformable`, `trace_borders`, `export_maps`) may take
+minutes: `ops` marks it `long` and `schema` or a dry run gives the
+`--background` command.
+
+## Commands on FOLDER
+
+- `init`: create the job with the job flags of `langslice linear run` (`--tasks`,
+  `--atlas`, `--plane`, `--pixel-size-um`, `--image-provider none`,
+  `--positions`, `--transforms`, ...); no agent runs. `--notes TEXT` keeps the
+  user's notes in `job.json` (every door gives them to the agent);
+  `--viewer claude|codex|openai` says which model reads the pictures. An
+  existing job is continued (`--fresh` starts over); one made from other
+  supplied inputs is refused with `INPUTS_CHANGED`, naming the differing inputs.
+- `brief`: what LangSlice's own agent gets when it starts
+  (`src/langslice/doors/statement.py`): the job statement, the notes and the
+  status table under `result.statement`, the opening pictures saved in the job
+  folder and listed as `artifacts` of kind `opening`, and all of it in
+  `BRIEF.md`. It also reports the `viewer`, the `resolution` range a call may
+  ask for and the job's `image_model`. Run it again for the stack as it stands.
+- `runs [ID]`: the background runs, newest first, or one run's state.
+- `wait [ID]` (`--timeout SECONDS`): wait for a background run (the latest
+  without ID).
+
+`init --registration FILE` starts from a linear registration made elsewhere
+(QuickNII or VisuAlign JSON/XML, DeepSlice CSV/JSON/XML, a LangSlice
+`registration.json`): each matched section gets the file's position, cutting
+angles, orientation and in-plane transform as supplied inputs, and the job's
+tasks are `nonlinear` only. Matching, what is read and what is refused:
+[file_formats.md](file_formats.md), "Importing a registration made elsewhere".
+The result's `registration` reports the placed, unmatched, missing and refused
+sections; a file that cannot be read or places no section is `BAD_REGISTRATION`
+(exit 2). `linear run`, `mcp` and `claude prepare` take `--registration` too.
+
 ## Arguments
 
-- `--args '{"entries": [...]}'` or `--args @file.json`: the arguments as one
-  JSON object.
-- `--name value` per argument (kebab or snake case), over `--args`: a JSON
-  value, plain text for a text argument; a list argument takes the flag once
+- `--args '{"entries": [...]}'` or `--args @file.json`: all arguments as one JSON object.
+- `--name value` per argument (kebab or snake case), overriding `--args`: a JSON
+  value, or plain text for a text argument; a list argument takes the flag once
   per item or a JSON list; a yes/no argument alone means true.
-- `--dry-run`: a write runs on the job without writing anything (state,
-  history, pictures; only its line in `logs/calls.jsonl`) and reports
-  `would_change` (per section the fields that would change, and the
-  stack's). `fit_deformable`, `trace_borders` and `trace_from_atlas` are
-  checked (arguments, sections), not run. `export_maps` writes no file and
-  lists under `files` what it would write.
-- `--background`: answer at once with a run id; the verb runs in a detached
-  process, recorded in `logs/runs/<id>.json` (its stderr in `<id>.log`).
-- `--verbose`: the whole reply (whole-stack rows on writes, the
-  descriptions written for a model, a picture's text lines).
+- `--dry-run`: a write runs on the job without writing anything and reports
+  `would_change`; the long verbs are checked, not run; `export_maps` lists the
+  files it would write.
+- `--background`: answer at once with a run id; the verb runs detached,
+  recorded in `logs/runs/<id>.json`.
+- `--verbose`: the whole reply (whole-stack rows, descriptions written for a model).
 
-Pictures take the same `view` options as the tools, `view.resolution`
-included: any long edge from 128 px up to the viewer's largest (below), and
-never past the source's own pixels (nothing is upsampled). A larger request
-is clamped and the reply's `view.resolution_note` says so. The
-look-before-commit gates of `position.gated` do not apply: they are
-tool-only.
+Pictures take the same `view` options as the tools, `view.resolution` included:
+any long edge from 128 px up to the viewer's largest, never past the source's
+own pixels. A larger request is clamped and `view.resolution_note` says so.
 
 ## Pictures and the viewer
 
-A CLI picture is a file the coding agent opens with its own image reader, so
-the job's viewer (`init --viewer`, `job.json` `viewer`, default `claude`)
-sets the opening strips' size and the largest picture a call may ask for
-(`core/opening.py` `VIEWER_LIMITS`), the numbers of the door that serves the
-same models:
+A picture is a file the coding agent opens with its own image reader, so the
+job's viewer (`init --viewer`, default `claude`) sets the opening strips' size
+and the largest picture a call may ask for (`core/opening.py` `VIEWER_LIMITS`):
 
-| Viewer | Opening strips | Largest picture | Why |
-| --- | --- | --- | --- |
-| `claude` | 1568 px, ~1.2 MP | 2000 px | Claude Code's Read sends the file to the Claude API. Read's own resize rule is not published; the API takes no image past 2000 px once a request holds more than 20 images (any working session) and shrinks past 1568 px (~1.15 MP) on models before Claude 4.7 (2576 px on 4.7+). |
-| `codex`, `openai` | 2048 px, 2,500 32-px patches | 2048 px | Codex's `view_image` resizes a file to fit 2048 px and 2,500 patches (detail "high", its default; codex-rs `utils/image`). |
+| Viewer | Opening strips | Largest picture |
+| --- | --- | --- |
+| `claude` | 1568 px, about 1.2 MP | 2000 px |
+| `codex`, `openai` | 2048 px, 2,500 32-px patches | 2048 px |
 
-The library (`langslice.open_job`) has no viewer: its pictures are capped
-only by their source.
+The library (`langslice.open_job`) has no viewer: pictures are capped only by
+their source.
 
 ## The image model
 
-A job whose nonlinear task names an image model offers `trace_borders` only
-when that model is connected to LangSlice here (a key or login present, the
-MCP door's check, `doors.api.setup.image_model_connected`); `status` and
-`brief` report it under `image_model`, the statement says the tool is off,
-and calling it is refused with `IMAGE_MODEL_OFF` (exit 3). On this door
-`trace_borders` answers once the image call has landed (with `--background`
-at once; `wait` collects the answer).
+A job whose nonlinear task names an image model offers `trace_borders` only when
+that model is connected here (a key or login present, checked offline by
+`doors.api.setup.image_model_connected`). `status` and `brief` report it under
+`image_model`; calling the verb otherwise is refused with `IMAGE_MODEL_OFF`
+(exit 3).
 
 ## The answer
 
 ```json
 {"ok": true,
- "result": {"status": "ok", "written": [{"id": "s0.png", "position_mm": 0.1}], ...},
- "artifacts": [{"path": "/data/M04/langslice/sections/s0/views/000001_set_positions_overlay/view.jpg", "kind": "view"},
-               {"path": ".../view.json", "kind": "view_json"},
-               {"path": ".../labels.tif", "kind": "labels"},
-               {"path": ".../borders.png", "kind": "borders"}],
+ "result": {"status": "ok", "written": [{"id": "s0.png", "position_mm": 0.1}], "...": "..."},
+ "artifacts": [{"path": "/data/sections/langslice/sections/s0/views/000001_set_positions_overlay/view.jpg", "kind": "view"}],
  "warnings": [],
  "next": []}
 ```
 
-When `ok` is false, `error` says why and what to do:
-`{"code": "MISSING_POSITIONS", "message": "...", "fix": "Write every section's position first (set_positions)."}`;
-`result` still holds the verb's reply (the ids it names, the rows it refused).
+When `ok` is false, `error` has a `code`, a `message` and a `fix`; `result` still
+holds the verb's reply.
 
 | Exit | Meaning |
 | --- | --- |
 | 0 | ok |
 | 2 | the call is wrong: unknown verb or argument, a missing or malformed one, an unknown section, no job in FOLDER |
-| 3 | the job refused it: a gate or rule (`MISSING_TRANSFORMS`, `LOCKED`, `NOTHING_TO_UNDO`, a verb this job's tasks do not have, `STALE_INPUT` for every section), another writer holding the lock past 300 s (`JOB_BUSY`), or a background run still running at `wait --timeout` |
-| 4 | internal error (the traceback is on stderr); a background run that ended without an answer |
+| 3 | the job refused it: a gate or rule (`MISSING_TRANSFORMS`, `LOCKED`, `NOTHING_TO_UNDO`, a verb this job's tasks do not have, `STALE_INPUT` for every section), another writer holding the lock past 300 s (`JOB_BUSY`), a background run still running at `wait --timeout` |
+| 4 | internal error (traceback on stderr); a background run that ended without an answer |
 
-`result` is concise by default: a reply with pictures keeps what they are
-as one line, `picture_note` (the description written for a model, on one
-line), and a write's whole-stack `rows` are replaced by `n_rows` (`status` and
-`view_stack` keep theirs); `--verbose` gives the description and the
-pictures' text lines as written. Pictures are never inlined: each is saved
-in the job folder as every door saves it, and listed under `artifacts` by
-absolute path and kind, with `index` (its place among the call's pictures,
-the number the reply's `image_indexes` give) and, on the `view` entry,
-`label` (the sections it shows and its mode):
-`view` (the JPEG), `view_json` (its frame: `langslice.coordinate_map(path)`
-gives each pixel's atlas micrometres), and for a section on its atlas
-`labels` (uint32 atlas ids) and `borders`, plus `residual` for a
-`fit_deformable` picture; `results`, `registration`, `quicknii`,
-`visualign` and each section's `coords`, `labels`, `labels_fiji`,
-`labels_csv`, `tissue`, `residual` and `maps` (after `submit` and `export_maps`);
-`card`, `state` and `brief` (after `init`); `opening` and `brief` (after
-`brief`). Progress and library output go to stderr.
+`result` is concise by default; `--verbose` gives the full text. Pictures are
+never inlined: each is saved in the job folder and listed under `artifacts` by
+absolute path and `kind` with its `index` (the number the reply's
+`image_indexes` give): `view` (the JPEG), `view_json` (its frame:
+`langslice.coordinate_map(path)` gives each pixel's atlas micrometres),
+`labels` and `borders` (a section on its atlas), `residual` (a
+`fit_deformable` picture); after `submit` and `export_maps`: `results`,
+`registration`, `quicknii`, `visualign` and each section's `coords`, `labels`,
+`labels_fiji`, `labels_csv`, `tissue`, `residual`, `maps`; after `init`:
+`card`, `state`, `brief`.
 
-`status` also says, per row, `locked: true` for a section whose in-plane
-alignment the user did (`--locked`) and `damage_by_user: true` for one the
-user marked damaged (`--damaged`), and `image_model` (see above).
+## Call log, traces, shared editing
 
-## The call log and the trace
+Every call is logged in `logs/calls.jsonl` (verb, arguments, `ok`, exit code,
+error code, artifacts, seconds, background run id; a lean job logs nothing).
+With `LANGSLICE_TRACE_DIR` set, each call is also traced like an MCP tool call
+(`src/langslice/doors/trace.py`) into `cli_<images>_<digest>.jsonl`.
 
-Every call on a job is logged in its folder, `logs/calls.jsonl`: one line per
-call with the verb, its arguments as given, `ok`, the exit code, the error
-code, the number of warnings, the artifacts' paths, the seconds it took and,
-for a background run, its id (a lean job logs nothing). With
-`LANGSLICE_TRACE_DIR` set, each call is also traced as the MCP door traces a
-tool call (`src/langslice/doors/trace.py`): a `tool_result` record (`name`,
-`args` as the verb read them, `content`: the envelope as text, then each
-picture as `image/jpeg` with its path and size, never its bytes) appended to
-one file per job folder, `cli_<images>_<digest>.jsonl`.
-
-## Live shared editing
-
-Each call opens the job as it stands on disk (nothing is rewritten by
-opening), runs the verb and closes it. A LangSlice agent run on the same
-folder picks up a CLI write before its next tool call, history included, and
-the next CLI call picks up the agent's; every write is one undo step either
-way. Every write holds the job folder's lock (`job.lock`, across processes,
-Linux, macOS and Windows): lock, reload what others saved, apply, commit,
-unlock, so concurrent writers never overwrite each other. `fit_affine`,
-`fit_deformable` and `trace_borders` compute outside the lock (a fit can take
-minutes) and take it only to apply: a section whose inputs (position, plane,
-cutting angles, orientation, transform, fit appearance, applied deformation
-or trace, whatever the result was computed from) changed meanwhile is
-refused as that section's row, `STALE_INPUT` (run it again), and the other
-sections apply; the envelope lists it under `warnings`.
+Each call opens the job as it stands on disk, runs the verb and closes it. A
+`langslice linear run` on the same folder picks up a CLI write before its next
+tool call and the reverse; every write is one undo step. Writes hold the job
+folder's lock (across processes): lock, reload, apply, commit, unlock.
+`fit_affine`, `fit_deformable` and `trace_borders` compute outside the lock and
+take it only to apply: a section whose inputs changed meanwhile is refused as
+that section's row, `STALE_INPUT` (run it again), and the others apply.
 
 ## The reference card and the library
 
 Every job folder holds `AGENTS.md` and `CLAUDE.md` (identical, generated by
-`src/langslice/doors/card.py`, rewritten when stale): first, to run `brief`
-and read `BRIEF.md`; what the folder holds,
-that `state.json` is the truth and `registration.json`, pictures and maps
-are derived (one line per file), the coordinate convention (BrainGlobe micrometres, the atlas's axis order, voxel
-`i`'s centre at `i * resolution`), that calls may run in parallel, the
-verbs (each marked `long` where it computes outside the lock), and the
+`src/langslice/doors/card.py`): run `brief` first; what the folder holds
+(`state.json` is the truth; `registration.json`, pictures and maps are derived);
+the coordinate convention; that calls may run in parallel; the verbs; and the
 Python entry point:
 
 ```python
 import langslice
 
-job = langslice.open_job("/data/M04")        # the verbs as methods
-job.set_positions(entries=[{"id": "s0.png", "position_mm": 5.2}])["images"]  # PIL images
-langslice.coordinate_map(".../view.json")    # (rows, cols, 3) float32 atlas µm
-langslice.load_atlas("allen_mouse_25um")     # a BrainGlobe atlas
+job = langslice.open_job("/data/sections")   # the verbs as methods
+job.set_positions(entries=[{"id": "s0.png", "position_mm": 5.2}])["images"]   # PIL images
+langslice.coordinate_map(".../view.json")    # (rows, cols, 3) float32 atlas micrometres
 ```
 
-`import langslice` and `open_job` load no agent framework or model client
-(`tests/test_core_imports.py`). A scripted pipeline (making jobs, image-model
-profiles, `register_section` / `register_job`): [`library.md`](library.md).
-
-## Ready-made agent setups
-
-`connectors/claude-code/` (a Claude Code plugin: skills for the main session and
-registration subagents with CLI or scripting access) and
-`connectors/codex/` (skills, custom agents, rules) wrap this CLI for
-one-brain registration runs; their READMEs say how to restrict the
-shell.
+`import langslice` loads no agent framework or model client. A scripted
+pipeline (`create_job`, image-model profiles, `register_section`,
+`register_job`): [library.md](library.md). Ready-made Claude Code and Codex
+setups: [`connectors/claude-code/`](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-code/README.md),
+[`connectors/codex/`](https://github.com/greenpolo/LangSlice/blob/main/connectors/codex/README.md).
