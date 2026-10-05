@@ -17,7 +17,11 @@ permissions:
 
 jobs:
   java:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -32,10 +36,10 @@ jobs:
       - name: Build connector with declared Maven dependencies
         working-directory: connectors/fiji
         run: mvn --batch-mode package dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt
-      - name: Exercise worker protocol and SciJava command discovery
+      - name: Exercise worker protocol and SciJava command discovery (Linux)
+        if: runner.os != 'Windows'
         working-directory: connectors/fiji
-        # These are executable smoke checks, not JUnit tests; invoke their main
-        # explicitly rather than assuming Surefire discovers them.
+        shell: bash
         run: |
           for smoke in ConnectorSmokeTest HostGeometrySmokeTest; do
             java -Djava.awt.headless=true \
@@ -43,6 +47,16 @@ jobs:
               -cp "target/test-classes:target/classes:$(cat target/test-classpath.txt)" \
               "org.langslice.fiji.$smoke"
           done
+      - name: Exercise worker protocol and SciJava command discovery (Windows)
+        if: runner.os == 'Windows'
+        working-directory: connectors/fiji
+        shell: pwsh
+        run: |
+          $classpath = (Get-Content target/test-classpath.txt -Raw).Trim()
+          foreach ($smoke in @('ConnectorSmokeTest', 'HostGeometrySmokeTest')) {
+            & java '-Djava.awt.headless=true' "-Djava.util.prefs.userRoot=$env:RUNNER_TEMP\langslice-test-prefs" -cp "target/test-classes;target/classes;$classpath" "org.langslice.fiji.$smoke"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Upload connector JAR
         uses: actions/upload-artifact@v4
         with:
