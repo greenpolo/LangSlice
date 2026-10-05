@@ -62,10 +62,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,registration]"
 
-      - name: Check Windows job brief before the full suite
-        if: runner.os == 'Windows'
-        run: python -m pytest -q tests/test_agent_cli.py::test_brief_is_the_native_statement_and_opening
-
       # The default suite deselects tests marked slow.
       - name: Run pytest
         run: python -m pytest

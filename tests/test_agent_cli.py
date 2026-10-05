@@ -240,14 +240,8 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     assert [entry.get("path") for entry in result["opening"] if "picture" in entry] == [
         item["path"] for item in opening]
     # BRIEF.md holds it all, and the card names it first.
-    brief = (job / "BRIEF.md").read_text()
-    normalized = statement.replace("\r\n", "\n")
-    saved = brief.split("## Job statement\n\n", 1)[1]
-    mismatch = next((i for i, (actual, expected) in enumerate(zip(normalized, saved, strict=False))
-                     if actual != expected), min(len(normalized), len(saved)))
-    assert normalized in brief, (f"first mismatch at {mismatch}: "
-                                 f"{ascii(normalized[max(0, mismatch - 30):mismatch + 80])} vs "
-                                 f"{ascii(saved[max(0, mismatch - 30):mismatch + 80])}")
+    brief = (job / "BRIEF.md").read_text(encoding="utf-8")
+    assert statement.replace("\r\n", "\n") in brief
     assert all(item["path"] in brief for item in opening)
     assert envelope["artifacts"][-1] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
     assert "BRIEF.md" in (job / "AGENTS.md").read_text()
