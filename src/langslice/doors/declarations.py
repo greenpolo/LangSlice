@@ -1,6 +1,6 @@
 """Every verb's declaration: the one home of what each door offers.
 
-Phase 5 of the layered refactor (2026-10-04). Each verb of
+Each verb of
 :data:`langslice.ops.registry.VERBS` is declared here ONCE, as a stub
 function below: its arguments (names, types, defaults) and its description.
 Every door is generated from these declarations:
@@ -13,10 +13,9 @@ Every door is generated from these declarations:
 - the job folder's reference card and the library's job methods.
 
 The description is the stub's docstring, which a model reads verbatim (ADK
-and FastMCP send a function's ``__doc__`` as it is). The tools used to be
-closures inside ``build_tools``, so their docstrings carried eight spaces
-before every continuation line; :func:`model_doc` adds the four this module
-level lacks, so what a model reads is byte for byte what it read before.
+and FastMCP send a function's ``__doc__`` as it is). Every continuation line
+a model reads is indented eight spaces; :func:`model_doc` adds the four this
+module level lacks (the goldens pin the bytes).
 
 A run varies a declaration in four ways, all decided here from a
 :class:`Variant`: ``view`` is typed :class:`~langslice.doors.tools.arguments.ViewAuto`
@@ -736,8 +735,8 @@ FULL = Variant()
 # --- fit_deformable's description per run ------------------------------------------
 
 #: The ``fit_deformable`` description's recommendation for traced fit sections
-#: (the 2026-10-01 ceiling test's best pictures and numbers); dropped where it
-#: cannot apply (no image model, or the user fixed the engine to Elastix).
+#: (a small correction of a good placement); dropped where it cannot apply (no
+#: image model, or the user fixed the engine to Elastix).
 _RECOMMENDED_TRACED = (
     " With a\n"
     "                completed trace, traced_borders with the ANTs engine at medium\n"

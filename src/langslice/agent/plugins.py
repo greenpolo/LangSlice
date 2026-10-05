@@ -1,4 +1,4 @@
-"""ADK plugins used by the position-estimation harness."""
+"""ADK plugins of the agent session: pacing, strict arguments, media delivery, capture."""
 
 from __future__ import annotations
 
@@ -20,22 +20,16 @@ from PIL import Image
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY
 
 #: Images in context before the working set is cut, and what it is cut to.
-#: Industry practice (verified 2026-10-03): Codex CLI never prunes images by
-#: age (only whole images at compaction, by token budget); Claude Code keeps
-#: every image and drops the oldest batch only when a request would pass the
-#: API's image-count or size limit. So: keep everything, and cut oldest-first
-#: in ONE batch only at a hard backstop far above any LangSlice run (Astra
-#: accepts 1,500 images a request; this is a third of that). The stage-boundary
-#: cut (every earlier tool image dropped at the first fit_affine /
-#: adjust_transforms) is gone: on 2026-10-03 it threw away the channel strip and
-#: preprocess pictures both agents had chosen their stain from. A cached image
-#: costs ~0.13x on each later call (run 5, 2026-09-09), and a cut breaks the
-#: cache at the cut point, so cutting rarely is also the cheap choice.
+#: Every image is kept; the oldest are cut in ONE batch only at a backstop far
+#: above any run (a third of the 1,500 images the OpenAI lane accepts per
+#: request), as coding agents do. An agent chooses later steps from earlier
+#: pictures (its stain, its channels), and a cut breaks the prompt cache at
+#: the cut point, so cutting rarely is also the cheap choice.
 DEFAULT_MAX_IMAGES = 500
 DEFAULT_KEEP_IMAGES = 250
 
-#: Astra's run-19 debrief read the old wording ("dropped from context") as
-#: "never delivered" and doubted comparisons it had actually made.
+#: Says the pictures were delivered: "dropped from context" alone reads as
+#: "never shown".
 _DROPPED_TOOL = (
     "were shown when this call returned and have since been dropped from "
     "context to bound the request; call again to see them."

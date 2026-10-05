@@ -22,8 +22,6 @@ if TYPE_CHECKING:
 Emit = Callable[[dict[str, Any]], None]
 logger = logging.getLogger(__name__)
 _SUPPORTED_ATLASES = {"allen_mouse_10um", "allen_mouse_25um", "allen_mouse_50um"}
-#: Subfolder of the snapshot folder holding the blended images the agent is
-#: shown, when the host sends preprocessing settings or multi-page snapshots.
 
 
 #: Why an ABBA door refuses a job whose sections carry different cutting
@@ -46,28 +44,6 @@ def refuse_mixed_angles(state: Any) -> None:
              else bool(state.mixed_angles))
     if mixed:
         raise ValueError(ABBA_MIXED_ANGLES)
-
-
-def refuse_mixed_job(spec: JobSpec) -> None:
-    """Refuse, before ABBA is touched, a spec whose job would carry
-    different cutting angles per section: supplied per-section angles that
-    differ (``inputs.angles``), or, when it resumes, a checkpoint whose
-    sections differ (``ValueError``, :data:`ABBA_MIXED_ANGLES`)."""
-    from langslice.core.spec import supplied_angles
-
-    _stack, sections = supplied_angles((spec.inputs or {}).get("angles"))
-    if len(set(sections.values())) > 1:
-        raise ValueError(ABBA_MIXED_ANGLES)
-    if not spec.resume or not spec.image_folder:
-        return
-    from langslice.core.state import StackState
-    from langslice.job.checkpoint import read_checkpoint
-    from langslice.job.layout import JobLayout, locate_job_folder
-
-    folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
-    data = read_checkpoint(str(JobLayout(folder).state_file))
-    if data is not None:
-        refuse_mixed_angles(StackState.from_dict(data))
 
 
 def _finite_positive(value: Any, name: str) -> float:
@@ -102,7 +78,6 @@ def _host_updates(
     or transform row is ever emitted for it.
     """
     from langslice.core.abba_affine import normalized_to_abba_affine
-    from langslice.core.abba_spline import spline_world_landmarks
 
     prior = {row["id"]: row for row in previous["slices"]}
     updates = []
@@ -132,12 +107,6 @@ def _host_updates(
             transform = row.get("transform")
             if transform is None:
                 update["affine_mm"] = None
-            elif transform.get("spline") is not None:
-                source, target = spline_world_landmarks(
-                    transform["spline"], size=geometry[name], pixel_size_um=pixel_size_um,
-                    rotation_deg=int(row.get("rotation_deg") or 0),
-                )
-                update.update(spline_source_mm=source.tolist(), spline_target_mm=target.tolist())
             else:
                 update["affine_mm"] = normalized_to_abba_affine(
                     transform["params"], size=geometry[name], pixel_size_um=pixel_size_um,
@@ -168,7 +137,7 @@ def _host_appearance(
     blends it — the function ``preprocess.preview`` shows the user — but the
     blend is only the DEFAULT appearance (``JobSpec.host_preprocessing``): the
     snapshots stay the run's images and their pages stay readable as raw
-    channels, for the agent's ``section_image`` and ``preprocess``. Otherwise
+    channels, for the agent's picture options and ``preprocess``. Otherwise
     (no settings, single pages) None: the engine's own automatic path.
     """
     from langslice.core.image_prep import host_preprocess_settings, page_count
@@ -301,9 +270,6 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     # The host's blend is the default appearance; the snapshots and their
     # channels stay the run's images (nothing is staged or rewritten).
     spec.host_preprocessing = _host_appearance(paths, preprocessing)
-    registered = params.get("registered_slices") or []
-    if not isinstance(registered, list) or any(name not in geometry for name in registered):
-        raise ValueError("Registered slice names must identify exported snapshots")
     abba: dict[str, Any] = {"angles_deg": {"pitch_deg": pitch, "yaw_deg": yaw},
                             "z_offset_mm": z_offset, "existing_warp": sorted(set(existing_warp)),
                             "keep_warp": keep_warp}
@@ -314,11 +280,8 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
 def _host_angles(params: dict[str, Any]) -> tuple[float, float]:
     """ABBA's stack-wide cutting angles: ``angles_deg`` (``{"pitch_deg",
     "yaw_deg"}``, read from ``ReslicedAtlas`` with :mod:`langslice.core.abba_angles`'
-    signs), else the older ``host_angles_deg`` (``{"pitch", "yaw"}``), else flat."""
-    if params.get("angles_deg") is not None:
-        value, keys = params["angles_deg"], ("pitch_deg", "yaw_deg")
-    else:
-        value, keys = params.get("host_angles_deg") or {}, ("pitch", "yaw")
+    signs), else flat."""
+    value, keys = params.get("angles_deg") or {}, ("pitch_deg", "yaw_deg")
     if not isinstance(value, dict) or set(value) - set(keys):
         raise ValueError(f"The host's cutting angles must be {{{keys[0]!r}, {keys[1]!r}}} "
                          "in degrees")
@@ -522,20 +485,19 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     """Run exported snapshots; positions_mm are BrainGlobe AP millimetres.
 
     Required: image_folder, pixel_size_um, positions_mm (filename -> mm).
-    Optional: spec (JobSpec fields), registered_slices (snapshot filenames),
-    locked (snapshot filenames whose in-plane geometry the agent may not
-    change), damaged (filename -> note, flags the agent may not clear) and
-    preprocessing (``preprocess.preview`` settings for multi-page snapshots:
-    the default appearance; the pages stay readable as channels),
-    channel_names (one name per exported page), trace_dir (save this
-    run's full agent trace there; the result then names the files written),
-    angles_deg (ABBA's stack-wide ``{"pitch_deg", "yaw_deg"}``: the job's
-    ``inputs.angles``; the older ``host_angles_deg`` ``{"pitch", "yaw"}`` is
-    read too), z_offset_mm (ABBA's slicing-axis offset, kept with the job;
-    the connector converts positions with it) and existing_warp (snapshot
-    filenames already carrying the user's own warp: those that are also
-    locked keep it, ``inputs.keep_warp``) and nonlinear_skip (snapshot
-    filenames the user left out of Nonlinear, ``inputs.nonlinear_skip``).
+    Optional: spec (JobSpec fields), locked (snapshot filenames whose
+    in-plane geometry the agent may not change), damaged (filename -> note,
+    flags the agent may not clear) and preprocessing (``preprocess.preview``
+    settings for multi-page snapshots: the default appearance; the pages
+    stay readable as channels), channel_names (one name per exported page),
+    trace_dir (save this run's full agent trace there; the result then names
+    the files written), angles_deg (ABBA's stack-wide ``{"pitch_deg",
+    "yaw_deg"}``: the job's ``inputs.angles``), z_offset_mm (ABBA's
+    slicing-axis offset, kept with the job; the connector converts positions
+    with it) and existing_warp (snapshot filenames already carrying the
+    user's own warp: those that are also locked keep it,
+    ``inputs.keep_warp``) and nonlinear_skip (snapshot filenames the user
+    left out of Nonlinear, ``inputs.nonlinear_skip``).
     The run ends with one more checkpoint of the final state (the connector
     applies its rows; it does not apply ``final_updates`` again).
     Checkpoint events carry initial=True with no mutations for ingestion.
@@ -619,9 +581,9 @@ def _tracing(folder: Path | None) -> Iterator[None]:
 def preview_preprocess(request: PreprocessPreviewRequest) -> PreprocessPreviewResult:
     """Write the grayscale image the agent would be shown for one snapshot.
 
-    The same :func:`langslice.core.image_prep.host_preprocess` ``linear.run``
-    stages the agent's images with, before any agent-side resizing. No model,
-    no atlas, no engine import.
+    The same :func:`langslice.core.image_prep.host_preprocess` that gives
+    ``linear.run``'s sections their default appearance, before any
+    agent-side resizing. No model, no atlas, no engine import.
     """
     from langslice.core.image_prep import host_preprocess, read_pages
     from langslice.doors.api.models import PreprocessPreviewResult

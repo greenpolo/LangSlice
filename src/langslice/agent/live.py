@@ -27,18 +27,18 @@ def _model_name(model: Any) -> str:
     return name if isinstance(name, str) else type(model).__name__
 
 
-def _plain(value: Any) -> Any:
+def plain(value: Any) -> Any:
     """Copy JSON content without falling back to object reprs or media bytes."""
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
     if isinstance(value, dict):
         return {
-            key: _plain(item) for key, item in value.items()
+            key: plain(item) for key, item in value.items()
             if isinstance(key, str)
             and key not in {TOOL_MEDIA_PARTS_KEY, "thought_signature", "encrypted_content"}
         }
     if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
+        return [plain(item) for item in value]
     return "<non-text content>"
 
 
@@ -111,10 +111,10 @@ class LiveEvents:
             call = getattr(part, "function_call", None)
             if call is not None:
                 self.emit("tool_call", name=getattr(call, "name", ""),
-                          id=getattr(call, "id", None), args=_plain(getattr(call, "args", {})))
+                          id=getattr(call, "id", None), args=plain(getattr(call, "args", {})))
             response = getattr(part, "function_response", None)
             if response is not None:
                 name = getattr(response, "name", "")
                 self.emit("tool_result", name=name, id=getattr(response, "id", None),
-                          response=_plain(getattr(response, "response", None)),
+                          response=plain(getattr(response, "response", None)),
                           images=_images(getattr(response, "parts", None), label=name))

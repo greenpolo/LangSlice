@@ -170,7 +170,7 @@ def test_deformable_engine_choice_does_not_make_a_trace_stale(case):
 
 
 def test_a_door_resolves_the_provider_and_none_has_no_image_model():
-    resolved = resolve_image_model("chatgpt")
+    resolved = resolve_image_model("openai-oauth")
     assert (resolved.provider, resolved.model) == ("openai-oauth", "gpt-image-2")
     assert resolve_image_model("gemini-api", "some-model").model == "some-model"
     with pytest.raises(ValueError, match="image-model provider"):

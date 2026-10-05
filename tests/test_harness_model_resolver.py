@@ -101,10 +101,9 @@ def test_resolve_hosted_gemma_model_uses_adk_gemma(monkeypatch):
 
 
 def test_resolve_litellm_model_reports_missing_dependency(monkeypatch):
-    def _raise_import_error():
-        raise ImportError("LiteLLM support requires: pip install google-adk[extensions]")
+    import sys
 
-    monkeypatch.setattr(model_resolver, "_load_litellm_class", _raise_import_error)
+    monkeypatch.setitem(sys.modules, "google.adk.models.lite_llm", None)  # import fails
 
     with pytest.raises(RuntimeError, match="LiteLLM support requires"):
         model_resolver.resolve_adk_model("litellm-proxy:langslice-qwen36-plus")

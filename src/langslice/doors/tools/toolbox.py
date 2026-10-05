@@ -5,11 +5,10 @@ corrected index; ordinary writes return the rows they changed (``status`` is
 the whole table); every write is undoable and checkpoints. Transform writes
 return their physical result and omit a generic row that would repeat it.
 
-Tools report data. No advice, no interpretation, no strategy in any payload —
-every benchmark failure worth tracing came back to harness text telling the
-model what to think. The submit gates are the exception, and a constraint that
-states a number is not coaching: refusals name the numbers that caused them and
-stop there.
+Tools report data: no advice, no interpretation, no strategy in any payload
+(the job statement's "Method:" section is the one place for strategy). A
+constraint that states a number is not coaching: refusals name the numbers
+that caused them and stop there.
 
 The tools are a door over the core and the job: they check arguments, keep
 the look-before-commit gates and the delivery bookkeeping, call the
@@ -36,7 +35,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image
 
-from langslice.agent.live import LiveCallback, _plain
+from langslice.agent.live import LiveCallback, plain
 from langslice.core import appearance as looks
 from langslice.core import deformation, layers
 from langslice.core.canvas import VIEW_MODES
@@ -322,8 +321,8 @@ def _serialized(
                 arguments = dict(bound.arguments)
                 context = arguments.pop("tool_context", None)
                 fields.update(
-                    id=_plain(getattr(context, "function_call_id", None)),
-                    args=_plain(arguments),
+                    id=plain(getattr(context, "function_call_id", None)),
+                    args=plain(arguments),
                     target_ids=_tool_target_ids(state, tool.__name__, arguments)
                     if state is not None else [],
                 )
@@ -342,7 +341,7 @@ def _serialized(
                 raise
             # The pictures as saved in the job folder (written in the
             # background): hosts show them from there, never from bytes.
-            notify({"kind": "tool_end", **fields, "response": _plain(result),
+            notify({"kind": "tool_end", **fields, "response": plain(result),
                     "views": [str(item.folder / VIEW_PICTURE_FILE) for item in saved]})
             return result
 
@@ -396,8 +395,8 @@ def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
                 except TypeError:
                     arguments = dict(kwargs)
                 context = arguments.pop("tool_context", None)
-                shown.show(pictures, arguments=_plain(arguments),
-                           call_id=_plain(getattr(context, "function_call_id", None)))
+                shown.show(pictures, arguments=plain(arguments),
+                           call_id=plain(getattr(context, "function_call_id", None)))
         return result
 
     return run
@@ -1032,8 +1031,8 @@ def build_tools(
                 rejected.append({"id": record.id, "reason": "position_mm is not a number"})
                 continue
             if gated and not box.compared.get(record.id):
-                # One compare is enough: Astra's run-8 method confirms each
-                # section at ONE hypothesised position (2026-09-09).
+                # One compare is enough: a section is confirmed at one
+                # hypothesised position.
                 rejected.append(
                     {
                         "id": record.id,

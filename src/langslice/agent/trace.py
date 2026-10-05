@@ -56,7 +56,7 @@ from typing import Any
 from google.genai import types
 
 from langslice.agent.live import _model_name
-from langslice.agent.model_resolver import _env
+from langslice.agent.model_resolver import env_value
 from langslice.agent.plugins import part_summary
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.trace import TRACE_DIR_ENV as _TRACE_DIR_ENV
@@ -218,7 +218,7 @@ class SessionTrace:
 
 def open_trace(run_label: str, *, agent: Any) -> SessionTrace | None:
     """A trace for this session, or ``None`` when tracing is off."""
-    trace_dir = _env(TRACE_DIR_ENV)
+    trace_dir = env_value(TRACE_DIR_ENV)
     if trace_dir is None:
         return None
     return SessionTrace(trace_dir, run_label, agent=agent)

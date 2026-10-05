@@ -1,16 +1,13 @@
 """Pre-run cost estimate for a linear stack run on the ChatGPT account.
 
 The unit is percent of the ChatGPT usage window, the only cost the OAuth lane
-reports. Rates are percent per section, measured from 92 past runs whose logs
-carry usage-window readings (2026-09-09 to 2026-09-23). Every one of those runs
-had 36 or 38 sections and used the picture sizes of that period (every
-picture at the atlas's 25 um, roughly 200-450 px), so the estimate is a linear
-extrapolation in stack size and is offered only at "low". Since 2026-10-01
-"low" opens at 256 px and draws later pictures at 512 px
-(``render.PICTURE_EDGES``), larger than those runs saw: no run has been
-measured at the new sizes yet. The window reading is shared by the whole
-account and has one-percent resolution, so every figure here is an estimate,
-not a meter.
+reports. Rates are percent per section, measured from 92 runs whose logs
+carry usage-window readings. Every one of those runs had 36 or 38 sections
+and smaller pictures (roughly 200-450 px) than "low" draws now (256 px at
+the opening, 512 px later: ``core.sizes.PICTURE_EDGES``), so the estimate is
+a linear extrapolation in stack size and is offered only at "low". The
+window reading is shared by the whole account and has one-percent
+resolution, so every figure here is an estimate, not a meter.
 
 Where no honest number exists (medium, high or auto resolution; a run with
 only the Nonlinear task) the result says why in plain language instead of
