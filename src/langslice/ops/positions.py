@@ -167,14 +167,3 @@ def search_position(
         "searched_window_mm": round(window, 3),
         "searched_angles": bool(angles),
     }
-
-
-def run_deepslice(
-    job: Job, workspace: Workspace, slice_ids: list[str], *, allow_angle_change: bool,
-) -> dict[str, Any]:
-    """Seed positions (and optionally angles) with DeepSlice: the seam only
-    (:mod:`langslice.core.deepslice`), which answers ``UNAVAILABLE``."""
-    from langslice.core.deepslice import run_deepslice as seam
-
-    return seam(job.state, workspace, slice_ids=[str(item) for item in slice_ids],
-                allow_angle_change=bool(allow_angle_change))

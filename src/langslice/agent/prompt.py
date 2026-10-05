@@ -76,7 +76,6 @@ TOOL_LINES: dict[str, str] = {
     "mode; default stacked) unless that exact section, position, orientation "
     "and cutting-angle combination was already seen in a full-canvas "
     "atlas-bearing placement view.",
-    "run_deepslice": "seeds positions (and optionally angles) with DeepSlice.",
     "search_position": "searches the atlas around one section's current position "
     "and reports the best it found; writes nothing.",
     "set_cutting_angles": "sets the stack-wide cutting angles.",

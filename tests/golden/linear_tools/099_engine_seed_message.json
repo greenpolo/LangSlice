@@ -1,0 +1,53 @@
+{
+ "contents": [
+  {
+   "role": "user",
+   "text": "The 3 sections of the stack follow in 1 strip, in their current corrected order, left to right and strip after strip. Each section is labelled '<index>: <filename>' above it and drawn with any rotation and flip already applied."
+  },
+  {
+   "role": "user",
+   "text": "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg",
+   "role": "user"
+  },
+  {
+   "role": "user",
+   "text": "Atlas reference strip: the atlas at 2 positions, every 0.20 mm from 0.00 to 0.20 mm, at the stack's cutting angles, in 1 strip, each atlas section labelled 'atlas <position> mm' above it."
+  },
+  {
+   "role": "user",
+   "text": "Atlas strip 1 of 1: 0.00 to 0.20 mm"
+  },
+  {
+   "image": 1,
+   "mime": "image/jpeg",
+   "role": "user"
+  },
+  {
+   "role": "user",
+   "text": "Status table (corrected index, filename, position, spacing to the next placed section, flags):\nindex  id  position_mm  delta_to_next_mm  flags  transform(kind, iou, mirrored)\n  0  s0.png  unplaced  -\n  1  s1.png  unplaced  -\n  2  s2.png  unplaced  -\n\nRecent run notes:\n- ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm"
+  }
+ ],
+ "door": "engine",
+ "images": [
+  {
+   "file": "099_engine_seed_message.0.png",
+   "mode": "RGB",
+   "size": [
+    762,
+    213
+   ]
+  },
+  {
+   "file": "099_engine_seed_message.1.png",
+   "mode": "RGB",
+   "size": [
+    506,
+    136
+   ]
+  }
+ ]
+}

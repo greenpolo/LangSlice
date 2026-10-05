@@ -18,7 +18,7 @@ _TRANSFORMS = {"adjust_transforms", "fit_affine", "fit_deformable", "trace_borde
 #: sections, so the viewer shows them in the stack.
 _POSITIONING = {
     "view_slices", "view_placement", "view_stack", "set_positions", "search_position",
-    "run_deepslice", "orient_slices", "reorder_slices", "set_cutting_angles",
+    "orient_slices", "reorder_slices", "set_cutting_angles",
     "undo", "redo", "mark_damaged", "preprocess",
 }
 #: Tools after whose end the viewer refreshes its targets (ABBA has applied

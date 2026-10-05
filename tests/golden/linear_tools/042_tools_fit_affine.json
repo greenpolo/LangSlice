@@ -1,9 +1,11 @@
 {
  "args": [
-  []
+  [
+   "s0.png"
+  ]
  ],
  "data": {
-  "description": "Attached panels are s0.png, s1.png, in that order (mapped by each result's image_indexes); each shows the section under its fitted transform against the atlas at true physical scale, in the requested view.",
+  "description": "Attached panels are s0.png, in that order (mapped by each result's image_indexes); each shows the section under its fitted transform against the atlas at true physical scale, in the requested view.",
   "results": [
    {
     "calibration": {
@@ -14,47 +16,21 @@
     "image_indexes": [
      0
     ],
-    "iou": 0.989,
+    "iou": 0.993,
     "mirrored": false,
     "physical": {
      "pivot": [
       0.5,
       0.5
      ],
-     "rotation_deg": 0.339,
-     "scale_x": 1.0015,
-     "scale_y": 1.0045,
-     "shear": -0.0052,
-     "translate_x_mm": -0.0197,
-     "translate_y_mm": -0.0691
+     "rotation_deg": 0.59,
+     "scale_x": 1.0028,
+     "scale_y": 1.0053,
+     "shear": -0.0,
+     "translate_x_mm": -0.0132,
+     "translate_y_mm": -0.0657
     },
     "position_mm": 0.1,
-    "status": "ok"
-   },
-   {
-    "calibration": {
-     "section_um_per_px": 31.25,
-     "source": "host"
-    },
-    "id": "s1.png",
-    "image_indexes": [
-     1
-    ],
-    "iou": 0.992,
-    "mirrored": false,
-    "physical": {
-     "pivot": [
-      0.5,
-      0.5
-     ],
-     "rotation_deg": 0.025,
-     "scale_x": 1.0048,
-     "scale_y": 1.0053,
-     "shear": 0.001,
-     "translate_x_mm": -0.0351,
-     "translate_y_mm": -0.058
-    },
-    "position_mm": 0.15,
     "status": "ok"
    }
   ],
@@ -69,7 +45,7 @@
    "channels": [
     "view"
    ],
-   "mode": "overlay",
+   "mode": "outlines",
    "outlines": "all",
    "zoom": [
     0.0,
@@ -86,19 +62,16 @@
    "mode": "RGB",
    "size": [
     338,
-    296
-   ]
-  },
-  {
-   "file": "042_tools_fit_affine.1.png",
-   "mode": "RGB",
-   "size": [
-    338,
-    296
+    314
    ]
   }
  ],
- "kwargs": {},
+ "kwargs": {
+  "method": "silhouette",
+  "view": {
+   "mode": "outlines"
+  }
+ },
  "media_texts": [],
  "tool": "fit_affine"
 }

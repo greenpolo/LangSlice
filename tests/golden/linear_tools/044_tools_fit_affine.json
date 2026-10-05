@@ -1,52 +1,23 @@
 {
  "args": [
   [
-   "s1.png"
+   "s0.png"
   ]
  ],
  "data": {
-  "description": "Attached panels are s1.png, in that order (mapped by each result's image_indexes); each shows the section under its fitted transform against the atlas at true physical scale, in the requested view. The whole atlas is drawn; the fit used only the kept regions.",
+  "error": "NOTHING_FITTED",
   "results": [
    {
-    "calibration": {
-     "section_um_per_px": 31.25,
-     "source": "host"
-    },
-    "id": "s1.png",
-    "image_indexes": [
-     0,
-     1
-    ],
-    "iou": 0.992,
-    "mirrored": false,
-    "physical": {
-     "pivot": [
-      0.5,
-      0.5
-     ],
-     "rotation_deg": 0.038,
-     "scale_x": 1.0045,
-     "scale_y": 1.0053,
-     "shear": 0.0014,
-     "translate_x_mm": -0.0347,
-     "translate_y_mm": -0.058
-    },
-    "position_mm": 0.15,
-    "regions": {
-     "atlas_kept_fraction": 0.936,
-     "exclude": [
-      "HY"
-     ],
-     "include": []
-    },
-    "status": "ok"
+    "error": "REGIONS_INSIDE_OUTLINE",
+    "id": "s0.png",
+    "message": "The included regions (plus 300 um) do not reach the atlas outline at this position. A silhouette fit compares outlines only, so it has nothing to fit them by; use adjust_transforms or fit_deformable.",
+    "status": "error"
    }
   ],
-  "status": "ok",
+  "status": "error",
   "unknown_ids": [],
   "view": {
    "atlas_channels": [
-    "ara",
     "borders"
    ],
    "border_color": "#ffff00",
@@ -54,8 +25,11 @@
    "channels": [
     "view"
    ],
-   "mode": "side_by_side",
+   "mode": "overlay",
    "outlines": "all",
+   "regions": [
+    "TH"
+   ],
    "zoom": [
     0.0,
     0.0,
@@ -65,31 +39,12 @@
   }
  },
  "door": "tools",
- "images": [
-  {
-   "file": "044_tools_fit_affine.0.png",
-   "mode": "RGB",
-   "size": [
-    338,
-    332
-   ]
-  },
-  {
-   "file": "044_tools_fit_affine.1.png",
-   "mode": "RGB",
-   "size": [
-    338,
-    332
-   ]
-  }
- ],
+ "images": [],
  "kwargs": {
-  "exclude": [
-   "HY"
+  "include": [
+   "TH"
   ],
-  "view": {
-   "mode": "side_by_side"
-  }
+  "method": "silhouette"
  },
  "media_texts": [],
  "tool": "fit_affine"

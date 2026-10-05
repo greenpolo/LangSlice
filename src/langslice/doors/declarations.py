@@ -316,23 +316,6 @@ def view_stack(
     ...
 
 
-def run_deepslice(
-    slices: list[str], allow_angle_change: bool, keep: list[str]
-) -> dict[str, Any]:
-    """Seed positions (and optionally angles) with DeepSlice.
-
-    Args:
-        slices: Sections to place; empty means every undamaged section.
-        allow_angle_change: Whether DeepSlice may set the cutting angles.
-        keep: Sections whose current positions must not be overwritten.
-
-    Returns:
-        The positions written, or ``UNAVAILABLE`` when DeepSlice is not
-        installed or the plane/atlas is unsupported.
-    """
-    ...
-
-
 def search_position(id: str, window_mm: float, angles: bool) -> dict[str, Any]:
     """Search the atlas around a section's current position. Writes nothing.
 
@@ -667,7 +650,7 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
 STUBS: dict[str, Callable[..., Any]] = {
     stub.__name__: stub for stub in (
         status, view_slices, view_atlas, note, undo, redo, mark_damaged, preprocess,
-        reorder_slices, set_positions, view_placement, view_stack, run_deepslice,
+        reorder_slices, set_positions, view_placement, view_stack,
         search_position, orient_slices, fit_affine, adjust_transforms, set_cutting_angles,
         trace_borders, trace_from_atlas, grep_atlas, fit_deformable, submit, export_maps,
     )

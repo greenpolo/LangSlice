@@ -17,7 +17,6 @@
      "um_per_px": 31.25
     },
     "current_position_mm": 0.1,
-    "deformation_drawn": true,
     "id": "s0.png",
     "position_mm": 0.1,
     "transform": "interactive"
@@ -38,7 +37,7 @@
    "channels": [
     "view"
    ],
-   "deformation": "applied",
+   "deformation": "none",
    "mode": "overlay",
    "outlines": "all",
    "zoom": [
@@ -56,12 +55,13 @@
    "mode": "RGB",
    "size": [
     338,
-    332
+    314
    ]
   }
  ],
  "kwargs": {
   "view": {
+   "deformation": "none",
    "mode": "overlay"
   }
  },

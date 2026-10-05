@@ -455,7 +455,6 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("view_atlas", [0.1])
     call("undo")
     call("search_position", ID0, 0.1, False)
-    call("run_deepslice", [ID0], False, [])
 
     # The in-plane transform: fits and direct adjustments.
     call("fit_affine", [])
