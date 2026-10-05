@@ -210,7 +210,6 @@
      "host_preprocessing": null,
      "image_folder": "<ROOT>/engine",
      "image_resolution": "low",
-     "image_retention": "legacy",
      "inputs": {
       "pixel_size_um": 31.25
      },
@@ -227,7 +226,6 @@
      "plane": "coronal",
      "position": {
       "bayesian": true,
-      "deepslice": true,
       "gated": false,
       "interval_um": 200,
       "notes": "",
@@ -237,7 +235,6 @@
      },
      "preprocess": "none",
      "reasoning": null,
-     "reorder": {},
      "resume": true,
      "tasks": [
       "reorder",
@@ -748,7 +745,6 @@
      "host_preprocessing": null,
      "image_folder": "<ROOT>/mcp",
      "image_resolution": "low",
-     "image_retention": "legacy",
      "inputs": {
       "pixel_size_um": 31.25,
       "positions": {
@@ -770,7 +766,6 @@
      "plane": "coronal",
      "position": {
       "bayesian": false,
-      "deepslice": false,
       "gated": false,
       "interval_um": 200,
       "notes": "",
@@ -780,7 +775,6 @@
      },
      "preprocess": "none",
      "reasoning": null,
-     "reorder": {},
      "resume": true,
      "tasks": [
       "transform"
@@ -1049,7 +1043,6 @@
      "host_preprocessing": null,
      "image_folder": "<ROOT>/resume",
      "image_resolution": "low",
-     "image_retention": "legacy",
      "inputs": {
       "pixel_size_um": 31.25,
       "positions": {
@@ -1071,7 +1064,6 @@
      "plane": "coronal",
      "position": {
       "bayesian": false,
-      "deepslice": false,
       "gated": false,
       "interval_um": 200,
       "notes": "",
@@ -1081,7 +1073,6 @@
      },
      "preprocess": "none",
      "reasoning": null,
-     "reorder": {},
      "resume": true,
      "tasks": [
       "transform"

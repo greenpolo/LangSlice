@@ -1,6 +1,6 @@
 """The job spec: one filled form per ``langslice linear`` run.
 
-A host (CLI, ABBA plugin, engine service) fills a :class:`JobSpec` and hands it
+A host (CLI, ABBA connector, engine service) fills a :class:`JobSpec` and hands it
 to :func:`langslice.agent.engine.run`. Every checkbox a user sees maps to a field
 here; nothing else is user-facing. ``tasks`` switches whole capabilities on and
 off — a task that is OFF takes its answer from ``inputs`` instead of from the
@@ -111,26 +111,6 @@ DEFORMABLE_ENGINES: tuple[str, ...] = ("ants", "elastix", "either")
 
 
 @dataclass
-class ReorderSpec:
-    """Knobs of the ``reorder`` task (the order only).
-
-    ``flip`` and ``hemisphere_cue`` moved to :class:`TransformSpec` on
-    2026-09-29: a mirror is the sign of the in-plane affine, so it belongs to
-    the ``transform`` task. The two fields remain here only as aliases for
-    hosts that still fill them: :class:`JobSpec` folds them into
-    ``transform`` (flip off in either place switches it off; a cue given
-    only here is used) and then mirrors the effective values back for
-    readers, and :meth:`JobSpec.to_dict` writes them under ``transform``
-    only.
-    """
-
-    #: Deprecated alias of ``TransformSpec.flip``.
-    flip: bool = True
-    #: Deprecated alias of ``TransformSpec.hemisphere_cue``.
-    hemisphere_cue: str = ""
-
-
-@dataclass
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""
 
@@ -138,22 +118,17 @@ class PositionSpec:
     interval_um: int = 200
     #: Sections must sit exactly one interval apart (gated at submit).
     strict_interval: bool = False
-    #: Build the ``run_deepslice`` tool (coronal mouse/rat only).
-    deepslice: bool = False
     #: Build the ``search_position`` tool (the oblique fitter).
     bayesian: bool = False
-    #: Look-before-you-write gates (2026-09-09, for the cheaper models):
-    #: ``set_positions`` is refused for a section not compared at any
-    #: position since its last write, and ``submit`` until
-    #: ``view_stack`` has run after the last write. Data-only refusals that
-    #: name what is missing; Astra passes them without noticing, Luna wrote
-    #: 36 uncompared positions in one call without them.
+    #: Look-before-you-write gates: ``set_positions`` is refused for a section
+    #: not compared at any position since its last write, and ``submit`` until
+    #: ``view_stack`` has run after the last write. The refusals name what is
+    #: missing.
     gated: bool = False
-    #: Astra's own run-8 method, written into the job statement for the
-    #: cheaper models (2026-09-09): hypothesise order and every position from
-    #: the opening images, confirm each section at that position four per
-    #: call, write, re-check the doubtful, review, submit. Coaching text, so
-    #: off for Astra and off by default.
+    #: A suggested method written into the job statement: hypothesise order
+    #: and every position from the opening images, confirm each section at that
+    #: position four per call, write, re-check the doubtful, review, submit.
+    #: Coaching text, off by default.
     playbook: bool = False
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
@@ -171,9 +146,7 @@ class TransformSpec:
     #: Offer direct visual adjustment.
     interactive: bool = True
     #: Offer the automatic affine fit (``fit_affine``: Elastix by default,
-    #: silhouette as an option). The former ``elastix`` switch is gone
-    #: (2026-10-03, Elastix became the default method); saved specs and hosts
-    #: that still send it load unchanged, the key ignored.
+    #: silhouette as an option).
     automatic: bool = True
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
@@ -295,7 +268,6 @@ class JobSpec:
     #: never clear a flag the host set.
     agent_damage: bool = True
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
-    reorder: ReorderSpec = field(default_factory=ReorderSpec)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
     nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
@@ -334,8 +306,6 @@ class JobSpec:
     #: After submit, ask the agent (same context) what tools it missed and
     #: record the answer on the state. One extra model call.
     debrief: bool = True
-    #: Compatibility field: only the established working-set policy is supported.
-    image_retention: str = "legacy"
     #: Stop after an observed request exceeds this input count (cached tokens
     #: included), with one grace call to submit. None disables the safeguard.
     #: This is checked after usage arrives, not a preflight context guarantee.
@@ -346,8 +316,6 @@ class JobSpec:
     max_quota_percent: int = DEFAULT_MAX_QUOTA_PERCENT
 
     def __post_init__(self) -> None:
-        if self.image_retention != "legacy":
-            raise ValueError("image_retention must be legacy; completion retirement was removed")
         if self.image_resolution not in IMAGE_RESOLUTIONS:
             raise ValueError(
                 f"Unsupported image_resolution {self.image_resolution!r}; "
@@ -379,15 +347,6 @@ class JobSpec:
                     f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
                 )
             supplied_angles(self.inputs.get("angles"))
-        # Flip moved from reorder to transform (2026-09-29); a host that still
-        # sets the old fields keeps working, and old readers see the values
-        # that apply.
-        self.transform.flip = bool(self.transform.flip and self.reorder.flip)
-        self.transform.hemisphere_cue = str(
-            self.transform.hemisphere_cue or self.reorder.hemisphere_cue or ""
-        )
-        self.reorder.flip = self.transform.flip
-        self.reorder.hemisphere_cue = self.transform.hemisphere_cue
 
     # --- views -----------------------------------------------------------
 
@@ -412,10 +371,6 @@ class JobSpec:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        # The flip lives under ``transform``; the reorder aliases are not
-        # written, so a reloaded spec has one source for it.
-        data["reorder"].pop("flip", None)
-        data["reorder"].pop("hemisphere_cue", None)
         if data.get("job_dir") is None:  # the default stays out of saved specs
             data.pop("job_dir", None)
         if data.get("output_level") == "full":  # likewise
@@ -426,7 +381,6 @@ class JobSpec:
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
         """Rebuild from :meth:`to_dict` output, ignoring unknown keys."""
         nested = {
-            "reorder": ReorderSpec,
             "position": PositionSpec,
             "transform": TransformSpec,
             "nonlinear": NonlinearSpec,

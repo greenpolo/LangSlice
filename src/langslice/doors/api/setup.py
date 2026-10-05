@@ -167,7 +167,7 @@ def setup_status() -> dict[str, Any]:
 
 def image_model_connected(provider: str) -> bool:
     """Whether LangSlice can reach *provider*'s image model now: the provider
-    (any accepted spelling) is not ``none`` and its key or login is present.
+    is not ``none`` and its key or login is present.
 
     The offline presence check of :func:`setup_status` (a key in the
     environment or saved by setup, for ``openai-api`` also

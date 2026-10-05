@@ -59,14 +59,14 @@ _PASS2_GEMINI_FEATURE_SENTENCE = (
 )
 
 
-@pytest.mark.parametrize("provider", ["openai-oauth", "openai-api", "chatgpt", "openai"])
+@pytest.mark.parametrize("provider", ["openai-oauth", "openai-api"])
 def test_pass1_gpt_twin_for_every_gpt_image_lane(provider: str) -> None:
     text = pass1_atlas_prompt("coronal", provider)
     assert text.endswith(_PASS1_GPT_FINAL_PARAGRAPH)
     assert "Image 2 alone decides which boundaries exist" in text
 
 
-@pytest.mark.parametrize("provider", ["gemini-api", "google", "none", None])
+@pytest.mark.parametrize("provider", ["gemini-api", "none", None])
 def test_pass1_gemini_twin_for_every_other_provider(provider: str | None) -> None:
     text = pass1_atlas_prompt("coronal", provider)
     assert text.endswith(_PASS1_GEMINI_FINAL_PARAGRAPH)
@@ -80,7 +80,7 @@ def test_pass2_gpt_twin_for_every_gpt_image_lane(provider: str) -> None:
     assert "A line drawn around a feature of the slide" not in text
 
 
-@pytest.mark.parametrize("provider", ["gemini-api", "google", "none"])
+@pytest.mark.parametrize("provider", ["gemini-api", "none"])
 def test_pass2_gemini_twin_for_every_other_provider(provider: str) -> None:
     text = pass2_atlas_prompt("coronal", provider)
     assert text.endswith(_PASS2_GEMINI_FINAL_PARAGRAPH)

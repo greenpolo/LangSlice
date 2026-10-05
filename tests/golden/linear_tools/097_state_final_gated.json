@@ -70,7 +70,6 @@
    "host_preprocessing": null,
    "image_folder": "<ROOT>/gated",
    "image_resolution": "low",
-   "image_retention": "legacy",
    "inputs": {
     "pixel_size_um": 31.25
    },
@@ -87,7 +86,6 @@
    "plane": "coronal",
    "position": {
     "bayesian": false,
-    "deepslice": false,
     "gated": true,
     "interval_um": 200,
     "notes": "",
@@ -97,7 +95,6 @@
    },
    "preprocess": "none",
    "reasoning": null,
-   "reorder": {},
    "resume": true,
    "tasks": [
     "reorder",

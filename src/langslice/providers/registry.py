@@ -112,7 +112,7 @@ def default_image_model(provider: str) -> str | None:
 
 
 def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
-    """Resolve a provider name (any accepted spelling) to its image-edit call.
+    """Resolve a provider name to its image-edit call.
 
     The transport (``langslice.providers.images``) is imported when the
     call runs, not here, so resolving loads no model client. ``none`` and

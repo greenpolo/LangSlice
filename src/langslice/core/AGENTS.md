@@ -57,7 +57,7 @@ other module whose imports are core-only:
   `tests/test_import_layers.py`) check the imports;
   `tests/test_core_imports.py` loads each module in a fresh interpreter and
   checks what it loads. Provider NAMES are the core's own plain-string
-  table, `provider_names.py` (`CANONICAL_PROVIDERS`, the aliases,
+  table, `provider_names.py` (`CANONICAL_PROVIDERS`,
   `canonical_provider`, and `CUSTOM_PROVIDER` `"custom"`: a job whose image
   model a script hands the library itself, accepted by the spec, never
   resolved from a name; `providers.registry` re-exports it): `spec.py`
