@@ -110,10 +110,9 @@ forbidden_modules = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "-ra -m 'not slow and not legacy_local'"
+addopts = "-ra -m 'not slow'"
 markers = [
-    "slow: integration tests that load real atlases",
-    "legacy_local: archived local-maintenance tests kept out of the default suite",
+    "slow: integration tests that load real atlases or start a real JVM",
 ]
 pythonpath = ["src"]
 
