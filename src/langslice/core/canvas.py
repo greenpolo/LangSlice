@@ -1,6 +1,5 @@
 """The physical canvas: a section and its atlas section at true scale, drawn.
 
-Split out of ``linear/render.py`` (layered refactor, phase 3d).
 :func:`canvas_geometry` places an atlas section on a section's frame at true
 physical scale; :func:`physical_views` draws the alignment picture on it in
 one of :data:`VIEW_MODES` and hands back, per picture, the

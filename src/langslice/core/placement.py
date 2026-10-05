@@ -1,8 +1,7 @@
 """A section on its physical canvas at a placement: every placement picture.
 
 The core of `view_placement`, `set_positions`, `fit_affine` and
-`adjust_transforms`'s pictures, taken out of the tool door (layered refactor,
-phase 3b). Plain inputs in (the workspace, the stack state, a section
+`adjust_transforms`'s pictures. Plain inputs in (the workspace, the stack state, a section
 record, numbers, the call's :class:`~langslice.core.display.DisplayOptions`),
 plain PIL pictures with their captions burned in out, plus the metadata a
 door words its reply from. No undo, no gates, no message types.

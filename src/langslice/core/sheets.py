@@ -1,7 +1,4 @@
-"""The stack sheets: captioned section pictures, contact sheets and the spacing plot.
-
-Split out of ``linear/render.py`` (layered refactor, phase 3d).
-"""
+"""The stack sheets: captioned section pictures, contact sheets and the spacing plot."""
 
 from __future__ import annotations
 

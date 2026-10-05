@@ -1,8 +1,7 @@
 """Captions, fonts and the scale bar burned into the pictures the tools send.
 
-Split out of ``linear/render.py`` (layered refactor, phase 3d). Tool images
-reach a model as bare attachments, so the text that binds a picture to its
-section rides in its pixels (:func:`caption`).
+Tool images reach a model as bare attachments, so the text that binds a
+picture to its section rides in its pixels (:func:`caption`).
 """
 
 from __future__ import annotations

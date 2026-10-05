@@ -34,6 +34,7 @@ section's appearance changes only through ``preprocess``).
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from typing import Any, cast
@@ -66,6 +67,8 @@ from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.space import Plane
 from langslice.core.state import Angles, SliceState, StackState, plane_angles
 from langslice.core.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 #: Every atlas channel, in the order pictures and docs list them.
 ATLAS_CHANNELS: tuple[str, ...] = ("ara", "nissl", "borders")
@@ -470,7 +473,9 @@ def framed_atlas(
         picture = picture.resize(native, Image.Resampling.BILINEAR)
     try:
         mask = atlas_mask(ctx, state, position_mm, picture.size, angles=(pitch, yaw)) > 0
-    except Exception:
+    except Exception as exc:
+        logger.warning("atlas at %.3f mm: framed by its labels, no root mask (%s)",
+                       position_mm, exc)
         mask = labels > 0
     box = mask_box(picture.size, mask) or (0, 0, picture.width, picture.height)
     if not options.full_view:

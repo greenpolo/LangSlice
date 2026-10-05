@@ -47,10 +47,8 @@ def annotation_slice(
     """The atlas annotation at *position_mm*, oriented for display.
 
     With a non-zero cutting angle the plane is resliced obliquely instead of
-    taken flat off the voxel grid. Measured on the LSD_910 hand
-    registrations, whose block was cut at 4 degrees: matching the plane is
-    worth far more than any fit tuning (fit-only family dice 0.93 -> 0.96,
-    boundary p95 34px -> 9px over 33 slices).
+    taken flat off the voxel grid: on a block cut at 4 degrees, matching the
+    plane is worth far more than any fit tuning.
     """
     if pitch_deg or yaw_deg:
         from langslice.core.oblique import sample_oblique_annotation

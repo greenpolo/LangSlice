@@ -1,34 +1,24 @@
 """Prompt texts for every nonlinear registration model call.
 
-Three prompt functions, one per model call shape:
-
-- :func:`border_refinement_prompt` — route "supplied": a rough placement's
-  yellow family borders are moved onto the visible tissue edges. Unchanged
-  since it was accepted into production; re-exported from
-  :mod:`langslice.core.nonlinear.border_refinement` for backward compatibility.
+- :func:`border_correction_tool_prompt` — route "supplied" (``trace_borders``):
+  a placement's yellow family borders moved onto the visible tissue edges.
+  OpenAI providers get :data:`_SUPPLIED_GPT` (Image 1 the clean photograph),
+  every other provider :func:`border_refinement_prompt` (Image 1 the placed
+  borders).
 - :func:`pass1_atlas_prompt` — route "atlas", pass 1: yellow family borders
-  are drawn from nothing onto the clean tissue, using the grayscale atlas
-  template (its own borders drawn in yellow) as the only reference.
+  drawn from nothing onto the clean tissue, the grayscale atlas template
+  (its own borders drawn in yellow) the only reference.
 - :func:`pass2_atlas_prompt` — route "atlas", optional pass 2: pass 1's lines,
-  redrawn on the clean tissue, are corrected against the same atlas template.
+  redrawn on the clean tissue, corrected against the same atlas template.
 
-Provider selection follows the historical ``base_segmentation_prompt``
-convention: ``canonical_provider(provider)`` starting with ``"openai"``
-(``openai-api``, ``openai-oauth``) gets the GPT twin; everything else
-(``gemini-api``, ``none``, ...) gets the Gemini twin. ``plane`` substitutes
-for the word "coronal" the same way the retired ``base_segmentation_prompt``
-did — the texts below were measured on coronal sections only.
-
-The pass-1/pass-2 base texts were sentence-audited and approved by the
-project owner on 2026-09-19 (audit records kept outside the repo); the final
-paragraphs below are the owner's verbatim replacement text for each twin. The
-damage block (slide features, missing tissue, faint-vs-missing, displaced
-pieces) was expanded on 2026-09-21 ahead of the sagittal / damaged-section
-test, because route "atlas" has no agent to describe a section's defects.
-
-The stack agent's image tool uses :func:`border_correction_tool_prompt`: the
-supplied-placement prompt (the GPT twin for OpenAI providers), which the agent
-may lightly edit for one section.
+``canonical_provider(provider)`` starting with ``"openai"`` (``openai-api``,
+``openai-oauth``) gets the GPT twin; everything else (``gemini-api``,
+``none``, ...) the Gemini twin. ``plane`` substitutes for the word "coronal";
+the texts were written and checked on coronal sections. Every sentence of
+these texts was audited for a second reading (``CLAUDE.md`` in this package,
+"Prompt review"); the damage block (slide features, missing tissue,
+faint-vs-missing, displaced pieces) is there because route "atlas" has no
+agent to describe a section's defects.
 """
 
 from __future__ import annotations
@@ -47,7 +37,8 @@ def _is_gpt_twin(provider: str | None) -> bool:
 
 
 def border_refinement_prompt(plane: Plane = "coronal") -> str:
-    """The rough-plus-raw experiment wording, without a mouse-only assumption.
+    """Route "supplied"'s Gemini wording: Image 1 the placed borders, Image 2
+    the clean photograph.
 
     Sentence audit: the first two sentences identify actual attachments and
     their order; the next four specify moving existing lines against visible
@@ -56,10 +47,6 @@ def border_refinement_prompt(plane: Plane = "coronal") -> str:
     output. 'Mouse' is removed and the section plane is parameterized. 'Automatic'
     is removed because supplied placement may come from an agent or a person;
     this leaves the instruction to correct existing rough lines unchanged.
-
-    Route "supplied" only; kept byte-for-byte from the accepted production
-    text (moved here from :mod:`langslice.core.nonlinear.border_refinement`, which
-    re-exports it for compatibility).
     """
     return (
         f"Image 1 is a photograph of a brain {plane} section with thin yellow "
@@ -82,8 +69,7 @@ def border_refinement_prompt(plane: Plane = "coronal") -> str:
 
 
 #: Route "supplied" for the GPT image models, as the stack agent's tool sends it:
-#: ``_PASS2_GPT`` (owner-approved 2026-09-19, damage block 2026-09-21) with the
-#: atlas reference removed. The placed lines of Image 2 now carry the region
+#: ``_PASS2_GPT`` with the atlas reference removed. The placed lines of Image 2 now carry the region
 #: arrangement the atlas image carried, so "no counterpart" removal and "add a
 #: missing boundary" go; everything else, including the damage block, is kept.
 #: Image 1 is the clean photograph (the edit target), Image 2 the same
