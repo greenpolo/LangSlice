@@ -347,7 +347,7 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.ops.registry import VERBS, listed
+    from langslice.ops.registry import VERBS
 
     if verb not in VERBS:
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
@@ -363,7 +363,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         # The job's verbs as the tool door builds them (a hidden verb is
         # called by name, never listed: ``Verb.hidden``).
         tools = {tool.__name__: tool for tool in opened.tools().tools}
-        offered = [name for name in tools if name in listed()]
+        offered = opened.listed_verbs()
         if verb not in tools:
             spec = opened.spec
             if (VERBS[verb].image_model and spec.has("nonlinear")
@@ -459,24 +459,17 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
                 warnings.append(f"picture not saved: {path}")
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
-        record = job.state.resolve(str(result.get("id", ""))) if result.get("id") else None
-        held = (record.image_correction or {}) if record is not None else {}
-        result["image_correction"] = {key: held[key] for key in (
-            "status", "error", "message", "cached", "attempt") if key in held}
+        result["image_correction"] = _landed(job, result.get("id"))
     if verb == "trace_from_atlas" and isinstance(result, dict):
         for row in result.get("results") or []:  # each landed call's outcome
-            if not isinstance(row, dict) or row.get("error") is not None:
-                continue
-            record = job.state.resolve(str(row.get("id", "")))
-            held = (record.image_correction or {}) if record is not None else {}
-            if held:
-                row["image_correction"] = {key: held[key] for key in (
-                    "status", "error", "message", "cached", "attempt") if key in held}
+            if isinstance(row, dict) and row.get("error") is None:
+                landed = _landed(job, row.get("id"))
+                if landed:
+                    row["image_correction"] = landed
     if verb == "status" and isinstance(result, dict):
         from langslice.doors.statement import image_model_state
-        from langslice.ops.registry import listed
 
-        result["verbs"] = [name for name in opened.tools().names if name in listed()]
+        result["verbs"] = opened.listed_verbs()
         state = image_model_state(opened.spec, connected=opened.image_model_connected)
         if state is not None:
             result["image_model"] = state
@@ -511,6 +504,15 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     nexts = ([_command(job_folder, verb, arguments)] if dry_run
              and VERBS[verb].kind == "write" else [])
     return Envelope(result=result, artifacts=artifacts, warnings=warnings, next=nexts)
+
+
+def _landed(job: Any, section: Any) -> dict[str, Any]:
+    """A section's image-model call as it landed (status, error, message,
+    cached, attempt); empty for an unknown section or none."""
+    record = job.state.resolve(str(section)) if section not in (None, "") else None
+    held = (record.image_correction or {}) if record is not None else {}
+    return {key: held[key] for key in ("status", "error", "message", "cached", "attempt")
+            if key in held}
 
 
 def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
@@ -579,7 +581,6 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     from langslice.doors.cli.linear import add_linear_arguments, spec_from_args
     from langslice.doors.jobs import create, with_registration
     from langslice.job.job import InputsChanged
-    from langslice.ops.registry import listed
 
     parser = _Parser(prog="langslice job FOLDER init", add_help=False)
     add_linear_arguments(parser)
@@ -622,7 +623,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
             write_job_file(layout, **settings)
             opened.viewer = job_viewer(layout)
         written = briefs.build(opened, pictures=False)
-        listed_verbs = [name for name in opened.tools().names if name in listed()]
+        listed_verbs = opened.listed_verbs()
         result = {
             "job_folder": str(layout.folder), "image_folder": str(images),
             "sections": [record.id for record in state.in_order()],
@@ -654,7 +655,6 @@ def brief(folder: str, *, atlas_loader: Any = None) -> Envelope:
     (artifacts of kind ``opening``, in reading order) and ``BRIEF.md``
     (:mod:`langslice.doors.cli.brief`)."""
     from langslice.doors.cli import brief as briefs
-    from langslice.ops.registry import listed
 
     opened = _open(folder, persist=True, atlas_loader=atlas_loader)
     try:
@@ -668,7 +668,7 @@ def brief(folder: str, *, atlas_loader: Any = None) -> Envelope:
             "job_folder": str(opened.job.folder),
             "statement": written.statement,
             "opening": written.opening,
-            "verbs": [name for name in opened.tools().names if name in listed()],
+            "verbs": opened.listed_verbs(),
             **written.facts,
         }, artifacts=written.artifacts, warnings=warnings)
     finally:

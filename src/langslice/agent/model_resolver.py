@@ -25,7 +25,8 @@ _ENV_ENDPOINT = "LANGSLICE_ENDPOINT"
 _ENV_ENDPOINT_KEY = "LANGSLICE_ENDPOINT_KEY"
 
 
-def _env(name: str, default: str | None = None) -> str | None:
+def env_value(name: str, default: str | None = None) -> str | None:
+    """The environment's *name*, stripped; *default* when absent or blank."""
     value = os.environ.get(name)
     if value is None:
         return default
@@ -33,15 +34,16 @@ def _env(name: str, default: str | None = None) -> str | None:
     return cleaned or default
 
 
-def _env_float(name: str) -> float | None:
-    value = _env(name)
+def env_float(name: str) -> float | None:
+    """The environment's *name* as a number; None when absent or blank."""
+    value = env_value(name)
     if value is None:
         return None
     return float(value)
 
 
 def _env_bool(name: str) -> bool | None:
-    value = _env(name)
+    value = env_value(name)
     if value is None:
         return None
     lowered = value.lower()
@@ -105,13 +107,13 @@ def resolve_adk_model(model: str | object) -> str | object:
 
     stripped = model.strip()
 
-    endpoint = _env(_ENV_ENDPOINT)
+    endpoint = env_value(_ENV_ENDPOINT)
     if endpoint:
         litellm_cls = _load_litellm_class()
         endpoint_kwargs: dict[str, Any] = {
             "api_base": endpoint.rstrip("/"),
         }
-        key = _env(_ENV_ENDPOINT_KEY)
+        key = env_value(_ENV_ENDPOINT_KEY)
         if key:
             endpoint_kwargs["api_key"] = key
         return litellm_cls(model=f"openai/{stripped}", **endpoint_kwargs)
@@ -150,8 +152,8 @@ def resolve_adk_model(model: str | object) -> str | object:
         litellm_cls = _load_litellm_class()
         return litellm_cls(
             model=f"openai/{alias}",
-            api_base=_env("LANGSLICE_LITELLM_PROXY_BASE", _DEFAULT_PROXY_BASE),
-            api_key=_env("LANGSLICE_LITELLM_PROXY_KEY", _DEFAULT_PROXY_KEY),
+            api_base=env_value("LANGSLICE_LITELLM_PROXY_BASE", _DEFAULT_PROXY_BASE),
+            api_key=env_value("LANGSLICE_LITELLM_PROXY_KEY", _DEFAULT_PROXY_KEY),
         )
 
     if lowered.startswith(_OPENROUTER_PREFIX):
@@ -160,7 +162,7 @@ def resolve_adk_model(model: str | object) -> str | object:
             raise ValueError("openrouter model strings require a model id after ':'")
         litellm_cls = _load_litellm_class()
         kwargs: dict[str, Any] = {}
-        key = _env("OPENROUTER_API_KEY")
+        key = env_value("OPENROUTER_API_KEY")
         if key:
             kwargs["api_key"] = key
         return litellm_cls(model=f"openrouter/{model_id}", **kwargs)
@@ -171,7 +173,7 @@ def resolve_adk_model(model: str | object) -> str | object:
             raise ValueError("ollama model strings require a model tag after ':'")
         litellm_cls = _load_litellm_class()
         ollama_kwargs: dict[str, object] = {
-            "api_base": _env("LANGSLICE_OLLAMA_BASE", _DEFAULT_OLLAMA_BASE),
+            "api_base": env_value("LANGSLICE_OLLAMA_BASE", _DEFAULT_OLLAMA_BASE),
         }
         think = _env_bool(_ENV_OLLAMA_THINK)
         if think is not None:
@@ -184,7 +186,7 @@ def resolve_adk_model(model: str | object) -> str | object:
     if ":" in stripped:
         litellm_cls = _load_litellm_class()
         bare_tag_kwargs: dict[str, object] = {
-            "api_base": _env("LANGSLICE_OLLAMA_BASE", _DEFAULT_OLLAMA_BASE),
+            "api_base": env_value("LANGSLICE_OLLAMA_BASE", _DEFAULT_OLLAMA_BASE),
         }
         think = _env_bool(_ENV_OLLAMA_THINK)
         if think is not None:
@@ -197,10 +199,10 @@ def resolve_adk_model(model: str | object) -> str | object:
     if lowered.startswith(_OPENAI_MODEL_PREFIXES):
         litellm_cls = _load_litellm_class()
         openai_kwargs: dict[str, Any] = {}
-        key = _env("OPENAI_API_KEY")
+        key = env_value("OPENAI_API_KEY")
         if key:
             openai_kwargs["api_key"] = key
-        base_url = _env("OPENAI_BASE_URL")
+        base_url = env_value("OPENAI_BASE_URL")
         if base_url:
             openai_kwargs["api_base"] = base_url
         return litellm_cls(model=f"openai/{stripped}", **openai_kwargs)

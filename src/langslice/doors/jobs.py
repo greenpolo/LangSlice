@@ -9,7 +9,7 @@ agent changes nothing until its first write) and :func:`create` makes one
 from an image folder through the same ingest every host uses
 (``Job.open``). Both write the job folder's reference card
 (:mod:`langslice.doors.card`). The tools on top are the same toolbox the
-agent and MCP doors use (:func:`tools`), with the look-before-commit gates
+agent and MCP doors use (:meth:`Opened.tools`), with the look-before-commit gates
 off (gates are tool-only) and the picture size the caller's.
 """
 
@@ -71,6 +71,29 @@ def close_job(job: Job) -> None:
     if job.image_jobs:
         job.settle_image_corrections()
     job.close()
+
+
+def provider_connected(spec: JobSpec) -> bool:
+    """Whether *spec*'s own image model can be reached here, with no model
+    handed in: True when the spec names none; never for a ``custom``
+    provider (a script's own model, handed in); else its provider's key or
+    login is present (:func:`langslice.doors.api.setup.image_model_connected`,
+    an offline presence check)."""
+    if not spec.nonlinear.uses_image_model:
+        return True
+    from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
+    from langslice.doors.api.setup import image_model_connected
+
+    provider = spec.nonlinear.provider
+    return canonical_provider(provider) != CUSTOM_PROVIDER and image_model_connected(provider)
+
+
+def image_model_off(spec: JobSpec, connected: bool) -> bool:
+    """Whether *spec*'s nonlinear task names an image model that is not
+    *connected*: then ``trace_borders`` is not offered and every door's
+    statement says why (``statement.IMAGE_MODEL_OFF``). The spec is left as
+    it is: the job keeps its provider for a door that can reach it."""
+    return spec.has("nonlinear") and spec.nonlinear.uses_image_model and not connected
 
 
 class NoJob(LookupError):
@@ -188,22 +211,11 @@ class Opened:
     @property
     def image_model_connected(self) -> bool:
         """Whether ``trace_borders`` can reach the job's image model here:
-        a model handed in, else the spec's provider with its key or login
-        present (:func:`langslice.doors.api.setup.image_model_connected`, the
-        MCP door's check; a ``custom`` provider is a script's own model and
-        needs it handed in), and not :attr:`traces_off`."""
+        a model handed in, else :func:`provider_connected` (the MCP door's
+        check), and not :attr:`traces_off`."""
         if self.traces_off:
             return False
-        if self.image_model is not None:
-            return True
-        if not self.spec.nonlinear.uses_image_model:
-            return True  # nothing to reach; the spec declares no image model
-        from langslice.core.provider_names import CUSTOM_PROVIDER, canonical_provider
-        from langslice.doors.api.setup import image_model_connected
-
-        provider = self.spec.nonlinear.provider
-        return (canonical_provider(provider) != CUSTOM_PROVIDER
-                and image_model_connected(provider))
+        return self.image_model is not None or provider_connected(self.spec)
 
     def tools(self) -> ToolBox:
         """The verbs this job's spec has, as the tool door builds them (one
@@ -223,6 +235,14 @@ class Opened:
                                     image_model_connected=self.image_model_connected,
                                     door=self.door)
         return self._box
+
+    def listed_verbs(self) -> list[str]:
+        """The job's verbs a caller is shown, in registry order (a hidden
+        verb, ``Verb.hidden``, is callable by name but not listed)."""
+        from langslice.ops.registry import listed
+
+        shown = listed()
+        return [name for name in self.tools().names if name in shown]
 
     def close(self) -> None:
         """Finish the job's background writes (image corrections, pictures):
