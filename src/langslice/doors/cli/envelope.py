@@ -190,7 +190,7 @@ class Envelope:
 
 def dumps(envelope: Envelope) -> str:
     """The envelope as one line of JSON."""
-    return json.dumps(envelope.to_dict(), default=str, ensure_ascii=False)
+    return json.dumps(envelope.to_dict(), default=str, ensure_ascii=True)
 
 
 def emit(envelope: Envelope) -> int:
