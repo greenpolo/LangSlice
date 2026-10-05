@@ -1,40 +1,25 @@
-"""Correct placed atlas boundaries while keeping the original photograph authoritative.
+"""The yellow lines of a border trace: drawn onto a section, and read back off a reply.
 
-The image-model half of route "supplied": the request (rough borders drawn on
-the photograph, the clean photograph beside it), the yellow-line extraction
-and the review overlays. The fit after it is the deformable package's
-(:mod:`langslice.core.nonlinear.border_fit`).
+:func:`smooth_border_overlay` draws a placed atlas plane's family borders
+on the section (route "supplied"'s Image 1 or 2), :func:`border_overlay`
+draws a line mask on it, and :func:`extract_thinned_lines` reads the
+model's yellow lines off a raw reply onto the canvas. Nothing here calls a
+model or fits anything; the fit of the lines is ``fit_deformable``'s
+(:mod:`langslice.core.deformation`).
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.render import placed_border_coverage
-from langslice.core.nonlinear.image_gen_helpers import (
-    _extract_borders_from_classified,
-    _merge_classified,
-    line_width_px,
-)
-from langslice.core.nonlinear.prompts import border_refinement_prompt
-from langslice.core.nonlinear.types import SegmentationGenerationRequest
-from langslice.core.provider_names import canonical_provider
-from langslice.core.space import Plane
-
-if TYPE_CHECKING:
-    from langslice.providers.registry import ImageCall
 
 __all__ = [
-    "BorderRefinementResult",
     "border_overlay",
-    "border_refinement_prompt",
     "extract_thinned_lines",
-    "refine_borders",
+    "smooth_border_overlay",
     "thin",
     "yellow_mask",
 ]
@@ -121,105 +106,15 @@ def border_overlay(image: Image.Image, mask: np.ndarray, width: int = 1) -> Imag
 def extract_thinned_lines(raw: Image.Image, canvas_size: tuple[int, int]) -> np.ndarray:
     """Boolean thinned yellow-line mask from a raw model reply, on *canvas_size*.
 
-    Shared by the line extraction in :func:`refine_borders` and
-    route "atlas"'s pass-2 input construction (:mod:`border_registration`),
-    which needs pass 1's lines redrawn on the clean tissue at the same canvas
-    before the second call. Extracts before any interpolation, so tissue
-    colors cannot blend into yellow; crops back to the canvas aspect first —
-    a lane with a fixed output frame answers at its own aspect, ours
-    letterboxed inside it, so crop back rather than stretch.
+    Every trace's line extraction, and route "atlas"'s pass 2 input (pass
+    1's lines redrawn on the clean tissue at the same canvas). Extracts
+    before any interpolation, so tissue colors cannot blend into yellow;
+    crops back to the canvas aspect first: a lane with a fixed output frame
+    answers at its own aspect, ours letterboxed inside it, so crop back
+    rather than stretch.
     """
     from langslice.core.nonlinear.image_gen_registration import crop_to_aspect
 
     raw_mask = Image.fromarray(yellow_mask(np.asarray(raw.convert("RGB"))))
     framed = crop_to_aspect(raw_mask, canvas_size[0] / canvas_size[1])
     return thin(np.asarray(framed.resize(canvas_size, Image.Resampling.NEAREST)))
-
-
-@dataclass
-class BorderRefinementResult:
-    """The model's correction of the rough borders, before any fit.
-
-    The fit after it is :func:`langslice.core.nonlinear.border_fit.fit_border_lines`.
-    """
-
-    rough_border_overlay: Image.Image
-    raw_model_image: Image.Image
-    model_border_mask: np.ndarray
-    model_border_overlay: Image.Image
-    metadata: dict[str, Any]
-
-
-def refine_borders(
-    image: Image.Image,
-    rough_labels: np.ndarray,
-    atlas: Any,
-    *,
-    provider: str = "google",
-    model: str | None = None,
-    plane: Plane = "coronal",
-    review_model: str | None = None,
-    openai_image_route: str = "images",
-    thinking_level: str | None = None,
-    generated_image: Image.Image | None = None,
-    image_prompt: str | None = None,
-    image_call: ImageCall | None = None,
-) -> BorderRefinementResult:
-    """Ask the model to move the rough borders onto the tissue; extract its lines.
-
-    Image 1 is the photograph with the rough placement's family borders drawn
-    on it, Image 2 the clean photograph; the reply's yellow lines are
-    extracted on the original canvas. ``provider="none"`` without a
-    *generated_image* calls no model: the rough borders stand as the lines
-    (``model_free``). A *generated_image* replays a reply with no call.
-    Nothing is fitted here (the caller fits the lines,
-    :func:`langslice.core.nonlinear.border_fit.fit_border_lines`), and the raw
-    reply is untouched.
-    """
-    labels = np.asarray(rough_labels)
-    shape = (image.height, image.width)
-    if labels.shape != shape or not np.issubdtype(labels.dtype, np.integer):
-        raise ValueError("Rough atlas labels must be an integer map on the image canvas")
-    if not np.any(labels):
-        raise ValueError("Rough atlas placement contains no regions")
-    original = image.convert("RGB")
-    moving = _extract_borders_from_classified(_merge_classified(labels, atlas))
-    line_width = line_width_px(max(image.size))
-    rough = border_overlay(original, moving > 0, line_width)
-    prompt = image_prompt or border_refinement_prompt(plane)
-    metadata: dict[str, Any] = {
-        "workflow": "border_refinement", "prompt": prompt,
-        "provider": canonical_provider(provider), "model": model,
-        "line_width_px": line_width, "input_size": list(image.size),
-    }
-    if generated_image is None and canonical_provider(provider) == "none":
-        return BorderRefinementResult(
-            rough, rough.copy(), moving > 0, rough.copy(),
-            {**metadata, "model_called": False, "model_free": True},
-        )
-    if generated_image is None:
-        if image_call is None:
-            raise ValueError(
-                "no image_call: pass the resolved image model's call"
-                " (providers.registry.resolve_image_model(provider).call)"
-            )
-        generated = image_call(SegmentationGenerationRequest(
-            slice_image=rough, reference_images=[original], prompt=prompt,
-            provider=provider, model=model, review_model=review_model,
-            openai_image_route=openai_image_route, thinking_level=thinking_level,
-            metadata=dict(metadata),
-        ))
-        raw = generated.image.copy()
-        metadata.update({"model_called": True, "route": generated.route})
-    else:
-        raw = generated_image.copy()
-        metadata.update({"model_called": False, "replayed": True})
-
-    mask = extract_thinned_lines(raw, image.size)
-    if not mask.any():
-        raise ValueError("Image model returned no usable yellow anatomical boundaries")
-    metadata.update({
-        "raw_output_size": list(raw.size), "model_border_pixels": int(mask.sum()),
-        "rough_border_pixels": int((moving > 0).sum()),
-    })
-    return BorderRefinementResult(rough, raw, mask, border_overlay(original, mask), metadata)

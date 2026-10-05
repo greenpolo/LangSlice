@@ -59,7 +59,7 @@ SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
 #: Rows per block when a map is computed (bounds the float64 temporaries).
 BLOCK_ROWS = 256
 #: Marker grid of :func:`residual_markers`: 1/36 of the file's long edge,
-#: 32 px at least (the density ``core.nonlinear.border_registration`` exports).
+#: 32 px at least.
 MARKER_DIVISIONS = 36
 MARKER_MIN_SPACING_PX = 32
 

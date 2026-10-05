@@ -16,7 +16,6 @@ from PIL import Image
 
 from langslice.agent.engine import build_context
 from langslice.core.affine import normalized_physical_affine, physical_affine_matrix
-from langslice.core.atlas.recolor import color_lut
 from langslice.core.atlas.render import family_mapping, family_outlines
 from langslice.core.canvas import canvas_geometry, physical_overlay
 from langslice.core.captions import scale_bar_px
@@ -216,8 +215,6 @@ def test_the_template_only_shows_when_it_is_asked_for():
 
 
 def test_outlines_follow_the_family_boundaries_of_the_filled_map():
-    from langslice.core.nonlinear.render import filled_regions
-
     atlas = TwoRegionAtlas()
     labels = atlas.annotation[0]
     mapping = family_mapping(np.unique(labels), atlas)
@@ -226,12 +223,10 @@ def test_outlines_follow_the_family_boundaries_of_the_filled_map():
     families = np.zeros_like(labels)
     for uid, rep in mapping.items():
         families[labels == uid] = rep
-    filled = filled_regions(families, lut=color_lut(atlas), smooth_window=9)
-
-    # Every pixel whose neighbour is a different color is a family boundary.
-    boundary = np.zeros(filled.shape[:2], dtype=bool)
-    boundary[:, 1:] |= (filled[:, 1:] != filled[:, :-1]).any(axis=2)
-    boundary[1:, :] |= (filled[1:, :] != filled[:-1, :]).any(axis=2)
+    # Every pixel whose neighbour is in a different family is a boundary.
+    boundary = np.zeros(families.shape, dtype=bool)
+    boundary[:, 1:] |= families[:, 1:] != families[:, :-1]
+    boundary[1:, :] |= families[1:, :] != families[:-1, :]
     import cv2
 
     near = cv2.dilate(boundary.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0

@@ -19,6 +19,12 @@ from langslice.core.state import SliceState, StackState
 from langslice.providers.registry import ImageModel, resolve_image_model
 
 
+def _correct(state, ctx, section_id, **kwargs):
+    """One image edit, run in this thread (``start_correction`` and its job)."""
+    record, job = tool.start_correction(state, ctx, section_id, **kwargs)
+    return job() if job is not None else record
+
+
 def _model(call, provider="openai-oauth"):
     """The run's image model with its network call replaced (a door resolves it)."""
     return ImageModel(provider, resolve_image_model(provider).model, call)
@@ -62,7 +68,7 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
 
     model = _model(generate)
     before = state.to_dict()
-    result = tool.correct_slice(
+    result = _correct(
         state, ctx, record.id, out=tmp_path / "out", image_model=model,
         prompt=border_correction_tool_prompt(
             provider="openai-oauth",
@@ -105,8 +111,8 @@ def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_pat
         return SimpleNamespace(image=original, route="test")
 
     model = _model(generate)
-    first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
-    repeated = tool.correct_slice(
+    first = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    repeated = _correct(
         state, ctx, record.id, out=tmp_path / "out", image_model=model,
         prompt="Try something else.",
     )
@@ -117,7 +123,7 @@ def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_pat
     assert repeated["artifact_dir"] == first["artifact_dir"]
     # A changed linear alignment is a new input, not a veto of the first reply.
     record.position_mm = 4.5
-    changed = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    changed = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert len(calls) == 2
     assert changed["geometry_fingerprint"] != first["geometry_fingerprint"]
 
@@ -128,7 +134,7 @@ def test_missing_linear_placement_never_reaches_provider(case, tmp_path, monkeyp
     monkeypatch.setattr(tool, "prepare_linear_registration", prepare_linear_registration)
     model = _model(lambda *a: pytest.fail("Unexpected model call"))
     with pytest.raises(ValueError, match="affine transform"):
-        tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+        _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert not (tmp_path / "out").exists()
 
 
@@ -143,13 +149,13 @@ def test_transport_can_retry_without_discarding_any_image_reply(case, tmp_path, 
         return SimpleNamespace(image=original, route="test")
 
     model = _model(fail)
-    first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
-    repeated = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    first = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    repeated = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert first["status"] == "error" and first["message"] == "transport failed"
     assert not first["raw_received"]
     assert repeated["status"] == "ok" and repeated["raw_received"]
     assert repeated["attempt"] == 2 and len(calls) == 2
-    cached = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    cached = _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert cached["cached"] and len(calls) == 2
 
 
@@ -185,7 +191,7 @@ def test_gemini_keeps_the_accepted_prompt_and_attachment_order(case, tmp_path, m
         lambda request: calls.append(request) or SimpleNamespace(image=original, route="test"),
         provider="gemini-api",
     )
-    tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", image_model=model)
+    _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
     assert calls[0].prompt == border_refinement_prompt()
     np.testing.assert_array_equal(calls[0].reference_images[0], original)
     assert not np.array_equal(np.asarray(calls[0].slice_image), np.asarray(original))
@@ -203,3 +209,27 @@ def test_smooth_borders_draw_one_antialiased_line_per_shared_edge():
     # One stroke about two pixels wide, not one line per region an atlas pixel apart.
     assert lit.size and lit.max() - lit.min() <= 3
     assert ((row > 0) & (row < 255)).any()  # antialiased edge pixels
+
+
+def test_atlas_route_keeps_pass_one_when_pass_two_is_refused(case, tmp_path, monkeypatch):
+    """Two passes, pass 1 draws no lines: pass 2 is refused, yet pass 1's
+    reply is saved and counts as received, so a retry is not paid again."""
+    state, ctx, record, original, *_ = case
+    monkeypatch.setattr(tool, "outlined_atlas_template", lambda *a, **k: original)
+    calls = []
+    model = _model(
+        lambda request: calls.append(request) or SimpleNamespace(image=original, route="test"),
+    )
+    submitted, job = tool.start_atlas_correction(
+        state, ctx, record.id, passes=2, image_model=model, calls_dir=tmp_path / "calls",
+    )
+    assert job is not None
+    result = job()
+    assert result["status"] == "error" and "nothing to correct" in result["message"]
+    assert result["raw_received"] is True and len(calls) == 1
+    np.testing.assert_array_equal(
+        Image.open(result["artifact_paths"]["pass1_raw_correction"]), original)
+    again, job = tool.start_atlas_correction(
+        state, ctx, record.id, passes=2, image_model=model, calls_dir=tmp_path / "calls",
+    )
+    assert job is None and again["cached"] and len(calls) == 1

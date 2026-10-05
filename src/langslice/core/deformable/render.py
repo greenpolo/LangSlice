@@ -200,26 +200,6 @@ def warped_border_layers(
     }
 
 
-def warped_border_coverage(
-    record: DeformableRecord, atlas: Any, *,
-    highlight: Iterable[str | int] = (), warped: bool = True,
-    width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
-    native: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """(faint, strong) border coverage in [0, 1] on the section grid, tissue-clipped.
-
-    *strong* is the edges that touch a highlighted region (leaf regions of the
-    chosen structures and their descendants); with no *highlight* every edge is
-    strong. *faint* is every other edge between color-family regions. With
-    ``warped=False`` the residual field is ignored (the linear placement alone).
-    """
-    layers = warped_border_layers(
-        record, atlas, highlight=highlight, warped=warped, width_px=width_px,
-        smoothing_px=smoothing_px, supersample=supersample, native=native,
-    )
-    return layers["faint"], layers["strong"]
-
-
 def _without_field(record: DeformableRecord) -> DeformableRecord:
     from dataclasses import replace
 

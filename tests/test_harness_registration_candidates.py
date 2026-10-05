@@ -1,12 +1,4 @@
-"""Standalone unit tests for helpers both border routes share.
-
-The candidate-building pipeline these tests once exercised end-to-end
-(`_generate_registration_candidate`, the colormap workflow) is deleted; what
-remains here are the geometry and CLI helpers that
-`border_registration.py`/`border_refinement.py` still call, tested directly
-rather than through that deleted pipeline (the Elastix report and parameter
-builders went with the Elastix residual fit on 2026-10-04).
-"""
+"""The atlas root mask and the border traces' working canvas."""
 
 from __future__ import annotations
 
@@ -24,17 +16,12 @@ def _make_slice(size: tuple[int, int] = (12, 8)) -> Image.Image:
     return image
 
 
-def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch):
-    """`_build_atlas_root_mask` slices annotation at the AP index for the
-    requested plane, marks non-zero structure IDs as opaque (255) and zeros
-    as transparent (0), and NEAREST-resizes to *target_size* so alpha stays
-    binary -- bilinear interpolation would halo the 3D-viewer silhouette.
-
-    The implementation now lives in `langslice.core.atlas.core.get_root_mask` (it is
-    an atlas accessor, and the linear transform tools need it too); the
-    name here is an alias, so this exercises both."""
+def test_root_mask_produces_binary_alpha_at_target_size(monkeypatch):
+    """`get_root_mask` slices annotation at the AP index for the requested
+    plane, marks non-zero structure IDs as opaque (255) and zeros as
+    transparent (0), and NEAREST-resizes to *target_size* so alpha stays
+    binary (bilinear interpolation would halo the silhouette)."""
     from langslice.core.atlas import core as atlas_core
-    from langslice.core.nonlinear import image_gen_helpers
 
     # Annotation slab: top half has tissue (non-zero IDs), bottom half is bg.
     annotation = np.array(
@@ -58,7 +45,7 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     monkeypatch.setattr(atlas_core, "orient_slice_for_display", lambda a, plane: a)
 
     target_size = (8, 8)  # (W, H) per PIL convention
-    mask = image_gen_helpers._build_atlas_root_mask(
+    mask = atlas_core.get_root_mask(
         atlas, position_mm=0.0, target_size=target_size, plane="coronal"
     )
 

@@ -95,18 +95,18 @@ def test_cropping_keeps_the_center_of_the_painting() -> None:
 @pytest.fixture
 def _toy_atlas_render(monkeypatch: pytest.MonkeyPatch):
     """A tiny two-region plane, wired so outlined_atlas_template runs with no atlas I/O."""
-    import langslice.core.nonlinear.image_gen_helpers as helpers
+    import langslice.core.nonlinear.image_gen_registration as registration
 
     labels = np.zeros((20, 30), dtype=np.int32)
     labels[:, 15:] = 1
     gray = np.full((20, 30), 120.0, dtype=np.float32)
 
     atlas = SimpleNamespace(atlas_name="toy", structures={})
-    monkeypatch.setattr(helpers, "annotation_slice", lambda *a, **k: labels.copy())
+    monkeypatch.setattr(registration, "annotation_slice", lambda *a, **k: labels.copy())
     monkeypatch.setattr("langslice.core.atlas.get_reference_slice", lambda *a, **k: gray.copy())
     # No real structure tree to merge families from; the render only needs a
     # boundary between two ids, so pass classified ids through unchanged.
-    monkeypatch.setattr(helpers, "_merge_classified", lambda ids, atlas, merge_eps=40.0: ids)
+    monkeypatch.setattr(registration, "_merge_classified", lambda ids, atlas, merge_eps=40.0: ids)
     return atlas, labels
 
 

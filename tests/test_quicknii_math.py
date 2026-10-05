@@ -4,7 +4,7 @@ from typing import Protocol, cast
 
 import numpy as np
 
-from langslice.core.nonlinear import AffineResult, affine_matrix_from_legacy_params
+from langslice.core.affine import affine_matrix_from_legacy_params
 from langslice.job.quint import (
     CORONAL_FRAME_PADDING_FACTOR,
     compute_anchoring,
@@ -134,23 +134,7 @@ def test_legacy_affine_params_match_matrix_path() -> None:
     )
 
 
-def test_affine_decomposition_and_shear_preservation() -> None:
-    similarity_matrix = np.array(
-        [[1.08, -0.12, 14.0], [0.12, 1.08, -9.0], [0.0, 0.0, 1.0]],
-        dtype=np.float64,
-    )
-    similarity_result = AffineResult(
-        matrix=similarity_matrix,
-        source_size=(1000, 800),
-        output_size=(900, 700),
-        backend="test",
-        reasoning="synthetic",
-    )
-    expected_scale = float(np.hypot(1.08, 0.12))
-    assert abs(similarity_result.rotation_deg - 6.3401917) < 1e-3
-    assert abs(similarity_result.scale[0] - expected_scale) < 1e-6
-    assert abs(similarity_result.scale[1] - expected_scale) < 1e-6
-
+def test_shear_is_preserved_in_the_anchoring() -> None:
     shear_matrix = np.array(
         [[1.0, 0.35, 8.0], [0.0, 0.85, -6.0], [0.0, 0.0, 1.0]],
         dtype=np.float64,

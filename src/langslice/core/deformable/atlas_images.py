@@ -7,9 +7,8 @@ placed on the section's working grid through the linear placement. Blanking
 before placement is what makes exclusion work the same for every image kind:
 an excluded region's Nissl or template texture is gone, not just its lines.
 
-Host portability: an ABBA host has ABBA's cached Allen volumes, so it may use
-the Nissl channel; every other host gets only what BrainGlobe provides — the
-atlas reference and borders drawn from its labels (:func:`atlas_images_for_host`).
+The ``nissl`` image needs ABBA's cached Allen volume (:class:`AbbaAtlas`);
+the reference and the borders come from the BrainGlobe atlas itself.
 """
 
 from __future__ import annotations
@@ -35,20 +34,6 @@ VENTRICLE_NAME_KEYWORDS = (
 )
 #: Intensity percentile mapped to 1.0 when normalizing grayscale atlas planes.
 INTENSITY_PERCENTILE = 99.5
-
-
-def atlas_images_for_host(host: str, atlas: Any | None = None) -> tuple[str, ...]:
-    """The atlas image kinds a host may offer.
-
-    ABBA hosts get ``nissl`` when ABBA's cached Allen volume is present and
-    matches the atlas; every host gets the BrainGlobe reference and borders.
-    """
-    kinds = ["ara", "borders", "borders_merged"]
-    if host == "abba":
-        found = AbbaAtlas.find()
-        if found is not None and (atlas is None or found.compatible(atlas)):
-            kinds.insert(1, "nissl")
-    return tuple(kinds)
 
 
 _RECORD_FIELDS = ("id", "acronym", "name", "structure_id_path")
