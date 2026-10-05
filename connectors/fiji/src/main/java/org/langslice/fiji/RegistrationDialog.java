@@ -33,14 +33,13 @@ final class RegistrationDialog extends JDialog {
     }
 
     static final String TIP = "Tip: try to maximize contrast between different regions.";
-    static final String SOON = "Coming soon";
     static final String VIEWER_UNAVAILABLE = "Available when ABBA is started with `langslice abba`";
     private static final int PREVIEW_W = 340, PREVIEW_H = 230;
     private final Host host;
     private final List<SliceRow> rows;
     private final List<String> channelNames;
     private JsonObject status;
-    private boolean statusStale, previewBusy, previewAgain, estimateBusy, estimateAgain, estimateSupported = true, previewShown;
+    private boolean statusStale, previewBusy, previewAgain, estimateBusy, estimateAgain, previewShown;
 
     final JComboBox<String> provider = new JComboBox<>(new String[]{"ChatGPT", "Claude"});
     final JLabel account = new JLabel();
@@ -57,7 +56,6 @@ final class RegistrationDialog extends JDialog {
     final JTextField cue = new JTextField(16);
     final JSpinner thickness = new JSpinner(new SpinnerNumberModel(50, 1, 100000, 10));
     final JSpinner interval = new JSpinner(new SpinnerNumberModel(200, 1, 100000, 10));
-    final JCheckBox deepslice = new JCheckBox("DeepSlice tool"), bayesian = new JCheckBox("Bayesian position fit");
     final JTextArea positionNotes = notes();
     final JCheckBox linear = header("Linear"), affine = new JCheckBox("Enable affine tool");
     final JCheckBox angles = new JCheckBox("Enable slice angle estimation");
@@ -176,10 +174,8 @@ final class RegistrationDialog extends JDialog {
         cell(grid, positioning, 0, y++, 4, true);
         cell(grid, indent(label("Section thickness (µm)")), 0, y, 1, false); cell(grid, left(thickness), 1, y, 1, false);
         cell(grid, label("Section interval (µm)"), 2, y, 1, false); cell(grid, left(interval), 3, y++, 1, false);
-        cell(grid, indent(left(deepslice, bayesian)), 0, y++, 4, true);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(positionNotes), 1, y++, 3, true);
         cell(grid, new JSeparator(), 0, y++, 4, true);
-        for (JCheckBox soon : new JCheckBox[]{deepslice, bayesian}) { soon.setEnabled(false); soon.setToolTipText(SOON); soon.setText(soon.getText() + " (coming soon)"); }
 
         cell(grid, linear, 0, y++, 4, true);
         cell(grid, indent(flip), 0, y, 2, false); cell(grid, label("Hemisphere cue"), 2, y, 1, false); cell(grid, cue, 3, y++, 1, true);
@@ -262,11 +258,11 @@ final class RegistrationDialog extends JDialog {
 
     private void fill(RegistrationSettings s) {
         provider.setSelectedItem(s.claude ? "Claude" : "ChatGPT");
-        String defaultModel = RegistrationSettings.defaultValue(status, "default_agent_model", RegistrationSettings.DEFAULT_MODEL);
-        String defaultImage = RegistrationSettings.defaultValue(status, "default_image_model", RegistrationSettings.DEFAULT_IMAGE_MODEL);
-        for (String id : RegistrationSettings.models(status, "agent_models", RegistrationSettings.FALLBACK_MODELS)) model.addItem(RegistrationSettings.modelLabel(id));
-        fillImageModels(s.fresh ? RegistrationSettings.PROVIDER : s.imageProvider, s.fresh ? defaultImage : s.imageModel);
-        select(model, RegistrationSettings.modelLabel(s.fresh ? defaultModel : s.model));
+        for (String id : RegistrationSettings.agentModels(status)) model.addItem(RegistrationSettings.modelLabel(id));
+        fillImageModels(s.fresh ? RegistrationSettings.PROVIDER : s.imageProvider,
+                s.fresh ? RegistrationSettings.accountDefault(status, "default_image_model") : s.imageModel);
+        String agent = s.fresh ? RegistrationSettings.accountDefault(status, "default_agent_model") : s.model;
+        if (agent != null && !agent.isEmpty()) select(model, RegistrationSettings.modelLabel(agent));
         reasoning.setSelectedItem(s.reasoning);
         resolution.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.RESOLUTIONS).indexOf(s.resolution)));
         showLog.setSelected(s.showLog); viewer.setSelected(s.viewer && host.viewerAvailable());
@@ -486,7 +482,6 @@ final class RegistrationDialog extends JDialog {
 
     private void refreshEstimate() {
         if ("Claude".equals(provider.getSelectedItem())) { cost.setText("Usage is managed by Claude; no LangSlice estimate."); return; }
-        if (!estimateSupported) { cost.setText("Estimated cost: estimate unavailable"); return; }
         RegistrationSettings s = read();
         String problem = s.problem(channelNames.size());
         if (problem != null) { cost.setText("Estimated cost: " + problem); return; }
@@ -507,19 +502,12 @@ final class RegistrationDialog extends JDialog {
                     cost.setToolTipText(result.has("basis") && result.get("basis").isJsonPrimitive() ? result.get("basis").getAsString() : null);
                 } catch (Exception failure) {
                     Throwable cause = failure.getCause() != null ? failure.getCause() : failure;
-                    if (unsupported(cause)) { estimateSupported = false; cost.setText("Estimated cost: estimate unavailable"); }
-                    else cost.setText(refusalText(cause, s));
+                    cost.setText(refusalText(cause, s));
                     cost.setToolTipText(null);
                 }
                 if (estimateAgain) { estimateAgain = false; refreshEstimate(); }
             }
         }.execute();
-    }
-
-    /** An older worker rejects the unknown method at validation, not at run time. */
-    static boolean unsupported(Throwable error) {
-        String text = error.getMessage();
-        return text != null && (text.contains("validation_error") || text.contains("invalid_request"));
     }
 
     /**

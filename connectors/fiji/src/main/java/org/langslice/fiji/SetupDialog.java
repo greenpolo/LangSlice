@@ -1,6 +1,5 @@
 package org.langslice.fiji;
 
-import ch.epfl.biop.atlas.aligner.MultiSlicePositioner;
 import com.google.gson.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -27,9 +26,11 @@ public final class SetupDialog extends JDialog {
     private WorkerClient worker;
     private boolean verified;
     private URI loginUri;
+    /** The repository, whose README leads to the installation guide. */
+    static final String INSTALLATION = "https://github.com/greenpolo/LangSlice";
 
-    public static void show(MultiSlicePositioner mp) { SwingUtilities.invokeLater(() -> new SetupDialog(null).setVisible(true)); }
-    public static void ensureConfigured(MultiSlicePositioner mp, Runnable ready) {
+    public static void open() { SwingUtilities.invokeLater(() -> new SetupDialog(null).setVisible(true)); }
+    public static void ensureConfigured(Runnable ready) {
         // Recheck on each launch: an environment may have been moved or upgraded.
         SetupDialog dialog = new SetupDialog(ready);
         dialog.setVisible(true);
@@ -71,8 +72,8 @@ public final class SetupDialog extends JDialog {
         JPanel bottom = new JPanel(new BorderLayout()); bottom.add(actions, BorderLayout.NORTH);
         JButton instructions = new JButton("Installation instructions");
         instructions.addActionListener(e -> {
-            try { Desktop.getDesktop().browse(new URI("https://github.com/greenpolo/LangSlice/blob/main/docs/abba_installation.md")); }
-            catch (Exception failure) { JOptionPane.showMessageDialog(this, "Open the LangSlice repository and read docs/abba_installation.md."); }
+            try { Desktop.getDesktop().browse(new URI(INSTALLATION)); }
+            catch (Exception failure) { JOptionPane.showMessageDialog(this, "Open " + INSTALLATION + " in a browser."); }
         });
         bottom.add(instructions, BorderLayout.SOUTH); root.add(bottom, BorderLayout.SOUTH); setContentPane(root);
         addWindowListener(new WindowAdapter() { @Override public void windowClosed(WindowEvent e) { if (worker != null) worker.close(); } });
@@ -115,7 +116,7 @@ public final class SetupDialog extends JDialog {
             @Override protected JsonObject doInBackground() throws Exception {
                 JsonObject result = current.request(method, params, event -> {
                     JsonObject payload = event.has("payload") && event.get("payload").isJsonObject() ? event.getAsJsonObject("payload") : event;
-                    JsonElement url = payload.has("authorization_url") ? payload.get("authorization_url") : payload.get("url");
+                    JsonElement url = payload.get("url");
                     if (url != null) SwingUtilities.invokeLater(() -> {
                         try { loginUri = URI.create(url.getAsString()); openLogin.setVisible(true); status.setText("Finish signing in in your browser. If no browser opened, click Open sign-in page."); pack(); }
                         catch (RuntimeException ignored) { }
@@ -142,7 +143,11 @@ public final class SetupDialog extends JDialog {
                     }
                     text.append("\nModel requests send selected section images to the chosen provider. API providers may charge for usage.");
                     status.setText(text.toString());
-                    if (continueWhenReady && configured) { EnvironmentDiscovery.save(selected); dispose(); if (onReady != null) onReady.run(); }
+                    if (continueWhenReady && configured) {
+                        // A check of the launcher's environment never replaces the user's own saved choice.
+                        if (!selected.equals(EnvironmentDiscovery.launcher()) || EnvironmentDiscovery.saved() == null) EnvironmentDiscovery.save(selected);
+                        dispose(); if (onReady != null) onReady.run();
+                    }
                 } catch (Exception failure) {
                     verified = false; Throwable cause = failure.getCause() != null ? failure.getCause() : failure;
                     status.setText(cause instanceof CancellationException ? "Operation cancelled." : cause.getMessage());

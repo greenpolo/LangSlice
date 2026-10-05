@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import xml.etree.ElementTree as ElementTree
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--java-home', type=Path, default=None)
@@ -35,7 +36,11 @@ classes.mkdir(parents=True, exist_ok=True)
 sources = sorted((root / 'src/main/java').rglob('*.java'))
 # -proc:full: the SciJava annotation processor writes the plugin index (JDK 23+ no longer runs processors implicitly).
 run([tool('javac'), '--release', '21', '-proc:full', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(classes), *(str(p) for p in sources)])
-artifact = root / 'target/langslice-fiji-0.2.0.jar'
+# The same jar name Maven writes: artifactId-version from pom.xml.
+pom = ElementTree.parse(root / 'pom.xml').getroot()
+namespace = {'m': 'http://maven.apache.org/POM/4.0.0'}
+name = pom.findtext('m:artifactId', namespaces=namespace) + '-' + pom.findtext('m:version', namespaces=namespace)
+artifact = root / 'target' / (name + '.jar')
 run([tool('jar'), 'cf', str(artifact), '-C', str(classes), '.'])
 print(artifact)
 if args.test:

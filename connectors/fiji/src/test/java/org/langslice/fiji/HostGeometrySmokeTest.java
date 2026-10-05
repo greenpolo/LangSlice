@@ -43,7 +43,7 @@ public final class HostGeometrySmokeTest {
     }
 
     /**
-     * The warp step: same pull-back as the legacy spline rows (target point -> source point), in both coordinate
+     * The warp step: a pull-back (target point -> source point), in both coordinate
      * layouts; a BigWarp step that survives ABBA's serialization and that BigWarp can reopen for editing.
      */
     static int warpChecks(double[][] source, double[][] target) throws Exception {
@@ -56,11 +56,11 @@ public final class HostGeometrySmokeTest {
             close(expected, apply(byPoints, target[0][i], target[1][i], 0), 1e-8, "Warp maps target_mm to source_mm (points)");
             probes += 2;
         }
-        // Exactly the legacy pull-back with the orientation left out (the affine step carries it).
-        InvertibleRealTransform legacy = AbbaHostSession.tps(target, source);
+        // Exactly the plain TPS pull-back with no orientation inside (the affine step carries it).
+        InvertibleRealTransform plain = AbbaHostSession.tps(target, source);
         for (int ix = -4; ix <= 4; ix++) for (int iy = -4; iy <= 4; iy++) {
             double x = ix * .31, y = iy * .27;
-            close(apply(legacy, x, y, 0), apply(byRows, x, y, 0), 1e-12, "Warp equals the legacy TPS off landmarks");
+            close(apply(plain, x, y, 0), apply(byRows, x, y, 0), 1e-12, "Warp equals the plain TPS off landmarks");
             probes++;
         }
         try { AbbaHostSession.warpTransform(JsonParser.parseString("{\"source_mm\":[[0,1],[0,1]],\"target_mm\":[[0,1],[0,1]]}").getAsJsonObject());
@@ -101,13 +101,12 @@ public final class HostGeometrySmokeTest {
 
     /** A row kept after a failure, merged with the next checkpoint's row for the same section. */
     static void mergeChecks() {
-        JsonObject kept = JsonParser.parseString("{\"id\":\"a\",\"position_mm\":1,\"spline_source_mm\":[],\"spline_target_mm\":[],\"warp\":null}").getAsJsonObject();
+        JsonObject kept = JsonParser.parseString("{\"id\":\"a\",\"position_mm\":1,\"affine_mm\":null,\"warp\":null}").getAsJsonObject();
         JsonObject next = JsonParser.parseString("{\"id\":\"a\",\"affine_mm\":[[1,0,0,0],[0,1,0,0],[0,0,1,0]],\"warp\":{\"source_mm\":[]}}").getAsJsonObject();
         JsonObject merged = AbbaHostSession.merge(kept, next);
-        if (merged.has("spline_source_mm") || merged.has("spline_target_mm") || !merged.has("affine_mm")
-                || merged.get("position_mm").getAsDouble() != 1 || !merged.get("warp").isJsonObject())
-            throw new AssertionError("Merge: newer keys win and a new affine replaces a kept spline: " + merged);
-        if (kept.has("affine_mm")) throw new AssertionError("Merge leaves its inputs alone");
+        if (!merged.get("affine_mm").isJsonArray() || merged.get("position_mm").getAsDouble() != 1 || !merged.get("warp").isJsonObject())
+            throw new AssertionError("Merge: newer keys win, older ones stay: " + merged);
+        if (!kept.get("affine_mm").isJsonNull()) throw new AssertionError("Merge leaves its inputs alone");
     }
 
     public static void main(String[] args) throws Exception {
