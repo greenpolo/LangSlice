@@ -24,7 +24,7 @@ import java.util.*;
  *     org.langslice.fiji.HostSessionSmokeTest /path/to/cached_atlas</pre>
  * It then starts a second JVM WITHOUT the connector's classes ({@link ReloadCheck}) to reopen the saved project.
  * Requires the Allen V3p1 XML, HDF5 and ontology already downloaded by ABBA (normally ~/cached_atlas).
- * Checks: AP positions from ABBA's own toAtlasZ against the former coordinate-probe measurement, a tilted
+ * Checks: AP positions from ABBA's own toAtlasZ against ABBA's atlas coordinate images read at the slice, a tilted
  * session's angles_deg, existing_warp, live checkpoints (position, affine step, warp step, cutting angles),
  * the affine-then-warp replace/remove order, one checkpoint = one Undo (angles included), refusal and retry
  * after an outside change, and save then reload without LangSlice with the warp step intact.
@@ -136,7 +136,7 @@ public final class HostSessionSmokeTest {
         SliceSources one = sections.get(0), two = sections.get(1);
         require(mp.getAtlas().getName().contains("V3p1"), "Allen V3p1 atlas: " + mp.getAtlas().getName());
 
-        // 1. ABBA's own AP conversion equals what the former coordinate probe measured (flat session).
+        // 1. ABBA's own AP conversion equals what its atlas coordinate images read at the slice (flat session).
         double probed = probeAP(mp, one), converted = mp.toAtlasZ(one.getSlicingAxisPosition());
         System.out.println("AP_CHECK probe=" + probed + " toAtlasZ=" + converted + " difference=" + (converted - probed)
                 + " zOffset=" + mp.getReslicedAtlas().getZOffset() + " slicingAxisPosition=" + one.getSlicingAxisPosition());
@@ -264,7 +264,7 @@ public final class HostSessionSmokeTest {
         require(process.waitFor() == 0, "Reload without the connector failed");
     }
 
-    /** The former AP measurement: ABBA's atlas coordinate images read at the slice's plane (flat session only). */
+    /** An independent AP measurement: ABBA's atlas coordinate images read at the slice's plane (flat session only). */
     static double probeAP(MultiSlicePositioner mp, SliceSources slice) {
         final double[] measured = {Double.NaN};
         SimpleRegistrationPlugin probe = new SimpleRegistrationPlugin() {

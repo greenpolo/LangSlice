@@ -44,7 +44,7 @@ public final class AgentRunner {
             }
             protected void done() {
                 try { open(mp, selected, chosen, get()); }
-                catch (Exception error) { JOptionPane.showMessageDialog(null, "Could not check LangSlice. Open Setup to reconnect the environment."); SetupDialog.show(mp); }
+                catch (Exception error) { JOptionPane.showMessageDialog(null, "Could not check LangSlice. Open Setup to reconnect the environment."); SetupDialog.open(); }
             }
         }.execute();
     }
@@ -124,7 +124,7 @@ public final class AgentRunner {
         public JsonObject status() throws Exception {
             try (WorkerClient worker = new WorkerClient(environment())) { return worker.request("setup.status", new JsonObject(), null, Duration.ofSeconds(60)); }
         }
-        public void setup() { SetupDialog.show(mp); }
+        public void setup() { SetupDialog.open(); }
         public void run(RegistrationSettings settings, Map<Integer, String> damaged, Set<Integer> nonlinearSkip) {
             Map<SliceSources, String> marked = new HashMap<>();
             damaged.forEach((row, note) -> marked.put(slices.get(row), note));
@@ -146,7 +146,7 @@ public final class AgentRunner {
     }
 
     private static Path environment() {
-        Path environment = EnvironmentDiscovery.saved();
+        Path environment = EnvironmentDiscovery.current();
         if (environment == null) throw new IllegalStateException("Open Setup and choose the LangSlice environment.");
         return environment;
     }
@@ -240,7 +240,7 @@ public final class AgentRunner {
     }
 
     /** Prepares snapshots and the request shared by both modes; registers the run with event listeners. */
-    private static JsonObject prepareRun(AbbaHostSession host, MultiSlicePositioner mp, RegistrationSettings settings,
+    private static JsonObject prepareRun(AbbaHostSession host, RegistrationSettings settings,
             List<SliceSources> selected, Map<SliceSources, String> damaged, Set<SliceSources> nonlinearSkip,
             List<String> channelNames, String mode) throws IOException {
         JsonObject request = host.prepare(settings.spec(), selected, settings.exportChannels(channelNames.size()), channelNames,
@@ -254,7 +254,7 @@ public final class AgentRunner {
         started.addProperty("mode", mode);
         started.addProperty("viewer", settings.viewer);
         started.addProperty("image_folder", host.folder.toString());
-        LangSliceEvents.runStarted(mp, host.slices, started);
+        LangSliceEvents.runStarted(host.slices, started);
         return request;
     }
 
@@ -288,7 +288,7 @@ public final class AgentRunner {
                 window.line("The agent's changes appear in ABBA as it saves them; each saved step is one ABBA Undo. "
                         + "Avoid editing the listed slices while the agent works.");
                 AbbaHostSession host = new AbbaHostSession(mp, folder);
-                JsonObject request = prepareRun(host, mp, settings, selected, damaged, nonlinearSkip, channelNames, "chatgpt");
+                JsonObject request = prepareRun(host, settings, selected, damaged, nonlinearSkip, channelNames, RegistrationSettings.PROVIDER);
                 session.set(host);
                 AbbaHostSession.checkInterrupted();
                 window.status("The agent is working. Changes are live in ABBA.");
@@ -359,7 +359,7 @@ public final class AgentRunner {
                 Path folder = Files.createTempDirectory(root, "claude-");
                 window.status("Preparing calibrated snapshots…");
                 AbbaHostSession host = new AbbaHostSession(mp, folder);
-                JsonObject request = prepareRun(host, mp, settings, selected, damaged, nonlinearSkip, channelNames, "claude");
+                JsonObject request = prepareRun(host, settings, selected, damaged, nonlinearSkip, channelNames, "claude");
                 session.set(host);
                 request.addProperty("notes", "");
                 if (stopping.get()) throw new CancellationException();
@@ -431,11 +431,15 @@ public final class AgentRunner {
         }.execute();
     }
 
+    /**
+     * The run log's text for one agent event. A tool's failure is read from its tool_end (sent in both modes:
+     * the worker's toolbox emits it around every executed tool), so a refusal shows once, with its reason.
+     */
     static String agentText(JsonObject event) {
         String kind = event.has("kind") ? event.get("kind").getAsString() : "";
         if ((kind.equals("text") || kind.equals("reasoning")) && event.has("text")) return event.get("text").getAsString();
         if (kind.equals("tool_start")) return "\nWorking: " + (event.has("name") ? event.get("name").getAsString().replace('_', ' ') : "registration") + "\n";
-        if (kind.equals("tool_result") && event.has("response") && event.get("response").isJsonObject()) {
+        if (kind.equals("tool_end") && event.has("response") && event.get("response").isJsonObject()) {
             JsonObject response = event.getAsJsonObject("response");
             String status = response.has("status") ? response.get("status").getAsString() : "";
             if (!status.isEmpty() && !status.equals("ok") && !status.equals("success")) {

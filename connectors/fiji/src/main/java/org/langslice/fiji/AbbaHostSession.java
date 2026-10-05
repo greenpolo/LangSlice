@@ -134,7 +134,7 @@ final class AbbaHostSession {
         return out;
     }
 
-    /** ABBA's rotations (radians) as the job's stack-wide angles; signs pinned by test_integrations_abba_math.py. */
+    /** ABBA's rotations (radians) as the job's stack-wide angles; signs pinned by tests/test_abba_angles.py. */
     static JsonObject anglesDeg(double rotateX, double rotateY) {
         JsonObject angles = new JsonObject();
         angles.addProperty("pitch_deg", -Math.toDegrees(rotateX));
@@ -348,13 +348,10 @@ final class AbbaHostSession {
         return report;
     }
 
-    /** One older row with a newer one on top: the newer keys win; a new placement replaces an older one. */
+    /** One older row with a newer one on top: the newer keys win. */
     static JsonObject merge(JsonObject older, JsonObject newer) {
         if (older == null) return newer.deepCopy();
         JsonObject merged = older.deepCopy();
-        if (newer.has("affine_mm") || newer.has("spline_source_mm")) {
-            merged.remove("affine_mm"); merged.remove("spline_source_mm"); merged.remove("spline_target_mm");
-        }
         for (Map.Entry<String, JsonElement> value : newer.entrySet()) merged.add(value.getKey(), value.getValue().deepCopy());
         return merged;
     }
@@ -383,7 +380,7 @@ final class AbbaHostSession {
         SliceSources slice = slices.get(id);
         if (slice == null) throw new IllegalArgumentException("Unknown section in the worker's result.");
         if (!mp.getSlices().contains(slice)) throw new IllegalStateException("The slice was removed from ABBA.");
-        boolean placement = update.has("flip") || update.has("rotation_deg") || update.has("affine_mm") || update.has("spline_source_mm");
+        boolean placement = update.has("flip") || update.has("rotation_deg") || update.has("affine_mm");
         boolean warpChange = update.has("warp");
         Registration<SourceAndConverter<?>[]> previousAffine = ownedAffine.get(id), previousWarp = ownedWarp.get(id);
         if (placement || warpChange) {
@@ -394,9 +391,7 @@ final class AbbaHostSession {
         JsonObject transform = transforms.containsKey(id) ? transforms.get(id).deepCopy() : new JsonObject();
         Registration<SourceAndConverter<?>[]> nextAffine = previousAffine, nextWarp = previousWarp;
         if (placement) {
-            if (update.has("affine_mm")) { transform.remove("spline_source_mm"); transform.remove("spline_target_mm"); }
-            if (update.has("spline_source_mm")) transform.remove("affine_mm");
-            for (String key : new String[]{"flip", "rotation_deg", "affine_mm", "spline_source_mm", "spline_target_mm"})
+            for (String key : new String[]{"flip", "rotation_deg", "affine_mm"})
                 if (update.has(key)) transform.add(key, update.get(key).deepCopy());
             nextAffine = prepareRegistration(transform);
         }
@@ -477,25 +472,9 @@ final class AbbaHostSession {
         return matrix;
     }
 
-    /** The affine step (null for the identity) or, for a legacy spline row, the complete legacy BigWarp step. */
+    /** The affine step, or null for the identity. */
     Registration<SourceAndConverter<?>[]> prepareRegistration(JsonObject transform) {
-        AffineTransform3D orient = orientation(transform);
         PluginService service = mp.getContext().getService(PluginService.class);
-        if (transform.has("spline_source_mm")) {
-            double[][] source = points(transform.getAsJsonArray("spline_source_mm"));
-            double[][] target = points(transform.getAsJsonArray("spline_target_mm"));
-            if (source[0].length != target[0].length) throw new IllegalArgumentException("Unpaired spline points.");
-            InvertibleRealTransformSequence pullback = new InvertibleRealTransformSequence();
-            pullback.add(tps(target, source));
-            pullback.add(orient.inverse());
-            BigWarpSource2DRegistration reg = instance(service, BigWarpSource2DRegistration.class);
-            reg.setRealTransform(pullback);
-            reg.setTransform(reg.getTransform());
-            reg.setRegistrationParameters(new HashMap<>());
-            reg.setRegistrationName(AFFINE_NAME);
-            if (!reg.isRegistrationDone()) throw new IllegalStateException("Spline serialization failed.");
-            return reg;
-        }
         AffineTransform3D affine = affineMatrix(transform);
         if (affine == null) return null;
         AffineRegistration reg = instance(service, AffineRegistration.class);
@@ -529,7 +508,7 @@ final class AbbaHostSession {
 
     /**
      * The warp step: a BigWarp thin-plate spline from the row's landmark pairs, in the same centred ABBA
-     * world-mm frame and pull-back direction as the legacy spline rows, applied AFTER the affine step.
+     * world-mm frame as the affine step, applied AFTER it.
      * The plain wrapped TPS (no orientation inside) is what BigWarp reopens for editing.
      */
     BigWarpSource2DRegistration prepareWarp(JsonObject warp) {
@@ -546,7 +525,7 @@ final class AbbaHostSession {
         return reg;
     }
 
-    /** source_mm / target_mm as a TPS mapping target points to source points (the legacy pull-back). */
+    /** source_mm / target_mm as a TPS mapping target points to source points (a pull-back, as BigWarp stores it). */
     static InvertibleRealTransform warpTransform(JsonObject warp) {
         if (!warp.has("source_mm") || !warp.has("target_mm")) throw new IllegalArgumentException("A warp needs source_mm and target_mm.");
         double[][] source = coordinates(warp.getAsJsonArray("source_mm"));
