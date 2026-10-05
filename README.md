@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <em>Register histological brain sections to BrainGlobe atlases.</em>
+  <em>Register histological brain sections to BrainGlobe atlases using vision-language &amp; image-generation models.</em>
 </p>
 
 <p align="center">
