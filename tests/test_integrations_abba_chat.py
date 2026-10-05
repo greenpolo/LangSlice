@@ -105,6 +105,17 @@ def test_browser_missing_falls_back_to_existing_viewer(monkeypatch):
     assert chat.create_activity_window() is marker
 
 
+def test_windows_browser_searches_standard_install_locations(monkeypatch, tmp_path):
+    browser = tmp_path / "Google" / "Chrome" / "Application" / "chrome.exe"
+    browser.parent.mkdir(parents=True)
+    browser.touch()
+    monkeypatch.setattr(chat.shutil, "which", lambda _: None)
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path))
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    assert chat._browser(windows=True) == str(browser)
+
+
 def test_disposed_window_ignores_future_events_and_show():
     window = chat.ChatWindow.__new__(chat.ChatWindow)
     window.closed = True

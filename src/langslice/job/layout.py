@@ -219,7 +219,8 @@ def section_dirname(section_id: str, siblings: list[str] | tuple[str, ...] = ())
     """
     name = Path(section_id).name
     stem = Path(name).stem
-    clash = sum(1 for other in siblings if Path(Path(other).name).stem == stem) > 1
+    clash = sum(1 for other in siblings
+                if Path(Path(other).name).stem.casefold() == stem.casefold()) > 1
     return _safe(name if clash else stem)
 
 

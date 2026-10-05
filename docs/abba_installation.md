@@ -22,9 +22,12 @@ needs `itk-elastix`, which conda-forge does not publish; see
    conda env create -f environment.yml
    ```
 
-This creates an environment named `langslice`, including its Python dependencies.
-Leave it installed in that location. You can close the terminal when installation
-finishes. You do not need Java, Maven or `abba-python` in this environment.
+On Windows, run the same commands in Miniforge Prompt or PowerShell with conda
+initialized. Python 3.11 is tested on Windows. This creates an environment
+named `langslice`, including its Python dependencies. Leave it installed in
+that location. You can close the terminal when installation finishes. The
+Fiji worker does not need Java or Maven in this environment; the included
+`abba-python` extra is for starting ABBA from Python.
 
 If an environment named `langslice` already exists, choose another name with
 `conda env create -n langslice-fiji -f environment.yml` and select that environment

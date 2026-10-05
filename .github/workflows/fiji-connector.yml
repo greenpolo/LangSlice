@@ -35,7 +35,7 @@ jobs:
           python-version: "3.11"
       - name: Build connector with declared Maven dependencies
         working-directory: connectors/fiji
-        run: mvn --batch-mode package dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt
+        run: mvn --batch-mode package dependency:build-classpath '-Dmdep.outputFile=target/test-classpath.txt'
       - name: Exercise worker protocol and SciJava command discovery (Linux)
         if: runner.os != 'Windows'
         working-directory: connectors/fiji

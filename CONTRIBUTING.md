@@ -21,7 +21,7 @@ git clone https://github.com/greenpolo/LangSlice.git
 cd LangSlice
 uv venv --python 3.11 .venv
 source .venv/bin/activate       # macOS / Linux
-# .venv\Scripts\activate        # Windows
+# .venv\Scripts\Activate.ps1    # Windows PowerShell (or activate.bat in cmd.exe)
 uv pip install -e ".[dev,registration]"
 ```
 
@@ -43,7 +43,7 @@ python -m langslice version
 
 - Branch from `main`, open the PR against `main`.
 - Keep PRs focused — one logical change per PR is easier to review.
-- CI runs `ruff`, `basedpyright` and the test suite on Python 3.10 / 3.11 / 3.12.
+- CI runs `ruff`, `basedpyright` and the test suite on Linux Python 3.10 / 3.11 / 3.12 and Windows Python 3.11. The Fiji connector builds and runs its discovery, menu and geometry checks on Windows; its shebang-based fake-worker subprocess check runs on Linux.
 
 ## License
 
