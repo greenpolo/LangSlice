@@ -1,7 +1,6 @@
 """Sections as the run sees them: the renders every picture and fit start from.
 
-Split out of ``linear/render.py`` (layered refactor, phase 3d). Every path
-that shows or measures a section goes through :func:`render_slice`, so the
+Every path that shows or measures a section goes through :func:`render_slice`, so the
 pixels the agent judges are the pixels a fit is computed on. Corrections are
 applied in one order everywhere: ROTATE first, then FLIP left-right. Renders
 are cached on the workspace (``render_cache``, ``render_scale``) and shared:

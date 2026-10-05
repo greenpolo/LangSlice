@@ -37,17 +37,17 @@ not the pairs.
 
 Accuracy and folds. A regular grid over the snapshot of 9x9, 17x17, 25x25
 and at most 33x33 file points is tried (33x33 = 1089 points: ABBA's cost
-grows fast with the point count, measured 2026-10-04 in headless ABBA
-0.24.1: building the step ~3 s at 1089 points against ~5 min at 4225).
+grows fast with the point count; in ABBA 0.24.1 building the step takes
+~3 s at 1089 points against ~5 min at 4225).
 Each grid's TPS pull-back is compared with the exact one (the record's
 bilinear field) at three independent off-grid probe sets (a denser grid with
 the edges, and two offset grids), and its Jacobian is sampled there. The
 first non-folding grid within *tolerance_mm* (5 um) is returned; otherwise
 the largest non-folding grid is returned ANYWAY, its error measured and
-reported (``max_error_mm``, ``p99_error_mm``, ``within_tolerance``): the
-product chose a warp in ABBA with a recorded error over no warp
-(2026-10-04; on six real sections Elastix and ANTs fits measured 7-100 um
-maximum at 33x33, 3-31 um p99 inside the tissue). Only when every grid's
+reported (``max_error_mm``, ``p99_error_mm``, ``within_tolerance``): a
+warp in ABBA with a recorded error is preferred over no warp (Elastix and
+ANTs fits typically measure 7-100 um maximum at 33x33, 3-31 um p99 inside
+the tissue). Only when every grid's
 TPS folds (a sampled Jacobian determinant at or below ``MIN_JACOBIAN``) is
 ``ValueError`` raised. The exact map's own smallest sampled Jacobian (a
 65x65 screen) is reported, not enforced.

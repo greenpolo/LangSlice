@@ -348,10 +348,9 @@ def silhouette_affine(
     (``core.transform.fit_silhouette``) calls it. The atlas tissue silhouette is
     the root mask of the plane at *position_mm* and the cutting angles
     (:func:`langslice.core.atlas.core.get_root_mask`), so an angled stack is
-    measured against the plane every other picture in the run shows (until
-    2026-09-10 it measured against the flat plane on a 13-degree brain and
-    said so with ``flat_atlas_fit``). *atlas_mask_at* (a ``(w, h)`` size ->
-    mask) replaces that silhouette with the caller's own.
+    measured against the plane every other picture in the run shows.
+    *atlas_mask_at* (a ``(w, h)`` size -> mask) replaces that silhouette with
+    the caller's own.
 
     Raises ``ValueError`` when the tissue silhouette is implausible (Otsu
     failed on a blank or uniform field) or no candidate could be computed.

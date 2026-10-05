@@ -823,8 +823,8 @@ def _largest_component(mask: np.ndarray) -> np.ndarray:
 
     A slide carries more than the section: a dust speck, a pen mark, a sliver
     of a neighbouring section. The global bounding box stretches around all of
-    it and the section comes back rendered at a fraction of the frame — the
-    worst framing in a benchmark run was also its worst position. But a
+    it and the section comes back rendered at a fraction of the frame, which
+    costs the position estimate. But a
     section is often in pieces (bulbs cut apart, the cerebellum parted from
     the brainstem, a tear): keeping only the biggest blob showed the model one
     bulb, or a cerebellum with no brainstem, and those sections were placed

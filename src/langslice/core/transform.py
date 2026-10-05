@@ -7,8 +7,7 @@ the deformable package's prepared stain and atlas images.
 (:func:`langslice.core.affine.silhouette_affine`) of a section's silhouette onto
 its atlas section. The interactive route is the main agent's
 own hand: `adjust_transforms` in :mod:`langslice.doors.tools.toolbox`, whose
-arithmetic (calibration and the decomposition it reports) lives here. Shared
-point-fit geometry helpers are retained for analysis and historical results.
+arithmetic (calibration and the decomposition it reports) lives here.
 
 The fits return numbers, never pictures: each ok payload carries its
 :class:`FitFrame` (the working frame, its calibration and the fitted matrix

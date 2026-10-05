@@ -76,9 +76,9 @@ logger = logging.getLogger(__name__)
 #: engine works on a coarser grid (the detail level's micrometres); this grid
 #: carries the final field, the labels and the masks.
 FIT_LONG_EDGE = 1536
-#: The detail level every tool fit runs at. The 2026-10-01 ceiling test found
-#: detail never changed which candidate looked best, so the tool fixes it;
-#: tests set ``coarse`` here for speed.
+#: The detail level every tool fit runs at: detail never changes which
+#: candidate looks best, so the tool fixes it; tests set ``coarse`` here for
+#: speed.
 DETAIL_LEVEL = "standard"
 #: Setting variants one call may preview.
 MAX_CANDIDATES = 4
@@ -281,9 +281,9 @@ class Choice:
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...]) -> FitSettings:
         """The engine settings. A stain fit with ANTs adds the automatic tissue
-        and ventricle label channels (``labels="auto"``): the 2026-10-02
-        stain ceiling test's clearest gain (outline and enlarged ventricles);
-        Elastix has no label channels."""
+        and ventricle label channels (``labels="auto"``), the clearest gain
+        on the outline and enlarged ventricles; Elastix has no label
+        channels."""
         traced = self.fit_section in TRACED
         if self.fit_section == TRACED_BORDERS:
             labels = "model"

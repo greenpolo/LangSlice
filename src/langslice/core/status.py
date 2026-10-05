@@ -1,7 +1,6 @@
 """The status table: one row per section, as data for the doors.
 
-Split out of ``linear/render.py`` (layered refactor, phase 3d). Not a
-picture: the rows every write answers with, ``status`` returns whole, and
+Not a picture: the rows every write answers with, ``status`` returns whole, and
 the opening and MCP briefing print as text (:func:`status_text`).
 """
 
@@ -91,10 +90,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rows without their null and empty fields, for a tool payload.
 
-    A position-only run carried null transform fields and empty caveat lists
-    on every row of every result, a third of the text the model paid for
-    (run 5, 2026-09-09). Absent means null; ``status_text`` keeps the full
-    rows.
+    Null transform fields and empty lists on every row of every result
+    would be a large share of the text a model pays for. Absent means null;
+    ``status_text`` keeps the full rows.
     """
     return [
         {k: v for k, v in row.items() if v is not None and v != [] and v != ""}

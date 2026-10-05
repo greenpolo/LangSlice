@@ -1,7 +1,6 @@
 """Picture sizes: the long edge of every picture the agent is shown, per level.
 
-Split out of ``linear/render.py`` (layered refactor, phase 3d). The working
-frame fits are computed on is :data:`langslice.core.sections.PREVIEW_LONG_EDGE`,
+The working frame fits are computed on is :data:`langslice.core.sections.PREVIEW_LONG_EDGE`,
 never one of these.
 """
 

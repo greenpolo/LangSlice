@@ -12,6 +12,7 @@ sections differ (:class:`langslice.core.state.MixedAngles`).
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import cast
 
@@ -26,6 +27,8 @@ from langslice.core.sizes import opening_edge, picture_edge
 from langslice.core.space import Plane
 from langslice.core.state import Angles, StackState, plane_angles
 from langslice.core.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 #: Most atlas sections in the opening's atlas reference (laid out as strips by
 #: :mod:`langslice.core.opening`, sent when a section has no position).
@@ -70,7 +73,8 @@ def atlas_section(
         return image
     try:
         mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
-    except Exception:
+    except Exception as exc:
+        logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)", position_mm, exc)
         return image
     return crop_to_mask(image, mask > 0)
 
@@ -114,9 +118,7 @@ def reference_atlas(
 ) -> tuple[float, list[tuple[float, Image.Image]]]:
     """The atlas at evenly spaced positions for the opening: ``(step, pictures)``.
 
-    Until 2026-09-09 the model never saw the atlas as a set: four bare atlas
-    sections from one ``view_atlas`` and then only ever half of a
-    comparison pair. The reference spans the atlas's valid range at the
+    The reference spans the atlas's valid range at the
     nominal interval, or coarser when that would exceed *max_images*. Each
     picture is tissue-framed at the stack's cutting angles
     (``StackState.view_angles``: the median of the sections' when they

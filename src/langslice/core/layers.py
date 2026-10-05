@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from langslice.core.canvas import PanelFrame
     from langslice.core.placement import CanvasFrame
 
-#: The frame record's format. 1 (2026-10-03).
+#: The frame record's format.
 FRAME_FORMAT_VERSION = 1
 #: Stated in every frame record, so a script reading one needs nothing else.
 CONVENTION = (

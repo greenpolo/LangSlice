@@ -1,8 +1,8 @@
 """Section pixels to atlas micrometres: the linear frame, the residual and the maps.
 
-The geometry behind the job folder's public files (formats phase,
-2026-10-04): ``registration.json`` and, per section, ``coords.tif``,
-``labels.tif`` and ``residual.tif`` (written by :mod:`langslice.job.formats`).
+The geometry behind the job folder's public files: ``registration.json``
+and, per section, ``coords.tif``, ``labels.tif`` and ``residual.tif``
+(written by :mod:`langslice.job.formats`).
 One path from the stored parameters to the atlas, the one every picture and
 fit uses: the six stored numbers are placed by
 :func:`langslice.core.handoff.linear_placement_matrix` on the section's
@@ -14,7 +14,7 @@ picture), and an applied deformation is the record's own field and placement
 (:class:`langslice.core.deformable.record.DeformableRecord`), composed exactly as
 its pictures compose it (residual first, then the linear placement undone).
 
-Conventions (Nash 2026-10-03, BrainGlobe's): atlas micrometres in the atlas's
+Conventions (BrainGlobe's): atlas micrometres in the atlas's
 own axis order, voxel ``i``'s centre at ``i * resolution``; image pixels are
 ``[row, col]`` with pixel centres at integers, row 0 the top of the image
 FILE as stored (no rotation or flip applied: those are part of the mapping).
@@ -410,12 +410,10 @@ class SectionMaps:
 
 #: A gap in the section's outline narrower than twice this is closed when
 #: the footprint is drawn (a tear, a fissure, a fringe of dim white matter
-#: the threshold dropped at the edge of a ventricle). Measured 2026-10-04 on
-#: LSD_910 M02_B_06 (fluorescent, dim fibre tracts beside enlarged
-#: ventricles, two tears reaching the ventral surface): 0.03 mm left a dark
-#: band beside the hippocampus open, 0.06 mm left the tears as notches,
-#: 0.12 mm closed both and kept the real ventral notches; 0.4 mm began to
-#: fill those.
+#: the threshold dropped at the edge of a ventricle), while the outline's
+#: real notches stay open: on a fluorescent section with dim fibre tracts and
+#: tears, 0.06 mm left the tears as notches and 0.4 mm began to fill the
+#: real ventral notches.
 FOOTPRINT_CLOSING_MM = 0.15
 
 

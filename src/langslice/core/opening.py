@@ -3,9 +3,8 @@
 The seed message (and the Claude host's ``show_stack`` pages) shows the stack
 the way ABBA's slice strip does: horizontal strips in corrected order, the
 sections along the top row and, directly beneath each one, the atlas at that
-section's current position at the stack's cutting angles. Until 2026-10-03
-every section and every atlas section was its own image (~80 images for a
-40-section stack); Nash asked for strips instead.
+section's current position at the stack's cutting angles: a few strips
+instead of two images per section.
 
 Each strip's long edge is the model lane's largest image
 (:func:`langslice.doors.tools.media.strip_edge`),
@@ -36,12 +35,11 @@ from langslice.core.state import Angles, SliceState, StackState
 from langslice.core.workspace import Workspace
 
 #: Longest image edge, in pixels, the OpenAI lanes take in without shrinking
-#: (gpt-6-astra at detail "high"; Codex CLI's own client resize is the same
-#: 2048 px). Verified 2026-10-03.
+#: (at detail "high"; Codex CLI's own client resize is the same 2048 px).
 OPENAI_MAX_IMAGE_EDGE = 2048
 #: The OpenAI lanes' per-image budget of 32-px patches at detail "high"
-#: (ceil(w/32) * ceil(h/32)); a larger image is downscaled to fit. Verified
-#: 2026-10-03: a 2048-px-wide strip may be at most ~1250 px tall.
+#: (ceil(w/32) * ceil(h/32)); a larger image is downscaled to fit: a
+#: 2048-px-wide strip may be at most ~1250 px tall.
 OPENAI_MAX_IMAGE_PATCHES = 2500
 #: Claude's recommended largest long edge (the MCP host, ``show_stack``):
 #: older Claude models shrink anything larger, and a request with more than
