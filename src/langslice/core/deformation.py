@@ -25,7 +25,6 @@ engine package :mod:`langslice.core.deformable`. What lives here:
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import logging
@@ -67,6 +66,7 @@ from langslice.core.deformable.settings import (
     ELASTIX_MEAN_SQUARES_BENDING_SCALE,
     ELASTIX_STIFFNESS,
 )
+from langslice.core.handoff import digest
 from langslice.core.state import SliceState, StackState
 from langslice.core.workspace import Workspace
 
@@ -132,17 +132,13 @@ ANTS_MISSING = (
 )
 
 
-def _digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
-
-
 # --- the linear placement a deformation lives on --------------------------
 
 
 def linear_key(state: StackState, record: SliceState) -> str:
     """Identity of the section's linear placement: what a warp is fitted on."""
     transform = record.transform or {}
-    return _digest({
+    return digest({
         "atlas": state.atlas, "plane": state.plane, "position_mm": record.position_mm,
         "angles": [record.pitch_deg, record.yaw_deg], "flip": record.flip,
         "rotation_deg": record.rotation_deg,
@@ -344,7 +340,7 @@ def cache_key(
     previous_key: str | None,
 ) -> str:
     """Every input of one fit: the same key means the same result."""
-    return _digest({
+    return digest({
         "section": grid.record.id, "linear": linear_key(state, grid.record),
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
         "placement": grid.placement.to_dict(), "image": image_identity,

@@ -7,18 +7,14 @@ plane as ``pitch_deg`` / ``yaw_deg``. The mapping is a sign per axis::
     rotateX = radians(pitch_deg * PITCH_TO_ROTATE_X_SIGN)
     rotateY = radians(yaw_deg * YAW_TO_ROTATE_Y_SIGN)
 
-Pinned 2026-09-29 against stage 0 of ABBA's own exported transform chains
-(``tests/test_abba_angles.py``): both signs are -1. A +rotateY
-cut puts the screen-LEFT half more posterior; LangSlice's coronal display
-has the BrainGlobe ML index running rightward, so that is yaw < 0. An
-earlier probe (2026-09-22) read yaw = +rotateY because it took ABBA's ML
-coordinate channel as BrainGlobe ML; that channel DECREASES with screen x,
-and the left-right symmetric Allen labels cannot reveal the mirror, so never
-settle an ML sign by label agreement.
-
-These constants moved here from the deleted Python live mirror
-(``hosts/integrations/abba_linear.py``, 2026-10-04); SliceBench still reads
-them through ``langslice.integrations.abba_linear``.
+Both signs are -1, pinned against stage 0 of ABBA's own exported transform
+chains (``tests/test_abba_angles.py``). A +rotateY cut puts the screen-LEFT
+half more posterior; LangSlice's coronal display has the BrainGlobe ML index
+running rightward, so that is yaw < 0. ABBA's ML coordinate channel
+DECREASES with screen x, and the left-right symmetric Allen labels cannot
+reveal a mirror, so an ML sign is never settled by label agreement. The
+Fiji connector applies the same mapping (``SlicingAnglesAction``); SliceBench
+reads the constants through ``langslice.integrations.abba_linear``.
 """
 
 from __future__ import annotations

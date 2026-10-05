@@ -14,13 +14,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
 Engine = Literal["ants", "elastix"]
-#: The 2026-10-01 ceiling test dropped ``stiff`` (never the best-looking fit; it
-#: left enlarged ventricles unfilled).
+#: There is no ``stiff``: it never gave the best-looking fit and left
+#: enlarged ventricles unfilled.
 Stiffness = Literal["soft", "medium", "firm"]
-#: ``standard`` is what the linear tool always uses. ``coarse`` looked the same
-#: in the ceiling test at a fraction of the time and stays for quick previews
-#: and tests; ``fine`` (10 um) was 4-5x slower with no visible gain and was
-#: dropped.
+#: ``standard`` is what the linear tool always uses. ``coarse`` looks the same
+#: at a fraction of the time, for quick previews and tests; a 10 um level
+#: was 4-5x slower with no visible gain.
 Detail = Literal["coarse", "standard"]
 #: ``ara``: the atlas's own BrainGlobe reference (for Allen, the ARA average
 #: template). ``nissl``: ABBA's cached Allen Nissl volume (ABBA hosts only).
@@ -38,8 +37,7 @@ Metric = Literal["local_correlation", "mutual_information", "normalized_correlat
 #: neighbourhood cross-correlation (``CC``) over a small window
 #: (:data:`CORRELATION_RADIUS_UM`); Elastix has no local correlation metric
 #: and uses :data:`ELASTIX_STAIN_METRIC` instead. ``mutual_information``: one
-#: joint histogram over the whole masked section (the default until
-#: 2026-10-02).
+#: joint histogram over the whole masked section.
 StainMetric = Literal["local_correlation", "mutual_information"]
 #: Label-map channels added to the image pair (ANTs only). ``none``: the image
 #: pair alone. ``auto``: what can be detected from the stain without a model —
@@ -52,7 +50,6 @@ Labels = Literal["none", "auto", "model"]
 Preprocess = Literal["n4", "denoise"]
 
 BORDER_IMAGES: frozenset[str] = frozenset({"borders", "borders_merged"})
-INTENSITY_IMAGES: frozenset[str] = frozenset({"ara", "nissl"})
 
 
 @dataclass(frozen=True)
@@ -123,8 +120,8 @@ DETAIL: dict[str, DetailLevel] = {
 #: Gaussian sigma, in micrometres, that turns a one-pixel line into a soft
 #: ridge both images share. A wider ridge widens the capture range (how far a
 #: misplaced border can be and still be pulled in) at the cost of precision.
-#: Fixed since the 2026-10-01 ceiling test: 30 and 60 um looked the same,
-#: 120 um slightly worse and added folds with Elastix.
+#: Fixed: 30 and 60 um look the same, 120 um slightly worse and adds folds
+#: with Elastix.
 LINE_SOFTENING_UM = 60.0
 
 #: Radius, in micrometres, of the window ANTs' local correlation compares
@@ -216,8 +213,8 @@ class FitSettings:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> FitSettings:
         data = dict(value)
-        # Records saved before 2026-10-02 carry the then-adjustable softening,
-        # and were fitted with mutual information and no edge channel.
+        # A record without these fields was fitted with mutual information
+        # and no edge channel; the softening it may carry is fixed now.
         data.pop("line_softening_um", None)
         data.setdefault("stain_metric", "mutual_information")
         data.setdefault("stain_edges", False)
@@ -243,9 +240,8 @@ def metric_for(
     local correlation metric, so its stain fits use
     :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
     lines against a grayscale image share no structure, and a stain against
-    atlas borders is the pairing the 2026-10-01 ceiling test found worst (it
-    stayed at the linear placement and left enlarged ventricles unfilled) —
-    borders are for traced lines.
+    atlas borders is the worst pairing (it stays at the linear placement and
+    leaves enlarged ventricles unfilled): borders are for traced lines.
     """
     if section_image == "lines":
         if atlas_image not in BORDER_IMAGES:

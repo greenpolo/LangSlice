@@ -17,7 +17,7 @@ z -> 11.4 - 0.01*z, so ABBA expresses its ML direction in the transform and
 leaves the voxel data in Allen's native order; (2) an asymmetric check:
 ABBA's Nissl correlates with the Allen Institute's own ``ara_nissl_50.nrrd``
 (LPS-labelled, native index order) with a positive antisymmetric part
-(r = 0.26 to 0.59 over seven coronal levels, measured 2026-10-01), i.e. the
+(r = 0.26 to 0.59 over seven coronal levels), i.e. the
 same ML order, not mirrored; (3) BrainGlobe builds ``allen_mouse`` from the
 same Allen arrays with an identity transform. So h5 index k on the ML axis is
 BrainGlobe ML index k. What remains unverified is only (3), BrainGlobe's own

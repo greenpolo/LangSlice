@@ -61,6 +61,14 @@ class CanvasGeometry:
     atlas_offset: tuple[float, float]
     annotation: np.ndarray
 
+    def atlas_to_section_frame(self) -> np.ndarray:
+        """3x3 from native atlas-plane pixels to the section's own frame (the
+        canvas less the section's offset)."""
+        sx, sy = self.section_offset
+        ax, ay = self.atlas_offset
+        return np.array([[self.atlas_scale, 0.0, ax - sx],
+                         [0.0, self.atlas_scale, ay - sy], [0.0, 0.0, 1.0]], dtype=np.float64)
+
 
 def canvas_geometry(
     section_size: tuple[int, int],
@@ -77,10 +85,10 @@ def canvas_geometry(
     """Place an atlas section on a section's frame at TRUE physical scale.
 
     The atlas is scaled by ``atlas um/px / canvas um/px`` — never fitted to
-    the canvas, which is not a calibration: measured on LSD_910 M01,
-    fit-to-canvas put the atlas plate at 0.69x the tissue where true scale
-    puts it at 1.05x. Its ANATOMY (the annotation's bounding box, not the
-    atlas frame with its empty margins) is centred on the canvas centre, and
+    the canvas, which is not a calibration: fit-to-canvas can put the atlas
+    plate at two thirds of the tissue's size where true scale matches it.
+    Its ANATOMY (the annotation's bounding box, not the atlas frame with its
+    empty margins) is centred on the canvas centre, and
     with *pad_to_fit_atlas* the canvas grows to hold whichever of the section
     and the atlas anatomy is larger, plus *margin* of black on every side —
     ABBA's viewer leaves generous black space around both, and the alignment
