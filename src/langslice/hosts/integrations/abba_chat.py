@@ -43,8 +43,7 @@ def _public(value: Any, depth: int = 0) -> Any:
 class ChatHistory:
     """A bounded replay buffer. Media endpoints contain exact incoming image bytes."""
 
-    def __init__(self, model: str = "") -> None:
-        self.model = model
+    def __init__(self) -> None:
         self.status = "Starting"
         self.lock = threading.Lock()
         self.events: deque[tuple[dict[str, Any], int]] = deque()
@@ -55,10 +54,6 @@ class ChatHistory:
 
     def add(self, event: dict[str, Any]) -> None:
         kind = event.get("kind")
-        if kind == "session":
-            with self.lock:
-                self.model = str(event.get("model") or self.model)
-            return
         if kind not in {
             "text",
             "reasoning",
@@ -130,7 +125,6 @@ class ChatHistory:
         with self.lock:
             first = self.events[0][0]["seq"] if self.events else self.sequence + 1
             return {
-                "model": self.model,
                 "status": self.status,
                 "sequence": self.sequence,
                 "reset": since > self.sequence or (since > 0 and since < first - 1),
@@ -259,9 +253,9 @@ def _arrange(parent: Any) -> tuple[int, int, int, int]:
 class ChatWindow:
     """Same host lifecycle as ActivityWindow, with a private browser app process."""
 
-    def __init__(self, *, model: str = "", parent: Any = None) -> None:
+    def __init__(self, *, parent: Any = None) -> None:
         self.browser = _browser()
-        self.history = ChatHistory(model)
+        self.history = ChatHistory()
         self.server = ChatServer(self.history)
         self.url = self.server.url
         self.profile = tempfile.mkdtemp(prefix="langslice-chat-")
@@ -278,11 +272,10 @@ class ChatWindow:
         if not self.closed:
             self.history.add(event)
 
-    def set_status(self, text: str) -> None:
-        self.on_event({"kind": "status", "text": text})
-
     def show(self) -> None:
-        if self.closed:
+        """Open the app window unless it is already open (a closed window's
+        browser process has exited; the server and history live on)."""
+        if self.closed or (self.process is not None and self.process.poll() is None):
             return
         x, y, width, height = self.bounds
         args = [
@@ -300,18 +293,15 @@ class ChatWindow:
         if os.name == "posix" and os.environ.get("DISPLAY"):
             args.append("--ozone-platform=x11")
         # A private profile keeps this process independent of the user's browser.
-        if self.process is not None and self.process.poll() is None:
-            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.process = subprocess.Popen(
+            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=os.environ.copy()
+        )
+        try:
+            code = self.process.wait(timeout=0.15)
+        except subprocess.TimeoutExpired:
+            pass
         else:
-            self.process = subprocess.Popen(
-                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=os.environ.copy()
-            )
-            try:
-                code = self.process.wait(timeout=0.15)
-            except subprocess.TimeoutExpired:
-                pass
-            else:
-                raise RuntimeError(f"Browser app exited during startup (status {code})")
+            raise RuntimeError(f"Browser app exited during startup (status {code})")
 
     def dispose(self) -> None:
         if self.closed:
@@ -328,16 +318,16 @@ class ChatWindow:
         shutil.rmtree(self.profile, ignore_errors=True)
 
 
-def create_activity_window(*, model: str = "", parent: Any = None) -> Any:
-    """Prefer the browser chat, retaining the existing JVM viewer as a fallback."""
+def create_activity_window(*, parent: Any = None) -> Any:
+    """The browser log, or the Swing window when no Chromium browser starts."""
     import logging
 
     try:
-        return ChatWindow(model=model, parent=parent)
+        return ChatWindow(parent=parent)
     except Exception:
         logging.getLogger(__name__).warning(
             "Browser activity window unavailable; using Swing viewer", exc_info=True
         )
         from langslice.hosts.integrations.abba_activity import ActivityWindow
 
-        return ActivityWindow(model=model, parent=parent)
+        return ActivityWindow(parent=parent)
