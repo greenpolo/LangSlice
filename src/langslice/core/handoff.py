@@ -1,7 +1,7 @@
 """The geometry an image correction or a deformable fit starts from.
 
 The core half of the bridge between a written linear placement and the
-nonlinear work on top of it (layered refactor, phase 4, 2026-10-04):
+nonlinear work on top of it:
 :func:`prepare_linear_registration` renders the section and maps the native
 atlas plane onto it (the trace's canvas and every deformable fit's grid start
 here), and :func:`correction_fingerprint` identifies everything an image
@@ -132,15 +132,19 @@ def prepare_linear_registration(
 ) -> LinearRegistrationInput:
     """Prepare a supplied affine placement, preserving shear and physical scale.
 
-    Requires a written position, invertible affine and recoverable calibration.
-    Legacy records do not retain an orientation snapshot; when supplied, an
-    ``orientation`` dictionary or ``stale`` flag is checked before using a fit.
-    Missing calibration is never replaced with a new silhouette estimate.
+    Requires a written position and an invertible affine. Legacy records do
+    not retain an orientation snapshot; when supplied, an ``orientation``
+    dictionary or ``stale`` flag is checked before using a fit. The scale
+    is the one every placement picture and ``registration.json`` draw the
+    section at (:func:`langslice.core.transform.calibrate` on its working
+    frame, carried to *long_edge*), so the six numbers place the atlas here
+    exactly where the pictures show it, also for a section without a pixel
+    size whose position moved after its transform was written.
 
-    *transform* stands in for the section's written transform (same keys:
-    ``params``, ``calibration``), for a fit that starts from a placement it
-    has not written: ``fit_affine``'s Elastix method on a section with no
-    transform yet starts from the identity.
+    *transform* stands in for the section's written transform (``params``),
+    for a fit that starts from a placement it has not written:
+    ``fit_affine``'s Elastix method on a section with no transform yet
+    starts from the identity.
     """
     if isinstance(long_edge, bool) or not isinstance(long_edge, int) or long_edge <= 0:
         raise ValueError("long_edge must be a positive integer")
@@ -183,16 +187,13 @@ def prepare_linear_registration(
 
     um_per_px, source = canvas_um_per_px(ctx, record, long_edge=long_edge, frame=False)
     if um_per_px is None:
-        calibration = transform.get("calibration") or {}
-        try:
-            preview_um_per_px = float(calibration["section_um_per_px"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("The written affine has no recoverable calibration") from exc
-        render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
+        from langslice.core.transform import calibrate
+
+        working = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
+        preview_um_per_px, source = calibrate(state, ctx, record, working)
         preview_key = render_cache_key(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
         target_key = render_cache_key(ctx, record, long_edge=long_edge, frame=False)
         um_per_px = preview_um_per_px * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
-        source = str(calibration.get("source", "stored"))
     if not np.isfinite(um_per_px) or um_per_px <= 0:
         raise ValueError("Section calibration must be finite and positive")
 

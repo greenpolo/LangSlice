@@ -77,17 +77,23 @@ def test_rotation_then_flip_and_requested_grid_calibration(tmp_path, monkeypatch
     np.testing.assert_allclose(small.atlas_to_slice[:2, :2] * 2, full.atlas_to_slice[:2, :2])
 
 
-def test_stored_estimated_calibration_scales_without_reestimating(tmp_path, monkeypatch):
+def test_without_a_pixel_size_the_scale_is_the_pictures_one(tmp_path, monkeypatch):
+    """No pixel size: the scale every picture draws the section at
+    (``calibrate`` on its working frame), carried to the requested grid; the
+    calibration stored with the transform is not read."""
+    from langslice.core import transform as core_transform
+
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch, known=False)
+    monkeypatch.setattr(core_transform, "calibrate", lambda *a, **k: (12.5, "estimated"))
     full = prepare_linear_registration(state, ctx, record.id, long_edge=120)
     small = prepare_linear_registration(state, ctx, record.id, long_edge=60)
     assert full.metadata["calibration_source"] == "estimated"
-    assert full.metadata["section_um_per_px"] == 10
-    assert small.metadata["section_um_per_px"] == 20
+    assert full.metadata["section_um_per_px"] == 12.5
+    assert small.metadata["section_um_per_px"] == 25.0
     assert record.transform is not None
     del record.transform["calibration"]
-    with pytest.raises(ValueError, match="calibration"):
-        prepare_linear_registration(state, ctx, record.id)
+    assert prepare_linear_registration(
+        state, ctx, record.id, long_edge=120).metadata["section_um_per_px"] == 12.5
 
 
 def test_calibration_uses_requested_resolution_above_preview_cap(tmp_path, monkeypatch):
