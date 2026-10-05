@@ -47,8 +47,8 @@ Two exceptions, both from `layout.locate_job_folder` (used by
   holds the job of ..."); the same image folder's job is continued.
   `to_dict` leaves `job_dir` out when it is unset.
 - **A read-only image folder.** When `<images>/langslice/` cannot be created
-  or written (`layout.writable`: a probe file in an existing folder, else
-  write access to the image folder; nothing is created by the check), the
+  or written (`layout.writable`: a temporary probe file in an existing job folder or
+  the image folder; no file remains after the check), the
   job folder is `~/.langslice/jobs/<id>/`, same layout. The id is the
   image folder's path hashed (`index.folder_id`), so a reopen finds it
   again; a saved Claude job uses its own id. Said once through the

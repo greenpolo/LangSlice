@@ -93,15 +93,14 @@ def writable(folder: Path, image_folder: Path) -> bool:
     An existing folder is probed with a temporary file; a missing one asks
     whether *image_folder* (its parent) can take a new folder.
     """
-    if folder.exists():
-        try:
-            handle, probe = tempfile.mkstemp(dir=folder, prefix=".write-probe-")
-            os.close(handle)
-            os.unlink(probe)
-            return True
-        except OSError:
-            return False
-    return os.access(image_folder, os.W_OK | os.X_OK)
+    parent = folder if folder.exists() else image_folder
+    try:
+        handle, probe = tempfile.mkstemp(dir=parent, prefix=".write-probe-")
+        os.close(handle)
+        os.unlink(probe)
+        return True
+    except OSError:
+        return False
 
 
 def locate_job_folder(

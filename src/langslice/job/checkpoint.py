@@ -102,7 +102,11 @@ def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
             return value
         for base in bases:
             for spelled in dict.fromkeys((os.path.abspath(value), os.path.realpath(value))):
-                if os.path.commonpath([spelled, base]) == base:
+                try:
+                    inside = os.path.commonpath([spelled, base]) == base
+                except ValueError:  # different Windows drives have no common path
+                    continue
+                if inside:
                     return os.path.relpath(spelled, base).replace(os.sep, "/")
         return value
 
