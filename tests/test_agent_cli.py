@@ -246,8 +246,8 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     mismatch = next((i for i, (actual, expected) in enumerate(zip(normalized, saved, strict=False))
                      if actual != expected), min(len(normalized), len(saved)))
     assert normalized in brief, (f"first mismatch at {mismatch}: "
-                                 f"{normalized[max(0, mismatch - 30):mismatch + 80]!r} vs "
-                                 f"{saved[max(0, mismatch - 30):mismatch + 80]!r}")
+                                 f"{ascii(normalized[max(0, mismatch - 30):mismatch + 80])} vs "
+                                 f"{ascii(saved[max(0, mismatch - 30):mismatch + 80])}")
     assert all(item["path"] in brief for item in opening)
     assert envelope["artifacts"][-1] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
     assert "BRIEF.md" in (job / "AGENTS.md").read_text()
