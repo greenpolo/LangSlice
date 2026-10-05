@@ -6,8 +6,8 @@ import math
 
 from PIL import Image
 
+from langslice.core.nonlinear.image_frames import gemini_aspect_for, native_output_size
 from langslice.core.nonlinear.image_gen_registration import prepare_canvas
-from langslice.core.nonlinear.model_prompts import gemini_aspect_for, native_output_size
 from langslice.providers.images import _api_edit_size
 
 _BUDGET = 1024 * 1536

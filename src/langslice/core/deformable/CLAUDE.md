@@ -1,22 +1,15 @@
 # LangSlice `core/deformable/` — library deformable fit of a placed atlas plane
 
 Package guide for `src/langslice/core/deformable/`; `AGENTS.md` is a verbatim
-twin of this file. A core sub-package (top-level `deformable/` until the
-folder move, 2026-10-04), like `core/affine.py`: it belongs to neither the
-linear method nor `core/nonlinear/` and imports neither. It is the engine behind the linear agent's
-`fit_deformable` tool (`core/deformation.py`, task `nonlinear`) and, since
-2026-10-03, behind `fit_affine`'s default Elastix method
-(`core/transform.elastix_affine`: `prepare_fit` builds its images and
-masks, `engines.run_elastix_affine` fits), and since 2026-10-04 behind the
-fit of the image model's lines in the core border routes
-(`generate_border_registration_candidate`, `deformation="deformable"`) and
-the ABBA registration plugin
-(`core/nonlinear/border_fit.py`, which replaced the old Elastix residual fit). The
-job folder's maps and VisuAlign markers read an applied record
-(`core/maps.py`, formats phase 2026-10-04); no ABBA or BrainGlobe export
-adapter reads it yet. `engines.py` is LangSlice's one
-itk-elastix registration wrapper (`core/landmark_elastix.py`, the landmark-pair
-spline of old checkpoints, is separate).
+twin of this file. A core sub-package, like `core/affine.py`: it belongs to
+neither the linear method nor `core/nonlinear/` and imports neither. It is the
+engine behind the linear agent's `fit_deformable` tool (`core/deformation.py`,
+task `nonlinear`) and behind `fit_affine`'s default Elastix method
+(`core/transform.elastix_affine`: `prepare_fit` builds its images and masks,
+`engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
+markers read an applied record (`core/maps.py`); the ABBA connector receives
+it as landmark pairs (`core/abba_warp.py`). `engines.py` is LangSlice's one
+itk-elastix registration wrapper.
 
 ## What it does
 
@@ -28,13 +21,12 @@ and returns a `record.DeformableRecord`. No custom solver.
 
 - Route A (no image model): the stain image (`section_image="stain"`) against
   an atlas image — `ara` (BrainGlobe reference), or `nissl` (ABBA's cached
-  Allen Nissl, ABBA hosts only, `atlas_images_for_host`). Metric
+  Allen Nissl, read by `abba_atlas.py`; needs ABBA's cache). Metric
   (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
   cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
   (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); Elastix has
   no local correlation and uses `ELASTIX_STAIN_METRIC` (mutual information)
-  and says so in `engine["notes"]`; `mutual_information` is the pre-2026-10-02
-  metric. Plus, by default (`stain_edges`), an EDGE channel: the gradient
+  and says so in `engine["notes"]`; `mutual_information` is the alternative. Plus, by default (`stain_edges`), an EDGE channel: the gradient
   magnitude after a `EDGE_SIGMA_UM` (30 µm) Gaussian of the stain and of the
   atlas image (`fit.edge_image`, scaled by its 99th percentile in each mask),
   a second metric of the same kind at `EDGE_CHANNEL_WEIGHT` 1.0. The
@@ -56,14 +48,9 @@ and returns a `record.DeformableRecord`. No custom solver.
   Mean squares. `settings.traced_settings(engine)` is the traced-lines
   setting in one call: ANTs with the lines as named regions too
   (`labels="model"`), or Elastix lines against borders; `engine=None` picks
-  ANTs when installed (`core/nonlinear/border_fit.py` passes Elastix).
-- Caller-supplied labels (`prepare_fit(native=...)`, through `fit_section`):
-  a host's own leaf-label grid stands in for the atlas plane, placed by the
-  placement's matrix (the ABBA plugin: labels sampled at ABBA's per-pixel
-  coordinates, identity, its voxel size). Border atlas images only, no
-  one-sided entries; the record's `native_to_volume_index` is None. The crossed pairings are refused (`metric_for`): lines
-  against `ara`/`nissl`, and the stain against borders (the ceiling test's
-  worst pairing: it stayed at the linear placement).
+  ANTs when installed. The crossed pairings are refused (`metric_for`): lines
+  against `ara`/`nissl`, and the stain against borders (the pairing that
+  stays at the linear placement).
 - Label-map channels (`labels=`, ANTs only): `model` names each area the
   model's lines enclose after the placed merged region it overlaps most
   (`regions.named_regions`, small loops around bubbles dropped, joint
@@ -99,8 +86,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   `engines.ants_worker`. If something outside LangSlice loaded ANTs first the
   count is unknown: `threads` is None and a note says so. Elastix's own
   `SetNumberOfThreads` segfaults in itk-elastix 0.25.4, so the call sets
-  ITK's global default for its duration instead. Single-fit runtime at 8
-  threads ~5 s (local correlation + edges, M04_B_05), 9 s at 4, 15 s at 2.
+  ITK's global default for its duration instead. A single fit takes seconds at 8 threads and roughly
+  doubles with each halving.
 - `engines.run_elastix_affine` (the linear affine, not a deformation): an
   Elastix `AffineTransform` from the identity on the same prepared inputs
   (intensity pair, edge pair, masks; `AutomaticTransformInitialization` off,
@@ -112,11 +99,10 @@ and returns a `record.DeformableRecord`. No custom solver.
   runners share (images, masks, extra pairs, the global thread count). The
   affine stays Elastix-only; ANTs is a deformable option.
 - Optional ANTs preprocessing of the stain (`preprocess=("n4", "denoise")`).
-- `fit_candidates` runs 1–8 settings in a spawn process pool (atlas work in
-  the caller, engine calls in workers, `cpu_count // FIT_THREADS` workers at
-  most, one per fit); a failing candidate is a
-  `CandidateFailure`, never an exception. `fit_prepared` is the same pool
-  over already prepared fits (different sections or section images).
+- `fit_prepared` runs 1–8 prepared fits (different sections or settings) in
+  a spawn process pool (atlas work in the caller, engine calls in workers,
+  `cpu_count // FIT_THREADS` workers at most, one per fit); a failing
+  candidate is a `CandidateFailure`, never an exception.
 
 ## Settings (`settings.py`)
 
@@ -131,44 +117,23 @@ levels are its capture range); `atlas_image`, `section_image`, `exclude`,
 `stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
 from pairing, engine and stain metric (`metric_for`); lines against
 `ara`/`nissl` and the stain against `borders`/`borders_merged` are refused.
-`FitSettings.from_dict` loads records saved before 2026-10-02 (no
-`stain_metric`/`stain_edges` keys) as mutual information without edges,
-which is what they were fitted with. The step size is fixed.
+The step size is fixed.
 
-The 2026-10-02 stain ceiling test (`_local/runs/20261001_ceiling_test_stain2`,
-the same eight sections, 15 stain settings each, judged by eye) set the
-stain defaults. Local correlation at 40 µm radius was unstable (the one ANTs
-DISPLACEMENT_OUTSIZED, stray bands); at 80 and 120 µm (indistinguishable)
-interior lines followed visible structure better than mutual information
-(olfactory-bulb cores, thalamic nuclei) but on its own still crossed
-enlarged ventricles and missed a midline slit; the edge channel fixed most
-of that and put a Nissl outline back on the edge (~1.8x the runtime). The
-automatic label channels were the clearest gain (continuous pial outline,
-enlarged ventricles filled), hence the tool's ANTs stain default; their one
-error: small lateral-ventricle pieces pulled into a dorsal third-ventricle
-hole (the ventricle channel pairs all ventricles with all holes). Elastix
-mutual information blew up again on M11_B_08 (1.07 mm); with edges it
-stayed under the flag but still stretched cortex over the displaced flap,
-as did AdvancedNormalizedCorrelation (one global correlation) + edges. On
-the synthetic sections (flat regions, no texture) local correlation
-recovers a known warp worse than mutual information (error 0.39 vs 0.12 of
-the warp at standard), so the mechanism tests pin mutual information, and
-Elastix exclusion leaks more with edges (0.29 vs 0.12 of the free fit's
-movement inside the excluded region).
-
-The 2026-10-01 ceiling test (eight LSD_910 sections, 400 fits, judged by
-eye) trimmed the ladders: `stiff` was never the best-looking fit and left
-enlarged ventricles unfilled, so it is gone; detail never changed which fit
-looked best — `coarse` looked the same at ~1 s, `fine` (10 µm) was 4-5x
-slower with worse outline numbers and is gone, and the linear tool always
-runs `standard`; line softening 30 and 60 µm looked the same and 120 µm
-slightly worse with more Elastix folds, so it is the constant
-`LINE_SOFTENING_UM` = 60 (`FitSettings.from_dict` drops the old
-`line_softening_um` key of records saved before). On that fluorescent data
-the Nissl reference's pial outline sat 40-80 µm inside the tissue's bright
-surface rim with every engine and stiffness, where `ara` followed the edge
-(outline error 19-25 µm against 37-63 µm for Nissl, 65 µm linear); Nissl
-stays available, untested on brightfield Nissl stains.
+Stain defaults, and why: local correlation at 80 µm radius followed visible
+structure better than mutual information but on its own still crossed
+enlarged ventricles, so the edge channel is on by default and the tool adds
+the automatic label channels to every ANTs stain fit (they give a continuous
+pial outline and fill enlarged ventricles; their known error: small
+lateral-ventricle pieces pulled into a dorsal third-ventricle hole, since the
+ventricle channel pairs all ventricles with all holes). There is no `stiff`
+setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
+slower, worse outlines) and the linear tool always runs `standard`; line
+softening is the constant `LINE_SOFTENING_UM` = 60. On fluorescent data the
+Nissl reference's pial outline sat 40-80 µm inside the tissue's bright
+surface rim with every engine, where `ara` followed the edge; Nissl stays
+available, untested on brightfield Nissl stains. On synthetic sections (flat
+regions, no texture) local correlation recovers a known warp worse than
+mutual information, so the mechanism tests pin mutual information.
 
 **One side of a region.** Any `exclude` or `structures` entry may name one
 side, `"CTX:left"` / `"CTX:right"` (`core.atlas.sides`): left and right of the
@@ -179,9 +144,9 @@ native-plane MASK (`atlas_images.regions_mask`), not an id set:
 `PreparedFit.excluded_mask` blanks the moving image, `excluded` (and the
 record's `excluded_ids`) holds only whole-region ids (`whole_region_ids`),
 and area diagnostics drop excluded pixels, so a region excluded on one side
-is still judged on the other. Checked on M11_C_08 (cortex torn off one
-side): excluding RSP/VIS/PTLp by name also dropped the intact hemisphere;
-`:left` kept it.
+is still judged on the other. On a section with cortex torn off
+one side, excluding RSP/VIS/PTLp by name also drops the intact hemisphere;
+`:left` keeps it.
 
 ## Masks (`masks.py`)
 
@@ -199,8 +164,7 @@ of the region only).
 
 `field_mm[y, x]` = [dx, dy] mm: section point (x, y)·mm_per_px corresponds to
 placed-atlas point + field (brainglobe-registration's direction); native =
-inv(atlas_to_section) @ (pixel + field/mm_per_px), the same order as
-`border_registration.composed_native_map`. A sequential record's field is
+inv(atlas_to_section) @ (pixel + field/mm_per_px), the order `core/maps.native_points` composes. A sequential record's field is
 the total. Also: inverse field (or None), engine name/version/runtime/native
 parameters, working grid, warped leaf labels CLIPPED TO TISSUE, tissue and
 torn-band masks, excluded ids, `native_to_volume_index` (plane pixel → atlas
@@ -209,8 +173,7 @@ volume index, so exports need no atlas object), `native_coordinates()`,
 and a free-form `provenance` dict saved with the metadata (the linear tool
 stores section id, linear handoff metadata and its inputs there). The job
 folder's maps (`coords.tif`, `labels.tif`, `residual.tif`) and the VisuAlign
-markers are composed from it by `core/maps.py` (`native_points`); ABBA and
-BrainGlobe export adapters are still to be built.
+markers are composed from it by `core/maps.py` (`native_points`).
 
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
@@ -221,17 +184,11 @@ named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
 `MIN_FLAG_AREA_MM2`, `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED
 (`displacement_report`, also in `diagnostics["displacement"]`) a maximum
 displacement in tissue above `OUTSIZED_MAX_FRACTION` (0.1) of the tissue's
-longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6). The ceiling
-test's one blow-up (Elastix on the raw blue channel against Nissl, M11_C_08:
-max 1.31 mm, median 0.46 mm, no fold or area flag; the atlas outline shrank
-~1 mm inside the cortex) raised nothing before; applied to all 400 stored
-fits the flag fires on six, all Elastix: that blow-up, Elastix medium on
-M11_B_08 (1.08 mm, the atlas pulled onto a displaced flap), and four soft or
-120 µm-softened Elastix fits (one on M11_B_08, three on M04_D_08, where the
-ceiling test could not tell any candidate apart by eye). No ANTs fit fires (largest max 0.78 mm on
-an 8.9 mm section). The median limit sits above every observed median
-(largest 0.52 mm): 0.4 mm would have flagged Elastix fits on M11_C_08 whose
-borders looked as plausible as ANTs's.
+longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6).
+Elastix fits are the ones that trip DISPLACEMENT_OUTSIZED in practice (a
+stretch over a displaced flap, or the raw blue channel against Nissl); ANTs
+fits stay well under it. The median limit sits above every observed median:
+0.4 mm would flag Elastix fits whose borders look as plausible as ANTs's.
 
 ## ABBA's Allen volume (`abba_atlas.py`)
 
@@ -266,9 +223,9 @@ resamples a section render into its placed-atlas frame through the inverse
 field (fixed-point inverse when none is stored), so a picture drawn under the
 linear placement shows the full registration. Never judge borders traced from `record.labels`: those
 are nearest-sampled from the 25 um atlas grid and look staircased on fine
-section pixels (3.5 section px per step at 7 um/px), which was the whole of the
-zig-zag once seen along hippocampal arcs in label-map mode (the residual field
-there has under 1 um of high-frequency content). Smoothing is 1.4 atlas px:
+section pixels (3.5 section px per step at 7 um/px), which is the whole of the
+zig-zag along hippocampal arcs in label-map mode (the residual field there
+has under 1 um of high-frequency content). Smoothing is 1.4 atlas px:
 1.0 leaves a ripple along shallow edges (the annotation's own steps), 2.0
 turns thin regions into dotted blobs.
 

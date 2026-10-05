@@ -17,7 +17,7 @@ from typing import Any, cast
 
 from PIL import Image
 
-from langslice.core.nonlinear.model_prompts import gemini_aspect_for
+from langslice.core.nonlinear.image_frames import gemini_aspect_for
 from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
 from langslice.providers import vlm_config
 from langslice.providers.openai_config import get_openai_image_client, get_openai_image_model
@@ -105,14 +105,14 @@ def _build_metadata(
         "request": {
             "provider": request.provider.lower(),
             "model": request.model,
-            "thinking_level": request.thinking_level,
+            "size_tier": request.size_tier,
             "prompt": request.prompt,
         },
     })
     return metadata
 
 
-#: ``thinking_level`` values that name a Gemini output resolution (the API's
+#: ``size_tier`` values that name a Gemini output resolution (the API's
 #: own spellings). Flash-Lite Image serves 1K only; 512 is Flash Image, 2K/4K
 #: are Flash Image / Pro Image tiers.
 _GEMINI_IMAGE_SIZES = frozenset({"512", "512P", "512PX", "1K", "2K", "4K"})
@@ -135,8 +135,8 @@ def _gemini_image_config(
     w, h = request.slice_image.size
     # The same table the canvas was framed with (native_output_size), so the
     # aspect asked for is the aspect the canvas already has.
-    aspect = gemini_aspect_for(w / h, request.thinking_level)
-    size = (request.thinking_level or "").upper()
+    aspect = gemini_aspect_for(w / h, request.size_tier)
+    size = (request.size_tier or "").upper()
     image_config = types_mod.ImageConfig(
         aspect_ratio=aspect,
         image_size=size if size in _GEMINI_IMAGE_SIZES else None,
@@ -196,7 +196,7 @@ def _generate_openai_images_segmentation(
         ),
     ]
 
-    quality = (request.thinking_level or "auto").lower()
+    quality = (request.size_tier or "auto").lower()
     response = client.images.edit(  # type: ignore[attr-defined]
         model=model,
         image=image_files,
@@ -244,7 +244,7 @@ def _generate_openai_oauth_segmentation(
     from langslice.providers import openai_oauth
 
     model = request.model or openai_oauth.DEFAULT_IMAGE_MODEL
-    quality = (request.thinking_level or "high").lower()
+    quality = (request.size_tier or "high").lower()
     # The images/edits endpoint: the prompt reaches the image model verbatim.
     png_bytes = openai_oauth.edit_image(
         request.prompt,

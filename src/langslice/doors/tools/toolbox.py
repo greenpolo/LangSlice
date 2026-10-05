@@ -54,7 +54,7 @@ from langslice.core.placement import (
 from langslice.core.sizes import AUTO_RESOLUTION, MAX_IMAGES_PER_CALL, resolution_level
 from langslice.core.spec import JobSpec
 from langslice.core.state import (
-    IDENTITY_PARAMS,
+    IDENTITY_KNOBS,
     SliceState,
     StackState,
 )
@@ -93,7 +93,7 @@ from langslice.ops.refusal import Refused
 from langslice.ops.registry import VERBS, enabled
 from langslice.providers.registry import ImageModel, resolve_image_model
 
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
+if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.agent.engine import EngineContext
 
 logger = logging.getLogger(__name__)
@@ -1374,7 +1374,7 @@ def build_tools(
             held = previous is not None
             reference = {
                 "source": "stored" if held else "identity",
-                "params": dict(stored) if isinstance(stored, dict) else dict(IDENTITY_PARAMS),
+                "params": dict(stored) if isinstance(stored, dict) else dict(IDENTITY_KNOBS),
             }
             if held:
                 reference["stored_kind"] = (previous or {}).get("kind")

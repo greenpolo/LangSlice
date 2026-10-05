@@ -133,7 +133,7 @@ def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
         slice_image=_make_image((0, 0, 255)),
         prompt="google it",
         provider="gemini-api",
-        thinking_level="high",
+        size_tier="high",
     )
 
     result = providers.generate_warped_segmentation_image(request)
@@ -215,7 +215,7 @@ def _dual_request(providers):
         slice_image=_make_image((0, 0, 255)),
         prompt="two please",
         provider="gemini-api",
-        thinking_level="1K",
+        size_tier="1K",
     )
 
 

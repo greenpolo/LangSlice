@@ -133,23 +133,3 @@ def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_
         refusal["message"])
     spec.tasks = ["position"]
     assert submit_errors(state, spec, []) is None
-
-
-@pytest.mark.parametrize("shift,accepted", [(0, False), (.05, True)])
-def test_historical_spline_checkpoint_still_obeys_damage_gate(tmp_path, shift, accepted):
-    from langslice.job.job import submit_errors
-
-    state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
-    for record in state.slices:
-        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
-    source = [[.2, .2], [.8, .2], [.2, .8], [.8, .8]]
-    state.slices[0].damaged = True
-    state.slices[0].transform["spline"] = {
-        "source": source, "target": [[x + shift, y] for x, y in source],
-        "extent_mm": [4, 3],
-    }
-    refusal = submit_errors(state, ctx.spec, [])
-    if accepted:
-        assert refusal is None
-    else:
-        assert refusal["failures"] == [{"id": "s0.png", "reason": "identity_transform"}]

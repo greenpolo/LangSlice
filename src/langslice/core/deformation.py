@@ -142,7 +142,7 @@ def linear_key(state: StackState, record: SliceState) -> str:
         "atlas": state.atlas, "plane": state.plane, "position_mm": record.position_mm,
         "angles": [record.pitch_deg, record.yaw_deg], "flip": record.flip,
         "rotation_deg": record.rotation_deg,
-        "transform": {key: transform.get(key) for key in ("params", "spline", "calibration")},
+        "transform": {key: transform.get(key) for key in ("params", "calibration")},
     })
 
 

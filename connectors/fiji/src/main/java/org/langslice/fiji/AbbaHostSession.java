@@ -82,7 +82,7 @@ final class AbbaHostSession {
         double[] half = frame(pixelSize);
         Files.createDirectories(folder);
         JsonObject positions = new JsonObject();
-        JsonArray registered = new JsonArray(), locked = new JsonArray(), warped = new JsonArray();
+        JsonArray locked = new JsonArray(), warped = new JsonArray();
         JsonObject marked = new JsonObject();
         JsonObject mapping = new JsonObject();
         for (int index = 0; index < selected.size(); index++) {
@@ -94,7 +94,6 @@ final class AbbaHostSession {
             slices.put(name, slice);
             baseline.put(name, slice.getNumberOfRegistrations());
             if (slice.getNumberOfRegistrations() > 0) {
-                registered.add(name);
                 // Their snapshot already carries the registration: the agent keeps its in-plane geometry.
                 if (lockRegistered) locked.add(name);
             }
@@ -110,7 +109,6 @@ final class AbbaHostSession {
         request.add("positions_mm", positions);
         request.addProperty("z_offset_mm", mp.getReslicedAtlas().getZOffset());
         request.add("angles_deg", anglesDeg(mp.getReslicedAtlas().getRotateX(), mp.getReslicedAtlas().getRotateY()));
-        request.add("registered_slices", registered);
         request.add("locked", locked);
         request.add("existing_warp", warped);
         request.add("damaged", marked);

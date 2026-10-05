@@ -177,13 +177,6 @@ def test_a_door_resolves_the_provider_and_none_has_no_image_model():
         resolve_image_model("none")
 
 
-def test_existing_spline_is_not_silently_reduced_to_affine(case, monkeypatch):
-    state, ctx, record, *_ = case
-    record.transform["spline"] = {"backend": "elastix"}
-    with pytest.raises(ValueError, match="spline"):
-        prepare_linear_registration(state, ctx, record.id)
-
-
 def test_gemini_keeps_the_accepted_prompt_and_attachment_order(case, tmp_path, monkeypatch):
     state, ctx, record, original, *_ = case
     calls = []

@@ -270,7 +270,7 @@ def frame_record(atlas: Any, note: PictureNote) -> dict[str, Any]:
                    "atlas_offset": [float(v) for v in panel.geometry.atlas_offset],
                    "section_offset": [int(v) for v in panel.geometry.section_offset]},
         "section": {"id": frame.section_id, "render_size": [int(v) for v in frame.section.size],
-                    "placement": placement, "spline": frame.spline is not None},
+                    "placement": placement},
         "deformation": note.deformation,
         "zoom": None if frame.zoom is None else [float(v) for v in frame.zoom],
         "pixel_to_atlas_um": to_um.tolist(),

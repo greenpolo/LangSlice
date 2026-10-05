@@ -20,17 +20,12 @@ class SegmentationGenerationRequest:
     prompt: str
     provider: str = "gemini-api"
     model: str | None = None
-    #: Transport fields the provider adapter reads (``providers/images.py``);
-    #: no core caller sets them.
-    route: str | None = None
-    review_model: str | None = None
     #: Registration is always an EDIT of the slice image (pixel-aligned
     #: output); each transport translates this its own way.
     mode: str = "edit"
-    openai_image_route: str = "images"
     #: The output tier the transport passes on (Gemini's image size, the
-    #: OpenAI images quality); no core caller sets it.
-    thinking_level: str | None = None
+    #: OpenAI images quality).
+    size_tier: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

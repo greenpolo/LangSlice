@@ -70,7 +70,7 @@ def test_a_position_only_spec_has_no_reorder_or_transform_tools(tmp_path: Path):
 def test_optional_tools_follow_their_flags(tmp_path: Path):
     _, _, box = _box(
         tmp_path,
-        position=PositionSpec(deepslice=True, bayesian=True),
+        position=PositionSpec(bayesian=True),
         transform=TransformSpec(angles=True),
     )
     names = set(box.names)
@@ -100,7 +100,7 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
 
 
 def test_orientation_is_a_transform_tool_not_a_positioning_one(tmp_path: Path):
-    # 2026-09-29: a mirror is the sign of the in-plane affine, so flip and
+    # A mirror is the sign of the in-plane affine, so flip and
     # rotation belong to the transform task.
     _, _, positioning = _box(tmp_path, tasks=["reorder", "position"])
     assert "reorder_slices" in positioning.names

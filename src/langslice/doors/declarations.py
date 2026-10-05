@@ -422,11 +422,11 @@ def adjust_transforms(
 ) -> dict[str, Any]:
     """Set and show one to four independent sections in one undoable call.
 
-    Each entry replaces the complete transform, including any previous
-    spline; a shear left out is kept from the current transform. A section may
-    appear once per call; inspect its result before making a dependent
-    correction in a later call. Call it as often as you need, on any
-    section that has a position; the last call is what stays.
+    Each entry replaces the complete transform; a shear left out is kept from
+    the current transform. A section may appear once per call; inspect its
+    result before making a dependent correction in a later call. Call it as
+    often as you need, on any section that has a position; the last call is
+    what stays.
 
     Args:
         entries: One to four objects with id, rotation_deg (counter-clockwise

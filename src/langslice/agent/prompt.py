@@ -104,7 +104,7 @@ TOOL_LINES: dict[str, str] = {
     "side_by_side shows section and atlas. Results map their images with "
     "zero-based image_indexes. Each section may appear once; inspect before a "
     "dependent correction in a later call. This replaces the complete "
-    "transform, including any spline or shear.",
+    "transform, including any shear.",
     "trace_borders": "runs the image-model border-correction prompt on one "
     "section's existing linear placement, with your edited copy of the prompt "
     "for that section. The image call runs in the background and the tool returns "

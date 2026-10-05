@@ -89,7 +89,7 @@ class CanvasFrame:
     (``section.size``, ``um_per_px``, the atlas, ``position_mm``, ``plane``,
     ``pitch_deg``, ``yaw_deg``); the section sits on it under ``params``
     (the knobs about ``pivot`` / ``pivot_in_section``, or a ready 2x3 on
-    ``section``'s frame), or under ``spline``, then ``warp`` (an applied
+    ``section``'s frame), then ``warp`` (an applied
     deformation record) resamples it; ``zoom`` crops the canvas and
     ``long_edge`` sizes each panel. Holding these, the section as placed, the
     atlas labels, the border mask and the pixel-to-atlas map can all be drawn
@@ -107,7 +107,6 @@ class CanvasFrame:
     params: dict[str, float] | np.ndarray
     pivot: tuple[float, float] | None
     pivot_in_section: tuple[float, float] | None
-    spline: dict[str, Any] | None
     warp: Any
     zoom: list[float] | None
     long_edge: int
@@ -147,7 +146,6 @@ def draw_canvas(
     pivot: tuple[float, float] | None = None,
     section_offset: tuple[int, int] = (0, 0),
     label: str = "",
-    spline: dict[str, Any] | None = None,
     long_edge: int | None = None,
     matrix_label: str = "fitted matrix",
     warp: Any = None,
@@ -195,7 +193,7 @@ def draw_canvas(
         section_id=record.id, section=shown, um_per_px=shown_um, position_mm=position,
         plane=state.plane, pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, params=params,
         pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-        spline=spline, warp=warp, zoom=options.window, long_edge=edge,
+        warp=warp, zoom=options.window, long_edge=edge,
     )
     if warp is not None:
         from langslice.core.deformable import warp_section_image
@@ -210,7 +208,7 @@ def draw_canvas(
         atlas_opacity=options.atlas_opacity, outlines=options.layer,
         border_color=options.border_color, border_thickness=options.border_thickness,
         pivot=frame.pivot, pivot_in_section=in_section,
-        label=canvas_label(label or record.id, options), spline=spline, long_edge=edge,
+        label=canvas_label(label or record.id, options), long_edge=edge,
         atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position,
                                           angles=record.angles),
         atlas_name=options.atlas_name(), regions=options.regions,
@@ -224,8 +222,8 @@ def draw_canvas(
     return Canvas(images=images, frame=frame, panels=panels)
 
 
-def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
-    """``(params or matrix, spline, kind)`` of the section's in-plane transform.
+def stored_placement(record: SliceState, section: Any) -> tuple[Any, str]:
+    """``(params or matrix, kind)`` of the section's in-plane transform.
 
     The six stored numbers are the exact map (shear included); a section
     without a transform is drawn at identity.
@@ -233,9 +231,9 @@ def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
     transform = record.transform or {}
     values = transform.get("params")
     if values is not None and len(values) == 6:
-        return (denormalized_affine(values, section.size), transform.get("spline"),
+        return (denormalized_affine(values, section.size),
                 str(transform.get("kind") or "stored"))
-    return dict(IDENTITY_KNOBS), None, "identity"
+    return dict(IDENTITY_KNOBS), "identity"
 
 
 def current_warp(store: Any, state: StackState, record: SliceState) -> Any:
@@ -332,7 +330,7 @@ def placement_pictures(
             + ("" if name == "template" else f" ({name})"),
         ), sections=(record.id,), mode="stacked", extra={"position_mm": float(position)})],
             row=row)
-    params, spline, kind = stored_placement(record, section)
+    params, kind = stored_placement(record, section)
     # The section under its full placement: the stored warp too, at the
     # position it was fitted at (the atlas-only view needs no section).
     warp = (current_warp(store, state, record)
@@ -342,7 +340,6 @@ def placement_pictures(
     canvas = draw_canvas(
         ws, state, record, section, um_per_px, position, params, options,
         label=f"{record.id} vs atlas {position:.2f} mm",
-        spline=spline,
         matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
         warp=warp,
     )
@@ -474,7 +471,6 @@ def staged_views(
     mode: str,
     pivot: tuple[float, float] | None,
     label: str = "",
-    spline: dict[str, Any] | None = None,
 ) -> Canvas:
     """One staged section's canvas pictures at *params* (knobs or a 2x3 on
     its working frame) about *pivot* (canvas pixels)."""
@@ -482,7 +478,7 @@ def staged_views(
         ws, state, staged.record, staged.section, staged.um_per_px,
         float(staged.record.position_mm or 0.0), params, options,
         mode=mode, pivot=pivot, section_offset=staged.geometry.section_offset,
-        label=label, spline=spline,
+        label=label,
     )
 
 
@@ -558,5 +554,4 @@ def transform_views(
     ).images + staged_views(
         ws, state, staged, other, options, mode="overlay", pivot=other_pivot,
         label=f"{record.id} {'stored' if held else 'identity'}",
-        spline=(previous or {}).get("spline"),
     ).images

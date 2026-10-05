@@ -62,7 +62,7 @@ BORDER_WIDTH_PX = 2.0
 #: Changes whenever the model's inputs change for the same geometry (prompt text,
 #: attachment order, border rendering), so a saved reply is reused only for the
 #: exact inputs that produced it.
-INPUT_VERSION = "2026-09-29 smooth borders; route-supplied GPT twin"
+INPUT_VERSION = "supplied-1"
 
 #: Attachment roles in request order, per prompt twin.
 _GPT_ATTACHMENTS = (("Image 1: clean photograph", "original"),
@@ -413,7 +413,7 @@ def draw_from_atlas(
 
 #: Changes whenever route "atlas"'s model inputs change for the same geometry
 #: (prompt text, attachments, the outlined atlas), like :data:`INPUT_VERSION`.
-ATLAS_INPUT_VERSION = "2026-10-04 route atlas as a job verb"
+ATLAS_INPUT_VERSION = "atlas-1"
 
 
 def start_atlas_correction(

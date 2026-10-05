@@ -95,7 +95,7 @@ def _exact(frame, warp, points, params=PARAMS):
 @pytest.mark.parametrize("rotation,flip", [(0, False), (0, True), (90, False), (90, True),
                                            (180, False), (270, True)])
 def test_pairs_tps_reproduces_the_record_off_the_grid(rotation, flip):
-    from langslice.core.landmark_warp import _ThinPlateKernel
+    from langslice.core.thin_plate import ThinPlateKernel
 
     frame = _frame(rotation, flip)
     warp = _record(frame, _smooth_field(rotation))
@@ -106,7 +106,7 @@ def test_pairs_tps_reproduces_the_record_off_the_grid(rotation, flip):
     assert report["max_error_mm"] <= 0.005 and report["within_tolerance"]
     assert 0 < report["p99_error_mm"] <= report["max_error_mm"]
     # ABBA's pull-back (target -> source), applied at random points of the file.
-    pullback = _ThinPlateKernel(target, source, max_points=33 ** 2)
+    pullback = ThinPlateKernel(target, source, max_points=33 ** 2)
     rng = np.random.default_rng(rotation + flip)
     points = rng.uniform([-0.5, -0.5], [FILE[0] - 0.5, FILE[1] - 0.5], size=(2000, 2))
     before, after = _exact(frame, warp, points)
@@ -169,7 +169,7 @@ def test_a_deformation_whose_spline_folds_at_every_grid_is_refused():
 def test_a_deformation_too_fine_for_33_points_is_sent_with_its_error():
     """Accuracy never refuses: the 33x33 grid goes out, its error measured
     (the maximum at the probes matches an independent check)."""
-    from langslice.core.landmark_warp import _ThinPlateKernel
+    from langslice.core.thin_plate import ThinPlateKernel
 
     frame = _frame(0, False)
     warp = _record(frame, _smooth_field(0, amplitude_mm=0.02, waves=12.0))
@@ -179,7 +179,7 @@ def test_a_deformation_too_fine_for_33_points_is_sent_with_its_error():
     assert report["grid_size"] == 33 and len(source) == 33 ** 2 == report["points"]
     assert not report["within_tolerance"] and report["max_error_mm"] > 0.005
     assert 0 < report["p99_error_mm"] <= report["max_error_mm"]
-    pullback = _ThinPlateKernel(target, source, max_points=33 ** 2)
+    pullback = ThinPlateKernel(target, source, max_points=33 ** 2)
     rng = np.random.default_rng(7)
     points = rng.uniform([-0.5, -0.5], [FILE[0] - 0.5, FILE[1] - 0.5], size=(4000, 2))
     before, after = _exact(frame, warp, points)
@@ -190,16 +190,16 @@ def test_a_deformation_too_fine_for_33_points_is_sent_with_its_error():
 
 def test_the_largest_grid_whose_spline_does_not_fold_is_sent(monkeypatch):
     """When the finest grids' splines fold, the largest one that does not is sent."""
-    import langslice.core.landmark_warp as landmark_warp
+    import langslice.core.thin_plate as thin_plate
 
-    class FoldingAbove289(landmark_warp._ThinPlateKernel):
+    class FoldingAbove289(thin_plate.ThinPlateKernel):
         def jacobian(self, points_mm):
             result = super().jacobian(points_mm)
             if len(self.source) > 17 ** 2:
                 result[:, 0] *= -1  # a mirrored map: every determinant negative
             return result
 
-    monkeypatch.setattr(landmark_warp, "_ThinPlateKernel", FoldingAbove289)
+    monkeypatch.setattr(thin_plate, "ThinPlateKernel", FoldingAbove289)
     frame = _frame(0, False)
     report: dict = {}
     source, _target = warp_world_landmarks(

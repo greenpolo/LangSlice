@@ -4,10 +4,13 @@ Package guide for `src/langslice/core/atlas/`. The repo-level `CLAUDE.md` holds 
 project-wide rules; this file holds what is specific to this package. `AGENTS.md`
 here is a verbatim copy — edit one, mirror to the other.
 
-- `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
-  region maps, borders.
-  `sides.py` (2026-10-02) is one side of a region, `"CTX:left"`: the
-  grammar (`split_side`, `overlapping`), the native plane's two ML halves
+- `core.py` — BrainGlobe loading (`load_atlas`, `canonicalize_atlas_name`),
+  position helpers (`position_mm_to_index`, `index_to_position_mm`,
+  `get_position_range_mm`), the reference plate (`get_reference_slice`) and
+  `get_root_mask`. The public surface is deliberately small: what LangSlice
+  itself reads.
+- `sides.py` — one side of a region, `"CTX:left"`: the grammar
+  (`split_side`, `overlapping`), the native plane's two ML halves
   (`ml_halves`: ML volume index per pixel from `oblique.plane_index_coordinates`
   on the axis `space.atlas_space_context` derives; split where BrainGlobe
   splits a symmetric atlas, at `round(n_ml / 2)`, or by the atlas's own
@@ -19,64 +22,39 @@ here is a verbatim copy — edit one, mirror to the other.
   own "left"/"right" hemisphere values are never used: its `hemispheres`
   docstring and code disagree, and on a symmetric atlas no label agreement
   could settle which is which.
-  `render.py` is the geometry BOTH methods draw from, and it belongs to
-  neither: `annotation_slice` (the display-oriented annotation at a position,
+- `render.py` — the geometry both methods draw from, belonging to neither:
+  `annotation_slice` (the display-oriented annotation at a position,
   resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,
   `family_mapping` (region id -> its merged color family's representative),
-  `family_labels` (a label map rewritten to those representatives — the set
-  the image model is shown), `placed_border_coverage` (antialiased placed
-  boundaries; the image tool's overlay and the deformable fit's border images),
-  `region_contours` + `_smooth_closed` (smoothed per-region polygons, holes
-  included, confetti dropped), `family_outlines` (one `(family color,
+  `family_labels` (a label map rewritten to those representatives),
+  `placed_border_coverage` (antialiased placed boundaries; the image tool's
+  overlay and the deformable fit's border images), `region_contours` +
+  `_smooth_closed` (smoothed per-region polygons, holes included, confetti
+  dropped), `family_outlines` / `outer_outline` (one `(family color,
   polyline)` per family region, in atlas-native pixels), and the shade rules
-  `border_color` / `darker` / `BORDER_DARKEN` / `is_dark_background`. It moved
-  here from `core/nonlinear/render.py` and `core/nonlinear/image_gen_helpers.py` when
-  `linear`'s physical overlay started drawing the same lines: two methods
-  disagreeing about where a boundary is would be a bug neither could see.
-  `core.nonlinear.render` re-exports the shade rules and `region_contours`, so it
-  stays the one import for review rendering.
-  Also `recolor.py`: organized structure colors for atlases whose native
-  palettes are visually confusing. Nonlinear's two border-based routes never
-  show an image-generation model any colored atlas render — the model-facing
-  atlas reference on route "atlas" is a grayscale plate with thin yellow
-  boundaries only (`core.nonlinear.image_gen_registration.outlined_atlas_template`).
-  This LUT still colors renders people (not models) look at: the atlas
-  package's own colored region maps, the family grouping behind linear's
-  physical overlay (whose lines are drawn in one color, yellow by default), and
-  nonlinear's human-review warped-atlas overlay
-  (`core.nonlinear.image_gen_helpers._classified_to_rgb`). `color_lut(atlas)` keeps native colors
-  when they are hierarchy-organized, joins the true Allen CCF colors
-  (vendored `allen_colors.json`) for trees with
-  enough Allen overlap — the all-white atlases (Osten, Princeton, adult Kim)
-  and the Waxholm rat family. The join matches by normalized name, a
-  terminology bridge (classical/embryological vocabulary onto Allen's, e.g.
-  mesencephalon→Midbrain, white matter→fiber tracts), name variants, and
-  acronym only when the names corroborate it; unmatched subregions inherit
-  their deepest matched ancestor's color (the root never joins or seeds
-  inheritance). It generates an Allen-style palette for
-  foreign trees: nested hue subdivision (each division's hue range is
-  proportional to its subtree), quantized to at most `MAX_FAMILIES` flat
-  family colors, because few flat colors IS the Allen convention. Auto-
-  detection is data-driven — degenerate = one color for
-  everything; disorganized = child colors uncorrelated with parents — and
-  flat or small trees always keep native colors. `core/atlas/core.py`'s colored
-  region-map render and nonlinear's human-review warped-atlas render
-  (`core/nonlinear/image_gen_helpers.py`'s `_classified_to_rgb`) both draw from
-  this one LUT; border fitting warps the existing label map by
-  nearest-neighbor sampling and never classifies model-output pixels.
-  A DERIVED palette (Allen join or generated) is then organized: leaf-level
-  Allen colors are not a usable palette — Allen encodes hierarchy in hue, so
-  a cortex-dominated slice came out as a dozen near-identical greens the
-  pipeline merges away anyway (that was the WHS rat "washed out" bug). Colors
-  closer than `MERGE_EPS` (40, `_family_mapping`'s own radius) collapse into
-  one unit, and the surviving units are pulled at least `MIN_SEPARATION` (60)
-  apart, nudging value/saturation before hue so a family keeps its identity.
-  Native palettes are left exactly as the atlas authored them.
-  `color_lut` has ONE table and no modes. Region fills are outlined by a
-  line in a darker shade of the region's own color (`render.darker`, RGB ×
-  `BORDER_DARKEN` = 0.7, which moves HSV value only, so hue and saturation
-  still name the region); lines are drawn LINE_8 like the fills, on the
-  smoothed sub-pixel contours, so no pixel blends two region colors. These
-  renders are for people (this package's own colored region maps, linear's
-  overlay, nonlinear's review-only warped-atlas render); no model is shown
-  any of them.
+  `border_color` / `is_dark_background`. Every picture draws its boundaries
+  from these, so two views never disagree about where a boundary is.
+- `recolor.py` — `color_lut(atlas)`: organized structure colors for atlases
+  whose native palettes are visually confusing. Its consumer is the family
+  grouping (`render.family_mapping`) behind the placement overlay's outlines,
+  whose lines are drawn in one color (yellow by default); no model is shown a
+  colored atlas render. Native colors are kept when they are
+  hierarchy-organized. Otherwise the true Allen CCF colors (vendored
+  `allen_colors.json`) are joined for trees with enough Allen overlap (the
+  all-white atlases such as Osten, Princeton and adult Kim, and the Waxholm
+  rat family): by normalized name, a terminology bridge (classical or
+  embryological vocabulary onto Allen's, e.g. mesencephalon -> Midbrain,
+  white matter -> fiber tracts), name variants, and acronym only when the
+  names corroborate it; unmatched subregions inherit their deepest matched
+  ancestor's color (the root never joins or seeds inheritance). Foreign trees
+  get a generated Allen-style palette: nested hue subdivision (each
+  division's hue range proportional to its subtree), quantized to at most
+  `MAX_FAMILIES` flat family colors, because few flat colors is the Allen
+  convention. Auto-detection is data-driven (degenerate = one color for
+  everything; disorganized = child colors uncorrelated with parents), and
+  flat or small trees keep native colors. A derived palette is then
+  organized: colors closer than `MERGE_EPS` (40, `family_mapping`'s own
+  radius) collapse into one unit, and the surviving units are pulled at least
+  `MIN_SEPARATION` (60) apart, nudging value/saturation before hue so a
+  family keeps its identity. Native palettes are left exactly as the atlas
+  authored them.
