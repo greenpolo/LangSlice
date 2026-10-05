@@ -493,6 +493,34 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
     assert "pixel size" in (entry["problem"] or "")
 
 
+def test_an_uncalibrated_section_is_fitted_at_the_scale_its_pictures_draw(tmp_path,
+                                                                           monkeypatch):
+    """No pixel size, a transform written at one position, the section then
+    moved: the nonlinear start (the trace's canvas, every deformable fit's
+    grid, the Elastix affine's start) places the atlas at the scale the
+    pictures and registration.json use, not the one stored with the
+    transform, so the six numbers mean one placement everywhere."""
+    from langslice.core.handoff import prepare_linear_registration
+    from langslice.core.sections import PREVIEW_LONG_EDGE
+
+    job = _uncalibrated_job(tmp_path, monkeypatch)
+    job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
+    job.adjust_transforms(entries=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
+                                    "scale_y": 1.0, "translate_x_mm": 0.0,
+                                    "translate_y_mm": 0.0}])
+    stored = job.state.by_id(ID0).transform["calibration"]["section_um_per_px"]
+    job.set_positions(entries=[{"id": ID0, "position_mm": 0.25}])
+    job.view_placement(entries=[{"id": ID0, "positions_mm": [0.25]}],
+                       view={"mode": "overlay", "resolution": 512})
+    handoff = prepare_linear_registration(job.state, job.workspace, ID0,
+                                          long_edge=PREVIEW_LONG_EDGE).metadata
+    job.close()
+    picture = _picture_um_per_section_px(Path(job.folder), ID0)
+    assert abs(stored - picture) > 0.1, (stored, picture)  # the scale did change
+    assert abs(handoff["section_um_per_px"] - picture) < 0.01, (handoff, picture)
+    assert handoff["calibration_source"] == "estimated"
+
+
 def prepared_render_size(path: Path) -> tuple[int, int]:
     from langslice.core.image_prep import prepared_size
     from langslice.core.sections import PREVIEW_LONG_EDGE

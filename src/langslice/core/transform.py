@@ -575,7 +575,6 @@ def elastix_affine(
     ctx: Workspace,
     record: SliceState,
     start_params: Sequence[float],
-    calibration: dict[str, Any],
     *,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
@@ -583,9 +582,10 @@ def elastix_affine(
 ) -> ElastixFit:
     """Refine one section's placement with an Elastix intensity affine.
 
-    Starts from *start_params* (the section's current six numbers, drawn
-    with *calibration*) and never searches from scratch: the atlas plane is
-    placed there on the deformable fit grid (``deformation.fit_grid``), the
+    Starts from *start_params* (the section's current six numbers, at the
+    scale its pictures draw it, :func:`calibrate`) and never searches from
+    scratch: the atlas plane is placed there on the deformable fit grid
+    (``deformation.fit_grid``), the
     section's ``fit`` appearance and the placed ARA template are prepared
     exactly as a deformable stain fit prepares them (tissue and atlas masks,
     excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
@@ -603,8 +603,7 @@ def elastix_affine(
     from langslice.core.deformable.engines import run_elastix_affine
 
     start = [float(v) for v in start_params]
-    grid = deformation.fit_grid(state, ctx, record,
-                                transform={"params": start, "calibration": dict(calibration)})
+    grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
     image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
     width, height = grid.image.size
     torn = None if record.damaged else np.zeros((height, width), dtype=bool)
@@ -643,30 +642,6 @@ def elastix_affine(
     )
 
 
-def _start_calibration(
-    state: StackState, ctx: Workspace, record: SliceState, section: Image.Image,
-    stored: bool,
-) -> tuple[float, str]:
-    """The calibration the section's current placement was drawn with.
-
-    The file's or host's answer when there is one; otherwise the stored
-    transform's own (its six numbers mean that placement only at that
-    scale), and only without either a fresh :func:`calibrate`.
-    """
-    known, source = canvas_um_per_px(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    if known is not None:
-        return known, source
-    if stored:
-        held = (record.transform or {}).get("calibration") or {}
-        try:
-            value = float(held["section_um_per_px"])
-        except (KeyError, TypeError, ValueError):
-            value = float("nan")
-        if np.isfinite(value) and value > 0:
-            return value, str(held.get("source") or "stored")
-    return calibrate(state, ctx, record, section)
-
-
 def fit_elastix(
     state: StackState,
     ctx: Workspace,
@@ -692,8 +667,7 @@ def fit_elastix(
     stored = (record.transform or {}).get("params")
     start = (list(stored) if stored is not None and len(stored) == 6
              else list(IDENTITY_PARAMS))
-    has_stored = stored is not None and len(stored) == 6
-    um_per_px, source = _start_calibration(state, ctx, record, section, has_stored)
+    um_per_px, source = calibrate(state, ctx, record, section)
     try:
         geometry = canvas_geometry(
             section.size,
@@ -705,7 +679,6 @@ def fit_elastix(
             record.yaw_deg,
         )
         fit = elastix_affine(state, ctx, record, start,
-                             {"section_um_per_px": um_per_px, "source": source},
                              include=include, exclude=exclude, atlas_image=atlas_image)
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}

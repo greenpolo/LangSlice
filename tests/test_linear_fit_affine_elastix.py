@@ -144,7 +144,7 @@ def test_starts_from_the_current_placement(tmp_path: Path, atlas):
     assert error["rotation"] < 0.3 and error["corner_px"] < 1.5, error
     # From the true placement itself, the fit stays there.
     exact = normalized_affine(truth[:2], SECTION_SIZE)
-    fit = tr.elastix_affine(state, _ctx, record, exact, record.transform["calibration"])
+    fit = tr.elastix_affine(state, _ctx, record, exact)
     assert fit.start_params == exact
     assert fit.start_iou > 0.97
     assert _error_vs(truth, fit.params)["corner_px"] < 1.0
@@ -154,9 +154,8 @@ def test_identical_inputs_give_identical_transforms(tmp_path: Path, atlas):
     truth = _step(2.0, 1.03, 3.0, 2.0)
     state, ctx, _box = _setup(tmp_path, atlas, _section(atlas, truth))
     record = state.slices[0]
-    calibration = {"section_um_per_px": UM, "source": "host"}
-    first = tr.elastix_affine(state, ctx, record, tr.IDENTITY_PARAMS, calibration)
-    second = tr.elastix_affine(state, ctx, record, tr.IDENTITY_PARAMS, calibration)
+    first = tr.elastix_affine(state, ctx, record, tr.IDENTITY_PARAMS)
+    second = tr.elastix_affine(state, ctx, record, tr.IDENTITY_PARAMS)
     assert first.params == second.params  # bit for bit
     assert first.engine["native_parameters"]["random_seed"] == engines.RANDOM_SEED
     assert first.engine["native_parameters"]["threads"] == engines.FIT_THREADS
