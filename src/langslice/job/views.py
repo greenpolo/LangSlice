@@ -69,7 +69,7 @@ NUMBERING_TIMEOUT_S = 30.0
 
 logger = logging.getLogger(__name__)
 
-#: ``view.json``'s format. 1 (2026-10-03).
+#: ``view.json``'s format.
 VIEW_FORMAT_VERSION = 1
 VIEW_FILE = "view.json"
 PICTURE_FILE = "view.jpg"
@@ -437,8 +437,8 @@ class ViewStore:
 
 
 class DiscardedViews(ViewStore):
-    """A store that saves nothing (a job that writes nothing, ``Job.persist``
-    False: the CLI's dry run)."""
+    """A store that saves nothing: a job that writes nothing (``Job.persist``
+    False: the CLI's dry run) or keeps the results only (``Job.lean``)."""
 
     def save(
         self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],

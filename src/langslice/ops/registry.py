@@ -112,6 +112,8 @@ VERBS: dict[str, Verb] = _verbs(
                                                              "nonlinear"))),
     Verb("view_stack", views.view_stack, "read", "Positioning",
          when=lambda spec: spec.has("position")),
+    # The oblique plane fit around a section's position (``oblique.fit_oblique``),
+    # switched on by the spec's ``position.bayesian``.
     Verb("search_position", positions.search_position, "read", "Positioning",
          when=lambda spec: spec.has("position") and spec.position.bayesian),
     # Orientation (flip + quarter-turn) is part of in-plane alignment.
