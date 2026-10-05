@@ -4,11 +4,106 @@ from __future__ import annotations
 import copy
 import json
 import re
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pytest
 
-from langslice.core.landmark_elastix import fit_landmark_elastix, load_elastix
+from langslice.core.landmark_elastix import (
+    _affine,
+    _bounds,
+    _check_landmarks,
+    _extent,
+    _points,
+    load_elastix,
+)
+
+
+def _corners(bounds):
+    lo, hi = bounds
+    return np.array([[lo[0], lo[1]], [hi[0], lo[1]],
+                     [lo[0], hi[1]], [hi[0], hi[1]]])
+
+
+def fit_landmark_elastix(source_mm, target_mm, extent_mm, affine_mm, domain_bounds_mm=None):
+    """A landmark spline payload as checkpoints carry one: a bounded,
+    regularized residual fitted to landmark pairs (bending weight scales
+    with length cubed, so coordinate units do not change the tradeoff)."""
+    import itk
+
+    source, target = _points(source_mm), _points(target_mm)
+    _check_landmarks(source, target)
+    extent, affine = _extent(extent_mm), _affine(affine_mm)
+    aligned = source @ affine[:, :2].T + affine[:, 2]
+    original_corners = _corners(np.array([np.zeros(2), extent]))
+    aligned_corners = original_corners @ affine[:, :2].T + affine[:, 2]
+    coordinates = np.vstack((original_corners, aligned_corners, source, target, aligned))
+    if domain_bounds_mm is not None:
+        coordinates = np.vstack((coordinates, _bounds(domain_bounds_mm)))
+    lower, upper = coordinates.min(axis=0), coordinates.max(axis=0)
+    scale = float(np.max(upper - lower))
+    lower, upper = lower - scale * 0.15, upper + scale * 0.15
+    bounds = np.array([lower, upper])
+    image_spacing = scale / 96
+    shape = np.ceil((upper - lower) / image_spacing).astype(int) + 1
+    blank = itk.image_from_array(np.zeros((int(shape[1]), int(shape[0])), dtype=np.float32))
+    blank.SetOrigin(tuple(lower))
+    blank.SetSpacing((image_spacing, image_spacing))
+    # ITK loads these wrapped extension classes dynamically.
+    runtime = itk
+    parameter_object = runtime.ParameterObject.New()
+    parameters = parameter_object.GetDefaultParameterMap("bspline", 1, scale / 4)
+    parameters.update({
+        "Registration": ["MultiMetricMultiResolutionRegistration"],
+        "Metric": ["TransformBendingEnergyPenalty", "CorrespondingPointsEuclideanDistanceMetric"],
+        "Metric0Weight": [str(0.05 * scale**3)],
+        "Metric1Weight": ["1"], "UseRelativeWeights": ["false"],
+        "Optimizer": ["AdaptiveStochasticGradientDescent"],
+        "MaximumNumberOfIterations": ["160"],
+        "ImageSampler": ["Full"], "NewSamplesEveryIteration": ["false"],
+        "WriteResultImage": ["false"], "UseDirectionCosines": ["true"],
+        "PassiveEdgeWidth": ["1"],
+    })
+    if np.allclose(aligned, target, rtol=0, atol=1e-12):
+        # Avoid estimating optimizer gains from an exactly zero residual.
+        parameters["MaximumNumberOfIterations"] = ["0"]
+    parameter_object.AddParameterMap(parameters)
+    with TemporaryDirectory(prefix="langslice-landmark-elastix-") as directory:
+        root = Path(directory)
+        for name, points in (("fixed", target), ("moving", aligned)):
+            rows = "\n".join(" ".join(format(float(v), ".17g") for v in row) for row in points)
+            (root / f"{name}.txt").write_text(f"point\n{len(points)}\n{rows}\n")
+        registration = runtime.ElastixRegistrationMethod.New(blank, blank)
+        registration.SetParameterObject(parameter_object)
+        registration.SetFixedPointSetFileName(str(root / "fixed.txt"))
+        registration.SetMovingPointSetFileName(str(root / "moving.txt"))
+        registration.SetOutputDirectory(directory)
+        registration.SetLogToConsole(False)
+        registration.SetNumberOfThreads(1)
+        try:
+            registration.UpdateLargestPossibleRegion()
+        except RuntimeError as exc:
+            raise ValueError("Elastix could not fit the anatomical landmarks") from exc
+        result = registration.GetTransformParameterObject().GetParameterMap(0)
+        saved = {str(key): [str(value) for value in values] for key, values in result.items()}
+    saved["InitialTransformParameterFileName"] = ["NoInitialTransform"]
+    payload = {
+        "backend": "elastix", "source": (source / extent).tolist(),
+        "target": (target / extent).tolist(), "extent_mm": extent.tolist(),
+        "affine_mm": affine.tolist(), "domain_mm": bounds.tolist(),
+        "parameter_maps": [saved],
+    }
+    transform = load_elastix(payload)
+    residuals = np.linalg.norm(transform.forward(source) - target, axis=1)
+    before = np.linalg.norm(aligned - target, axis=1)
+    payload["diagnostics"] = {
+        **transform.validate_domain(extent),
+        "affine_landmark_rms_mm": float(np.sqrt(np.mean(before**2))),
+        "landmark_rms_mm": float(np.sqrt(np.mean(residuals**2))),
+        "landmark_max_error_mm": float(np.max(residuals)),
+    }
+    return payload
 
 
 @pytest.fixture(scope="module")

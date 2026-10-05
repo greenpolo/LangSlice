@@ -23,14 +23,18 @@ from typing import Any
 ROTATIONS = (0, 90, 180, 270)
 
 #: The five physical knobs of the transform every section starts from, and
-#: the B side of an A/B preview when a section carries nothing yet.
-IDENTITY_PARAMS: dict[str, float] = {
+#: the B side of an A/B preview when a section carries nothing yet. (The
+#: identity's six normalized numbers are ``core.affine.IDENTITY_PARAMS``.)
+IDENTITY_KNOBS: dict[str, float] = {
     "rotation_deg": 0.0,
     "scale_x": 1.0,
     "scale_y": 1.0,
     "translate_x_mm": 0.0,
     "translate_y_mm": 0.0,
 }
+#: The old name of :data:`IDENTITY_KNOBS`, still imported by ``job/job.py``
+#: and ``doors/tools/toolbox.py``.
+IDENTITY_PARAMS = IDENTITY_KNOBS
 
 #: A plane's cutting angles, ``(pitch_deg, yaw_deg)``.
 Angles = tuple[float, float]
@@ -87,16 +91,17 @@ class SliceState:
          "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
 
-    Optional ``spline`` stores ``source`` and ``target`` landmark pairs in
-    normalized oriented-section coordinates, ``extent_mm`` from original image
-    calibration, and optional labels. When present it is the COMPLETE mapping;
-    ``params``/``physical`` retain the affine baseline as metadata and are not
-    composed with the spline. New ``backend="elastix"`` payloads store native
-    ``parameter_maps``, ``affine_mm`` and ``domain_mm`` for the complete affine
-    plus residual pullback. Legacy payloads retain their BigWarp TPS mapping.
-    Both evaluate target-to-source resampling and invert it for forward points.
-    Affine adjustment/fitting replaces the spline. Checkpoints and undo retain
-    all pairs. ``iou`` is always tissue-silhouette overlap, not anatomical quality.
+    A ``spline`` is read from old checkpoints only (nothing writes one): it
+    stores ``source`` and ``target`` landmark pairs in normalized
+    oriented-section coordinates, ``extent_mm`` from original image
+    calibration, and optional labels. When present it is the COMPLETE
+    mapping; ``params``/``physical`` retain the affine baseline as metadata
+    and are not composed with the spline. ``backend="elastix"`` payloads
+    carry native ``parameter_maps``, ``affine_mm`` and ``domain_mm`` for the
+    complete affine plus residual pullback; the others a BigWarp TPS
+    mapping. Both evaluate target-to-source resampling and invert it for
+    forward points. Affine adjustment/fitting replaces the spline. ``iou``
+    is always tissue-silhouette overlap, not anatomical quality.
 
     For an affine, ``physical`` is the ONE representation it carries, whatever
     made it: the five knobs the alignment tools take (plus the ``shear`` an
@@ -116,8 +121,8 @@ class SliceState:
     flip: bool = False
     #: Quarter-turn applied before the flip; one of :data:`ROTATIONS`.
     rotation_deg: int = 0
-    #: Agent-internal: excludes the section from DeepSlice and the automatic
-    #: affine. Never a user option.
+    #: Set by the agent (``mark_damaged``) or the host (``inputs.damaged``):
+    #: the automatic affine fits the section only with a region restriction.
     damaged: bool = False
     damage_note: str = ""
     position_mm: float | None = None
@@ -155,12 +160,6 @@ class SliceState:
     @property
     def is_oblique(self) -> bool:
         return bool(self.pitch_deg or self.yaw_deg)
-
-
-def add_caveat(record: SliceState, caveat: str) -> None:
-    """Append *caveat* to a section once."""
-    if caveat not in record.caveats:
-        record.caveats.append(caveat)
 
 
 @dataclass

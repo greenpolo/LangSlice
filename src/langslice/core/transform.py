@@ -36,6 +36,7 @@ from PIL import Image
 
 from langslice.core.affine import (
     AFFINE_LONG_EDGE,
+    IDENTITY_PARAMS,
     axis_ratio,
     decompose_affine,
     denormalized_affine,
@@ -109,8 +110,8 @@ class FitFrame:
     left: np.ndarray | None = None
 
 #: Below this long/short axis ratio an outline has no defined long axis, and a
-#: region-restricted fit's reply says so with the rotation it chose (M04_D_08
-#: with both hemispheres missing: tissue 1.14, kept atlas 1.59 -> turned 83 deg).
+#: region-restricted fit's reply says so with the rotation it chose (a
+#: near-round outline can turn the section by almost any angle).
 ROUND_AXIS_RATIO = 1.2
 
 
@@ -470,15 +471,12 @@ def _fit_payload(
 
 # --- the Elastix affine ----------------------------------------------------
 
-#: The atlas image the Elastix affine fits the section to. The 2026-10-02
-#: stain ceiling test (deformable ``CLAUDE.md``) found the ARA template's pial
-#: outline on the fluorescent sections' bright rim, where ABBA's Nissl sat
-#: 40-80 um inside it.
+#: The atlas image the Elastix affine fits the section to: the ARA
+#: template's pial outline lies on a fluorescent section's bright rim, where
+#: ABBA's Nissl sits 40-80 um inside it.
 ELASTIX_ATLAS_IMAGE = "ara"
 #: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um).
 ELASTIX_DETAIL = "standard"
-#: The identity transform's six normalized numbers.
-IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 
 
 def elastix_settings(
@@ -702,46 +700,14 @@ def physical_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]
     """decompose_affine without its translation fractions.
 
     In the alignment loop the shift IS the entered millimetres; the matrix's
-    fractional offsets also absorb the pivot-based scale and rotation, so they
-    read as a contradiction (four agents flagged "+0.04 mm entered, negative
-    fraction reported"). Rotation, scales, shear and mirrored stay.
+    fractional offsets also absorb the pivot-based scale and rotation, so
+    they would read as a contradiction ("+0.04 mm entered, negative fraction
+    reported"). Rotation, scales, shear and mirrored stay.
     """
     out = decompose_affine(params, size)
     out.pop("translate_x_frac", None)
     out.pop("translate_y_frac", None)
     return out
-
-
-def similarity_fit(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
-    """The 2x3 similarity (rotation, one scale, shift) mapping *src* to *dst*.
-
-    Umeyama's closed form, so two points give the exact answer and more give
-    the least-squares one. A similarity is what two landmarks can support: a
-    per-axis scale needs three.
-    """
-    src = np.asarray(src, dtype=np.float64)
-    dst = np.asarray(dst, dtype=np.float64)
-    mu_src, mu_dst = src.mean(axis=0), dst.mean(axis=0)
-    x, y = src - mu_src, dst - mu_dst
-    cov = (y.T @ x) / len(src)
-    u, singular, vt = np.linalg.svd(cov)
-    correction = np.eye(2)
-    if np.linalg.det(u) * np.linalg.det(vt) < 0:  # never mirror the section
-        correction[1, 1] = -1.0
-    rotation = u @ correction @ vt
-    variance = float((x**2).sum() / len(src))
-    scale = float((singular * np.diag(correction)).sum() / variance) if variance > 0 else 1.0
-    linear = scale * rotation
-    return np.column_stack([linear, mu_dst - linear @ mu_src])
-
-
-def affine_fit(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
-    """The least-squares 2x3 affine mapping *src* to *dst*; needs 3+ points."""
-    src = np.asarray(src, dtype=np.float64)
-    dst = np.asarray(dst, dtype=np.float64)
-    design = np.column_stack([src, np.ones(len(src))])
-    solution, *_ = np.linalg.lstsq(design, dst, rcond=None)
-    return np.asarray(solution.T, dtype=np.float64)
 
 
 def physical_params(

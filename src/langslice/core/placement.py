@@ -62,7 +62,7 @@ from langslice.core.sections import (
 )
 from langslice.core.sheets import stacked
 from langslice.core.space import Plane
-from langslice.core.state import IDENTITY_PARAMS, SliceState, StackState
+from langslice.core.state import IDENTITY_KNOBS, SliceState, StackState
 from langslice.core.transform import calibrate
 from langslice.core.workspace import Workspace
 
@@ -236,7 +236,7 @@ def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
     if values is not None and len(values) == 6:
         return (denormalized_affine(values, section.size), transform.get("spline"),
                 str(transform.get("kind") or "stored"))
-    return dict(IDENTITY_PARAMS), None, "identity"
+    return dict(IDENTITY_KNOBS), None, "identity"
 
 
 def current_warp(store: Any, state: StackState, record: SliceState) -> Any:
@@ -519,11 +519,11 @@ def ab_reference(
     """
     stored = (previous or {}).get("physical")
     before = (previous or {}).get("params")
-    other: Any = dict(IDENTITY_PARAMS)
+    other: Any = dict(IDENTITY_KNOBS)
     if before is not None and len(before) == 6:
         other = denormalized_affine(before, staged.section.size)
     elif isinstance(stored, dict):
-        other = {key: float(stored[key]) for key in IDENTITY_PARAMS}
+        other = {key: float(stored[key]) for key in IDENTITY_KNOBS}
         if stored.get("shear"):
             other["shear"] = float(stored["shear"])
     other_pivot = staged.pivot

@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from langslice.core.affine import pixel_center_map
+from langslice.core.affine import IDENTITY_PARAMS, pixel_center_map
 from langslice.core.handoff import linear_placement_matrix
 from langslice.core.image_prep import prepared_size, working_size
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
@@ -172,11 +172,6 @@ def _file_stamp(path: str) -> tuple[int, int] | None:
     except OSError:
         return None
     return (info.st_size, info.st_mtime_ns)
-
-
-#: The six stored numbers of a section without a transform: the identity,
-#: as every placement picture draws it (``core.placement.stored_placement``).
-IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 
 
 def stored_params(record: SliceState) -> tuple[float, ...]:

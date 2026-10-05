@@ -1,6 +1,8 @@
-"""Landmark deformation dispatch, rendering, and legacy TPS in physical millimeters.
+"""Reader of a stored landmark spline: dispatch, rendering, and the TPS, in millimetres.
 
-New Elastix payloads dispatch to their saved coefficient evaluator.
+Read only: nothing writes a spline any more; a checkpoint that carries one
+still draws and exports through it. Elastix payloads dispatch to their
+saved coefficient evaluator (:mod:`langslice.core.landmark_elastix`).
 
 The kernel is r² log(r), as in BigWarp's
 ``jitk.spline.ThinPlateR2LogRSplineKernelTransform``. BigWarp fits the

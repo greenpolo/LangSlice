@@ -24,7 +24,7 @@ def _sample_elastix_landmarks(
     """Approximate the exact pullback as ABBA's native sampled TPS.
 
     Check independent off-grid locations and sampled Jacobians before returning
-    anything the mirror can apply. The serialized Elastix maps stay authoritative;
+    any pairs. The serialized Elastix maps stay authoritative;
     these correspondences are an export representation, never agent landmarks.
     """
     from langslice.core.landmark_warp import _ThinPlateKernel, fit_spline
