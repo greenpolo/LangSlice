@@ -1,4 +1,4 @@
-"""Every combination of steps, through every door (audit, 2026-10-04).
+"""Every combination of steps, through every door .
 
 The product requirement: LangSlice works in ANY combination of its steps
 (Positioning, Linear, Nonlinear with or without an image model, or a
@@ -13,9 +13,6 @@ process at the coarse level). The image model is the golden stub (it answers
 with the rough border overlay it was sent), installed where every door
 resolves one; the real transport is replaced by a function that fails the
 test, and ``HOME`` is private, so no credential is read and no model called.
-
-A test marked ``xfail(strict=True)`` is a gap: what the requirement asks
-for and the code does not do yet. Its reason says where it is blocked.
 
 | # | Combination | tasks | image model |
 |---|---|---|---|

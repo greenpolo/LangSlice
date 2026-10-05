@@ -20,6 +20,7 @@ from langslice.doors.tools.media import package_result
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
+from tests.linear_tool_helpers import tool_named as _tool
 
 PICTURE_TOOLS = (
     "view_slices", "view_atlas", "view_placement", "view_stack", "set_positions",
@@ -71,10 +72,6 @@ def _setup(tmp_path: Path, **spec_kwargs: Any):
         record.position_mm = 5.0 + index
     box = build_tools(state, ctx, spec)
     return state, ctx, spec, box
-
-
-def _tool(box: Any, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 def _bytes(result: dict[str, Any]) -> list[bytes]:

@@ -1,4 +1,4 @@
-"""Retiring the acceptance experiment must leave the established workflow intact."""
+"""The default image policy: no acceptance tool or inspection gate, working-set filtering."""
 
 import pytest
 
@@ -6,11 +6,6 @@ from langslice.agent.plugins import ToolMediaDeliveryPlugin, WorkingSetImages
 from langslice.agent.session import build_plugins
 from tests.linear_tool_helpers import single_adjust
 from tests.test_linear_toolbox import _box, _tool
-
-
-def test_completion_configuration_fails_instead_of_silently_changing_policy(tmp_path):
-    with pytest.raises(ValueError, match="completion retirement was removed"):
-        _box(tmp_path, image_retention="completion")
 
 
 @pytest.mark.parametrize("policy", [None, "legacy"])

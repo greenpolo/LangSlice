@@ -566,7 +566,7 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
     assert xyz.ndim == 3 and xyz.shape[2] == 3 and bool((xyz == xyz).any())
 
 
-# --- a dead background run on Windows (review finding 10, 2026-10-04) ------------------
+# --- a dead background run on Windows------------------
 
 
 def _dead_run(tmp_path: Path) -> tuple[Any, str]:

@@ -1,4 +1,4 @@
-"""The working canvas is the image path's own output frame (2026-09-11)."""
+"""The working canvas is the image path's own output frame ."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _BUDGET = 1024 * 1536
 
 
 def test_codex_frame_is_the_fixed_budget_at_the_canvas_aspect() -> None:
-    # Measured 2026-09-11: 2197x1686 in -> 1431x1099 out.
+    # 2197x1686 in -> 1431x1099 out.
     assert native_output_size(None, "openai-oauth", (2197, 1686)) == (1431, 1099)
     w, h = native_output_size(None, "openai-oauth", (1000, 3000)) or (0, 0)
     assert abs(w * h - _BUDGET) < 2000 and abs(w / h - 1 / 3) < 0.01

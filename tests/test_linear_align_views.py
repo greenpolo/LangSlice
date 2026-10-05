@@ -215,8 +215,8 @@ def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_pa
     assert first["physical"]["translate_x_mm"] == 0.25
     assert first["physical"]["pivot"] == [0.5, 0.5]
     # No overlap number: silhouette overlap against the whole atlas plate
-    # rewarded inflating a damaged remnant to fill it (luna, D_08, 2026-09-06:
-    # 0.29 -> 0.51 at scale 1.35), and this loop exists for damaged sections.
+    # rewards inflating a damaged remnant to fill it, and this loop exists
+    # for damaged sections.
     assert "silhouette_iou" not in first
     assert {key: first["view"][key] for key in ("mode", "zoom", "outlines")} == {
         "mode": "overlay",
