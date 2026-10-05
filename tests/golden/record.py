@@ -762,7 +762,8 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
     """Two servers on one folder: the second resumes the first's checkpoint."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from langslice.job.checkpoint import default_checkpoint_path, load_checkpoint
+    from langslice.job.checkpoint import load_checkpoint
+    from langslice.job.layout import JobLayout
     from langslice.core.spec import JobSpec
     from langslice.doors.mcp.server import build_server
 
@@ -810,7 +811,7 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
 
     session("first", first)
     session("second", second)
-    saved = load_checkpoint(default_checkpoint_path(str(folder)))
+    saved = load_checkpoint(str(JobLayout.for_images(folder).state_file))
     rec.raw("state", "final_resumed", {"state": saved.to_dict() if saved else None})
 
 

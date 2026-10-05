@@ -5,8 +5,8 @@
 format version), the state checkpoint, the undo history
 (:mod:`langslice.job.history`), the per-section folders, the pictures the
 model was shown with their layers (:mod:`langslice.job.views`), exports and
-logs. Old layouts are upgraded on open (:mod:`langslice.job.migrate`); saved
-host jobs are found by id through a small index (:mod:`langslice.job.index`).
+logs. Saved host jobs are found by id through a small index
+(:mod:`langslice.job.index`).
 The :class:`~langslice.job.job.Job` (:mod:`langslice.job.job`) owns the
 state, undo, the checkpoint (:mod:`langslice.job.checkpoint`) and the submit
 gates; :mod:`langslice.job.formats` and :mod:`langslice.job.quint` write the

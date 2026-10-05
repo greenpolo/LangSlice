@@ -7,11 +7,6 @@ path, plus the one thing that does not belong in a folder that may be
 shared with colleagues, the host's loopback channel token. Owner-only on
 POSIX. Everything else of the job lives in its folder (``job.json`` there,
 under ``host``).
-
-Before the job folder (phase 2), ``~/.langslice/jobs/<id>/`` WAS the job:
-``job.json``, the checkpoint, the undo history and the results.
-:func:`langslice.job.migrate.migrate_saved_job` moves such a directory into
-the job folder next to its images on first open.
 """
 
 from __future__ import annotations
@@ -24,8 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-#: The index entry's format. 1 (2026-10-03): ``job_id``, ``job_folder``,
-#: ``host_channel``, ``created_at``.
+#: The index entry's format: ``job_id``, ``job_folder``, ``host_channel``,
+#: ``created_at`` and, for a job folder kept under ``~/.langslice/jobs/``,
+#: ``fallback``.
 INDEX_FORMAT_VERSION = 1
 _JOB_ID = re.compile(r"[0-9a-f]{12}")
 
@@ -55,11 +51,6 @@ def check_id(job_id: str) -> str:
 
 def entry_path(root: Path, job_id: str) -> Path:
     return Path(root) / f"{check_id(job_id)}.json"
-
-
-def legacy_dir(root: Path, job_id: str) -> Path:
-    """Where a phase-2 saved job lived (the whole job, not a pointer)."""
-    return Path(root) / check_id(job_id)
 
 
 def register(

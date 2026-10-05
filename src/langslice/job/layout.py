@@ -5,26 +5,29 @@ to the images it hands LangSlice (the CLI's folder, a Claude job's folder,
 the snapshots ABBA exports), so a job travels with its images and is found
 without an id. Inside::
 
+    job.lock             the write lock (:mod:`langslice.job.lock`)
     job.json             settings (the JobSpec) + format_version; a saved
                          host job's own fields under "host"
     state.json           the state checkpoint (StackState, versioned)
+    registration.json    its public rendering (:mod:`langslice.job.formats`)
     history/             undo/redo: index.json + one file per step
     sections/<name>/     per section (<name>: the image filename's stem)
         deformable/<key>/          applied deformation records
         image_correction/<key>/    trace_borders calls and their attempts
         views/<seq>_<tool>_<mode>/ pictures of this section the model saw
+        coords.tif, labels.tif, labels_fiji.tif, labels.csv, tissue.png,
+        residual.tif, maps.json    the section's maps (at submit and by
+                                   ``export_maps``)
     views/<seq>_<tool>_<mode>/     pictures of several sections (stack level)
     views.jsonl          append-only index of every saved picture
-    exports/             linear_results.json, a host's result.json
-    logs/                events.jsonl (migrations, opens)
+    views.seq            the picture and call numbers handed out (+ views.seq.lock)
+    exports/             linear_results.json, a host's result.json,
+                         quicknii.json and visualign.json
+    logs/                events.jsonl (opens), runs/ (the agent CLI's
+                         background runs), calls.jsonl (the agent CLI's calls)
     prompt.txt           a saved Claude job's copy prompt
-
-Derived, public files (formats phase, :mod:`langslice.job.formats`;
-``docs/file_formats.md``): ``registration.json`` at the top (every write),
-``coords.tif``, ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv``,
-``residual.tif`` and ``maps.json`` in each section folder and
-``quicknii.json`` / ``visualign.json`` in ``exports/`` (at submit and by
-``export_maps``).
+    AGENTS.md, CLAUDE.md the reference card for coding agents
+    BRIEF.md             the agent CLI's brief
 
 Every path a job file stores is relative to the job folder
 (:meth:`JobLayout.relative`), so the folder can move with its images.
@@ -72,10 +75,7 @@ SECTION_VIEWS_DIR = "views"
 #: also names each section's map files).
 REGISTRATION_FILE = "registration.json"
 
-#: The job folder's format, carried by ``job.json``. 1 (2026-10-03): this
-#: layout. A folder without ``job.json`` (the files beside the images, or a
-#: saved Claude job under ``~/.langslice/jobs/<id>/``) is the old layout and
-#: is upgraded on open (:mod:`langslice.job.migrate`).
+#: The job folder's format, carried by ``job.json``: this layout.
 JOB_FORMAT_VERSION = 1
 FORMAT_KEY = "format_version"
 

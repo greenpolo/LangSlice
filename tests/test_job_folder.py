@@ -1,10 +1,9 @@
-"""The job folder: layout, per-step undo files, migration of the old layouts,
-and every picture the model is shown saved with its layers."""
+"""The job folder: layout, per-step undo files, refused older formats, and
+every picture the model is shown saved with its layers."""
 
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -146,8 +145,7 @@ def test_a_history_that_cannot_be_read_is_never_deleted(tmp_path: Path, damage: 
                                                        caplog: Any):
     """An unreadable step or an index from a newer LangSlice: the job opens
     without undo for the session, with a warning, and the history on disk
-    is left exactly as it was, through the open and later writes (review
-    finding 4)."""
+    is left exactly as it was, through the open and later writes."""
     import logging
 
     folder = _folder(tmp_path / "stack")
@@ -178,278 +176,28 @@ def test_a_history_that_cannot_be_read_is_never_deleted(tmp_path: Path, damage: 
     assert {path.name: path.read_bytes() for path in history.iterdir()} == held
     assert fresh.undo_stack == []
 
-# --- migration -------------------------------------------------------------------------------
+# --- older formats ---------------------------------------------------------------------------
 
 
-def _legacy_state(folder: Path, base: Path) -> dict[str, Any]:
-    """A phase-2 checkpoint (format 1) whose paths point under *base*."""
-    job, _ = _open(folder)
-    state = job.state.to_dict()
-    shutil.rmtree(folder / "langslice")
-    record_dir = base / "deformable" / "s0.png" / KEY
-    attempt = base / "nonlinear" / "s0.png" / CALL / "attempt-01"
-    state["slices"][0]["deformation"] = {"record": str(record_dir), "key": KEY,
-                                         "linear_key": "x", "steps": []}
-    state["slices"][0]["image_correction"] = {
-        "status": "ok", "artifact_dir": str(attempt),
-        "artifact_paths": {"raw_reply": str(attempt / "raw_reply.png")}}
-    record_dir.mkdir(parents=True)
-    (record_dir / "record.json").write_text("{}")
-    attempt.mkdir(parents=True)
-    (attempt / "extracted_lines.png").write_bytes(b"png")
-    (attempt.parent / "result.json").write_text(json.dumps(
-        state["slices"][0]["image_correction"]))
-    return state
-
-
-def _write_legacy(base: Path, state: dict[str, Any], *, version: int | None = 1) -> None:
-    saved = dict(state) if version is None else {"format_version": version, **state}
-    (base / "linear_state.json").write_text(json.dumps(saved))
-    older = json.loads(json.dumps(state))
-    older["notes"] = [*older["notes"], "older"]
-    (base / "linear_undo.json").write_text(json.dumps({
-        "format_version": 1, "state_format_version": 1, "depth": 50,
-        "undo": [older], "redo": []}))
-    (base / "linear_results.json").write_text(json.dumps(state))
-
-
-def test_the_old_files_beside_the_images_move_into_the_job_folder(tmp_path: Path):
+@pytest.mark.parametrize("version", [None, 1, 2])
+def test_a_checkpoint_of_an_older_format_is_refused(tmp_path: Path, version: int | None):
+    """A pre-release checkpoint (unversioned, or an older format) is not read:
+    the job asks to be started fresh and leaves the file alone."""
     folder = _folder(tmp_path / "stack")
-    _write_legacy(folder, _legacy_state(folder, folder))
-    job, _ = _open(folder)
-    root = folder / "langslice"
-    for old in ("linear_state.json", "linear_undo.json", "linear_results.json",
-                "deformable", "nonlinear"):
-        assert not (folder / old).exists(), old
-    saved = json.loads((root / "state.json").read_text())
-    assert saved["format_version"] == STATE_FORMAT_VERSION
-    held = job.state.slices[0]
-    assert held.deformation["record"] == f"sections/s0/deformable/{KEY}"
-    assert (root / held.deformation["record"] / "record.json").exists()
-    correction = held.image_correction
-    assert correction["artifact_dir"] == f"sections/s0/image_correction/{CALL}/attempt-01"
-    assert correction["artifact_paths"]["raw_reply"].startswith("sections/s0/image_correction/")
-    assert (root / correction["artifact_dir"] / "extracted_lines.png").exists()
-    # The saved reply a cached trace_borders returns points at the new place too.
-    reply = json.loads((root / "sections/s0/image_correction" / CALL / "result.json").read_text())
-    assert reply["artifact_dir"] == correction["artifact_dir"]
-    results = json.loads((root / "exports" / "linear_results.json").read_text())
-    assert results["slices"][0]["deformation"]["record"] == held.deformation["record"]
-    # The history came along, one file per step, its paths moved too.
-    assert len(job.undo_stack) == 1
-    assert job.undo() and job.state.notes[-1] == "older"
-    assert job.state.slices[0].deformation["record"] == f"sections/s0/deformable/{KEY}"
-    assert "migrated" in (root / "logs" / "events.jsonl").read_text()
-
-
-def test_an_unversioned_checkpoint_beside_the_images_migrates(tmp_path: Path):
-    folder = _folder(tmp_path / "stack")
-    state = _legacy_state(folder, folder)
-    _write_legacy(folder, state, version=None)
-    job, _ = _open(folder)
-    assert job.state.slices[0].deformation["record"] == f"sections/s0/deformable/{KEY}"
-
-
-def test_a_newer_checkpoint_beside_the_images_is_refused_and_left_alone(tmp_path: Path):
-    folder = _folder(tmp_path / "stack")
-    state = _legacy_state(folder, folder)
-    _write_legacy(folder, state, version=STATE_FORMAT_VERSION + 1)
-    with pytest.raises(ValueError, match="newer LangSlice"):
+    _open(folder)
+    path = folder / "langslice" / "state.json"
+    record = json.loads(path.read_text())
+    record.pop("format_version")
+    if version is not None:
+        record["format_version"] = version
+    path.write_text(json.dumps(record))
+    held = path.read_bytes()
+    with pytest.raises(ValueError, match="older pre-release LangSlice.*Start a new job"):
         _open(folder)
-    assert (folder / "linear_state.json").exists() and (folder / "deformable").is_dir()
-
-
-
-# --- an interrupted migration (review finding 5, 2026-10-04) ----------------------------
-
-
-def _assert_migrated(folder: Path, job: Job) -> None:
-    root = folder / "langslice"
-    for old in ("linear_state.json", "linear_undo.json", "linear_results.json",
-                "deformable", "nonlinear"):
-        assert not (folder / old).exists(), old
-    held = job.state.slices[0]
-    assert held.deformation["record"] == f"sections/s0/deformable/{KEY}"
-    assert (root / held.deformation["record"] / "record.json").read_text() == "{}"
-    correction = held.image_correction
-    assert correction["artifact_dir"] == f"sections/s0/image_correction/{CALL}/attempt-01"
-    assert (root / correction["artifact_dir"] / "extracted_lines.png").read_bytes() == b"png"
-    assert len(job.undo_stack) == 1 and job.undo_stack[0]["notes"][-1] == "older"
-    assert not list(root.glob("**/*.partial"))
-    assert not (root / "migration.json").exists()
-
-
-def test_a_migration_interrupted_before_the_state_is_written_resumes(
-    tmp_path: Path, monkeypatch: Any,
-):
-    """Folders moved, then the process died before ``state.json``: the next
-    open finishes the migration from its journal, and every stored path
-    points at the moved folders (none orphaned)."""
-    from langslice.job import migrate
-
-    folder = _folder(tmp_path / "stack")
-    _write_legacy(folder, _legacy_state(folder, folder))
-    real = migrate.write_json_atomic
-
-    def dies_at_the_state(path: str, data: Any, **kwargs: Any) -> None:
-        if path.endswith("state.json"):
-            raise OSError("interrupted")
-        real(path, data, **kwargs)
-
-    with monkeypatch.context() as patch:
-        patch.setattr(migrate, "write_json_atomic", dies_at_the_state)
-        with pytest.raises(OSError, match="interrupted"):
-            _open(folder)
-    assert not (folder / "deformable").exists()  # the folders had moved
-    job, _ = _open(folder)
-    _assert_migrated(folder, job)
-
-
-def test_a_migration_interrupted_after_the_state_is_written_resumes(
-    tmp_path: Path, monkeypatch: Any,
-):
-    """``state.json`` written, the process died before the history and the
-    old files' removal: the next open finishes (history included) instead
-    of leaving the old files beside the images."""
-    from langslice.job import migrate
-
-    folder = _folder(tmp_path / "stack")
-    _write_legacy(folder, _legacy_state(folder, folder))
-
-    class Dies:
-        def __init__(self, _folder: Path) -> None:
-            pass
-
-        def save(self, *_args: Any) -> None:
-            raise OSError("interrupted")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(migrate, "History", Dies)
-        with pytest.raises(OSError, match="interrupted"):
-            _open(folder)
-    assert (folder / "langslice" / "state.json").exists()
-    job, _ = _open(folder)
-    _assert_migrated(folder, job)
-
-
-@pytest.mark.parametrize("same", [True, False])
-def test_a_migration_onto_an_existing_folder_checks_its_content(tmp_path: Path, same: bool):
-    """A key folder already in the job folder: the old one is removed only
-    when its content is the same; otherwise both are kept, the state keeps
-    pointing at the old one, and the migration reports the conflict."""
-    folder = _folder(tmp_path / "stack")
-    _write_legacy(folder, _legacy_state(folder, folder))
-    target = folder / "langslice" / "sections" / "s0" / "deformable" / KEY
-    target.mkdir(parents=True)
-    (target / "record.json").write_text("{}" if same else '{"other": 1}')
-    job, _ = _open(folder)
-    source = folder / "deformable" / "s0.png" / KEY
-    held = job.state.slices[0].deformation["record"]
-    events = (folder / "langslice" / "logs" / "events.jsonl").read_text()
-    if same:
-        assert not source.exists() and held == f"sections/s0/deformable/{KEY}"
-    else:
-        assert (source / "record.json").read_text() == "{}"
-        assert (target / "record.json").read_text() == '{"other": 1}'
-        assert held == str(source)
-        assert "conflicts" in events and str(source) in events
-
-
-@pytest.mark.parametrize("dies_in", ["copy", "removal"])
-def test_a_migration_across_file_systems_survives_an_interruption(
-    tmp_path: Path, monkeypatch: Any, dies_in: str,
-):
-    """Old folders on another file system are copied, then removed: an
-    interruption while copying (a partial copy) or while removing the
-    originals (a complete copy) is finished on the next open, nothing lost."""
-    import errno
-
-    from langslice.job import migrate
-
-    folder = _folder(tmp_path / "stack")
-    _write_legacy(folder, _legacy_state(folder, folder))
-
-    def other_device(_src: Any, _dst: Any) -> None:
-        raise OSError(errno.EXDEV, "Invalid cross-device link")
-
-    real_copy, real_remove = migrate._copy_tree, migrate._remove_tree
-    calls = {"n": 0}
-
-    def partial_copy(src: Path, dst: Path) -> None:
-        dst.mkdir(parents=True)
-        (dst / "half").write_bytes(b"x")
-        raise OSError("interrupted")
-
-    def partial_remove(path: Path) -> None:
-        calls["n"] += 1
-        first = next(p for p in sorted(path.rglob("*")) if p.is_file())
-        first.unlink()
-        raise OSError("interrupted")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(migrate, "_rename", other_device)
-        if dies_in == "copy":
-            patch.setattr(migrate, "_copy_tree", partial_copy)
-        else:
-            patch.setattr(migrate, "_remove_tree", partial_remove)
-        with pytest.raises(OSError, match="interrupted"):
-            _open(folder)
-    assert real_copy is migrate._copy_tree and real_remove is migrate._remove_tree
-    with monkeypatch.context() as patch:
-        patch.setattr(migrate, "_rename", other_device)  # still another device
-        job, _ = _open(folder)
-    _assert_migrated(folder, job)
-
-def _saved_job(root: Path, folder: Path, job_id: str) -> Path:
-    """A phase-2 saved Claude job: the whole job under ``<root>/<id>/``."""
-    old = root / job_id
-    old.mkdir(parents=True)
-    state = _legacy_state(folder, old)
-    _write_legacy(old, state)
-    spec = JobSpec(image_folder=str(folder), preprocess="none", tasks=["position"]).to_dict()
-    (old / "job.json").write_text(json.dumps({
-        "format_version": 1, "job_id": job_id, "created_at": "2026-10-01T00:00:00+00:00",
-        "kind": "folder", "spec": spec, "notes": "old notes", "host_channel": None,
-        "trace_dir": None}))
-    (old / "prompt.txt").write_text("the prompt\n")
-    (old / "result.json").write_text("{}")
-    return old
-
-
-def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import claude_jobs
-    from langslice.doors.mcp.server import open_saved_job
-
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    folder = _folder(tmp_path / "stack")
-    job_id = "abcdef012345"
-    old = _saved_job(tmp_path / "jobs", folder, job_id)
-    job_folder, record = claude_jobs.load_job(job_id)
-    root = folder / "langslice"
-    assert job_folder == root and not old.exists()
-    assert record["kind"] == "folder" and record["notes"] == "old notes"
-    entry = json.loads((tmp_path / "jobs" / f"{job_id}.json").read_text())
-    assert entry["job_folder"] == str(root)
-    assert (root / "prompt.txt").read_text() == "the prompt\n"
-    assert (root / "exports" / "result.json").exists()
-    saved = json.loads((root / "state.json").read_text())
-    assert saved["slices"][0]["deformation"]["record"] == f"sections/s0/deformable/{KEY}"
-    assert (root / f"sections/s0/deformable/{KEY}/record.json").exists()
-    session = open_saved_job(job_id, lambda _n: _ATLAS)
-    assert session.job.folder == root and len(session.job.undo_stack) == 1
-
-
-def test_an_old_saved_job_does_not_move_onto_another_job(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import claude_jobs
-
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    folder = _folder(tmp_path / "stack")
-    job_id = "abcdef012345"
-    old = _saved_job(tmp_path / "jobs", folder, job_id)
-    _open(folder)  # the folder already has its own job
-    with pytest.raises(ValueError, match="already holds a LangSlice job"):
-        claude_jobs.load_job(job_id)
-    assert (old / "job.json").exists() and (old / "linear_state.json").exists()
+    assert path.read_bytes() == held
+    fresh, _ = _open(folder, resume=False)
+    assert json.loads(path.read_text())["format_version"] == STATE_FORMAT_VERSION
+    assert fresh.state.notes[0].startswith("ingest:")
 
 
 # --- the saved pictures ---------------------------------------------------------------------
@@ -662,7 +410,7 @@ def test_a_claude_job_on_a_read_only_folder_lives_under_its_id(
     assert session.job.folder == target
 
 
-# --- a job folder moves with its images (review finding 2, 2026-10-04) -------------------
+# --- a job folder moves with its images ---------------------------------------------------
 
 
 def _create(folder: Path, **spec_kwargs: Any) -> Any:
