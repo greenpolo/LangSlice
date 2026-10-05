@@ -27,7 +27,6 @@ def test_export_schema_bundle_contains_engine_shapes() -> None:
     assert "schemas" in bundle
     assert "EngineRequest" in bundle["schemas"]
     assert "EngineResultEnvelope" in bundle["schemas"]
-    assert "ExportRequest" in bundle["schemas"]
     assert "QuickAffineRequest" not in bundle["schemas"]
     assert "RegisterRequest" not in bundle["schemas"]  # register.run removed 2026-10-04
 

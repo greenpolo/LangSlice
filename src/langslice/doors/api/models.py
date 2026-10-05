@@ -17,7 +17,6 @@ EngineMethod = Literal[
     "claude.prepare",
     "preprocess.preview",
     "linear.estimate",
-    "export.run",
 ]
 ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "version",
@@ -28,7 +27,6 @@ ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "claude.prepare",
     "preprocess.preview",
     "linear.estimate",
-    "export.run",
 )
 
 
@@ -157,26 +155,6 @@ class VersionResult(EngineBaseModel):
     version: str
 
 
-class ExportRequest(EngineBaseModel):
-    image_path: str
-    atlas: str
-    position_mm: float
-    output_path: str
-    affine_matrix: list[list[float]] | None = None
-    output_width: int | None = None
-    output_height: int | None = None
-    rotation_deg: float = 0.0
-    translate_x_pct: float = 0.0
-    translate_y_pct: float = 0.0
-
-
-class ExportResult(EngineBaseModel):
-    output_path: str
-    target: str
-    aligner: str
-    slices: int
-
-
 def export_schema_bundle() -> dict[str, object]:
     models: dict[str, type[BaseModel]] = {
         "EngineError": EngineError,
@@ -195,8 +173,6 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineResultEnvelope": EngineResultEnvelope,
         "EngineErrorEnvelope": EngineErrorEnvelope,
         "VersionResult": VersionResult,
-        "ExportRequest": ExportRequest,
-        "ExportResult": ExportResult,
     }
     return {
         "schema_version": "1",
