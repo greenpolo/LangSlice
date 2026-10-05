@@ -168,9 +168,8 @@ def held_image_folder(folder: Path, held: dict[str, Any]) -> Path | None:
     *folder*) names, as an absolute path, or None when it names none.
 
     A relative value is under the job folder (:data:`IMAGES_ARE_PARENT`: its
-    parent). An absolute one is taken as it is, except a default job folder
-    (named ``langslice``) whose stored folder no longer exists, written
-    before the relative form: its parent, where its images moved with it.
+    parent); an absolute one is taken as it is. Without one, the stored
+    spec's ``image_folder``.
     """
     value = held.get("image_folder")
     if not isinstance(value, str) or not value:
@@ -181,8 +180,6 @@ def held_image_folder(folder: Path, held: dict[str, Any]) -> Path | None:
     path = Path(value)
     if not path.is_absolute():
         return Path(os.path.normpath(os.path.join(os.path.abspath(folder), value)))
-    if not path.is_dir() and Path(folder).name == JOB_DIRNAME:
-        return Path(os.path.abspath(folder)).parent
     return path
 
 
