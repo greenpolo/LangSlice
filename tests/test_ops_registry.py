@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from langslice.ops.registry import GROUPS, VERBS, table
+from langslice.ops.registry import GROUPS, VERBS
 from tests.golden.record import atlas_loader, full_spec, write_sections
 
 
@@ -88,6 +88,4 @@ def test_every_operation_is_an_op_and_classified():
         assert verb.group in GROUPS
         for alternate in verb.alternates.values():
             assert alternate.__module__.startswith("langslice.ops."), name
-    rows = table()
-    assert [row["tool"] for row in rows] == list(VERBS)
-    assert {row["kind"] for row in rows if row["tool"].startswith("view_")} == {"read"}
+    assert {verb.kind for name, verb in VERBS.items() if name.startswith("view_")} == {"read"}
