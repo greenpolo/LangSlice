@@ -2,6 +2,7 @@
 
 The top layer of the layered core: the ABBA integration
 (:mod:`langslice.hosts.integrations`), the engine service the Fiji connector
-starts (:mod:`langslice.hosts.api`), and the host commands ``abba`` and ``serve`` (:mod:`langslice.hosts.cli`, loaded by
-the ``langslice`` command by module path). Nothing below imports a host.
+starts (:mod:`langslice.hosts.api`), and the host commands ``abba`` and
+``serve`` (:mod:`langslice.hosts.cli`, loaded by the ``langslice`` command
+by module path). Nothing below imports a host.
 """
