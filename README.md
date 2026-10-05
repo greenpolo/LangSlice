@@ -39,9 +39,12 @@ conda activate langslice
 langslice login        # ChatGPT sign-in; or set OPENAI_API_KEY / GEMINI_API_KEY (see .env.example)
 ```
 
-Atlases are downloaded by BrainGlobe on first use into `~/.brainglobe/`.
-Python 3.10 or newer. The environment includes the ANTs deformable engine, the
-Claude Desktop server and the ABBA launcher.
+On Windows, run the same `conda env create` and `conda activate` commands in
+Miniforge Prompt or PowerShell with conda initialized. Python 3.11 on Windows
+is tested in CI. Atlases are downloaded by BrainGlobe on first use into the
+user's `.brainglobe` folder. Python 3.10 or newer is required; the environment
+includes the ANTs deformable engine, the Claude Desktop server and the ABBA
+launcher.
 
 ## Ways to use it
 

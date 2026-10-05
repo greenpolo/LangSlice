@@ -215,11 +215,23 @@ class ChatServer:
         self.thread.join(timeout=2)
 
 
-def _browser() -> str:
-    for name in ("google-chrome", "chromium", "chromium-browser", "google-chrome-stable"):
+def _browser(*, windows: bool | None = None) -> str:
+    for name in ("google-chrome", "chromium", "chromium-browser", "google-chrome-stable",
+                 "chrome.exe", "msedge.exe"):
         found = shutil.which(name)
         if found:
             return found
+    if windows is None:
+        windows = os.name == "nt"
+    if windows:
+        for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"),
+                     os.environ.get("LOCALAPPDATA")):
+            if root:
+                for name in ("Google/Chrome/Application/chrome.exe",
+                             "Microsoft/Edge/Application/msedge.exe"):
+                    browser = Path(root) / name
+                    if browser.is_file():
+                        return str(browser)
     raise RuntimeError("A Chromium browser is unavailable; use the Swing activity viewer")
 
 

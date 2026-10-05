@@ -586,15 +586,17 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     release = threading.Event()
 
     def job() -> dict[str, Any]:
-        # Held until released, so a slow first fit still finds it running.
-        release.wait(120)
+        # Held until released, even on a slow CI runner.
+        release.wait()
         return {"status": "error", "error": "TransportError", "message": "no image",
                 "geometry_fingerprint": "now"}
 
     box.job.start_image_job(ID, "now", job, workers=1)
     fit = _tool(box, "fit_deformable")
-    late = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
-    assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]
-    release.set()
+    try:
+        late = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
+        assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]
+    finally:
+        release.set()
     failed = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
     assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]

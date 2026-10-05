@@ -52,6 +52,7 @@ def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
 def test_section_folders_are_stems_unless_two_images_share_one(tmp_path: Path):
     assert section_dirname("s1.png", ["s0.png", "s1.png"]) == "s1"
     assert section_dirname("s1.png", ["s1.png", "s1.tif"]) == "s1.png"
+    assert section_dirname("S1.png", ["S1.png", "s1.tif"]) == "S1.png"
     assert section_dirname("odd:name?.tif") == "odd_name_"
     layout = JobLayout.for_images(tmp_path)
     assert layout.folder == tmp_path / "langslice"
