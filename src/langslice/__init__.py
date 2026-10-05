@@ -84,12 +84,11 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module 'langslice' has no attribute {name!r}")
 
 
-# A response whose only part is a function call makes google-genai's
-# response.text log a WARNING ("non-text parts in the response") through the
-# `google_genai.types` logger. The agent loop reads function calls directly
-# (`event.get_function_calls()`), so the warning is noise that reads like an
-# error in the run's log. Silence that one message; other google_genai
-# warnings stay visible.
+# google-genai warns through the `google_genai.types` logger whenever
+# `response.text` is read from a response whose only part is a function call.
+# The agent loop reads function calls with `event.get_function_calls()`, so
+# the warning is noise that reaches every host's log as if it were an error.
+# Only that message is silenced; other google_genai warnings stay visible.
 import logging as _logging  # noqa: E402
 
 
