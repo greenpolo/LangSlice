@@ -8,7 +8,7 @@
     {
       "name": "langslice",
       "source": "./connectors/claude-code",
-      "description": "Skills for setting up a LangSlice registration job, and registration subagents (MCP, CLI, scripting variants) that register one brain each"
+      "description": "Skills for setting up a LangSlice registration job, and registration subagents (CLI and scripting variants) that register one brain each"
     }
   ]
 }

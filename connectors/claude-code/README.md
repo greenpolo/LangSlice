@@ -78,6 +78,7 @@ run. Replace the path with your job folder (`//` starts an absolute path).
 The scripting variant also needs `Edit(//data/brains/M04/**)`, and the main
 session needs whatever else it should be allowed to do.
 
-## Uncertain
+## Status
 
-- Not run against a live model; `claude plugin validate` and JSON checks pass.
+`claude plugin validate` passes; the plugin has not yet been used for a full
+registration.
