@@ -592,11 +592,19 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
                 "geometry_fingerprint": "now"}
 
     box.job.start_image_job(ID, "now", job, workers=1)
+    real_wait = box.job.wait_image_job
+    pending = True
+
+    def wait(section_id: str, timeout: float) -> bool:
+        return False if pending else real_wait(section_id, timeout)
+
+    monkeypatch.setattr(box.job, "wait_image_job", wait)
     fit = _tool(box, "fit_deformable")
     try:
         late = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
         assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]
     finally:
+        pending = False
         release.set()
     failed = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
     assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]
