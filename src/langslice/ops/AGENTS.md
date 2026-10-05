@@ -5,10 +5,8 @@ project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
 Every write to a stack, and every read a viewing tool makes, is a function
-here (layered refactor, phases 3a and 3b, 2026-10-03; the rest of the tool
-logic and the read verbs, phase 3d, 2026-10-04). The agent tools, the MCP
-server, the agent CLI and scripts (phase 5) call the same
-functions, so a tool and a script do exactly the same write and get the same
+here. The agent tools, the MCP server, the agent CLI and scripts call the
+same functions, so a tool and a script do exactly the same write and get the same
 picture. Each agent tool's body is argument checking, ONE call here and the
 wording; `registry.py` lists which.
 
@@ -48,7 +46,7 @@ wording; `registry.py` lists which.
   is checked by the tool door with its other arguments.
 - A model is passed in, never chosen here: `traces.trace_borders` (and
   `traces.trace_from_atlas`) takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
-  the door resolved (phase 4); the geometry fingerprint is the core's
+  the door resolved; the geometry fingerprint is the core's
   (`core.handoff.correction_fingerprint`).
 - A refusal is `refusal.Refused(code, status="error", **facts)`, nothing
   written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
@@ -75,8 +73,7 @@ wording; `registry.py` lists which.
   (a read: `oblique.fit_oblique` around the section's position, holding the
   section's own angles unless `angles`, the best
   position/angles/score; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`,
-  `FIT_FAILED`). `run_deepslice(job, workspace, ids, allow_angle_change=)`
-  (the `core/deepslice.py` seam: `UNAVAILABLE`).
+  `FIT_FAILED`; offered when the spec's `position.bayesian` is on).
 - `order.py` — `reorder(job, filenames, after)` (one block, filenames only),
   `renumber(order)` (indices only, no undo step).
 - `orientation.py` — `orient_sections(job, entries, workspace=, options=)`:
@@ -99,13 +96,15 @@ wording; `registry.py` lists which.
   with *traces* (the image model is in the run; *workspace* reads each
   section's geometry) and the nonlinear task every section's completed image
   correction (`MISSING_IMAGE_CORRECTIONS`, reported before a missing
-  deformation), then the door's *gate*; then ONE undo step: the interval
+  deformation; the sections the host kept out of Nonlinear need neither),
+  then the door's *gate*; then ONE undo step: the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
   `submit: <summary>` note, `submitted`; then every queued picture written
   (`job.views.flush`) and, with the workspace, every placed section's maps
   and the exports (`exports.export_maps`; a failure is logged, the submit
-  stands). Returns `Submitted` (`exported`).
-- `exports.py` (formats phase) — `export_maps(job, workspace, ids=,
+  stands). Returns `Submitted` (`exported`). Not a long verb: the door
+  holds the job lock for the whole call, the maps included.
+- `exports.py` — `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
   stands, no undo step (a long verb: the stack read under the job lock
   after a sync, each section's maps computed outside it and written under
@@ -123,12 +122,12 @@ wording; `registry.py` lists which.
 - `transforms.py` — the stored transform: `interactive_transform` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (`fit_affine`'s record), `set_transforms(job, {id: record})` (one undo step
-  for the batch; locked sections refused). `KNOBS` lists the knobs in
-  payload order. The shear convention is `affine.decompose_affine`'s.
+  for the batch; locked sections refused). The shear convention is `affine.decompose_affine`'s.
   `fit_affine(job, workspace, records, method=, fit_atlas=, include=,
   exclude=, options=)`: the fitter (`elastix` refining the current placement
   against `fit_atlas`, or `silhouette`), `LOCKED`, `DAMAGED` unless regions
-  restrict the fit, each fit drawn (`core.placement.fit_picture`) before
+  restrict the fit (a restricted fit records its `regions`, and the job's
+  damaged-section gate accepts it), each fit drawn (`core.placement.fit_picture`) before
   every successful fit is written as one undo step; `AffineFit` (`rows`,
   `fitted`, `pictures`). `fit_targets(job)`: the default sections.
   `adjust_transforms(job, workspace, entries, options=)`: per entry the
@@ -138,7 +137,7 @@ wording; `registry.py` lists which.
   every changed record written as one undo step; `Adjusted` (one
   `Adjustment` per entry: `error`, `staged`, `previous`, `transform`,
   `written`, `pictures`).
-- `deformable.py` (phase 3b) — `fit_deformable(job, workspace, records,
+- `deformable.py` — `fit_deformable(job, workspace, records,
   choices, include=, exclude=, start=)`: the deformation on top of each
   section's linear placement. The door validates the arguments and resolves
   each candidate into a `deformation.Choice`; this runs every fit (the fit
@@ -170,12 +169,15 @@ wording; `registry.py` lists which.
   geometry is `core.handoff.correction_fingerprint`;
   `registration_tool.start_correction` prepares the edit for *image_model*
   (resolved by the door: the toolbox's `build_tools(image_model=...)`
-  binding) and returns the record and the call to run. A call already running at that
-  geometry is not started again (`running`); otherwise the call runs on the
-  job's image executor and the section's `image_correction` record is
-  written as one undo step when it changed. `UNKNOWN_SECTION`,
-  `INVALID_LINEAR_PLACEMENT`, `IMAGE_CORRECTION_IO_ERROR`. Returns
-  `TraceStarted`.
+  binding) and returns the record and the call to run. A call already
+  running at that geometry is not started again (`running`); otherwise the
+  call runs on the job's image executor and the section's
+  `image_correction` record is written as one undo step when it changed.
+  Prepared outside the lock, started and written under it. Refused:
+  `UNKNOWN_SLICE_IDS`, `KEEPS_HOST_WARP` / `NONLINEAR_SKIPPED`
+  (`Job.nonlinear_refusal`), `INVALID_LINEAR_PLACEMENT`,
+  `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
+  call was prepared). Returns `TraceStarted`.
   `trace_from_atlas(job, workspace, refs, image_model=, passes=1,
   workers=)`: the placement-free route "atlas" as a job verb, a HIDDEN
   scripting verb (kept for experiments, called by name, listed nowhere):
@@ -188,10 +190,11 @@ wording; `registry.py` lists which.
   written transform. Prepared outside the lock; under it each section's
   geometry is checked again (`STALE_INPUT` row), its call started, its
   record written; every changed record ONE undo step. Per-section rows
-  (`UNKNOWN_SECTION`, `INVALID_LINEAR_PLACEMENT`,
-  `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT`, `running`); `BAD_ARGS` for
-  no sections or `passes` not 1/2. Returns `AtlasTraces` (`rows`,
-  `written`).
+  (`UNKNOWN_SLICE_IDS`, `KEEPS_HOST_WARP` / `NONLINEAR_SKIPPED`,
+  `INVALID_LINEAR_PLACEMENT`, `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT`,
+  `running`); `BAD_ARGS` for no sections or `passes` not 1/2. Returns
+  `AtlasTraces` (`rows`, `written`). Both verbs share one prepare step
+  (outside the lock) and one apply step (under it).
 - `inputs.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
   position, plane, angles, flip, rotation, transform; its fit appearance;
@@ -215,8 +218,7 @@ wording; `registry.py` lists which.
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
   "Nonlinear", alternates, when, long, scripting, image_model, hidden)`, in
   the order every door lists them; `enabled(spec, scripting=, image_model=,
-  hidden=)`
-  (phase 5): the verbs a run of the spec has (`when`: the task switches and
+  hidden=)`: the verbs a run of the spec has (`when`: the task switches and
   host switches that were `build_tools`' if-chain; `image_model` False
   leaves out the verbs that call the image model, `trace_borders`, for a
   door that cannot reach it: MCP with none connected). A `scripting` verb (`export_maps`, a "read":
@@ -227,9 +229,9 @@ wording; `registry.py` lists which.
   (what `build_tools(scripting=True)` passes, so the CLI and the library
   call it by name) and in no listing: `listed()` (every verb but the hidden
   ones) is what `langslice ops`, `langslice schema` without a verb, the job
-  folder's card, the library's `verbs` and the CLI's `verbs` lists show;
-  `table()` as plain rows. `fit_deformable`'s alternate is `keep_linear`.
-  Every door is built from it (phase 5): `build_tools` makes the tools
+  folder's card, the library's `verbs` and the CLI's `verbs` lists show.
+  `fit_deformable`'s alternate is `keep_linear`. Every door is built from
+  it: `build_tools` makes the tools
   `enabled(spec)` names (the ADK and MCP doors), the MCP door's
   `readOnlyHint` is `kind == "read"`, and the agent CLI (`langslice ops`,
   `schema`, `job FOLDER VERB`), the library's job methods and the job
