@@ -6,9 +6,9 @@ the whole table); every write is undoable and checkpoints. Transform writes
 return their physical result and omit a generic row that would repeat it.
 
 Tools report data: no advice, no interpretation, no strategy in any payload
-(the job statement's optional "Method:" section is the one place for
-strategy). A constraint that states a number is not coaching: refusals name
-the numbers that caused them and stop there.
+(the job statement's "Method:" section is the one place for strategy). A
+constraint that states a number is not coaching: refusals name the numbers
+that caused them and stop there.
 
 The tools are a door over the core and the job: they check arguments, keep
 the look-before-commit gates and the delivery bookkeeping, call the
