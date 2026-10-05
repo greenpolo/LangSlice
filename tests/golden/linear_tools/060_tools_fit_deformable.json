@@ -5,23 +5,28 @@
   ]
  ],
  "data": {
-  "applied": false,
-  "description": "Preview: nothing was written. One picture per result (image_indexes): the final atlas borders on the section image the fit read; then, per traced section (`traces`), the image model's traced lines on the section.",
+  "applied": true,
+  "description": "Applied: each section's deformation is now this fit (one undo step). One picture per result (image_indexes): the final atlas borders on the section image the fit read.",
   "render_failed": [],
   "results": [
    {
     "cached": false,
-    "candidate": 1,
     "displacement_mm": {
-     "max": 0.156,
-     "median": 0.029
+     "max": 0.178,
+     "median": 0.095
     },
     "engine_settings": {
-     "bending_weight": 0.001,
-     "grid_spacing_mm": 0.4,
-     "iterations": 300,
-     "metric": "mean_squares",
-     "resolutions": 2,
+     "correlation_radius_um": 80.0,
+     "edge_channel": true,
+     "iterations": [
+      80,
+      50,
+      25
+     ],
+     "label_map": "auto",
+     "metric": "local_correlation",
+     "total_sigma_mm": 0.02,
+     "update_sigma_mm": 0.08,
      "working_um": 40.0
     },
     "flags": [],
@@ -32,54 +37,17 @@
     ],
     "runtime_s": "<seconds>",
     "settings": {
-     "engine": "elastix",
-     "fit_atlas": "borders",
-     "fit_section": "traced_lines",
-     "stiffness": "medium"
-    },
-    "status": "ok"
-   },
-   {
-    "cached": false,
-    "candidate": 2,
-    "displacement_mm": {
-     "max": 0.272,
-     "median": 0.102
-    },
-    "engine_settings": {
-     "bending_weight": 0.01,
-     "edge_channel": true,
-     "grid_spacing_mm": 0.25,
-     "iterations": 300,
-     "metric": "mutual_information",
-     "resolutions": 2,
-     "working_um": 40.0
-    },
-    "flags": [],
-    "fold_fraction": 0.0,
-    "id": "s0.png",
-    "image_indexes": [
-     1
-    ],
-    "runtime_s": "<seconds>",
-    "settings": {
-     "engine": "elastix",
+     "engine": "ants",
      "fit_atlas": "ara",
      "fit_section": "fit",
-     "stiffness": "soft"
+     "stiffness": "medium"
     },
-    "status": "ok"
+    "status": "ok",
+    "steps": 1,
+    "written": true
    }
   ],
   "status": "ok",
-  "traces": [
-   {
-    "id": "s0.png",
-    "image_indexes": [
-     2
-    ]
-   }
-  ],
   "view": {
    "atlas_channels": [
     "borders"
@@ -105,36 +73,9 @@
     272,
     245
    ]
-  },
-  {
-   "file": "060_tools_fit_deformable.1.png",
-   "mode": "RGB",
-   "size": [
-    272,
-    245
-   ]
-  },
-  {
-   "file": "060_tools_fit_deformable.2.png",
-   "mode": "RGB",
-   "size": [
-    272,
-    243
-   ]
   }
  ],
- "kwargs": {
-  "candidates": [
-   {
-    "engine": "elastix",
-    "fit_section": "traced_lines"
-   },
-   {
-    "engine": "elastix",
-    "stiffness": "soft"
-   }
-  ]
- },
+ "kwargs": {},
  "media_texts": [],
  "tool": "fit_deformable"
 }

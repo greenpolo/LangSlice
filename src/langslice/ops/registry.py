@@ -112,8 +112,6 @@ VERBS: dict[str, Verb] = _verbs(
                                                              "nonlinear"))),
     Verb("view_stack", views.view_stack, "read", "Positioning",
          when=lambda spec: spec.has("position")),
-    Verb("run_deepslice", positions.run_deepslice, "write", "Positioning",
-         when=lambda spec: spec.has("position") and spec.position.deepslice),
     Verb("search_position", positions.search_position, "read", "Positioning",
          when=lambda spec: spec.has("position") and spec.position.bayesian),
     # Orientation (flip + quarter-turn) is part of in-plane alignment.

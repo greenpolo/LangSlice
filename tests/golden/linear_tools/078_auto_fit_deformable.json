@@ -5,14 +5,76 @@
   ]
  ],
  "data": {
-  "error": "NO_IMAGE_MODEL",
-  "message": "This run has no image model, so there are no traced fit sections; use 'fit'.",
-  "status": "error"
+  "applied": true,
+  "description": "Applied: each section's deformation is now this fit (one undo step). One picture per result (image_indexes): the final atlas borders on the section image the fit read.",
+  "render_failed": [],
+  "results": [
+   {
+    "cached": false,
+    "displacement_mm": {
+     "max": 0.158,
+     "median": 0.081
+    },
+    "engine_settings": {
+     "bending_weight": 0.05,
+     "edge_channel": true,
+     "grid_spacing_mm": 0.4,
+     "iterations": 300,
+     "metric": "mutual_information",
+     "resolutions": 2,
+     "working_um": 40.0
+    },
+    "flags": [],
+    "fold_fraction": 0.0,
+    "id": "s0.png",
+    "image_indexes": [
+     0
+    ],
+    "runtime_s": "<seconds>",
+    "settings": {
+     "engine": "elastix",
+     "fit_atlas": "ara",
+     "fit_section": "fit",
+     "stiffness": "medium"
+    },
+    "status": "ok",
+    "steps": 1,
+    "written": true
+   }
+  ],
+  "status": "ok",
+  "view": {
+   "atlas_channels": [
+    "borders"
+   ],
+   "border_color": "#ffff00",
+   "border_thickness": 1.0,
+   "mode": "borders",
+   "outlines": "all",
+   "resolution": 300,
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
  },
  "door": "auto",
- "images": [],
+ "images": [
+  {
+   "file": "078_auto_fit_deformable.0.png",
+   "mode": "RGB",
+   "size": [
+    272,
+    245
+   ]
+  }
+ ],
  "kwargs": {
-  "fit_section": "traced_lines"
+  "view": {
+   "resolution": 300
+  }
  },
  "media_texts": [],
  "tool": "fit_deformable"

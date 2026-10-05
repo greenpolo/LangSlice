@@ -263,7 +263,7 @@ def make_view_atlas(job: Job, ctx: EngineContext, max_view_edge: int, level: str
 def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
     if name in {"view_stack", "status", "undo", "redo", "submit",
-                "set_cutting_angles", "run_deepslice"} or (
+                "set_cutting_angles"} or (
                     name == "preprocess" and not args.get("slices")):
         return [record.id for record in state.in_order()]
     if name == "fit_affine" and not args.get("slices"):
@@ -1123,13 +1123,6 @@ def build_tools(
         result[TOOL_MEDIA_PARTS_KEY] = list(pictured.pictures)
         return result
 
-    def run_deepslice(
-        slices: list[str], allow_angle_change: bool, keep: list[str]
-    ) -> dict[str, Any]:
-        del keep
-        return ops_positions.run_deepslice(job, ctx, list(slices or []),
-                                           allow_angle_change=bool(allow_angle_change))
-
     def search_position(id: str, window_mm: float, angles: bool) -> dict[str, Any]:
         try:
             found = ops_positions.search_position(job, ctx, id, window_mm, angles=bool(angles))
@@ -1750,7 +1743,7 @@ def build_tools(
         "undo": undo, "redo": redo, "mark_damaged": mark_damaged, "preprocess": preprocess,
         "reorder_slices": reorder_slices, "set_positions": set_positions,
         "view_placement": view_placement, "view_stack": view_stack,
-        "run_deepslice": run_deepslice, "search_position": search_position,
+        "search_position": search_position,
         "orient_slices": orient_slices, "fit_affine": fit_affine,
         "adjust_transforms": adjust_transforms, "set_cutting_angles": set_cutting_angles,
         "trace_borders": trace_borders, "trace_from_atlas": trace_from_atlas,
