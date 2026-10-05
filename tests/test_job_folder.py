@@ -447,7 +447,7 @@ def test_a_job_folder_moves_with_its_images(tmp_path: Path, monkeypatch: Any):
     job.set_positions(entries=[{"id": "s0.png", "position_mm": 0.1}])
     job.close()
     registration = json.loads((moved / "langslice" / "registration.json").read_text())
-    assert registration["image_folder"] == str(moved)
+    assert registration["image_folder"] == ".."
     again = _create(moved)  # a host opening the moved folder resumes the job
     assert again.job.state.by_id("s0.png").position_mm == 0.1
 
