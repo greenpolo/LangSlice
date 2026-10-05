@@ -580,7 +580,7 @@ def test_the_frame_cache_is_bounded(placed, monkeypatch):
     assert len(workspace.frame_cache) == 2
 
 
-# --- export_maps beside other writers (review finding 6, 2026-10-04) -----------------
+# --- export_maps beside other writers-----------------
 
 
 def _two_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: Any) -> tuple[Any, Any]:

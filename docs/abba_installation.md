@@ -6,12 +6,10 @@ entry opens LangSlice, and Fiji's **Plugins > LangSlice > LangSlice setup…** o
 setup. You may install the Fiji plugin or the Python environment first.
 Account setup is done inside ABBA. Command-line login is optional.
 
-**Distribution status:** this is a source-build preview. A public Fiji update
-site and conda package have not been published. Do not use a purported
-`conda install langslice` command yet. The environment-file installation below
-installs the worker using pip inside conda. See the
-[distribution notes](https://github.com/greenpolo/LangSlice/blob/main/packaging/README.md)
-for the remaining conda packaging prerequisite.
+**Distribution:** the connector and the Python environment are installed
+from source; there is no Fiji update site or conda package (the conda package
+needs `itk-elastix`, which conda-forge does not publish; see
+[`packaging/README.md`](https://github.com/greenpolo/LangSlice/blob/main/packaging/README.md)).
 
 ## Install the Python environment
 
@@ -43,11 +41,6 @@ For this source preview, build the connector following
 copy `langslice-fiji-0.2.0.jar` into Fiji's `jars` folder, and restart Fiji before
 opening ABBA. Keep only one version of the connector installed.
 
-The planned public distribution is a LangSlice Fiji update site. Once published,
-users will enable that site in Fiji's updater, apply changes, and restart Fiji;
-no Java build will be needed. Standalone ABBA installations need an appropriate
-plugin installation path; inclusion in ABBA's own installer is not required for
-the Fiji route.
 
 ## Set up LangSlice in ABBA
 
@@ -105,7 +98,8 @@ Register menu). The dialog has three tabs:
 
 Choose the agent model at the top, and the image model for Nonlinear (or **None (fit
 to the stain only)**), check the estimated cost at the bottom, and click **Run**.
-**Open agent viewer** is available only when ABBA was started with `langslice abba`. Your choices are remembered for the next run. Tick **Save traces to**
+**Open agent viewer** is available only when ABBA was started with `langslice abba`.
+Your choices are remembered for the next run. Tick **Save traces to**
 to keep a full record of what the agent saw and did in a folder of your choice;
 it is useful when reporting a problem.
 
@@ -133,6 +127,6 @@ langslice version
 langslice login
 ```
 
-The older `langslice abba` command starts ABBA from Python and is a separate
-development route. It requires `langslice[abba]`, OpenJDK and Maven; it is not
-needed by the Fiji connector.
+`langslice abba` starts ABBA from Python, with the connector, the agent viewer and
+the agent log; it needs `pip install -e ".[abba]"`, Java 21 and the connector jar.
+The connector does not need it.

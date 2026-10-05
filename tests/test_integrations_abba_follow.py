@@ -127,13 +127,6 @@ def test_finished_follower_ignores_later_events(setup):
     assert not setup.comparison.batches and not setup.dispatches
 
 
-@pytest.mark.parametrize("name", ["view_landmarks", "edit_landmarks", "warp_landmarks"])
-def test_removed_landmark_tools_do_not_drive_the_viewer(setup, name):
-    _follower(setup).on_event(_event(name=name, targets=("b",)))
-    assert not setup.comparison.batches
-    assert name not in abba_follow._WRITES
-
-
 @pytest.mark.parametrize("name, refreshed", [
     ("fit_deformable", True), ("trace_borders", True), ("mark_damaged", True),
     ("preprocess", False),

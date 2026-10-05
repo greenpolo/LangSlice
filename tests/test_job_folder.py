@@ -24,6 +24,7 @@ from langslice.job.job import Job
 from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, section_dirname
 from langslice.job.views import flush_all
 from tests.fakes import SlabAtlas
+from tests.linear_tool_helpers import tool_named as _tool
 
 _ATLAS = SlabAtlas()
 KEY = "0123456789abcdef01234567"
@@ -43,10 +44,6 @@ def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
                    **spec_kwargs)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
     return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path), ctx
-
-
-def _tool(box: Any, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 # --- the layout --------------------------------------------------------------------------

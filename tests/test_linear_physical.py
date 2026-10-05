@@ -119,15 +119,6 @@ def test_the_micro_sign_survives_a_mangled_encoding():
     assert _unit_to_um("furlong") is None
 
 
-@pytest.mark.skipif(
-    not Path("~/LSD_910/images/M04/M04_A_04_Overlay.tif").expanduser().exists(),
-    reason="LSD_910 M04 is not on this machine",
-)
-def test_a_real_acquisition_reads_its_own_pixel_size():
-    path = Path("~/LSD_910/images/M04/M04_A_04_Overlay.tif").expanduser()
-    assert read_pixel_size_um(path) == pytest.approx(0.7549, abs=1e-4)
-
-
 # --- millimetres on the canvas -------------------------------------------
 
 

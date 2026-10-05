@@ -3,7 +3,8 @@
 from langslice.agent.plugins import ToolMediaDeliveryPlugin, WorkingSetImages
 from langslice.agent.session import build_plugins
 from tests.linear_tool_helpers import single_adjust
-from tests.test_linear_toolbox import _box, _tool
+from tests.linear_tool_helpers import tool_named as _tool
+from tests.test_linear_toolbox import _box
 
 
 def test_baseline_has_no_acceptance_tool_or_inspection_gate(tmp_path):
