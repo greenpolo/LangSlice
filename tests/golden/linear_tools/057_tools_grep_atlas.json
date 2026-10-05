@@ -1,26 +1,29 @@
 {
  "args": [
-  "TH"
+  "ST"
  ],
  "data": {
   "matches": 1,
-  "query": "TH",
+  "query": "ST",
   "rows": [
    {
-    "acronym": "TH",
+    "acronym": "STR",
     "ancestry": [
      "root"
     ],
-    "id": 4,
+    "id": 3,
+    "in_section": true,
     "n_descendants": 0,
-    "name": "TH"
+    "name": "STR"
    }
   ],
   "status": "ok"
  },
  "door": "tools",
  "images": [],
- "kwargs": {},
+ "kwargs": {
+  "section": "s0.png"
+ },
  "media_texts": [],
  "tool": "grep_atlas"
 }

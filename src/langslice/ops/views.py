@@ -103,8 +103,8 @@ def view_slices(
             failed.append({"id": record.id, "message": str(exc)})
             continue
         shown.append(record.id)
-    channels = ({record.id: list(workspace.section_channels(record.id)[0]) for record in records}
-                if options.mode == "channels" else {})
+    channels = ({section_id: list(workspace.section_channels(section_id)[0])
+                 for section_id in shown} if options.mode == "channels" else {})
     return SectionsView(pictures=pictures, shown=shown, failed=failed, channels=channels)
 
 

@@ -21,12 +21,11 @@ from typing import Any
 from langslice.core.spec import JobSpec
 from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import prepare_linear
-from langslice.job import index, migrate
+from langslice.job import index
 from langslice.job.job import refuse_changed_inputs
 from langslice.job.layout import (
     JobLayout,
     check_owner,
-    job_folder_for,
     locate_job_folder,
     read_job_file,
     write_job_file,
@@ -159,7 +158,7 @@ def _write_job(
     image_folder: Path, host: dict[str, Any], *, spec: JobSpec,
     channel: dict[str, Any] | None, notes: str = "",
 ) -> tuple[str, JobLayout]:
-    """Save the job: its folder located, upgraded and checked (another image
+    """Save the job: its folder located and checked (another image
     folder's job, and with ``spec.resume`` a checkpoint made from other
     inputs, are refused before anything is written), ``job.json`` (the
     user's *notes* under ``notes``, which every door reads:
@@ -170,8 +169,6 @@ def _write_job(
                                          job_id=job_id, register=False)
     layout = JobLayout(folder, images)
     check_owner(layout)
-    if layout.folder == job_folder_for(images):
-        migrate.migrate_beside_images(layout)
     if spec.resume:
         refuse_changed_inputs(layout, spec)
     layout.ensure()
@@ -186,18 +183,13 @@ def _write_job(
 
 def load_job(job_id: str) -> tuple[Path, dict[str, Any]]:
     """``(job folder, record)`` of a saved job; the record is the job file's
-    ``host`` fields plus ``job_id``, ``spec`` and ``host_channel``.
-
-    A phase-2 saved job is moved into its job folder first.
-    """
+    ``host`` fields plus ``job_id``, ``spec`` and ``host_channel``."""
     if not isinstance(job_id, str) or re.fullmatch(r"[0-9a-f]{12}", job_id) is None:
         raise ValueError("Invalid LangSlice job id")
     root = jobs_root()
     entry = index.lookup(root, job_id)
     if entry is None:
-        if not (index.legacy_dir(root, job_id) / "job.json").exists():
-            raise ValueError(f"No saved LangSlice job {job_id}")
-        entry = migrate.migrate_saved_job(root, job_id)
+        raise ValueError(f"No saved LangSlice job {job_id}")
     layout = JobLayout(Path(entry["job_folder"]))
     data = read_job_file(layout)
     if data is None or not isinstance(data.get("host"), dict):

@@ -131,6 +131,32 @@ def test_submit_requires_completed_correction_at_current_geometry(tmp_path, monk
     assert not state.submitted
 
 
+@pytest.mark.parametrize("key,code", [("keep_warp", "KEEPS_HOST_WARP"),
+                                      ("nonlinear_skip", "NONLINEAR_SKIPPED")])
+def test_sections_kept_out_of_nonlinear_need_no_trace_and_no_deformation(
+        tmp_path, monkeypatch, key, code):
+    """A section the host keeps out of Nonlinear is refused by the traces and
+    skipped by both submit gates, so the run can still submit."""
+    from langslice.ops import traces
+
+    state, ctx, spec = _stack(
+        tmp_path, n=2, placed=True, tasks=["nonlinear"], inputs={key: ["s1.png"]},
+        nonlinear=NonlinearSpec(provider="openai-api", image_model="test-model"))
+    apply_host_inputs(state, spec)
+    for record in state.slices:
+        record.transform = {"kind": "interactive", "params": [1, 0, .1, 0, 1, .2],
+                            "calibration": {"section_um_per_px": 25, "source": "host"}}
+    state.slices[0].image_correction = {"status": "ok", "geometry_fingerprint": "current"}
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
+    box = build_tools(state, ctx, spec)
+    assert _tool(box, "trace_borders")("s1.png")["error"] == code
+    rows = traces.trace_from_atlas(box.job, ctx, ["s1.png"], image_model=None).rows  # type: ignore[arg-type]
+    assert [row["error"] for row in rows] == [code]
+    _tool(box, "fit_deformable")(["s0.png"], keep_linear="The placement already fits.")
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
+    assert state.slices[1].deformation is None
+
+
 def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_path, monkeypatch):
     from langslice.core.nonlinear import registration_tool
 

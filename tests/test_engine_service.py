@@ -6,8 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from langslice.doors.api import runtime
-from langslice.doors.api.models import EngineLogEvent, EngineRequest, ExportResult
+from langslice.doors.api.models import EngineRequest
 from langslice.hosts.api.service import handle_request, run_stdio
 
 
@@ -58,8 +57,8 @@ def test_validation_error_returns_error() -> None:
         json.dumps(
             {
                 "id": "2",
-                "method": "export.run",
-                "params": {"atlas": "allen_mouse_25um"},
+                "method": "linear.estimate",
+                "params": {"spec": {}},
             }
         )
     )
@@ -69,48 +68,13 @@ def test_validation_error_returns_error() -> None:
     assert error["code"] == "validation_error"
 
 
-def test_progress_events_are_emitted_before_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run_export(request, emit=None):  # noqa: ANN001
-        assert request.image_path == "slice.png"
-        if emit is not None:
-            emit(EngineLogEvent(kind="log", message="starting"))
-        return ExportResult(output_path="out.json", target="t", aligner="a", slices=1)
-
-    monkeypatch.setattr(runtime, "run_export", fake_run_export)
-    messages = _run_lines(
-        json.dumps(
-            {
-                "id": "3",
-                "method": "export.run",
-                "params": {
-                    "image_path": "slice.png",
-                    "atlas": "allen_mouse_25um",
-                    "position_mm": 5.0,
-                    "output_path": "out.json",
-                },
-            }
-        )
-    )
-    event = cast(dict[str, Any], messages[0]["event"])
-    assert len(messages) == 2
-    assert messages[0]["type"] == "event"
-    assert event["kind"] == "log"
-    assert messages[1]["type"] == "result"
-
-
 def test_validation_error_for_unknown_param_key() -> None:
     messages = _run_lines(
         json.dumps(
             {
                 "id": "4",
-                "method": "export.run",
-                "params": {
-                    "image_path": "slice.png",
-                    "atlas": "allen_mouse_25um",
-                    "position_mm": 5.0,
-                    "output_path": "out.json",
-                    "plaen": "coronal",
-                },
+                "method": "linear.estimate",
+                "params": {"spec": {}, "n_slices": 3, "plaen": "coronal"},
             }
         )
     )

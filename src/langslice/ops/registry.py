@@ -11,7 +11,7 @@ Linear (``transform``) or Nonlinear (``nonlinear``), as
 task (``view_placement`` with Linear or Nonlinear alone) is listed under the
 group that introduces it.
 
-Every door is generated from this list (phase 5): the agent tools and the
+Every door is generated from this list: the agent tools and the
 MCP tools (``build_tools`` builds the verbs :func:`enabled` names for the
 run, in this order, each one declared by
 :mod:`langslice.doors.declarations`), the agent CLI (``langslice ops``,
@@ -112,8 +112,8 @@ VERBS: dict[str, Verb] = _verbs(
                                                              "nonlinear"))),
     Verb("view_stack", views.view_stack, "read", "Positioning",
          when=lambda spec: spec.has("position")),
-    Verb("run_deepslice", positions.run_deepslice, "write", "Positioning",
-         when=lambda spec: spec.has("position") and spec.position.deepslice),
+    # The oblique plane fit around a section's position (``oblique.fit_oblique``),
+    # switched on by the spec's ``position.bayesian``.
     Verb("search_position", positions.search_position, "read", "Positioning",
          when=lambda spec: spec.has("position") and spec.position.bayesian),
     # Orientation (flip + quarter-turn) is part of in-plane alignment.
@@ -166,12 +166,3 @@ def listed() -> dict[str, Verb]:
     """Every verb a listing shows (``langslice ops``, ``langslice schema``,
     the job folder's card): :data:`VERBS` without the hidden ones."""
     return {name: verb for name, verb in VERBS.items() if not verb.hidden}
-
-
-def table() -> list[dict[str, str]]:
-    """The registry as plain rows: tool, operation, kind, group."""
-    return [
-        {"tool": verb.name, "operation": f"{verb.function.__module__}.{verb.function.__name__}",
-         "kind": verb.kind, "group": verb.group}
-        for verb in VERBS.values()
-    ]

@@ -88,7 +88,7 @@ def _spec(**fields: Any) -> JobSpec:
     (_spec(tasks=["position"], position=PositionSpec(deepslice=True, bayesian=True),
            agent_preprocessing=True),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "mark_damaged",
-      "preprocess", "set_positions", "view_placement", "view_stack", "run_deepslice",
+      "preprocess", "set_positions", "view_placement", "view_stack",
       "search_position", "submit"]),
     (_spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none")),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "mark_damaged",

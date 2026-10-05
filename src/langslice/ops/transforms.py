@@ -34,13 +34,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The knobs of a transform, in the order every payload lists them. ``shear``
-#: is :func:`langslice.core.affine.decompose_affine`'s (0: none).
-KNOBS: tuple[str, ...] = (
-    "rotation_deg", "scale_x", "scale_y", "translate_x_mm", "translate_y_mm", "shear",
-)
-
-
 def interactive_transform(
     *,
     size: tuple[int, int],
@@ -56,8 +49,10 @@ def interactive_transform(
     *size* and *um_per_px* are the section's working frame and its
     calibration; *pivot* is the rotation/scale centre on that frame (None:
     its centre) and *pivot_frac* the same point as canvas fractions, which
-    the record keeps beside the knobs. *knobs* are :data:`KNOBS` (``shear``
-    may be left out: none); the record's ``physical`` lists all six, so a
+    the record keeps beside the knobs. *knobs* are ``rotation_deg``,
+    ``scale_x``, ``scale_y``, ``translate_x_mm``, ``translate_y_mm`` and
+    ``shear`` (:func:`langslice.core.affine.decompose_affine`'s; may be left
+    out: none); the record's ``physical`` lists all six, so a
     tweak that copies a fit's knobs, shear included, keeps the fit's map.
     """
     knobs = {**knobs, "shear": knobs.get("shear", 0.0)}
@@ -135,11 +130,6 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
 
 
 # --- fit_affine ------------------------------------------------------------------------
-
-#: ``fit_affine``'s methods: an intensity affine refining the current
-#: placement (default), or the whole-outline silhouette fit from scratch.
-FIT_METHODS: tuple[str, ...] = ("elastix", "silhouette")
-
 
 def fit_targets(job: Job) -> list[SliceState]:
     """The sections ``fit_affine`` fits when none are named: every positioned,
@@ -236,8 +226,7 @@ def fit_affine(
             continue
         fits.append((record, outcome))
         if options is not None:
-            # Every fit returns its picture (run 15, 2026-09-10: a
-            # 25-section fit pictured 4 and the model never saw 21).
+            # Every fit returns its picture, however many sections the call fits.
             outcome["image_indexes"] = list(range(len(pictures), len(pictures) + len(panels)))
             pictures.extend(panels)
     with job.writing():
@@ -327,7 +316,7 @@ def adjust_transforms(
 
     An entry is ``{"id", "rotation_deg", "scale_x", "scale_y",
     "translate_x_mm", "translate_y_mm", "shear"?, "pivot"?, "note"?}``
-    (:data:`KNOBS`; *pivot* "canvas" (default), "tissue" or ``[fx, fy]``
+    (*pivot* "canvas" (default), "tissue" or ``[fx, fy]``
     canvas fractions). A left-out ``shear`` keeps the section's current
     shear (0 without one); an explicit 0 drops it. The record replaces the
     whole transform, spline included; the flip and rotation flags are not

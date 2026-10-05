@@ -1,0 +1,19 @@
+{
+ "args": [
+  [
+   "s0.png"
+  ]
+ ],
+ "data": {
+  "error": "NO_IMAGE_MODEL",
+  "message": "This run has no image model, so there are no traced fit sections; use 'fit'.",
+  "status": "error"
+ },
+ "door": "auto",
+ "images": [],
+ "kwargs": {
+  "fit_section": "traced_lines"
+ },
+ "media_texts": [],
+ "tool": "fit_deformable"
+}

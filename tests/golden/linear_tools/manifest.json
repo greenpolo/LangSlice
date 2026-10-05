@@ -1,5 +1,5 @@
 {
- "calls": 144,
+ "calls": 143,
  "tools_auto_spec": [
   "adjust_transforms",
   "fit_affine",
@@ -29,7 +29,6 @@
   "preprocess",
   "redo",
   "reorder_slices",
-  "run_deepslice",
   "search_position",
   "set_cutting_angles",
   "set_positions",
@@ -53,7 +52,6 @@
   "preprocess",
   "redo",
   "reorder_slices",
-  "run_deepslice",
   "search_position",
   "set_cutting_angles",
   "set_positions",

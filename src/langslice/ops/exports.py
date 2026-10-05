@@ -181,6 +181,7 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
     under the job lock."""
     from langslice.core.maps import placement_problem, residual_markers, section_frame
     from langslice.job import formats
+    from langslice.job.checkpoint import write_json_atomic
 
     state = job.state
     layout = job.layout
@@ -210,7 +211,8 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
         for name, kind, rows in ((formats.QUICKNII_FILE, "quicknii", sections_linear),
                                  (formats.VISUALIGN_FILE, "visualign", sections_markers)):
             try:
-                path = formats.write_json(exports_dir / name, job_export(rows, facts))
+                path = exports_dir / name
+                write_json_atomic(str(path), job_export(rows, facts))
             except (OSError, ValueError, KeyError):
                 logger.warning("Could not write %s", name, exc_info=True)
                 continue

@@ -13,8 +13,8 @@ candidate into a :class:`~langslice.core.deformation.Choice`); what can go
 wrong per section (no valid placement, ``start="current"`` with nothing to
 compose onto, a trace that is missing, stale or failed, a fit that failed,
 a record that cannot be saved) is that section's row, not a refusal of the
-call. No pictures: the result carries the image each fit read and its
-records, which the door draws.
+call. With display options, :func:`pictures` draws each fit and each
+traced section's trace through the core.
 """
 
 from __future__ import annotations

@@ -1,0 +1,18 @@
+{
+ "args": [
+  "s1.png"
+ ],
+ "data": {
+  "attempt": 1,
+  "cached": false,
+  "id": "s1.png",
+  "message": "Image call started in the background. Continue; submit waits for it.",
+  "prompt_edited": false,
+  "status": "running"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "trace_borders"
+}

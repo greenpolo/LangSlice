@@ -18,7 +18,7 @@ from langslice.job.checkpoint import (
     STATE_FORMAT_VERSION,
     load_checkpoint,
     read_checkpoint,
-    save_checkpoint,
+    write_checkpoint,
 )
 from langslice.job.history import HISTORY_FORMAT_VERSION
 from langslice.job.job import UNDO_DEPTH, Job
@@ -112,22 +112,12 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
 # --- versioned files ---------------------------------------------------------------
 
 
-def test_the_checkpoint_is_versioned_and_an_unversioned_one_still_opens(tmp_path: Path):
+def test_the_checkpoint_is_versioned(tmp_path: Path):
     folder = _folder(tmp_path)
-    job, ctx = _open(folder)
+    _job, ctx = _open(folder)
     saved = json.loads(Path(ctx.checkpoint_path).read_text())
     assert saved["format_version"] == STATE_FORMAT_VERSION
-
-    # A checkpoint from before versioning: the same fields, no version.
-    del saved["format_version"]
-    saved["slices"][0]["position_mm"] = 3.25
-    Path(ctx.checkpoint_path).write_text(json.dumps(saved))
-    assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").position_mm == 3.25
-    again, _ = _open(folder)
-    assert again.state.by_id("s0.png").position_mm == 3.25
-    # Upgraded on open: the next write is the current format.
-    assert json.loads(Path(ctx.checkpoint_path).read_text())["format_version"] == (
-        STATE_FORMAT_VERSION)
+    assert load_checkpoint(ctx.checkpoint_path) is not None
 
 
 def test_a_checkpoint_from_a_newer_langslice_is_refused(tmp_path: Path):
@@ -183,13 +173,13 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
 def test_an_unchanged_or_half_written_file_is_not_a_step(tmp_path: Path):
     folder = _folder(tmp_path)
     job, ctx = _open(folder)
-    save_checkpoint(job.state, ctx.checkpoint_path)  # rewritten, same content
+    write_checkpoint(job.state, ctx.checkpoint_path)  # rewritten, same content
     assert job.sync() is None and job.undo_stack == []
 
     Path(ctx.checkpoint_path).write_text('{"slices": [')  # a script mid-write
     assert job.sync() is None and job.undo_stack == []
-    Path(ctx.checkpoint_path).write_text(
-        json.dumps({**job.state.to_dict(), "notes": ["finished"]}))
+    Path(ctx.checkpoint_path).write_text(json.dumps(
+        {"format_version": STATE_FORMAT_VERSION, **job.state.to_dict(), "notes": ["finished"]}))
     assert job.sync() is not None
     assert job.state.notes == ["finished"] and len(job.undo_stack) == 1
 

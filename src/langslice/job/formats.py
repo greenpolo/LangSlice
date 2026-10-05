@@ -1,9 +1,9 @@
 """The job folder's public files: ``registration.json`` and each section's maps.
 
-Formats phase (2026-10-04; ``docs/file_formats.md`` describes every field).
-``state.json`` stays the job's one working source; what is written here is
-derived from it, in public units, for scripts and other programs, and is
-never read back as input:
+``docs/file_formats.md`` describes every field. ``state.json`` stays the
+job's one working source; what is written here is derived from it, in
+public units, for scripts and other programs, and is never read back as
+input:
 
 - ``registration.json`` (top of the job folder): every section's
   registration parameters (atlas, pixel size, plane, orientation, in-plane
@@ -37,7 +37,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 import langslice
-from langslice.job.layout import EXPORTS_DIR, REGISTRATION_FILE, JobLayout
+from langslice.job.checkpoint import write_json_atomic
+from langslice.job.layout import (
+    IMAGES_ARE_PARENT,
+    REGISTRATION_FILE,
+    JobLayout,
+    job_folder_for,
+)
 
 if TYPE_CHECKING:
     from langslice.core.maps import SectionFrame, SectionMaps
@@ -46,9 +52,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: ``registration.json``'s format. 1 (2026-10-04).
+#: ``registration.json``'s format.
 REGISTRATION_FORMAT_VERSION = 1
-#: ``maps.json``'s format. 1 (2026-10-04).
+#: ``maps.json``'s format.
 MAPS_FORMAT_VERSION = 1
 COORDS_FILE = "coords.tif"
 LABELS_FILE = "labels.tif"
@@ -242,8 +248,8 @@ def registration_document(
         # registration supplied per section): each section's "plane" has its own.
         "cutting_angles_deg": (None if state.mixed_angles else
                                dict(zip(("pitch", "yaw"), state.stack_angles, strict=True))),
-        "image_folder": (str(workspace.image_folder) if workspace is not None
-                         else state.image_folder),
+        "image_folder": _image_folder(layout, workspace.image_folder if workspace is not None
+                                      else state.image_folder),
         "submitted": bool(state.submitted),
         "sections": [section_entry(state, workspace, layout, record, atlas)
                      for record in state.in_order()],
@@ -251,12 +257,20 @@ def registration_document(
     }
 
 
+def _image_folder(layout: JobLayout, images: str) -> str:
+    """The image folder as ``job.json`` stores it: the job folder's parent
+    (:data:`~langslice.job.layout.IMAGES_ARE_PARENT`) for the default job
+    folder, so the file stays right when the folder moves with its images;
+    else the absolute path."""
+    if layout.folder == job_folder_for(images):
+        return IMAGES_ARE_PARENT
+    return str(images)
+
+
 def write_registration(
     layout: JobLayout, state: StackState, workspace: Workspace | None,
 ) -> Path | None:
     """Write ``registration.json`` atomically; never raises (None on failure)."""
-    from langslice.job.checkpoint import write_json_atomic
-
     path = layout.folder / REGISTRATION_FILE
     try:
         write_json_atomic(str(path), registration_document(state, workspace, layout))
@@ -272,8 +286,7 @@ def write_registration(
 #: Float maps are deflate-compressed WITHOUT the floating-point predictor:
 #: ImageJ 1.x cannot decode it (``ij/io/TiffDecoder.java`` logs "unsupported
 #: predictor value of 3" and reads the bytes as they are), so Fiji would show
-#: garbage. Measured 2026-10-04 on a 3072 x 2305 working copy: coords.tif
-#: 25.6 MB this way, 1.1 MB with the predictor (imagecodecs).
+#: garbage. The price is file size: the float maps compress far less.
 FLOAT_COMPRESSION = "zlib"
 
 
@@ -311,9 +324,9 @@ def structure_rows(atlas: Any) -> dict[int, dict[str, Any]]:
 def write_labels(folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float,
                  info: dict[str, Any]) -> list[tuple[Path, str]]:
     """``labels.tif`` (uint32 atlas ids), ``labels_fiji.tif`` (uint16 dense
-    index, with the atlas colours as an ImageJ lookup table when the section
-    has at most 255 regions) and ``labels.csv`` (index, id, acronym, name,
-    r, g, b)."""
+    index, with an ImageJ lookup table giving indexes 1-255 their atlas
+    colours) and ``labels.csv`` (index, id, acronym, name, r, g, b, every
+    index)."""
     import tifffile
 
     ids = np.unique(labels)
@@ -399,8 +412,6 @@ def write_section_maps(
               "deformation_record": deformation_record,
               "files": {kind: name for kind, name in SECTION_FILES.items()
                         if kind != "maps" and (folder / name).exists()}}
-    from langslice.job.checkpoint import write_json_atomic
-
     write_json_atomic(str(folder / MAPS_FILE), record)
     written.append((folder / MAPS_FILE, "maps"))
     return written
@@ -421,18 +432,3 @@ def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]
         found += [(folder / name, kind) for kind, name in SECTION_FILES.items()
                   if (folder / name).exists()]
     return found
-
-
-def write_json(path: Path, data: Any) -> Path:
-    """Write a JSON export atomically."""
-    from langslice.job.checkpoint import write_json_atomic
-
-    write_json_atomic(str(path), data)
-    return path
-
-
-__all__ = [
-    "COORDS_FILE", "EXPORTS_DIR", "LABELS_CSV_FILE", "LABELS_FIJI_FILE", "LABELS_FILE",
-    "MAPS_FILE", "QUICKNII_FILE", "RESIDUAL_FILE", "SECTION_FILES", "VISUALIGN_FILE",
-    "registration_document", "section_entry", "write_registration", "write_section_maps",
-]

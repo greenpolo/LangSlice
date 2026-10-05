@@ -17,11 +17,8 @@ from langslice.doors.api.models import (
     EngineError,
     EngineErrorEnvelope,
     EngineEventEnvelope,
-    EngineLogEvent,
-    EngineProgressEvent,
     EngineRequest,
     EngineResultEnvelope,
-    ExportRequest,
     LinearEstimateRequest,
     LinearEstimateResult,
     PreprocessPreviewRequest,
@@ -54,9 +51,6 @@ def _emit_error(
 
 
 def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineResultEnvelope:
-    def runtime_emit(event: EngineProgressEvent | EngineLogEvent) -> None:
-        emit(EngineEventEnvelope(id=request.id, type="event", event=event))
-
     def data_emit(payload: dict[str, object]) -> None:
         emit(EngineEventEnvelope(
             id=request.id, type="event", event=EngineDataEvent(payload=payload),
@@ -121,9 +115,6 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
     if request.method == "version":
         result = runtime.get_version()
-    elif request.method == "export.run":
-        params = ExportRequest.model_validate(request.params)
-        result = runtime.run_export(params, emit=runtime_emit)
     else:
         raise KeyError(request.method)
 
