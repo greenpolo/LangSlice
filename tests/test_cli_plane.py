@@ -1,4 +1,4 @@
-"""Tests for the ``--plane`` flag on the ``linear run`` CLI parser."""
+"""The stack-opening commands' job flags: ``--plane`` and bad JSON values."""
 
 from __future__ import annotations
 
@@ -36,9 +36,10 @@ def test_linear_run_rejects_unknown_plane(capsys):
     assert "axial" in err
 
 
-def test_the_nonlinear_register_command_is_gone(capsys):
-    """``nonlinear register`` (a one-shot pipeline outside the job) was
-    removed 2026-10-04; its group went with it."""
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["nonlinear", "register", "x.png", "--position", "5.0"])
-    assert "invalid choice" in capsys.readouterr().err
+@pytest.mark.parametrize("command", [["linear", "run"], ["claude", "prepare"], ["mcp"]])
+def test_a_bad_job_flag_ends_with_a_message_not_a_traceback(tmp_path, command):
+    from langslice.doors.cli import main
+
+    with pytest.raises(SystemExit) as stopped:
+        main([*command, str(tmp_path), "--positions", "{not json"])
+    assert "--positions" in str(stopped.value.code)

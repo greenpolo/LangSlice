@@ -27,9 +27,9 @@ from google.genai import types
 
 from langslice.agent.live import LiveCallback, LiveEvents
 from langslice.agent.model_resolver import (
-    _env,
-    _env_float,
     default_http_options,
+    env_float,
+    env_value,
     resolve_adk_model,
 )
 from langslice.agent.plugins import (
@@ -64,10 +64,10 @@ def build_plugins(
         # Must follow the context filter: only media that survived pruning is
         # about to be delivered to the model.
         plugins.append(ToolMediaDeliveryPlugin(tool_media_delivered))
-    model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
+    model_call_delay_s = env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
         plugins.append(ModelCallPacingPlugin(model_call_delay_s))
-    capture_dir = _env("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
+    capture_dir = env_value("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
     # Unknown or misplaced arguments are refused, never silently dropped.
@@ -286,7 +286,7 @@ async def run_agent_session(
                 if getattr(event, "partial", False):
                     continue
                 usage = getattr(event, "usage_metadata", None)
-                if usage is not None and not getattr(event, "partial", False):
+                if usage is not None:
                     line = tokens.add(usage)
                     if live is not None:
                         live.emit("usage", tokens=tokens.as_dict())
@@ -377,7 +377,7 @@ async def run_agent_session(
                     if getattr(event, "partial", False):
                         continue
                     usage = getattr(event, "usage_metadata", None)
-                    if usage is not None and not getattr(event, "partial", False):
+                    if usage is not None:
                         (progress or logger.info)(f"[tokens] {tokens.add(usage)}")
                     for part in getattr(getattr(event, "content", None), "parts", None) or []:
                         text = getattr(part, "text", None)

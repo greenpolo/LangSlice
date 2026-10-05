@@ -32,7 +32,6 @@ from langslice.core.jpeg import encode_jpeg
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
-from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import (
     PreparedLinear,
     checkpoint_callback,
@@ -41,7 +40,7 @@ from langslice.doors.api.abba_worker import (
 )
 from langslice.doors.api.claude_jobs import load_job
 from langslice.doors.card import write_card
-from langslice.doors.jobs import close_job
+from langslice.doors.jobs import close_job, image_model_off, provider_connected
 from langslice.doors.mcp.host_channel import HostChannel
 from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
@@ -118,7 +117,8 @@ class Session:
     pages: list[list[ContentBlock]] = field(default_factory=list)
     lock: Any = field(default_factory=threading.RLock, repr=False)
     #: The job's nonlinear task names an image model this door cannot reach
-    #: (:func:`image_model_off`): its tools and statement are a run without one.
+    #: (:func:`langslice.doors.jobs.image_model_off`): its tools and statement
+    #: are a run without one.
     image_model_off: bool = False
     #: Tool events, forwarded to the host channel of a saved ABBA job.
     events: EventRelay = field(default_factory=EventRelay)
@@ -214,17 +214,6 @@ def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
 # --- the job ---------------------------------------------------------------
 
 
-def image_model_off(spec: JobSpec) -> bool:
-    """Whether *spec*'s nonlinear task names an image model that is not
-    connected to LangSlice here (no key or login for its provider:
-    :func:`langslice.doors.api.setup.image_model_connected`). Then
-    ``trace_borders`` is not listed and the statement says why; the fitting
-    tools are offered either way. The spec is left as it is: the job keeps
-    its provider for a door that can reach it."""
-    return (spec.has("nonlinear") and spec.nonlinear.uses_image_model
-            and not provider_setup.image_model_connected(spec.nonlinear.provider))
-
-
 def open_job(
     spec: JobSpec,
     atlas_loader: Callable[[str], Any] | None = None,
@@ -234,8 +223,8 @@ def open_job(
     job folder next to the images (``<images>/langslice``), or *folder*, a
     saved job's (the same place, as its index names it). The nonlinear
     task's image-model tool is offered only when that model is connected
-    (:func:`image_model_off`)."""
-    off = image_model_off(spec)
+    (:func:`langslice.doors.jobs.image_model_off`)."""
+    off = image_model_off(spec, provider_connected(spec))
     ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     write_card(job.layout)

@@ -422,7 +422,10 @@ def run_linear(args: argparse.Namespace) -> None:
     from langslice.agent.trace import TRACE_DIR_ENV
 
     apply_trace_dir(args)
-    spec = build_linear_spec(args, args.image_folder)
+    try:
+        spec = build_linear_spec(args, args.image_folder)
+    except ValueError as exc:
+        raise SystemExit(f"langslice linear run: {exc}") from exc
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
