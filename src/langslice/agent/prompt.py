@@ -1,9 +1,11 @@
-"""The job statement: job, run facts, one factual line per tool, constraints.
+"""The job statement: job, run facts, one factual line per tool, constraints, method.
 
 The statement reports; the model reasons. It gives no rules of thumb and no
-warnings about failure modes; the only strategy is the optional "Method:"
-section (``position.playbook``), a working method for models that do not
-find one on their own.
+warnings about failure modes. The one place for strategy is the short
+"Method:" section per task that is on (look before writing, review the
+stack, inspect each fit against internal anatomy); ``position.playbook``
+replaces the positioning lines with a step-by-step method for models that do
+not find one on their own.
 
 Deliberately atlas- and plane-agnostic — it names no region, no landmark and no
 absolute position, because the same text runs against every BrainGlobe atlas,
