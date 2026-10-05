@@ -433,7 +433,7 @@ def test_the_footprint_keeps_dark_tissue_and_tears_inside_the_outline():
     assert not footprint[5, 5] and not footprint[395, 590]   # the slide
 
 
-# --- sections without a pixel size (review findings 1 and 3, 2026-10-04) -------------
+# --- sections without a pixel size -------------
 
 
 def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:

@@ -313,14 +313,6 @@ def write_float_channels(path: Path, planes: np.ndarray, names: Iterable[str],
     )
 
 
-def structure_rows(atlas: Any) -> dict[int, dict[str, Any]]:
-    """Atlas id -> its structure (acronym, name, rgb_triplet), from the
-    BrainGlobe structure tree."""
-    from langslice.core.atlas.recolor import _structure_rows
-
-    return _structure_rows(atlas)
-
-
 def write_labels(folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float,
                  info: dict[str, Any]) -> list[tuple[Path, str]]:
     """``labels.tif`` (uint32 atlas ids), ``labels_fiji.tif`` (uint16 dense
@@ -328,6 +320,8 @@ def write_labels(folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float,
     colours) and ``labels.csv`` (index, id, acronym, name, r, g, b, every
     index)."""
     import tifffile
+
+    from langslice.core.atlas.recolor import structure_rows
 
     ids = np.unique(labels)
     ids = ids[ids != 0]

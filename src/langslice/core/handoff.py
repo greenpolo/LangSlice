@@ -125,9 +125,9 @@ def prepare_linear_registration(
 ) -> LinearRegistrationInput:
     """Prepare a supplied affine placement, preserving shear and physical scale.
 
-    Requires a written position and an invertible affine. Legacy records do
-    not retain an orientation snapshot; when supplied, an ``orientation``
-    dictionary or ``stale`` flag is checked before using a fit. The scale
+    Requires a written position and an invertible affine. When the
+    transform carries an ``orientation`` snapshot or a ``stale`` flag, it is
+    checked before the fit is used. The scale
     is the one every placement picture and ``registration.json`` draw the
     section at (:func:`langslice.core.transform.calibrate` on its working
     frame, carried to *long_edge*), so the six numbers place the atlas here

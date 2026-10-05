@@ -7,7 +7,7 @@ shows it under. ``Common`` tools are on in every run whatever the tasks
 (``mark_damaged`` and ``preprocess`` behind their own host switches); the
 others come with their task, Positioning (``reorder`` + ``position``),
 Linear (``transform``) or Nonlinear (``nonlinear``), as
-``docs/interface_design.md`` names them. A tool that also exists without its
+the user-facing task names. A tool that also exists without its
 task (``view_placement`` with Linear or Nonlinear alone) is listed under the
 group that introduces it.
 
