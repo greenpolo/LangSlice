@@ -49,7 +49,8 @@ minutes: `ops` marks it `long` and `schema` or a dry run gives the
   (`src/langslice/doors/statement.py`): the job statement, the notes and the
   status table under `result.statement`, the opening pictures saved in the job
   folder and listed as `artifacts` of kind `opening`, and all of it in
-  `BRIEF.md`. It also reports the `viewer`, the `resolution` range a call may
+  `BRIEF.md` (with LF line endings on every platform, matching the returned
+  statement). It also reports the `viewer`, the `resolution` range a call may
   ask for and the job's `image_model`. Run it again for the stack as it stands.
 - `runs [ID]`: the background runs, newest first, or one run's state.
 - `wait [ID]` (`--timeout SECONDS`): wait for a background run (the latest

@@ -239,6 +239,16 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048
 
 
+def test_brief_writes_normalized_line_endings_on_every_platform(tmp_path: Path):
+    from langslice.doors.cli.brief import Brief, write
+
+    saved = write(tmp_path, Brief(statement="First line\r\nSecond line"), pictures=False)
+    assert saved is not None
+    data = saved.read_bytes()
+    assert b"First line\nSecond line" in data
+    assert b"\r" not in data
+
+
 def test_init_answers_with_the_statement_and_keeps_notes_and_viewer(capsys, images):
     code, envelope = cli(capsys, "job", str(images), "init", "--tasks", "position",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),

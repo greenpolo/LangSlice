@@ -144,7 +144,9 @@ def write(folder: Path, brief: Brief, *, pictures: bool) -> Path | None:
 
     path = Path(folder) / BRIEF_FILE
     try:
-        path.write_text(text(Path(folder), brief, pictures=pictures), encoding="utf-8")
+        content = text(Path(folder), brief, pictures=pictures).replace("\r\n", "\n")
+        with path.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(content)
     except OSError:
         logging.getLogger(__name__).warning("Could not write %s", path, exc_info=True)
         return None
