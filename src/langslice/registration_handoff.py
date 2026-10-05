@@ -1,4 +1,5 @@
-"""Compatibility shim for sibling repos; use :mod:`langslice.core.nonlinear.registration_handoff`."""
+"""Compatibility shim for sibling repos; use
+:mod:`langslice.core.nonlinear.registration_handoff`."""
 
 import importlib
 import sys
