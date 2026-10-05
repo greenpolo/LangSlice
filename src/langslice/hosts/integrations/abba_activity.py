@@ -89,7 +89,9 @@ def format_event(event: dict[str, Any]) -> tuple[str, str]:
         if len(targets) > 4:
             suffix += f" + {len(targets) - 4} more"
         return f"Called {_tool_title(str(event.get('name', '')))}{suffix}", "tool"
-    if kind in {"seed", "tool_result"}:
+    # A tool's outcome and pictures come with its tool_end (both modes; the
+    # ADK's own tool_result would repeat a failure).
+    if kind in {"seed", "tool_end"}:
         count = len(event.get("images") or [])
         response = event.get("response") or {}
         if isinstance(response, dict):
@@ -416,7 +418,7 @@ class ActivityWindow:
                 self._append(*format_event(event))
                 if kind == "tool_start":
                     self.status.setText(f"Running {_tool_title(str(event.get('name', 'tool')))}…")
-                elif kind in {"text", "reasoning", "session", "tool_result"}:
+                elif kind in {"text", "reasoning", "tool_end"}:
                     self.status.setText("Agent exploring…")
                 elif kind == "complete":
                     self.status.setText("Submitted" if event.get("submitted") else "Stopped")
