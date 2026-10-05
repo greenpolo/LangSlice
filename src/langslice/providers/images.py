@@ -1,4 +1,12 @@
-"""Provider-neutral image generation adapter for harness registration flows."""
+"""The image-edit transports: one request in, one edited image out.
+
+``generate_warped_segmentation_image`` sends a
+:class:`~langslice.core.nonlinear.types.SegmentationGenerationRequest` to its
+provider: ``gemini-api`` (``generate_content`` with an image config),
+``openai-api`` (the Images API edit endpoint) or ``openai-oauth`` (the Codex
+``images/edits`` endpoint, :func:`langslice.providers.openai_oauth.edit_image`).
+The slice image is always Image 1; the references follow in prompt order.
+"""
 
 from __future__ import annotations
 
@@ -12,22 +20,8 @@ from PIL import Image
 from langslice.core.nonlinear.model_prompts import gemini_aspect_for
 from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
 from langslice.providers import vlm_config
-from langslice.providers.openai_config import (
-    get_openai_client,
-    get_openai_image_client,
-    get_openai_image_model,
-    get_openai_model,
-)
-from langslice.providers.registry import canonical_provider
-
-_VALID_REQUEST_ROUTES = {
-    "google_genai",
-    "openai_images",
-    "openai_responses_image_generation",
-    "openai_oauth_images_edit",
-    "openai_oauth_image_generation",  # hosted-tool fallback path
-    "chatgpt_responses_image_generation",  # legacy spelling of openai_oauth_image_generation
-}
+from langslice.providers.openai_config import get_openai_image_client, get_openai_image_model
+from langslice.providers.registry import GEMINI_DEFAULT_IMAGE_MODEL, canonical_provider
 
 _IMAGE_QUALITIES = {"low", "medium", "high", "xhigh", "max"}
 
@@ -98,28 +92,6 @@ def _extract_openai_image_b64(response: Any) -> str:
     return image_b64
 
 
-def _extract_openai_responses_image(response: Any) -> tuple[Image.Image, str | None]:
-    outputs = getattr(response, "output", None) or []
-    for output in outputs:
-        if getattr(output, "type", None) != "image_generation_call":
-            continue
-
-        result = getattr(output, "result", None)
-        if not result:
-            raise RuntimeError("OpenAI Responses image_generation call did not include result data")
-        if isinstance(result, bytes):
-            image_bytes = base64.b64decode(result)
-        else:
-            image_bytes = base64.b64decode(str(result))
-
-        image = Image.open(io.BytesIO(image_bytes))
-        image.load()
-        revised_prompt = getattr(output, "revised_prompt", None)
-        return image.convert("RGB"), revised_prompt
-
-    raise RuntimeError("OpenAI Responses API did not return an image_generation_call output")
-
-
 def _build_metadata(
     request: SegmentationGenerationRequest,
     *,
@@ -127,30 +99,17 @@ def _build_metadata(
     route: str,
 ) -> dict[str, Any]:
     metadata = dict(request.metadata)
-    metadata.update(
-        {
-            "provider": provider,
-            "route": route,
-            "request": {
-                "provider": request.provider.lower(),
-                "route": request.route.lower() if request.route else None,
-                "openai_image_route": request.openai_image_route.lower(),
-                "model": request.model,
-                "review_model": request.review_model,
-                "thinking_level": request.thinking_level,
-                "prompt": request.prompt,
-            },
-        }
-    )
+    metadata.update({
+        "provider": provider,
+        "route": route,
+        "request": {
+            "provider": request.provider.lower(),
+            "model": request.model,
+            "thinking_level": request.thinking_level,
+            "prompt": request.prompt,
+        },
+    })
     return metadata
-
-
-def _validate_requested_route(request_route: str | None) -> None:
-    if request_route is None:
-        return
-    normalized_route = request_route.lower()
-    if normalized_route not in _VALID_REQUEST_ROUTES:
-        raise ValueError(f"Unknown route: {request_route}")
 
 
 #: ``thinking_level`` values that name a Gemini output resolution (the API's
@@ -189,7 +148,7 @@ def _gemini_image_config(
 
 
 def _generate_google_segmentation(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
-    model = request.model or vlm_config.MODEL_NAME
+    model = request.model or GEMINI_DEFAULT_IMAGE_MODEL
     client = vlm_config.get_client()
 
     # Histology first: the edited base image leads, references follow. There
@@ -214,10 +173,10 @@ def _generate_google_segmentation(request: SegmentationGenerationRequest) -> Gen
     route = "google_genai"
     return GeneratedSegmentation(
         image=image,
-        provider="google",
+        provider="gemini-api",
         model=model,
         route=route,
-        metadata=_build_metadata(request, provider="google", route=route),
+        metadata=_build_metadata(request, provider="gemini-api", route=route),
     )
 
 
@@ -279,47 +238,6 @@ def _api_edit_size(canvas: Image.Image, budget_px: int = 1024 * 1536) -> str:
     return f"{round(w * s / 16) * 16}x{round(h * s / 16) * 16}"
 
 
-def _generate_openai_responses_segmentation(
-    request: SegmentationGenerationRequest,
-) -> GeneratedSegmentation:
-    mainline_model = request.review_model or get_openai_model()
-
-    client = get_openai_client()
-    contents = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": request.prompt},
-                {"type": "input_image", "image_url": _image_to_data_url(request.slice_image)},
-                *(
-                    {"type": "input_image", "image_url": _image_to_data_url(ref)}
-                    for ref in request.reference_images
-                ),
-            ],
-        }
-    ]
-
-    reasoning_effort = (request.thinking_level or "medium").lower()
-
-    response = client.responses.create(  # type: ignore[attr-defined]
-        model=mainline_model,
-        input=cast(Any, contents),
-        tools=cast(Any, [{"type": "image_generation", "action": request.mode}]),
-        reasoning=cast(Any, {"effort": reasoning_effort}),
-    )
-
-    image, revised_prompt = _extract_openai_responses_image(response)
-    route = "openai_responses_image_generation"
-    return GeneratedSegmentation(
-        image=image,
-        provider="openai",
-        model=mainline_model,
-        route=route,
-        revised_prompt=revised_prompt,
-        metadata=_build_metadata(request, provider="openai", route=route),
-    )
-
-
 def _generate_openai_oauth_segmentation(
     request: SegmentationGenerationRequest,
 ) -> GeneratedSegmentation:
@@ -327,8 +245,7 @@ def _generate_openai_oauth_segmentation(
 
     model = request.model or openai_oauth.DEFAULT_IMAGE_MODEL
     quality = (request.thinking_level or "high").lower()
-    # Direct images/edits: one GPT model (the pilot) and one image model —
-    # no server-side routing model rewriting the prompt in between.
+    # The images/edits endpoint: the prompt reaches the image model verbatim.
     png_bytes = openai_oauth.edit_image(
         request.prompt,
         [
@@ -338,8 +255,6 @@ def _generate_openai_oauth_segmentation(
         image_model=model,
         quality=quality if quality in _IMAGE_QUALITIES else "high",
     )
-    revised_prompt = None  # nothing rewrites the prompt on this path
-
     image = Image.open(io.BytesIO(png_bytes))
     image.load()
     route = "openai_oauth_images_edit"
@@ -348,7 +263,6 @@ def _generate_openai_oauth_segmentation(
         provider="openai-oauth",
         model=model,
         route=route,
-        revised_prompt=revised_prompt,
         metadata=_build_metadata(request, provider="openai-oauth", route=route),
     )
 
@@ -356,21 +270,12 @@ def _generate_openai_oauth_segmentation(
 def generate_warped_segmentation_image(
     request: SegmentationGenerationRequest,
 ) -> GeneratedSegmentation:
+    """Send *request* to its provider's image model; the edited image."""
     provider = canonical_provider(request.provider)
-    _validate_requested_route(request.route)
-
     if provider == "gemini-api":
         return _generate_google_segmentation(request)
-
     if provider == "openai-oauth":
         return _generate_openai_oauth_segmentation(request)
-
     if provider == "openai-api":
-        image_route = request.openai_image_route.lower()
-        if image_route == "images":
-            return _generate_openai_images_segmentation(request, provider=provider)
-        if image_route == "responses":
-            return _generate_openai_responses_segmentation(request)
-        raise ValueError(f"Unknown openai_image_route: {request.openai_image_route}")
-
+        return _generate_openai_images_segmentation(request, provider=provider)
     raise ValueError(f"Unknown provider: {request.provider}")

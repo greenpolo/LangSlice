@@ -1,182 +1,37 @@
-"""VLM configuration - authentication and model settings."""
+"""The ``gemini-api`` client: one google-genai client, authenticated from the environment.
+
+``LANGSLICE_GENAI_BACKEND`` picks the authentication (default ``ai_studio``,
+or ``vertex_adc`` when ``GOOGLE_GENAI_USE_VERTEXAI`` is set):
+
+- ``ai_studio``: ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``).
+- ``vertex_api_key``: ``GOOGLE_CLOUD_API_KEY`` (or ``VERTEX_API_KEY``).
+- ``vertex_adc``: application default credentials, ``GOOGLE_CLOUD_PROJECT``
+  and ``GOOGLE_CLOUD_LOCATION`` (default ``us-central1``).
+"""
+
+from __future__ import annotations
 
 import atexit
 import importlib
 import logging
 import os
-import sys
-import types
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import Protocol, cast
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
-_DEFAULT_THINKING_LEVEL = "MEDIUM"
-_DEFAULT_TEMPERATURE: float = 1.0
-
-
-class _RuntimeConfig:
-    """Thread-aware mutable runtime config singleton.
-
-    All mutable settings live here instead of module globals so that
-    ``vlm_config.MODEL_NAME`` always reflects the latest value regardless
-    of import style.
-    """
-
-    __slots__ = (
-        "model_name", "thinking_level",
-        "temperature", "_thinking_overridden",
-    )
-
-    def __init__(self) -> None:
-        self.model_name: str = _DEFAULT_MODEL_NAME
-        self.thinking_level: str = _DEFAULT_THINKING_LEVEL
-        self.temperature: float = _DEFAULT_TEMPERATURE
-        self._thinking_overridden: bool = False
-
-
-_runtime = _RuntimeConfig()
-
-AVAILABLE_THINKING_LEVELS: list[tuple[str, str]] = [
-    ("Minimal", "MINIMAL"),
-    ("Low", "LOW"),
-    ("Medium", "MEDIUM"),
-    ("High", "HIGH"),
-]
-
-_ENV_FILE_POLL_TIMEOUT_S = "LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S"
-_ENV_TEMPERATURE = "LANGSLICE_GENAI_TEMPERATURE"
-
-AVAILABLE_MODELS: list[str] = [
-    "gemini-3-flash-preview",
-    "gemini-3.1-pro-preview",
-    "gemini-3-pro-image-preview",
-    "gemini-3.1-flash-image-preview",
-    "gemma-4-31b-it",
-    "gemma-4-26b-a4b-it",
-]
-
-GEMMA_MODELS: set[str] = {
-    "gemma-4-31b-it",
-    "gemma-4-26b-a4b-it",
-}
-
-def set_model_name(name: str) -> None:
-    """Set active model name at runtime for subsequent requests."""
-    _runtime.model_name = name
-    logger.info("Model changed to: %s", name)
-
-
-def set_thinking_level(level: str) -> None:
-    """Set active Gemini thinking level at runtime for subsequent requests."""
-    normalized = str(level).strip().upper()
-    valid_levels = {value for _label, value in AVAILABLE_THINKING_LEVELS}
-    if normalized not in valid_levels:
-        allowed = ", ".join(sorted(valid_levels))
-        raise ValueError(f"Invalid thinking level {level!r}. Expected one of: {allowed}")
-    _runtime.thinking_level = normalized
-    _runtime._thinking_overridden = True
-    logger.info("Thinking level changed to: %s", normalized)
-
-
-def get_thinking_level_or(default: str) -> str:
-    """Return the user-overridden thinking level, or *default* if not set."""
-    if _runtime._thinking_overridden:
-        return _runtime.thinking_level
-    return default
-
-
-def set_temperature(value: float) -> None:
-    """Set active generation temperature at runtime for subsequent requests."""
-    clamped = max(0.0, min(2.0, float(value)))
-    _runtime.temperature = clamped
-    logger.info("Temperature changed to: %.2f", clamped)
-
-
-def is_gemma_model(model_name: str | None) -> bool:
-    """Return True when *model_name* is a Gemma open model."""
-    if model_name is None:
-        return False
-    normalized = str(model_name).strip()
-    if normalized.startswith("models/"):
-        normalized = normalized[len("models/"):]
-    return normalized in GEMMA_MODELS
-
-
-_THINKING_BUDGET_MAP: dict[str, int] = {
-    "MINIMAL": 128,
-    "LOW": 512,
-    "MEDIUM": 2048,
-    "HIGH": 8192,
-}
-
-
-def _is_budget_model(model_name: str) -> bool:
-    """Return True for models that use thinking_budget instead of thinking_level."""
-    lower = model_name.lower()
-    return "2.5" in lower or "2.0" in lower
-
-
-def build_thinking_config(
-    model_name: str, thinking_level: str, *, include_thoughts: bool = False
-) -> object | None:
-    """Build a ThinkingConfig appropriate for the model.
-
-    Gemma 4 only supports thinking on (HIGH) or off (None).
-    Gemini 2.5 uses thinking_budget (tokens), not thinking_level.
-    Gemini 3.x supports graduated levels (MINIMAL, LOW, MEDIUM, HIGH).
-    """
-    types_mod = importlib.import_module("google.genai.types")
-    if is_gemma_model(model_name):
-        if thinking_level in ("HIGH", "MEDIUM"):
-            return types_mod.ThinkingConfig(
-                thinking_level="HIGH", include_thoughts=include_thoughts
-            )
-        return None
-    if _is_budget_model(model_name):
-        budget = _THINKING_BUDGET_MAP.get(thinking_level, 2048)
-        return types_mod.ThinkingConfig(
-            thinking_budget=budget, include_thoughts=include_thoughts
-        )
-    return types_mod.ThinkingConfig(
-        thinking_level=thinking_level, include_thoughts=include_thoughts
-    )
-
 
 _BACKEND_AI_STUDIO = "ai_studio"
 _BACKEND_VERTEX_API_KEY = "vertex_api_key"
 _BACKEND_VERTEX_ADC = "vertex_adc"
-_VALID_BACKENDS = {
-    _BACKEND_AI_STUDIO,
-    _BACKEND_VERTEX_API_KEY,
-    _BACKEND_VERTEX_ADC,
-}
+_VALID_BACKENDS = {_BACKEND_AI_STUDIO, _BACKEND_VERTEX_API_KEY, _BACKEND_VERTEX_ADC}
 
 
 class _GenAIModelsProtocol(Protocol):
     def generate_content(self, *, model: str, contents: object, config: object) -> object: ...
 
-    def generate_content_stream(
-        self, *, model: str, contents: object, config: object
-    ) -> object: ...
-
-    def count_tokens(
-        self, *, model: str, contents: object, config: object | None = None
-    ) -> object: ...
-
-
-class _GenAIFilesProtocol(Protocol):
-    def upload(self, *, file: object, config: object | None = None) -> object: ...
-
-    def get(self, *, name: str, config: object | None = None) -> object: ...
-
-    def delete(self, *, name: str, config: object | None = None) -> object: ...
-
 
 class GenAIClientProtocol(Protocol):
     models: _GenAIModelsProtocol
-    files: _GenAIFilesProtocol
 
     def close(self) -> None: ...
 
@@ -184,52 +39,24 @@ class GenAIClientProtocol(Protocol):
 _client_instance: GenAIClientProtocol | None = None
 
 
-def _load_dotenv() -> None:
-    try:
-        dotenv_module = importlib.import_module("dotenv")
-        load_dotenv = cast(Callable[[], bool], dotenv_module.load_dotenv)
-        _ = load_dotenv()
-    except ImportError:
-        pass
-
-
-_load_dotenv()
-
-
 def _env(name: str) -> str | None:
     value = os.environ.get(name)
     if value is None:
         return None
-    cleaned = value.strip()
-    return cleaned or None
+    return value.strip() or None
 
 
 def _env_bool(name: str) -> bool:
     value = _env(name)
-    if value is None:
-        return False
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
-def _env_float(name: str, default: float) -> float:
-    value = _env(name)
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        logger.warning("Invalid float env %s=%r; using default %.2f", name, value, default)
-        return default
+    return value is not None and value.lower() in {"1", "true", "yes", "on"}
 
 
 def get_backend() -> str:
-    """Resolve authentication backend for google-genai client."""
+    """The authentication backend for the google-genai client."""
     backend = _env("LANGSLICE_GENAI_BACKEND")
     if backend is None:
-        if _env_bool("GOOGLE_GENAI_USE_VERTEXAI"):
-            return _BACKEND_VERTEX_ADC
-        return _BACKEND_AI_STUDIO
-
+        return _BACKEND_VERTEX_ADC if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") \
+            else _BACKEND_AI_STUDIO
     normalized = backend.lower()
     if normalized not in _VALID_BACKENDS:
         allowed = ", ".join(sorted(_VALID_BACKENDS))
@@ -239,47 +66,28 @@ def get_backend() -> str:
     return normalized
 
 
-def file_poll_timeout_s() -> float:
-    return _env_float(_ENV_FILE_POLL_TIMEOUT_S, 10.0)
-
-
-def configured_temperature() -> float:
-    return _env_float(_ENV_TEMPERATURE, _DEFAULT_TEMPERATURE)
-
-
-# Apply environment override to the runtime config at import time.
-_runtime.temperature = configured_temperature()
-
-
-def supports_file_api() -> bool:
-    return get_backend() == _BACKEND_AI_STUDIO
-
-
 def get_api_key() -> str:
-    """Load API key for the selected backend mode."""
+    """The API key of the selected backend."""
     backend = get_backend()
-
     if backend == _BACKEND_AI_STUDIO:
         key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
         if key:
             return key
         raise RuntimeError(
             "AI Studio mode requires GEMINI_API_KEY (or GOOGLE_API_KEY). "
-            + "Set LANGSLICE_GENAI_BACKEND=ai_studio and configure one of those keys."
+            "Set LANGSLICE_GENAI_BACKEND=ai_studio and configure one of those keys."
         )
-
     if backend == _BACKEND_VERTEX_API_KEY:
         key = _env("GOOGLE_CLOUD_API_KEY") or _env("VERTEX_API_KEY")
         if key:
             return key
         raise RuntimeError(
             "Vertex API-key mode requires GOOGLE_CLOUD_API_KEY (or VERTEX_API_KEY). "
-            + "Set LANGSLICE_GENAI_BACKEND=vertex_api_key and configure one of those keys."
+            "Set LANGSLICE_GENAI_BACKEND=vertex_api_key and configure one of those keys."
         )
-
     raise RuntimeError(
         "Vertex ADC mode does not use an API key. "
-        + "Use get_client() with LANGSLICE_GENAI_BACKEND=vertex_adc."
+        "Use get_client() with LANGSLICE_GENAI_BACKEND=vertex_adc."
     )
 
 
@@ -295,11 +103,10 @@ def _vertex_location() -> str:
 
 
 def close_client() -> None:
-    """Close cached GenAI client and release transport resources."""
+    """Close the cached client and release its transport."""
     global _client_instance
     if _client_instance is None:
         return
-
     close = getattr(_client_instance, "close", None)
     if callable(close):
         try:
@@ -310,90 +117,23 @@ def close_client() -> None:
 
 
 def get_client() -> GenAIClientProtocol:
-    """Create and return a configured GenAI client for the selected backend."""
+    """The google-genai client for the selected backend, made on first use."""
     global _client_instance
     if _client_instance is not None:
         return _client_instance
-
     genai_module = importlib.import_module("google.genai")
     client_cls = cast(Callable[..., GenAIClientProtocol], genai_module.Client)
     backend = get_backend()
-
     if backend == _BACKEND_AI_STUDIO:
         _client_instance = client_cls(api_key=get_api_key())
-        return _client_instance
-
-    if backend == _BACKEND_VERTEX_API_KEY:
+    elif backend == _BACKEND_VERTEX_API_KEY:
         _client_instance = client_cls(vertexai=True, api_key=get_api_key())
-        return _client_instance
-
-    logger.info(
-        "Using Vertex ADC auth (project=%s, location=%s)",
-        _vertex_project(),
-        _vertex_location(),
-    )
-    _client_instance = client_cls(
-        vertexai=True,
-        project=_vertex_project(),
-        location=_vertex_location(),
-    )
+    else:
+        logger.info("Using Vertex ADC auth (project=%s, location=%s)",
+                    _vertex_project(), _vertex_location())
+        _client_instance = client_cls(vertexai=True, project=_vertex_project(),
+                                      location=_vertex_location())
     return _client_instance
 
 
 atexit.register(close_client)
-
-
-# ---------------------------------------------------------------------------
-# Module-level attribute forwarding for runtime config
-# ---------------------------------------------------------------------------
-# ``vlm_config.MODEL_NAME`` etc. always read the live value from _runtime.
-# TYPE_CHECKING block gives pyright the correct types; __getattr__ handles
-# runtime dispatch so the values are always live.
-if TYPE_CHECKING:
-    MODEL_NAME: str
-    THINKING_LEVEL: str
-    TEMPERATURE: float
-
-_RUNTIME_ATTRS = {
-    "MODEL_NAME": "model_name",
-    "THINKING_LEVEL": "thinking_level",
-    "TEMPERATURE": "temperature",
-}
-
-
-def __getattr__(name: str) -> object:
-    attr = _RUNTIME_ATTRS.get(name)
-    if attr is not None:
-        return getattr(_runtime, attr)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-class _RuntimeConfigModule(types.ModuleType):
-    """Module type that keeps legacy global assignment in sync with _runtime."""
-
-    def __getattribute__(self, name: str) -> object:
-        runtime_attrs = types.ModuleType.__getattribute__(self, "_RUNTIME_ATTRS")
-        attr = runtime_attrs.get(name)
-        if attr is not None:
-            runtime = types.ModuleType.__getattribute__(self, "_runtime")
-            return getattr(runtime, attr)
-        return types.ModuleType.__getattribute__(self, name)
-
-    def __setattr__(self, name: str, value: object) -> None:
-        runtime_attrs = types.ModuleType.__getattribute__(self, "_RUNTIME_ATTRS")
-        attr = runtime_attrs.get(name)
-        if attr is None:
-            types.ModuleType.__setattr__(self, name, value)
-            return
-
-        runtime = cast(Any, types.ModuleType.__getattribute__(self, "_runtime"))
-        if name == "TEMPERATURE":
-            setattr(runtime, attr, float(cast(Any, value)))
-        elif name == "THINKING_LEVEL":
-            setattr(runtime, attr, str(value))
-            runtime._thinking_overridden = True
-        else:
-            setattr(runtime, attr, str(value))
-
-
-sys.modules[__name__].__class__ = _RuntimeConfigModule

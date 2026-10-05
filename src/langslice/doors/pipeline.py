@@ -261,36 +261,56 @@ def _result(job: JobHandle, ids: Sequence[str], problems: Mapping[str, str], sub
                               exports=exports, sections=outputs, submitted=submitted)
 
 
-def _place_image(image: Any, folder: Path, name: str | None) -> str:
-    """Put the section image in *folder*; its filename (the section's id)."""
+def _section_name(image: Any, name: str | None) -> str:
+    """The section's filename (its id) in its folder: *name*, else the
+    image file's own name, else :data:`ARRAY_NAME` for an array."""
+    if name:
+        return name
+    if isinstance(image, (str, os.PathLike)):
+        return Path(os.fspath(image)).name
+    return ARRAY_NAME
+
+
+def _place_image(image: Any, folder: Path, filename: str) -> None:
+    """Put the section image in *folder* as *filename*. A file already there
+    under that name is used when it is the same image, and refused (never
+    replaced) otherwise."""
     import numpy as np
 
+    target = folder / filename
     if isinstance(image, (str, os.PathLike)):
         source = Path(os.path.expanduser(os.fspath(image))).resolve()
         if not source.is_file():
             raise FileNotFoundError(f"No section image at {source}")
-        filename = name or source.name
-        target = folder / filename
-        if target.resolve() != source:
-            if target.exists():
-                target.unlink()
-            try:
-                os.link(source, target)  # no copy of a whole-slide scan where possible
-            except OSError:
-                shutil.copy2(source, target)
-        return filename
+        if target.exists():
+            if os.path.samefile(target, source):
+                return
+            raise ValueError(f"{folder} already holds a different {filename}; give "
+                             "register_section another folder or name")
+        try:
+            os.link(source, target)  # no copy of a whole-slide scan where possible
+        except OSError:
+            shutil.copy2(source, target)
+        return
     array = np.asarray(image)
     if array.ndim not in (2, 3) or (array.ndim == 3 and array.shape[-1] not in (1, 3, 4)):
         raise ValueError("A section array must be (rows, cols) or (rows, cols, 1|3|4); "
                          f"got shape {array.shape}")
     import tifffile
 
-    filename = name or ARRAY_NAME
     if Path(filename).suffix.lower() not in (".tif", ".tiff"):
         raise ValueError(f"An array is written as a TIFF; name {filename!r} must end in .tif")
-    tifffile.imwrite(folder / filename, array, photometric="rgb" if array.ndim == 3
+    if target.exists():
+        try:
+            same = np.array_equal(tifffile.imread(target), array)
+        except Exception:
+            same = False
+        if same:
+            return
+        raise ValueError(f"{folder} already holds a different {filename}; give "
+                         "register_section another folder or name")
+    tifffile.imwrite(target, array, photometric="rgb" if array.ndim == 3
                      and array.shape[-1] in (3, 4) else "minisblack")
-    return filename
 
 
 def register_section(
@@ -349,13 +369,14 @@ def register_section(
     place = Path(tempfile.mkdtemp(prefix="langslice-section-")) if folder is None else \
         Path(os.path.abspath(os.path.expanduser(os.fspath(folder))))
     place.mkdir(parents=True, exist_ok=True)
-    filename = _place_image(image, place, name)
+    filename = _section_name(image, name)
     others = [os.path.basename(path) for path in discover_slices(str(place))
               if os.path.basename(path) != filename]
-    if others:
+    if others:  # checked before anything is written into the folder
         raise ValueError(f"{place} holds other section images {others[:5]}; give "
                          "register_section a folder of its own (or use create_job and "
                          "register_job for a folder of sections)")
+    _place_image(image, place, filename)
     orientation: dict[str, Any] = {}
     if flip is not None:
         orientation["flip"] = bool(flip)

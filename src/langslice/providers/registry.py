@@ -4,8 +4,8 @@ A provider is an ACCESS METHOD — a vendor plus how you authenticate — never 
 product name. Canonical names:
 
 - ``gemini-api``: Gemini models via a Google API key.
-- ``openai-api``: OpenAI-compatible endpoints via an API key (or a custom
-  ``--endpoint``).
+- ``openai-api``: the OpenAI API (or a compatible endpoint,
+  ``OPENAI_BASE_URL``) via an API key.
 - ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login
   (``langslice login``; transport lives in ``providers/openai_oauth.py``).
 - ``none``: no model at all. Registration's model-free backbone registers
@@ -48,6 +48,12 @@ OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-5.6-sol"
 #: Image models on the ``openai-oauth`` lane, and the default.
 OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2",)
 OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = "gpt-image-2"
+#: Image models on the ``gemini-api`` lane (Google's image-generation
+#: models), and the default: the general-purpose one.
+GEMINI_IMAGE_MODELS: tuple[str, ...] = (
+    "gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image",
+)
+GEMINI_DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
 
 
 #: One image edit: the request in (prompt, images in order, provider, model),
@@ -87,9 +93,13 @@ class ImageModel:
 
 
 def default_image_model(provider: str) -> str | None:
-    """The image model a provider uses when none is named (None: the transport's)."""
-    if canonical_provider(provider) == "openai-oauth":
+    """The image model a provider uses when none is named (None for
+    ``openai-api``: its transport reads ``OPENAI_IMAGE_MODEL``)."""
+    canonical = canonical_provider(provider)
+    if canonical == "openai-oauth":
         return OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
+    if canonical == "gemini-api":
+        return GEMINI_DEFAULT_IMAGE_MODEL
     return None
 
 
@@ -119,6 +129,8 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
 __all__ = [
     "CANONICAL_PROVIDERS",
     "CUSTOM_PROVIDER",
+    "GEMINI_DEFAULT_IMAGE_MODEL",
+    "GEMINI_IMAGE_MODELS",
     "OPENAI_OAUTH_AGENT_MODELS",
     "OPENAI_OAUTH_DEFAULT_AGENT_MODEL",
     "OPENAI_OAUTH_DEFAULT_IMAGE_MODEL",
