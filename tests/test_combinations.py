@@ -1071,20 +1071,20 @@ def test_8_trace_from_atlas_draws_each_section_at_its_own_angles(images, monkeyp
     """A stack whose sections were supplied with different cutting angles:
     each section's outlined atlas is drawn at its own (pitch, yaw)."""
     import langslice
-    from langslice.core.nonlinear import image_gen_registration
+    from langslice.core.nonlinear import registration_tool
 
     angles = {ID0: {"pitch": 1.0, "yaw": -0.5}, ID1: {"pitch": -0.75, "yaw": 0.25},
               ID2: {"pitch": 0.0, "yaw": 0.0}}
     inputs = {**external_inputs(), "angles": angles}
     create(spec_for(images, ["nonlinear"], provider="openai-oauth", **inputs))
-    real = image_gen_registration.outlined_atlas_template
+    real = registration_tool.outlined_atlas_template
     drawn: list[tuple[float, float]] = []
 
     def outlined(*args: Any, **kwargs: Any) -> Any:
         drawn.append((kwargs["pitch_deg"], kwargs["yaw_deg"]))
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(image_gen_registration, "outlined_atlas_template", outlined)
+    monkeypatch.setattr(registration_tool, "outlined_atlas_template", outlined)
     with langslice.open_job(images) as job:
         assert job.state.mixed_angles
         reply = job.trace_from_atlas(slices=list(IDS))

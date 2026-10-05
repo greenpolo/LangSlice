@@ -17,7 +17,6 @@ from langslice.core.deformable import (
     FitSettings,
     diagnose,
     excluded_ids,
-    fit_candidates,
     fit_section,
     prepare_fit,
     ventricle_ids,
@@ -381,10 +380,10 @@ def test_record_carries_volume_coordinates(atlas, warped):
 @needs_ants
 def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped
-    results = fit_candidates(image, atlas, placement(), [
+    results = fit_prepared([prepare_fit(image, atlas, placement(), settings) for settings in (
         FitSettings(engine="ants", detail="coarse", **MI),
         FitSettings(engine="elastix", detail="coarse", stiffness="firm", **MI),
-    ])
+    )])
     assert len(results) == 2
     for result in results:
         assert not isinstance(result, CandidateFailure), result

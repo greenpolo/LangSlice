@@ -20,16 +20,6 @@ from langslice.core.affine import (
 )
 from tests.fakes import EllipseAtlas, ellipse_section
 
-# --- the move ------------------------------------------------------------
-
-
-def test_the_atlas_root_mask_kept_its_old_name_in_nonlinear():
-    from langslice.core.atlas.core import get_root_mask
-    from langslice.core.nonlinear.image_gen_helpers import _build_atlas_root_mask
-
-    assert _build_atlas_root_mask is get_root_mask
-
-
 # --- affine_matrix -------------------------------------------------------
 
 

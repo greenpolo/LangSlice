@@ -16,6 +16,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,17 +37,18 @@ from langslice.core.nonlinear.border_refinement import (
     extract_thinned_lines,
     smooth_border_overlay,
 )
-from langslice.core.nonlinear.image_gen_helpers import (
-    _merge_classified,
+from langslice.core.nonlinear.image_gen_helpers import _merge_classified, line_width_px
+from langslice.core.nonlinear.image_gen_registration import (
+    outlined_atlas_template,
+    prepare_canvas,
 )
-from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 from langslice.core.nonlinear.prompts import (
     border_correction_tool_prompt,
     pass1_atlas_prompt,
     pass2_atlas_prompt,
     supplied_prompt_is_gpt_twin,
 )
-from langslice.core.nonlinear.types import SegmentationGenerationRequest
+from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
 from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
@@ -213,26 +215,6 @@ def _canvas_and_placement(
 MAX_CONCURRENT_IMAGE_CALLS = 8
 
 
-def correct_slice(
-    state: StackState,
-    ctx: Workspace,
-    section_id: str,
-    *,
-    prompt: str = "",
-    out: Path,
-    image_model: ImageModel,
-) -> dict[str, Any]:
-    """Make one image edit and wait for its result.
-
-    The synchronous form of :func:`start_correction`: prepare, then run the
-    image call in this thread.
-    """
-    record, job = start_correction(
-        state, ctx, section_id, prompt=prompt, out=out, image_model=image_model,
-    )
-    return job() if job is not None else record
-
-
 def start_correction(
     state: StackState,
     ctx: Workspace,
@@ -341,7 +323,7 @@ def start_correction(
             first, second = (canvas, rough) if gpt_twin else (rough, canvas)
             generated = image_model.call(SegmentationGenerationRequest(
                 slice_image=first, reference_images=[second], prompt=sent,
-                provider=provider, model=model, openai_image_route="images", mode="edit",
+                provider=provider, model=model,
             ))
             result["raw_received"] = True
             raw = generated.image.convert("RGB")
@@ -359,6 +341,74 @@ def start_correction(
         return _finish_attempt(directory, result_path, in_progress, result)
 
     return submitted, job
+
+
+@dataclass(frozen=True)
+class AtlasDrawing:
+    """Route "atlas"'s model calls on one canvas (:func:`draw_from_atlas`)."""
+
+    #: The final reply (pass 2's when there was one): the lines to extract.
+    image: Image.Image
+    #: Model calls made.
+    model_calls: int
+    #: Each call's transport route, in call order.
+    transports: list[str | None]
+    #: Pass 2's inputs by file name, with two passes: pass 1's lines on the tissue.
+    artifacts: dict[str, Image.Image]
+
+
+def draw_from_atlas(
+    canvas: Image.Image,
+    outlined_atlas: Image.Image,
+    *,
+    plane: Plane,
+    provider: str,
+    model: str | None,
+    passes: int,
+    edit: Callable[[SegmentationGenerationRequest], GeneratedSegmentation],
+    on_reply: Callable[[int, Image.Image], None] | None = None,
+) -> AtlasDrawing:
+    """Route "atlas"'s model calls: boundaries drawn from nothing on the clean tissue.
+
+    Pass 1 sends *canvas* (Image 1, the clean tissue) and *outlined_atlas*
+    (Image 2, :func:`~langslice.core.nonlinear.image_gen_registration.outlined_atlas_template`)
+    with :func:`~langslice.core.nonlinear.prompts.pass1_atlas_prompt`. With
+    *passes* 2 a second call sends the clean tissue, pass 1's extracted
+    lines redrawn on it, and the outlined atlas, with
+    :func:`~langslice.core.nonlinear.prompts.pass2_atlas_prompt`. No
+    placement is shown to the model. *edit* is the image model's call;
+    *on_reply* receives each reply as it arrives (pass number, image), so a
+    caller keeps pass 1's reply even when pass 2 is refused (pass 1 drew no
+    lines) or fails.
+    """
+    if passes not in (1, 2):
+        raise ValueError("passes must be 1 or 2")
+    reply = edit(SegmentationGenerationRequest(
+        slice_image=canvas.convert("RGB"), reference_images=[outlined_atlas],
+        prompt=pass1_atlas_prompt(plane, provider), provider=provider, model=model,
+        metadata={"route": "atlas", "pass": 1},
+    ))
+    if on_reply is not None:
+        on_reply(1, reply.image)
+    transports: list[str | None] = [reply.route]
+    if passes == 1:
+        return AtlasDrawing(reply.image, 1, transports, {})
+    pass1_lines = extract_thinned_lines(reply.image, canvas.size)
+    if not pass1_lines.any():
+        raise ValueError(
+            "Pass 1 returned no usable yellow anatomical boundaries; pass 2 has nothing to correct"
+        )
+    lines_on_tissue = border_overlay(canvas, pass1_lines, line_width_px(max(canvas.size)))
+    reply = edit(SegmentationGenerationRequest(
+        slice_image=canvas.convert("RGB"), reference_images=[lines_on_tissue, outlined_atlas],
+        prompt=pass2_atlas_prompt(plane, provider), provider=provider, model=model,
+        metadata={"route": "atlas", "pass": 2},
+    ))
+    if on_reply is not None:
+        on_reply(2, reply.image)
+    transports.append(reply.route)
+    return AtlasDrawing(reply.image, 2, transports,
+                        {"pass1_lines_on_tissue.png": lines_on_tissue})
 
 
 #: Changes whenever route "atlas"'s model inputs change for the same geometry
@@ -379,8 +429,8 @@ def start_atlas_correction(
 
     The model is shown the clean section and the outlined grayscale atlas
     plane at the section's position and cutting angles
-    (:func:`~langslice.core.nonlinear.border_registration.draw_from_atlas`:
-    pass 1, and with *passes* 2 a corrective pass 2), never the section's
+    (:func:`draw_from_atlas`: pass 1, and with *passes* 2 a corrective
+    pass 2), never the section's
     placement. The result is recorded exactly as :func:`start_correction`'s
     (same keys, same call-key folders and attempts under *calls_dir*, the
     extracted lines and ``request.json``'s ``atlas_to_canvas``), so
@@ -390,11 +440,11 @@ def start_atlas_correction(
     ``trace_borders`` reply. Requires a position and a written transform
     (:func:`langslice.core.handoff.prepare_linear_registration`). Returns
     ``(record, job)`` like :func:`start_correction`; the first reply at a
-    geometry and pass count is reused (``cached``).
+    geometry and pass count is reused (``cached``). With two passes, pass
+    1's reply is saved as it arrives (``pass1_raw_correction.png``) and
+    counts as a received reply, so a failed or refused pass 2 is not paid
+    for again.
     """
-    from langslice.core.nonlinear.border_registration import draw_from_atlas
-    from langslice.core.nonlinear.image_gen_registration import outlined_atlas_template
-
     if passes not in (1, 2):
         raise ValueError("passes must be 1 or 2")
     provider, model = image_model.provider, image_model.model
@@ -428,7 +478,7 @@ def start_atlas_correction(
     }.items()}
     canvas.save(paths["original"])
     outlined.save(paths["outlined_atlas"])
-    # The exact text each pass sends (draw_from_atlas sends these).
+    # The exact text each pass sends.
     Path(paths["prompt"]).write_text(pass1_atlas_prompt(prepared.plane, provider))
     if passes == 2:
         Path(paths["pass2_prompt"]).write_text(pass2_atlas_prompt(prepared.plane, provider))
@@ -453,17 +503,21 @@ def start_atlas_correction(
     }
     submitted = {**result, "artifact_paths": dict(paths), "status": "running"}
 
+    def received(pass_number: int, image: Image.Image) -> None:
+        result["raw_received"] = True
+        if passes == 2 and pass_number == 1:
+            paths["pass1_raw_correction"] = str(directory / "pass1_raw_correction.png")
+            image.save(paths["pass1_raw_correction"])
+
     def job() -> dict[str, Any]:
         try:
             drawing = draw_from_atlas(
                 canvas, outlined, plane=prepared.plane, provider=provider, model=model,
-                passes=passes, edit=image_model.call,
+                passes=passes, edit=image_model.call, on_reply=received,
             )
             for filename, image in drawing.artifacts.items():
-                if filename != "outlined_atlas.png":  # saved with the request
-                    paths[Path(filename).stem] = str(directory / filename)
-                    image.save(directory / filename)
-            result["raw_received"] = True
+                paths[Path(filename).stem] = str(directory / filename)
+                image.save(directory / filename)
             raw = drawing.image.convert("RGB")
             raw.save(paths["raw_reply"])
             mask = extract_thinned_lines(raw, canvas.size)

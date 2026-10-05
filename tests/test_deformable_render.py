@@ -10,9 +10,15 @@ from langslice.core.deformable import (
     FitSettings,
     draw_warped_borders,
     fit_section,
-    warped_border_coverage,
+    warped_border_layers,
 )
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, placement, render_section
+
+
+def warped_border_coverage(record, atlas, **options):
+    """``(faint, strong)`` layers of :func:`warped_border_layers`."""
+    layers = warped_border_layers(record, atlas, **options)
+    return layers["faint"], layers["strong"]
 
 
 @pytest.fixture(scope="module")
@@ -64,8 +70,6 @@ def test_highlight_is_strong_over_a_faint_outline(case):
 
 
 def test_marked_regions_get_their_own_layer_and_outlines_limit_the_rest(case):
-    from langslice.core.deformable import warped_border_layers
-
     atlas, image, record = case
     layers = warped_border_layers(record, atlas, highlight=["STR"], marked=["HY"])
     assert layers["marked"].max() > 0.5 and layers["strong"].max() > 0.5

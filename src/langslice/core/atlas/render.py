@@ -21,11 +21,9 @@ from langslice.core.atlas.recolor import MERGE_EPS, color_lut
 from langslice.core.space import Plane, atlas_space_context, slice_axis_index
 
 __all__ = [
-    "BORDER_DARKEN",
     "annotation_slice",
     "atlas_um_per_px",
     "border_color",
-    "darker",
     "family_labels",
     "family_mapping",
     "family_outlines",
@@ -193,22 +191,6 @@ def border_color(color: Rgb, *, dark_background: bool = False) -> Rgb:
     out = cv2.cvtColor(np.array([[(hue, sat, val)]], dtype=np.uint8), cv2.COLOR_HSV2RGB)
     r, g, b = (int(v) for v in out[0, 0])
     return (r, g, b)
-
-
-#: Allen-Reference-Atlas plate look: a region's delineating line is its own
-#: color at this fraction of its brightness — same hue and saturation, only
-#: value moves, so the line reads as "the edge of THIS region" rather than as
-#: a separate structure. (Scaling all three channels scales HSV value exactly.)
-BORDER_DARKEN = 0.7
-
-
-def darker(color: Rgb) -> Rgb:
-    """*color* dimmed to :data:`BORDER_DARKEN` of its brightness."""
-    return (
-        int(color[0] * BORDER_DARKEN),
-        int(color[1] * BORDER_DARKEN),
-        int(color[2] * BORDER_DARKEN),
-    )
 
 
 def _smooth_closed(points: np.ndarray, window: int) -> np.ndarray:

@@ -1,12 +1,9 @@
-"""Image-path facts for the registration task: model families and output frames.
+"""Image-path facts for a border trace: model families and output frames.
 
-Registration prompt TEXT lives in :mod:`langslice.core.nonlinear.prompts` now (the
-colormap-lineup prompts this module used to hold — ``V14``,
-``V14_EDIT_MOUSE``, ``base_segmentation_prompt`` — were deleted with the
-colormap workflow). What stays here is provider-network fact, not task
-wording: which model family a name belongs to, the aspect-ratio envelope an
-image path accepts, and the fixed output frame each lane hands back for a
-given canvas, so :func:`~langslice.core.nonlinear.image_gen_registration.prepare_canvas`
+No prompt text (that is :mod:`langslice.core.nonlinear.prompts`): which
+model family a name belongs to, the aspect-ratio envelope an image path
+accepts, and the fixed output frame each lane hands back for a given
+canvas, so :func:`~langslice.core.nonlinear.image_gen_registration.prepare_canvas`
 can build the working canvas AT that frame instead of resampling into or out
 of the model.
 """
@@ -34,10 +31,10 @@ def aspect_ratio_limits(
     resampling a mismatched ratio back onto the slice would undo the pixel
     alignment.
 
-    Verified 2026-08-25: gpt-image-2 via the OpenAI API accepts arbitrary
-    WIDTHxHEIGHT within 1:3..3:1; via openai-oauth (Codex backend) the size
-    parameter is ignored and the output matches the input image's aspect
-    exactly (probed up to 2.35:1), so the same range is a safe envelope.
+    gpt-image via the OpenAI API accepts any WIDTHxHEIGHT within 1:3..3:1;
+    via openai-oauth (Codex backend) the size parameter is ignored and the
+    output matches the input image's aspect exactly (probed up to 2.35:1),
+    so the same range is a safe envelope.
     """
     if image_model_family(image_model) == "gpt-image":
         return (1.0 / 3.0, 3.0)
@@ -45,12 +42,12 @@ def aspect_ratio_limits(
 
 
 #: Codex-lane (openai-oauth) output: a fixed ~1.573 Mpx budget at the INPUT
-#: aspect, size/quality ignored. Read off 19 outputs on 2026-09-11: width =
-#: floor(sqrt(budget * aspect)), height = round(budget / width), within 1 px.
+#: aspect, size/quality ignored: width = floor(sqrt(budget * aspect)),
+#: height = round(budget / width), within 1 px of the measured outputs.
 _CODEX_OUTPUT_BUDGET_PX = 1024 * 1536
 
 #: Gemini image models return one fixed frame per (aspect ratio, size tier);
-#: measured live on gemini-3.1-flash-lite-image / flash-image, 2026-09-11.
+#: measured on gemini-3.1-flash-lite-image / flash-image.
 #: Portrait entries are the transposed landscape ones (assumed, not measured).
 _GEMINI_FRAMES: dict[str, dict[str, tuple[int, int]]] = {
     "1K": {"1:1": (1024, 1024), "4:3": (1200, 896), "3:2": (1264, 848), "5:4": (1152, 928)},
@@ -68,9 +65,10 @@ def _nearest_gemini_frame(aspect: float, tier: str) -> tuple[str, tuple[int, int
     return min(frames.items(), key=lambda kv: abs(math.log((kv[1][0] / kv[1][1]) / aspect)))
 
 
-def gemini_aspect_for(aspect: float, quality: str | None = None) -> str:
-    """The Gemini ``aspect_ratio`` string nearest a canvas aspect (w/h)."""
-    tier = _GEMINI_TIER_ALIASES.get((quality or "1K").upper(), "1K")
+def gemini_aspect_for(aspect: float, size_tier: str | None = None) -> str:
+    """The Gemini ``aspect_ratio`` string nearest a canvas aspect (w/h) at a
+    size tier (``1K``, the default, or ``512``)."""
+    tier = _GEMINI_TIER_ALIASES.get((size_tier or "1K").upper(), "1K")
     return _nearest_gemini_frame(aspect, tier if tier in _GEMINI_FRAMES else "1K")[0]
 
 
@@ -78,7 +76,7 @@ def native_output_size(
     image_model: str | None,
     provider: str | None,
     canvas_size: tuple[int, int],
-    quality: str | None = None,
+    size_tier: str | None = None,
 ) -> tuple[int, int] | None:
     """The frame the image path will hand back for a canvas of this size.
 
@@ -91,7 +89,7 @@ def native_output_size(
     - openai-api: the same budget on the endpoint's 16-px grid (the request
       size then equals the canvas; ``_api_edit_size`` sends it verbatim).
     - gemini-api: the model's fixed frame for the nearest legal aspect at the
-      requested tier (``quality`` = 1K | 512; 2K/4K frames not measured).
+      requested tier (*size_tier* 1K | 512; 2K/4K frames not measured).
     """
     from langslice.core.provider_names import canonical_provider
 
@@ -109,7 +107,7 @@ def native_output_size(
         out_w = max(16, round(math.sqrt(_CODEX_OUTPUT_BUDGET_PX * aspect) / 16) * 16)
         return out_w, max(16, round(_CODEX_OUTPUT_BUDGET_PX / out_w / 16) * 16)
     if canon == "gemini-api" or family == "nano-banana":
-        tier = _GEMINI_TIER_ALIASES.get((quality or "1K").upper(), "1K")
+        tier = _GEMINI_TIER_ALIASES.get((size_tier or "1K").upper(), "1K")
         if tier not in _GEMINI_FRAMES:
             return None
         return _nearest_gemini_frame(aspect, tier)[1]

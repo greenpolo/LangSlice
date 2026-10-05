@@ -9,8 +9,8 @@ atlas plane composes the linear placement after it::
 
     native_xy = inverse(atlas_to_section) @ (pixel + field_mm / mm_per_px)
 
-which is ``core.handoff``'s and ``border_registration``'s order
-(``composed_native_map``: residual first, then undo the placement), so ABBA,
+(residual first, then undo the placement; ``core.maps.native_points``
+composes it the same way), so ABBA,
 VisuAlign and BrainGlobe exports can all be derived from
 :meth:`DeformableRecord.native_coordinates` and
 :meth:`DeformableRecord.volume_coordinates` without the atlas object. The
@@ -48,19 +48,13 @@ MIN_FLAG_AREA_MM2 = 0.02
 FOLD_FRACTION_LIMIT = 0.001
 #: DISPLACEMENT_OUTSIZED: the largest displacement in tissue above this
 #: fraction of the tissue's longest extent (about 1 mm on a 10 mm coronal
-#: section). In the 2026-10-01 ceiling test (400 fits, eight sections) the
-#: one blow-up (Elastix on a raw channel, M11_C_08) reached 1.31 mm on a
-#: section ~10 mm wide with no fold or area flag, and every ANTs fit stayed
-#: at or below 0.78 mm; the next largest, 1.08 mm (Elastix, M11_B_08), had
-#: pulled the atlas outline onto a displaced tissue flap.
+#: section): a blow-up can stay under every fold and area flag while it
+#: drags the outline over a millimetre.
 OUTSIZED_MAX_FRACTION = 0.1
 #: DISPLACEMENT_OUTSIZED also fires when the median displacement in tissue
 #: exceeds this, in mm: a wholesale drift a uniform field would hide from the
-#: maximum rule. The recommended pairings (ANTs medium) sat at medians of
-#: 0.01-0.33 mm and the largest ceiling-test median was 0.52 mm (Elastix
-#: stiff on M11_B_08); 0.4 mm would
-#: have flagged Elastix fits on M11_C_08 whose borders looked as plausible
-#: as ANTs's, so the limit sits above every observed median.
+#: maximum rule. It sits above the medians of fits whose borders looked
+#: plausible.
 OUTSIZED_MEDIAN_MM = 0.6
 
 RECORD_VERSION = 1

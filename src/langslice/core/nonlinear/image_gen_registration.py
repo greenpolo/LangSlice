@@ -1,34 +1,28 @@
-"""Model-facing canvas geometry, atlas templates, and the registration entrypoint.
+"""Model-facing canvas geometry and the outlined atlas template.
 
-Exactly two routes, both border-based (see ``border_registration.py`` for the
-route selection and orchestration): this module holds the geometry every
-route shares — the working canvas (:func:`prepare_canvas`), the aspect-ratio
-lineup helpers, the grayscale atlas template, and the outlined-atlas render
-route "atlas" shows the model instead of a placement.
+The geometry both border traces share: the working canvas
+(:func:`prepare_canvas`), the aspect-ratio helpers, and the outlined
+grayscale atlas plate route "atlas" shows the model instead of a placement
+(:func:`outlined_atlas_template`).
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.core.atlas.render import annotation_slice
 from langslice.core.nonlinear.image_gen_helpers import (
-    _annotation_slice,
     _extract_borders_from_classified,
     _merge_classified,
     line_width_px,
 )
 from langslice.core.nonlinear.model_prompts import aspect_ratio_limits, native_output_size
-from langslice.core.nonlinear.types import Deformation, RegistrationCandidate
 from langslice.core.space import Plane
-
-if TYPE_CHECKING:
-    from langslice.providers.registry import ImageCall
 
 #: Long edge every model-facing atlas render is NEAREST/LANCZOS-upscaled to at
 #: least. The atlas is coarse (a 25um coronal plate is ~456px across); below
@@ -132,7 +126,7 @@ def prepare_canvas(
     provider: str | None = None,
     native_canvas: bool = True,
     canvas_long_edge: int | None = None,
-    quality: str | None = None,
+    size_tier: str | None = None,
 ) -> tuple[Image.Image, tuple[int, int], float, float, int]:
     """Downsample, pad, and aspect-snap the slice into the working canvas.
 
@@ -145,13 +139,12 @@ def prepare_canvas(
     ``native_canvas`` (the default) sizes the canvas to the frame the image
     path returns (:func:`model_prompts.native_output_size`): the layout is
     worked out at the long-edge rule, scaled to fit that frame, and padded
-    out to it exactly, so the model edits on the output's own pixel grid.
-    Nash 2026-09-11: every input the model must rescale to its output is a
-    pixel the output cannot carry, paid for twice (input tokens in, a
-    resample out). The slice is resampled ONCE, straight from the original
-    to its final size. ``canvas_long_edge`` instead pins the long edge (an
-    experiment knob: the model is shown a smaller canvas and its output is
-    resampled DOWN onto it).
+    out to it exactly, so the model edits on the output's own pixel grid: an
+    input the model must rescale to its output is a pixel the output cannot
+    carry, paid for twice (input tokens in, a resample out). The slice is
+    resampled ONCE, straight from the original to its final size.
+    ``canvas_long_edge`` instead pins the long edge (the model is shown a
+    smaller canvas and its output is resampled DOWN onto it).
     """
     fill = _background_color(image)
     limits = aspect_ratio_limits(image_model, provider)
@@ -174,7 +167,7 @@ def prepare_canvas(
     frame: tuple[int, int] | None = None
     if native_canvas and canvas_long_edge is None:
         _, _, canvas0, _ = layout(1.0)
-        frame = native_output_size(image_model, provider, canvas0, quality)
+        frame = native_output_size(image_model, provider, canvas0, size_tier)
         if frame is not None:
             scale = min(frame[0] / canvas0[0], frame[1] / canvas0[1])
     target_size, pad_px, canvas_size, offset = layout(scale)
@@ -235,8 +228,8 @@ def _model_facing_template(
 
     ``get_reference_slice`` normalizes by the volume's brightest voxel, which
     leaves a typical plate dim; the model reads structure off this image, so
-    it is restretched on the 99.5th percentile of the plate's own tissue
-    (a linear rescale, exactly what the April benchmark sent).
+    it is restretched linearly on the 99.5th percentile of the plate's own
+    tissue.
     """
     from langslice.core.atlas import get_reference_slice
 
@@ -260,7 +253,7 @@ def _overlay_borders(
     Yellow core on a black rim: readable on violet Nissl, white brightfield,
     and dark fluorescence alike (plain cyan vanished on cyan-tinted Nissl).
     ``line_px`` grows the yellow core before the rim is drawn, so a render at
-    a different working resolution than the historical 2048px canvas still
+    a different working resolution than a 2048px canvas still
     gets a legible (not hairline-thin, not bloated) line — see
     :func:`~langslice.core.nonlinear.image_gen_helpers.line_width_px`.
     """
@@ -302,9 +295,8 @@ def outlined_atlas_template(
         atlas, plane, image_axes, atlas_mirror_lr,
     )
     if native_labels is None:
-        native_labels = _annotation_slice(
+        native_labels = annotation_slice(
             atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
-            blackout=False,
         )
         if image_axes:
             from langslice.core.space import atlas_space_context, orient_slice_to_axes
@@ -332,80 +324,3 @@ def outlined_atlas_template(
     if section_aspect is not None:
         outlined = letterbox_to_aspect(outlined, section_aspect)
     return outlined
-
-
-def generate_registration_candidate(
-    image: Image.Image,
-    *,
-    atlas_name: str,
-    position_mm: float,
-    plane: Plane = "coronal",
-    provider: str = "google",
-    image_model: str | None = None,
-    image_prompt: str | None = None,
-    generated_image: Image.Image | None = None,
-    image_axes: str | None = None,
-    canvas_pad: float = 0.0,
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-    deformation: Deformation = "deformable",
-    passes: int = 1,
-    previous_candidate_id: str | None = None,
-    candidate_id: str | None = None,
-    debug_dir: str | None = None,
-    on_progress: Callable[[str], None] | None = None,
-    on_trace: Callable[[dict[str, object]], None] | None = None,
-    openai_image_route: str = "images",
-    review_model: str | None = None,
-    thinking_level: str | None = None,
-    native_canvas: bool = True,
-    canvas_long_edge: int | None = None,
-    initial_atlas_to_slice: Sequence[Sequence[float]] | np.ndarray | None = None,
-    initial_alignment_source: str = "supplied",
-    atlas_mirror_lr: bool = False,
-    image_call: ImageCall | None = None,
-) -> RegistrationCandidate:
-    """Generate one dense border-based registration candidate.
-
-    Exactly two routes, chosen by whether a placement is supplied:
-
-    - ``initial_atlas_to_slice`` given -> route "supplied": one model call
-      (:func:`~langslice.core.nonlinear.border_refinement.border_refinement_prompt`)
-      moves a rough placement's drawn boundaries onto the visible tissue.
-    - Not given -> route "atlas": no placement to correct. One model call
-      (:func:`~langslice.core.nonlinear.prompts.pass1_atlas_prompt`) draws
-      boundaries on the clean tissue against the outlined atlas template
-      (:func:`outlined_atlas_template`); an optional second call
-      (``passes=2``) corrects them. The same silhouette-moments placement
-      (:mod:`langslice.core.nonlinear.prior`) and residual border fit as
-      "supplied" then produce the candidate.
-
-    ``provider="none"`` calls no model on either route: it retains a supplied
-    placement, or fits the silhouette placement with zero residual. This is a
-    thin dispatcher; the routing and both routes' orchestration live in
-    :mod:`langslice.core.nonlinear.border_registration` (avoids a circular import
-    at module load time).
-
-    *image_call* is the image model's edit, resolved by the caller
-    (:class:`langslice.providers.registry.ImageModel`'s ``call``); a model
-    call without it is refused (``provider="none"`` and a replayed
-    *generated_image* need none).
-    """
-    from langslice.core.nonlinear.border_registration import generate_border_registration_candidate
-
-    return generate_border_registration_candidate(
-        image,
-        atlas_name=atlas_name, position_mm=position_mm, plane=plane,
-        provider=provider, image_model=image_model, image_prompt=image_prompt,
-        generated_image=generated_image, image_axes=image_axes,
-        atlas_mirror_lr=atlas_mirror_lr,
-        initial_atlas_to_slice=initial_atlas_to_slice,
-        initial_alignment_source=initial_alignment_source,
-        canvas_pad=canvas_pad, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
-        deformation=deformation, passes=passes,
-        previous_candidate_id=previous_candidate_id, candidate_id=candidate_id,
-        debug_dir=debug_dir, on_progress=on_progress, on_trace=on_trace,
-        openai_image_route=openai_image_route, review_model=review_model,
-        thinking_level=thinking_level, native_canvas=native_canvas,
-        canvas_long_edge=canvas_long_edge, image_call=image_call,
-    )

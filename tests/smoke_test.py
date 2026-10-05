@@ -4,13 +4,7 @@ from __future__ import annotations
 
 import importlib
 
-import numpy as np
-
-from langslice.core.nonlinear import (
-    AffineResult,
-    affine_matrix_from_legacy_params,
-    identity_affine_matrix,
-)
+from langslice.core.affine import affine_matrix_from_legacy_params
 from langslice.job.quint import build_quint_export, export_to_dict
 
 
@@ -46,22 +40,3 @@ def test_quint_export_smoke_payload() -> None:
     assert payload["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
     assert payload["slices"][0]["filename"] == "test_slice.png"
     assert len(payload["slices"][0]["anchoring"]) == 9
-
-
-def test_affine_result_constructor_smoke() -> None:
-    result = AffineResult(
-        matrix=affine_matrix_from_legacy_params(
-            image_width=1024,
-            image_height=670,
-            rotation_deg=2.5,
-            translate_x_pct=1.0,
-            translate_y_pct=-0.5,
-        ),
-        source_size=(1024, 670),
-        output_size=(1024, 670),
-        backend="test",
-        reasoning="synthetic",
-    )
-    assert result.matrix.shape == (3, 3)
-    assert result.output_size == (1024, 670)
-    assert np.allclose(identity_affine_matrix(), np.eye(3, dtype=np.float64))
