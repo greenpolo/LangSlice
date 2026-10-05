@@ -4,9 +4,8 @@ Package guide for `src/langslice/hosts/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The top layer of the layered core (folder move, 2026-10-04): code that
-connects LangSlice to another program and runs in LangSlice's own Python
-environment. What is installed into someone else's program lives in
+The top layer of the layered core: code that connects LangSlice to another
+program and runs in LangSlice's own Python environment. What is installed into someone else's program lives in
 `connectors/` at the repo root instead (the Fiji/ABBA connector, the Claude
 Desktop configuration).
 
@@ -31,13 +30,11 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   the listener of the connector's run messages), the ABBA agent viewer
   (`abba_follow.py`, `abba_compare.py`, `abba_overview.py`) and activity log
   (`abba_chat.py` + `static/`, `abba_activity.py`): `integrations/CLAUDE.md`.
-  The abba-python registration plugin, the launcher's settings menu and
-  the Python live mirror were removed 2026-10-04 (the Fiji connector is the
-  one ABBA integration). The QUINT writer that used to sit there is
-  `job/quint.py` (an operation writes it).
+  The Fiji connector is the one ABBA integration; this package only follows
+  its runs.
 - `api/` — `service.py` (`langslice serve --stdio`: the JSON-lines engine
   service the Fiji connector starts). The protocol models, the runtime
   handlers, setup, saved Claude jobs and the JVM-free snapshot worker
   (`abba_worker.py`, whose checkpoints carry the affine and warp rows) are
-  door-level, in `doors/api/` (moved down 2026-10-04).
-  `docs/abba_plugin_design.md`, `docs/abba_installation.md`.
+  door-level, in `doors/api/`. `docs/abba_plugin_design.md`,
+  `docs/abba_installation.md`.
