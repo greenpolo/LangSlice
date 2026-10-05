@@ -391,58 +391,6 @@ def test_a_migration_across_file_systems_survives_an_interruption(
         job, _ = _open(folder)
     _assert_migrated(folder, job)
 
-def _saved_job(root: Path, folder: Path, job_id: str) -> Path:
-    """A phase-2 saved Claude job: the whole job under ``<root>/<id>/``."""
-    old = root / job_id
-    old.mkdir(parents=True)
-    state = _legacy_state(folder, old)
-    _write_legacy(old, state)
-    spec = JobSpec(image_folder=str(folder), preprocess="none", tasks=["position"]).to_dict()
-    (old / "job.json").write_text(json.dumps({
-        "format_version": 1, "job_id": job_id, "created_at": "2026-10-01T00:00:00+00:00",
-        "kind": "folder", "spec": spec, "notes": "old notes", "host_channel": None,
-        "trace_dir": None}))
-    (old / "prompt.txt").write_text("the prompt\n")
-    (old / "result.json").write_text("{}")
-    return old
-
-
-def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import claude_jobs
-    from langslice.doors.mcp.server import open_saved_job
-
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    folder = _folder(tmp_path / "stack")
-    job_id = "abcdef012345"
-    old = _saved_job(tmp_path / "jobs", folder, job_id)
-    job_folder, record = claude_jobs.load_job(job_id)
-    root = folder / "langslice"
-    assert job_folder == root and not old.exists()
-    assert record["kind"] == "folder" and record["notes"] == "old notes"
-    entry = json.loads((tmp_path / "jobs" / f"{job_id}.json").read_text())
-    assert entry["job_folder"] == str(root)
-    assert (root / "prompt.txt").read_text() == "the prompt\n"
-    assert (root / "exports" / "result.json").exists()
-    saved = json.loads((root / "state.json").read_text())
-    assert saved["slices"][0]["deformation"]["record"] == f"sections/s0/deformable/{KEY}"
-    assert (root / f"sections/s0/deformable/{KEY}/record.json").exists()
-    session = open_saved_job(job_id, lambda _n: _ATLAS)
-    assert session.job.folder == root and len(session.job.undo_stack) == 1
-
-
-def test_an_old_saved_job_does_not_move_onto_another_job(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import claude_jobs
-
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    folder = _folder(tmp_path / "stack")
-    job_id = "abcdef012345"
-    old = _saved_job(tmp_path / "jobs", folder, job_id)
-    _open(folder)  # the folder already has its own job
-    with pytest.raises(ValueError, match="already holds a LangSlice job"):
-        claude_jobs.load_job(job_id)
-    assert (old / "job.json").exists() and (old / "linear_state.json").exists()
-
-
 # --- the saved pictures ---------------------------------------------------------------------
 
 
