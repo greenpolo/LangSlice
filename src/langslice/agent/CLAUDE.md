@@ -42,7 +42,7 @@ one undo step; a dependent refinement waits for the first picture.
 Tasks (`JobSpec.tasks`) are switched on one by one; a task that is OFF builds
 no tools and takes its answer from `spec.inputs`. Users see Positioning
 (`reorder` + `position`), Linear (`transform`) and Nonlinear (`nonlinear`)
-(`docs/interface_design.md`). Which verbs a run has is
+(the user-facing task names). Which verbs a run has is
 `ops.registry.enabled(spec)`: `orient_slices`, `fit_affine`,
 `adjust_transforms` and `set_cutting_angles` belong to `transform` (a mirror
 is the sign of the in-plane affine, so flipping is Linear, never

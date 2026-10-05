@@ -11,14 +11,14 @@ import pytest
 # --- ABBA slicing rotations <-> LangSlice pitch/yaw ---------------------------
 
 #: Stage 0 (atlas (ML, DV, AP) mm -> ABBA world) of ABBA's own QuPath
-#: ``ABBA-Transform-allen_mouse_10um_java.json`` exports (LSD_910, the lab's
-#: saves), with the save's rotationX/rotationY in radians. Only the 3x3 block;
-#: world z is the slicing axis, so its row is the cutting plane's normal.
+#: ``ABBA-Transform-allen_mouse_10um_java.json`` exports (real saves), with the
+#: save's rotationX/rotationY in radians. Only the 3x3 block; world z is the
+#: slicing axis, so its row is the cutting plane's normal.
 #: ABBA's ASR atlas names x > 5.7 "Left", BrainGlobe asr names the high ML index
 #: left, and the exported Left ROIs sit on the image's right for every
-#: unflipped section (M12: 38/38 with flips), so x IS BrainGlobe ML here.
+#: unflipped section (38/38 with flips), so x IS BrainGlobe ML here.
 _ABBA_EXPORTS = {
-    "M11_B_01": (
+    "save_a": (
         0.22689280275926282,
         0.03490658503988659,
         [
@@ -27,7 +27,7 @@ _ABBA_EXPORTS = {
             [0.03492076949174772, -0.23100891551524302, 0.9999999999999999],
         ],
     ),
-    "M12_C_01": (
+    "save_b": (
         -0.148352986419518,
         0.05235987755982988,
         [

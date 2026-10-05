@@ -253,7 +253,7 @@ def test_a_section_without_tissue_is_refused_cleanly(tmp_path: Path, atlas):
 
 
 def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Path, atlas):
-    """adjust_transforms takes the shear fit_affine reports (Nash 2026-10-03):
+    """adjust_transforms takes the shear fit_affine reports:
     the fit's knobs given back draw and store the fit's own map."""
     centre = np.array([WIDTH / 2.0, HEIGHT / 2.0])
     slant = np.eye(3)

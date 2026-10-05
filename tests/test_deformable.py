@@ -59,7 +59,7 @@ def _settings(**options) -> FitSettings:
 #: The synthetic sections are flat-intensity regions with no texture, where
 #: local correlation has little to work with (synthetic warp error 0.39 of the
 #: warp vs 0.12 for mutual information at standard detail). Tests of the fit's
-#: mechanics (direction, exclusion, steps, the pool) pin the pre-2026-10-02
+#: mechanics (direction, exclusion, steps, the pool) pin the mutual-information
 #: stain metric; the defaults have their own test.
 MI = {"stain_metric": "mutual_information", "stain_edges": False}
 

@@ -1,4 +1,4 @@
-"""Every combination of steps, through every door (audit, 2026-10-04).
+"""Every combination of steps, through every door.
 
 The product requirement: LangSlice works in ANY combination of its steps
 (Positioning, Linear, Nonlinear with or without an image model, or a

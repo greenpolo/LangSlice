@@ -116,7 +116,7 @@ def border_correction_tool_prompt(plane: Plane = "coronal", provider: str | None
     Image 2 the placed borders); every other provider keeps the accepted
     :func:`border_refinement_prompt` (Image 1 the placed borders, Image 2 the
     clean photograph). The stack agent may send its own lightly edited copy
-    in place of this text. Sentence audit: ``docs/nonlinear_image_tool.md``.
+    in place of this text. Sentence audit: ``core/nonlinear/CLAUDE.md``.
     """
     return (
         _for_plane(_SUPPLIED_GPT, plane) if _is_gpt_twin(provider)

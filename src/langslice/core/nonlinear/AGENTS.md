@@ -14,8 +14,8 @@ placed-border correction with the agent's edited copy of the base prompt
 (blank = base), one retained reply per geometry, raw and extracted images
 returned separately, no atlas search or rejection. The fit of the extracted
 lines is `fit_deformable`'s (traced), in `core/deformation.py` and the
-`core/deformable/` package. See `docs/nonlinear_image_tool.md` for the tool's
-contract and prompt sentence review.
+`core/deformable/` package. The prompt sentence review is below; `docs/nonlinear_design.md` has the
+contract.
 
 Exactly two border-based routes, chosen by whether a placement is supplied.
 No model is ever shown a colored region map: the model-facing atlas is a
@@ -123,6 +123,30 @@ Before changing or sending a prompt:
 
 Provider adapters only translate requests; task semantics and prompt selection
 stay in nonlinear.
+
+## Base prompt sentence review
+
+`border_correction_tool_prompt` returns `border_refinement_prompt` for the
+Gemini lineage (Image 1 the placed borders, Image 2 the clean photograph);
+OpenAI providers get `_SUPPLIED_GPT` (the same sentences, attachments swapped).
+The notes heading, "Additional notes for this slice (supplement the task
+above)", is subordinate scope and adds no attachment, frame or partition. Notes
+describe specimen-specific displacement, damage or slide artifacts; they are
+never a replacement task or a visibility-based border-selection policy. The exact
+notes and the effective prompt are always saved. Sentence by sentence, with the
+interpretation each was checked against:
+
+| Sentence | Purpose and alternative interpretation checked |
+| --- | --- |
+| Image 1 is the photograph with roughly aligned borders. | Establishes the edit target; "rough" avoids treating the placement as anatomically final. |
+| Image 2 is the same photograph without lines. | Supplies unobscured tissue in the identical frame; it is not an independent atlas plate. |
+| Edit Image 1 so each line follows its region edge in Image 2. | Requests corrected anatomical placement rather than tracing any visible artifact. |
+| Move a line by sliding or bending it. | Describes changes to lines, not movements of tissue pixels. |
+| Keep an already correct line. | Allows partial correction without asking the model to redraw every border. |
+| Infer indistinct boundaries from neighboring structures and the supplied arrangement. | Indistinct surviving anatomy retains boundaries; visibility is not a permission to omit them. |
+| Preserve Image 2's photograph, tissue, background, size, position and frame. | Defines an annotation overlay and excludes synthesized tissue as the intended output. |
+| Keep the same boundary set and thin bright yellow style. | The supplied atlas arrangement decides region identity; artifacts do not introduce regions. |
+| Output one photograph with corrected boundaries replacing the rough ones. | Requests one corrected annotation, with no labels, alternate views or accumulated rough lines. |
 
 ## Known limits
 

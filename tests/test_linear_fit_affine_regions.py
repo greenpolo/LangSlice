@@ -19,7 +19,7 @@ from tests.fakes import EllipseAtlas, ellipse_section
 LEFT, RIGHT, CORE = 2, 3, 4
 
 #: The whole-outline fit on the ellipse fixture, as computed by the code before
-#: regions existed (commit 5b873d3, run 2026-10-01): regions must not move it.
+#: regions existed: regions must not move it.
 PINNED_IOU = 0.985
 PINNED_PHYSICAL = {"rotation_deg": -0.004, "scale_x": 0.9998, "scale_y": 1.1398,
                    "translate_x_mm": -0.2817, "translate_y_mm": -0.041, "shear": 0.0001,

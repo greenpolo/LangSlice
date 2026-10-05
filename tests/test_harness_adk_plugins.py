@@ -255,7 +255,7 @@ def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
 
 
 def test_transform_calls_do_not_cut_earlier_images():
-    """No stage-boundary cut (2026-10-03): channel strips and preprocess
+    """No stage-boundary cut: channel strips and preprocess
     pictures seen before alignment stay in context."""
     ws = WorkingSetImages()
 

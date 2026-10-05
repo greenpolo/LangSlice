@@ -292,7 +292,7 @@ def _allen_color(acronym: str, name: str) -> Rgb | None:
     return None
 
 
-def _structure_rows(atlas: Any) -> dict[int, dict[str, Any]]:
+def structure_rows(atlas: Any) -> dict[int, dict[str, Any]]:
     """``{id: row}`` from ``atlas.structures``, tolerating rows without an
     explicit ``id`` field (the dict key stands in)."""
     structures = getattr(atlas, "structures", None)
@@ -311,7 +311,7 @@ def _structure_rows(atlas: Any) -> dict[int, dict[str, Any]]:
 
 def _native_lut(atlas: Any) -> dict[int, Rgb]:
     lut: dict[int, Rgb] = {}
-    for sid, entry in _structure_rows(atlas).items():
+    for sid, entry in structure_rows(atlas).items():
         try:
             triplet = entry["rgb_triplet"]
             lut[sid] = (int(triplet[0]), int(triplet[1]), int(triplet[2]))
@@ -322,7 +322,7 @@ def _native_lut(atlas: Any) -> dict[int, Rgb]:
 
 def _paths(atlas: Any) -> dict[int, tuple[int, ...]]:
     paths: dict[int, tuple[int, ...]] = {}
-    for sid, entry in _structure_rows(atlas).items():
+    for sid, entry in structure_rows(atlas).items():
         try:
             paths[sid] = tuple(int(p) for p in entry.get("structure_id_path", ()))
         except Exception:
@@ -365,7 +365,7 @@ def _allen_join(atlas: Any) -> dict[int, Rgb] | None:
     ancestor colors whatever the match misses (a subregion the Allen tree does
     not segment inherits its family's color). ``None`` when the tree is mostly
     foreign to the Allen ontology."""
-    rows = _structure_rows(atlas)
+    rows = structure_rows(atlas)
     if not rows:
         return None
     paths = _paths(atlas)

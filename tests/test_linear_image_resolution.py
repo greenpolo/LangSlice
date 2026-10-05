@@ -349,7 +349,7 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
 
 def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
     font = _caption_font()
-    text = "12: M04_D_08_Overlay.tif  9.00 mm (+0.40 to next)  [damaged: dorsal cortex torn]"
+    text = "12: section_08_overlay.tif  9.00 mm (+0.40 to next)  [damaged: dorsal cortex torn]"
     picture = Image.new("RGB", (160, 120), (40, 40, 40))
     labelled = caption(picture, text)
     wrapped = wrap_caption(text, font, picture.width - 6)
@@ -363,7 +363,7 @@ def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
     assert labelled.height - picture.height >= len(lines) * CAPTION_PX
     # A word wider than the picture breaks between characters.
     assert all(font.getlength(line) <= 30 for line in
-               wrap_caption("M04_D_08_Overlay.tif", font, 30).split("\n"))
+               wrap_caption("section_08_overlay.tif", font, 30).split("\n"))
 
 
 def test_a_caption_that_fits_is_drawn_as_before():

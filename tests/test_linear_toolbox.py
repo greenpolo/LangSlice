@@ -408,7 +408,7 @@ def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
 
 
 def test_confidence_is_gone_from_the_package():
-    """Nash: "What use is there for confidence?" — none downstream."""
+    """No confidence value is produced or carried downstream."""
     import langslice.agent
     import langslice.core
     import langslice.doors.tools

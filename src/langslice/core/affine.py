@@ -108,48 +108,6 @@ def pixel_center_map(
     ])
 
 
-def coerce_affine_matrix(matrix: Any) -> np.ndarray:
-    """*matrix* as a finite 3x3 float64 array (a copy); ``ValueError`` otherwise."""
-    arr = np.asarray(matrix, dtype=np.float64)
-    if arr.shape != (3, 3):
-        raise ValueError(f"Expected a 3x3 affine matrix, got shape {arr.shape}")
-    if not np.isfinite(arr).all():
-        raise ValueError("Affine matrix contains non-finite values")
-    return arr.copy()
-
-
-def apply_affine_to_points(matrix: Any, points: Any) -> np.ndarray:
-    """A homogeneous 3x3 affine applied to ``(N, 2)`` points."""
-    arr = coerce_affine_matrix(matrix)
-    pts = np.asarray(points, dtype=np.float64)
-    if pts.ndim != 2 or pts.shape[1] != 2:
-        raise ValueError(f"Expected points with shape (N, 2), got {pts.shape}")
-    homogeneous = np.concatenate([pts, np.ones((pts.shape[0], 1), dtype=np.float64)], axis=1)
-    return (arr @ homogeneous.T).T[:, :2]
-
-
-def affine_matrix_from_legacy_params(
-    image_width: int,
-    image_height: int,
-    rotation_deg: float = 0.0,
-    translate_x_pct: float = 0.0,
-    translate_y_pct: float = 0.0,
-) -> np.ndarray:
-    """A rotation about the image centre plus a shift in percent of the image
-    size, as a 3x3 matrix (the QuickNII export's knob form)."""
-    cx, cy = float(image_width) / 2.0, float(image_height) / 2.0
-    tx = float(image_width) * (translate_x_pct / 100.0)
-    ty = float(image_height) * (translate_y_pct / 100.0)
-    theta = math.radians(rotation_deg)
-    cos_t, sin_t = math.cos(theta), math.sin(theta)
-
-    def shift(x: float, y: float) -> np.ndarray:
-        return np.array([[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]])
-
-    rotation = np.array([[cos_t, -sin_t, 0.0], [sin_t, cos_t, 0.0], [0.0, 0.0, 1.0]])
-    return shift(cx + tx, cy + ty) @ rotation @ shift(-cx, -cy)
-
-
 def resize_long_edge(image: Image.Image, long_edge: int) -> Image.Image:
     """Scale *image* so its long edge is exactly *long_edge* px."""
     width, height = image.size

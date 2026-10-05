@@ -342,13 +342,13 @@ def test_register_section_takes_an_array_and_no_image_model(images, tmp_path, ca
     plane = np.asarray(Image.open(images / ID0))[..., 0].astype(np.uint16) * 200
     result = langslice.register_section(
         plane, position_mm=POSITIONS[ID0], transform=TRANSFORMS[ID0],
-        pixel_size_um=PIXEL_SIZE_UM, folder=tmp_path / "array", name="M01_s07.tif")
+        pixel_size_um=PIXEL_SIZE_UM, folder=tmp_path / "array", name="s07.tif")
     assert calls == ["fit_deformable", "submit"]  # no image model: the stain fit, no trace
-    written = tmp_path / "array" / "M01_s07.tif"
+    written = tmp_path / "array" / "s07.tif"
     import tifffile
 
     assert tifffile.imread(written).dtype == np.uint16
-    section = result.section("M01_s07.tif")
+    section = result.section("s07.tif")
     assert section.trace is None and section.untested is False and section.problem is None
     assert section.coords.is_file()
 
