@@ -40,7 +40,11 @@ def test_disabled_transform_task_overrides_enabled_fitting_switches(tmp_path: Pa
 
 @pytest.mark.parametrize("transform,reason", [
     (None, "missing_transform"),
-    ({"kind": "silhouette", "params": [1, 0, .1, 0, 1, 0]}, "not_interactive"),
+    ({"kind": "silhouette", "params": [1, 0, .1, 0, 1, 0]}, "whole_section_fit"),
+    ({"kind": "elastix", "params": [1, 0, .1, 0, 1, 0],
+      "regions": {"include": [], "exclude": []}}, "whole_section_fit"),
+    ({"kind": "elastix", "params": [1, 0, 0, 0, 1, 0],
+      "regions": {"include": ["CTX"], "exclude": []}}, "identity_transform"),
     ({"kind": "interactive", "params": [1, 0, 0, 0, 1, 0],
       "note": "Reviewed manual transform"}, "identity_transform"),
     ({"kind": "interactive", "params": [1, 1e-16, 0, -1e-16, 1, 0]},
@@ -87,13 +91,34 @@ def test_real_manual_adjustment_resolves_damage_gate_and_undo_restores_it(tmp_pa
     assert _submit(box)["status"] == "ok"
 
 
+@pytest.mark.parametrize("transform", [
+    {"kind": "silhouette", "params": [1, 0, .1, 0, 1, 0],
+     "regions": {"include": [], "exclude": ["HPF"]}},
+    {"kind": "elastix", "params": [1, 0, .1, 0, 1, 0],
+     "regions": {"include": ["CTX"], "exclude": []}},
+    {"kind": "imported", "params": [1, 0, .1, 0, 1, 0]},
+])
+def test_a_region_restricted_fit_or_a_supplied_transform_resolves_damage(tmp_path, transform):
+    """fit_affine fits a damaged section when regions restrict the fit, and
+    the gate accepts that fit; a transform the host supplied counts too."""
+    from langslice.job.job import submit_errors
+    from tests.test_linear_toolbox import _stack
+
+    state, _, spec = _stack(tmp_path, tasks=["transform"], placed=True)
+    for record in state.slices:
+        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+    state.slices[0].damaged = True
+    state.slices[0].transform = transform
+    assert submit_errors(state, spec, []) is None
+
+
 def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_path):
     from langslice.job.job import submit_errors
     from tests.test_linear_toolbox import _stack
 
     state, _, spec = _stack(
         tmp_path, tasks=["transform"], placed=True,
-        transform=TransformSpec(interactive=False, automatic=True),
+        transform=TransformSpec(interactive=False, automatic=False),
     )
     damaged = state.by_id("s0.png")
     assert damaged is not None
@@ -102,6 +127,10 @@ def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_
     assert refusal is not None
     assert refusal["interactive_enabled"] is False
     assert "host must enable" in refusal["message"]
+    spec.transform = TransformSpec(interactive=False, automatic=True)
+    refusal = submit_errors(state, spec, [])
+    assert refusal is not None and "fit_affine with include or exclude regions" in (
+        refusal["message"])
     spec.tasks = ["position"]
     assert submit_errors(state, spec, []) is None
 
