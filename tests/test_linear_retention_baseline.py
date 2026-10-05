@@ -1,6 +1,4 @@
-"""Retiring the acceptance experiment must leave the established workflow intact."""
-
-import pytest
+"""The default workflow has no acceptance tool or inspection gate."""
 
 from langslice.agent.plugins import ToolMediaDeliveryPlugin, WorkingSetImages
 from langslice.agent.session import build_plugins
@@ -8,15 +6,8 @@ from tests.linear_tool_helpers import single_adjust
 from tests.test_linear_toolbox import _box, _tool
 
 
-def test_completion_configuration_fails_instead_of_silently_changing_policy(tmp_path):
-    with pytest.raises(ValueError, match="completion retirement was removed"):
-        _box(tmp_path, image_retention="completion")
-
-
-@pytest.mark.parametrize("policy", [None, "legacy"])
-def test_baseline_has_no_acceptance_tool_or_inspection_gate(tmp_path, policy):
-    kwargs = {} if policy is None else {"image_retention": policy}
-    state, _, box = _box(tmp_path, n=1, placed=True, tasks=["transform"], **kwargs)
+def test_baseline_has_no_acceptance_tool_or_inspection_gate(tmp_path):
+    state, _, box = _box(tmp_path, n=1, placed=True, tasks=["transform"])
     assert "accept_views" not in box.names
     single_adjust(_tool(box, "adjust_transforms"))("s0.png", 0.0, 1.0, 1.0, 0.0, 0.0)
     # No model-delivery boundary has been announced: baseline submit needs a

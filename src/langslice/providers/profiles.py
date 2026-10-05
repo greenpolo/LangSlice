@@ -37,7 +37,7 @@ CUSTOM_PROFILE = "custom"
 
 
 def default_prompt(provider: str = "openai-oauth", plane: str = "coronal") -> str:
-    """LangSlice's own trace prompt for *provider* (any accepted spelling) on
+    """LangSlice's own trace prompt for *provider* on
     a *plane* section: what a built-in profile sends, and the text to start
     a custom prompt from. A custom prompt may write ``{plane}`` where the
     plane belongs."""
@@ -105,8 +105,8 @@ def image_model(
 
     *source* is one of:
 
-    - a provider name (``"openai-oauth"``, ``"openai-api"``, ``"gemini-api"``
-      or an accepted spelling), with *model* the image model (None: the
+    - a provider name (``"openai-oauth"``, ``"openai-api"``, ``"gemini-api"``),
+      with *model* the image model (None: the
       provider's default). Without *prompt* or *prompt_file* this is the
       provider's built-in profile (LangSlice's prompt; ``tested``).
     - an :class:`~langslice.providers.registry.ImageModel`, or any object

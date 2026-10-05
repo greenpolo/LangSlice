@@ -85,7 +85,7 @@ def _spec(**fields: Any) -> JobSpec:
     (_spec(tasks=["transform"], transform=TransformSpec(automatic=False), agent_damage=False),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "view_placement",
       "orient_slices", "adjust_transforms", "submit"]),
-    (_spec(tasks=["position"], position=PositionSpec(deepslice=True, bayesian=True),
+    (_spec(tasks=["position"], position=PositionSpec(bayesian=True),
            agent_preprocessing=True),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "mark_damaged",
       "preprocess", "set_positions", "view_placement", "view_stack",

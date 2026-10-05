@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from langslice.core.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
+from langslice.core.spec import JobSpec, PositionSpec, TransformSpec
 from langslice.core.state import SliceState, StackState
 
 
@@ -34,24 +34,6 @@ def test_spec_round_trips_through_dict():
     assert again.interval_mm == 0.3
     assert again.thickness_mm == 0.05
     assert again.has("position") and not again.has("reorder")
-
-
-def test_flip_lives_under_transform_and_the_reorder_fields_are_aliases():
-    legacy = JobSpec(
-        image_folder="/tmp/x",
-        reorder=ReorderSpec(flip=False, hemisphere_cue="notch on the left"),
-    )
-    assert legacy.transform.flip is False
-    assert legacy.transform.hemisphere_cue == "notch on the left"
-    # Old readers see the values that apply; the dict carries one source.
-    assert legacy.reorder.flip is False
-    data = legacy.to_dict()
-    assert "flip" not in data["reorder"] and "hemisphere_cue" not in data["reorder"]
-    assert data["transform"]["flip"] is False
-    assert JobSpec.from_dict(data) == legacy
-    # Old JSON with the fields under reorder still loads.
-    old = JobSpec.from_dict({"image_folder": "/tmp/x", "reorder": {"flip": False}})
-    assert old.transform.flip is False
 
 
 def test_spec_rejects_an_unknown_plane_and_task():

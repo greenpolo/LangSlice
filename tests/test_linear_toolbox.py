@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
+from langslice.core.spec import JobSpec, PositionSpec, TransformSpec
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import ingest
@@ -118,13 +118,6 @@ def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
     assert result["rejected"] == [{"id": "s0.png", "error": "FLIP_DISABLED"}]
     assert state.by_id("s0.png").flip is False
     assert state.by_id("s1.png").rotation_deg == 90
-
-
-def test_the_old_reorder_flip_field_still_switches_the_flip_off(tmp_path: Path):
-    # Hosts that still fill ``reorder.flip`` keep working through the alias.
-    _, _, box = _box(tmp_path, reorder=ReorderSpec(flip=False))
-    result = _tool(box, "orient_slices")([{"id": "s0.png", "flip": True}])
-    assert result["rejected"] == [{"id": "s0.png", "error": "FLIP_DISABLED"}]
 
 
 # --- writes, checkpoints, undo/redo --------------------------------------

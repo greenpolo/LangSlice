@@ -366,7 +366,7 @@ def full_spec(folder: Path) -> Any:
         image_folder=str(folder), model="fake-model", preprocess="none",
         tasks=["reorder", "position", "transform", "nonlinear"],
         inputs={"pixel_size_um": PIXEL_SIZE_UM},
-        position=PositionSpec(deepslice=True, bayesian=True),
+        position=PositionSpec(bayesian=True),
         transform=TransformSpec(angles=True),
         nonlinear=NonlinearSpec(provider="openai-oauth"),
         agent_preprocessing=True,

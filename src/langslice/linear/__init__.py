@@ -7,7 +7,6 @@ from langslice.core.spec import (
     JobSpec,
     NonlinearSpec,
     PositionSpec,
-    ReorderSpec,
     TransformSpec,
 )
 from langslice.core.state import SliceState, StackState
@@ -18,7 +17,6 @@ __all__ = [
     "JobSpec",
     "NonlinearSpec",
     "PositionSpec",
-    "ReorderSpec",
     "SliceState",
     "StackState",
     "TransformSpec",
