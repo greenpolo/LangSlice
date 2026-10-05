@@ -178,6 +178,15 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert (job / "AGENTS.md").read_text() == agents
 
 
+def test_cli_json_preserves_unicode_on_non_utf8_consoles():
+    from langslice.doors.cli.envelope import Envelope, dumps
+
+    message = "The atlas border — preserved exactly"
+    wire = dumps(Envelope(result={"statement": message}))
+    assert wire.isascii()
+    assert json.loads(wire)["result"]["statement"] == message
+
+
 # --- brief: the job statement and the opening, as LangSlice's own agent gets them ------
 
 
@@ -232,13 +241,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
         item["path"] for item in opening]
     # BRIEF.md holds it all, and the card names it first.
     brief = (job / "BRIEF.md").read_text()
-    normalized = statement.replace("\r\n", "\n")
-    saved = brief.split("## Job statement\n\n", 1)[1]
-    mismatch = next((i for i, (actual, expected) in enumerate(zip(normalized, saved, strict=False))
-                     if actual != expected), min(len(normalized), len(saved)))
-    assert normalized in brief, (f"first mismatch at {mismatch}: "
-                                 f"{normalized[max(0, mismatch - 30):mismatch + 80]!r} vs "
-                                 f"{saved[max(0, mismatch - 30):mismatch + 80]!r}")
+    assert statement.replace("\r\n", "\n") in brief
     assert all(item["path"] in brief for item in opening)
     assert envelope["artifacts"][-1] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
     assert "BRIEF.md" in (job / "AGENTS.md").read_text()

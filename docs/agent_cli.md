@@ -52,6 +52,8 @@ minutes: `ops` marks it `long` and `schema` or a dry run gives the
   `BRIEF.md` (with LF line endings on every platform, matching the returned
   statement). It also reports the `viewer`, the `resolution` range a call may
   ask for and the job's `image_model`. Run it again for the stack as it stands.
+  The JSON envelope escapes non-ASCII characters for consoles that do not use
+  UTF-8; parsing the JSON restores the original text.
 - `runs [ID]`: the background runs, newest first, or one run's state.
 - `wait [ID]` (`--timeout SECONDS`): wait for a background run (the latest
   without ID).
