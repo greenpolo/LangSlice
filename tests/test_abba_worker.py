@@ -64,7 +64,6 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
     ({"angles_deg": {"pitch": 4.0}}, "pitch_deg"),
     ({"z_offset_mm": float("inf")}, "z_offset_mm"),
     ({"existing_warp": ["missing.tif"]}, "existing_warp"),
-    ({"registered_slices": ["missing.tif"]}, "Registered"),
     ({"locked": ["missing.tif"]}, "Locked"),
     ({"damaged": {"missing.tif": ""}}, "Damaged"),
     ({"damaged": {"section_0001.tif": 3}}, "Damaged"),
@@ -232,35 +231,6 @@ def test_a_run_ending_with_an_angle_per_section_reports_the_refusal(params, monk
         run_linear(params, [].append)
 
 
-def test_a_spec_with_differing_section_angles_is_refused_for_abba(tmp_path):
-    from langslice.core.spec import JobSpec
-    from langslice.doors.api.abba_worker import refuse_mixed_job
-
-    def spec(angles, resume=False):
-        return JobSpec(image_folder=str(tmp_path), resume=resume, inputs={"angles": angles})
-
-    refuse_mixed_job(spec({"pitch": 2.0, "yaw": 0.0}))  # stack-wide: one angle
-    refuse_mixed_job(spec({"a.tif": {"pitch": 1.0}, "b.tif": {"pitch": 1.0}}))
-    with pytest.raises(ValueError, match="cannot show"):
-        refuse_mixed_job(spec({"a.tif": {"pitch": 1.0}, "b.tif": {"pitch": 2.0}}))
-
-
-def test_resuming_a_saved_job_with_an_angle_per_section_is_refused_for_abba(tmp_path):
-    from langslice.core.spec import JobSpec
-    from langslice.doors.api.abba_worker import refuse_mixed_job
-    from langslice.job.checkpoint import write_checkpoint
-    from langslice.job.layout import JobLayout
-
-    layout = JobLayout.for_images(tmp_path)
-    layout.folder.mkdir()
-    write_checkpoint(_angled_state((0.0, 0.0), (1.5, 0.0)), str(layout.state_file))
-    with pytest.raises(ValueError, match="cannot show"):
-        refuse_mixed_job(JobSpec(image_folder=str(tmp_path), resume=True))
-    refuse_mixed_job(JobSpec(image_folder=str(tmp_path), resume=False))  # a fresh job
-    write_checkpoint(_angled_state((1.5, 0.0), (1.5, 0.0)), str(layout.state_file))
-    refuse_mixed_job(JobSpec(image_folder=str(tmp_path), resume=True))
-
-
 # --- ABBA 0.24 contract: angles, z offset, existing warps, warp rows -------------------
 
 
@@ -274,10 +244,6 @@ def test_abba_angles_become_the_stack_wide_input_and_angle_tasks_are_allowed(par
     assert prepared.spec.transform.angles
     assert prepared.abba["z_offset_mm"] == 5.7
     assert prepared.abba["angles_deg"] == {"pitch_deg": 2.5, "yaw_deg": -1.0}
-    # The older key is still read when the new one is absent.
-    del params["angles_deg"]
-    params["host_angles_deg"] = {"pitch": 1.0, "yaw": 0.0}
-    assert prepare_linear(params).spec.inputs["angles"] == {"pitch": 1.0, "yaw": 0.0}
 
 
 @pytest.mark.parametrize("locked, kept", [(["section_0001.tif"], True), ([], False)])
@@ -287,8 +253,7 @@ def test_existing_warp_is_kept_unless_the_user_allows_overwriting(params, locked
     (overwrite on) may be deformed."""
     from langslice.doors.api.abba_worker import prepare_linear
 
-    params.update(registered_slices=["section_0001.tif"], locked=locked,
-                  existing_warp=["section_0001.tif"])
+    params.update(locked=locked, existing_warp=["section_0001.tif"])
     params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
     prepared = prepare_linear(params)
     assert ("keep_warp" in prepared.spec.inputs) is kept

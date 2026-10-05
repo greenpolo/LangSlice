@@ -79,13 +79,13 @@ def _with_reasoning(model: str | object, reasoning: str | None) -> str | object:
     """Set a resolved model's reasoning effort, when it has one to set.
 
     Providers that expose the knob carry a ``reasoning_effort`` field (the
-    OAuth ``ChatGptLlm`` is a pydantic model, hence ``model_copy``); every
+    OAuth ``OpenAIOAuthLlm`` is a pydantic model, hence ``model_copy``); every
     other backend is left exactly as it was.
     """
     if not reasoning or not hasattr(model, "reasoning_effort"):
         return model
     copier = getattr(model, "model_copy", None)
-    if callable(copier):  # pydantic BaseLlm, e.g. the OAuth ChatGptLlm
+    if callable(copier):  # pydantic BaseLlm, e.g. the OAuth OpenAIOAuthLlm
         return copier(update={"reasoning_effort": reasoning})
     object.__setattr__(model, "reasoning_effort", reasoning)
     return model

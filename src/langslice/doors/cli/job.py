@@ -63,8 +63,6 @@ WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")
 #: Verbs whose whole-stack ``rows`` are their answer (kept when concise).
 ROW_VERBS = frozenset({"status", "view_stack"})
-#: The CLI's own options (the rest are the verb's arguments).
-OPTIONS = {"args", "dry_run", "background", "verbose", "timeout", "run_id"}
 
 
 def progress(message: str) -> None:

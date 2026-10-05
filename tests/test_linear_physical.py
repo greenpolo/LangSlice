@@ -324,10 +324,10 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
 
 def test_reasoning_effort_reaches_a_model_that_has_one():
     from langslice.agent.session import build_agent
-    from langslice.providers.openai_oauth import ChatGptLlm
+    from langslice.providers.openai_oauth import OpenAIOAuthLlm
 
     agent = build_agent(
-        model=ChatGptLlm(model="gpt-5.6-sol"),
+        model=OpenAIOAuthLlm(model="gpt-5.6-sol"),
         name="t",
         instruction="i",
         tools=[],
@@ -336,7 +336,7 @@ def test_reasoning_effort_reaches_a_model_that_has_one():
     assert getattr(agent.model, "reasoning_effort", None) == "high"
 
     default = build_agent(
-        model=ChatGptLlm(model="gpt-5.6-sol"), name="t", instruction="i", tools=[]
+        model=OpenAIOAuthLlm(model="gpt-5.6-sol"), name="t", instruction="i", tools=[]
     )
     assert getattr(default.model, "reasoning_effort", None) == "medium"
     # A plain model string has no such knob and must survive untouched.

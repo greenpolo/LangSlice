@@ -96,7 +96,7 @@ def test_provider_diagnostics_do_not_change_request_or_model_content(monkeypatch
             "cache_write_tokens": 0}, "output_tokens": 0,
         }}}])
     monkeypatch.setattr(openai_oauth, "stream_events", fake_stream)
-    model = openai_oauth.ChatGptLlm(model="openai-oauth/test", capture_usage_details=capture)
+    model = openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test", capture_usage_details=capture)
     request = LlmRequest(contents=[types.Content(role="user", parts=[
         types.Part.from_text(text="private"),
     ])])
@@ -133,7 +133,7 @@ def test_session_enables_optional_diagnostics_only_when_traced(tmp_path, monkeyp
     monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
     if traced:
         monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(tmp_path))
-    model = openai_oauth.ChatGptLlm(model="openai-oauth/test")
+    model = openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test")
     agent = LlmAgent(name="test", model=model)
     # Already done: test session setup without invoking any provider.
     asyncio.run(run_agent_session(
@@ -157,7 +157,7 @@ def test_diagnostics_survive_the_adk_session_to_trace(tmp_path, monkeypatch):
             }}},
         ])
     monkeypatch.setattr(openai_oauth, "stream_events", fake_stream)
-    agent = LlmAgent(name="test", model=openai_oauth.ChatGptLlm(model="openai-oauth/test"))
+    agent = LlmAgent(name="test", model=openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test"))
     asyncio.run(run_agent_session(
         agent=agent, run_label="usage_test", max_iterations=1, done=lambda: bool(sent),
         nudge_no_tool="continue", nudge_continue="continue",

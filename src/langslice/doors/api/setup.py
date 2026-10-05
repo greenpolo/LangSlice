@@ -70,18 +70,12 @@ def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _oauth_path() -> Path:
-    """The login file ``providers.openai_oauth`` reads: ``LANGSLICE_OPENAI_AUTH``
-    when set (another account for one process), else LangSlice's own."""
-    override = os.environ.get("LANGSLICE_OPENAI_AUTH", "").strip()
-    return Path(override).expanduser() if override else (
-        Path.home() / ".langslice" / "openai_auth.json")
-
-
 def _oauth_status() -> dict[str, object]:
     # Do not call load_credentials: status must never refresh tokens or contact a provider.
     try:
-        path = _oauth_path()
+        from langslice.providers.registry import openai_oauth_credentials_path
+
+        path = openai_oauth_credentials_path()
         doc = json.loads(path.read_text(encoding="utf-8"))
         tokens = doc.get("tokens", doc)
         if isinstance(tokens, dict) and isinstance(tokens.get("access_token"), str):

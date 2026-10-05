@@ -28,6 +28,7 @@ from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
 from PIL import Image
 
 from langslice.agent.engine import EngineContext, build_context
+from langslice.core.jpeg import encode_jpeg
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
@@ -44,10 +45,9 @@ from langslice.doors.jobs import close_job
 from langslice.doors.mcp.host_channel import HostChannel
 from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.media import (
+from langslice.doors.tools.reply import (
     REPLY_BYTES,
     Item,
-    encode_jpeg,
     fit_reply,
     paged,
     shrunk_note,
@@ -63,8 +63,9 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "langslice"
 
-#: Tools that only look (the registry's read verbs, plus the door's own
-#: ``show_stack``). Hosts may use the hint to skip a confirmation.
+#: Tools that only look (the registry's read verbs; the door's own
+#: ``show_stack`` is marked read-only where it is declared). Hosts may use the
+#: hint to skip a confirmation.
 READ_ONLY_TOOLS = frozenset(name for name, verb in VERBS.items() if verb.kind == "read")
 
 INSTRUCTIONS = (
@@ -106,7 +107,7 @@ class Session:
     job: Job
     ctx: EngineContext
     box: ToolBox
-    trace: McpTrace | None
+    trace: HostTrace | None
     job_id: str = ""
     job_dir: Path | None = None
     notes: str = ""
@@ -155,7 +156,7 @@ def image_block(image: Image.Image | bytes) -> ImageContent:
 
 
 def blocks_of(items: list[Item]) -> list[ContentBlock]:
-    """Texts and JPEG bytes (:data:`langslice.doors.tools.media.Item`) as MCP blocks."""
+    """Texts and JPEG bytes (:data:`langslice.doors.tools.reply.Item`) as MCP blocks."""
     return [TextContent(type="text", text=item) if isinstance(item, str) else image_block(item)
             for item in items]
 
@@ -169,7 +170,7 @@ def result_blocks(result: Any) -> list[ContentBlock]:
     non-empty text a text block. ``images_attached`` counts both. The
     ADK-only delivery id (``media_delivery_id``) is left out. The whole
     reply stays within the host's reply budget
-    (:func:`langslice.doors.tools.media.fit_reply`): past it every picture is
+    (:func:`langslice.doors.tools.reply.fit_reply`): past it every picture is
     shrunk together and a last text says so and how to get full-size ones.
     """
     media: list[Any] = []
@@ -195,11 +196,6 @@ def result_blocks(result: Any) -> list[ContentBlock]:
 
 
 # --- trace -----------------------------------------------------------------
-
-
-#: The door's trace (:class:`langslice.doors.trace.HostTrace`): what the host
-#: was shown and what it called, one file per session.
-McpTrace = HostTrace
 
 
 def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
@@ -244,7 +240,7 @@ def open_job(
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     write_card(job.layout)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
-    trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
+    trace = HostTrace(trace_dir, ctx.image_folder) if trace_dir else None
     # The host is Claude: its pictures are capped at Claude's largest image.
     events = EventRelay()
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
@@ -253,19 +249,15 @@ def open_job(
 
 
 #: The serialized bytes of one ``show_stack`` page, JSON and base64 included
-#: (every MCP reply's budget, :data:`langslice.doors.tools.media.REPLY_BYTES`).
+#: (every MCP reply's budget, :data:`langslice.doors.tools.reply.REPLY_BYTES`).
 PAGE_BYTES = REPLY_BYTES
-
-
-def page_size(blocks: list[ContentBlock]) -> int:
-    return len(json.dumps([block.model_dump(exclude_none=True) for block in blocks]).encode())
 
 
 def opening_pages(session: Session) -> list[list[ContentBlock]]:
     """The opening strips (:mod:`langslice.core.opening`) at Claude's image
     size, each strip composed within a page's byte budget (fewer sections per
-    strip, never a shrunk strip: :func:`langslice.doors.tools.media.strip_bytes`),
-    paged under :data:`PAGE_BYTES` (:func:`langslice.doors.tools.media.paged`);
+    strip, never a shrunk strip: :func:`langslice.doors.tools.reply.strip_bytes`),
+    paged under :data:`PAGE_BYTES` (:func:`langslice.doors.tools.reply.paged`);
     a strip and its text stay together."""
     items = opening_items(session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT,
                           max_bytes=strip_bytes(PAGE_BYTES))
@@ -317,7 +309,7 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     session.notes = read_notes(session.job.layout)
     trace_dir = prepared.trace_dir
     if trace_dir:
-        session.trace = McpTrace(trace_dir, session.ctx.image_folder)
+        session.trace = HostTrace(trace_dir, session.ctx.image_folder)
     session.channel = HostChannel(job_id, record.get("host_channel"))
     channel = session.channel
     session.events.target = lambda event: channel.event(
@@ -353,7 +345,7 @@ def open_folder_job(
     session.job_id, session.job_dir = job_id, folder
     session.notes = read_notes(session.job.layout)
     if record.get("trace_dir"):
-        session.trace = McpTrace(record["trace_dir"], session.ctx.image_folder)
+        session.trace = HostTrace(record["trace_dir"], session.ctx.image_folder)
     return session
 
 

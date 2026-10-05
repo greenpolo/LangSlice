@@ -26,8 +26,9 @@ from langslice.core.sizes import PICTURE_EDGES, opening_edge
 from langslice.core.spec import JobSpec
 from langslice.core.transform import calibrate
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.media import package_result, strip_edge
+from langslice.doors.tools.media import package_result
 from langslice.doors.tools.toolbox import build_tools
+from langslice.doors.tools.view_options import image_limit
 from langslice.job.job import ingest
 from tests.linear_tool_helpers import legacy_view
 from tests.test_linear_physical import TwoRegionAtlas
@@ -86,7 +87,7 @@ def _seed_sections(state: Any, ctx: Any) -> list[Image.Image]:
     """The opening strip(s), and each section's tile as the strip draws it."""
     parts = build_seed_message(state, ctx).parts or []
     strips = [Image.open(io.BytesIO(p.inline_data.data)) for p in parts if p.inline_data]
-    _count, tile = strip_layout(strip_edge(ctx), opening_edge(ctx))
+    _count, tile = strip_layout(image_limit(ctx)[0], opening_edge(ctx))
     assert strips[0].width == len(state.slices) * tile + (len(state.slices) - 1) * COLUMN_GAP
     return [section_tile(ctx, state, record, tile) for record in state.in_order()]
 
