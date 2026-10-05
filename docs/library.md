@@ -21,8 +21,7 @@ Code: `src/langslice/doors/library.py` (`create_job`, `open_job`),
 LangSlice needs Python 3.10 or newer. From a source checkout:
 
 ```bash
-pip install .                    # or: conda env create -f environment.yml
-pip install ".[registration]"    # optional: the ANTs deformable engine
+conda env create -f environment.yml   # everything; or: pip install ".[registration,mcp,abba]"
 ```
 
 Atlases are BrainGlobe's, downloaded on first use into `~/.brainglobe/`.

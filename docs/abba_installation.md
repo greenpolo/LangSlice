@@ -128,5 +128,5 @@ langslice login
 ```
 
 `langslice abba` starts ABBA from Python, with the connector, the agent viewer and
-the agent log; it needs `pip install -e ".[abba]"`, Java 21 and the connector jar.
+the agent log; it needs Java 21 (fetched on first start) and the connector jar.
 The connector does not need it.

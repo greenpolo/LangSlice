@@ -1,6 +1,7 @@
 # Run from the root of a downloaded LangSlice source archive or checkout:
 # conda env create -f environment.yml
-# This is the external Fiji worker; Fiji provides its own Java runtime.
+# One environment for everything: the agent, the ANTs engine, the Claude
+# Desktop server and the ABBA connector's worker and launcher.
 name: langslice
 channels:
   - conda-forge
@@ -8,4 +9,4 @@ dependencies:
   - python=3.11
   - pip
   - pip:
-      - .
+      - ".[registration,mcp,abba]"
