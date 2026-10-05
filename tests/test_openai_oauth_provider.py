@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 from typing import Any
 
 import pytest
@@ -108,7 +109,8 @@ def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
     saved = json.loads(creds_path.read_text())
     assert saved["tokens"]["access_token"] == "NEW"
     assert saved["tokens"]["refresh_token"] == "NEWR"
-    assert creds_path.stat().st_mode & 0o777 == 0o600
+    if os.name == "posix":
+        assert creds_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_load_credentials_prefers_our_file_and_refreshes_when_expired(tmp_path, monkeypatch):

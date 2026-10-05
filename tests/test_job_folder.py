@@ -57,7 +57,8 @@ def test_section_folders_are_stems_unless_two_images_share_one(tmp_path: Path):
     layout = JobLayout.for_images(tmp_path)
     assert layout.folder == tmp_path / "langslice"
     assert layout.relative(layout.folder / "sections" / "s0" / "x") == "sections/s0/x"
-    assert layout.relative("/elsewhere/file") == "/elsewhere/file"
+    outside = tmp_path.parent / "elsewhere" / "file"
+    assert layout.relative(outside) == str(outside)
     assert layout.resolve("sections/s0") == layout.folder / "sections" / "s0"
 
 
@@ -361,9 +362,18 @@ def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
 
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root writes into read-only folders")
+    from langslice.job import index, layout
+
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(index, "default_root", lambda: tmp_path / "home" / ".langslice" / "jobs")
     folder = _folder(tmp_path / "shared-drive")
     folder.chmod(0o555)
+    if os.name == "nt":
+        # Windows chmod does not remove directory write permission; simulate a
+        # folder with an ACL that denies writes instead.
+        original = layout.writable
+        monkeypatch.setattr(layout, "writable", lambda target, images:
+                            False if images == folder else original(target, images))
     yield folder
     folder.chmod(0o755)
 

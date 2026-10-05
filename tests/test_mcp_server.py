@@ -329,13 +329,17 @@ def test_image_model_connected_checks_presence_only(tmp_path: Path, monkeypatch:
     credential is read)."""
     import json
 
+    from langslice.doors.api import setup
     from langslice.doors.api.setup import image_model_connected
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    credentials = tmp_path / ".langslice" / "provider_credentials.json"
+    monkeypatch.setattr(setup, "_credentials_path", lambda: credentials)
     for name in ("LANGSLICE_OPENAI_AUTH", "OPENAI_API_KEY", "OPENAI_BASE_URL",
                  "OPENAI_IMAGE_API_KEY", "OPENAI_IMAGE_BASE_URL", "GEMINI_API_KEY",
                  "GOOGLE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(tmp_path / ".langslice" / "openai_auth.json"))
     assert not image_model_connected("none")
     assert not image_model_connected("openai-oauth")
     assert not image_model_connected("openai-api")

@@ -161,11 +161,12 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
     import os
 
     from langslice.agent import engine
-    from langslice.job import index
+    from langslice.job import index, layout
 
     if where == "read_only" and hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root writes into read-only folders")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(index, "default_root", lambda: tmp_path / "home" / ".langslice" / "jobs")
 
     async def run(spec, *, on_write, on_event, emit, **_):
         value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
@@ -183,6 +184,10 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
     else:
         expected = tmp_path / "home" / ".langslice" / "jobs" / index.folder_id(images)
         images.chmod(0o555)
+        if os.name == "nt":
+            original = layout.writable
+            monkeypatch.setattr(layout, "writable", lambda target, source:
+                                False if source == images else original(target, source))
         try:
             result = run_linear(params, lambda event: None)
         finally:

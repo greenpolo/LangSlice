@@ -159,7 +159,7 @@ def test_browser_launch_uses_private_profile_and_abba_display(monkeypatch, tmp_p
     monkeypatch.setenv("DISPLAY", ":108")
     window = chat.ChatWindow()
     args = window.process.args
-    assert "--ozone-platform=x11" in args
+    assert ("--ozone-platform=x11" in args) == (chat.os.name == "posix")
     assert "--window-position=1200,0" in args
     assert f"--user-data-dir={tmp_path / 'private'}" in args
     assert not any("no-sandbox" in arg for arg in args)

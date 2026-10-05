@@ -43,7 +43,7 @@ python -m langslice version
 
 - Branch from `main`, open the PR against `main`.
 - Keep PRs focused — one logical change per PR is easier to review.
-- CI runs `ruff`, `basedpyright` and the test suite on Linux Python 3.10 / 3.11 / 3.12 and Windows Python 3.11. The Fiji connector builds and runs its discovery, menu and geometry checks on Windows; its shebang-based fake-worker subprocess check runs on Linux.
+- CI runs `ruff`, `basedpyright` and the test suite on Linux Python 3.10 / 3.11 / 3.12 and Windows Python 3.11. The pixel-exact ANTs/ITK golden recording is Linux-specific and skips on Windows. The Fiji connector builds and runs discovery, menu and geometry checks on Windows; its shebang-based fake-worker subprocess check runs on Linux.
 
 ## License
 

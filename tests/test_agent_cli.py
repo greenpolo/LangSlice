@@ -232,7 +232,8 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
         item["path"] for item in opening]
     # BRIEF.md holds it all, and the card names it first.
     brief = (job / "BRIEF.md").read_text()
-    assert statement in brief and all(item["path"] in brief for item in opening)
+    assert statement.replace("\r\n", "\n") in brief
+    assert all(item["path"] in brief for item in opening)
     assert envelope["artifacts"][-1] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
     assert "BRIEF.md" in (job / "AGENTS.md").read_text()
     assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048

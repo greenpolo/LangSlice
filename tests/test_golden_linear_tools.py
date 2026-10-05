@@ -109,6 +109,8 @@ def _compare(golden: Path, actual: Path) -> list[str]:
     return problems
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="pixel-exact Linux ANTs/ITK differs on Windows")
 @pytest.mark.skipif(bool(_MISSING), reason=f"needs {', '.join(_MISSING)}")
 def test_every_linear_tool_matches_its_golden(tmp_path: Path) -> None:
     if os.environ.get(UPDATE_ENV) == "1":
