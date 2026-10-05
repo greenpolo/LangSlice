@@ -86,6 +86,15 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
                for entry in registration["sections"])
 
 
+def test_the_open_event_says_whether_a_checkpoint_was_resumed(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    _open(folder)
+    _open(folder)
+    events = [json.loads(line) for line in
+              (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
+    assert [event["resumed"] for event in events if event["kind"] == "open"] == [False, True]
+
+
 def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
     folder = _folder(tmp_path / "stack")
     _open(folder)

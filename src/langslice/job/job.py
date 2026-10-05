@@ -73,6 +73,7 @@ from langslice.job.checkpoint import (
     relative_to,
     state_paths,
     write_checkpoint,
+    write_json_atomic,
 )
 from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
 from langslice.job.history import History
@@ -128,6 +129,12 @@ def keep_warp_ids(spec: JobSpec) -> set[str]:
 def nonlinear_skip_ids(spec: JobSpec) -> set[str]:
     """Sections the user left out of the Nonlinear task."""
     return {str(name) for name in (spec.inputs or {}).get("nonlinear_skip") or []}
+
+
+def nonlinear_exempt_ids(spec: JobSpec) -> set[str]:
+    """Sections the host kept out of the Nonlinear task (``keep_warp`` and
+    ``nonlinear_skip``): its verbs refuse them and its submit gates skip them."""
+    return keep_warp_ids(spec) | nonlinear_skip_ids(spec)
 
 
 #: Why Nonlinear refuses a section the host kept out of it: code, message.
@@ -279,16 +286,16 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
                 raise ValueError(f"inputs.transforms names an unknown section: {name!r}")
             if not isinstance(value, dict):
                 raise ValueError(f"inputs.transforms[{name!r}] must be a transform dictionary")
-            # Preserve complete historical mappings, including splines. The image
-            # correction handoff explicitly refuses unsupported spline inputs.
+            # Kept whole, a spline included (the image-correction handoff
+            # refuses a spline it cannot use).
             record.transform = copy.deepcopy(value)
         state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
 
     damaged = inputs.get("damaged") or {}
     if damaged:
-        # Damage is normally the agent's own classification; a host (or a
-        # benchmark) may assert it up front so the automatic fits refuse the
-        # section and it is aligned by hand.
+        # Damage is normally the agent's own classification; a host may
+        # assert it up front so the automatic fits refuse the section unless
+        # regions restrict them.
         for name, note in damaged.items():
             record = state.by_id(str(name))
             if record is None:
@@ -373,9 +380,7 @@ def emit_results(
 ) -> StackState:
     """Write the results JSON — the same shape as the checkpoint, unversioned
     (its paths relative to the job folder, as the checkpoint's)."""
-    os.makedirs(os.path.dirname(os.path.abspath(results_path)), exist_ok=True)
-    with open(results_path, "w", encoding="utf-8") as handle:
-        json.dump(state.to_dict(), handle, indent=2)
+    write_json_atomic(results_path, state.to_dict())
     if progress is not None:
         progress(f"[emit] results -> {results_path}")
     return state
@@ -561,11 +566,26 @@ def missing_transforms(state: StackState) -> dict[str, Any] | None:
     }
 
 
+#: ``fit_affine``'s kinds: on a damaged section such a fit counts only when
+#: regions restricted it (its ``regions``) to the surviving anatomy.
+AUTOMATIC_FIT_KINDS = ("elastix", "silhouette")
+
+
+def _restricted(transform: dict[str, Any]) -> bool:
+    """Whether a fit's record names the regions that restricted it."""
+    regions = transform.get("regions")
+    return isinstance(regions, dict) and any(regions.get(key) for key in ("include", "exclude"))
+
+
 def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] | None:
-    """Damaged sections require an applied interactive correction, not identity."""
+    """Damaged sections require a non-identity transform made for their
+    surviving anatomy: a manual one (``interactive``), a ``fit_affine`` fit
+    restricted to regions, or one the host supplied (``imported``, or any
+    other kind it gave). A whole-section automatic fit, an identity or an
+    invalid transform is refused. Locked sections are exempt: the user
+    aligned them and they cannot change here."""
     failures = []
     identity = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-    # A locked section was aligned by the user and cannot be changed here.
     locked = locked_ids(spec)
     for record in state.in_order():
         if not record.damaged or record.id in locked:
@@ -574,14 +594,16 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
         reason = None
         if not transform:
             reason = "missing_transform"
-        elif transform.get("kind") != "interactive":
-            reason = "not_interactive"
+        elif transform.get("kind") in AUTOMATIC_FIT_KINDS and not _restricted(transform):
+            reason = "whole_section_fit"
         else:
             try:
                 params = np.asarray(transform.get("params"), dtype=float)
                 if params.shape != (6,) or not np.isfinite(params).all():
                     reason = "invalid_transform"
                 elif transform.get("spline") is not None:
+                    # A host-supplied transform may carry a spline; then the
+                    # spline decides whether it moves anything.
                     from langslice.core.landmark_warp import fit_spline
 
                     spline = transform["spline"]
@@ -600,29 +622,39 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
             failures.append({"id": record.id, "reason": reason})
     if not failures:
         return None
+    tools = ((["adjust_transforms"] if spec.transform.interactive else [])
+             + (["fit_affine with include or exclude regions"]
+                if spec.transform.automatic else []))
     return {
         "status": "error",
         "error": "DAMAGED_REQUIRES_MANUAL_TRANSFORM",
         "failures": failures,
         "interactive_enabled": spec.transform.interactive,
         "message": (
-            "Damaged sections require a non-identity interactive transform. "
+            "Damaged sections require a non-identity transform made for their surviving "
+            "anatomy. "
             + (
-                "Use adjust_transforms to align the surviving "
-                "anatomy, inspect the returned overlays, then submit again."
-                if spec.transform.interactive else
-                "Interactive transform tools are disabled for this run; the host "
-                "must enable interactive transforms to resolve these sections."
+                f"Align each with {' or '.join(tools)}, inspect the returned overlays, "
+                "then submit again."
+                if tools else
+                "The transform tools are disabled for this run; the host must enable "
+                "interactive transforms to resolve these sections."
             )
         ),
     }
 
 
-def missing_deformations(state: StackState) -> dict[str, Any] | None:
+def missing_deformations(
+    state: StackState, exempt: frozenset[str] | set[str] = frozenset(),
+) -> dict[str, Any] | None:
     """``None`` when every section carries a deformation, or a keep_linear
-    reason, at its current linear placement; else the rejection."""
+    reason, at its current linear placement; else the rejection. The
+    sections in *exempt* (kept out of Nonlinear by the host,
+    :func:`nonlinear_exempt_ids`) need neither."""
     missing: list[dict[str, str]] = []
     for record in state.in_order():
+        if record.id in exempt:
+            continue
         held = record.deformation or {}
         if not held:
             missing.append({"id": record.id, "reason": "no deformation and no keep_linear reason"})
@@ -663,7 +695,7 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("nonlinear"):
-        return missing_deformations(state)
+        return missing_deformations(state, nonlinear_exempt_ids(spec))
     return None
 
 
@@ -810,6 +842,7 @@ class Job:
         lock = FolderLock(layout.folder)
         with lock.held():  # read and first checkpoint as one write
             state = None
+            resumed = False
             if spec.resume:
                 data = read_checkpoint(str(layout.state_file))
                 state = None if data is None else StackState.from_dict(data)
@@ -821,6 +854,7 @@ class Job:
             undo: list[dict[str, Any]] = []
             redo: list[dict[str, Any]] = []
             if state is not None:
+                resumed = True
                 workspace.progress(f"[ingest] resuming from {layout.state_file}")
                 state.spec = spec.to_dict()
                 state.image_folder = str(images)  # where they are now (a moved folder)
@@ -841,7 +875,7 @@ class Job:
                 job._save_history()  # a fresh job empties a history it read; never another
             job.checkpoint()
         if not spec.lean:
-            layout.log_event("open", resumed=bool(undo or redo or spec.resume))
+            layout.log_event("open", resumed=resumed)
         return job
 
     @classmethod
@@ -1164,13 +1198,16 @@ class Job:
         A section's current geometry is the core's fingerprint
         (:func:`langslice.core.handoff.correction_fingerprint`), read through
         *workspace* (the section files and the spec it renders with). Running
-        corrections are settled first.
+        corrections are settled first. The sections the host kept out of
+        Nonlinear (:attr:`keep_warp`, :attr:`nonlinear_skip`) need none.
         """
         from langslice.core import handoff
 
         self.settle_image_corrections()
         pending: list[dict[str, str]] = []
         for record in self.state.in_order():
+            if record.id in self.keep_warp or record.id in self.nonlinear_skip:
+                continue
             result = record.image_correction or {}
             try:
                 current = handoff.correction_fingerprint(self.state, workspace, record.id)

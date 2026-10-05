@@ -1047,7 +1047,7 @@ def test_8_trace_from_atlas_rows_per_section(images, monkeypatch):
         reply = job.trace_from_atlas(slices=[ID0, "nope.png"])
         assert reply["status"] == "error" and reply["error"] == "NOTHING_TRACED", reply
         assert [row["error"] for row in reply["results"]] == [
-            "INVALID_LINEAR_PLACEMENT", "UNKNOWN_SECTION"]
+            "INVALID_LINEAR_PLACEMENT", "UNKNOWN_SLICE_IDS"]
         assert "fit_affine" in reply["results"][0]["message"]
     fresh = spec_for(images, ["nonlinear"], provider="openai-oauth", **external_inputs())
     fresh.resume = False

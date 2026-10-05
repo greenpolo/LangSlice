@@ -145,3 +145,30 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
         transforms.set_transforms(job, {"s0.png": record, "s2.png": record})
     assert locked.value.code == "LOCKED" and _record(job, "s0.png").transform is None
     assert transforms.set_transforms(job, {}) == []
+
+
+def test_view_slices_lists_channels_only_for_the_sections_pictured(monkeypatch):
+    """With keep_going, a section whose picture failed is reported, and its
+    file is not read again for its channel names."""
+    from types import SimpleNamespace
+
+    from langslice.ops import views
+
+    def picture(_workspace: Any, _state: Any, record: Any, _options: Any) -> str:
+        if record.id == "bad.png":
+            raise OSError("unreadable")
+        return "picture"
+
+    asked: list[str] = []
+
+    def channels(section_id: str) -> tuple[list[str], None]:
+        asked.append(section_id)
+        return ["DAPI"], None
+
+    monkeypatch.setattr(views, "section_picture", picture)
+    done = views.view_slices(
+        SimpleNamespace(state=None), SimpleNamespace(section_channels=channels),  # type: ignore[arg-type]
+        [SimpleNamespace(id="good.png"), SimpleNamespace(id="bad.png")],  # type: ignore[list-item]
+        SimpleNamespace(mode="channels"), keep_going=True)  # type: ignore[arg-type]
+    assert done.channels == {"good.png": ["DAPI"]} and asked == ["good.png"]
+    assert done.failed == [{"id": "bad.png", "message": "unreadable"}]
