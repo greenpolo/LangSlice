@@ -22,7 +22,6 @@ import pytest
 
 CORE_MODULES = (
     "langslice.core.workspace",
-    "langslice.linear.render",
     "langslice.core.display",
     "langslice.core.transform",
     "langslice.core.deformation",

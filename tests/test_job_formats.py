@@ -433,7 +433,7 @@ def test_the_footprint_keeps_dark_tissue_and_tears_inside_the_outline():
     assert not footprint[5, 5] and not footprint[395, 590]   # the slide
 
 
-# --- sections without a pixel size (review findings 1 and 3, 2026-10-04) -------------
+# --- sections without a pixel size-------------
 
 
 def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
@@ -580,7 +580,7 @@ def test_the_frame_cache_is_bounded(placed, monkeypatch):
     assert len(workspace.frame_cache) == 2
 
 
-# --- export_maps beside other writers (review finding 6, 2026-10-04) -----------------
+# --- export_maps beside other writers-----------------
 
 
 def _two_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: Any) -> tuple[Any, Any]:

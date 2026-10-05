@@ -1,9 +1,8 @@
 """Golden snapshots of every linear tool: the recorder.
 
-Phase 0 of the layered-core refactor (``_local/notes/20261001_layered_core_plan.md``):
-a fixed, scripted sequence of tool calls on a small synthetic stack, recorded
-so every later phase can show that the pictures stay pixel-identical and the
-data and text stay equal.
+A fixed, scripted sequence of tool calls on a small synthetic stack, recorded
+so a change can show that the pictures stay pixel-identical and the data and
+text stay equal.
 
 What is recorded, per call: every picture (decoded and saved as PNG), the
 structured data the tool returned (JSON), and the text the model receives.
@@ -41,7 +40,7 @@ Four doors are covered:
   and normalised JSON hashed, ``labels.csv`` as text).
 
 Everything goes through public entry points (``build_tools``, ``engine.run``,
-``mcp_server.server.build_server``). The few internals touched are listed in
+``doors.mcp.server.build_server``). The few internals touched are listed in
 :data:`PATCHES`; each is checked to exist, so a phase that moves one fails
 here loudly instead of silently recording something else. The image model is
 injected (:func:`stub_image_model`, given to ``build_tools``).
@@ -1024,8 +1023,7 @@ def snapshot_job_folders(rec: Recorder, folders: dict[str, Path]) -> None:
 
 def record(out: Path) -> dict[str, Any]:
     """Run every door into *out* (emptied first); return the run summary."""
-    for variable in ("LANGSLICE_TRACE_DIR", "LANGSLICE_VLM_DEBUG_DIR"):
-        os.environ.pop(variable, None)
+    os.environ.pop("LANGSLICE_TRACE_DIR", None)
     apply_patches()
     if out.exists():
         shutil.rmtree(out)

@@ -22,6 +22,7 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from tests.deformable_synthetic import SECTION_SIZE, TH, SyntheticAtlas
+from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
 UM = 25.0
@@ -82,10 +83,6 @@ def _setup(folder: Path, atlas: SyntheticAtlas, image: Image.Image, *, damaged: 
     state.slices[0].position_mm = POSITION
     state.slices[0].damaged = damaged
     return state, ctx, build_tools(state, ctx, spec)
-
-
-def _tool(box: Any, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 def _error_vs(truth: np.ndarray, params: list[float]) -> dict[str, float]:
@@ -253,8 +250,8 @@ def test_a_section_without_tissue_is_refused_cleanly(tmp_path: Path, atlas):
 
 
 def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Path, atlas):
-    """adjust_transforms takes the shear fit_affine reports (Nash 2026-10-03):
-    the fit's knobs given back draw and store the fit's own map."""
+    """adjust_transforms takes the shear fit_affine reports: the fit's knobs
+    given back draw and store the fit's own map."""
     centre = np.array([WIDTH / 2.0, HEIGHT / 2.0])
     slant = np.eye(3)
     slant[0, 1] = 0.06

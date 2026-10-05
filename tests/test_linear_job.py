@@ -23,6 +23,7 @@ from langslice.job.checkpoint import (
 from langslice.job.history import HISTORY_FORMAT_VERSION
 from langslice.job.job import UNDO_DEPTH, Job
 from tests.fakes import SlabAtlas
+from tests.linear_tool_helpers import tool_named as _tool
 
 _ATLAS = SlabAtlas()
 
@@ -40,10 +41,6 @@ def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     return job, ctx
-
-
-def _tool(box: Any, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 def _edit_on_disk(path: str, edit: Any) -> None:

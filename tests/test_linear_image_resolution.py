@@ -30,7 +30,7 @@ from langslice.doors.tools.media import package_result
 from langslice.doors.tools.toolbox import build_tools
 from langslice.doors.tools.view_options import image_limit
 from langslice.job.job import ingest
-from tests.linear_tool_helpers import legacy_view
+from tests.linear_tool_helpers import keyword_view
 from tests.test_linear_physical import TwoRegionAtlas
 
 #: A 6 x 4.5 mm field at 2.5 um/px (2400 x 1800 px) with 4 x 3 mm of tissue:
@@ -63,7 +63,7 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
         record.position_mm = 0.2 + 0.1 * index
     box = build_tools(state, ctx, spec)
     # Picture options given the old way (keywords) go into `view`.
-    return state, ctx, {tool.__name__: legacy_view(tool) for tool in box.tools}, spec
+    return state, ctx, {tool.__name__: keyword_view(tool) for tool in box.tools}, spec
 
 
 def _images(result: dict[str, Any]) -> list[Image.Image]:
@@ -199,7 +199,7 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     assert _widths(plain) == [512] and plain["view"]["resolution"] == 512
     chosen = tools["view_slices"](["s0.tif"], resolution=1200)
     assert _widths(chosen) == [1200] and "resolution_note" not in chosen["view"]
-    # The cap is the driver model's largest image (Nash 2026-10-03): the
+    # The cap is the driver model's largest image: the
     # OpenAI lanes' 2048 px here, the run's model being no other lane.
     big = tools["view_placement"]([{"id": "s0.tif"}], mode="overlay", resolution=5000)
     assert _widths(big) == [2048]
@@ -228,7 +228,7 @@ def test_resolution_is_ignored_and_invisible_below_auto(tmp_path: Path):
 
 
 #: fit_affine and adjust_transforms on this stack, computed with the code
-#: BEFORE the picture-size change (2026-10-01): the stored numbers must match.
+#: before pictures were sized by level: the stored numbers must match.
 _PINNED_S0_FIT = [-0.24853608803995778, 9.56406142034393e-16, 0.6245949944548352,
                   -2.2479381284208716e-15, -0.3341968926388023, 0.6672419978191492]
 _PINNED_S1_ADJUST = [1.0973204552858067, 0.04970148754268928, -0.053191461442875475,
@@ -251,7 +251,7 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, dict[str, Any]]:
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 0.2 + 0.1 * index
-    return state, {tool.__name__: legacy_view(tool)
+    return state, {tool.__name__: keyword_view(tool)
                    for tool in build_tools(state, ctx, spec).tools}
 
 
@@ -264,7 +264,7 @@ def test_fits_and_written_transforms_are_the_numbers_from_before(tmp_path: Path,
     tools["adjust_transforms"]([{
         "id": "s1.tif", "rotation_deg": 4.0, "scale_x": 1.1, "scale_y": 0.95,
         "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue",
-        # A left-out shear keeps the fit's (2026-10-03); the pin is shear-free.
+        # A left-out shear keeps the fit's ; the pin is shear-free.
         "shear": 0.0}])
     assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
 
