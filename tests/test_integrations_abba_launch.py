@@ -31,9 +31,13 @@ class _Log:
 
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
+        self.shown = 0
 
     def on_event(self, event: dict[str, Any]) -> None:
         self.events.append(event)
+
+    def show(self) -> None:
+        self.shown += 1
 
 
 def _listener(slices: dict[str, Any]) -> tuple[RunListener, list[_Follower], list[_Log]]:
@@ -112,6 +116,19 @@ def test_the_java_thread_only_queues_messages():
     listener.accept("not json")  # a bad message is logged and skipped
     listener.close()
     assert [event["execution_id"] for event in followers[0].events] == list("01234")
+
+
+def test_one_log_serves_the_session_and_each_run_reopens_it():
+    listener, _followers, logs = _listener({"a.tif": 1})
+    listener.handle(json.dumps({"kind": "run_started", "viewer": False}))
+    listener.handle(json.dumps({"kind": "run_finished", "message": "Submitted"}))
+    listener.handle(json.dumps({"kind": "run_started", "viewer": False}))
+    [log] = logs
+    assert log.shown == 2
+    assert {"kind": "status", "text": "Submitted"} in log.events
+    log.closed = True  # disposed: the next message gets a new window
+    listener.handle(json.dumps({"kind": "log", "message": "next"}))
+    assert len(logs) == 2 and logs[1].events == [{"kind": "progress", "text": "next"}]
 
 
 def test_missing_or_unlisted_views_are_skipped(tmp_path):

@@ -29,8 +29,7 @@ public final class ConnectorSmokeTest {
         " out({'id':r['id'],'type':'error','error':'secret-key-must-not-escape'})",
         "elif m=='linear.estimate':",
         " if p.get('n_slices')==99: result({'low':2,'high':3.5,'unit':'percent_of_usage_window','basis':'test'})",
-        " elif p.get('n_slices')==98: out({'id':r['id'],'type':'error','error':{'code':'runtime_error','message':'Runtime request handling failed','details':{'error':'No runs have been measured at this image resolution'}}})",
-        " else: out({'id':r['id'],'type':'error','error':{'code':'validation_error','message':'Request validation failed'}})",
+        " else: out({'id':r['id'],'type':'error','error':{'code':'runtime_error','message':'Runtime request handling failed','details':{'error':'No runs have been measured at this image resolution'}}})",
         "elif m=='preprocess.preview':",
         " rows=b''.join(b'\\x00'+bytes([0,120,240]) for y in range(2))",
         " png=b'\\x89PNG\\r\\n\\x1a\\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',3,2,8,0,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b'')",
@@ -97,6 +96,19 @@ public final class ConnectorSmokeTest {
         EnvironmentDiscovery.save(prefix);
         require(prefix.equals(EnvironmentDiscovery.saved()), "Remember environment path with spaces");
         require(EnvironmentDiscovery.discover().contains(prefix), "Saved environment is rediscovered");
+        Path launcher = Files.createTempDirectory("langslice launcher ");
+        Files.createDirectories(launcher.resolve("bin")); Files.write(launcher.resolve("bin/python"), new byte[0]);
+        System.setProperty(EnvironmentDiscovery.PROPERTY, launcher.toString());
+        try {
+            require(EnvironmentDiscovery.current().equals(launcher.toAbsolutePath().normalize()) && prefix.equals(EnvironmentDiscovery.saved()),
+                    "langslice abba's environment runs this session's workers; the saved choice is kept");
+            require(EnvironmentDiscovery.discover().get(0).equals(launcher.toAbsolutePath().normalize()), "Setup lists the launcher's environment first");
+            System.setProperty(EnvironmentDiscovery.PROPERTY, launcher.resolve("missing").toString());
+            require(prefix.equals(EnvironmentDiscovery.current()), "A launcher environment without Python falls back to the saved one");
+        } finally {
+            System.clearProperty(EnvironmentDiscovery.PROPERTY);
+            Files.walk(launcher).sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+        }
         AtomicInteger events = new AtomicInteger();
         try (WorkerClient client = new WorkerClient(prefix)) {
             JsonObject result = client.request("hello", new JsonObject(), e -> events.incrementAndGet(), Duration.ofSeconds(5));
@@ -197,6 +209,11 @@ public final class ConnectorSmokeTest {
             require(host.viewerAvailable(), "Viewer offered while a listener is registered");
         } finally { LangSliceEvents.removeListener(broken); LangSliceEvents.removeListener(good); }
         require(!LangSliceEvents.hasListeners(), "Listeners can be removed");
+        JsonObject refused = JsonParser.parseString("{\"kind\":\"tool_end\",\"name\":\"fit_affine\",\"response\":{\"status\":\"error\","
+                + "\"error\":\"LOCKED\",\"message\":\"s1 is locked\"}}").getAsJsonObject();
+        require(AgentRunner.agentText(refused).equals("\ns1 is locked\n"), "A failing tool's reason reaches the run log (both modes)");
+        refused.addProperty("kind", "tool_result");
+        require(AgentRunner.agentText(refused).isEmpty(), "The ADK's own tool_result does not repeat it");
     }
 
     /** Dialog choices become the contract's spec, preprocessing and exported channel order, and persist. */
@@ -265,22 +282,15 @@ public final class ConnectorSmokeTest {
                 && back.imageProvider.equals("none") && back.imageModel == null && back.engine.equals("elastix")
                 && back.saveTraces && back.traceDir.equals(s.traceDir), "Every choice persists between runs");
         node.removeNode();
-        JsonObject status = JsonParser.parseString("{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],\"default_agent_model\":\"openai-oauth/gpt-6-sol\"}}}").getAsJsonObject();
-        require(RegistrationSettings.models(status, "agent_models", RegistrationSettings.FALLBACK_MODELS).equals(Collections.singletonList("openai-oauth/gpt-6-sol")), "Models come from setup.status");
-        require(RegistrationSettings.models(new JsonObject(), "agent_models", RegistrationSettings.FALLBACK_MODELS).size() == 6, "Older workers fall back to the known model list");
-        require(RegistrationSettings.models(status, "image_models", Collections.singletonList("gpt-image-2")).equals(Collections.singletonList("gpt-image-2")), "Image model fallback");
+        JsonObject status = JsonParser.parseString("{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],"
+                + "\"default_agent_model\":\"openai-oauth/gpt-6-sol\",\"default_image_model\":\"gpt-image-2\"}}}").getAsJsonObject();
+        require(RegistrationSettings.agentModels(status).equals(Collections.singletonList("openai-oauth/gpt-6-sol")), "Models come from setup.status");
+        require(RegistrationSettings.accountDefault(status, "default_image_model").equals("gpt-image-2")
+                && RegistrationSettings.accountDefault(new JsonObject(), "default_agent_model") == null, "Account defaults");
         require(RegistrationSettings.signedIn(status) && !RegistrationSettings.signedIn(new JsonObject()), "Account status");
         require(RegistrationSettings.modelLabel("openai-oauth/gpt-5.6-sol").equals("gpt-5.6-sol"), "Model labels drop the account prefix");
-        // Image models in the worker's order, None (fit to the stain only) always offered; older workers still get ChatGPT's.
-        List<RegistrationSettings.ImageChoice> old = RegistrationSettings.imageChoices(new JsonObject());
-        require(old.size() == 2 && old.get(0).matches("openai-oauth", "gpt-image-2") && old.get(1).provider.equals("none")
-                && old.get(1).label.equals("None (fit to the stain only)"), "Image models without a list from the worker: " + old);
-        JsonObject providers = JsonParser.parseString("{\"providers\":{\"openai-api\":{\"configured\":false},\"gemini-api\":{\"configured\":true},"
-                + "\"openai-oauth\":{\"configured\":true,\"image_models\":[\"gpt-image-2\"]},\"none\":{\"configured\":true}}}").getAsJsonObject();
-        List<RegistrationSettings.ImageChoice> listed = RegistrationSettings.imageChoices(providers);
-        require(listed.size() == 4 && listed.get(0).matches("openai-oauth", "gpt-image-2") && listed.get(1).provider.equals("gemini-api")
-                && listed.get(1).model == null && listed.get(2).provider.equals("openai-api") && listed.get(2).toString().endsWith("(not set up)")
-                && listed.get(3).provider.equals("none"), "Image models from the older providers block: " + listed);
+        require(new RegistrationSettings().problem(1) != null, "No agent model until the dialog fills in the worker's default");
+        // Image models in the worker's order, with None (fit to the stain only) as the worker places it.
         JsonObject current = JsonParser.parseString("{\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,"
                 + "\"models\":[\"gpt-image-2\"],\"default_model\":\"gpt-image-2\"},{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":false,"
                 + "\"models\":[\"g1\",\"g2\"],\"default_model\":\"g1\"},{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":true,\"models\":[],"
@@ -289,6 +299,7 @@ public final class ConnectorSmokeTest {
         require(given.size() == 5 && given.get(0).label.equals("ChatGPT image lane: gpt-image-2") && given.get(2).matches("gemini-api", "g2")
                 && given.get(2).toString().endsWith("(not set up)") && given.get(3).matches("openai-api", "img-1")
                 && given.get(4).label.equals("None (fit to the stain only)"), "setup.status image_models list: " + given);
+        require(RegistrationSettings.imageChoices(new JsonObject()).isEmpty(), "No list, no choices");
     }
 
     private static String spec(RegistrationSettings s) { return s.spec().getAsJsonArray("tasks").toString(); }
@@ -319,13 +330,9 @@ public final class ConnectorSmokeTest {
         Files.walk(folder).sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
     }
 
-    /** A worker without linear.estimate reads as "estimate unavailable", not as a failure. */
+    /** The estimate line: a number, or the worker's plain reason when it gives none. */
     static void estimateChecks(Path prefix) throws Exception {
-        JsonObject params = new JsonObject(); params.addProperty("n_slices", 5);
-        try (WorkerClient client = new WorkerClient(prefix)) {
-            client.request("linear.estimate", params, null, Duration.ofSeconds(5)); throw new AssertionError("Expected unknown method");
-        } catch (IOException expected) { require(RegistrationDialog.unsupported(expected), "Unknown method is detected from the error"); }
-        params.addProperty("n_slices", 99);
+        JsonObject params = new JsonObject(); params.addProperty("n_slices", 99);
         try (WorkerClient client = new WorkerClient(prefix)) {
             String text = RegistrationDialog.costText(client.request("linear.estimate", params, null, Duration.ofSeconds(5)));
             require(text.equals("Estimated cost: 2–3.5% of your ChatGPT usage window"), "Estimate text: " + text);
@@ -335,7 +342,6 @@ public final class ConnectorSmokeTest {
         try (WorkerClient client = new WorkerClient(prefix)) {
             client.request("linear.estimate", params, null, Duration.ofSeconds(5)); throw new AssertionError("Expected a refusal");
         } catch (IOException refused) {
-            require(!RegistrationDialog.unsupported(refused), "A refusal is not an older worker");
             String text = RegistrationDialog.refusalText(refused, medium);
             require(text.equals("Estimated cost: no estimate (only runs at Low image resolution have been measured)"), "Refusal text: " + text);
         }

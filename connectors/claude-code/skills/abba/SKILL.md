@@ -46,8 +46,10 @@ Names and parameters were read from the ABBA source at tag
   file) and start the job from it: `langslice job FOLDER init --registration
   FILE`.
 - Out of LangSlice: `langslice job FOLDER export_maps` writes
-  `exports/quicknii.json` and `exports/visualign.json`; import them with
-  ABBA's own commands above.
+  `exports/quicknii.json` and `exports/visualign.json`. ABBA takes the
+  linear placement through `ABBA - Import QuickNII Project` with
+  `quicknii.json`; ABBA has no VisuAlign import, so `visualign.json` (the
+  deformations) is for VisuAlign itself.
 - ABBA's coordinates differ from BrainGlobe's by a measured offset of about
   0.985 mm. Never hardcode it or convert positions by hand.
 - Save State before any bulk change.

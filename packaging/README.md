@@ -2,9 +2,11 @@
 
 The Fiji connector starts the separately installed LangSlice Python worker.
 The worker does not require Java, Maven, or `abba-python`. The optional
-`langslice[abba]` extra remains available for the older Python-starts-ABBA route.
+`langslice[abba]` extra (`abba-python`) is only for `langslice abba`, which starts
+ABBA from Python so that the connector's runs can be followed in LangSlice's agent
+viewer and log.
 
-## Install from source today
+## Install from source
 
 Download and extract the repository source archive, open a terminal **in its
 root folder**, and run:
@@ -24,18 +26,16 @@ chain is not currently available from conda-forge.
 
 ## Conda package publication blocker
 
-As checked against the public conda-forge Anaconda API on 2026-09-16,
-`google-adk`, `google-genai`, `litellm`, `openai`, `brainglobe-atlasapi`, and
-`brainglobe-space` are published there. **`itk-elastix` is not**: the package
-endpoint returns HTTP 404. This Python extension is a required LangSlice
+On conda-forge, `google-adk`, `google-genai`, `litellm`, `openai`,
+`brainglobe-atlasapi` and `brainglobe-space` are published. **`itk-elastix` is
+not** (its package endpoint below returns HTTP 404). This Python extension is a required LangSlice
 dependency and is different from the standalone Elastix executable.
 
 Before advertising `conda install -c conda-forge langslice`, package
 `itk-elastix` and any missing native dependencies, verify the full dependency
 solve on supported platforms, and submit a LangSlice recipe through
 [conda-forge's staging process](https://conda-forge.org/docs/maintainer/adding_pkgs/).
-No conda package or update site is published by the source changes in this
-branch. We deliberately do not supply a recipe that claims a working solve
+No conda package or Fiji update site is published. We deliberately do not supply a recipe that claims a working solve
 against a nonexistent dependency or installs hidden pip packages in a conda
 post-link script.
 

@@ -89,7 +89,9 @@ def format_event(event: dict[str, Any]) -> tuple[str, str]:
         if len(targets) > 4:
             suffix += f" + {len(targets) - 4} more"
         return f"Called {_tool_title(str(event.get('name', '')))}{suffix}", "tool"
-    if kind in {"seed", "tool_result"}:
+    # A tool's outcome and pictures come with its tool_end (both modes; the
+    # ADK's own tool_result would repeat a failure).
+    if kind in {"seed", "tool_end"}:
         count = len(event.get("images") or [])
         response = event.get("response") or {}
         if isinstance(response, dict):
@@ -149,7 +151,7 @@ def transcript_html(entries: list[tuple[str, str]]) -> str:
 class ActivityWindow:
     """A vertical companion beside ABBA, safe to feed from a worker thread."""
 
-    def __init__(self, *, model: str = "", parent: Any = None) -> None:
+    def __init__(self, *, parent: Any = None) -> None:
         from jpype import JProxy  # pyright: ignore[reportMissingImports]
         from scyjava import jimport  # pyright: ignore[reportMissingImports]
 
@@ -165,7 +167,7 @@ class ActivityWindow:
         self._index = -1
         self._page = 0
         self._refs: list[Any] = []
-        self._closed = False
+        self.closed = False
         self._dropped = 0
         self._last_style = ""
         self._entries: list[tuple[str, str]] = []
@@ -182,7 +184,7 @@ class ActivityWindow:
             "result": (175, 197, 209),
             "error": (255, 150, 145),
         }
-        self._edt(lambda: self._build(model, parent), wait=True)
+        self._edt(lambda: self._build(parent), wait=True)
 
     def _edt(self, fn: Any, *, wait: bool = False) -> None:
         swing = self._j("javax.swing.SwingUtilities")
@@ -214,7 +216,7 @@ class ActivityWindow:
         button.setFocusable(False)
         return button
 
-    def _build(self, model: str, parent: Any) -> None:
+    def _build(self, parent: Any) -> None:
         j = self._j
         Border = j("java.awt.BorderLayout")
         Panel = j("javax.swing.JPanel")
@@ -281,7 +283,6 @@ class ActivityWindow:
         right_header = Panel(Border())
         right_header.setOpaque(False)
         right_header.add(self._label("Agent activity", size=16), Border.NORTH)
-        right_header.add(self._label(model, style="muted"), Border.SOUTH)
         right.add(right_header, Border.NORTH)
         self.log = j("javax.swing.JTextPane")()
         self.log.setEditable(False)
@@ -318,7 +319,7 @@ class ActivityWindow:
 
     def on_event(self, event: dict[str, Any]) -> None:
         """Nonblocking: a slow/hidden viewer can never hold up registration."""
-        if self._closed:
+        if self.closed:
             return
         size = sum(len(im.get("data", b"")) for im in event.get("images", []))
         size += len(event.get("text", "")) * 4
@@ -332,11 +333,8 @@ class ActivityWindow:
             except queue.Full:
                 self._dropped += 1
 
-    def set_status(self, text: str) -> None:
-        self.on_event({"kind": "status", "text": text})
-
     def show(self) -> None:
-        if self._closed:
+        if self.closed:
             return
 
         def show() -> None:
@@ -346,7 +344,7 @@ class ActivityWindow:
         self._edt(show)
 
     def dispose(self) -> None:
-        self._closed = True
+        self.closed = True
         self._decoder.shutdown(wait=False, cancel_futures=True)
 
         def close() -> None:
@@ -420,7 +418,7 @@ class ActivityWindow:
                 self._append(*format_event(event))
                 if kind == "tool_start":
                     self.status.setText(f"Running {_tool_title(str(event.get('name', 'tool')))}…")
-                elif kind in {"text", "reasoning", "session", "tool_result"}:
+                elif kind in {"text", "reasoning", "tool_end"}:
                     self.status.setText("Agent exploring…")
                 elif kind == "complete":
                     self.status.setText("Submitted" if event.get("submitted") else "Stopped")
@@ -547,7 +545,7 @@ class ActivityWindow:
                         decoded.append({"data": output.getvalue(), "label": image["label"]})
                 except Exception:
                     decoded.append({"data": b"", "label": "Image could not be decoded"})
-            if not self._closed:
+            if not self.closed:
                 self._edt(lambda: self._publish_images(decoded, rows, columns, page, generation))
 
         self._render_future = self._decoder.submit(prepare)
@@ -557,7 +555,7 @@ class ActivityWindow:
     ) -> None:
         from jpype import JArray, JByte  # pyright: ignore[reportMissingImports]
 
-        if self._closed or generation != self._render_generation:
+        if self.closed or generation != self._render_generation:
             return
         j = self._j
         self.image_grid.removeAll()

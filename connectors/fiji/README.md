@@ -40,7 +40,7 @@ for estimates and plain refusals; multi-page snapshot TIFFs; the `preprocess.pre
 request; that every saved checkpoint (not the initial one) reaches the live hook
 while the run goes on, including after a stop; that event listeners receive
 checkpoints and agent events in order and that a failing listener harms nothing;
-native affine/spline registration geometry and serialization; the warp step's
+native affine registration geometry and serialization; the warp step's
 direction, both coordinate layouts, its serialization and that BigWarp can reopen
 it; the cutting-angle signs; and how a kept row merges with a newer one.
 
@@ -54,7 +54,7 @@ java -Djava.awt.headless=true --add-opens=java.base/java.lang=ALL-UNNAMED \
 ```
 
 It imports two synthetic sections and checks: AP positions from ABBA's own
-`toAtlasZ` against the former atlas-coordinate measurement; a tilted session's
+`toAtlasZ` against ABBA's atlas coordinate images read at the slice; a tilted session's
 `angles_deg`; `existing_warp` for a user's own BigWarp step; live checkpoints
 (position, affine step, warp step, cutting angles) read back from ABBA; that a new
 placement removes the warp before replacing the affine; that one ABBA Undo reverts
@@ -77,15 +77,20 @@ site has not been published. Do not copy the Maven dependency jars into Fiji.
 ## Setup and lifecycle
 
 Open Setup from Fiji's **Plugins → LangSlice → LangSlice setup…**, or with the
-**Setup…** button of the Registration dialog. Choose the conda environment,
+**Setup…** button of the Registration dialog. Its **Installation instructions**
+button opens the LangSlice repository, whose README leads to the installation guide. Choose the conda environment,
 check the installation, and connect a model account. The browser completes ChatGPT
 sign-in. API keys are sent through the worker's stdin, never command-line arguments,
 and are saved by LangSlice. A saved credential is explicitly distinguished from an
 account validated online.
 
-Environment discovery checks conda's registry and common installation folders;
-Browse accepts an environment folder. A remembered environment is rechecked when
-launching the agent. When available, `conda run --prefix` supplies activation variables
+Environment discovery checks conda's registry and the base environments of
+common conda and mamba installations (`CONDA_EXE`, `MAMBA_ROOT_PREFIX`, and
+`miniforge3`, `miniconda3`, `anaconda3`, `mambaforge` or `micromamba` in the home
+folder); Browse accepts an environment folder. A remembered environment is rechecked
+when launching the agent. When ABBA was started with `langslice abba`, the
+environment that started it (the `langslice.environment` system property) runs that
+session's workers and is listed first in Setup; the user's saved choice is kept. When available, `conda run --prefix` supplies activation variables
 without requiring an open terminal. Otherwise the environment's Python is invoked
 directly. Worker processes and their descendants are terminated on cancellation.
 
@@ -104,19 +109,18 @@ when none is selected. It is not modal; the run starts from **Run** (**Copy prom
 in Claude mode).
 
 - **Top:** provider (ChatGPT or Claude), agent model (from the worker's `setup.status`
-  list, editable; the connector's own list when an older worker gives none), reasoning
+  list, editable), reasoning
   level, image resolution (Low/Medium/High/Auto), **Show agent log**, **Open agent
   viewer**, the image model, and **Save traces to** a folder (default
   `~/LangSlice/traces`), which keeps the run's full agent trace; the final message names
   the file. The image model list comes from `setup.status` (`image_models`, in the
-  worker's order; older workers: the ChatGPT image model) and always offers **None (fit
-  to the stain only)**; an entry whose account is not connected says "(not set up)". It
+  worker's order, **None (fit to the stain only)** included); an entry whose account is not connected says "(not set up)". It
   is enabled whenever Nonlinear is ticked, in both modes. **Open agent viewer** is
   enabled only when ABBA was started from Python (`langslice abba`), which registers a
   `LangSliceEvents` listener; otherwise it is disabled with the tooltip "Available when
   ABBA is started with `langslice abba`".
 - **Tasks tab:** *Positioning* (section thickness and interval prefilled from ABBA's
-  slices, notes for the agent; DeepSlice and Bayesian position fit shown disabled).
+  slices, notes for the agent).
   *Linear* (**Enable hemisphere flipping** with an optional hemisphere cue, the affine
   tool, max parallel slice transforms 1–4, **Enable slice angle estimation**, notes for
   the agent). *Nonlinear* (deformable-fit engine: Either, ANTs or Elastix; notes for the
@@ -138,8 +142,8 @@ in Claude mode).
   (one channel in gray, several as a coloured overlay); after is the worker's
   `preprocess.preview` output, the grayscale image the agent sees.
 - **Bottom:** the estimated cost from `linear.estimate`; when the worker gives no
-  number, its plain reason ("Estimated cost: no estimate (…)"); "estimate unavailable"
-  only for a worker without the method. **Setup…**, **Cancel** and **Run**.
+  number, its plain reason ("Estimated cost: no estimate (…)"). **Setup…**, **Cancel**
+  and **Run**.
 
 Every choice except the per-slice damage checks is saved (Java preferences, node
 `org/langslice/fiji/registration`) when a run starts, and restored next time; section
@@ -204,10 +208,10 @@ compact window shows the status, the Stop button and the final message.
 
 `org.langslice.fiji.LangSliceEvents` is a small public registry for an in-JVM listener,
 normally the Python launcher's JPype proxy when ABBA was started with `langslice abba`:
-`addListener(Consumer<String>)`, `removeListener`, `hasListeners()`, `slices()` (the run's
-snapshot filename to ABBA slice map) and `session()`. In both modes the connector passes
+`addListener(Consumer<String>)`, `removeListener`, `hasListeners()` and `slices()` (the
+run's snapshot filename to ABBA slice map). In both modes the connector passes
 on every worker message verbatim (`checkpoint`, `agent_event`, `log`, each a JSON object
-with its `kind`) and adds `run_started` (mode, viewer, image folder, sections), `job`
+with its `kind`) and adds `run_started` (mode `openai-oauth` or `claude`, viewer, image folder, sections), `job`
 (Claude mode), `applied` (what reached ABBA) and `run_finished`. Delivery runs on one
 background thread, in order; a failing listener is logged and never affects the run.
 

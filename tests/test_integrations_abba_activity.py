@@ -89,7 +89,7 @@ def test_activity_hides_protocol_payloads_and_reports_image_count():
     response = {"detail": "x" * 10_000, "status": "ok"}
     text, style = activity.format_event(
         {
-            "kind": "tool_result",
+            "kind": "tool_end",
             "name": "compare",
             "response": response,
             "images": [_image(b"a"), _image(b"b")],
@@ -99,6 +99,10 @@ def test_activity_hides_protocol_payloads_and_reports_image_count():
     assert style == "result"
     assert activity.format_event({"kind": "usage", "tokens": {"input": 5000}})[0] == ""
     assert activity.format_event({"kind": "progress", "text": "[tokens] diagnostic"})[0] == ""
+    refused = {"name": "fit_affine", "response": {"status": "error", "message": "s1 is locked"}}
+    shown = activity.format_event({"kind": "tool_end", **refused})
+    assert shown == ("fit affine: s1 is locked", "error")
+    assert activity.format_event({"kind": "tool_result", **refused})[0] == ""
     assert len(response["detail"]) == 10_000
 
 

@@ -207,6 +207,7 @@ class RunListener:
             self._finish_run()
             self.viewer_wanted = bool(message.get("viewer", True))
             self._to_log({"kind": "status", "text": "Running"})
+            self._show_log()
             self._ensure_run(force=True)
         elif kind == "agent_event" and isinstance(message.get("event"), dict):
             self._agent_event(message["event"])
@@ -220,14 +221,8 @@ class RunListener:
             if message.get("angles_failed"):
                 self._to_log({"kind": "progress",
                               "text": f"ABBA could not set the angles: {message['angles_failed']}"})
-        elif kind in {"run_finished", "result"}:
-            state = (message.get("result") or {}).get("state") or {}
-            note = message.get("message")
-            self._to_log({"kind": "status", "text": str(note) if note else (
-                "Submitted" if state.get("submitted") else "Finished")})
-            self._finish_run()
-        elif kind == "error":
-            self._to_log({"kind": "error", "text": str(message.get("message") or "Run failed")})
+        elif kind == "run_finished":
+            self._to_log({"kind": "status", "text": str(message.get("message") or "Finished")})
             self._finish_run()
 
     def _agent_event(self, event: dict[str, Any]) -> None:
@@ -272,11 +267,20 @@ class RunListener:
             except Exception:
                 logger.warning("ABBA agent viewer could not finish", exc_info=True)
 
+    def _show_log(self) -> None:
+        """Reopen the session's log window when the user closed it."""
+        if self.log is None:
+            return
+        try:
+            self.log.show()
+        except Exception:
+            logger.warning("Agent log could not reopen", exc_info=True)
+
     def _to_log(self, event: dict[str, Any]) -> None:
         if self.log_factory is None:
             return
         try:
-            if self.log is None or getattr(self.log, "closed", False):
+            if self.log is None or self.log.closed:
                 self.log = self.log_factory()
             self.log.on_event(event)
         except Exception:
@@ -390,11 +394,11 @@ def start_abba(
 
 
 def run_abba_session(
-    *, abba_atlas: str, jar: str | None = None, viewer: bool = True, log: bool = True,
+    *, abba_atlas: str, jar: Path, viewer: bool = True, log: bool = True,
 ) -> None:
-    """``langslice abba``: start ABBA and block until its JVM shuts down."""
-    path = connector_jar(jar)
-    _abba, listener, _forward = start_abba(abba_atlas=abba_atlas, jar=path, viewer=viewer,
+    """``langslice abba``: start ABBA with the connector *jar*
+    (:func:`connector_jar`) and block until its JVM shuts down."""
+    _abba, listener, _forward = start_abba(abba_atlas=abba_atlas, jar=jar, viewer=viewer,
                                            log=log)
     try:
         wait_for_jvm_shutdown()

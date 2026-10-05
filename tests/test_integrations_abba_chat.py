@@ -10,7 +10,7 @@ from langslice.hosts.integrations import abba_chat as chat
 
 
 def test_history_preserves_summary_deltas_and_ignores_private_fields():
-    history = chat.ChatHistory("model")
+    history = chat.ChatHistory()
     history.add({"kind": "session", "model": "model-2", "text": "private instruction"})
     history.add({"kind": "reasoning", "text": "Slices **1–4**", "thought_signature": "secret"})
     history.add({"kind": "reasoning", "text": " look anterior."})
@@ -31,7 +31,6 @@ def test_history_preserves_summary_deltas_and_ignores_private_fields():
         }
     )
     result = history.snapshot()
-    assert result["model"] == "model-2"
     assert [e["text"] for e in result["events"][:2]] == ["Slices **1–4**", " look anterior."]
     assert "secret" not in json.dumps(result)
     assert "instruction" not in json.dumps(result)
@@ -103,7 +102,7 @@ def test_browser_missing_falls_back_to_existing_viewer(monkeypatch):
     monkeypatch.setattr(chat, "_browser", lambda: (_ for _ in ()).throw(RuntimeError("missing")))
     marker = object()
     monkeypatch.setattr(abba_activity, "ActivityWindow", lambda **kwargs: marker)
-    assert chat.create_activity_window(model="test") is marker
+    assert chat.create_activity_window() is marker
 
 
 def test_disposed_window_ignores_future_events_and_show():
@@ -147,15 +146,19 @@ def test_browser_launch_uses_private_profile_and_abba_display(monkeypatch, tmp_p
     monkeypatch.setattr(chat.tempfile, "mkdtemp", lambda **kwargs: str(tmp_path / "private"))
     monkeypatch.setattr(chat.subprocess, "Popen", Process)
     monkeypatch.setenv("DISPLAY", ":108")
-    window = chat.ChatWindow(model="model")
+    window = chat.ChatWindow()
     args = window.process.args
     assert "--ozone-platform=x11" in args
     assert "--window-position=1200,0" in args
     assert f"--user-data-dir={tmp_path / 'private'}" in args
     assert not any("no-sandbox" in arg for arg in args)
     window.on_event({"kind": "text", "text": "Still running"})
+    first = window.process
+    window.show()  # already open: no second window
+    assert window.process is first
     window.process.returncode = 0  # Closing the window does not close the server.
     window.show()
+    assert window.process is not first
     assert not window.server.closed
     assert window.history.snapshot()["events"][0]["text"] == "Still running"
     window.dispose()
