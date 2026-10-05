@@ -1,78 +1,30 @@
-logo-concepts/
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
+# Python
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
+.venv/
 .pytest_cache/
 .mypy_cache/
-*.egg-info/
-.vscode/
-
-# Windows NUL artifact
-nul
-
-# Cloned reference repositories (keep locally, exclude from repo)
-references/
-references/abba_python/
-references/brainglobe-atlasapi/
-references/DeepSlice_upstream/
-references/google-genai-docs/
-references/ijp-imagetoatlas/
-
-# Archived local notes not part of the active docs set
-archive/
-archive/*.md
-
-# Local agent/session artifacts
-.sisyphus/
-.claude/
-.superpowers/
-.playwright-mcp/
-.worktrees/
-debug_runs/
-test_runs/
-eval_outputs/
-new-debug/
-_logs/
-openspec/
 .ruff_cache/
+.import_linter_cache/
 
-# Session handoff / scratch docs (AI-generated; keep local, never ship)
-HANDOFF*.md
+# Credentials and local settings
+.env*
+!.env.example
+CLAUDE.local.md
 
-# Large binary data
+# Editors and OS
+.vscode/
+.DS_Store
+
+# Logs and outputs
+*.log
+out/
+tmp/
+
+# Large imaging data
 *.nii
 *.nii.gz
-
-# Downloaded training/eval datasets
 /data/
-debug_output/
-
-# Local-only mirror of dataset-specific files kept off the public repo
-_local/
-
-# Local scratch / dev script outputs
-tmp/
-out/
-unsloth_compiled_cache/
-last_launch_dir.txt
-_live_*
-_deployed_*.png
-_3d_view_*.png
-/C*/
-/LabSoftwareLangSlicetmppytest-basetemp/
-/pytest-basetemp/
-
-# Local litert-lm spike venv (not portable, large)
-_spike_litert_venv/
-
-# uv project venv (Python 3.11, base harness)
-.venv/
-_local/openai_api.env
-.import_linter_cache/

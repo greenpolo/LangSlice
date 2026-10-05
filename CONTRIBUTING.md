@@ -22,10 +22,10 @@ cd LangSlice
 uv venv --python 3.11 .venv
 source .venv/bin/activate       # macOS / Linux
 # .venv\Scripts\activate        # Windows
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,registration]"
 ```
 
-Plain `python -m venv .venv` + `pip install -e ".[dev]"` works too.
+Plain `python -m venv .venv` + `pip install -e ".[dev,registration]"` works too.
 
 ## Verifying changes
 
@@ -34,6 +34,7 @@ Before opening a PR, please run:
 ```bash
 python -m ruff check .
 python -m basedpyright
+lint-imports
 python -m pytest
 python -m langslice version
 ```
@@ -42,8 +43,7 @@ python -m langslice version
 
 - Branch from `main`, open the PR against `main`.
 - Keep PRs focused — one logical change per PR is easier to review.
-- The CI workflow runs `ruff`, `basedpyright`, and a harness test
-  subset on Python 3.10 / 3.11 / 3.12.
+- CI runs `ruff`, `basedpyright` and the test suite on Python 3.10 / 3.11 / 3.12.
 
 ## License
 
