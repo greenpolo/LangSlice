@@ -19,14 +19,17 @@ once shipped. A hidden verb (``registry.Verb.hidden``) is in neither list;
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from typing import Any
 
-from langslice.doors.cli.envelope import Envelope, emit
+from langslice.doors.cli.envelope import EXIT_INTERNAL, EXIT_REFUSED, Envelope, emit
+
+logger = logging.getLogger(__name__)
 
 #: The version of what ``langslice schema`` prints (bumped when a verb's
-#: arguments change incompatibly). 2 (2026-10-04): each verb an object with
-#: its description, summary, arguments, picture options and ``long``.
+#: arguments change incompatibly). 2: each verb an object with its
+#: description, summary, arguments, picture options and ``long``.
 SCHEMA_VERSION = 2
 
 #: The agent CLI's own commands besides the verbs (``langslice job FOLDER ...``).
@@ -132,13 +135,6 @@ def _job_here() -> str | None:
         return None
 
 
-def schema_of(name: str, job: str | None = None) -> dict[str, Any]:
-    """The JSON schema of *name*'s arguments as the CLI accepts them (the
-    caller sizes pictures: ``view.resolution``); with *job*, as that job's
-    spec declares the verb (e.g. no ``engine`` where the user fixed it)."""
-    return Declared(job).entry(name)["arguments"]
-
-
 def add_parsers(subparsers: argparse._SubParsersAction) -> None:
     subparsers.add_parser("ops", help="List the verbs of the agent CLI (JSON)")
     schema = subparsers.add_parser(
@@ -181,4 +177,10 @@ def run_schema(args: argparse.Namespace) -> int:
                      + (" --background" if VERBS[name].long else "")]
     except NoJob as exc:
         return emit(Envelope.failure("NO_JOB", str(exc)))
+    except (FileNotFoundError, ValueError) as exc:
+        return emit(Envelope.failure("JOB_UNREADABLE", str(exc), exit=EXIT_REFUSED))
+    except Exception as exc:  # the envelope reports it; the traceback goes to stderr
+        logger.exception("langslice schema failed")
+        return emit(Envelope.failure("INTERNAL", f"{type(exc).__name__}: {exc}",
+                                     exit=EXIT_INTERNAL))
     return emit(Envelope(result=result, next=nexts))

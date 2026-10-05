@@ -42,7 +42,7 @@ EXIT_INTERNAL = 4
 ARGUMENT_CODES = frozenset({
     "MISSING_ARGUMENTS", "VIEW_KEY_UNUSED", "DUPLICATE_SLICE_IDS", "ZOOM_UNSUPPORTED",
     "INVALID_BORDER_STYLE", "RESOLUTION_FIXED", "NO_SIDES", "LABEL_MAP_ANTS_ONLY",
-    "ENGINE_FIXED", "EMPTY_RESULT", "NO_JOB", "NO_IMAGES", "NOT_A_RUN",
+    "ENGINE_FIXED", "EMPTY_RESULT", "NO_JOB", "NO_IMAGES",
 })
 
 #: What to do about a code (the envelope's ``error.fix``); ``{job}`` is the

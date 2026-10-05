@@ -141,6 +141,15 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     assert "engine" not in here["result"]["arguments"]["properties"]
 
 
+def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
+    job = init(capsys, images)
+    record = json.loads((job / "job.json").read_text())
+    record["spec"]["plane"] = "diagonal"  # a spec the job layer refuses
+    (job / "job.json").write_text(json.dumps(record))
+    code, envelope = cli(capsys, "schema", "fit_deformable", "--job", str(images))
+    assert code == 3 and envelope["error"]["code"] == "JOB_UNREADABLE"
+
+
 # --- init, the card, status ---------------------------------------------------------
 
 
@@ -411,6 +420,12 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
                          "--dry-run")
     assert code == 0 and envelope["result"] == {"dry_run": True, "simulated": False,
                                                 "sections": [ID0]}
+    # A dry run never starts a background run (that child would run the verb).
+    code, envelope = cli(capsys, "job", str(images), "fit_deformable", "--slices", ID0,
+                         "--dry-run", "--background")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert not (job / "logs" / "runs").exists()
+    assert (job / "state.json").read_bytes() == state_before
 
 
 def test_the_cli_never_applies_the_look_before_commit_gates(capsys, images):

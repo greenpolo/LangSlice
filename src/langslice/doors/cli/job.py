@@ -354,6 +354,11 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     if verb not in VERBS:
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
     dry_run = bool(options.get("dry_run"))
+    if dry_run and options.get("background"):
+        # A background child runs the verb for real; a dry run answers at once.
+        raise _Refusal(Envelope.failure(
+            "BAD_ARGUMENTS", "--dry-run and --background do not go together: a dry run "
+            "answers at once.", verb=verb))
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
     try:

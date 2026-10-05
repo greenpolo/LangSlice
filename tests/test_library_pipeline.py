@@ -354,11 +354,26 @@ def test_register_section_takes_an_array_and_no_image_model(images, tmp_path, ca
     assert section.coords.is_file()
 
 
-def test_register_section_refuses_a_shared_folder(images):
+def test_register_section_refuses_a_shared_folder(images, tmp_path):
     import langslice
 
+    before = {path.name: path.read_bytes() for path in images.iterdir() if path.is_file()}
     with pytest.raises(ValueError, match="other section images"):
         langslice.register_section(images / ID0, position_mm=0.1, folder=images)
+    # A same-named file in the folder is never replaced; nothing is written.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    shutil.copy2(images / ID1, elsewhere / ID0)
+    with pytest.raises(ValueError, match="other section images"):
+        langslice.register_section(elsewhere / ID0, position_mm=0.1, folder=images)
+    assert {path.name: path.read_bytes() for path in images.iterdir()
+            if path.is_file()} == before
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    shutil.copy2(images / ID1, alone / ID0)
+    with pytest.raises(ValueError, match="already holds a different"):
+        langslice.register_section(images / ID0, position_mm=0.1, folder=alone)
+    assert (alone / ID0).read_bytes() == (images / ID1).read_bytes()
 
 
 def test_register_section_says_why_a_section_failed(images, tmp_path):
