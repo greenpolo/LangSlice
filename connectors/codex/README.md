@@ -61,12 +61,8 @@ Codex's `view_image` (2048 px).
   reaches the agents. `[[skills.config]]` with `enabled = false` can disable
   a skill per agent file.
 
-## Uncertain
+## Status
 
-- Not run against a live model. The TOML files parse and `codex execpolicy
-  check` matches the rules.
-- Codex's two plugin documents disagreed about the manifest, so no plugin
-  package is shipped.
-- Documentation read from developers.openai.com/codex (redirects to
-  learn.chatgpt.com/docs): skills, subagents, rules, config reference,
-  plugins/build.
+The TOML files parse and `codex execpolicy check` matches the rules; the
+agents have not yet been used for a full registration. No Codex plugin
+package is shipped.

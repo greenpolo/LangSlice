@@ -29,7 +29,8 @@ Registration is always the subagent's, and it registers exactly one brain.
 - Notes about the brain (a tear, a damaged section).
 - Which subagent the user allows (step 3).
 
-`langslice job FOLDER init --help` lists every flag. Check that `langslice`
+`init` takes the job flags `langslice linear run --help` lists, plus `--notes
+TEXT` (the user's notes, saved in the job). Check that `langslice`
 runs (`langslice version`); if it does not, tell the user how the plugin
 README says to install it, and stop.
 
