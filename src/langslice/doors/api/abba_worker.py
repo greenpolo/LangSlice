@@ -78,7 +78,6 @@ def _host_updates(
     or transform row is ever emitted for it.
     """
     from langslice.core.abba_affine import normalized_to_abba_affine
-    from langslice.core.abba_spline import spline_world_landmarks
 
     prior = {row["id"]: row for row in previous["slices"]}
     updates = []
@@ -108,12 +107,6 @@ def _host_updates(
             transform = row.get("transform")
             if transform is None:
                 update["affine_mm"] = None
-            elif transform.get("spline") is not None:
-                source, target = spline_world_landmarks(
-                    transform["spline"], size=geometry[name], pixel_size_um=pixel_size_um,
-                    rotation_deg=int(row.get("rotation_deg") or 0),
-                )
-                update.update(spline_source_mm=source.tolist(), spline_target_mm=target.tolist())
             else:
                 update["affine_mm"] = normalized_to_abba_affine(
                     transform["params"], size=geometry[name], pixel_size_um=pixel_size_um,

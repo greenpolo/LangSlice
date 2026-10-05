@@ -20,12 +20,11 @@ from typing import Any
 from langslice.core.spec import JobSpec
 from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import prepare_linear
-from langslice.job import index, migrate
+from langslice.job import index
 from langslice.job.job import refuse_changed_inputs
 from langslice.job.layout import (
     JobLayout,
     check_owner,
-    job_folder_for,
     locate_job_folder,
     read_job_file,
     write_job_file,
@@ -157,7 +156,7 @@ def _write_job(
     image_folder: Path, host: dict[str, Any], *, spec: JobSpec,
     channel: dict[str, Any] | None, notes: str = "",
 ) -> tuple[str, JobLayout]:
-    """Save the job: its folder located, upgraded and checked (another image
+    """Save the job: its folder located and checked (another image
     folder's job, and with ``spec.resume`` a checkpoint made from other
     inputs, are refused before anything is written), ``job.json`` (the
     user's *notes* under ``notes``, which every door reads:
@@ -168,8 +167,6 @@ def _write_job(
                                          job_id=job_id, register=False)
     layout = JobLayout(folder, images)
     check_owner(layout)
-    if layout.folder == job_folder_for(images):
-        migrate.migrate_beside_images(layout)
     if spec.resume:
         refuse_changed_inputs(layout, spec)
     layout.ensure()
