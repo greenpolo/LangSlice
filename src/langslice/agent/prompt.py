@@ -1,8 +1,11 @@
-"""The job statement: job, run facts, one factual line per tool, constraints.
+"""The job statement: job, run facts, one factual line per tool, constraints, method.
 
-Nothing else. No strategy, no rules of thumb, no warnings about failure modes:
-every benchmark failure worth tracing came back to advice the harness put in
-front of the model, so the harness reports and the model reasons.
+The statement reports; the model reasons. It gives no rules of thumb and no
+warnings about failure modes. The one place for strategy is the short
+"Method:" section per task that is on (look before writing, review the
+stack, inspect each fit against internal anatomy); ``position.playbook``
+replaces the positioning lines with a step-by-step method for models that do
+not find one on their own.
 
 Deliberately atlas- and plane-agnostic — it names no region, no landmark and no
 absolute position, because the same text runs against every BrainGlobe atlas,
@@ -509,10 +512,9 @@ def build_job_statement(
 
     method: list[str] = []
     if spec.has("position") and spec.position.playbook:
-        # GPT-6 Astra's own method, read off its run-8 trace (M11, 34 of 36
-        # within 0.25 mm): a complete hypothesis first, then one confirmation
-        # sweep, one write, targeted re-checks, a review. Coaching text: only
-        # for the models that do not find this on their own.
+        # A complete hypothesis first, then one confirmation sweep, one
+        # write, targeted re-checks, a review: coaching, only for the models
+        # that do not find this method on their own.
         method = [
             "",
             "Method:",

@@ -4,27 +4,26 @@ A provider is an ACCESS METHOD — a vendor plus how you authenticate — never 
 product name. Canonical names:
 
 - ``gemini-api``: Gemini models via a Google API key.
-- ``openai-api``: OpenAI-compatible endpoints via an API key (or a custom
-  ``--endpoint``).
+- ``openai-api``: the OpenAI API (or a compatible endpoint,
+  ``OPENAI_BASE_URL``) via an API key.
 - ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login
   (``langslice login``; transport lives in ``providers/openai_oauth.py``).
 - ``none``: no model at all. Registration's model-free backbone registers
   the silhouette prior itself (see ``core/nonlinear/prior.py``); there is nothing
   to authenticate, so it needs no transport module.
 
-Future providers (``anthropic-api``, ``openrouter-api``, ``qwen-api``, ...)
-are added HERE and nowhere else (their names and aliases in the
-provider-free table :mod:`langslice.core.provider_names`, which this module
-re-exports, so the core compares names without importing a provider);
-downstream code compares canonical names only. Legacy spellings ("google",
-"openai", "chatgpt") resolve here so old CLIs, saved configs, and sibling
-repos keep working.
+A new provider gets its canonical name in the provider-free table
+:mod:`langslice.core.provider_names` (re-exported here, so the core compares
+names without importing a provider) and its transport in this package;
+downstream code compares canonical names only.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from langslice.core.provider_names import CANONICAL_PROVIDERS, CUSTOM_PROVIDER, canonical_provider
@@ -48,6 +47,21 @@ OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-5.6-sol"
 #: Image models on the ``openai-oauth`` lane, and the default.
 OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2",)
 OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = "gpt-image-2"
+#: Image models on the ``gemini-api`` lane (Google's image-generation
+#: models), and the default: the general-purpose one.
+GEMINI_IMAGE_MODELS: tuple[str, ...] = (
+    "gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image",
+)
+GEMINI_DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
+
+
+def openai_oauth_credentials_path() -> Path:
+    """The ``openai-oauth`` login file (``langslice login`` writes it, mode
+    600): ``LANGSLICE_OPENAI_AUTH`` when set (another account for one
+    process), else ``~/.langslice/openai_auth.json``. Read at call time."""
+    override = os.environ.get("LANGSLICE_OPENAI_AUTH", "").strip()
+    return Path(override).expanduser() if override else (
+        Path.home() / ".langslice" / "openai_auth.json")
 
 
 #: One image edit: the request in (prompt, images in order, provider, model),
@@ -87,9 +101,13 @@ class ImageModel:
 
 
 def default_image_model(provider: str) -> str | None:
-    """The image model a provider uses when none is named (None: the transport's)."""
-    if canonical_provider(provider) == "openai-oauth":
+    """The image model a provider uses when none is named (None for
+    ``openai-api``: its transport reads ``OPENAI_IMAGE_MODEL``)."""
+    canonical = canonical_provider(provider)
+    if canonical == "openai-oauth":
         return OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
+    if canonical == "gemini-api":
+        return GEMINI_DEFAULT_IMAGE_MODEL
     return None
 
 
@@ -119,6 +137,8 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
 __all__ = [
     "CANONICAL_PROVIDERS",
     "CUSTOM_PROVIDER",
+    "GEMINI_DEFAULT_IMAGE_MODEL",
+    "GEMINI_IMAGE_MODELS",
     "OPENAI_OAUTH_AGENT_MODELS",
     "OPENAI_OAUTH_DEFAULT_AGENT_MODEL",
     "OPENAI_OAUTH_DEFAULT_IMAGE_MODEL",
@@ -127,5 +147,6 @@ __all__ = [
     "ImageModel",
     "canonical_provider",
     "default_image_model",
+    "openai_oauth_credentials_path",
     "resolve_image_model",
 ]

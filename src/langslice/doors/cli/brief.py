@@ -55,6 +55,7 @@ def build(opened: Any, *, pictures: bool = True) -> Brief:
     for the CLI: its viewer and door). With *pictures* the opening strips are
     drawn and saved as the job's opening views; ``BRIEF.md`` is written."""
     from langslice.core.opening import VIEWER_LIMITS, opening_items
+    from langslice.doors.jobs import image_model_off
     from langslice.doors.statement import (
         image_model_state,
         job_statement,
@@ -81,8 +82,7 @@ def build(opened: Any, *, pictures: bool = True) -> Brief:
         spec, job.state, opened.ctx, door="cli", tool_names=box.names,
         opening=opening_for_cli(folder, len(saved) if pictures else None),
         notes=read_notes(job.layout), max_resolution=box.max_view_edge,
-        image_model_off=spec.has("nonlinear") and spec.nonlinear.uses_image_model
-        and not connected, auto=True, gates=False,
+        image_model_off=image_model_off(spec, connected), auto=True, gates=False,
     )
     brief = Brief(statement=statement, facts={
         "viewer": viewer, "resolution": resolution_range(opened),

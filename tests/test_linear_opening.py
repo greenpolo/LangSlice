@@ -30,7 +30,8 @@ from langslice.core.opening import (
 )
 from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.spec import JobSpec
-from langslice.doors.tools.media import image_limit, opening_parts
+from langslice.doors.tools.media import opening_parts
+from langslice.doors.tools.view_options import image_limit
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
 
@@ -68,8 +69,6 @@ def test_the_lane_limits_are_the_verified_numbers():
     class Ctx:
         model = "openai-oauth/gpt-6-astra"
 
-    assert image_limit(Ctx()) == (2048, 2500)
-    Ctx.model = "chatgpt/gpt-6-astra"  # legacy spelling
     assert image_limit(Ctx()) == (2048, 2500)
     Ctx.model = "fake-model"
     assert image_limit(Ctx()) == (2048, 2500)

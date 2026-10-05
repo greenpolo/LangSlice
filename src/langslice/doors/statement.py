@@ -72,18 +72,14 @@ def user_notes_lines(notes: str) -> list[str]:
 
 
 def read_notes(layout: JobLayout) -> str:
-    """The user's notes for the job in ``job.json`` (``notes``; a saved job
-    from before 2026-10-04 holds them under ``host``); empty when none."""
+    """The user's notes for the job in ``job.json`` (``notes``); empty when none."""
     from langslice.job.layout import read_job_file
 
     try:
         record = read_job_file(layout) or {}
     except (OSError, ValueError):
         return ""
-    notes = record.get(NOTES_KEY)
-    if notes is None:
-        notes = (record.get("host") or {}).get("notes")
-    return str(notes or "")
+    return str(record.get(NOTES_KEY) or "")
 
 
 def opening_for_mcp(pages: int) -> list[str]:
@@ -115,7 +111,7 @@ def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
         "Pictures come back as files under `artifacts` (kind `view`, `index` matching "
         "the reply's image_indexes); open them to see them.",
         "- `--dry-run` runs a write without writing and reports what would change; "
-        "trace_borders, trace_from_atlas and fit_deformable are only checked, not run.",
+        "trace_borders and fit_deformable are only checked, not run.",
         f"- Long tools ({', '.join(long_verbs())}) can run with `--background`, which "
         "answers at once with a run id; `wait ID` collects the answer.",
         "- Commands may run in parallel: each write holds the job folder's lock, and a "

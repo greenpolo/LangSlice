@@ -6,7 +6,7 @@ verbs the agent tools and the CLI offer, by the same names and arguments
 
     import langslice
 
-    job = langslice.open_job("/data/M04")          # the job folder or its images
+    job = langslice.open_job("/data/brain1")       # the job folder or its images
     job.status()["rows"]
     reply = job.set_positions(entries=[{"id": "s01.tif", "position_mm": 5.2}])
     reply["images"]                                 # the pictures, as PIL images
@@ -62,10 +62,7 @@ class JobHandle:
     def verbs(self) -> list[str]:
         """The verbs this job has (its tasks decide), in registry order; a
         hidden verb (``Verb.hidden``) is callable by name but not listed."""
-        from langslice.ops.registry import listed
-
-        shown = listed()
-        return [name for name in self._tools if name in shown]
+        return self._opened.listed_verbs()
 
     def __getattr__(self, name: str) -> Callable[..., dict[str, Any]]:
         tools = self.__dict__.get("_tools") or {}

@@ -260,9 +260,8 @@ def test_checkpoints_carry_updates_since_start_and_the_result_the_final_ones(
     assert checkpoints[-1]["updates_since_start"] == result["final_updates"]
 
 
-def test_reorder_with_registered_slices_is_no_longer_refused(snapshots, monkeypatch):
+def test_reorder_is_not_refused(snapshots, monkeypatch):
     seen: dict[str, Any] = {}
     _fake_engine(monkeypatch, [], seen)
-    run_linear({**snapshots, "registered_slices": ["a.tif"],
-                "spec": {"tasks": ["reorder", "position"]}}, lambda event: None)
+    run_linear({**snapshots, "spec": {"tasks": ["reorder", "position"]}}, lambda event: None)
     assert seen["spec"].tasks == ["reorder", "position"]

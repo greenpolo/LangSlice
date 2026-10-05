@@ -7,6 +7,7 @@ Saved API keys are loaded explicitly by the worker before running model tasks.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from langslice import __version__
+
+logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = 1
 _KEY_ENV = {
@@ -27,22 +30,35 @@ def _credentials_path() -> Path:
     return Path.home() / ".langslice" / "provider_credentials.json"
 
 
-def _read_keys() -> dict[str, str]:
+def _read_saved() -> dict[str, Any]:
+    """The saved-key file as written (every entry, known or not); ``ValueError``
+    when it cannot be read as a JSON object."""
     path = _credentials_path()
     if not path.exists():
         return {}
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(doc, dict) or any(
-            provider not in _KEY_ENV or not isinstance(key, str) or not key.strip()
-            for provider, key in doc.items()
-        ):
+        if not isinstance(doc, dict):
             raise ValueError
         return doc
     except (OSError, ValueError) as exc:
         raise ValueError(
             "Saved API-key settings could not be read. Check the settings file."
         ) from exc
+
+
+def _read_keys() -> dict[str, str]:
+    """The saved keys of the providers this version knows; an entry for
+    another provider (a newer version's) or without a usable key is skipped
+    with a warning. ``ValueError`` when the file cannot be read."""
+    keys: dict[str, str] = {}
+    for provider, key in _read_saved().items():
+        if provider in _KEY_ENV and isinstance(key, str) and key.strip():
+            keys[provider] = key
+        else:
+            logger.warning("Skipping the saved API-key entry %r: not a provider key this "
+                           "version uses.", provider)
+    return keys
 
 
 def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
@@ -54,18 +70,12 @@ def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _oauth_path() -> Path:
-    """The login file ``providers.openai_oauth`` reads: ``LANGSLICE_OPENAI_AUTH``
-    when set (another account for one process), else LangSlice's own."""
-    override = os.environ.get("LANGSLICE_OPENAI_AUTH", "").strip()
-    return Path(override).expanduser() if override else (
-        Path.home() / ".langslice" / "openai_auth.json")
-
-
 def _oauth_status() -> dict[str, object]:
     # Do not call load_credentials: status must never refresh tokens or contact a provider.
     try:
-        path = _oauth_path()
+        from langslice.providers.registry import openai_oauth_credentials_path
+
+        path = openai_oauth_credentials_path()
         doc = json.loads(path.read_text(encoding="utf-8"))
         tokens = doc.get("tokens", doc)
         if isinstance(tokens, dict) and isinstance(tokens.get("access_token"), str):
@@ -106,10 +116,9 @@ def _image_models(provider: str) -> tuple[list[str], str | None]:
         return (list(registry.OPENAI_OAUTH_IMAGE_MODELS),
                 registry.OPENAI_OAUTH_DEFAULT_IMAGE_MODEL)
     if provider == "gemini-api":
-        from langslice.providers import vlm_config
+        from langslice.providers import registry
 
-        models = [name for name in vlm_config.AVAILABLE_MODELS if "-image" in name]
-        return models, (models[0] if models else None)
+        return list(registry.GEMINI_IMAGE_MODELS), registry.GEMINI_DEFAULT_IMAGE_MODEL
     if provider == "openai-api":
         from langslice.providers import openai_config
 
@@ -161,10 +170,10 @@ def image_model_connected(provider: str) -> bool:
     (any accepted spelling) is not ``none`` and its key or login is present.
 
     The offline presence check of :func:`setup_status` (a key in the
-    environment or saved by setup, the ChatGPT login file; for
-    ``openai-api`` also a custom endpoint, ``OPENAI_IMAGE_BASE_URL`` or
-    ``OPENAI_BASE_URL``): nothing is validated, no token refreshed, no
-    provider contacted. The MCP door asks it before offering ``trace_borders``.
+    environment or saved by setup, for ``openai-api`` also
+    ``OPENAI_IMAGE_API_KEY``; the ChatGPT login file): nothing is validated,
+    no token refreshed, no provider contacted. The MCP door asks it before
+    offering ``trace_borders``.
     """
     from langslice.core.provider_names import canonical_provider
 
@@ -173,9 +182,7 @@ def image_model_connected(provider: str) -> bool:
         return bool(_oauth_status()["configured"])
     if canonical not in _KEY_ENV:
         return False
-    if canonical == "openai-api" and any(
-            os.getenv(name, "").strip() for name in (
-                "OPENAI_IMAGE_API_KEY", "OPENAI_IMAGE_BASE_URL", "OPENAI_BASE_URL")):
+    if canonical == "openai-api" and os.getenv("OPENAI_IMAGE_API_KEY", "").strip():
         return True
     try:
         keys = _read_keys()
@@ -191,15 +198,15 @@ def save_api_key(provider: str, api_key: str) -> dict[str, object]:
     key = api_key.strip()
     if not key or any(character.isspace() or ord(character) < 32 for character in key):
         raise ValueError("Enter a nonempty API key without whitespace or control characters.")
-    keys = _read_keys()
-    keys[provider] = key
+    saved = _read_saved()  # entries of providers this version does not know are kept
+    saved[provider] = key
     path = _credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=".provider_credentials-", dir=path.parent)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(keys, stream)
+            json.dump(saved, stream)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
@@ -207,20 +214,23 @@ def save_api_key(provider: str, api_key: str) -> dict[str, object]:
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
-    return _api_status(provider, keys)
+    return _api_status(provider, {provider: key})
 
 
 def apply_saved_credentials() -> None:
-    """Load saved keys into this worker, respecting explicit environment settings."""
-    for provider, key in _read_keys().items():
+    """Load saved keys into this worker, respecting explicit environment
+    settings. A settings file that cannot be read is skipped with a warning
+    (``setup_status`` reports it): every command still runs on the keys in
+    the environment."""
+    try:
+        keys = _read_keys()
+    except ValueError as exc:
+        logger.warning("%s", exc)
+        return
+    for provider, key in keys.items():
         names = _KEY_ENV[provider]
         if not any(os.getenv(name, "").strip() for name in names):
             os.environ[names[0]] = key
-            if provider == "openai-api" and not os.getenv("OPENAI_BASE_URL", "").strip():
-                # GUI setup names the OpenAI provider. The legacy configuration
-                # defaults to a local compatible server, which is inappropriate
-                # for an OpenAI key saved by this dialog.
-                os.environ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
 
 
 def load_dotenv() -> None:

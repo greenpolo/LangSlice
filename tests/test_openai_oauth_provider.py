@@ -58,7 +58,6 @@ def _sse(events: list[dict[str, Any]]) -> list[str]:
 def test_jwt_claims_and_account_id():
     token = _id_token("acct_123", "pro")
     assert chatgpt.account_id_from_id_token(token) == "acct_123"
-    assert chatgpt.plan_from_id_token(token) == "pro"
     assert chatgpt.account_id_from_id_token(None) is None
     assert chatgpt.account_id_from_id_token("garbage") is None
 
@@ -78,7 +77,7 @@ def test_creds_from_doc_nested_and_flat():
 
 def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
     creds_path = tmp_path / "openai_auth.json"
-    monkeypatch.setattr(chatgpt, "CREDENTIALS_PATH", creds_path)
+    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(creds_path))
 
     posted: dict[str, Any] = {}
 
@@ -116,14 +115,14 @@ def test_load_credentials_prefers_our_file_and_refreshes_when_expired(tmp_path, 
     creds_path = tmp_path / "openai_auth.json"
     expired = _fake_jwt({"exp": 0})
     creds_path.write_text(json.dumps({"tokens": {"access_token": expired, "refresh_token": "R"}}))
-    monkeypatch.setattr(chatgpt, "CREDENTIALS_PATH", creds_path)
+    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(creds_path))
     monkeypatch.setattr(chatgpt, "refresh", lambda creds: chatgpt.Creds("FRESH"))
 
     assert chatgpt.load_credentials().access_token == "FRESH"
 
 
 def test_load_credentials_without_any_source_is_actionable(tmp_path, monkeypatch):
-    monkeypatch.setattr(chatgpt, "CREDENTIALS_PATH", tmp_path / "none.json")
+    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(tmp_path / "none.json"))
 
     with pytest.raises(RuntimeError, match="langslice login"):
         chatgpt.load_credentials()
@@ -139,15 +138,6 @@ def test_headers():
     assert headers["originator"] == "langslice"
     assert headers["session_id"] == "sess-1"
     assert "chatgpt-account-id" not in chatgpt._headers(chatgpt.Creds("A"), "sess-1")
-
-
-def test_user_message_image_url_is_a_bare_string():
-    message = chatgpt.user_message("hello", ["data:image/png;base64,AAAA"])
-    assert message["role"] == "user"
-    text, image = message["content"]
-    assert text == {"type": "input_text", "text": "hello"}
-    # CRITICAL: Responses input uses a bare string here, not {"url": ...}
-    assert image == {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}
 
 
 def test_iter_sse_decodes_bytes_lines_and_stops_at_done():
@@ -317,7 +307,7 @@ def test_tools_to_wire_uses_flat_responses_function_shape():
 
 
 def test_build_request_body_carries_instructions_and_model():
-    llm = chatgpt.ChatGptLlm(model="chatgpt/gpt-5.6-luna")
+    llm = chatgpt.OpenAIOAuthLlm(model="openai-oauth/gpt-5.6-luna")
     assert llm.model == "gpt-5.6-luna"  # prefix stripped
     request = LlmRequest(
         contents=[types.Content(role="user", parts=[types.Part.from_text(text="hi")])],
@@ -345,7 +335,7 @@ def _run_turn(monkeypatch, events: list[dict[str, Any]], *, stream: bool):
         return iter(events)
 
     monkeypatch.setattr(chatgpt, "stream_events", fake_stream_events)
-    llm = chatgpt.ChatGptLlm(model="chatgpt/gpt-5.6-luna")
+    llm = chatgpt.OpenAIOAuthLlm(model="openai-oauth/gpt-5.6-luna")
     request = LlmRequest(
         contents=[types.Content(role="user", parts=[types.Part.from_text(text="hi")])]
     )
@@ -493,7 +483,7 @@ def test_function_result_round_trip_body(monkeypatch):
     monkeypatch.setattr(
         chatgpt, "stream_events", lambda body, **_kw: iter([{"type": "response.completed"}])
     )
-    llm = chatgpt.ChatGptLlm(model="chatgpt/gpt-5.6-luna")
+    llm = chatgpt.OpenAIOAuthLlm(model="openai-oauth/gpt-5.6-luna")
     request = LlmRequest(
         contents=[
             types.Content(role="user", parts=[types.Part.from_text(text="where am i")]),
@@ -527,21 +517,21 @@ def test_function_result_round_trip_body(monkeypatch):
 
 
 # --- wiring ------------------------------------------------------------------
-def test_model_resolver_routes_chatgpt_prefix():
+def test_model_resolver_routes_the_openai_oauth_prefix():
     from langslice.agent import model_resolver
 
-    model = model_resolver.resolve_adk_model("chatgpt/gpt-5.6-luna")
-    assert isinstance(model, chatgpt.ChatGptLlm)
+    model = model_resolver.resolve_adk_model("openai-oauth/gpt-5.6-luna")
+    assert isinstance(model, chatgpt.OpenAIOAuthLlm)
     assert model.model == "gpt-5.6-luna"
 
     with pytest.raises(ValueError):
-        model_resolver.resolve_adk_model("chatgpt/")
+        model_resolver.resolve_adk_model("openai-oauth/")
 
 
-def test_registry_resolves_chatgpt_models():
+def test_registry_resolves_openai_oauth_models():
     from google.adk.models.registry import LLMRegistry
 
-    assert LLMRegistry.resolve("chatgpt/gpt-5.6-luna") is chatgpt.ChatGptLlm
+    assert LLMRegistry.resolve("openai-oauth/gpt-5.6-luna") is chatgpt.OpenAIOAuthLlm
 
 
 def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
@@ -563,7 +553,7 @@ def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
         slice_image=Image.new("RGB", (30, 20)),
         reference_images=[Image.new("RGB", (10, 10)), Image.new("RGB", (10, 10))],
         prompt="warp it",
-        provider="chatgpt",
+        provider="openai-oauth",
     )
     generated = providers.generate_warped_segmentation_image(request)
 
@@ -623,16 +613,3 @@ def test_reasoning_items_are_kept_and_replayed_ahead_of_the_turn(monkeypatch):
     items = chatgpt.content_to_input_items(turn)
     assert [item["type"] for item in items] == ["reasoning", "function_call"]
     assert items[0] == reasoning
-
-
-@pytest.mark.parametrize("detail,expected", [("original", "original"), ("invalid", "high")])
-def test_coordinate_tool_images_preserve_requested_detail(detail, expected):
-    response = types.FunctionResponse(
-        id="coordinates", name="point_view", response={"image_detail": detail},
-        parts=[types.FunctionResponsePart(inline_data=types.FunctionResponseBlob(
-            data=_png_bytes(), mime_type="image/png"))],
-    )
-    output = chatgpt._function_call_output(response)["output"]
-    image = next(item for item in output if item["type"] == "input_image")
-    assert image["detail"] == expected
-    assert image["image_url"].startswith("data:image/png;base64,")

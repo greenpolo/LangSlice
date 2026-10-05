@@ -8,9 +8,8 @@ under ``host``, the kind (``host`` or ``folder``), the host's parameters,
 the notes and the trace folder; ``prompt.txt`` the copy prompt. The id leads
 there through the index (:mod:`langslice.job.index`,
 ``~/.langslice/jobs/<id>.json``), which also holds the host's loopback
-channel. A phase-2 saved job (the whole job under ``~/.langslice/jobs/<id>/``)
-is moved into its job folder on first open. No model access; the image
-provider's key or login is only checked for presence (``setup.image_model_connected``).
+channel. No model access; the image provider's key or login is only
+checked for presence (``setup.image_model_connected``).
 """
 from __future__ import annotations
 
@@ -31,9 +30,8 @@ from langslice.job.layout import (
     write_job_file,
 )
 
-#: The saved job's own format inside ``job.json`` (``host``). 2 (2026-10-03):
-#: the job folder next to the images; 1 was the whole job under
-#: ``~/.langslice/jobs/<id>/``.
+#: The saved job's own format inside ``job.json`` (``host``); a newer one is
+#: refused.
 FORMAT_VERSION = 2
 
 
@@ -198,7 +196,7 @@ def load_job(job_id: str) -> tuple[Path, dict[str, Any]]:
         raise ValueError(f"Saved job {job_id} was replaced by job {data.get('job_id')} in "
                          f"{layout.folder} (one job folder per image folder)")
     host = dict(data["host"])
-    if int(host.get("format", 1)) > FORMAT_VERSION:
+    if int(host.get("format", FORMAT_VERSION)) > FORMAT_VERSION:
         raise ValueError("This saved job was written by a newer LangSlice. Update LangSlice "
                          "to open it.")
     record = {**host, "job_id": job_id, "spec": data.get("spec"),

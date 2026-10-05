@@ -50,12 +50,31 @@ def test_apply_respects_existing_credentials(
     monkeypatch.setenv("GOOGLE_API_KEY", "existing-google")
     # Register this environment change with monkeypatch before the helper writes it.
     monkeypatch.setenv("OPENAI_API_KEY", "")
-    monkeypatch.setenv("OPENAI_BASE_URL", "")
     setup.apply_saved_credentials()
     assert os.environ["OPENAI_API_KEY"] == "saved-openai"
-    assert os.environ["OPENAI_BASE_URL"] == "https://api.openai.com/v1"
     assert os.environ["GOOGLE_API_KEY"] == "existing-google"
     assert "GEMINI_API_KEY" not in os.environ
+
+
+def test_unknown_or_unreadable_saved_entries_are_skipped(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A settings file naming a provider this version does not know (a newer
+    version's) loads the rest and keeps that entry; an unreadable one loads
+    nothing and raises nowhere."""
+    path = isolated_home / ".langslice" / "provider_credentials.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"future-api": "f", "gemini-api": "saved-gemini"}))
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    setup.apply_saved_credentials()
+    assert os.environ["GEMINI_API_KEY"] == "saved-gemini"
+    assert setup.setup_status()["providers"]["gemini-api"]["configured"]
+    setup.save_api_key("openai-api", "new")
+    assert json.loads(path.read_text()) == {"future-api": "f", "gemini-api": "saved-gemini",
+                                            "openai-api": "new"}
+    path.write_text("not json")
+    setup.apply_saved_credentials()  # warns, raises nothing
+    setup.load_credentials()
 
 
 @pytest.mark.parametrize("provider,key", [
@@ -199,7 +218,7 @@ def test_status_lists_every_image_model_choice_with_its_connection(
     assert oauth["models"] == ["gpt-image-2"] and oauth["default_model"] == "gpt-image-2"
     gemini = choices[1]
     assert gemini["models"] and all("-image" in m for m in gemini["models"])
-    assert gemini["default_model"] in gemini["models"]
+    assert gemini["default_model"] == "gemini-3.1-flash-image"
     assert choices[3]["models"] == [] and choices[3]["default_model"] is None
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     path = isolated_home / ".langslice" / "openai_auth.json"

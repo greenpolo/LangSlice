@@ -1,9 +1,9 @@
 """Separate positioning references reuse cached pictures, not composed canvases."""
 
+from langslice.core.jpeg import encode_jpeg
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
 from langslice.core.sizes import picture_edge
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.media import encode_jpeg
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
 
 
