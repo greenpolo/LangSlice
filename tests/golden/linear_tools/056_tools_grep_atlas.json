@@ -1,0 +1,26 @@
+{
+ "args": [
+  "TH"
+ ],
+ "data": {
+  "matches": 1,
+  "query": "TH",
+  "rows": [
+   {
+    "acronym": "TH",
+    "ancestry": [
+     "root"
+    ],
+    "id": 4,
+    "n_descendants": 0,
+    "name": "TH"
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "grep_atlas"
+}

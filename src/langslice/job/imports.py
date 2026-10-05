@@ -653,11 +653,8 @@ def import_placements(
 
 # --- as a job's supplied inputs ----------------------------------------------------------
 
-#: The ``JobSpec.inputs`` keys an imported registration supplies; a caller
-#: that also gives any of them is refused (:func:`registration_inputs`).
-IMPORTED_INPUT_KEYS = ("positions", "angles", "orientation", "transforms")
-#: The warning when the file carries VisuAlign markers (product decision
-#: 2026-10-04: only the linear registration is imported).
+#: The warning when the file carries VisuAlign markers: only the linear
+#: registration is imported.
 MARKERS_NOT_IMPORTED = (
     "The file's VisuAlign nonlinear markers ({count} section(s)) were not imported: "
     "only its linear registration is. LangSlice's nonlinear step replaces them.")

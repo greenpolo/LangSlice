@@ -102,8 +102,7 @@ def test_undo_restores_each_sections_angles():
     assert [record.angles for record in state.slices] == [(1.0, 0.0), (2.0, -1.0), (0.0, 0.5)]
 
 
-@pytest.mark.parametrize("version", [None, 1, 2])
-def test_an_old_checkpoint_loads_with_every_section_carrying_the_stack_angle(tmp_path, version):
+def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_path):
     from langslice.job.checkpoint import (
         FORMAT_KEY,
         STATE_FORMAT_VERSION,
@@ -111,14 +110,12 @@ def test_an_old_checkpoint_loads_with_every_section_carrying_the_stack_angle(tmp
         write_checkpoint,
     )
 
-    old = {"atlas": "allen_mouse_25um", "plane": "coronal",
-           "cutting_angles_deg": {"pitch": 2.0, "yaw": -1.0},
-           "slices": [{"id": f"s{i}.png", "index_original": i, "index_corrected": i}
-                      for i in range(3)]}
-    if version is not None:
-        old[FORMAT_KEY] = version
+    stored = {FORMAT_KEY: STATE_FORMAT_VERSION, "atlas": "allen_mouse_25um",
+              "plane": "coronal", "cutting_angles_deg": {"pitch": 2.0, "yaw": -1.0},
+              "slices": [{"id": f"s{i}.png", "index_original": i, "index_corrected": i}
+                         for i in range(3)]}
     path = tmp_path / "state.json"
-    path.write_text(json.dumps(old))
+    path.write_text(json.dumps(stored))
     state = load_checkpoint(str(path))
     assert state is not None
     assert [record.angles for record in state.slices] == [(2.0, -1.0)] * 3
@@ -126,19 +123,9 @@ def test_an_old_checkpoint_loads_with_every_section_carrying_the_stack_angle(tmp
     assert state.to_dict()["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
     write_checkpoint(state, str(path))
     written = json.loads(path.read_text())
-    assert STATE_FORMAT_VERSION == 3 and written[FORMAT_KEY] == 3
+    assert written[FORMAT_KEY] == STATE_FORMAT_VERSION
     assert written["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -1.0}
     assert all("cutting_angles_deg" not in row for row in written["slices"])
-
-
-def test_an_old_history_step_loads_with_the_stack_angle(tmp_path):
-    from langslice.job.checkpoint import upgrade_state
-
-    step = {"format_version": 2, "cutting_angles_deg": {"pitch": 0.5, "yaw": 0.0},
-            "slices": [{"id": "s0.png", "index_original": 0, "index_corrected": 0}]}
-    fields = upgrade_state(step, root=tmp_path)
-    assert fields["slices"][0]["cutting_angles_deg"] == {"pitch": 0.5, "yaw": 0.0}
-    assert StackState.from_dict(fields).slices[0].angles == (0.5, 0.0)
 
 
 # --- the supplied inputs ------------------------------------------------------------------

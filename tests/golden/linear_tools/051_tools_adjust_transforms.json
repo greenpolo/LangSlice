@@ -15,7 +15,7 @@
   "description": "Attached feedback images (mapped by each result's image_indexes), in entry order, for s1.png; each image is labelled with its section and transform.",
   "results": [
    {
-    "description": "s1.png under the transform above, the atlas lines and the section's own silhouette contour, on black, the atlas template blended under it at opacity 0.5. The outlines are the FAMILY regions of the coronal atlas section at 0.150 mm, drawn at true physical scale with #ff00ff borders 0.5 output pixel(s) wide.",
+    "description": "s1.png under the transform above, the atlas template alone. No atlas outlines are drawn.",
     "id": "s1.png",
     "image_indexes": [
      0
@@ -40,17 +40,9 @@
   "status": "ok",
   "view": {
    "atlas_channels": [
-    "ara",
-    "borders"
+    "ara"
    ],
-   "atlas_opacity": 0.5,
-   "border_color": "#ff00ff",
-   "border_thickness": 0.5,
-   "channels": [
-    "view"
-   ],
-   "mode": "outlines",
-   "outlines": "all",
+   "mode": "template",
    "zoom": [
     0.0,
     0.0,
@@ -66,19 +58,13 @@
    "mode": "RGB",
    "size": [
     338,
-    350
+    332
    ]
   }
  ],
  "kwargs": {
   "view": {
-   "atlas_channels": [
-    "ara",
-    "borders"
-   ],
-   "border_color": "magenta",
-   "border_thickness": 0.5,
-   "mode": "outlines"
+   "mode": "template"
   }
  },
  "media_texts": [],

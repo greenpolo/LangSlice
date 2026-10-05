@@ -1,18 +1,17 @@
 """The job: one stack's state and everything that keeps it consistent.
 
-The job layer of the layered core (``_local`` plan, phases 2 and 3c). A
-:class:`Job` owns the :class:`~langslice.core.state.StackState` and the
+A :class:`Job` owns the :class:`~langslice.core.state.StackState` and the
 :class:`~langslice.core.spec.JobSpec`, its job folder
 (:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
 host's locked and damaged sections, undo/redo (persisted in the job folder),
-the checkpoint and its observers, the submit gates, the stale-deformation
-rule, the deformation record store, the store of the pictures the model was
-shown (:class:`langslice.job.views.ViewStore`), the transform-count cap and
-the background image-correction jobs. ``ingest``, ``apply_host_inputs`` and
-``emit_results`` open and close it. It imports the core and the job folder
-package (``langslice.job``) only: no agent framework, no message types, no
-provider. The doors (the ADK toolbox, the MCP server) sit on it; a script can
-drive it directly.
+the checkpoint and its observers (:meth:`Job.observe`), the submit gates,
+the stale-deformation rule, the deformation record store, the store of the
+pictures the model was shown (:class:`langslice.job.views.ViewStore`), the
+transform-count cap and the background image-correction jobs. ``ingest``,
+``apply_host_inputs`` and ``emit_results`` open and close it. It imports the
+core and the job folder package (``langslice.job``) only: no agent
+framework, no message types, no provider. The doors (the ADK toolbox, the
+MCP server) sit on it; a script can drive it directly.
 
 What a Job never holds: the look-before-commit gates (``view_placement``
 before ``set_positions``, ``view_stack`` before ``submit``) and the
@@ -37,8 +36,7 @@ deformation records, the image-model traces and the exports are written as
 in a full job.
 
 **Paths.** Every path the state stores (a deformation's ``record``, an image
-correction's artifacts) is relative to the job folder (state format 2);
-:meth:`Job.open` upgrades an old layout first (:mod:`langslice.job.migrate`).
+correction's artifacts) is relative to the job folder.
 
 **Live shared editing.** :meth:`Job.sync` notices that the state file changed
 on disk since this job last read or wrote it (a script edited it, or another
@@ -66,20 +64,19 @@ from langslice.core import deformation
 from langslice.core.discovery import discover_slices
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_PARAMS, ROTATIONS, SliceState, StackState
-from langslice.job import formats, migrate
+from langslice.job import formats
 from langslice.job.checkpoint import (
-    notify_observers,
     read_checkpoint,
     relative_to,
     state_paths,
     write_checkpoint,
+    write_json_atomic,
 )
 from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
 from langslice.job.history import History
 from langslice.job.layout import (
     JobLayout,
     check_owner,
-    job_folder_for,
     locate_job_folder,
     write_job_file,
 )
@@ -115,19 +112,30 @@ def _stamp(path: str) -> Stamp:
     return (info.st_ino, info.st_size, info.st_mtime_ns)
 
 
+def _named(spec: JobSpec, key: str) -> set[str]:
+    """The section filenames ``spec.inputs[key]`` names (a list, or a mapping's keys)."""
+    return {str(name) for name in (spec.inputs or {}).get(key) or []}
+
+
 def locked_ids(spec: JobSpec) -> set[str]:
     """Sections whose flip, rotation and transform the host locked."""
-    return {str(name) for name in (spec.inputs or {}).get("locked") or []}
+    return _named(spec, "locked")
 
 
 def keep_warp_ids(spec: JobSpec) -> set[str]:
     """Sections whose own deformation in the host the agent may not replace."""
-    return {str(name) for name in (spec.inputs or {}).get("keep_warp") or []}
+    return _named(spec, "keep_warp")
 
 
 def nonlinear_skip_ids(spec: JobSpec) -> set[str]:
     """Sections the user left out of the Nonlinear task."""
-    return {str(name) for name in (spec.inputs or {}).get("nonlinear_skip") or []}
+    return _named(spec, "nonlinear_skip")
+
+
+def nonlinear_exempt_ids(spec: JobSpec) -> set[str]:
+    """Sections the host kept out of the Nonlinear task (``keep_warp`` and
+    ``nonlinear_skip``): its verbs refuse them and its submit gates skip them."""
+    return keep_warp_ids(spec) | nonlinear_skip_ids(spec)
 
 
 #: Why Nonlinear refuses a section the host kept out of it: code, message.
@@ -139,7 +147,7 @@ NONLINEAR_SKIPPED = ("NONLINEAR_SKIPPED", "The user chose not to have this secti
 
 def host_damaged_ids(spec: JobSpec) -> set[str]:
     """Sections the host marked damaged; the agent cannot clear these flags."""
-    return {str(name) for name in ((spec.inputs or {}).get("damaged") or {})}
+    return _named(spec, "damaged")
 
 
 def host_transform() -> dict[str, Any]:
@@ -184,6 +192,14 @@ def ingest(spec: JobSpec, workspace: Workspace) -> StackState:
     return state
 
 
+def _section(state: StackState, key: str, name: Any) -> SliceState:
+    """The section *name* of ``inputs.<key>``; ``ValueError`` for one not here."""
+    record = state.by_id(str(name))
+    if record is None:
+        raise ValueError(f"inputs.{key} names an unknown section: {name!r}")
+    return record
+
+
 def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     """Write the host's answers for the tasks that are switched off.
 
@@ -193,11 +209,10 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     plane kept as supplied (:func:`langslice.core.spec.supplied_angles`; a
     section it does not name keeps the flat plane), orientation as a
     filename -> ``{"flip": bool, "rotation_deg": 0|90|180|270}`` mapping (a
-    missing key leaves that part as it is), damage as a filename
-    -> note mapping, and transforms as filename -> stored transform dictionaries.
-    Anything the host
-    supplies for a task that IS on is applied too — it is a starting point,
-    not a constraint. Two exceptions are constraints: ``damaged`` flags the
+    missing key leaves that part as it is), damage as a filename -> note
+    mapping, and transforms as filename -> stored transform dictionaries.
+    Anything the host supplies for a task that IS on is applied too — it is
+    a starting point, not a constraint. Two exceptions are constraints: ``damaged`` flags the
     agent cannot clear, and ``locked`` sections (a list of filenames) whose
     flip, rotation and transform the agent cannot change; a locked section
     without a supplied transform carries the ``"host"`` identity
@@ -220,9 +235,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     if positions:
         applied = 0
         for name, value in positions.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.positions names an unknown section: {name!r}")
+            record = _section(state, "positions", name)
             record.position_mm = float(value)
             applied += 1
         state.notes.append(f"inputs: {applied} position(s) set by the host")
@@ -237,9 +250,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         )
     if section_angles:
         for name, (pitch, yaw) in section_angles.items():
-            record = state.by_id(name)
-            if record is None:
-                raise ValueError(f"inputs.angles names an unknown section: {name!r}")
+            record = _section(state, "angles", name)
             record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
         state.notes.append(
             f"inputs: cutting angles of {len(section_angles)} section(s) set by the host"
@@ -251,9 +262,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             raise ValueError("inputs.orientation must map section filenames to "
                              "{flip, rotation_deg}")
         for name, value in orientation.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.orientation names an unknown section: {name!r}")
+            record = _section(state, "orientation", name)
             if not isinstance(value, dict) or set(value) - {"flip", "rotation_deg"}:
                 raise ValueError(f"inputs.orientation[{name!r}] must be "
                                  "{flip: bool, rotation_deg: 0|90|180|270}")
@@ -274,25 +283,21 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     transforms = inputs.get("transforms") or {}
     if transforms:
         for name, value in transforms.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.transforms names an unknown section: {name!r}")
+            record = _section(state, "transforms", name)
             if not isinstance(value, dict):
                 raise ValueError(f"inputs.transforms[{name!r}] must be a transform dictionary")
-            # Preserve complete historical mappings, including splines. The image
-            # correction handoff explicitly refuses unsupported spline inputs.
+            # Kept whole, a spline included (the image-correction handoff
+            # refuses a spline it cannot use).
             record.transform = copy.deepcopy(value)
         state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
 
     damaged = inputs.get("damaged") or {}
     if damaged:
-        # Damage is normally the agent's own classification; a host (or a
-        # benchmark) may assert it up front so the automatic fits refuse the
-        # section and it is aligned by hand.
+        # Damage is normally the agent's own classification; a host may
+        # assert it up front so the automatic fits refuse the section unless
+        # regions restrict them.
         for name, note in damaged.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.damaged names an unknown section: {name!r}")
+            record = _section(state, "damaged", name)
             record.damaged = True
             record.damage_note = str(note or "")
         state.notes.append(f"inputs: {len(damaged)} section(s) marked damaged by the host")
@@ -302,9 +307,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         if not isinstance(locked, (list, tuple)):
             raise ValueError("inputs.locked must be a list of section filenames")
         for name in locked:
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.locked names an unknown section: {name!r}")
+            record = _section(state, "locked", name)
             if record.transform is None:
                 record.transform = host_transform()
         state.notes.append(
@@ -319,8 +322,7 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         if not isinstance(names, (list, tuple)):
             raise ValueError(f"inputs.{key} must be a list of section filenames")
         for name in names:
-            if state.by_id(str(name)) is None:
-                raise ValueError(f"inputs.{key} names an unknown section: {name!r}")
+            _section(state, key, name)
         state.notes.append(f"inputs: {len(names)} section(s) {note}")
 
 
@@ -373,9 +375,7 @@ def emit_results(
 ) -> StackState:
     """Write the results JSON — the same shape as the checkpoint, unversioned
     (its paths relative to the job folder, as the checkpoint's)."""
-    os.makedirs(os.path.dirname(os.path.abspath(results_path)), exist_ok=True)
-    with open(results_path, "w", encoding="utf-8") as handle:
-        json.dump(state.to_dict(), handle, indent=2)
+    write_json_atomic(results_path, state.to_dict())
     if progress is not None:
         progress(f"[emit] results -> {results_path}")
     return state
@@ -561,11 +561,26 @@ def missing_transforms(state: StackState) -> dict[str, Any] | None:
     }
 
 
+#: ``fit_affine``'s kinds: on a damaged section such a fit counts only when
+#: regions restricted it (its ``regions``) to the surviving anatomy.
+AUTOMATIC_FIT_KINDS = ("elastix", "silhouette")
+
+
+def _restricted(transform: dict[str, Any]) -> bool:
+    """Whether a fit's record names the regions that restricted it."""
+    regions = transform.get("regions")
+    return isinstance(regions, dict) and any(regions.get(key) for key in ("include", "exclude"))
+
+
 def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] | None:
-    """Damaged sections require an applied interactive correction, not identity."""
+    """Damaged sections require a non-identity transform made for their
+    surviving anatomy: a manual one (``interactive``), a ``fit_affine`` fit
+    restricted to regions, or one the host supplied (``imported``, or any
+    other kind it gave). A whole-section automatic fit, an identity or an
+    invalid transform is refused. Locked sections are exempt: the user
+    aligned them and they cannot change here."""
     failures = []
     identity = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-    # A locked section was aligned by the user and cannot be changed here.
     locked = locked_ids(spec)
     for record in state.in_order():
         if not record.damaged or record.id in locked:
@@ -574,14 +589,16 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
         reason = None
         if not transform:
             reason = "missing_transform"
-        elif transform.get("kind") != "interactive":
-            reason = "not_interactive"
+        elif transform.get("kind") in AUTOMATIC_FIT_KINDS and not _restricted(transform):
+            reason = "whole_section_fit"
         else:
             try:
                 params = np.asarray(transform.get("params"), dtype=float)
                 if params.shape != (6,) or not np.isfinite(params).all():
                     reason = "invalid_transform"
                 elif transform.get("spline") is not None:
+                    # A host-supplied transform may carry a spline; then the
+                    # spline decides whether it moves anything.
                     from langslice.core.landmark_warp import fit_spline
 
                     spline = transform["spline"]
@@ -600,29 +617,39 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
             failures.append({"id": record.id, "reason": reason})
     if not failures:
         return None
+    tools = ((["adjust_transforms"] if spec.transform.interactive else [])
+             + (["fit_affine with include or exclude regions"]
+                if spec.transform.automatic else []))
     return {
         "status": "error",
         "error": "DAMAGED_REQUIRES_MANUAL_TRANSFORM",
         "failures": failures,
         "interactive_enabled": spec.transform.interactive,
         "message": (
-            "Damaged sections require a non-identity interactive transform. "
+            "Damaged sections require a non-identity transform made for their surviving "
+            "anatomy. "
             + (
-                "Use adjust_transforms to align the surviving "
-                "anatomy, inspect the returned overlays, then submit again."
-                if spec.transform.interactive else
-                "Interactive transform tools are disabled for this run; the host "
-                "must enable interactive transforms to resolve these sections."
+                f"Align each with {' or '.join(tools)}, inspect the returned overlays, "
+                "then submit again."
+                if tools else
+                "The transform tools are disabled for this run; the host must enable "
+                "interactive transforms to resolve these sections."
             )
         ),
     }
 
 
-def missing_deformations(state: StackState) -> dict[str, Any] | None:
+def missing_deformations(
+    state: StackState, exempt: frozenset[str] | set[str] = frozenset(),
+) -> dict[str, Any] | None:
     """``None`` when every section carries a deformation, or a keep_linear
-    reason, at its current linear placement; else the rejection."""
+    reason, at its current linear placement; else the rejection. The
+    sections in *exempt* (kept out of Nonlinear by the host,
+    :func:`nonlinear_exempt_ids`) need neither."""
     missing: list[dict[str, str]] = []
     for record in state.in_order():
+        if record.id in exempt:
+            continue
         held = record.deformation or {}
         if not held:
             missing.append({"id": record.id, "reason": "no deformation and no keep_linear reason"})
@@ -663,7 +690,7 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("nonlinear"):
-        return missing_deformations(state)
+        return missing_deformations(state, nonlinear_exempt_ids(spec))
     return None
 
 
@@ -707,8 +734,8 @@ def _land(state: StackState, section_id: str, fingerprint: str, result: dict[str
 class Job:
     """One stack being registered: its state, its rules and its files.
 
-    Build one with :meth:`open` (upgrade an old layout, resume or ingest,
-    then the first checkpoint), or around a state already in hand
+    Build one with :meth:`open` (resume or ingest, then the first
+    checkpoint), or around a state already in hand
     (``Job(state, spec, layout=...)``: an empty history, nothing read or
     written until the first operation; the files as they stand on disk at
     that moment count as already seen). *results_path* None is the job
@@ -785,14 +812,13 @@ class Job:
         ``~/.langslice/jobs/<id>/``).
 
         A folder holding the job of another image folder is refused
-        (``ValueError``). An old layout beside the images is upgraded into the
-        default job folder first
-        (:func:`langslice.job.migrate.migrate_beside_images`), ``job.json``
-        gets this spec, then the checkpoint is resumed (``spec.resume``) or
-        the folder ingested, and the first checkpoint written. A resumed job
+        (``ValueError``). ``job.json`` gets this spec, then the checkpoint
+        is resumed (``spec.resume``) or the folder ingested, and the first
+        checkpoint written. A resumed job
         keeps its undo history; a fresh one starts without one (a history
         left by an earlier job here is emptied). A job folder or checkpoint
-        from a newer LangSlice is refused (``ValueError``). A resume whose
+        of another format (a newer LangSlice's, or an older pre-release's) is
+        refused (``ValueError``). A resume whose
         spec supplies other ``inputs`` than the checkpoint was made from is
         refused (:class:`InputsChanged`, naming the keys and how to start
         fresh) before anything is written: the old checkpoint would keep the
@@ -804,12 +830,11 @@ class Job:
         images = Path(os.path.abspath(workspace.image_folder))
         layout = JobLayout(Path(os.path.abspath(folder)), images)
         check_owner(layout)
-        if layout.folder == job_folder_for(images):
-            migrate.migrate_beside_images(layout)
         layout.ensure(lean=spec.lean)
         lock = FolderLock(layout.folder)
         with lock.held():  # read and first checkpoint as one write
             state = None
+            resumed = False
             if spec.resume:
                 data = read_checkpoint(str(layout.state_file))
                 state = None if data is None else StackState.from_dict(data)
@@ -821,6 +846,7 @@ class Job:
             undo: list[dict[str, Any]] = []
             redo: list[dict[str, Any]] = []
             if state is not None:
+                resumed = True
                 workspace.progress(f"[ingest] resuming from {layout.state_file}")
                 state.spec = spec.to_dict()
                 state.image_folder = str(images)  # where they are now (a moved folder)
@@ -841,7 +867,7 @@ class Job:
                 job._save_history()  # a fresh job empties a history it read; never another
             job.checkpoint()
         if not spec.lean:
-            layout.log_event("open", resumed=bool(undo or redo or spec.resume))
+            layout.log_event("open", resumed=resumed)
         return job
 
     @classmethod
@@ -929,7 +955,6 @@ class Job:
             yield self.sync()
 
     def _notify(self) -> None:
-        notify_observers(self.state)
         for observer in list(self.observers):
             try:
                 observer(self.state)
@@ -1164,13 +1189,16 @@ class Job:
         A section's current geometry is the core's fingerprint
         (:func:`langslice.core.handoff.correction_fingerprint`), read through
         *workspace* (the section files and the spec it renders with). Running
-        corrections are settled first.
+        corrections are settled first. The sections the host kept out of
+        Nonlinear (:attr:`keep_warp`, :attr:`nonlinear_skip`) need none.
         """
         from langslice.core import handoff
 
         self.settle_image_corrections()
         pending: list[dict[str, str]] = []
         for record in self.state.in_order():
+            if record.id in self.keep_warp or record.id in self.nonlinear_skip:
+                continue
             result = record.image_correction or {}
             try:
                 current = handoff.correction_fingerprint(self.state, workspace, record.id)

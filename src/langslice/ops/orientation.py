@@ -6,15 +6,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.state import ROTATIONS
+
 if TYPE_CHECKING:
     from PIL import Image
 
     from langslice.core.display import DisplayOptions
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
-
-#: The rotations a section may carry, degrees.
-ROTATIONS: tuple[int, ...] = (0, 90, 180, 270)
 
 
 @dataclass(frozen=True)

@@ -1,18 +1,20 @@
 {
  "args": [
-  "s1.png"
+  "s2.png"
  ],
  "data": {
   "attempt": 1,
   "cached": false,
-  "id": "s1.png",
+  "id": "s2.png",
   "message": "Image call started in the background. Continue; submit waits for it.",
-  "prompt_edited": false,
+  "prompt_edited": true,
   "status": "running"
  },
  "door": "tools",
  "images": [],
- "kwargs": {},
+ "kwargs": {
+  "prompt": "Trace only the surviving left half."
+ },
  "media_texts": [],
  "tool": "trace_borders"
 }

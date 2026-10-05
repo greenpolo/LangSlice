@@ -6,22 +6,21 @@
  ],
  "data": {
   "applied": true,
-  "description": "Applied: each section's deformation is now this fit (one undo step). One picture per result (image_indexes): the final atlas borders on the section image the fit read, included/`regions` borders strong over faint outlines, excluded regions in pink; in ab mode then what the fit started from.",
+  "description": "Applied: each section's deformation is now this fit (one undo step). One picture per result (image_indexes): the final atlas borders on the section image the fit read.",
   "render_failed": [],
   "results": [
    {
     "cached": false,
     "displacement_mm": {
-     "max": 0.195,
-     "median": 0.075
+     "max": 0.188,
+     "median": 0.097
     },
     "engine_settings": {
-     "bending_weight": 0.05,
+     "bending_weight": 0.2,
      "edge_channel": true,
-     "grid_spacing_mm": 0.4,
+     "grid_spacing_mm": 0.6,
      "iterations": 300,
      "metric": "mutual_information",
-     "neighbourhood_um": 300.0,
      "resolutions": 2,
      "working_um": 40.0
     },
@@ -29,29 +28,34 @@
     "fold_fraction": 0.0,
     "id": "s1.png",
     "image_indexes": [
-     0,
-     1
+     0
     ],
     "runtime_s": "<seconds>",
     "settings": {
      "engine": "elastix",
      "fit_atlas": "ara",
      "fit_section": "fit",
-     "stiffness": "medium"
+     "stiffness": "firm"
     },
     "status": "ok",
-    "steps": 1,
+    "step_displacement_mm": {
+     "max": 0.135,
+     "median": 0.033
+    },
+    "steps": 2,
     "written": true
    }
   ],
   "status": "ok",
   "view": {
    "atlas_channels": [
+    "ara",
     "borders"
    ],
+   "atlas_opacity": 0.4,
    "border_color": "#ffff00",
    "border_thickness": 1.0,
-   "mode": "ab",
+   "mode": "borders",
    "outlines": "all",
    "zoom": [
     0.0,
@@ -68,29 +72,20 @@
    "mode": "RGB",
    "size": [
     272,
-    261
-   ]
-  },
-  {
-   "file": "062_tools_fit_deformable.1.png",
-   "mode": "RGB",
-   "size": [
-    272,
-    228
+    245
    ]
   }
  ],
  "kwargs": {
   "engine": "elastix",
-  "exclude": [
-   "HY"
-  ],
-  "include": [
-   "STR",
-   "TH"
-  ],
+  "start": "current",
+  "stiffness": "firm",
   "view": {
-   "mode": "ab"
+   "atlas_channels": [
+    "ara",
+    "borders"
+   ],
+   "atlas_opacity": 0.4
   }
  },
  "media_texts": [],

@@ -41,7 +41,7 @@ Format 1.
 | `atlas` | `name`, `version`, `orientation`, `shape` (voxels per axis), `resolution_um` (per axis) |
 | `plane` | `coronal`, `sagittal` or `horizontal` |
 | `cutting_angles_deg` | the stack's `pitch` and `yaw`; null when the sections' angles differ (a registration supplied per section), each section's `parameters.plane` then giving its own |
-| `image_folder` | the images' folder (absolute) |
+| `image_folder` | the images' folder: `".."` (the job folder's parent) for the default job folder beside the images, so the file stays right when the folder moves with them; the absolute path for an explicit job folder |
 | `submitted` | whether the run was submitted |
 | `sections` | one entry per section, in corrected order (below) |
 | `exports` | relative paths of `exports/quicknii.json` and `exports/visualign.json` when written |

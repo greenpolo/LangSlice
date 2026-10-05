@@ -74,10 +74,10 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
         transform=TransformSpec(angles=True),
     )
     names = set(box.names)
-    assert {"run_deepslice", "search_position", "set_cutting_angles"} <= names
+    assert {"search_position", "set_cutting_angles"} <= names
 
     _, _, plain = _box(tmp_path)
-    assert not set(plain.names) & {"run_deepslice", "search_position", "set_cutting_angles"}
+    assert not set(plain.names) & {"search_position", "set_cutting_angles"}
     # The interactive transform rides in the main trajectory, always on with
     # the task.
     assert not {"adjust_transform", "unmark_damaged", "validate", "move_slice"} & set(plain.names)
