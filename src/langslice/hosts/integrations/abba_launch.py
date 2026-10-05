@@ -394,11 +394,11 @@ def start_abba(
 
 
 def run_abba_session(
-    *, abba_atlas: str, jar: str | None = None, viewer: bool = True, log: bool = True,
+    *, abba_atlas: str, jar: Path, viewer: bool = True, log: bool = True,
 ) -> None:
-    """``langslice abba``: start ABBA and block until its JVM shuts down."""
-    path = connector_jar(jar)
-    _abba, listener, _forward = start_abba(abba_atlas=abba_atlas, jar=path, viewer=viewer,
+    """``langslice abba``: start ABBA with the connector *jar*
+    (:func:`connector_jar`) and block until its JVM shuts down."""
+    _abba, listener, _forward = start_abba(abba_atlas=abba_atlas, jar=jar, viewer=viewer,
                                            log=log)
     try:
         wait_for_jvm_shutdown()

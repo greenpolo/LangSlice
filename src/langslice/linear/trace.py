@@ -1,7 +1,4 @@
-"""Deprecated shim: moved to :mod:`langslice.agent.trace`.
-
-Kept for SliceBench (layered folder move, 2026-10-04).
-"""
+"""Compatibility shim for sibling repos; use :mod:`langslice.agent.trace`."""
 
 import importlib
 import sys

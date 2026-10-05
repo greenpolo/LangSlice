@@ -1,7 +1,4 @@
-"""Deprecated shim: moved to :mod:`langslice.core.space`.
-
-Kept for SliceBench, LangSlice-Training (layered folder move, 2026-10-04).
-"""
+"""Compatibility shim for sibling repos; use :mod:`langslice.core.space`."""
 
 import importlib
 import sys

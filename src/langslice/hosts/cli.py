@@ -50,7 +50,7 @@ def run_abba(args: argparse.Namespace) -> None:
         jar = connector_jar(args.connector_jar)
     except FileNotFoundError as exc:
         raise SystemExit(str(exc)) from exc
-    run_abba_session(abba_atlas=args.abba_atlas, jar=str(jar), viewer=not args.no_viewer,
+    run_abba_session(abba_atlas=args.abba_atlas, jar=jar, viewer=not args.no_viewer,
                      log=not args.no_log)
 
 

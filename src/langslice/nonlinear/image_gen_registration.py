@@ -1,7 +1,4 @@
-"""Deprecated shim: moved to :mod:`langslice.core.nonlinear.image_gen_registration`.
-
-Kept for SliceBench (layered folder move, 2026-10-04).
-"""
+"""Compatibility shim for sibling repos; use :mod:`langslice.core.nonlinear.image_gen_registration`."""
 
 import importlib
 import sys
