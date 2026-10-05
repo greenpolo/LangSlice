@@ -109,7 +109,7 @@ def test_copy_owns_outer_transform_and_converter_before_setting_brightness():
     wrapper, helper, settings = Mock(), Mock(), Mock()
     classes = {
         "bdv.tools.transformation.TransformedSource": wrapper,
-        "sc.fiji.bdvpg.sourceandconverter.SourceAndConverterHelper": helper,
+        "sc.fiji.bdvpg.source.SourceHelper": helper,
         "spimdata.util.Displaysettings": settings,
     }
     panel.owner = Mock(jimport=classes.__getitem__)
