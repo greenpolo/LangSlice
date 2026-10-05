@@ -230,7 +230,7 @@ longer exist be taken over by the images it is opened with.
   damaged, unlocked section needs a non-identity transform made for its
   surviving anatomy: `interactive`, a `fit_affine` fit whose record names
   its `regions`, or a host-supplied one; a whole-section fit, an identity
-  or an invalid transform is refused, a host spline judged by the spline)
+  or an invalid transform is refused)
   then `MISSING_TRANSFORMS`; `MISSING_DEFORMATIONS`. The sections the host
   kept out of Nonlinear (`keep_warp`, `nonlinear_skip`:
   `nonlinear_exempt_ids`) need no deformation and no image correction.

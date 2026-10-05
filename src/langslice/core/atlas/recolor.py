@@ -592,7 +592,7 @@ def _organize(atlas: Any, lut: dict[int, Rgb]) -> dict[int, Rgb]:
 
 def color_lut(atlas: Any, mode: RecolorMode = "auto") -> dict[int, Rgb]:
     """``{structure_id: (r, g, b)}`` for rendering *atlas*'s annotation."""
-    # ponytail: cache keyed by atlas NAME (load_atlas is lru_cached, one name =
+    # Cache keyed by atlas NAME (load_atlas is lru_cached, one name =
     # one object); a nameless atlas (test fakes) is computed fresh every call.
     name = getattr(atlas, "atlas_name", None)
     key = (str(name), mode)

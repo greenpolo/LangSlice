@@ -167,7 +167,7 @@ thickness and interval come from ABBA whenever ABBA's slices give them.
 The connector also sends, from ABBA: `positions_mm` (ABBA's `toAtlasZ` of each slice,
 BrainGlobe AP millimetres), `z_offset_mm` (`ReslicedAtlas.getZOffset()`), `angles_deg`
 (the session's stack-wide cutting angles, pitch = −degrees(rotateX), yaw =
-−degrees(rotateY)), `registered_slices`, `existing_warp` (slices carrying a spline or
+−degrees(rotateY)), `existing_warp` (slices carrying a spline or
 BigWarp step that is not LangSlice's) and `channel_names` (one per exported page).
 
 Snapshots are multi-page TIFFs with one page per exported channel: every channel in

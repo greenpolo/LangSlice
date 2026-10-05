@@ -16,12 +16,12 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.render import annotation_slice
+from langslice.core.nonlinear.image_frames import aspect_ratio_limits, native_output_size
 from langslice.core.nonlinear.image_gen_helpers import (
     _extract_borders_from_classified,
     _merge_classified,
     line_width_px,
 )
-from langslice.core.nonlinear.model_prompts import aspect_ratio_limits, native_output_size
 from langslice.core.space import Plane
 
 #: Long edge every model-facing atlas render is NEAREST/LANCZOS-upscaled to at
@@ -137,7 +137,7 @@ def prepare_canvas(
     onto the slice would silently undo the pixel alignment.
 
     ``native_canvas`` (the default) sizes the canvas to the frame the image
-    path returns (:func:`model_prompts.native_output_size`): the layout is
+    path returns (:func:`image_frames.native_output_size`): the layout is
     worked out at the long-edge rule, scaled to fit that frame, and padded
     out to it exactly, so the model edits on the output's own pixel grid: an
     input the model must rescale to its output is a pixel the output cannot

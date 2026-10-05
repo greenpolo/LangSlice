@@ -651,7 +651,6 @@ def physical_views(
     markers: tuple[np.ndarray, np.ndarray] | None = None,
     label: str = "",
     long_edge: int | None = None,
-    spline: dict[str, Any] | None = None,
     frames: list[dict[str, Any]] | None = None,
     panel_frames: list[PanelFrame] | None = None,
     pivot_in_section: tuple[float, float] | None = None,
@@ -732,21 +731,13 @@ def physical_views(
         section.size, geometry.um_per_px, geometry.section_offset, params,
         pivot=pivot, pivot_in_section=pivot_in_section,
     )
-    if spline is not None:
-        from langslice.core.landmark_warp import warp_section
-
-        warped = warp_section(
-            np.asarray(section.convert("RGB"), dtype=np.uint8), spline,
-            geometry.size, geometry.section_offset, geometry.um_per_px, fill,
-        )
-    else:
-        warped = cv2.warpAffine(
-            np.asarray(canvas, dtype=np.uint8),
-            matrix,
-            geometry.size,
-            flags=cv2.INTER_LINEAR,
-            borderValue=fill,
-        )
+    warped = cv2.warpAffine(
+        np.asarray(canvas, dtype=np.uint8),
+        matrix,
+        geometry.size,
+        flags=cv2.INTER_LINEAR,
+        borderValue=fill,
+    )
 
     tissue = extract_slice_silhouette(cv2.cvtColor(warped, cv2.COLOR_RGB2GRAY))
     iou = silhouette_iou(tissue, atlas_mask_canvas(geometry))
@@ -824,12 +815,7 @@ def physical_views(
         panels = [(warped, label or "section")]
 
     box = zoom_box(zoom, geometry.size)
-    if spline is not None:
-        knobs = (
-            "landmark Elastix B-spline" if spline.get("backend") == "elastix"
-            else "landmark thin-plate spline"
-        )
-    elif isinstance(params, np.ndarray):
+    if isinstance(params, np.ndarray):
         knobs = matrix_label
     else:
         knobs = (

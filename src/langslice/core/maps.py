@@ -189,8 +189,6 @@ def placement_problem(state: StackState, record: SliceState) -> str | None:
     transform = record.transform or {}
     if not transform:
         return None
-    if transform.get("spline"):
-        return "a landmark spline (not an affine placement)"
     if transform.get("stale"):
         return "the stored transform is marked stale"
     params = transform.get("params")

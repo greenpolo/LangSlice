@@ -178,12 +178,12 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
 
 def test_host_inputs_preserve_complete_transform_and_do_not_alias_it(tmp_path):
     state, _, spec = _placed(tmp_path)
-    supplied = {"params": [1, 0, 0, 0, 1, 0], "spline": {"source": [[.1, .2]]}}
+    supplied = {"params": [1, 0, 0, 0, 1, 0], "physical": {"scale_x": .1}}
     spec.inputs = {"transforms": {"s0.png": supplied}}
     apply_host_inputs(state, spec)
     assert state.slices[0].transform == supplied
-    supplied["spline"]["source"][0][0] = .9
-    assert state.slices[0].transform["spline"]["source"][0][0] == .1
+    supplied["physical"]["scale_x"] = .9
+    assert state.slices[0].transform["physical"]["scale_x"] == .1
     spec.inputs = {"transforms": {"missing.png": supplied}}
     with pytest.raises(ValueError, match="unknown section"):
         apply_host_inputs(state, spec)

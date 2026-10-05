@@ -371,8 +371,8 @@ def _row(event, name):
 
 def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     from langslice.core.abba_warp import world_frame
-    from langslice.core.landmark_warp import _ThinPlateKernel
     from langslice.core.maps import native_points, section_frame, stored_params
+    from langslice.core.thin_plate import ThinPlateKernel
     from tests.golden.record import ID0, ID1
 
     job, tracker, events, prepared = warped
@@ -404,7 +404,7 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     homogeneous = np.column_stack([points, np.ones(len(points))])
     before = (to_world @ frame.file_to_render @ homogeneous.T).T[:, :2]
     after = (native_to_world @ np.stack([nx[0], ny[0], np.ones(len(points))])).T[:, :2]
-    pullback = _ThinPlateKernel(target, source, max_points=33 ** 2)
+    pullback = ThinPlateKernel(target, source, max_points=33 ** 2)
     assert np.linalg.norm(pullback.forward(after) - before, axis=1).max() <= 0.005
 
 

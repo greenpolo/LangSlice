@@ -319,7 +319,7 @@ def adjust_transforms(
     (*pivot* "canvas" (default), "tissue" or ``[fx, fy]``
     canvas fractions). A left-out ``shear`` keeps the section's current
     shear (0 without one); an explicit 0 drops it. The record replaces the
-    whole transform, spline included; the flip and rotation flags are not
+    whole transform; the flip and rotation flags are not
     touched. Per entry, refused: a locked section (``LOCKED``), an unknown
     one, one without a position, numbers that are not finite, a canvas or
     pivot that cannot be built (:func:`langslice.core.placement.stage`).

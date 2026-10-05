@@ -32,9 +32,6 @@ IDENTITY_KNOBS: dict[str, float] = {
     "translate_x_mm": 0.0,
     "translate_y_mm": 0.0,
 }
-#: The old name of :data:`IDENTITY_KNOBS`, still imported by ``job/job.py``
-#: and ``doors/tools/toolbox.py``.
-IDENTITY_PARAMS = IDENTITY_KNOBS
 
 #: A plane's cutting angles, ``(pitch_deg, yaw_deg)``.
 Angles = tuple[float, float]
@@ -91,17 +88,7 @@ class SliceState:
          "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
 
-    A ``spline`` is read from old checkpoints only (nothing writes one): it
-    stores ``source`` and ``target`` landmark pairs in normalized
-    oriented-section coordinates, ``extent_mm`` from original image
-    calibration, and optional labels. When present it is the COMPLETE
-    mapping; ``params``/``physical`` retain the affine baseline as metadata
-    and are not composed with the spline. ``backend="elastix"`` payloads
-    carry native ``parameter_maps``, ``affine_mm`` and ``domain_mm`` for the
-    complete affine plus residual pullback; the others a BigWarp TPS
-    mapping. Both evaluate target-to-source resampling and invert it for
-    forward points. Affine adjustment/fitting replaces the spline. ``iou``
-    is always tissue-silhouette overlap, not anatomical quality.
+    ``iou`` is always tissue-silhouette overlap, not anatomical quality.
 
     For an affine, ``physical`` is the ONE representation it carries, whatever
     made it: the five knobs the alignment tools take (plus the ``shear`` an

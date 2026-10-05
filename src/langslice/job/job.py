@@ -63,7 +63,7 @@ import numpy as np
 from langslice.core import deformation
 from langslice.core.discovery import discover_slices
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
-from langslice.core.state import IDENTITY_PARAMS, ROTATIONS, SliceState, StackState
+from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
 from langslice.job import formats
 from langslice.job.checkpoint import (
     read_checkpoint,
@@ -155,7 +155,7 @@ def host_transform() -> dict[str, Any]:
     return {
         "kind": HOST_TRANSFORM_KIND,
         "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        "physical": {**IDENTITY_PARAMS, "shear": 0.0, "pivot": [0.5, 0.5]},
+        "physical": {**IDENTITY_KNOBS, "shear": 0.0, "pivot": [0.5, 0.5]},
         "mirrored": False,
     }
 
@@ -286,8 +286,6 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             record = _section(state, "transforms", name)
             if not isinstance(value, dict):
                 raise ValueError(f"inputs.transforms[{name!r}] must be a transform dictionary")
-            # Kept whole, a spline included (the image-correction handoff
-            # refuses a spline it cannot use).
             record.transform = copy.deepcopy(value)
         state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
 
@@ -596,19 +594,6 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
                 params = np.asarray(transform.get("params"), dtype=float)
                 if params.shape != (6,) or not np.isfinite(params).all():
                     reason = "invalid_transform"
-                elif transform.get("spline") is not None:
-                    # A host-supplied transform may carry a spline; then the
-                    # spline decides whether it moves anything.
-                    from langslice.core.landmark_warp import fit_spline
-
-                    spline = transform["spline"]
-                    fitted = fit_spline(spline)
-                    is_identity = (
-                        fitted.is_identity() if spline.get("backend") == "elastix" else
-                        np.allclose(spline["source"], spline["target"], rtol=0, atol=1e-9)
-                    )
-                    if is_identity:
-                        reason = "identity_transform"
                 elif np.allclose(params, identity, rtol=0, atol=1e-9):
                     reason = "identity_transform"
             except (TypeError, ValueError, KeyError, RuntimeError, np.linalg.LinAlgError):

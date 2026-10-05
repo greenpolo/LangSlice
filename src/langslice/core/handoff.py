@@ -150,8 +150,6 @@ def prepare_linear_registration(
         transform = record.transform
     if not transform:
         raise ValueError(missing_transform_message(getattr(ctx, "spec", None)))
-    if transform.get("spline"):
-        raise ValueError("A linear placement is required; an existing spline cannot be discarded")
     if transform.get("stale"):
         raise ValueError("The written affine is marked stale")
     orientation = transform.get("orientation")
@@ -239,7 +237,7 @@ def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -
         "position_mm": record.position_mm, "angles": record.cutting_angles_deg,
         "flip": record.flip, "rotation_deg": record.rotation_deg,
         "transform": {key: transform.get(key) for key in (
-            "params", "calibration", "orientation", "stale", "spline",
+            "params", "calibration", "orientation", "stale",
         )},
         "preprocess": ctx.spec.preprocess,
         "pixel_size_um": ctx.spec.inputs.get("pixel_size_um"),

@@ -4,44 +4,41 @@ Package guide for `src/langslice/core/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The lowest layer of the layered core. The pictures the tools send and their
-layers (phases 3b and 3c, 2026-10-03), the section renders, captions,
-canvas, sheets and status table that were `linear/render.py` (phase 3d,
-2026-10-04), and, since the rename-only folder move (2026-10-04), every
-other module whose imports are core-only:
+The lowest layer. The pictures the tools send and their layers, the section
+renders, captions, canvas, sheets and status table, and every other module
+whose imports are core-only:
 
 - shared foundations: `space.py`, `oblique.py`, `affine.py`,
-  `image_prep.py`, `landmark_warp.py` + `landmark_elastix.py`, and the
-  sub-packages `atlas/` (`atlas/CLAUDE.md`), `deformable/`
-  (`deformable/CLAUDE.md`) and `nonlinear/` (the image-model border route's
-  prompts, request, line extraction and fit, `nonlinear/CLAUDE.md`);
+  `image_prep.py`, `thin_plate.py` (the thin-plate kernel `abba_warp.py`
+  validates its landmark pairs with), and the sub-packages `atlas/`
+  (`atlas/CLAUDE.md`), `deformable/` (`deformable/CLAUDE.md`) and
+  `nonlinear/` (the image-model border route's prompts, request and line
+  extraction, `nonlinear/CLAUDE.md`);
 - the linear method's core: `state.py`, `spec.py`, `workspace.py`,
   `appearance.py`, `atlas_fetch.py`, `atlas_grep.py`, `display.py`,
-  `opening.py`, `transform.py`, `deformation.py`, `discovery.py`,
-  `deepslice.py`. Their entries are in the linear agent environment's guide
+  `opening.py`, `transform.py`, `deformation.py`, `discovery.py`. Their
+  entries are in the linear agent environment's guide
   (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method;
-- plain tables several layers share: `provider_names.py` (above) and
+- plain tables several layers share: `provider_names.py` and
   `media_keys.py` (the keys a tool's media travels under, read by the tool
   door, the ADK driver, MCP and the OAuth transport);
-- the host-row geometry the linear snapshot worker emits
-  (`doors/api/abba_worker.py`): `abba_affine.py` (a normalized affine in
-  ABBA's centred world millimetres) and `abba_spline.py` (a stored landmark
-  spline as ABBA landmark pairs, kept for old checkpoints; never emitted for
-  new jobs). Both moved down from `hosts/integrations/` (2026-10-04) because
-  a door uses them. `abba_warp.py` (2026-10-04): an applied deformation as
-  the landmark pairs of a SECOND ABBA step on top of the affine row
-  (`warp_world_landmarks(frame, record, params, size=, pixel_size_um=)`:
+- the host-row geometry the ABBA worker emits (`doors/api/abba_worker.py`):
+  `abba_affine.py` (a normalized affine in ABBA's centred world
+  millimetres) and `abba_warp.py` (an applied deformation as the landmark
+  pairs of a SECOND ABBA step on top of the affine row:
+  `warp_world_landmarks(frame, record, params, size=, pixel_size_um=)`;
   `source` = a section point as the affine step placed it, `target` = where
   the deformation takes it, centred world mm, the frame derived from
   `normalized_to_abba_affine` and `maps.native_points`; a 9x9 to 33x33
   grid, growing until the TPS pull-back is within 5 um at off-grid probes;
   past 33x33 the pairs are sent anyway with the error measured
-  (`max_error_mm`, `p99_error_mm`, `within_tolerance`: the product chose
-  speed over accuracy, 2026-10-04); the largest grid whose TPS does not
-  fold is sent, and only a TPS folding at every grid is refused). `abba_angles.py`: ABBA's `ReslicedAtlas` rotations <->
-  pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`, `YAW_TO_ROTATE_Y_SIGN`, both -1;
-  `angles_to_rotate`, `rotate_to_angles`; SliceBench reads the constants
-  through the `langslice.integrations.abba_linear` shim).
+  (`max_error_mm`, `p99_error_mm`, `within_tolerance`), favouring speed
+  over accuracy; the largest grid whose TPS does not fold is sent, and only
+  a TPS folding at every grid is refused). `abba_angles.py`: ABBA's
+  `ReslicedAtlas` rotations <-> pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`,
+  `YAW_TO_ROTATE_Y_SIGN`, both -1; `angles_to_rotate`, `rotate_to_angles`;
+  SliceBench reads the constants through the `langslice.integrations.abba_linear`
+  shim).
 
 ## The layer rule
 
@@ -70,7 +67,7 @@ other module whose imports are core-only:
 - A picture is returned, never encoded: the doors package it (the ADK agent
   through `doors.tools.media.packaged`, JPEG message parts; MCP as image blocks).
 
-## Cutting angles are per section (state format 3, 2026-10-04)
+## Cutting angles are per section
 
 Every atlas plane drawn, fitted or mapped for a section is at that
 section's own angles (`SliceState.angles`): the placement pictures
@@ -88,8 +85,7 @@ take `angles=`; None reads the stack's one angle (`state.plane_angles`),
 which raises `MixedAngles` on a stack whose sections differ, so a call
 that should pass a section's own fails loudly instead of drawing the
 wrong plane. `captions.angles_label` words the angles in a caption (empty
-for the flat plane). A single-angle stack draws exactly what it drew
-before (the goldens are unchanged).
+for the flat plane).
 
 ## Files
 
@@ -117,8 +113,8 @@ before (the goldens are unchanged).
   door maps by index; returns `Placed`: images, row facts, the canvas),
   and the interactive transform's `stage` (the working frame, calibration,
   canvas and resolved pivot; `StageFailure` `ATLAS_RENDER_FAILED` /
-  `BAD_PIVOT`), `Staged` and `staged_views`. The transform tools' pictures
-  (phase 3d): `fit_picture` (`fit_affine`: a fit drawn from its `FitFrame`,
+  `BAD_PIVOT`), `Staged` and `staged_views`. The transform tools' pictures:
+  `fit_picture` (`fit_affine`: a fit drawn from its `FitFrame`,
   one-sided regions with the sides the fit resolved) and `transform_views`
   (`adjust_transforms`: the staged knobs in the call's mode, or for `ab`
   the "candidate" overlay then the "stored" (or "identity") one,
@@ -155,7 +151,7 @@ before (the goldens are unchanged).
 - `layers.py` — a placement picture's layers and frame record (and a
   `fit_deformable` picture's), the on-demand coordinate map, and the
   per-call picture notes (below).
-- `maps.py` (formats phase, 2026-10-04) — section pixels to atlas
+- `maps.py` — section pixels to atlas
   micrometres for the job folder's public files (`job/formats.py`,
   `docs/file_formats.md`). `SectionFrame` / `section_frame(state,
   workspace, record)`: one placed section's linear map from its image FILE
@@ -211,7 +207,7 @@ before (the goldens are unchanged).
   job's plane is refused. `plane_angles`, `plane_position_mm`,
   `implied_pixel_size_um`.
 - `jpeg.py` — the doors' one JPEG encoding (below).
-- `handoff.py` (phase 4) — a written linear placement as the nonlinear work
+- `handoff.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
   long_edge=, transform=)` (the oriented, unframed section render and the
   3x3 from native atlas-plane pixel centres onto it, calibration checked,
@@ -228,13 +224,13 @@ before (the goldens are unchanged).
   transform as the identity). No provider import:
   `core/nonlinear/registration_handoff.py` re-exports the first for SliceBench.
 
-## The frame of a picture and its layers (phase 3c)
+## The frame of a picture and its layers
 
 `CanvasFrame` holds everything that fixes a physical picture's canvas: the
 shown section render (before any warp), its micrometres per pixel, the
 position, plane and cutting angles, the placement (`params`: the knobs about
 `pivot`/`pivot_in_section`, or a 2x3 on the shown render's frame;
-`spline`; `warp`), the zoom window and the panel size. `physical_views`
+`warp`), the zoom window and the panel size. `physical_views`
 builds the placement with `core.canvas.placement_matrices` (the section
 matrix on the section's frame, and the same map on the canvas,
 `shift(offset) @ section_matrix @ shift(-offset)`) and rasterises every
@@ -264,7 +260,7 @@ convention in words) and `picture_layers` (all three).
 `pixel_to_atlas_um` is a 3x3 matrix taking a picture pixel `[row, col, 1]`
 (pixel centres at integers, row 0 the top of the picture, caption included)
 to BrainGlobe atlas micrometres in the atlas's own axis order, voxel `i`'s
-centre at `i * resolution` (Nash 2026-10-03). It is exact: the picture shows
+centre at `i * resolution`. It is exact: the picture shows
 one atlas plane, so the map is affine (`oblique.plane_index_affine`, built
 from the same basis `plane_index_coordinates` samples, times the
 resolution). No coordinate map is stored per picture (three float32
@@ -273,7 +269,7 @@ takes a `view.json` (record or path) and returns the `(rows, cols, 3)`
 float32 map on demand, NaN in the caption band. The labels layer is what
 that map reads in the atlas annotation, up to ties at exact half voxels.
 
-A `fit_deformable` picture (formats phase) gets the same layers on its own
+A `fit_deformable` picture gets the same layers on its own
 grid through `warp_layers(atlas, note, size)`: labels through the record's
 composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
@@ -305,10 +301,6 @@ door and the job's view store call it, so the saved bytes are the sent ones.
 
 ## `linear/render.py`
 
-The split of `linear/render.py` into `sections`, `captions`, `canvas`,
-`sheets`, `status` and `sizes` was a pure move (phase 3d, goldens
-identical). `linear/render.py` stays as a re-export shim of their public
-names only because the sibling repo SliceBench imports it
-(`slicebench/adapters/langslice_geometry.py`: `PREVIEW_LONG_EDGE`,
-`canvas_geometry`, `canvas_um_per_px`, `render_slice`); LangSlice itself
-imports the core modules.
+`linear/render.py` is a re-export shim of four names, `PREVIEW_LONG_EDGE`,
+`canvas_geometry`, `canvas_um_per_px` and `render_slice`, because the sibling
+repo SliceBench imports them; LangSlice itself imports the core modules.

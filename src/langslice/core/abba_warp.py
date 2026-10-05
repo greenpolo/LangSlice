@@ -28,10 +28,9 @@ orientation handled there), sits at
     after(f) = S A n_w(f) = S M atlas_to_render n_w(f).
 
 The warp step moves ``before(f)`` to ``after(f)``. Its landmark pairs are
-returned as :func:`langslice.core.abba_spline.spline_world_landmarks`
-returns a spline's: ``source`` = the point before (the section side of
-the step), ``target`` = where it goes (the atlas side), centred ABBA world
-millimetres. ABBA resamples with the pull-back ``target -> source``, a TPS
+returned as ``source`` = the point before (the section side of
+the step) and ``target`` = where it goes (the atlas side), centred ABBA
+world millimetres. ABBA resamples with the pull-back ``target -> source``, a TPS
 interpolating these pairs; :func:`warp_world_landmarks` checks that TPS,
 not the pairs.
 
@@ -123,8 +122,8 @@ def warp_world_landmarks(
     folds. *diagnostics* receives the grid, point count, measured maximum
     and 99th-percentile error, whether the tolerance was met and the
     smallest sampled Jacobians (the TPS's and the exact map's)."""
-    from langslice.core.landmark_warp import _ThinPlateKernel
     from langslice.core.maps import native_points
+    from langslice.core.thin_plate import ThinPlateKernel
 
     if not np.isfinite(tolerance_mm) or tolerance_mm <= 0:
         raise ValueError("Export tolerance must be positive and finite")
@@ -166,7 +165,7 @@ def warp_world_landmarks(
     for n in GRID_SIDES:
         source, target = pairs(grid(n))
         try:
-            pullback = _ThinPlateKernel(target, source, max_points=GRID_SIDES[-1] ** 2)
+            pullback = ThinPlateKernel(target, source, max_points=GRID_SIDES[-1] ** 2)
         except ValueError:
             continue
         probes = np.vstack((grid(2 * n - 1), grid(n, 0.37), grid(n, 0.71)))
