@@ -38,14 +38,17 @@ theme:
 
 nav:
   - Overview: index.md
-  - Architecture: architecture_overview.md
-  - CLI usage: current_workflow.md
-  - Agent CLI: agent_cli.md
-  - Python library: library.md
-  - Install in ABBA: abba_installation.md
-  - Fiji connector design: abba_plugin_design.md
-  - Registration pipeline: registration_plan.md
-  - Training overview: training_overview.md
+  - Using LangSlice:
+      - Install in ABBA: abba_installation.md
+      - CLI usage: cli.md
+      - Agent CLI: agent_cli.md
+      - Python library: library.md
+      - File formats: file_formats.md
+  - How it works:
+      - Architecture: architecture_overview.md
+      - The linear job: linear_design.md
+      - Nonlinear: nonlinear_design.md
+      - Fiji connector and worker: abba_plugin_design.md
 
 markdown_extensions:
   - admonition
@@ -66,6 +69,4 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/greenpolo/LangSlice
 
-# RTD-friendly: do not error on the missing README at the project root
-# (the README lives in the repo root, not inside docs/).
-strict: false
+strict: true

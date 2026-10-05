@@ -1,6 +1,6 @@
 """Golden snapshots: every linear tool's pictures, data and text, unchanged.
 
-The safety net for the layered-core refactor. ``tests/golden/record.py``
+``tests/golden/record.py``
 scripts a fixed sequence of calls through every tool ``build_tools`` returns
 (plus the engine's first model request and the MCP door) on a small synthetic
 stack, and this test compares a fresh recording with the checked-in one in
@@ -45,7 +45,7 @@ _MISSING = [name for name in _NEEDS if importlib.util.find_spec(name.split(".")[
 
 def _record(out: Path) -> None:
     env = {key: value for key, value in os.environ.items()
-           if key not in ("LANGSLICE_TRACE_DIR", "LANGSLICE_VLM_DEBUG_DIR")}
+           if key != "LANGSLICE_TRACE_DIR"}
     completed = subprocess.run(
         [sys.executable, "-m", "tests.golden.record", "--out", str(out)],
         cwd=REPO, env=env, capture_output=True, text=True, timeout=600, check=False,

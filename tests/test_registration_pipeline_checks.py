@@ -1,9 +1,4 @@
-"""Deterministic checks on shared orientation helpers.
-
-`_despeckle_classified` and `generation_report` (paint-classification and
-generated-vs-atlas diagnostics for the colormap workflow) were deleted with
-that workflow; what remains here is the render-orientation helper, which is
-unrelated to either border route or the colormap path."""
+"""The render-orientation helper `orient_slice_to_axes`."""
 
 from __future__ import annotations
 

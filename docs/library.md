@@ -54,7 +54,7 @@ photograph_first=None, name=None)` returns the model the trace calls. `source`
 is one of:
 
 - **A provider name**: `"openai-oauth"`, `"openai-api"` or `"gemini-api"`
-  (older spellings such as `"chatgpt"` are accepted). `model` names the image
+  `model` names the image
   model; without it the provider's default (`gpt-image-2` on `openai-oauth`).
   Without a prompt this is the provider's **built-in profile**: LangSlice's
   prompt for that provider.
@@ -76,7 +76,7 @@ section is traced.
 ## Profiles: a model and the prompt written for it
 
 Different image models need different prompts, so a profile pairs a model
-with its prompt. The built-in profiles use the prompts the project measured:
+with its prompt. The built-in profiles use LangSlice's own prompts:
 the GPT wording for `openai-oauth` and `openai-api` (the clean photograph is
 Image 1, the photograph with the placed borders Image 2), the general wording
 for every other provider (the placed borders first). To make your own:
@@ -106,7 +106,7 @@ model = langslice.image_model(my_edit_function, prompt_file="prompts/lab_v1.txt"
 - `name` names the profile in every record (default `"custom"`).
 
 **Untested profiles are marked.** A profile with a prompt or attachment order
-of its own, or a model of your own, has not been measured by the project:
+of its own, or a model of your own, is not one LangSlice's prompts were written for:
 every border trace it makes records `"untested": true` and `"profile":
 "<name>"` in the trace record (each attempt's `request.json` and
 `result.json` under `sections/<name>/image_correction/`, and the section's
@@ -137,14 +137,14 @@ make: `doors.api.setup.image_model_connected`, offline, presence only), so
 
 ```python
 result = langslice.register_section(
-    "/scans/M01/s07.tif",                # a file path, or an array
+    "/scans/brain1/s07.tif",                # a file path, or an array
     atlas="allen_mouse_25um", position_mm=6.2,
     pitch_deg=1.0, yaw_deg=-0.5,         # optional cutting angles
     transform=[1.02, 0.01, -0.01, 0.0, 0.98, 0.01],   # optional in-plane affine
     flip=False, rotation_deg=0,          # optional orientation
     pixel_size_um=0.65,                  # optional; else read from the file
     image_model=model,
-    folder="/work/M01_s07",              # optional; default a new temporary folder
+    folder="/work/brain1_s07",              # optional; default a new temporary folder
     output="lean",                       # optional; "full" by default
     arrays=True,                         # optional: load the maps as arrays
 )
@@ -207,7 +207,7 @@ section:
 
 ```python
 job = langslice.create_job(
-    "/scans/M01",                            # a folder of section images
+    "/scans/brain1",                            # a folder of section images
     atlas="allen_mouse_25um",
     positions={"s01.tif": 5.9, "s02.tif": 6.1},           # by filename, mm
     transforms={"s01.tif": [1, 0, 0, 0, 1, 0]},           # optional, per section
@@ -273,9 +273,9 @@ image-model nonlinear step runs on top:
 
 ```python
 job = langslice.create_job(
-    "/scans/M01",
+    "/scans/brain1",
     atlas="allen_mouse_25um",
-    registration="/scans/M01/quicknii.json",   # or .xml, a DeepSlice .csv, a registration.json
+    registration="/scans/brain1/quicknii.json",   # or .xml, a DeepSlice .csv, a registration.json
     pixel_size_um=0.65,                        # optional (below)
     image_model=model,
 )
@@ -291,7 +291,7 @@ angles, its orientation and its in-plane transform, exactly: the new job's
 `registration.json` maps every section file as the file does (a QuickNII
 anchoring places the image by fractions of its width and height, so a
 registration made on smaller copies carries over). The formats and what is
-read: `docs/file_formats.md`, "Importing a registration made elsewhere".
+read: [file_formats.md](file_formats.md), "Importing a registration made elsewhere".
 
 - `tasks` defaults to `["nonlinear"]`: the imported placement is kept as it
   is; `register_job` then traces and fits each section. Pass `tasks=` to
@@ -338,28 +338,16 @@ read: `docs/file_formats.md`, "Importing a registration made elsewhere".
   `register_section`'s default temporary folder, `shutil.rmtree(
   result.job_folder.parent)` (the section image's copy is in it).
 
-## Outputs and their conventions
+## Outputs
 
-`result.job_folder` holds, among the files above:
-
-| File | What it is |
-|---|---|
-| `registration.json` | every section's registration in public units: the plane (position, cutting angles), orientation, the six affine numbers, the deformation, the file pixel -> atlas matrix of the linear placement, and its maps |
-| `sections/<name>/coords.tif` | atlas micrometres per pixel, float32, three channels (the atlas axes), NaN outside the section or the atlas: the complete mapping, deformation included |
-| `sections/<name>/labels.tif` | atlas region ids per pixel, uint32, 0 outside |
-| `sections/<name>/labels_fiji.tif`, `labels.csv` | the same as a uint16 index Fiji opens without loss, and its table (index, id, acronym, name, colour) |
-| `sections/<name>/residual.tif` | the deformation as a displacement field, when one is applied |
-| `sections/<name>/tissue.png`, `maps.json` | the tissue estimate; what the maps are and how they were made |
-| `exports/quicknii.json`, `exports/visualign.json` | the QuickNII anchoring and VisuAlign markers, for QUINT |
-
-Atlas coordinates are BrainGlobe micrometres in the atlas's own axis order
-(packaged atlases are `asr`: axis 0 anterior to posterior, 1 superior to
-inferior, 2 right to left), voxel `i`'s centre at `i * resolution_um`. Image
-pixels are `[row, col]` of the image file as stored. The maps are on the
-section's working copy (a whole-slide TIFF's smallest pyramid level of at
-least 1536 px, else the file downsampled to at most 3072 px) unless
-`full_resolution=True`; `maps.json` gives the grid's own pixel -> atlas
-matrix. Every field: [`file_formats.md`](file_formats.md).
+`result.job_folder` holds the job's public files: `registration.json`, each
+section's `coords.tif` (atlas micrometres per pixel), `labels.tif`,
+`labels_fiji.tif` + `labels.csv`, `residual.tif`, `tissue.png`, `maps.json`,
+and `exports/quicknii.json`, `exports/visualign.json`. Atlas coordinates are
+BrainGlobe micrometres in the atlas's own axis order; image pixels are
+`[row, col]` of the image file as stored. The maps are on the section's working
+copy unless `full_resolution=True`. Every field and convention:
+[file_formats.md](file_formats.md).
 
 `RegistrationResult`: `job_folder`, `registration`, `exports` (by kind),
 `sections` (stack order), `submitted`, `problems`, `ok`, `section(id)`.

@@ -22,6 +22,7 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from tests.deformable_synthetic import SECTION_SIZE, TH, SyntheticAtlas
+from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
 UM = 25.0
@@ -82,10 +83,6 @@ def _setup(folder: Path, atlas: SyntheticAtlas, image: Image.Image, *, damaged: 
     state.slices[0].position_mm = POSITION
     state.slices[0].damaged = damaged
     return state, ctx, build_tools(state, ctx, spec)
-
-
-def _tool(box: Any, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 def _error_vs(truth: np.ndarray, params: list[float]) -> dict[str, float]:

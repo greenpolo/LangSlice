@@ -7,8 +7,13 @@ from langslice.doors.tools.arguments import ViewAuto
 VIEW_KEYS = frozenset(ViewAuto.__annotations__)
 
 
-def legacy_view(tool):
-    """*tool* callable the old way: picture options as keywords or entry keys.
+def tool_named(box, name: str):
+    """The tool called *name* in a built toolbox."""
+    return next(tool for tool in box.tools if tool.__name__ == name)
+
+
+def keyword_view(tool):
+    """*tool* callable with picture options given as keywords or entry keys.
 
     For tests about what a picture shows, not about the argument shape: the
     keywords (and any picture key inside an ``entries`` dict) are moved into

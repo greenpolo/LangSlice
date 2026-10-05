@@ -1,4 +1,4 @@
-"""Cutting angles per section (state format 3, 2026-10-04).
+"""Cutting angles per section (state format 3).
 
 A job keeps each section's own cutting angles, so a registration made
 elsewhere (QuickNII, VisuAlign, DeepSlice) keeps every section's plane as it

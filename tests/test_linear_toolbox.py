@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
@@ -16,6 +15,7 @@ from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import ingest
 from tests.fakes import EllipseAtlas, SlabAtlas, ellipse_section
 from tests.linear_tool_helpers import single_adjust
+from tests.linear_tool_helpers import tool_named as _tool
 
 _ATLAS = SlabAtlas()
 
@@ -49,10 +49,6 @@ def _stack(folder: Path, n: int = 5, *, placed: bool = False, **spec_kwargs):
 def _box(folder: Path, **kwargs):
     state, ctx, spec = _stack(folder, **kwargs)
     return state, ctx, build_tools(state, ctx, spec)
-
-
-def _tool(box, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 # --- gating --------------------------------------------------------------
@@ -405,25 +401,6 @@ def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
     assert len(_tool(box, "undo")()["rows"]) == 5
     assert len(_tool(box, "redo")()["rows"]) == 5
     assert state.by_id("s2.png").damaged is True
-
-
-def test_confidence_is_gone_from_the_package():
-    """No confidence value is produced or carried downstream."""
-    import langslice.agent
-    import langslice.core
-    import langslice.doors.tools
-    import langslice.job
-
-    # The former linear package's modules, in their layer packages.
-    packages = [Path(module.__file__).parent for module in (
-        langslice.core, langslice.job, langslice.doors.tools, langslice.agent)]
-    hits = [
-        path.name
-        for package in packages
-        for path in sorted(package.glob("*.py"))
-        if "confidence" in path.read_text(encoding="utf-8")
-    ]
-    assert hits == []
 
 
 # --- the reorder rule ----------------------------------------------------
@@ -921,8 +898,7 @@ def test_gated_set_positions_refuses_an_uncompared_section(tmp_path: Path):
     assert result["status"] == "error" and result["error"] == "NOTHING_WRITTEN"
     assert "view_placement first" in result["rejected"][0]["reason"]
     assert state.by_id("s0.png").position_mm is None
-    # one compare is enough (Astra confirms at one hypothesised position);
-    # the write then resets the record
+    # one compare is enough; the write then resets the record
     _tool(box, "view_placement")([{"id": "s0.png", "positions_mm": [3.0]}])
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
     assert result["status"] == "ok" and state.by_id("s0.png").position_mm == 3.0

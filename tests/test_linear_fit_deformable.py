@@ -23,6 +23,7 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import ingest
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
+from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
 FAST = {"engine": "elastix"}
@@ -58,10 +59,6 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *, engine: str = "either",
     record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                         "calibration": {"section_um_per_px": 25.0, "source": "host"}}
     return state, ctx, spec, build_tools(state, ctx, spec)
-
-
-def _tool(box: Any, name: str) -> Any:
-    return next(tool for tool in box.tools if tool.__name__ == name)
 
 
 def _media(result: dict[str, Any]) -> list[bytes]:

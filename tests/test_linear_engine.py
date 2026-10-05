@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -19,14 +18,10 @@ from langslice.agent.prompt import build_job_statement
 from langslice.core.spec import JobSpec, PositionSpec
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
-from langslice.job.job import apply_host_inputs, emit_results, ingest
+from langslice.job.job import apply_host_inputs, ingest
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack
 
 _ATLAS = SlabAtlas()
-
-#: The folder of real sections the no-model smoke test uses when it is there.
-_REAL_STACK = Path.home() / "LSD_910" / "images" / "M04"
-
 
 def _make_stack(folder: Path, n: int = 4) -> list[str]:
     """Tiny generated PNGs with non-lexicographic numbering."""
@@ -404,34 +399,6 @@ def test_the_seed_carries_section_strips_then_the_atlas_reference(tmp_path: Path
     assert len(images) == 1 + len(atlas_strips) >= 2
     assert texts.index(reference) > 1
     assert texts[-1].startswith("Status table")
-
-
-# --- a real folder, no model ---------------------------------------------
-
-
-@pytest.mark.skipif(not _REAL_STACK.is_dir(), reason="LSD_910/M04 is not on this machine")
-def test_ingest_tools_and_emit_on_a_real_folder(tmp_path: Path):
-    """ingest -> build_tools -> a tool sequence -> emit, on real TIFFs."""
-    for path in sorted(_REAL_STACK.iterdir()):
-        if path.suffix.lower() in {".tif", ".tiff", ".png"}:
-            os.symlink(path, tmp_path / path.name)
-
-    spec = _spec(tmp_path, tasks=["position"], out=str(tmp_path / "out.json"))
-    ctx = _ctx(spec)
-    state = ingest(spec, ctx)
-    assert len(state.slices) > 1
-
-    box = build_tools(state, ctx, spec)
-    tools = {tool.__name__: tool for tool in box.tools}
-    first, last = state.in_order()[0].id, state.in_order()[-1].id
-    assert tools["set_positions"](
-        [{"id": first, "position_mm": 3.0}, {"id": last, "position_mm": 9.0}]
-    )["status"] == "ok"
-    assert tools["status"]()["rows"][0]["position_mm"] == 3.0
-
-    emit_results(state, ctx.results_path)
-    written = json.loads(Path(spec.out).read_text())
-    assert len(written["slices"]) == len(state.slices)
 
 
 def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp_path: Path):

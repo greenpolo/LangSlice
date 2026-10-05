@@ -425,7 +425,7 @@ class _AllenShape:
 
 @pytest.mark.skipif(ABBA is None, reason="ABBA's cached Allen atlas is not installed")
 def test_abba_nissl_reader_matches_its_own_volume_on_a_flat_plane():
-    import h5py
+    h5py = pytest.importorskip("h5py")
 
     assert ABBA is not None
     shape_atlas = _AllenShape()
