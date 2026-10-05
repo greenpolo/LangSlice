@@ -89,7 +89,9 @@ public final class ConnectorSmokeTest {
     public static void main(String[] args) throws Exception {
         claudeChannel();
         Path prefix = Files.createTempDirectory("langslice connector space ");
-        Path python = prefix.resolve("bin/python"); Files.createDirectories(python.getParent());
+        boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+        Path python = windows ? prefix.resolve("python.exe") : prefix.resolve("bin/python");
+        Files.createDirectories(python.getParent());
         Files.write(python, FAKE_WORKER.getBytes(StandardCharsets.UTF_8)); python.toFile().setExecutable(true);
         require(EnvironmentDiscovery.python(prefix).equals(python), "Prefix resolves python");
         require(EnvironmentDiscovery.command(prefix).get(0).equals(python.toString()), "Prefix with spaces stays a single argv element");
@@ -97,7 +99,8 @@ public final class ConnectorSmokeTest {
         require(prefix.equals(EnvironmentDiscovery.saved()), "Remember environment path with spaces");
         require(EnvironmentDiscovery.discover().contains(prefix), "Saved environment is rediscovered");
         Path launcher = Files.createTempDirectory("langslice launcher ");
-        Files.createDirectories(launcher.resolve("bin")); Files.write(launcher.resolve("bin/python"), new byte[0]);
+        Path launcherPython = windows ? launcher.resolve("python.exe") : launcher.resolve("bin/python");
+        Files.createDirectories(launcherPython.getParent()); Files.write(launcherPython, new byte[0]);
         System.setProperty(EnvironmentDiscovery.PROPERTY, launcher.toString());
         try {
             require(EnvironmentDiscovery.current().equals(launcher.toAbsolutePath().normalize()) && prefix.equals(EnvironmentDiscovery.saved()),
@@ -108,6 +111,17 @@ public final class ConnectorSmokeTest {
         } finally {
             System.clearProperty(EnvironmentDiscovery.PROPERTY);
             Files.walk(launcher).sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+        }
+        if (windows) {
+            // A POSIX shebang makes the fake worker executable on Unix only.
+            // Exercise discovery, settings, events and the SciJava menu here;
+            // Python's installed worker protocol is covered by the Windows pytest job.
+            eventChecks();
+            settingsChecks();
+            menuChecks();
+            Files.walk(prefix).sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+            System.out.println("Connector Windows discovery and command smoke checks passed.");
+            return;
         }
         AtomicInteger events = new AtomicInteger();
         try (WorkerClient client = new WorkerClient(prefix)) {
