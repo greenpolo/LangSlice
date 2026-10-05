@@ -5,14 +5,14 @@ Each step is a whole state, written once as its own file
 fields) when it enters the history; ``index.json`` lists the undo and redo
 steps, oldest first, and is the only file rewritten per step. A step is
 never rewritten, so one tool call costs one state file and a small index,
-not the whole history: with depth 50 and a 40-section state of tens of
-kilobytes, rewriting everything (the phase-2 ``linear_undo.json``) wrote
-megabytes per call. Bounded: steps the index no longer names are deleted
-after each index write.
+not the whole history (with depth 50 and a 40-section state of tens of
+kilobytes, rewriting every step would write megabytes per call). Bounded:
+steps the index no longer names are deleted after each index write.
 
 An unreadable index or step starts the job without a history (logged): the
 history is a convenience, the checkpoint is the record. A history from a
-newer LangSlice is likewise ignored, never guessed at. Either way the
+newer LangSlice, or a step of another state format, is likewise ignored,
+never guessed at. Either way the
 history on disk is left exactly as it is: :attr:`History.problem` is set and
 :meth:`History.save` writes and deletes nothing until a later
 :meth:`History.load` reads a valid one (undo works for the session, in
@@ -30,7 +30,7 @@ from typing import Any
 from langslice.job.checkpoint import (
     FORMAT_KEY,
     STATE_FORMAT_VERSION,
-    upgrade_state,
+    current_state,
     write_json_atomic,
 )
 
@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 #: Undo steps kept (and saved). One tool call is one step, a batch included.
 UNDO_DEPTH = 50
 INDEX_FILE = "index.json"
-#: The index's format. 1 (2026-10-03): ``undo`` and ``redo`` step file
-#: names, oldest first, ``next`` the next step number.
+#: The index's format: ``undo`` and ``redo`` step file names, oldest first,
+#: ``next`` the next step number.
 HISTORY_FORMAT_VERSION = 1
 
 
@@ -73,10 +73,10 @@ class History:
         data = json.loads((self.folder / name).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError(f"{name} does not hold a state")
-        return upgrade_state(data, root=self.folder.parent)
+        return current_state(data)
 
     def load(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """``(undo, redo)`` from disk, each upgraded; empty without a history."""
+        """``(undo, redo)`` from disk; empty without a history."""
         self._known = {}
         self.problem = None
         try:

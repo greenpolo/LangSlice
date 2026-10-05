@@ -55,7 +55,6 @@ CORE_MODULES = (
     "langslice.job.layout",
     "langslice.job.history",
     "langslice.job.index",
-    "langslice.job.migrate",
     "langslice.job.views",
     "langslice.job.formats",
     "langslice.job.imports",
