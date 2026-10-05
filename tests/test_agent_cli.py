@@ -217,6 +217,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
         tail = statement[len(expected):]
         assert "Opening pictures: `brief` saved 2 picture files" in tail
         assert "User notes:\nSection 2 is torn." in tail
+        assert "trace_from_atlas" not in statement  # a hidden verb is listed nowhere
         from langslice.doors.statement import status_and_notes
 
         assert tail.endswith(status_and_notes(opened.job.state))
