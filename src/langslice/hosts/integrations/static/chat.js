@@ -71,7 +71,7 @@ function render(event){
   }
   if(event.kind!=='status')active=null;
   if(event.kind==='tool_start')toolCard(event);
-  else if(event.kind==='tool_end')resultCard(toolCard(event),event);
+  else if(event.kind==='tool_end'){const card=toolCard(event);resultCard(card,event);imageEvent(event,card);}
   else if(event.kind==='tool_result'){
     const pending=pendingTools.get(event.name)||[];
     const card=tools.get(event.execution_id||event.id)||pending.find(c=>!c.received);
