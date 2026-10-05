@@ -4,15 +4,10 @@ Package guide for `src/langslice/job/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The job layer (layered refactor, phase 3c, 2026-10-03; folder move
-2026-10-04). The `Job` itself (state, undo, checkpoint, gates) is
-`job/job.py` (formerly `linear/job.py`) over `job/checkpoint.py` (formerly
-`linear/checkpoint.py`), both described in the linear agent environment's
-guide (`src/langslice/agent/CLAUDE.md`, "Files"); `job/quint.py` (formerly
-`integrations/quint.py`) is the QUINT/QuickNII/VisuAlign writer
-`ops.exports` calls, described in `src/langslice/hosts/integrations/CLAUDE.md`.
-The rest of this package is where the job's files live and how they are
-named, upgraded, indexed and filled with pictures.
+The job layer: the `Job` (`job.py`: the state, undo, the checkpoint, the
+submit gates), where its files live and how they are named, indexed and
+filled with pictures, the public files rendered from the state, and the
+QUINT (QuickNII/VisuAlign) reading and writing.
 
 ## The layer rule
 
@@ -45,8 +40,8 @@ Two exceptions, both from `layout.locate_job_folder` (used by
 
 - **An explicit folder.** `JobSpec.job_dir` (`--job-dir PATH` on `linear
   run`, `mcp` and `claude prepare`) puts the job folder exactly there, same
-  layout, e.g. one per benchmark arm on one dataset folder; the image folder
-  is then never written (no migration from beside the images either). Two
+  layout, e.g. one per experiment on one dataset folder; the image folder
+  is then never written. Two
   jobs never share a folder silently: `layout.check_owner` refuses a folder
   whose `job.json` names a DIFFERENT image folder (`ValueError`, "already
   holds the job of ..."); the same image folder's job is continued.
@@ -59,8 +54,7 @@ Two exceptions, both from `layout.locate_job_folder` (used by
   again; a saved Claude job uses its own id. Said once through the
   progress/emit log (`[job] ... cannot be created or written; the job
   folder is ...`) and recorded in the id's index entry under `fallback`
-  (`image_folder`, `reason`). Old files beside a read-only image folder are
-  not migrated.
+  (`image_folder`, `reason`).
 
 Inside (`layout.py`, names as constants):
 
@@ -90,7 +84,7 @@ views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
                      the path), result.json (a saved host job's final result),
                      quicknii.json and visualign.json (with the maps)
-logs/events.jsonl    one line per open and per migration
+logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, artifacts)
 prompt.txt           a saved Claude job's copy prompt
@@ -100,8 +94,7 @@ BRIEF.md             the agent CLI's brief (`langslice job FOLDER brief`, `init`
                      the job statement and the opening pictures' paths
 ```
 
-**Lean job folders (2026-10-04).** `JobSpec.output_level` "lean" (the
-library's `create_job(output="lean")`; `docs/library.md`; left out of
+**Lean job folders.** `JobSpec.output_level` "lean" (the library's `create_job(output="lean")`; `docs/library.md`; left out of
 `job.json`'s spec when "full") keeps the results only. The `Job` honours it
 (`Job.lean`): its `views` is a `views.DiscardedViews` (no `views/`,
 `views.jsonl`, `views.seq`, nor `sections/<stem>/views/`), `_save_history`
@@ -112,9 +105,8 @@ doors write no reference card (`doors.jobs`). Everything else is written as in
 a full job: `job.json`, `state.json`, `registration.json`, the maps, the
 deformation records, the image-model trace attempts and `exports/`.
 
-**The public files (formats phase, 2026-10-04; `docs/file_formats.md` has
-every field).** `state.json` stays the one working source; `formats.py`
-renders it for scripts and other programs, in BrainGlobe micrometres (the
+**The public files (`docs/file_formats.md` has every field).**
+`state.json` stays the one working source; `formats.py` renders it for scripts and other programs, in BrainGlobe micrometres (the
 atlas's axis order, voxel `i`'s centre at `i * resolution`) and image-file
 pixels `[row, col]`, and never reads any of it back. `Job.checkpoint`
 rewrites `registration.json` atomically after the state
@@ -147,8 +139,8 @@ without resume, as `linear run --fresh`, and clears the mark. ABBA's
 Claude mode (`prepare_claude`) never resumes (`prepare_linear` sets
 `resume` False), so it is never refused.
 
-**Opening a job without writing (phase 5).** `Job.open` writes `job.json`
-and a first checkpoint. `Job.load(spec, workspace, folder=)` opens an
+**Opening a job without writing.** `Job.open` writes `job.json` and a
+first checkpoint. `Job.load(spec, workspace, folder=)` opens an
 existing folder as it stands (the checkpoint and its history; nothing
 rewritten, `FileNotFoundError` without a checkpoint, another image
 folder's job refused): the agent CLI and the library open a job per call
@@ -157,8 +149,7 @@ nothing until its first write. `Job.persist` False (`Job.load(...,
 persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
 checkpoint, no history, and `views.DiscardedViews` saves no picture.
 
-**One writer at a time, across processes (phase 5 follow-up).** Every
-write goes lock -> sync -> apply -> commit -> unlock: `Job.writing()` holds
+**One writer at a time, across processes.** Every write goes lock -> sync -> apply -> commit -> unlock: `Job.writing()` holds
 the folder's `lock.FolderLock` (`job.lock`, `filelock`: `fcntl` on Linux
 and macOS, `msvcrt` on Windows, released by the OS if a process dies;
 reentrant in its thread; `LOCK_TIMEOUT_S` 300 then `JobBusy`) and runs
@@ -180,9 +171,9 @@ paths). The trace identity in a deformation cache key is the stored
 to where the images are now). `job.json`'s `image_folder` is `".."`
 (`layout.IMAGES_ARE_PARENT`) for the default job folder, so the job folder
 moves or is renamed with its images; an explicit job folder stores the
-absolute path. `layout.held_image_folder` resolves it (a default folder
-written with an absolute path that no longer exists: its parent), the
-CLI and library (`doors.jobs.read_spec`) open the images there, and when
+absolute path; `registration.json` stores it the same way.
+`layout.held_image_folder` resolves it, the CLI and library
+(`doors.jobs.read_spec`) open the images there, and when
 they are gone say how to reattach (`langslice job NEW_IMAGES init
 --job-dir FOLDER`); `check_owner` lets an explicit folder whose images no
 longer exist be taken over by the images it is opened with.
@@ -203,58 +194,55 @@ longer exist be taken over by the images it is opened with.
   the only file rewritten per step, and step files it no longer names are
   deleted, so the folder holds at most `UNDO_DEPTH` (50) undo steps plus
   the redo side. A new step never takes the name of an existing file (a
-  second job on the same folder). Why per-step files: the phase-2
-  `linear_undo.json` rewrote every whole state on every call (megabytes per
-  call on a 40-section stack at depth 50). An unreadable or newer history
-  (index, any step, or step files without an index) starts the session
-  without undo and is never deleted: `History.problem` says why (logged,
-  and `Job.open` says it through the progress log), and `save` writes and
-  deletes nothing while it is set; a fresh job reads a history before
-  emptying it. Only a history that was read is pruned.
+  second job on the same folder). An unreadable or newer history (index,
+  any step, step files without an index, or a step of another state
+  format) starts the session without undo and is never deleted:
+  `History.problem` says why (logged, and `Job.open` says it through the
+  progress log), and `save` writes and deletes nothing while it is set; a
+  fresh job reads a history before emptying it. Only a history that was read is pruned.
 - `index.py` — saved host jobs by id: `~/.langslice/jobs/<id>.json`
   (`job_id`, `job_folder`, `host_channel`, `created_at`, and `fallback`
   when the job folder is under `~/.langslice/jobs/` because the image
   folder could not be written; owner-only). `folder_id` (an image folder's
-  stable id). The
-  channel token stays here, not in a folder that may be shared. `register`,
-  `lookup` (refuses a newer entry), `legacy_dir`.
-- `migrate.py` — opening an old layout upgrades it.
-  `migrate_beside_images(layout)` (called by `Job.open` and by a Claude
-  job's preparation): `linear_state.json`, `linear_undo.json`,
-  `linear_results.json`, `deformable/<file>/<key>/` and
-  `nonlinear/<file>/<key>/` beside the images move into the job folder
-  (state to `state.json` at the current format, history split per step, records and
-  calls into their section folders, results to `exports/`, every stored
-  path rewritten to its new relative place, including each moved call's
-  saved `result.json`). Skipped (logged) when the job folder already holds a
-  checkpoint. `migrate_saved_job(root, id)` (called by
-  `doors.api.claude_jobs.load_job`): a phase-2 saved job under
-  `~/.langslice/jobs/<id>/` moves into the job folder next to its images
-  (plus `prompt.txt` and `result.json` → `exports/`), its `job.json`
-  becomes the folder's (`host`), the index entry is written and the old
-  directory removed; refused when that job folder already holds a
-  checkpoint. A checkpoint from a newer LangSlice is refused before
-  anything moves. Each migration is a line in `logs/events.jsonl`.
-  Resumable (review fix 2026-10-04): a journal, `migration.json` in the job
-  folder, lists every planned move before anything moves and marks each one
-  done; the converted checkpoint, history and results are written while the
-  old files still exist, the old files go after, the journal last, and the
-  next open finishes an interrupted migration from it (a saved job's too).
-  A move across file systems copies under `.partial`, renames into place,
-  marks done, and only then removes the original. A target that already
-  exists without the mark is compared file by file (size and SHA-256): the
-  same, the original goes; different, both stay, the state keeps the
-  original's path and the event lists it under `conflicts`.
+  stable id). The channel token stays here, not in a folder that may be
+  shared. `register`, `lookup` (refuses a newer entry).
+- `checkpoint.py` — `state.json`: `write_checkpoint` (atomic, versioned,
+  `STATE_FORMAT_VERSION` 3), `read_checkpoint` / `load_checkpoint`,
+  `current_state` (refuses any other format: a newer LangSlice's asks for
+  an update, an older pre-release's for a new job, `--fresh` or
+  `resume=False`), `write_json_atomic` (every job file's writer),
+  `state_paths` and `relative_to` (a state's stored paths made relative to
+  the job folder).
+- `job.py` — `Job`: `open` (resume or ingest, then the first checkpoint;
+  the open event records `resumed`), `load` (as it stands, writing
+  nothing), `writing` / `sync` (above), `snapshot` / `commit`, `undo` /
+  `redo`, `checkpoint` (state, then `registration.json`, then the
+  observers: `observe(fn)` calls *fn* with the state after every
+  checkpoint and reload, the hosts' live views; one that raises is logged),
+  the image-correction jobs (`start_image_job`, `settle_image_corrections`,
+  `wait_image_job`, `missing_image_corrections`), `nonlinear_refusal`
+  (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
+  `ingest`, `apply_host_inputs` (the host's inputs, each section named
+  checked), `changed_inputs` / `refuse_changed_inputs` (above). The submit
+  gates, `submit_errors`, in order and only for the tasks that are on:
+  `MISSING_POSITIONS`, `ORDER_POSITION_MISMATCH`, `STRICT_INTERVAL` or
+  `INTERVAL_BREAKS_UNSUPPORTED`; `DAMAGED_REQUIRES_MANUAL_TRANSFORM` (a
+  damaged, unlocked section needs a non-identity transform made for its
+  surviving anatomy: `interactive`, a `fit_affine` fit whose record names
+  its `regions`, or a host-supplied one; a whole-section fit, an identity
+  or an invalid transform is refused, a host spline judged by the spline)
+  then `MISSING_TRANSFORMS`; `MISSING_DEFORMATIONS`. The sections the host
+  kept out of Nonlinear (`keep_warp`, `nonlinear_skip`:
+  `nonlinear_exempt_ids`) need no deformation and no image correction.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
   `applied_deformation`, `maps_status`, `write_registration`,
   `write_section_maps` (float maps as ImageJ hyperstacks, deflate without
   the floating-point predictor, which ImageJ 1.x cannot read;
   `FLOAT_COMPRESSION`), `write_labels` (the uint32 ids, the uint16 Fiji
-  index with the atlas colours as its lookup table, the csv),
-  `derived_files` (the CLI's artifacts after submit), `write_json`, the
-  file names (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`,
-  `VISUALIGN_FILE`).
+  index with the atlas colours of indexes 1-255 as its lookup table, the
+  csv), `derived_files` (the CLI's artifacts after submit), the file names
+  (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`, `VISUALIGN_FILE`).
 - `imports.py` — a linear registration made elsewhere, read (never
   written to the job): `read_registration` (QuickNII/VisuAlign/DeepSlice
   JSON, QuickNII/DeepSlice XML, DeepSlice CSV, a job's `registration.json`),
@@ -279,7 +267,7 @@ longer exist be taken over by the images it is opened with.
   VisuAlign markers) and the full `ImportResult`; `ValueError` when nothing
   is placed. The doors call it through `doors.jobs.with_registration`.
 - `views.py` — `ViewStore` (`Job.views`): every picture the model was
-  shown. The hook every door uses (phase 3d) is `ViewStore.shown(tool,
+  shown. The hook every door uses is `ViewStore.shown(tool,
   atlas_of=)`: a context manager that collects what `core.layers` notes
   while the door's operation runs; the door hands it the pictures it sends
   (`Shown.show(pictures, arguments=, call_id=)`) and the store queues each
@@ -302,13 +290,9 @@ longer exist be taken over by the images it is opened with.
   `path`, `tool`, `call`, `sections`, `mode`, `layers`). One background
   thread per store, ending when its queue is empty; `flush` (`ops.submit`,
   `Job.emit_results`, `Job.close`) and `flush_all` (interpreter exit) wait
-  for it. A failed write is logged and skipped. Measured (2026-10-03,
-  synthetic atlas): numbering and queueing 0.2-0.3 ms per call on the tool
-  thread; writing 14 ms (512 px) to 32 ms (1024 px) per placement picture
-  in the background; the 18 s golden recording and the test suite take as
-  long as before. A 1024 px placement picture: `view.jpg` ~40 KB,
-  `labels.tif` ~10 KB, `borders.png` ~1 KB, `view.json` ~2.5 KB (a real
-  atlas's labels compress less). `captured()` (phase 5) collects every
+  for it. A failed write is logged and skipped; only the numbering and
+  queueing run on the tool's thread. `DiscardedViews` saves nothing (a
+  dry run, a lean job). `captured()` collects every
   picture any store queues inside the block (`Saved`: its folder,
   whether it gets layers and a residual, its note's sections and mode, its
   index among the call's pictures; `files()` lists `view.jpg`,
@@ -319,6 +303,13 @@ longer exist be taken over by the images it is opened with.
   and last call numbers, under its own file lock `views.seq.lock`;
   `ViewStore._numbering`), so two stores that queue pictures before either
   writes never share one.
+- `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
+  placed sections, each anchoring from its exact pixel -> atlas map, so any
+  plane and cutting angle; `exports/quicknii.json` and `visualign.json`,
+  through `ops.exports`), the atlas micrometre <-> QuickNII voxel
+  conversions and their inverses (read by `imports.py`), the `.cutlas` target per
+  atlas (every Allen resolution exported to the 25 um target, its voxel
+  grid rescaled).
 
 The frame record and the on-demand coordinate map are the core's
 (`core/layers.py`, `core/CLAUDE.md`).
