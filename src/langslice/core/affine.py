@@ -82,6 +82,11 @@ class SilhouetteFit:
     sign_pattern: tuple[int, int]
 
 
+#: The identity's six normalized numbers (:func:`normalized_affine`): what a
+#: section without a transform is drawn and mapped with.
+IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+
+
 def pixel_center_map(
     source_size: tuple[int, int],
     target_size: tuple[int, int],

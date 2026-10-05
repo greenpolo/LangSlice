@@ -1,18 +1,16 @@
-"""Landmark-only regularized Elastix B-splines, independent of image registration.
+"""Reader of a stored landmark Elastix B-spline (``backend="elastix"``).
 
-The saved affine A maps original section coordinates into atlas coordinates.
-Elastix fits a residual pullback B from atlas landmarks to A(section landmarks).
-Resampling therefore uses A^-1(B(x)); forward points invert that same mapping.
-Only paired-point distances and bending energy drive the fit. Blank images
-define the physical domain, never an image-similarity objective.
+Read only: nothing writes these payloads any more; checkpoints that carry
+one still draw and export through it. The saved affine A maps original
+section coordinates into atlas coordinates, and the saved residual pullback
+B maps atlas landmarks to A(section landmarks). Resampling therefore uses
+A^-1(B(x)); forward points invert that same mapping.
 """
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping
 from functools import lru_cache
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 import numpy as np
@@ -52,12 +50,6 @@ def _bounds(value: ArrayLike | None) -> FloatArray:
             or np.any(result[1] <= result[0])):
         raise ValueError("domain_bounds_mm must contain [lower_xy, upper_xy]")
     return result
-
-
-def _corners(bounds: FloatArray) -> FloatArray:
-    lo, hi = bounds
-    return np.array([[lo[0], lo[1]], [hi[0], lo[1]],
-                     [lo[0], hi[1]], [hi[0], hi[1]]])
 
 
 def _check_landmarks(source: FloatArray, target: FloatArray) -> None:
@@ -255,88 +247,3 @@ def load_elastix(payload: Mapping[str, Any]) -> LandmarkElastix:
     except (TypeError, ValueError) as exc:
         raise ValueError("Elastix transform must contain finite JSON data") from exc
     return _load_cached(serialized)
-
-
-def fit_landmark_elastix(source_mm: ArrayLike, target_mm: ArrayLike,
-                         extent_mm: ArrayLike, affine_mm: ArrayLike,
-                         domain_bounds_mm: ArrayLike | None = None) -> dict[str, Any]:
-    """Fit a bounded, regularized residual from anatomical landmark pairs.
-
-    Bending weight scales with length cubed so changing coordinate units does
-    not change the tradeoff with mean Euclidean landmark error. Optimizer/grid
-    settings are host policy; the agent supplies only anatomical correspondences.
-    """
-    import itk
-
-    source, target = _points(source_mm), _points(target_mm)
-    _check_landmarks(source, target)
-    extent, affine = _extent(extent_mm), _affine(affine_mm)
-    aligned = source @ affine[:, :2].T + affine[:, 2]
-    original_corners = _corners(np.array([np.zeros(2), extent]))
-    aligned_corners = original_corners @ affine[:, :2].T + affine[:, 2]
-    coordinates = np.vstack((original_corners, aligned_corners, source, target, aligned))
-    if domain_bounds_mm is not None:
-        coordinates = np.vstack((coordinates, _bounds(domain_bounds_mm)))
-    lower, upper = coordinates.min(axis=0), coordinates.max(axis=0)
-    scale = float(np.max(upper - lower))
-    lower, upper = lower - scale * 0.15, upper + scale * 0.15
-    bounds = np.array([lower, upper])
-    image_spacing = scale / 96
-    shape = np.ceil((upper - lower) / image_spacing).astype(int) + 1
-    blank = itk.image_from_array(np.zeros((int(shape[1]), int(shape[0])), dtype=np.float32))
-    blank.SetOrigin(tuple(lower))
-    blank.SetSpacing((image_spacing, image_spacing))
-    # ITK loads these wrapped extension classes dynamically.
-    runtime: Any = itk
-    parameter_object = runtime.ParameterObject.New()
-    parameters = parameter_object.GetDefaultParameterMap("bspline", 1, scale / 4)
-    parameters.update({
-        "Registration": ["MultiMetricMultiResolutionRegistration"],
-        "Metric": ["TransformBendingEnergyPenalty", "CorrespondingPointsEuclideanDistanceMetric"],
-        "Metric0Weight": [str(0.05 * scale**3)],
-        "Metric1Weight": ["1"], "UseRelativeWeights": ["false"],
-        "Optimizer": ["AdaptiveStochasticGradientDescent"],
-        "MaximumNumberOfIterations": ["160"],
-        "ImageSampler": ["Full"], "NewSamplesEveryIteration": ["false"],
-        "WriteResultImage": ["false"], "UseDirectionCosines": ["true"],
-        "PassiveEdgeWidth": ["1"],
-    })
-    if np.allclose(aligned, target, rtol=0, atol=1e-12):
-        # Avoid estimating optimizer gains from an exactly zero residual.
-        parameters["MaximumNumberOfIterations"] = ["0"]
-    parameter_object.AddParameterMap(parameters)
-    with TemporaryDirectory(prefix="langslice-landmark-elastix-") as directory:
-        root = Path(directory)
-        for name, points in (("fixed", target), ("moving", aligned)):
-            rows = "\n".join(" ".join(format(float(v), ".17g") for v in row) for row in points)
-            (root / f"{name}.txt").write_text(f"point\n{len(points)}\n{rows}\n")
-        registration = runtime.ElastixRegistrationMethod.New(blank, blank)
-        registration.SetParameterObject(parameter_object)
-        registration.SetFixedPointSetFileName(str(root / "fixed.txt"))
-        registration.SetMovingPointSetFileName(str(root / "moving.txt"))
-        registration.SetOutputDirectory(directory)
-        registration.SetLogToConsole(False)
-        registration.SetNumberOfThreads(1)
-        try:
-            registration.UpdateLargestPossibleRegion()
-        except RuntimeError as exc:
-            raise ValueError("Elastix could not fit the anatomical landmarks") from exc
-        result = registration.GetTransformParameterObject().GetParameterMap(0)
-        saved = {str(key): [str(value) for value in values] for key, values in result.items()}
-    saved["InitialTransformParameterFileName"] = ["NoInitialTransform"]
-    payload: dict[str, Any] = {
-        "backend": "elastix", "source": (source / extent).tolist(),
-        "target": (target / extent).tolist(), "extent_mm": extent.tolist(),
-        "affine_mm": affine.tolist(), "domain_mm": bounds.tolist(),
-        "parameter_maps": [saved],
-    }
-    transform = load_elastix(payload)
-    residuals = np.linalg.norm(transform.forward(source) - target, axis=1)
-    before = np.linalg.norm(aligned - target, axis=1)
-    payload["diagnostics"] = {
-        **transform.validate_domain(extent),
-        "affine_landmark_rms_mm": float(np.sqrt(np.mean(before**2))),
-        "landmark_rms_mm": float(np.sqrt(np.mean(residuals**2))),
-        "landmark_max_error_mm": float(np.max(residuals)),
-    }
-    return payload
