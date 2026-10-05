@@ -1,7 +1,8 @@
 """Background runs of the agent CLI: ``--background``, ``runs [ID]``, ``wait [ID]``.
 
-A long verb (``fit_deformable``, ``trace_borders``) answers at once with a
-run id when given ``--background``: the same command is started again as a
+A long verb (``Verb.long`` in :mod:`langslice.ops.registry`: the fits, the
+traces, ``export_maps``) answers at once with a run id when given
+``--background``: the same command is started again as a
 detached process (:data:`CHILD_COMMAND`) that runs the verb and saves its
 envelope. Each run is one record, ``logs/runs/<id>.json`` in the job folder
 (``id``, ``verb``, ``arguments``, ``state`` running/finished/lost,

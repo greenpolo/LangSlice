@@ -17,7 +17,7 @@ validates against the schema (FastMCP) sees it.
 toolbox's own wrapper (``toolbox.build_tools``: direct calls and nested
 keys), the ADK plugin (``agent.plugins.StrictArgumentsPlugin``: ADK drops
 unknown top-level arguments before a tool runs, so it is checked before
-that) and the MCP server (``mcp_server.server``: FastMCP drops them too). An
+that) and the MCP server (``doors.mcp.server``: FastMCP drops them too). An
 unknown or misplaced key is refused with the key named and the accepted keys
 listed; nothing is silently dropped.
 """
