@@ -5,7 +5,7 @@ loaded)::
 
     import langslice
 
-    job = langslice.open_job("/data/M04")      # a job folder, or its images
+    job = langslice.open_job("/data/brain1")   # a job folder, or its images
     job.status()                                # the verbs, as methods
     xyz = langslice.coordinate_map(".../view.json")   # atlas µm per pixel
     atlas = langslice.load_atlas("allen_mouse_25um")  # a BrainGlobe atlas
@@ -13,7 +13,7 @@ loaded)::
     # A scripted pipeline: the image model's nonlinear registration, no agent.
     model = langslice.image_model("openai-oauth")     # or a profile of your own
     result = langslice.register_section("s01.tif", position_mm=6.2, image_model=model)
-    job = langslice.create_job("/data/M04", positions=..., image_model=model)
+    job = langslice.create_job("/data/brain1", positions=..., image_model=model)
     result = langslice.register_job(job)
 
 - :func:`open_job`, :func:`create_job` (:mod:`langslice.doors.library`): the
@@ -84,14 +84,12 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module 'langslice' has no attribute {name!r}")
 
 
-# Tool-calling Gemini models (especially Flash) routinely return responses
-# whose only part is a `function_call` — when google-genai's response.text
-# property is accessed under those conditions, it emits a noisy WARNING via
-# the `google_genai.types` logger. Our agent loop reads function calls via
-# `event.get_function_calls()` directly so the warning is pure noise, but
-# it leaks all the way out to the Tauri agent panel and looks like an
-# error. Silence just that specific message; other google_genai warnings
-# stay visible.
+# A response whose only part is a function call makes google-genai's
+# response.text log a WARNING ("non-text parts in the response") through the
+# `google_genai.types` logger. The agent loop reads function calls directly
+# (`event.get_function_calls()`), so the warning is noise that reads like an
+# error in the run's log. Silence that one message; other google_genai
+# warnings stay visible.
 import logging as _logging  # noqa: E402
 
 

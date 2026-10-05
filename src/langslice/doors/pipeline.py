@@ -32,9 +32,14 @@ from typing import Any
 
 from langslice.doors.library import JobHandle, create_job
 
-#: The fit ``register_job`` applies, over a trace (the measured default of
-#: the fit after the image model: the traced lines against the atlas borders,
-#: Elastix, medium stiffness; ``core/nonlinear/border_fit.py``) and without one.
+#: The fit ``register_job`` applies, over a trace and without one. Over a
+#: trace: the traced lines against the atlas borders with Elastix at medium
+#: stiffness, the default of the fit after the image model
+#: (``core/nonlinear/border_fit.py``): Elastix is a core dependency, so a
+#: script's result does not depend on the optional ANTs install, and it
+#: follows the traced lines closest when the placement is far off. The
+#: agent's ``fit_deformable`` recommends ANTs with ``traced_borders`` instead,
+#: for a small correction of a placement it has already made good.
 TRACED_FIT: dict[str, Any] = {"fit_section": "traced_lines", "engine": "elastix",
                               "stiffness": "medium"}
 STAIN_FIT: dict[str, Any] = {"fit_section": "fit", "engine": "elastix", "stiffness": "medium"}

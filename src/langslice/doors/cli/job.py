@@ -1,6 +1,6 @@
 """``langslice job FOLDER VERB [arguments]``: one verb on a job folder, for agents.
 
-The agent CLI (phase 5): every verb of :data:`langslice.ops.registry.VERBS`
+The agent CLI: every verb of :data:`langslice.ops.registry.VERBS`
 under the tool's own name (kebab-case accepted: ``set-positions``), plus
 ``init`` (create the job for a folder of images), ``brief`` (the job
 statement and the opening pictures, :mod:`langslice.doors.cli.brief`),
@@ -14,7 +14,8 @@ argument, ``--name value`` (kebab or snake case; a JSON value, or plain text
 for a text argument; a list argument takes the flag again for each item).
 Options: ``--dry-run`` (a write verb runs on the job without writing
 anything and reports what would change; ``fit_deformable`` and
-``trace_borders`` are only checked, not run), ``--background`` (answer at
+``trace_borders`` are only checked, not run; not with ``--background``),
+``--background`` (answer at
 once with a run id), ``--verbose`` (the whole reply: whole-stack rows, the
 descriptions written for a model), ``--timeout SECONDS`` (``wait``).
 

@@ -1,9 +1,8 @@
 """The ADK session: one agent, its tools, and the loop that drives it.
 
-Generic on purpose — the main stack session and the per-section alignment
-sub-session are the same loop with different tools, prompts and turn budgets.
-Tools mutate the stack state as they are called, so a pass that never submits
-still leaves its writes behind.
+Tools mutate the stack state as they are called, so a session that never
+submits still leaves its writes behind; a post-submit debrief, when asked
+for, runs on the same loop.
 
 With ``LANGSLICE_TRACE_DIR`` set, everything the agent is shown, says, calls
 and gets back is appended to a JSONL trace (:mod:`langslice.agent.trace`).
@@ -118,9 +117,8 @@ def build_agent(
     )
 
 
-#: What a cached input token costs relative to an uncached one. Measured on
-#: the OAuth lane's quota headers (run 5, 2026-09-09: 96%/M uncached,
-#: 13%/M cached, fit error half a point); OpenAI's published API rate is 0.1x.
+#: What a cached input token costs relative to an uncached one, measured on
+#: the OAuth lane's quota headers; OpenAI's published API rate is 0.1x.
 CACHED_TOKEN_WEIGHT = 0.13
 
 
@@ -144,9 +142,9 @@ def _int_or_none(value: Any) -> int | None:
 class TokenTally:
     """Summed token usage over one session, one line per model call.
 
-    ``paid`` is a legacy input-only proxy: uncached input plus cached input
-    at :data:`CACHED_TOKEN_WEIGHT`. It excludes output and is not the standard
-    all-token API-equivalent benchmark cost. ``input`` remains cumulative;
+    ``paid`` is an input-only proxy: uncached input plus cached input at
+    :data:`CACHED_TOKEN_WEIGHT`. It excludes output and is not an all-token
+    API-equivalent cost. ``input`` remains cumulative;
     ``latest_input`` and ``peak_input`` measure individual request context.
     """
 
@@ -252,8 +250,8 @@ async def run_agent_session(
     tokens = TokenTally()
     quota_start: int | None = None
     stopped: str | None = None
-    # A budget stop gets ONE more call, to submit: run 8 (2026-09-09) ended
-    # on `validate` at 26% of the window with a 500-token `submit` next.
+    # A budget stop gets ONE more call, to submit: a run stopped one call
+    # short of its submit loses all its work for a few hundred tokens.
     grace_left = 1
     while turns < max_iterations and not done() and (stopped is None or grace_left):
         turns += 1
@@ -338,8 +336,7 @@ async def run_agent_session(
                 if stopped is not None and (event.get_function_responses() or not calls):
                     # ADK runs the WHOLE tool loop inside one run_async: a model
                     # that never stops calling tools never ends the turn on its
-                    # own (Gemini 3.8 Flash ran 30 calls past the budget,
-                    # 2026-09-09). Leave once the budget-tripping call is answered.
+                    # own. Leave once the budget-tripping call is answered.
                     break
         if done():
             break
