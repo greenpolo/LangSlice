@@ -6,5 +6,5 @@ import org.scijava.plugin.*;
 @Plugin(type = Command.class, name = LangSliceService.REGISTRATION)
 public final class RegistrationCommand implements Command {
     @Parameter private MultiSlicePositioner mp;
-    @Override public void run() { SwingUtilities.invokeLater(() -> SetupDialog.ensureConfigured(mp, () -> AgentRunner.show(mp, EnvironmentDiscovery.saved()))); }
+    @Override public void run() { SwingUtilities.invokeLater(() -> SetupDialog.ensureConfigured(() -> AgentRunner.show(mp, EnvironmentDiscovery.current()))); }
 }

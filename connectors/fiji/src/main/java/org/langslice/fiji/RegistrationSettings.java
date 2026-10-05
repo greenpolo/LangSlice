@@ -6,13 +6,10 @@ import java.util.prefs.Preferences;
 
 /** Every dialog choice as plain data: persisted between runs and turned into the worker's job spec. */
 final class RegistrationSettings {
+    /** The ChatGPT account that runs the agent in ChatGPT mode (providers/registry.py). */
     static final String PROVIDER = "openai-oauth";
-    static final String DEFAULT_MODEL = "openai-oauth/gpt-5.6-sol";
-    static final String DEFAULT_IMAGE_MODEL = "gpt-image-2";
     /** The image-model provider that runs Nonlinear without an image model: deformations fit the stain alone. */
     static final String NO_IMAGE_MODEL = "none";
-    static final List<String> FALLBACK_MODELS = Arrays.asList("openai-oauth/gpt-6-astra", "openai-oauth/gpt-6-sol",
-            "openai-oauth/gpt-6-luna", "openai-oauth/gpt-5.6-sol", "openai-oauth/gpt-5.6-terra", "openai-oauth/gpt-5.6-luna");
     static final String[] REASONING = {"default", "low", "medium", "high", "xhigh", "max"};
     static final String[] LEVELS = {"low", "medium", "high"};
     static final String[] RESOLUTIONS = {"low", "medium", "high", "auto"};
@@ -21,9 +18,10 @@ final class RegistrationSettings {
     static final Preferences PREFS = Preferences.userNodeForPackage(RegistrationSettings.class).node("registration");
 
     boolean claude = false;
-    String model = DEFAULT_MODEL, reasoning = "default", resolution = "low";
+    /** The agent model; empty until the dialog fills in the worker's default. */
+    String model = "", reasoning = "default", resolution = "low";
     /** The image model: its provider (canonical name, or "none") and model (null: the provider's default). */
-    String imageProvider = PROVIDER, imageModel = DEFAULT_IMAGE_MODEL;
+    String imageProvider = PROVIDER, imageModel = null;
     boolean showLog = true, viewer = false, positioning = true, flip = true, linear = true, affine = true, angles = false;
     boolean nonlinear = false, overwrite = false, agentDamage = true, custom = false, clahe = true, saveTraces = false;
     boolean agentPreprocessing = false;
@@ -174,78 +172,40 @@ final class RegistrationSettings {
     /** One entry of the image-model list: a provider and a model (null = the provider's default). */
     static final class ImageChoice {
         final String provider, model, label;
-        final boolean configured;
-        ImageChoice(String provider, String model, String label, boolean configured) {
-            this.provider = provider; this.model = model; this.label = label; this.configured = configured;
+        final boolean connected;
+        ImageChoice(String provider, String model, String label, boolean connected) {
+            this.provider = provider; this.model = model; this.label = label; this.connected = connected;
         }
         boolean matches(String provider, String model) {
             return this.provider.equals(provider) && Objects.equals(this.model == null ? "" : this.model, model == null ? "" : model);
         }
-        @Override public String toString() { return label + (configured ? "" : " (not set up)"); }
+        @Override public String toString() { return label + (connected ? "" : " (not set up)"); }
     }
 
     static final String NONE_LABEL = "None (fit to the stain only)";
-    private static final Map<String, String> PROVIDER_LABELS = new LinkedHashMap<>();
-    static {
-        PROVIDER_LABELS.put("openai-oauth", "ChatGPT");
-        PROVIDER_LABELS.put("gemini-api", "Gemini API");
-        PROVIDER_LABELS.put("openai-api", "OpenAI API");
-    }
 
     /**
-     * The image-model list, in the worker's order: its top-level "image_models" list from setup.status
-     * ({provider, label, connected, models, default_model}; "image_providers" is read the same way), else each
-     * provider entry's "image_models" from the older "providers" block, else (older workers) ChatGPT's image model.
-     * The "none" provider is always offered, as "None (fit to the stain only)", last unless the worker places it.
+     * The image-model list, in the worker's order: setup.status's "image_models" ({provider, label, connected,
+     * models, default_model}), one choice per model; the "none" provider reads "None (fit to the stain only)".
      */
     static List<ImageChoice> imageChoices(JsonObject status) {
         List<ImageChoice> choices = new ArrayList<>();
-        boolean none = false;
-        JsonArray listed = null;
-        for (String key : new String[]{"image_models", "image_providers"})
-            if (listed == null && status != null && status.has(key) && status.get(key).isJsonArray()) listed = status.getAsJsonArray(key);
-        if (listed != null) {
-            for (JsonElement item : listed) {
-                if (!item.isJsonObject()) continue;
-                JsonObject entry = item.getAsJsonObject();
-                String provider = text(entry, "provider", text(entry, "name", null));
-                if (provider == null) continue;
-                if (provider.equals(NO_IMAGE_MODEL)) { if (!none) choices.add(new ImageChoice(NO_IMAGE_MODEL, null, NONE_LABEL, true)); none = true; continue; }
-                String label = text(entry, "label", PROVIDER_LABELS.getOrDefault(provider, provider));
-                boolean configured = flag(entry, "connected", flag(entry, "configured", true));
-                List<String> models = list(entry, "models");
-                if (models.isEmpty()) models = list(entry, "image_models");
-                addModels(choices, provider, label, configured, models,
-                        text(entry, "default_model", text(entry, "default_image_model", null)));
-            }
-        } else if (status != null && status.has("providers") && status.get("providers").isJsonObject()) {
-            JsonObject providers = status.getAsJsonObject("providers");
-            List<String> order = new ArrayList<>(PROVIDER_LABELS.keySet());
-            for (String key : providers.keySet()) if (!order.contains(key)) order.add(key);
-            for (String provider : order) {
-                if (provider.equals(NO_IMAGE_MODEL) || !providers.has(provider) || !providers.get(provider).isJsonObject()) continue;
-                JsonObject entry = providers.getAsJsonObject(provider);
-                List<String> models = list(entry, "image_models");
-                if (models.isEmpty() && !PROVIDER_LABELS.containsKey(provider)) continue;
-                addModels(choices, provider, PROVIDER_LABELS.getOrDefault(provider, provider), flag(entry, "configured", false), models,
-                        text(entry, "default_image_model", null));
-            }
+        if (status == null || !status.has("image_models") || !status.get("image_models").isJsonArray()) return choices;
+        for (JsonElement item : status.getAsJsonArray("image_models")) {
+            if (!item.isJsonObject()) continue;
+            JsonObject entry = item.getAsJsonObject();
+            String provider = text(entry, "provider", null);
+            if (provider == null) continue;
+            if (provider.equals(NO_IMAGE_MODEL)) { choices.add(new ImageChoice(NO_IMAGE_MODEL, null, NONE_LABEL, true)); continue; }
+            String label = text(entry, "label", provider);
+            boolean connected = entry.has("connected") && entry.get("connected").isJsonPrimitive() && entry.get("connected").getAsBoolean();
+            List<String> models = list(entry, "models");
+            String fallback = text(entry, "default_model", null);
+            if (models.isEmpty() && fallback != null) models = Collections.singletonList(fallback);
+            if (models.isEmpty()) choices.add(new ImageChoice(provider, null, label + ": default image model", connected));
+            for (String model : models) choices.add(new ImageChoice(provider, model, label + ": " + model, connected));
         }
-        if (choices.stream().noneMatch(choice -> !choice.provider.equals(NO_IMAGE_MODEL)))
-            choices.add(0, new ImageChoice(PROVIDER, DEFAULT_IMAGE_MODEL, "ChatGPT: " + DEFAULT_IMAGE_MODEL, true));
-        if (!none) choices.add(new ImageChoice(NO_IMAGE_MODEL, null, NONE_LABEL, true));
         return choices;
-    }
-
-    private static boolean flag(JsonObject entry, String key, boolean fallback) {
-        return entry.has(key) && entry.get(key).isJsonPrimitive() ? entry.get(key).getAsBoolean() : fallback;
-    }
-
-    private static void addModels(List<ImageChoice> choices, String provider, String label, boolean configured,
-            List<String> models, String fallback) {
-        if (models.isEmpty() && fallback != null) models = Collections.singletonList(fallback);
-        if (models.isEmpty()) choices.add(new ImageChoice(provider, null, label + ": default image model", configured));
-        for (String model : models) choices.add(new ImageChoice(provider, model, label + ": " + model, configured));
     }
 
     private static String text(JsonObject entry, String key, String fallback) {
@@ -259,18 +219,16 @@ final class RegistrationSettings {
         return values;
     }
 
-    /** Model lists from setup.status, or the connector's own list for older workers. */
-    static List<String> models(JsonObject status, String key, List<String> fallback) {
+    /** The ChatGPT account's agent models from setup.status (providers.openai-oauth.agent_models). */
+    static List<String> agentModels(JsonObject status) {
         JsonObject account = account(status);
-        List<String> values = new ArrayList<>();
-        if (account != null && account.has(key) && account.get(key).isJsonArray())
-            for (JsonElement item : account.getAsJsonArray(key)) values.add(item.getAsString());
-        return values.isEmpty() ? new ArrayList<>(fallback) : values;
+        return account == null ? new ArrayList<>() : list(account, "agent_models");
     }
 
-    static String defaultValue(JsonObject status, String key, String fallback) {
+    /** One of the ChatGPT account's defaults (default_agent_model, default_image_model), or null. */
+    static String accountDefault(JsonObject status, String key) {
         JsonObject account = account(status);
-        return account != null && account.has(key) && account.get(key).isJsonPrimitive() ? account.get(key).getAsString() : fallback;
+        return account == null ? null : text(account, key, null);
     }
 
     static boolean signedIn(JsonObject status) {

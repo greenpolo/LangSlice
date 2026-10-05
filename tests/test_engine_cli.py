@@ -41,15 +41,13 @@ def test_serve_requires_stdio() -> None:
         main(["serve"])
 
 
-def test_abba_takes_no_linear_job_options_any_more() -> None:
-    """`langslice abba` only starts ABBA with the connector: the fresh-import
-    `--linear` run and `--save-state` were removed (2026-10-04)."""
+def test_abba_only_starts_abba_with_the_connector() -> None:
+    """`langslice abba` takes the connector jar and the viewer/log switches only."""
     parser = build_parser()
     args = parser.parse_args(["abba", "--no-log"])
     assert args.no_log and not args.no_viewer and args.connector_jar is None
-    for removed in (["--linear", "/stack"], ["--save-state", "/out.abba"]):
-        with pytest.raises(SystemExit):
-            parser.parse_args(["abba", *removed])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["abba", "--linear", "/stack"])
 
 
 def test_run_abba_starts_abba_with_the_connector_jar(monkeypatch, tmp_path) -> None:
@@ -63,7 +61,7 @@ def test_run_abba_starts_abba_with_the_connector_jar(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(abba_launch, "run_abba_session", lambda **kw: calls.update(kw))
     run_abba(build_parser().parse_args(["abba", "--connector-jar", str(jar), "--no-viewer"]))
     assert calls == {"abba_atlas": "Adult Mouse Brain - Allen Brain Atlas V3p1",
-                     "jar": str(jar.resolve()), "viewer": False, "log": True}
+                     "jar": jar.resolve(), "viewer": False, "log": True}
 
 
 def test_run_abba_without_a_connector_jar_says_how_to_get_one(monkeypatch, tmp_path) -> None:

@@ -1,7 +1,4 @@
-"""Deprecated shim: moved to :mod:`langslice.doors.tools`.
-
-Kept for LangSlice-Training (layered folder move, 2026-10-04).
-"""
+"""Compatibility shim for sibling repos; use :mod:`langslice.doors.tools`."""
 
 from langslice.doors.tools import (
     MEDIA_LAYOUT_ATTR as MEDIA_LAYOUT_ATTR,

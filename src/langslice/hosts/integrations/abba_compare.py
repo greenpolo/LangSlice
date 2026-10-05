@@ -66,7 +66,7 @@ def copy_native_source(j: Any, source: Any, display: Any = None) -> Any:
     # The outer transform and converter belong exclusively to this panel.
     # Even BDV keyboard transforms and brightness controls cannot edit
     # ABBA's registered transform or converter.
-    helper = j("sc.fiji.bdvpg.sourceandconverter.SourceAndConverterHelper")
+    helper = j("sc.fiji.bdvpg.source.SourceHelper")
     local_source = j("bdv.tools.transformation.TransformedSource")(source.getSpimSource())
     copied = helper.createSourceAndConverter(local_source)
     settings = j("spimdata.util.Displaysettings")

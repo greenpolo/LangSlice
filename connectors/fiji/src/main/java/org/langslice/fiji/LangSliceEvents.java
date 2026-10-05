@@ -1,6 +1,5 @@
 package org.langslice.fiji;
 
-import ch.epfl.biop.atlas.aligner.MultiSlicePositioner;
 import ch.epfl.biop.atlas.aligner.SliceSources;
 import com.google.gson.JsonObject;
 
@@ -15,7 +14,7 @@ import java.util.function.Consumer;
  * <p>Each message is one JSON object (as text) with a {@code kind}. The worker's own messages are passed on
  * verbatim, in both modes: {@code agent_event} ({@code event}: the agent's tool_start / tool_end / seed ...),
  * {@code checkpoint} (host_updates, host_angles, updates_since_start, state) and {@code log} (message). The
- * connector adds {@code run_started} (mode "chatgpt" or "claude", viewer: the user ticked "Open agent viewer",
+ * connector adds {@code run_started} (mode "openai-oauth" or "claude", viewer: the user ticked "Open agent viewer",
  * image_folder, sections: snapshot filename to ABBA slice name), {@code job} (Claude mode: job_id, job_dir),
  * {@code applied} (what reached ABBA: applied ids, failed id to reason, angles) and {@code run_finished}
  * (message, and job_dir when known). Delivery runs on one background thread, in order; a failing listener is
@@ -29,7 +28,6 @@ public final class LangSliceEvents {
         return thread;
     });
     private static volatile Map<String, SliceSources> slices = Collections.emptyMap();
-    private static volatile MultiSlicePositioner session;
 
     private LangSliceEvents() { }
 
@@ -44,11 +42,7 @@ public final class LangSliceEvents {
     /** The current (or last) run's snapshot filename to ABBA slice, in snapshot order. */
     public static Map<String, SliceSources> slices() { return slices; }
 
-    /** The ABBA session of the current (or last) run, or null before any run. */
-    public static MultiSlicePositioner session() { return session; }
-
-    static void runStarted(MultiSlicePositioner mp, Map<String, SliceSources> sections, JsonObject message) {
-        session = mp;
+    static void runStarted(Map<String, SliceSources> sections, JsonObject message) {
         slices = Collections.unmodifiableMap(new LinkedHashMap<>(sections));
         JsonObject names = new JsonObject();
         sections.forEach((file, slice) -> names.addProperty(file, slice.getName()));
