@@ -76,7 +76,7 @@ never written, only mime type, byte count and size; no credentials are read.
 - **MCP / Claude**: [connectors/claude-desktop/README.md](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-desktop/README.md).
   `langslice claude prepare FOLDER` takes the same job flags as `linear run`.
 - **ABBA**: [abba_installation.md](abba_installation.md). `langslice abba` needs
-  `pip install -e ".[abba]"`, Java 21 and the connector jar (`--connector-jar`
+  Java 21 (fetched on first start) and the connector jar (`--connector-jar`
   or `$LANGSLICE_CONNECTOR_JAR`); `--no-viewer` / `--no-log` turn off the companions.
 - **`langslice login`** runs the ChatGPT OAuth (PKCE) flow in a browser
   (callback on `localhost:1455`) and writes `~/.langslice/openai_auth.json`

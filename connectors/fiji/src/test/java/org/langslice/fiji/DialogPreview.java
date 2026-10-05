@@ -63,7 +63,7 @@ public final class DialogPreview {
             window[0].line("Preparing calibrated snapshots in /tmp/langslice-abba-123");
             window[0].fragment("\nWorking: place slices\nThe first slices look like olfactory bulb; moving them anterior.\n");
             window[0].finish("Stopped. The changes the agent saved before that are in ABBA; each saved step is one ABBA Undo."
-                    + " Some changes are not in ABBA: section_0004.tif (M03_B_04.vsi - 10x_01): its registrations were changed in ABBA during the run."
+                    + " Some changes are not in ABBA: section_0004.tif (brain_04.vsi - 10x_01): its registrations were changed in ABBA during the run."
                     + " Use Retry failed updates to try again.");
             window[0].offerRetry(() -> { });
             Thread.sleep(400);

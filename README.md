@@ -40,7 +40,8 @@ langslice login        # ChatGPT sign-in; or set OPENAI_API_KEY / GEMINI_API_KEY
 ```
 
 Atlases are downloaded by BrainGlobe on first use into `~/.brainglobe/`.
-Python 3.10 or newer; `pip install ".[registration]"` adds the ANTs deformable engine.
+Python 3.10 or newer. The environment includes the ANTs deformable engine, the
+Claude Desktop server and the ABBA launcher.
 
 ## Ways to use it
 
