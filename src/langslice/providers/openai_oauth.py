@@ -2,17 +2,16 @@
 
 NOT the OpenAI API: this transport talks to ``chatgpt.com/backend-api/codex``
 — the private backend behind the ChatGPT app and Codex CLI — with its own
-wire format and behaviors (e.g. its image tool ignores ``size`` and matches
-the input image's aspect ratio; probed 2026-08-25).
+wire format and behaviors (e.g. its image endpoint ignores ``size`` and
+matches the input image's aspect ratio).
 
 One user's ChatGPT Plus/Pro login powers both of LangSlice's model needs with
 no API key:
 
-* chat/vision/tool-use through :class:`ChatGptLlm`, a native ``google-adk``
-  model backend registered for ``openai-oauth/*`` (and legacy ``chatgpt/*``) model strings;
-* image generation (``gpt-image-2``) through :func:`edit_image`, used by
-  the nonlinear registration provider (the router session drives the hosted
-  ``image_generation`` tool through the Responses body directly).
+* chat/vision/tool-use through :class:`OpenAIOAuthLlm`, a native ``google-adk``
+  model backend registered for ``openai-oauth/*`` model strings;
+* image edits (``gpt-image-2``) through :func:`edit_image`, the Codex
+  ``images/edits`` endpoint, used by the image-model trace.
 
 Credentials come only from LangSlice's own file, ``~/.langslice/openai_auth.json``
 (written by :func:`login`); the Codex CLI's login is never read, so its account
@@ -47,7 +46,6 @@ import http.server
 import itertools
 import json
 import logging
-import os
 import secrets
 import threading
 import time
@@ -72,6 +70,7 @@ from langslice.core.media_keys import MEDIA_LAYOUT_ATTR
 from langslice.providers.registry import (
     OPENAI_OAUTH_DEFAULT_AGENT_MODEL,
     OPENAI_OAUTH_DEFAULT_IMAGE_MODEL,
+    openai_oauth_credentials_path,
 )
 from langslice.providers.usage import item_descriptor, request_descriptor, usage_diagnostics
 
@@ -85,26 +84,13 @@ RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 IMAGES_EDITS_URL = "https://chatgpt.com/backend-api/codex/images/edits"
 ORIGINATOR = "langslice"
 MODEL_PREFIX = "openai-oauth/"
-LEGACY_MODEL_PREFIX = "chatgpt/"  # accepted alias; older configs and docs use it
 REFRESH_SKEW_S = 5 * 60  # refresh when the access token expires within 5 min
 
-#: Where ``langslice login`` stores its token (mode 600).
-#: ``LANGSLICE_OPENAI_AUTH`` names another file for one process (a second
-#: account).
-_AUTH_OVERRIDE = os.environ.get("LANGSLICE_OPENAI_AUTH")
-CREDENTIALS_PATH = (
-    Path(_AUTH_OVERRIDE).expanduser()
-    if _AUTH_OVERRIDE
-    else Path.home() / ".langslice" / "openai_auth.json"
-)
-
-#: Routing model for image generation; the image itself is always rendered by
-#: ``gpt-image-2`` server-side.
+#: The image model :func:`edit_image` calls when none is named.
 DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
 
-#: Default review/mainline model for openai-oauth registration paths.
+#: The default agent model on this lane.
 DEFAULT_REVIEW_MODEL = OPENAI_OAUTH_DEFAULT_AGENT_MODEL
-MAX_REFERENCE_IMAGES = 8
 
 # OAuth callback (the Codex client_id only whitelists this redirect).
 _REDIRECT_URI = "http://localhost:1455/auth/callback"
@@ -151,12 +137,6 @@ def account_id_from_id_token(id_token: str | None) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def plan_from_id_token(id_token: str | None) -> str | None:
-    """Return the subscription plan claim from an id_token, if present."""
-    value = _auth_claims(id_token).get("chatgpt_plan_type")
-    return value if isinstance(value, str) else None
-
-
 def _token_expiry(access_token: str) -> float | None:
     try:
         return float(_decode_jwt_payload(access_token)["exp"])
@@ -186,9 +166,10 @@ def creds_from_doc(doc: dict[str, Any], source: str) -> Creds:
 
 
 def _write_creds(creds: Creds) -> None:
-    """Persist tokens to :data:`CREDENTIALS_PATH` with owner-only permissions."""
-    CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CREDENTIALS_PATH.write_text(
+    """Persist tokens to LangSlice's login file with owner-only permissions."""
+    path = openai_oauth_credentials_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         json.dumps(
             {
                 "tokens": {
@@ -202,7 +183,7 @@ def _write_creds(creds: Creds) -> None:
             indent=2,
         )
     )
-    CREDENTIALS_PATH.chmod(0o600)
+    path.chmod(0o600)
 
 
 def refresh(creds: Creds) -> Creds:
@@ -230,7 +211,7 @@ def refresh(creds: Creds) -> Creds:
         raw=creds.raw,
     )
     # Persist only to our own file; never rewrite the Codex CLI's auth.json.
-    if creds.source == str(CREDENTIALS_PATH):
+    if creds.source == str(openai_oauth_credentials_path()):
         _write_creds(new)
     return new
 
@@ -238,16 +219,16 @@ def refresh(creds: Creds) -> Creds:
 def load_credentials() -> Creds:
     """Load subscription credentials, refreshing when near expiry.
 
-    Reads only :data:`CREDENTIALS_PATH`.
+    Reads only LangSlice's login file
+    (:func:`~langslice.providers.registry.openai_oauth_credentials_path`).
     """
+    path = openai_oauth_credentials_path()
     try:
-        creds = creds_from_doc(
-            json.loads(CREDENTIALS_PATH.read_text()), source=str(CREDENTIALS_PATH)
-        )
+        creds = creds_from_doc(json.loads(path.read_text()), source=str(path))
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             "No ChatGPT-subscription credentials found. Run `langslice login` "
-            f"(writes {CREDENTIALS_PATH}), then retry."
+            f"(writes {path}), then retry."
         ) from exc
 
     expiry = _token_expiry(creds.access_token)
@@ -275,24 +256,6 @@ def _headers(creds: Creds, session_id: str) -> dict[str, str]:
 def data_uri(payload: bytes, mime: str = "image/png") -> str:
     """Return a ``data:`` URI for raw image bytes."""
     return f"data:{mime};base64,{base64.b64encode(payload).decode()}"
-
-
-def image_data_uri(path: str | Path, mime: str = "image/png") -> str:
-    """Return a ``data:`` URI for an image file on disk."""
-    return data_uri(Path(path).read_bytes(), mime)
-
-
-def user_message(text: str | None, image_uris: Sequence[str] = ()) -> dict[str, Any]:
-    """Build a Responses ``input`` user message.
-
-    ``image_url`` is a bare data-URI string here — the Responses input shape,
-    not the chat-completions ``{"url": ...}`` object.
-    """
-    content: list[dict[str, Any]] = []
-    if text:
-        content.append({"type": "input_text", "text": text})
-    content.extend({"type": "input_image", "image_url": uri} for uri in image_uris)
-    return {"type": "message", "role": "user", "content": content}
 
 
 def iter_sse(response: requests.Response) -> Iterator[dict[str, Any]]:
@@ -393,12 +356,10 @@ def edit_image(
 ) -> bytes:
     """Edit an image via the direct Codex ``images/edits`` endpoint.
 
-    There is NO mainline routing model in this path: ``prompt`` goes into the
-    request body verbatim and reaches the image model untouched. Same OAuth
-    credential; the endpoint mirrors the public ``images.edit`` shape (used by
-    the Codex CLI's own ``imagegenext``), but it is undocumented and carries
-    no compatibility guarantee — on breakage, use the hosted
-    ``image_generation`` tool on a Responses request instead.
+    ``prompt`` goes into the request body verbatim and reaches the image
+    model untouched. The endpoint mirrors the public ``images.edit`` shape
+    (the Codex CLI's own image edits use it); it is undocumented and carries
+    no compatibility guarantee.
     """
     creds = load_credentials()
     body: dict[str, Any] = {
@@ -504,17 +465,12 @@ def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
     A tool's images ride INSIDE the output as ``input_image`` parts (the
     Codex CLI's ``view_image`` does the same), each preceded by an
     ``input_text`` label naming the call and its index, so the model can tell
-    which call any image answers. Before 2026-09-09 the images followed as a
-    separate user message; every such message opened a new turn, and the
-    replayed reasoning before it was discarded under the API's default
-    ``reasoning.context`` of ``current_turn``.
+    which call any image answers. Images sent as a separate user message
+    would open a new turn, and the backend drops the replayed reasoning of
+    earlier turns at each one.
     """
     payload = response.response
     output = payload if isinstance(payload, str) else _json_dumps(payload)
-    # Coordinate-sensitive tools may request preservation of supplied pixels.
-    detail = payload.get("image_detail", "high") if isinstance(payload, dict) else "high"
-    if detail not in {"low", "high", "original", "auto"}:
-        detail = "high"
     uris = [
         uri
         for response_part in response.parts or []
@@ -537,7 +493,7 @@ def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
             )
             if index in surviving:
                 content.append({
-                    "type": "input_image", "image_url": surviving[index], "detail": detail,
+                    "type": "input_image", "image_url": surviving[index], "detail": "high",
                 })
         item["output"] = content
     return item
@@ -669,17 +625,17 @@ async def _aiter(events: Iterator[dict[str, Any]]) -> AsyncGenerator[dict[str, A
         yield event
 
 
-class ChatGptLlm(BaseLlm):
+class OpenAIOAuthLlm(BaseLlm):
     """ADK model backed by a ChatGPT subscription (Codex Responses backend).
 
-    Registered for ``openai-oauth/<model>`` strings (legacy ``chatgpt/<model>``
-    accepted), e.g. ``openai-oauth/gpt-5.6-luna``.
+    Registered for ``openai-oauth/<model>`` strings, e.g.
+    ``openai-oauth/gpt-5.6-luna``.
     Supports vision input, function calling, and media returned by tools.
     """
 
     reasoning_effort: str = "medium"
-    """Reasoning effort: low | medium | high | xhigh | max (GPT-6 Astra
-    returns HTTP 400 for ``none``; ``minimal`` is gone with it)."""
+    """Reasoning effort: low | medium | high | xhigh | max (the GPT-6 models
+    answer ``none`` and ``minimal`` with HTTP 400)."""
 
     prompt_cache_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
     """Stable across the turns of one agent loop, for upstream prompt caching."""
@@ -690,14 +646,11 @@ class ChatGptLlm(BaseLlm):
     @field_validator("model")
     @classmethod
     def _strip_prefix(cls, value: str) -> str:
-        for prefix in (MODEL_PREFIX, LEGACY_MODEL_PREFIX):
-            if value.startswith(prefix):
-                return value[len(prefix):]
-        return value
+        return value[len(MODEL_PREFIX):] if value.startswith(MODEL_PREFIX) else value
 
     @classmethod
     def supported_models(cls) -> list[str]:
-        return [r"openai-oauth/.*", r"chatgpt/.*"]
+        return [r"openai-oauth/.*"]
 
     @property
     def capabilities(self) -> LlmCapabilities:
@@ -723,7 +676,7 @@ class ChatGptLlm(BaseLlm):
             "prompt_cache_key": self.prompt_cache_key,
             # context=all_turns: render the replayed reasoning of EARLIER turns
             # into this sample; the default, current_turn, drops it at every
-            # user message (2026-09-09, verified live on the Codex backend).
+            # user message.
             "reasoning": {
                 "effort": self.reasoning_effort,
                 "summary": "auto",
@@ -850,7 +803,7 @@ def _parse_arguments(arguments: Any) -> dict[str, Any]:
     return {}
 
 
-LLMRegistry.register(ChatGptLlm)
+LLMRegistry.register(OpenAIOAuthLlm)
 
 
 # --- "Sign in with ChatGPT" (PKCE OAuth) -------------------------------------
@@ -966,7 +919,7 @@ def login(
             refresh_token=data.get("refresh_token"),
             id_token=id_token,
             account_id=account_id_from_id_token(id_token),
-            source=str(CREDENTIALS_PATH),
+            source=str(openai_oauth_credentials_path()),
         )
     )
-    return CREDENTIALS_PATH
+    return openai_oauth_credentials_path()

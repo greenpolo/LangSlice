@@ -8,7 +8,7 @@ from typing import Any
 
 from google.genai import types
 
-_OAUTH_PREFIXES = ("openai-oauth/", "chatgpt/")  # canonical, then legacy alias
+_OAUTH_PREFIX = "openai-oauth/"
 _PROXY_PREFIX = "litellm-proxy:"
 _OPENROUTER_PREFIX = "openrouter:"
 _OLLAMA_PREFIX = "ollama:"
@@ -19,10 +19,8 @@ _DEFAULT_PROXY_BASE = "http://127.0.0.1:4000/v1"
 _DEFAULT_PROXY_KEY = "sk-langslice-local"
 _DEFAULT_OLLAMA_BASE = "http://localhost:11434"
 _ENV_OLLAMA_THINK = "LANGSLICE_OLLAMA_THINK"
-# When set, every model resolution short-circuits to the OpenAI-compat
-# wrapper pointed at this base URL. The CLI exposes this via `--endpoint`;
-# the Tauri GUI sets it when the user picks a local-engine model from the
-# Estimate dropdown. Bypasses every prefix below.
+# When set, every model string goes to the OpenAI-compatible server at this
+# base URL (LM Studio, vLLM, ...), whatever its prefix.
 _ENV_ENDPOINT = "LANGSLICE_ENDPOINT"
 _ENV_ENDPOINT_KEY = "LANGSLICE_ENDPOINT_KEY"
 
@@ -85,7 +83,7 @@ def default_http_options() -> types.HttpOptions:
     client (Gemini and ADK ``Gemma``) honors it directly, and ADK's LiteLlm
     wrapper maps ``timeout``/``retry_options.attempts`` onto LiteLLM's
     ``timeout``/``num_retries`` since google-adk 2.7. Backends that ignore it
-    (e.g. ChatGptLlm) are unaffected.
+    (e.g. OpenAIOAuthLlm) are unaffected.
     """
     return types.HttpOptions(
         # ``timeout`` is milliseconds; generous ceiling for image-heavy calls.
@@ -107,16 +105,9 @@ def resolve_adk_model(model: str | object) -> str | object:
 
     stripped = model.strip()
 
-    # An explicit endpoint override beats every prefix below. The GUI sets
-    # this when the user picks a local-engine model from the Estimate
-    # dropdown (LM Studio, vLLM, etc.) so the request goes to that engine
-    # regardless of how the model id is shaped.
     endpoint = _env(_ENV_ENDPOINT)
     if endpoint:
-        try:
-            litellm_cls = _load_litellm_class()
-        except ImportError as exc:
-            raise _missing_litellm_error() from exc
+        litellm_cls = _load_litellm_class()
         endpoint_kwargs: dict[str, Any] = {
             "api_base": endpoint.rstrip("/"),
         }
@@ -136,15 +127,14 @@ def resolve_adk_model(model: str | object) -> str | object:
             raise ValueError("gemini-api model strings require a model id after '/'")
 
     # OpenAI subscription-OAuth backend (Codex Responses). No API key: the
-    # token comes from `langslice login` or the Codex CLI.
-    for oauth_prefix in _OAUTH_PREFIXES:
-        if lowered.startswith(oauth_prefix):
-            model_id = stripped[len(oauth_prefix):].strip()
-            if not model_id:
-                raise ValueError("openai-oauth model strings require a model id after '/'")
-            from langslice.providers.openai_oauth import ChatGptLlm
+    # token comes from `langslice login`.
+    if lowered.startswith(_OAUTH_PREFIX):
+        model_id = stripped[len(_OAUTH_PREFIX):].strip()
+        if not model_id:
+            raise ValueError("openai-oauth model strings require a model id after '/'")
+        from langslice.providers.openai_oauth import OpenAIOAuthLlm
 
-            return ChatGptLlm(model=model_id)
+        return OpenAIOAuthLlm(model=model_id)
 
     if lowered.startswith("gemma-") or lowered.startswith(f"{_MODELS_PREFIX}gemma-"):
         model_id = stripped
@@ -157,10 +147,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         alias = stripped[len(_PROXY_PREFIX):].strip()
         if not alias:
             raise ValueError("litellm-proxy model strings require an alias after ':'")
-        try:
-            litellm_cls = _load_litellm_class()
-        except ImportError as exc:
-            raise _missing_litellm_error() from exc
+        litellm_cls = _load_litellm_class()
         return litellm_cls(
             model=f"openai/{alias}",
             api_base=_env("LANGSLICE_LITELLM_PROXY_BASE", _DEFAULT_PROXY_BASE),
@@ -171,10 +158,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         model_id = stripped[len(_OPENROUTER_PREFIX):].strip()
         if not model_id:
             raise ValueError("openrouter model strings require a model id after ':'")
-        try:
-            litellm_cls = _load_litellm_class()
-        except ImportError as exc:
-            raise _missing_litellm_error() from exc
+        litellm_cls = _load_litellm_class()
         kwargs: dict[str, Any] = {}
         key = _env("OPENROUTER_API_KEY")
         if key:
@@ -185,10 +169,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         model_id = stripped[len(_OLLAMA_PREFIX):].strip()
         if not model_id:
             raise ValueError("ollama model strings require a model tag after ':'")
-        try:
-            litellm_cls = _load_litellm_class()
-        except ImportError as exc:
-            raise _missing_litellm_error() from exc
+        litellm_cls = _load_litellm_class()
         ollama_kwargs: dict[str, object] = {
             "api_base": _env("LANGSLICE_OLLAMA_BASE", _DEFAULT_OLLAMA_BASE),
         }
@@ -201,10 +182,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         )
 
     if ":" in stripped:
-        try:
-            litellm_cls = _load_litellm_class()
-        except ImportError as exc:
-            raise _missing_litellm_error() from exc
+        litellm_cls = _load_litellm_class()
         bare_tag_kwargs: dict[str, object] = {
             "api_base": _env("LANGSLICE_OLLAMA_BASE", _DEFAULT_OLLAMA_BASE),
         }
@@ -217,10 +195,7 @@ def resolve_adk_model(model: str | object) -> str | object:
         )
 
     if lowered.startswith(_OPENAI_MODEL_PREFIXES):
-        try:
-            litellm_cls = _load_litellm_class()
-        except ImportError as exc:
-            raise _missing_litellm_error() from exc
+        litellm_cls = _load_litellm_class()
         openai_kwargs: dict[str, Any] = {}
         key = _env("OPENAI_API_KEY")
         if key:

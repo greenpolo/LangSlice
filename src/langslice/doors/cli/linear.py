@@ -1,6 +1,6 @@
-"""``langslice linear``: the agent run, and the
-job flags every command that opens a stack shares (``linear run``, ``abba
---linear``, ``mcp``, ``claude prepare``, ``job FOLDER init``)."""
+"""``langslice linear``: the agent run, and the job flags every command
+that opens a stack shares (``linear run``, ``mcp``, ``claude prepare``,
+``job FOLDER init``)."""
 
 from __future__ import annotations
 
@@ -31,7 +31,6 @@ PLANE_HELP = (
 )
 
 
-
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "run",
@@ -43,9 +42,8 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def add_linear_arguments(p: argparse.ArgumentParser) -> None:
-    """Every ``linear run`` flag but the folder itself — shared with
-    ``abba --linear FOLDER``, which takes the same job, plus ``--save-state``,
-    inside a live ABBA session instead of headless."""
+    """Every ``linear run`` flag but the folder itself, shared by every
+    command that opens a stack."""
     p.add_argument(
         "--tasks",
         default=None,
@@ -134,9 +132,6 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help="Sections must sit exactly one interval apart",
     )
     p.add_argument(
-        "--deepslice", action="store_true", help="Offer the run_deepslice tool"
-    )
-    p.add_argument(
         "--bayesian", action="store_true", help="Offer the search_position tool"
     )
     p.add_argument(
@@ -209,8 +204,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="PATH",
         help="Put the job folder (checkpoint, undo history, pictures, results) here "
-        "instead of <image_folder>/langslice; e.g. one per benchmark arm. A folder "
-        "holding the job of another image folder is refused",
+        "instead of <image_folder>/langslice. A folder holding the job of another "
+        "image folder is refused",
     )
     p.add_argument(
         "--trace-dir",
@@ -242,8 +237,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--playbook",
         action="store_true",
-        help="Put GPT-6 Astra's own method in the job statement (hypothesise "
-        "everything, confirm, write, re-check, review); for the cheaper models",
+        help="Put a working method in the job statement (hypothesise everything, "
+        "confirm, write, re-check, review); for the cheaper models",
     )
     p.add_argument(
         "--max-quota-percent",
@@ -251,10 +246,6 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         help="Hard stop on the share of the provider's usage window one run "
         "may spend (default: JobSpec.max_quota_percent)",
-    )
-    p.add_argument(
-        "--image-retention", choices=("legacy",), default="legacy",
-        help="Compatibility option: legacy working set only; completion retirement was removed",
     )
     p.add_argument(
         "--no-debrief",
@@ -313,8 +304,8 @@ def build_linear_spec(
 ) -> JobSpec:
     """Args -> :class:`~langslice.core.spec.JobSpec`.
 
-    Shared by every command that opens a stack (``linear run``, ``abba
-    --linear FOLDER``, ``mcp``, ``claude prepare``, ``job FOLDER init``):
+    Shared by every command that opens a stack (``linear run``, ``mcp``,
+    ``claude prepare``, ``job FOLDER init``):
     their parsers add the same flags via :func:`add_linear_arguments`. A
     ``--registration`` file is imported here (:func:`build_job_spec`; its
     warnings said through *emit*).
@@ -344,7 +335,7 @@ def build_job_spec(
 def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     """The spec the flags give, ``--registration`` not yet imported (its
     clashes with other flags refused, its default tasks applied)."""
-    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, ReorderSpec, TransformSpec
+    from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
 
     registration = getattr(args, "registration", None)
     if registration:
@@ -398,17 +389,16 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         preprocess=args.preprocess,
         agent_preprocessing=bool(getattr(args, "agent_preprocessing", False)),
         tasks=[task.strip() for task in tasks.split(",") if task.strip()],
-        reorder=ReorderSpec(flip=args.flip, hemisphere_cue=args.hemisphere_cue),
         position=PositionSpec(
             thickness_um=args.thickness,
             interval_um=args.interval,
             strict_interval=args.strict_interval,
-            deepslice=args.deepslice,
             bayesian=args.bayesian,
             gated=args.gates,
             playbook=args.playbook,
         ),
-        transform=TransformSpec(angles=args.angles),
+        transform=TransformSpec(angles=args.angles, flip=args.flip,
+                                hemisphere_cue=args.hemisphere_cue),
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,
@@ -419,7 +409,6 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         inputs=inputs,
         resume=args.resume,
         debrief=args.debrief,
-        image_retention=getattr(args, "image_retention", "legacy"),
         **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
         **({"max_quota_percent": args.max_quota_percent} if args.max_quota_percent else {}),
     )

@@ -24,6 +24,11 @@ from tests.fakes import SlabAtlas
 _ATLAS = SlabAtlas()
 
 
+def page_size(blocks: list[Any]) -> int:
+    """A reply's serialized bytes, as the host receives it."""
+    return len(json.dumps([block.model_dump(exclude_none=True) for block in blocks]).encode())
+
+
 def _folder(root: Path, name: str = "stack", n: int = 3) -> Path:
     folder = root / name
     folder.mkdir()
@@ -206,7 +211,7 @@ def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Pat
 
 
 def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
-    from langslice.doors.mcp.server import PAGE_BYTES, briefing, open_job, page_size
+    from langslice.doors.mcp.server import PAGE_BYTES, briefing, open_job
 
     folder = _folder(tmp_path, n=36)
     rng = np.random.default_rng(17)
@@ -338,7 +343,7 @@ def test_image_model_connected_checks_presence_only(tmp_path: Path, monkeypatch:
     login = tmp_path / ".langslice" / "openai_auth.json"
     login.parent.mkdir()
     login.write_text(json.dumps({"tokens": {"access_token": "fake"}}))
-    assert image_model_connected("openai-oauth") and image_model_connected("chatgpt")
+    assert image_model_connected("openai-oauth")
     monkeypatch.setenv("GEMINI_API_KEY", "fake")
     assert image_model_connected("gemini-api")
     (tmp_path / ".langslice" / "provider_credentials.json").write_text(
@@ -507,9 +512,9 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
 
 
 def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
-    from langslice.doors.mcp.server import page_size, result_blocks
+    from langslice.doors.mcp.server import result_blocks
     from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.media import REPLY_BYTES
+    from langslice.doors.tools.reply import REPLY_BYTES
 
     rng = np.random.default_rng(3)
     noise = [Image.fromarray(rng.integers(0, 256, (1500, 2000, 3), dtype=np.uint8))
@@ -572,7 +577,7 @@ def test_opening_strips_are_composed_within_the_page_budget(tmp_path: Path):
     from langslice.core.jpeg import encode_jpeg
     from langslice.core.opening import CLAUDE_IMAGE_LIMIT, opening_items
     from langslice.doors.mcp.server import open_job, opening_pages
-    from langslice.doors.tools.media import strip_bytes
+    from langslice.doors.tools.reply import strip_bytes
 
     folder = _folder(tmp_path, n=12)
     rng = np.random.default_rng(5)

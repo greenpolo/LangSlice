@@ -12,19 +12,18 @@ product name. Canonical names:
   the silhouette prior itself (see ``core/nonlinear/prior.py``); there is nothing
   to authenticate, so it needs no transport module.
 
-Future providers (``anthropic-api``, ``openrouter-api``, ``qwen-api``, ...)
-are added HERE and nowhere else (their names and aliases in the
-provider-free table :mod:`langslice.core.provider_names`, which this module
-re-exports, so the core compares names without importing a provider);
-downstream code compares canonical names only. Legacy spellings ("google",
-"openai", "chatgpt") resolve here so old CLIs, saved configs, and sibling
-repos keep working.
+A new provider gets its canonical name in the provider-free table
+:mod:`langslice.core.provider_names` (re-exported here, so the core compares
+names without importing a provider) and its transport in this package;
+downstream code compares canonical names only.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from langslice.core.provider_names import CANONICAL_PROVIDERS, CUSTOM_PROVIDER, canonical_provider
@@ -54,6 +53,15 @@ GEMINI_IMAGE_MODELS: tuple[str, ...] = (
     "gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image",
 )
 GEMINI_DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image"
+
+
+def openai_oauth_credentials_path() -> Path:
+    """The ``openai-oauth`` login file (``langslice login`` writes it, mode
+    600): ``LANGSLICE_OPENAI_AUTH`` when set (another account for one
+    process), else ``~/.langslice/openai_auth.json``. Read at call time."""
+    override = os.environ.get("LANGSLICE_OPENAI_AUTH", "").strip()
+    return Path(override).expanduser() if override else (
+        Path.home() / ".langslice" / "openai_auth.json")
 
 
 #: One image edit: the request in (prompt, images in order, provider, model),
@@ -139,5 +147,6 @@ __all__ = [
     "ImageModel",
     "canonical_provider",
     "default_image_model",
+    "openai_oauth_credentials_path",
     "resolve_image_model",
 ]
