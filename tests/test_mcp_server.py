@@ -243,17 +243,17 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
 
 
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import claude_jobs
+    from langslice.doors.api import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
               "spec": {"tasks": ["transform"], "transform": {"angles": False}},
               "locked": [f"s{i}.png" for i in range(3)], "damaged": {"s0.png": "torn"},
               "preprocessing": {"mode": "auto"}, "notes": "Keep the supplied positions."}
-    prepared = claude_jobs.prepare_claude(params)
+    prepared = saved_jobs.prepare_saved_job(params)
     path = Path(prepared["job_dir"])
     assert path == folder / "langslice"  # the job folder next to the snapshots
     record = json.loads((path / "job.json").read_text())
@@ -314,13 +314,13 @@ def test_host_channel_loopback_envelopes_and_disconnect():
 def test_job_validation(tmp_path: Path, monkeypatch: Any):
     import pytest
 
-    from langslice.doors.api import claude_jobs
+    from langslice.doors.api import saved_jobs
 
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
-        claude_jobs.load_job("../../outside")
+        saved_jobs.load_job("../../outside")
     with pytest.raises(ValueError, match="loopback"):
-        claude_jobs.validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
+        saved_jobs.validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
 
 
 def test_image_model_connected_checks_presence_only(tmp_path: Path, monkeypatch: Any):
@@ -359,19 +359,19 @@ def test_image_model_connected_checks_presence_only(tmp_path: Path, monkeypatch:
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
-    from langslice.doors.api import claude_jobs, setup
+    from langslice.doors.api import saved_jobs, setup
     from langslice.doors.api.models import EngineRequest
     from langslice.hosts.api.service import handle_request
 
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     monkeypatch.setattr(setup, "apply_saved_credentials", lambda: (_ for _ in ()).throw(
-        AssertionError("Claude preparation must not load model credentials")))
+        AssertionError("Saving a job must not load model credentials")))
     folder = _folder(tmp_path)
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
               "spec": {"tasks": ["transform"], "transform": {"angles": False}},
               "locked": [f"s{i}.png" for i in range(3)]}
-    result = handle_request(EngineRequest(id="copy", method="claude.prepare", params=params),
+    result = handle_request(EngineRequest(id="copy", method="mcp.prepare", params=params),
                             lambda _event: None)
     job_id = result.result["job_id"]
     server = build_server(lambda _folder: (_ for _ in ()).throw(
@@ -391,28 +391,30 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     assert {"adjust_transforms", "show_stack", "submit"} <= tools
 
 
-def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
-    tmp_path: Path, monkeypatch: Any, capsys: Any
-):
-    from langslice.cli import main
-    from langslice.doors.api import claude_jobs
+def _init(folder: Path, *flags: str) -> Any:
+    """``langslice-job FOLDER init`` with *flags*, on the test atlas."""
+    from langslice.doors.cli.job import init
 
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    envelope = init(str(folder), list(flags), atlas_loader=lambda _n: _ATLAS)
+    assert envelope.ok, envelope
+    return envelope
+
+
+def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: Path):
+    """A job made with ``langslice-job FOLDER init`` opens through
+    ``start_job(image_folder=...)`` as it stands: its saved settings and
+    notes, never the server's job flags, resuming its checkpoint."""
     folder = _folder(tmp_path)
-    main(["claude", "prepare", str(folder), "--tasks", "position", "--interval", "150",
-          "--preprocess", "none", "--notes", "Section 2 is torn."])
-    prompt = capsys.readouterr().out
-    job_id = next(iter((tmp_path / "jobs").iterdir())).stem
-    assert f'start_job(job_id="{job_id}")' in prompt
-    assert "interval 150 µm" in prompt and "Section 2 is torn." not in prompt
+    _init(folder, "--tasks", "position", "--interval", "150", "--preprocess", "none",
+          "--notes", "Section 2 is torn.")
 
     def server() -> Any:
         return build_server(lambda _folder: (_ for _ in ()).throw(
-            AssertionError("Saved jobs must not use development CLI settings")),
+            AssertionError("A folder's own job must not use the server's job flags")),
             atlas_loader=lambda _n: _ATLAS)
 
     async def first(client: Any) -> Any:
-        briefing = await client.call_tool("start_job", {"job_id": job_id})
+        briefing = await client.call_tool("start_job", {"image_folder": str(folder)})
         tools = {tool.name for tool in (await client.list_tools()).tools}
         # Every write waits until the opening pages were read.
         early = await client.call_tool("note", {"text": "too early"})
@@ -429,32 +431,46 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     assert "User notes:\nSection 2 is torn." in briefing.content[0].text
     assert "set_positions" in tools and "adjust_transforms" not in tools
     job_dir = folder / "langslice"
-    assert (job_dir / "state.json").exists()
     # The sections are untouched; the job folder sits beside them.
     assert sorted(path.name for path in folder.iterdir()) == [
         "langslice", "s0.png", "s1.png", "s2.png"]
 
-    # A new server (a restarted Claude Desktop) resumes the saved checkpoint.
+    # A new server (a restarted Claude Desktop) resumes the checkpoint, named
+    # by its job folder this time.
     async def again(client: Any) -> Any:
-        await client.call_tool("start_job", {"job_id": job_id})
+        await client.call_tool("start_job", {"image_folder": str(job_dir)})
         return await client.call_tool("status", {})
 
-    _session(server(), again)
+    assert not _session(server(), again).isError
     saved = json.loads((job_dir / "state.json").read_text())
     assert any("checked s0" in line for line in saved["notes"])
 
 
-def test_a_saved_job_opened_at_startup_lists_its_tools_from_the_first_request(
-    tmp_path: Path, monkeypatch: Any
-):
-    from langslice.doors.api import claude_jobs
+def test_a_fresh_server_starts_a_folder_job_over_from_its_own_flags(tmp_path: Path):
+    """``langslice mcp --fresh``: the server's job flags make the job even
+    where one was saved."""
+    folder = _folder(tmp_path)
+    _init(folder, "--tasks", "position", "--preprocess", "none")
+    server = build_server(lambda image_folder: JobSpec(
+        image_folder=image_folder, tasks=["transform"], preprocess="none", resume=False),
+        str(folder), atlas_loader=lambda _n: _ATLAS, fresh=True)
 
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    job = claude_jobs.prepare_folder(
-        JobSpec(image_folder=str(_folder(tmp_path)), tasks=["reorder", "position"],
-                preprocess="none")
-    )
-    server = build_server(_spec_for, job_id=job["job_id"], atlas_loader=lambda _n: _ATLAS)
+    async def body(client: Any) -> Any:
+        return {tool.name for tool in (await client.list_tools()).tools}
+
+    tools = _session(server, body)
+    assert "adjust_transforms" in tools and "set_positions" not in tools
+    saved = json.loads((folder / "langslice" / "job.json").read_text())
+    assert saved["spec"]["tasks"] == ["transform"]
+
+
+def test_a_folder_job_opened_at_startup_lists_its_tools_from_the_first_request(
+    tmp_path: Path,
+):
+    folder = _folder(tmp_path)
+    _init(folder, "--tasks", "reorder,position", "--preprocess", "none")
+    server = build_server(lambda _folder: (_ for _ in ()).throw(AssertionError()),
+                          str(folder), atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
         return {tool.name for tool in (await client.list_tools()).tools}
@@ -465,17 +481,17 @@ def test_a_saved_job_opened_at_startup_lists_its_tools_from_the_first_request(
 
 
 def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, monkeypatch: Any):
-    """Claude mode: the tools' start/end events and the opening pages reach the
+    """ABBA's Claude mode: the tools' start/end events and the opening pages reach the
     ABBA channel as agent events, with the saved pictures' paths, never bytes."""
-    from langslice.doors.api import claude_jobs
+    from langslice.doors.api import saved_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
 
     folder = _folder(tmp_path)
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
               "spec": {"tasks": ["position", "transform"]}, "z_offset_mm": 5.7}
-    prepared = claude_jobs.prepare_claude(params)
+    prepared = saved_jobs.prepare_saved_job(params)
     session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
     sent: list[dict[str, Any]] = []
     assert session.channel is not None

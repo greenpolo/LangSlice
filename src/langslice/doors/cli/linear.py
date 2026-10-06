@@ -1,6 +1,5 @@
 """``langslice linear``: the agent run, and the job flags every command
-that opens a stack shares (``linear run``, ``mcp``, ``claude prepare``,
-``job FOLDER init``)."""
+that opens a stack shares (``linear run``, ``mcp``, ``job FOLDER init``)."""
 
 from __future__ import annotations
 
@@ -306,7 +305,7 @@ def build_linear_spec(
     """Args -> :class:`~langslice.core.spec.JobSpec`.
 
     Shared by every command that opens a stack (``linear run``, ``mcp``,
-    ``claude prepare``, ``job FOLDER init``):
+    ``job FOLDER init``):
     their parsers add the same flags via :func:`add_linear_arguments`. A
     ``--registration`` file is imported here (:func:`build_job_spec`; its
     warnings said through *emit*).

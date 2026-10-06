@@ -856,7 +856,8 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
     for label, tasks in (("transform", ["transform"]), ("position", ["reorder", "position"])):
         spec = JobSpec(image_folder=str(folder), tasks=tasks, **base)
         server = build_server(lambda image_folder, spec=spec: dataclasses.replace(
-            spec, image_folder=image_folder), str(folder), atlas_loader=atlas_loader())
+            spec, image_folder=image_folder), str(folder), atlas_loader=atlas_loader(),
+            fresh=True)
 
         async def listed(server: Any = server) -> list[dict[str, Any]]:
             async with create_connected_server_and_client_session(server) as client:

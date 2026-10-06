@@ -1,4 +1,4 @@
-"""LangSlice tools for Claude hosts, with saved ABBA jobs and paged pictures.
+"""LangSlice tools for MCP hosts, with job folders, saved ABBA jobs and paged pictures.
 
 The host owns its conversation; LangSlice owns validated settings, tool gates,
 checkpoints and optional loopback-only ABBA updates. No model is called here.
@@ -16,6 +16,7 @@ import threading
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
+from functools import partial
 from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
@@ -38,9 +39,16 @@ from langslice.doors.api.abba_worker import (
     prepare_linear,
     public_event,
 )
-from langslice.doors.api.claude_jobs import load_job
+from langslice.doors.api.saved_jobs import load_job
 from langslice.doors.card import write_card
-from langslice.doors.jobs import close_job, image_model_off, provider_connected
+from langslice.doors.jobs import (
+    NoJob,
+    close_job,
+    find,
+    image_model_off,
+    provider_connected,
+    read_spec,
+)
 from langslice.doors.mcp.host_channel import HostChannel
 from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
@@ -55,7 +63,6 @@ from langslice.doors.tools.reply import (
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.doors.trace import TRACE_DIR_ENV, HostTrace
 from langslice.job.job import Job
-from langslice.job.layout import read_job_file, write_job_file
 from langslice.ops.registry import VERBS
 
 logger = logging.getLogger(__name__)
@@ -289,9 +296,8 @@ def briefing(session: Session) -> list[ContentBlock]:
 
 
 def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Session:
+    """A saved ABBA job (:mod:`langslice.doors.api.saved_jobs`), by id."""
     folder, record = load_job(job_id)
-    if record["kind"] == "folder":
-        return open_folder_job(job_id, folder, record, atlas_loader)
     prepared = prepare_linear(record["params"])
     session = open_job(prepared.spec, atlas_loader, folder)
     session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
@@ -310,31 +316,24 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     return session
 
 
-def open_folder_job(
-    job_id: str, folder: Path, record: dict[str, Any],
-    atlas_loader: Callable[[str], Any] | None,
+def open_folder(
+    path: str, spec_for: Callable[[str], JobSpec],
+    atlas_loader: Callable[[str], Any] | None, *, fresh: bool = False,
 ) -> Session:
-    """A plain-folder job: its checkpoint and results live in its job folder.
-
-    Reopening it (a restarted server, a new chat) resumes from that checkpoint.
-    A job saved with ``claude prepare --fresh`` (``fresh`` in its record)
-    starts over on its first open, as ``linear run --fresh`` does (``Job.open``
-    without resume), and the mark is then cleared so later opens resume.
-    """
-    spec = JobSpec.from_dict(record["spec"])
-    fresh = bool(record.get("fresh"))
-    spec.resume = not fresh
-    spec.out = None
-    session = open_job(spec, atlas_loader, folder)
-    if fresh:
-        layout = session.job.layout
-        host = dict((read_job_file(layout) or {}).get("host") or {})
-        host.pop("fresh", None)
-        write_job_file(layout, host=host)
-    session.job_id, session.job_dir = job_id, folder
+    """The job of the folder the host names: an image folder or its job
+    folder. A job made there (``langslice-job FOLDER init``, any door)
+    opens as it stands, with its saved settings and notes, resuming its
+    checkpoint; a folder without one, or any folder when *fresh*
+    (``langslice mcp --fresh``), gets its job from this server's job flags
+    (*spec_for*)."""
+    try:
+        folder = None if fresh else find(path)
+    except NoJob:
+        folder = None
+    if folder is None:
+        return open_job(spec_for(path), atlas_loader)
+    session = open_job(read_spec(folder), atlas_loader, folder)
     session.notes = read_notes(session.job.layout)
-    if record.get("trace_dir"):
-        session.trace = HostTrace(record["trace_dir"], session.ctx.image_folder)
     return session
 
 
@@ -463,8 +462,11 @@ def build_server(
     job_id: str | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
     sessions: dict[str, Session] | None = None,
+    fresh: bool = False,
 ) -> FastMCP:
-    """The server. *spec_for* turns a folder into this server's job spec.
+    """The server. *spec_for* turns a folder into this server's job spec,
+    for a folder without a job, or for every folder when *fresh*
+    (:func:`open_folder`).
 
     With *folder*, that job opens now and its tools are listed from the
     start; otherwise ``start_job`` names the folder and the tools appear then.
@@ -521,7 +523,8 @@ def build_server(
     async def start_job(
         image_folder: str = "", job_id: str = "", ctx: Context | None = None,
     ) -> list[ContentBlock]:
-        """Open a saved LangSlice job by job_id, or a development image_folder.
+        """Open the job the user named: an image_folder (or its job folder),
+        or a saved ABBA job's job_id.
 
         Returns the job facts and status table without images. Read every
         show_stack page before writing. Omit both arguments to repeat the
@@ -536,8 +539,10 @@ def build_server(
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
         wanted = os.path.abspath(os.path.expanduser(image_folder)) if image_folder else None
-        if wanted is not None and (session is None or wanted != session.ctx.image_folder):
-            session = await to_thread.run_sync(open_job, spec_for(wanted), atlas_loader)
+        if wanted is not None and (session is None or wanted not in (
+                session.ctx.image_folder, str(session.job.folder))):
+            session = await to_thread.run_sync(
+                partial(open_folder, wanted, spec_for, atlas_loader, fresh=fresh))
             install(session)
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
@@ -545,7 +550,8 @@ def build_server(
             return [TextContent(type="text", text=json.dumps({
                 "status": "error",
                 "error": "NO_FOLDER",
-                "message": "Name a saved job: start_job(job_id=...), or an image_folder.",
+                "message": "Name a job: start_job(image_folder=...), or a saved ABBA "
+                           "job's start_job(job_id=...).",
             }))]
         blocks = await to_thread.run_sync(briefing, session)
         if session.trace is not None:
@@ -556,12 +562,14 @@ def build_server(
     if job_id:
         install(open_saved_job(job_id, atlas_loader))
     elif folder is not None:
-        install(open_job(spec_for(os.path.abspath(os.path.expanduser(folder))), atlas_loader))
+        install(open_folder(os.path.abspath(os.path.expanduser(folder)), spec_for,
+                            atlas_loader, fresh=fresh))
     return server
 
 
 def serve(
     spec_for: Callable[[str], JobSpec], folder: str | None = None, job_id: str | None = None,
+    *, fresh: bool = False,
 ) -> None:
     """Run the server over stdio until the host disconnects.
 
@@ -575,7 +583,7 @@ def serve(
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     with redirect_stdout(sys.stderr):
         sessions: dict[str, Session] = {}
-        server = build_server(spec_for, folder, job_id=job_id, sessions=sessions)
+        server = build_server(spec_for, folder, job_id=job_id, sessions=sessions, fresh=fresh)
         try:
             anyio.run(_run_stdio, server, wire)
         finally:

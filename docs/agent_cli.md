@@ -88,7 +88,7 @@ tasks are `nonlinear` only. Matching, what is read and what is refused:
 [file_formats.md](file_formats.md), "Importing a registration made elsewhere".
 The result's `registration` reports the placed, unmatched, missing and refused
 sections; a file that cannot be read or places no section is `BAD_REGISTRATION`
-(exit 2). `linear run`, `mcp` and `claude prepare` take `--registration` too.
+(exit 2). `linear run` and `mcp` take `--registration` too.
 
 ## Arguments
 

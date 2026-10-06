@@ -401,21 +401,29 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     assert again.folder == target and again.state.notes[-1] == "kept"
 
 
-def test_a_claude_job_on_a_read_only_folder_lives_under_its_id(
-    tmp_path: Path, read_only: Path, monkeypatch: Any,
+def test_a_read_only_folder_job_opens_over_mcp_by_its_job_folder(
+    tmp_path: Path, read_only: Path,
 ):
-    from langslice.doors.api import claude_jobs
-    from langslice.doors.mcp.server import open_saved_job
+    """The job of a read-only image folder lives under the home job folder;
+    an MCP host opens it by that job folder, as saved."""
+    from langslice.doors.mcp.server import open_folder
 
-    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    prepared = claude_jobs.prepare_folder(
-        JobSpec(image_folder=str(read_only), preprocess="none", tasks=["position"]))
-    target = tmp_path / "jobs" / prepared["job_id"]
-    assert Path(prepared["job_dir"]) == target and (target / "prompt.txt").exists()
-    entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
-    assert entry["fallback"]["image_folder"] == str(read_only)
-    session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
-    assert session.job.folder == target
+    job, _ = _open(read_only, tasks=["position"])
+    job_folder = job.folder
+    from langslice.doors.jobs import close_job
+
+    close_job(job)
+
+    def flags(_folder: str) -> JobSpec:
+        raise AssertionError("A folder's own job must not use the server's job flags")
+
+    session = open_folder(str(job_folder), flags, lambda _n: _ATLAS)
+    try:
+        assert session.job.folder == job_folder
+        assert session.ctx.image_folder == str(read_only)
+        assert session.spec.tasks == ["position"]
+    finally:
+        session.close()
 
 
 # --- a job folder moves with its images ---------------------------------------------------

@@ -6,7 +6,7 @@ import logging
 import socket
 from typing import Any
 
-from langslice.doors.api.claude_jobs import validate_channel
+from langslice.doors.api.saved_jobs import validate_channel
 
 logger = logging.getLogger(__name__)
 

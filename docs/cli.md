@@ -3,7 +3,6 @@
 ```text
 langslice linear run FOLDER        the built-in agent over a folder of sections
 langslice mcp                      the verbs as an MCP server (stdio)
-langslice claude prepare FOLDER    save a job for Claude Desktop / Code and print its prompt
 langslice abba                     start ABBA from Python with the connector, viewer and log
 langslice serve --stdio            JSON-lines worker (what the Fiji connector starts)
 langslice login                    sign in with ChatGPT (OAuth)
@@ -79,7 +78,7 @@ never written, only mime type, byte count and size; no credentials are read.
 - **Agent CLI**: [agent_cli.md](agent_cli.md). **Python library**:
   [library.md](library.md).
 - **MCP / Claude**: [connectors/claude-desktop/README.md](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-desktop/README.md).
-  `langslice claude prepare FOLDER` takes the same job flags as `linear run`.
+  A host opens a job made with `langslice-job FOLDER init` by naming its folder.
 - **ABBA**: [abba_installation.md](abba_installation.md). `langslice abba` needs
   Java 21 (fetched on first start) and the connector jar (`--connector-jar`
   or `$LANGSLICE_CONNECTOR_JAR`); `--no-viewer` / `--no-log` turn off the companions.
@@ -91,6 +90,6 @@ never written, only mime type, byte count and size; no credentials are read.
   environment, a `.env` file (`.env.example`) or the ABBA setup dialog.
 - **`langslice serve --stdio`** is a newline-delimited JSON service. Its
   methods are `version`, `setup.status`, `setup.login`, `setup.api_key`,
-  `linear.run`, `linear.estimate`, `preprocess.preview` and `claude.prepare`;
+  `linear.run`, `linear.estimate`, `preprocess.preview` and `mcp.prepare`;
   the contract is the Pydantic models in `src/langslice/doors/api/models.py`
   ([abba_plugin_design.md](abba_plugin_design.md)).

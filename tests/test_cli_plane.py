@@ -36,7 +36,7 @@ def test_linear_run_rejects_unknown_plane(capsys):
     assert "axial" in err
 
 
-@pytest.mark.parametrize("command", [["linear", "run"], ["claude", "prepare"], ["mcp"]])
+@pytest.mark.parametrize("command", [["linear", "run"], ["mcp"]])
 def test_a_bad_job_flag_ends_with_a_message_not_a_traceback(tmp_path, command):
     from langslice.doors.cli import main
 

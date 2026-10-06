@@ -85,8 +85,7 @@ the CLI is a process per call.
   calls). `status_and_notes(state)` (the status table and the newest
   `RECENT_NOTES` run notes) is the ADK seed message's text too.
   `read_notes(layout)`: the user's notes, `job.json` `notes` (written by
-  `claude prepare --notes`, ABBA's Claude mode and `job FOLDER init
-  --notes`), read by every door. `image_model_state(spec, connected=)`: the
+  ABBA's Claude mode and `job FOLDER init --notes`), read by every door. `image_model_state(spec, connected=)`: the
   image model as the CLI's `status` and `brief` report it.
 - `jobs.py` — opening a job without the agent: `JobContext` (the workspace
   plus the job folder and results path; the driver's `EngineContext` adds
@@ -192,9 +191,11 @@ the CLI is a process per call.
   `result_blocks` (every reply through `fit_reply`; a shrunk reply says so),
   `host_tool` (each call `in_flight`, so a sibling call promotes no picture
   as seen), `strict_arguments` (FastMCP drops unknown arguments; refused
-  first, a nested object sent as a JSON string parsed), `open_saved_job` /
-  `open_folder_job` (a saved Claude job by id; a `fresh` one starts over
-  once), `build_server`, `serve`. `EventRelay` forwards a saved ABBA job's
+  first, a nested object sent as a JSON string parsed), `open_saved_job`
+  (a saved ABBA job by id), `open_folder` (the job of a named image or job
+  folder as saved: `doors.jobs.find` / `read_spec`, its notes; a folder
+  without one gets a new job from the server's job flags), `build_server`,
+  `serve`. `EventRelay` forwards a saved ABBA job's
   tool events (and one `seed` per `show_stack` page) over its host channel
   (`host_channel.py`) as `agent_event`s; `tool_end` events carry `views`,
   the saved pictures' paths.
@@ -207,10 +208,9 @@ the CLI is a process per call.
   warning; `image_model_connected(provider)`: provider not `none` and its
   key or login present, nothing contacted; `image_model_choices()` /
   `IMAGE_MODEL_CHOICES`: the dialog's image models, each `connected` or not,
-  with the models to offer), `claude_jobs.py` (saved Claude jobs: the job
-  folder next to the images, the id index, the host channel, the copy
-  prompt; `prepare_folder` refuses a folder whose checkpoint was made from
-  other inputs, and with `--fresh` marks the job `fresh`) and
+  with the models to offer), `saved_jobs.py` (saved ABBA jobs,
+  `prepare_saved_job` for the engine method `mcp.prepare`: the job folder
+  next to the snapshots, the id index, the host channel, the copy prompt) and
   `abba_worker.py` (the JVM-free snapshot worker of the Fiji connector:
   `prepare_linear` (snapshots, BrainGlobe AP positions, `angles_deg` as the
   stack-wide `inputs.angles`, `z_offset_mm` / `existing_warp` kept as the
@@ -227,13 +227,13 @@ the CLI is a process per call.
   MCP door's opening of such a saved ABBA job.
 - `cli/` — the `langslice` and `langslice-job` commands, one module per
   group; `langslice/cli.py` keeps the entry point `langslice.cli:main`.
-  `__init__.py` (`build_parser`, `main`: `linear run`, `mcp`, `claude
-  prepare`, the host commands, `login`, `version`), `linear.py` (`linear run` and the job flags every
+  `__init__.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
+  commands, `login`, `version`), `linear.py` (`linear run` and the job flags every
   stack-opening command shares: `add_linear_arguments`, `build_linear_spec`,
   `spec_from_args`; `--tasks` defaults to `DEFAULT_TASKS`, or with
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
-  with a message), `claude.py` (`mcp`, `claude prepare`), and the agent CLI
+  with a message), `mcp.py` (`mcp`), and the agent CLI
   (`docs/agent_cli.md`), a command of its own so that allowing it allows
   no agent, server, host or login:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,

@@ -1,8 +1,8 @@
 """Where a job's files live: the job folder beside the images, and its names.
 
 One stack, one job folder: ``<images>/langslice/``. Every host puts it next
-to the images it hands LangSlice (the CLI's folder, a Claude job's folder,
-the snapshots ABBA exports), so a job travels with its images and is found
+to the images it hands LangSlice (the CLI's folder, the snapshots ABBA
+exports), so a job travels with its images and is found
 without an id. Inside::
 
     job.lock             the write lock (:mod:`langslice.job.lock`)
@@ -25,7 +25,7 @@ without an id. Inside::
                          quicknii.json and visualign.json
     logs/                events.jsonl (opens), runs/ (the agent CLI's
                          background runs), calls.jsonl (the agent CLI's calls)
-    prompt.txt           a saved Claude job's copy prompt
+    prompt.txt           a saved ABBA job's copy prompt
     AGENTS.md, CLAUDE.md the reference card for coding agents
     BRIEF.md             the agent CLI's brief
 
