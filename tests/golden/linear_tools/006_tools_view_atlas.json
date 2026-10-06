@@ -21,12 +21,7 @@
     "ara"
    ],
    "mode": "template",
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   }
  },
  "door": "tools",

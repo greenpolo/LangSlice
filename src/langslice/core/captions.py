@@ -35,7 +35,7 @@ def _caption_font() -> Any:
 
 
 def caption(image: Image.Image, text: str) -> Image.Image:
-    """A COPY of *image* with *text* burned into a dark strip, top-left.
+    """A COPY of *image* with *text* burned into a dark strip below it.
 
     Tool images reach the model as bare attachments, so the text that binds an
     image to its section or its position has to ride in the pixels. Caption
@@ -51,12 +51,14 @@ def caption(image: Image.Image, text: str) -> Image.Image:
     probe = ImageDraw.Draw(source)
     left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
     band = int(bottom - top + 6)
-    # The band sits ABOVE the picture, never over it: a caption drawn on the
-    # pixels covered exactly the magnified dorsal tissue an agent was reading.
+    # The band sits BELOW the picture, never over it (a caption drawn on the
+    # pixels covered exactly the magnified dorsal tissue an agent was
+    # reading), and never above it: the picture's pixel (x, y) is then the
+    # content's own, the coordinates a `view.zoom` is given in.
     labelled = Image.new("RGB", (source.width, source.height + band), (0, 0, 0))
-    labelled.paste(source, (0, band))
+    labelled.paste(source, (0, 0))
     draw = ImageDraw.Draw(labelled)
-    draw.text((3 - left, 3 - top), text, fill=(255, 255, 255), font=font)
+    draw.text((3 - left, source.height + 3 - top), text, fill=(255, 255, 255), font=font)
     return labelled
 
 

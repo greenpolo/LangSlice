@@ -42,12 +42,7 @@
    "outlines": "all",
    "resolution": 2048,
    "resolution_note": "resolution 4000 is outside 128..2048; used 2048",
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   }
  },
  "door": "auto",

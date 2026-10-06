@@ -128,9 +128,20 @@ for the flat plane).
   a picture is drawn from), `rescale_section_matrix`, `PREVIEW_LONG_EDGE`
   (512, the working frame every fit is computed on). Cached on the
   workspace (`render_cache`, `render_scale`): read, never mutate.
-- `captions.py` — `caption` (a COPY with the text in a band above the
-  picture; never caption an image a fit measures), `wrap_caption`, the
-  fonts, `scale_bar_px` and the 1 mm bar `_draw_scale_bar`.
+- `captions.py` — `caption` (a COPY with the text in a band below the
+  picture, so a picture pixel is the content's own, the coordinates a
+  `view.zoom` is given in; never caption an image a fit measures),
+  `wrap_caption`, the fonts, `scale_bar_px` and the 1 mm bar `_draw_scale_bar`.
+- Zoom: every picture tool takes `view.zoom` as `[x0, y0, x1, y1]` pixels of
+  the picture the same call returns unzoomed (top-left origin, the
+  convention of Claude's and OpenAI's computer-use tools; a later zoom is
+  again in the unzoomed picture's pixels). Each renderer converts it with
+  `display.zoom_fractions` against its own unzoomed content size
+  (`framed_section`, `framed_atlas`, `placement.draw_canvas`, which draws
+  the unzoomed canvas first for its size, `deformation.picture` and
+  `trace_picture` through `deformation.unzoomed_size`); below that the
+  renderers crop by fractions (`canvas.zoom_box`). In a picture of panels
+  side by side (`channels`), the box is read on the first panel.
 - `canvas.py` — the physical canvas: `CanvasGeometry` / `canvas_geometry`
   (the atlas section at true scale on the section's frame, anatomy centred,
   canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES`,
@@ -230,7 +241,7 @@ for the flat plane).
 shown section render (before any warp), its micrometres per pixel, the
 position, plane and cutting angles, the placement (`params`: the knobs about
 `pivot`/`pivot_in_section`, or a 2x3 on the shown render's frame;
-`warp`), the zoom window and the panel size. `physical_views`
+`warp`), the zoom window (fractions of the canvas) and the panel size. `physical_views`
 builds the placement with `core.canvas.placement_matrices` (the section
 matrix on the section's frame, and the same map on the canvas,
 `shift(offset) @ section_matrix @ shift(-offset)`) and rasterises every

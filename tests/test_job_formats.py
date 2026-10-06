@@ -64,7 +64,7 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     job.view_placement(entries=[{"id": ID1, "positions_mm": [0.15]}],
                        view={"mode": "overlay", "resolution": 700})
     job.view_placement(entries=[{"id": ID2, "positions_mm": [0.2]}],
-                       view={"mode": "overlay", "resolution": 300, "zoom": [0.1, 0.1, 0.9, 0.8]})
+                       view={"mode": "overlay", "resolution": 300, "zoom": [30, 25, 270, 200]})
     # A picture smaller than the fit grid, so the residual is resampled.
     job.fit_deformable(slices=[ID0], engine="elastix", view={"resolution": 160})
     exported = job.export_maps()

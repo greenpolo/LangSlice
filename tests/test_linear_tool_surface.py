@@ -278,11 +278,11 @@ def test_raw_channels_one_in_gray_several_overlaid_in_colour(tmp_path: Path):
     default = view(["s0.png"])
     assert default["view"]["channels"] == ["view"]
     green = view(["s0.png"], view={"channels": ["green"]})
-    pixels = _pixels(green)[30:]  # below the caption
+    pixels = _pixels(green)[:-45]  # above the caption
     assert np.abs(pixels[..., 0] - pixels[..., 1]).max() <= 12  # grayscale
     both = view(["s0.png"], view={"channels": ["red", "blue"]})
     assert both["view"]["channel_colors"] == {"red": "red", "blue": "blue"}
-    mixed = _pixels(both)[-40:]  # tissue rows, clear of the white caption text
+    mixed = _pixels(both)[:-45][-40:]  # tissue rows, clear of the white caption text
     # Both present; each is dimmed by its fine detail relative to the other.
     assert mixed[..., 0].max() > 200 and mixed[..., 2].max() > 40
     # No green channel in a red + blue overlay (JPEG chroma leaves a little at edges).

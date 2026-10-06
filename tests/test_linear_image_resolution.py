@@ -135,7 +135,7 @@ def test_a_zoom_magnifies_the_section_up_to_the_picture_size(tmp_path: Path):
     _state, _ctx, tools, _spec = _run(tmp_path / "zoom", "low")
     (whole,) = _images(tools["view_placement"]([{"id": "s0.tif"}], mode="overlay"))
     (zoomed,) = _images(tools["view_placement"](
-        [{"id": "s0.tif"}], mode="overlay", zoom=[0.25, 0.25, 0.75, 0.75]))
+        [{"id": "s0.tif"}], mode="overlay", zoom=[128, 100, 384, 300]))
     assert whole.width == zoomed.width == PICTURE_EDGES["low"][1]
 
 
@@ -377,8 +377,9 @@ def test_a_caption_that_fits_is_drawn_as_before():
     left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
     band = int(bottom - top + 6)
     expected = Image.new("RGB", (512, 80 + band), (0, 0, 0))
-    expected.paste(picture, (0, band))
-    ImageDraw.Draw(expected).text((3 - left, 3 - top), text, fill=(255, 255, 255), font=font)
+    expected.paste(picture, (0, 0))
+    ImageDraw.Draw(expected).text((3 - left, 80 + 3 - top), text, fill=(255, 255, 255),
+                                  font=font)
     assert np.array_equal(np.asarray(labelled), np.asarray(expected))
 
 

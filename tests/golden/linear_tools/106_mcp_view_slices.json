@@ -10,7 +10,7 @@
  },
  "content": [
   {
-   "text": "{\"status\": \"ok\", \"slices\": [\"s1.png\"], \"unknown_ids\": [], \"description\": \"Attached images are s1.png, in that order, rendered as corrected, each labelled '<corrected index>: <filename>' in its top-left corner; each is a strip of the section's raw channels, unmodified, left to right in the order of `channels`.\", \"view\": {\"mode\": \"channels\", \"channels\": [\"view\"], \"zoom\": [0.0, 0.0, 1.0, 1.0]}, \"channels\": {\"s1.png\": [\"red\", \"green\", \"blue\"]}, \"images_attached\": 1}"
+   "text": "{\"status\": \"ok\", \"slices\": [\"s1.png\"], \"unknown_ids\": [], \"description\": \"Attached images are s1.png, in that order, rendered as corrected, each labelled '<corrected index>: <filename>' in its top-left corner; each is a strip of the section's raw channels, unmodified, left to right in the order of `channels`.\", \"view\": {\"mode\": \"channels\", \"channels\": [\"view\"], \"zoom\": []}, \"channels\": {\"s1.png\": [\"red\", \"green\", \"blue\"]}, \"images_attached\": 1}"
   },
   {
    "image": 0,

@@ -23,7 +23,9 @@ pictures below):
   before ``view`` existed.
 - ``atlas_opacity``, ``regions`` (one side allowed, ``"CTX:left"``),
   ``outlines`` (which lines ``borders`` draws: all or outer), ``border_color``,
-  ``border_thickness``, ``zoom``, ``deformation`` (placement pictures: draw the
+  ``border_thickness``, ``zoom`` (``[x0, y0, x1, y1]`` pixels of the picture
+  the same call returns unzoomed, top-left origin: :func:`zoom_fractions`),
+  ``deformation`` (placement pictures: draw the
   applied warp, or ``none`` for the linear placement alone), ``resolution``
   (only where the host's image resolution is "auto").
 
@@ -89,7 +91,25 @@ DEFAULT_BORDER_THICKNESS = 1.0
 DEFAULT_BORDER_COLOR = "yellow"
 #: Intensity percentile mapped to white when a Nissl plane is shown.
 NISSL_PERCENTILE = 99.5
-FULL_VIEW = (0.0, 0.0, 1.0, 1.0)
+
+
+def zoom_fractions(zoom: tuple[float, ...] | list[float],
+                   shown: tuple[int, int]) -> tuple[float, ...]:
+    """A pixel zoom as fractions of the content it was read on.
+
+    *zoom* is ``[x0, y0, x1, y1]`` in pixels of the picture the call returns
+    unzoomed (top-left origin, x right, y down; the caption band is below
+    the content, so a picture pixel is the content's own) and *shown* that
+    picture's content size ``(width, height)``. The corners are ordered and
+    clamped to the content; empty is the whole picture, ``()``.
+    """
+    if not zoom:
+        return ()
+    width, height = max(int(shown[0]), 1), max(int(shown[1]), 1)
+    x0, x1 = sorted((float(zoom[0]), float(zoom[2])))
+    y0, y1 = sorted((float(zoom[1]), float(zoom[3])))
+    return (min(max(x0 / width, 0.0), 1.0), min(max(y0 / height, 0.0), 1.0),
+            min(max(x1 / width, 0.0), 1.0), min(max(y1 / height, 0.0), 1.0))
 
 
 @dataclass(frozen=True)
@@ -132,6 +152,8 @@ class DisplayOptions:
     """One call's validated picture options."""
 
     mode: str
+    #: ``[x0, y0, x1, y1]`` pixels of the unzoomed picture (:func:`zoom_fractions`);
+    #: empty is the whole picture.
     zoom: tuple[float, ...]
     #: Raw channel names shown (empty when a version is shown).
     channels: tuple[str, ...]
@@ -171,12 +193,12 @@ class DisplayOptions:
 
     @property
     def full_view(self) -> bool:
-        return not self.zoom or self.zoom == FULL_VIEW
+        return not self.zoom
 
-    @property
-    def window(self) -> list[float]:
-        """The zoom as the renderers take it (empty = whole)."""
-        return [] if self.full_view else list(self.zoom)
+    def window(self, shown: tuple[int, int]) -> list[float]:
+        """The zoom as fractions of the unzoomed content of size *shown*, as
+        the renderers take it (empty = whole)."""
+        return list(zoom_fractions(self.zoom, shown))
 
     @property
     def borders(self) -> bool:
@@ -260,7 +282,7 @@ class DisplayOptions:
             if self.lines:
                 out["border_color"] = self.border_color
                 out["border_thickness"] = self.border_thickness
-        out["zoom"] = list(self.zoom or FULL_VIEW)
+        out["zoom"] = list(self.zoom)
         if self.has_deformation:
             out["deformation"] = self.deformation
         # The size is the agent's to choose only at "auto"; any other level
@@ -395,15 +417,17 @@ def framed_section(
     """
     long_edge = long_edge or options.long_edge
     drawn: Look = options.look(state, record) if look == "options" else cast(Look, look)
+    whole = render_slice(ctx, record, long_edge=long_edge, frame=True, look=drawn)
     if options.full_view:
-        return render_slice(ctx, record, long_edge=long_edge, frame=True, look=drawn)
-    x0, y0, x1, y1 = options.zoom
+        return whole
+    window = options.window(whole.size)
+    x0, y0, x1, y1 = window
     extent = max(abs(x1 - x0), abs(y1 - y0), 1e-3)
     larger = render_slice(
         ctx, record, long_edge=int(math.ceil(long_edge / min(1.0, extent))), frame=True,
         look=drawn,
     )
-    return _crop_fraction(larger, options.zoom)
+    return _crop_fraction(larger, tuple(window))
 
 
 def channel_strip(
@@ -481,7 +505,8 @@ def framed_atlas(
     if not options.full_view:
         from langslice.core.canvas import zoom_box
 
-        inner = zoom_box(list(options.zoom), (box[2] - box[0], box[3] - box[1]))
+        whole = sized(picture.crop(box)).size
+        inner = zoom_box(options.window(whole), (box[2] - box[0], box[3] - box[1]))
         box = (box[0] + inner[0], box[1] + inner[1], box[0] + inner[2], box[1] + inner[3])
     cropped = picture.crop(box)
     shown = sized(cropped).convert("RGB")

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -609,7 +610,7 @@ class PanelFrame:
 
     What the picture's layers (:mod:`langslice.core.layers`) are computed
     from: the captioned picture's *size* ``(width, height)``, the
-    *content_box* holding the canvas crop below the caption, the *crop_box*
+    *content_box* holding the canvas crop above the caption, the *crop_box*
     on the canvas and *factor* (canvas px -> picture px, one for both axes,
     as the borders are drawn), the canvas *geometry*, the placement's
     *section_matrix* (3x3, the section render's frame -> canvas,
@@ -642,6 +643,7 @@ def physical_views(
     *,
     mode: str = "overlay",
     zoom: list[float] | None = None,
+    zoom_pixels: Sequence[float] = (),
     atlas_opacity: float = 0.0,
     border_color: str = "yellow",
     border_thickness: float = 0.5,
@@ -675,12 +677,15 @@ def physical_views(
     * ``outlines`` — the atlas lines and the section's own silhouette contour
       in a second grey, on black. No pixels.
 
-    *zoom* is ``[x0, y0, x1, y1]`` in fractions of the CANVAS; the crop happens
+    *zoom* is ``[x0, y0, x1, y1]`` in fractions of the CANVAS (the tools take
+    pixels and convert, :func:`langslice.core.display.zoom_fractions`); the crop happens
     before the screen is sized, so it is real magnification up to the canvas's
     own pixels: each panel's long edge is *long_edge*, or the crop's when that
     is smaller (never upsampled; ``None`` is canvas pixels one to one). A
     caller wanting a magnified zoom draws the canvas from a larger render.
     The scale bar is redrawn for the magnified micrometres per pixel.
+    *zoom_pixels* is the zoom as the caller gave it (pixels of the unzoomed
+    picture), for the caption.
 
     *outlines* picks which atlas lines are drawn (:data:`OUTLINE_LAYERS`):
     every family boundary, the root silhouette alone, or none. *border_color*
@@ -863,16 +868,9 @@ def physical_views(
             f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
         ).strip()
         if mode != "overlay" or box != (0, 0, geometry.size[0], geometry.size[1]):
-            zoomed = [
-                round(box[0] / geometry.size[0], 3),
-                round(box[1] / geometry.size[1], 3),
-                round(box[2] / geometry.size[0], 3),
-                round(box[3] / geometry.size[1], 3),
-            ]
-            text += (
-                f"\n{mode}  zoom {zoomed}  "
-                f"view {geometry.um_per_px / factor:.2f} um/px"
-            )
+            zoomed = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
+                      if zoom_pixels else "")
+            text += f"\n{mode}{zoomed}  view {geometry.um_per_px / factor:.2f} um/px"
         if layer == "outer" and lines:
             text += "  outlines outer"
         if regions:
@@ -881,8 +879,7 @@ def physical_views(
         if panel_frames is not None:
             panel_frames.append(PanelFrame(
                 size=labelled.size,
-                content_box=(0, labelled.height - screen.shape[0], labelled.width,
-                             labelled.height),
+                content_box=(0, 0, labelled.width, screen.shape[0]),
                 crop_box=box, factor=float(factor), geometry=geometry,
                 section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
                 lines=tuple(poly for _color, poly in atlas_lines) if lines else (),
@@ -891,8 +888,7 @@ def physical_views(
         if frames is not None:
             frames.append({
                 "width": labelled.width, "height": labelled.height,
-                "content_box": [0, labelled.height - screen.shape[0],
-                                labelled.width, labelled.height],
+                "content_box": [0, 0, labelled.width, screen.shape[0]],
                 "canvas_box": list(box), "section_offset": list(geometry.section_offset),
                 "section_size": list(section.size), "um_per_px": geometry.um_per_px,
             })

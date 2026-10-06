@@ -116,14 +116,14 @@ def test_caption_labels_a_copy_without_touching_the_original():
     labelled = caption(source, "atlas 3.20 mm")
 
     assert labelled is not source
-    # The caption is a band ABOVE the picture: same width, taller, pixels untouched.
+    # The caption is a band BELOW the picture: same width, taller, pixels untouched.
     assert labelled.size[0] == source.size[0] and labelled.size[1] > source.size[1]
     assert np.asarray(source).max() == 10  # the original is untouched
 
     array = np.asarray(labelled)
-    strip, below = array[:18, :90], array[30:, :]
-    assert strip.max() > 200  # bright text in a dark box, top-left
-    assert below.max() == 10  # nothing outside the strip changed
+    picture, strip = array[:80, :], array[80:, :90]
+    assert picture.max() == 10  # the picture's pixels sit unchanged at the top
+    assert strip.max() > 200  # bright text in a dark box below it
 
 
 def test_compact_rows_drops_null_and_empty_fields_only():

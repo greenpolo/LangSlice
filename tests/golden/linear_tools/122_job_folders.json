@@ -1620,7 +1620,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      368
+      350
      ],
      "view_json": "<hex>"
     },
@@ -1656,7 +1656,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      332
+      314
      ],
      "view_json": "<hex>"
     },
@@ -1686,7 +1686,7 @@
      "labels_dtype": "uint32",
      "size": [
       203,
-      283
+      308
      ],
      "view_json": "<hex>"
     },
@@ -1790,7 +1790,7 @@
      "labels_dtype": "uint32",
      "size": [
       202,
-      344
+      362
      ],
      "view_json": "<hex>"
     },
@@ -1841,7 +1841,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      332
+      314
      ],
      "view_json": "<hex>"
     },
@@ -1851,7 +1851,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      332
+      314
      ],
      "view_json": "<hex>"
     },
@@ -1861,7 +1861,7 @@
      "labels_dtype": "uint32",
      "size": [
       203,
-      283
+      308
      ],
      "view_json": "<hex>"
     },
@@ -1953,7 +1953,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      350
+      332
      ],
      "view_json": "<hex>"
     },
@@ -1963,7 +1963,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      350
+      332
      ],
      "view_json": "<hex>"
     },

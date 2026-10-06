@@ -167,7 +167,20 @@ def draw_canvas(
     regions (:class:`~langslice.core.transform.FitFrame`).
     """
     edge = int(long_edge or options.long_edge)
-    window = options.window
+    window: list[float] = []
+    if not options.full_view:
+        # The zoom is given in pixels of this picture unzoomed: draw that
+        # first for its content size.
+        from dataclasses import replace
+
+        whole = draw_canvas(
+            ws, state, record, section, um_per_px, position, params,
+            replace(options, zoom=()), mode=mode, pivot=pivot,
+            section_offset=section_offset, label=label, long_edge=long_edge,
+            matrix_label=matrix_label, warp=warp, left=left,
+        )
+        x0, y0, x1, y1 = whole.panels[0].content_box
+        window = options.window((x1 - x0, y1 - y0))
     # The canvas is at least the section on each axis, so a section
     # render 1/span times the panel puts at least the panel's pixels
     # inside the zoom (render_slice stops at the working copy).
@@ -193,7 +206,7 @@ def draw_canvas(
         section_id=record.id, section=shown, um_per_px=shown_um, position_mm=position,
         plane=state.plane, pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, params=params,
         pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-        warp=warp, zoom=options.window, long_edge=edge,
+        warp=warp, zoom=window, long_edge=edge,
     )
     if warp is not None:
         from langslice.core.deformable import warp_section_image
@@ -204,7 +217,7 @@ def draw_canvas(
     images, _iou = physical_views(
         shown, shown_um, ws.atlas, position, cast(Plane, state.plane),
         record.pitch_deg, record.yaw_deg, params,
-        mode=drawn_mode, zoom=options.window,
+        mode=drawn_mode, zoom=window, zoom_pixels=options.zoom,
         atlas_opacity=options.atlas_opacity, outlines=options.layer,
         border_color=options.border_color, border_thickness=options.border_thickness,
         pivot=frame.pivot, pivot_in_section=in_section,

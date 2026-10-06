@@ -51,9 +51,12 @@ def _views(value: int = 120, **kwargs) -> tuple[list[np.ndarray], float]:
         # The model-facing screen size is the pixel-size rule's business
         # (test_the_model_screen_is_sized_by_the_atlas_resolution).
         long_edge=None,
+        frames=(frames := []),
         **kwargs,
     )
-    return [np.asarray(image.convert("RGB")) for image in images], iou
+    # The picture content, above its caption band.
+    return [np.asarray(image.convert("RGB"))[:frame["content_box"][3]]
+            for image, frame in zip(images, frames, strict=True)], iou
 
 
 def test_the_screen_is_the_long_edge_and_never_an_upsample():
@@ -220,7 +223,7 @@ def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_pa
     assert "silhouette_iou" not in first
     assert {key: first["view"][key] for key in ("mode", "zoom", "outlines")} == {
         "mode": "overlay",
-        "zoom": [0.0, 0.0, 1.0, 1.0],
+        "zoom": [],
         "outlines": "all",
     }
     # The normalized matrix, derived pixel shift/decomposition, generic status
@@ -244,10 +247,10 @@ def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
     assert len(pair[TOOL_MEDIA_PARTS_KEY]) == 2
     assert pair["view"]["mode"] == "side_by_side"
 
-    zoomed = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [0.3, 0.3, 0.7, 0.7], 0.5,
+    zoomed = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [60, 60, 200, 200], 0.5,
                      atlas_channels=["ara", "borders"])
     assert len(zoomed[TOOL_MEDIA_PARTS_KEY]) == 1
-    assert zoomed["view"]["zoom"] == [0.3, 0.3, 0.7, 0.7]
+    assert zoomed["view"]["zoom"] == [60, 60, 200, 200]
 
     assert preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "flicker")["error"] == "BAD_MODE"
     assert preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [0.3, 0.7])["error"] == "BAD_ZOOM"
@@ -389,14 +392,14 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
 
 
 def _bodies(**kwargs) -> list[np.ndarray]:
-    """Each panel below its caption band (the band's height varies with wrapping)."""
+    """Each panel above its caption band (the band's height varies with wrapping)."""
     frames: list[dict] = []
     long_edge = kwargs.pop("long_edge", None)
     images, _iou = physical_views(
         _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
         long_edge=long_edge, frames=frames, **kwargs,
     )
-    return [np.asarray(image.convert("RGB"))[frame["content_box"][1]:]
+    return [np.asarray(image.convert("RGB"))[:frame["content_box"][3]]
             for image, frame in zip(images, frames, strict=True)]
 
 
@@ -407,7 +410,7 @@ def test_clean_section_and_template_views_carry_no_outlines():
     pair = _bodies(mode="side_by_side")
 
     # The synthetic tissue is 120 grey; anti-aliased hairlines are far brighter.
-    # Picture area only: below the caption band, above the scale bar.
+    # Picture area only: above the scale bar (the caption band is cut off).
     assert overlaid[:-40].max() >= 200
     assert section_only[:-40].max() < 200
     # The template alone is the side-by-side's second panel minus its lines.
