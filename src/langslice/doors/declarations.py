@@ -388,7 +388,7 @@ def fit_affine(
         method: "elastix" (default) or "silhouette".
         fit_atlas: The atlas image the elastix method matches: "ara" (the
             reference template; default) or "nissl" (a Nissl-stained
-            reference, hosts with ABBA's atlas). Not for "silhouette".
+            reference, Allen mouse atlases). Not for "silhouette".
         include: Regions (acronyms or ids, descendants included) to fit
             by: only the atlas within 300 um of them, against the tissue
             the fit lays there. With "silhouette" they count only where
@@ -573,7 +573,7 @@ def fit_deformable(
             stiffness is the recommended pairing.
         fit_atlas: What of the atlas the fit reads. For "fit": "ara" (the
             atlas's reference template; default) or "nissl" (a
-            Nissl-stained reference, hosts with ABBA's atlas). For traced
+            Nissl-stained reference, Allen mouse atlases). For traced
             fit sections: "borders" (default).
         engine: "ants" or "elastix"; empty is ANTs when installed.
         stiffness: "soft", "medium" (default) or "firm".
@@ -767,11 +767,11 @@ _STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
     (
         '            fit_atlas: What of the atlas the fit reads. For "fit": "ara" (the\n'
         "                atlas's reference template; default) or \"nissl\" (a\n"
-        "                Nissl-stained reference, hosts with ABBA's atlas). For traced\n"
+        "                Nissl-stained reference, Allen mouse atlases). For traced\n"
         '                fit sections: "borders" (default).\n',
         '            fit_atlas: What of the atlas the fit reads: "ara" (the atlas\'s\n'
         '                reference template; default) or "nissl" (a Nissl-stained\n'
-        "                reference, hosts with ABBA's atlas).\n",
+        "                reference, Allen mouse atlases).\n",
     ),
     (" Traced sections add `traces`: each\n            one's trace drawn on the section.", ""),
 )

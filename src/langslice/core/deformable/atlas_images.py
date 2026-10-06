@@ -7,8 +7,9 @@ placed on the section's working grid through the linear placement. Blanking
 before placement is what makes exclusion work the same for every image kind:
 an excluded region's Nissl or template texture is gone, not just its lines.
 
-The ``nissl`` image needs ABBA's cached Allen volume (:class:`AbbaAtlas`);
-the reference and the borders come from the BrainGlobe atlas itself.
+The ``nissl`` image is the Nissl template aligned to the Allen CCFv3
+(:class:`NisslAtlas`, an Allen mouse atlas only); the reference and the
+borders come from the BrainGlobe atlas itself.
 """
 
 from __future__ import annotations
@@ -20,8 +21,8 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from langslice.core.atlas.render import annotation_slice, family_labels, placed_border_coverage
-from langslice.core.deformable.abba_atlas import AbbaAtlas
 from langslice.core.deformable.geometry import Placement, warp_affine
+from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.settings import BORDER_IMAGES
 
 #: Acronym of the ventricular system: it and all its descendants get the
@@ -174,7 +175,7 @@ def native_labels(atlas: Any, placement: Placement) -> np.ndarray:
 
 
 def native_intensity(
-    atlas: Any, placement: Placement, kind: str, *, abba: AbbaAtlas | None = None,
+    atlas: Any, placement: Placement, kind: str, *, nissl: NisslAtlas | None = None,
 ) -> np.ndarray:
     """The grayscale atlas plane (``ara`` or ``nissl``) on the native grid, float32."""
     if kind == "ara":
@@ -192,11 +193,9 @@ def native_intensity(
         return np.asarray(np.asarray(atlas.template)[index[0], index[1], index[2]],
                           dtype=np.float32)
     if kind == "nissl":
-        source = abba or AbbaAtlas.find()
-        if source is None:
-            raise ValueError("The nissl atlas image needs ABBA's cached Allen atlas")
+        source = nissl or NisslAtlas()
         return source.sample_plane(
-            "NISSL", atlas, placement.position_mm, placement.plane,
+            atlas, placement.position_mm, placement.plane,
             placement.pitch_deg, placement.yaw_deg,
         )
     raise ValueError(f"Not a grayscale atlas image: {kind!r}")
@@ -240,7 +239,7 @@ def placed_atlas_image(
     excluded: np.ndarray | None,
     *,
     softening_px: float,
-    abba: AbbaAtlas | None = None,
+    nissl: NisslAtlas | None = None,
 ) -> np.ndarray:
     """The moving image on the working grid, excluded regions blanked first.
 
@@ -258,7 +257,7 @@ def placed_atlas_image(
             supersample=BORDER_SUPERSAMPLE,
         )
         return soft_lines(coverage >= BORDER_COVERAGE_THRESHOLD, softening_px)
-    native = native_intensity(atlas, placement, kind, abba=abba)
+    native = native_intensity(atlas, placement, kind, nissl=nissl)
     native = normalize_intensity(native, (labels > 0) & keep)
     native = np.where(keep, native, 0.0).astype(np.float32)
     return warp_affine(native, atlas_to_working, working_size)

@@ -2,7 +2,7 @@
 
 :class:`Workspace` is everything the core operations (renders, atlas
 sections, fits, deformations, the image-correction handoff) need that is not
-stack state: the job spec, the image folder, the atlas and ABBA's Nissl
+stack state: the job spec, the image folder, the atlas and its aligned Nissl
 volume, each section's working copy, raw channels and pixel size, and the
 render caches. It knows nothing of the agent: no model, no message images.
 The agent driver wraps it (:class:`langslice.agent.engine.EngineContext`
@@ -89,10 +89,10 @@ class Workspace:
     frame_cache: OrderedDict[str, tuple[tuple[Any, ...], Any]] = field(
         default_factory=OrderedDict, repr=False)
     _atlas: Any = field(default=None, repr=False)
-    #: ABBA's cached Allen atlas when it matches this run's atlas (the
-    #: ``nissl`` atlas image); looked up once.
-    _abba: Any = field(default=None, repr=False)
-    _abba_checked: bool = field(default=False, repr=False)
+    #: The aligned Nissl template when this run's atlas is an Allen mouse
+    #: (CCFv3) atlas (the ``nissl`` atlas image); looked up once.
+    _nissl: Any = field(default=None, repr=False)
+    _nissl_checked: bool = field(default=False, repr=False)
     _range: tuple[float, float] | None = field(default=None, repr=False)
     _pixel_sizes: dict[str, float | None] = field(default_factory=dict, repr=False)
 
@@ -141,19 +141,21 @@ class Workspace:
         return cached
 
     @property
-    def abba_atlas(self) -> Any:
-        """ABBA's cached Allen atlas when present and matching, else None."""
-        if not self._abba_checked:
-            self._abba_checked = True
+    def nissl_atlas(self) -> Any:
+        """The aligned Nissl template (:class:`~langslice.core.deformable.nissl.NisslAtlas`,
+        read through this workspace's atlas loader, downloaded on first use)
+        when the run's atlas is an Allen mouse (CCFv3) atlas, else None."""
+        if not self._nissl_checked:
+            self._nissl_checked = True
             try:
-                from langslice.core.deformable.abba_atlas import AbbaAtlas
+                from langslice.core.deformable.nissl import NisslAtlas
 
-                found = AbbaAtlas.find()
-                self._abba = found if found is not None and found.compatible(self.atlas) else None
-            except Exception:  # an unreadable cache or a non-BrainGlobe atlas: no Nissl
-                logger.debug("ABBA atlas lookup failed", exc_info=True)
-                self._abba = None
-        return self._abba
+                self._nissl = (NisslAtlas(loader=self.atlas_loader)
+                               if NisslAtlas.compatible(self.atlas) else None)
+            except Exception:  # a non-BrainGlobe atlas: no Nissl
+                logger.debug("Nissl atlas lookup failed", exc_info=True)
+                self._nissl = None
+        return self._nissl
 
     @property
     def atlas(self) -> Any:

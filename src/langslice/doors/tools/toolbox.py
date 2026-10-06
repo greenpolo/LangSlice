@@ -1296,8 +1296,8 @@ def build_tools(
             return {"status": "error", "error": "BAD_FIT_ATLAS", "fit_atlas": offered}
         if atlas_kind not in offered:
             return {"status": "error", "error": "FIT_ATLAS_UNAVAILABLE",
-                    "message": f"The {atlas_kind} atlas image needs ABBA's cached Allen atlas "
-                    f"matching {state.atlas}; this host has none.", "fit_atlas": offered}
+                    "message": f"The {atlas_kind} atlas image is offered on Allen mouse atlases "
+                    f"only; {state.atlas} does not cover the CCFv3 grid.", "fit_atlas": offered}
         kept = region_names(include, "include")
         if isinstance(kept, dict):
             return kept
@@ -1587,8 +1587,8 @@ def build_tools(
                     "fit_atlases": list(available)}
         if atlas_kind not in available:
             return {"status": "error", "error": "FIT_ATLAS_UNAVAILABLE",
-                    "message": f"The {atlas_kind} atlas image needs ABBA's cached Allen atlas "
-                    f"matching {state.atlas}; this host has none.",
+                    "message": f"The {atlas_kind} atlas image is offered on Allen mouse atlases "
+                    f"only; {state.atlas} does not cover the CCFv3 grid.",
                     "available": list(available)}
         if traced and atlas_kind != "borders":
             return {"status": "error", "error": "BAD_ARGS",

@@ -225,7 +225,7 @@ PICTURE_TOOLS: tuple[str, ...] = (
 #: One line per atlas channel, as the job statement describes it.
 ATLAS_CHANNEL_LINES: dict[str, str] = {
     "ara": "the atlas's reference image, the template its regions were drawn on",
-    "nissl": "a Nissl-stained reference, ABBA's cached Allen atlas",
+    "nissl": "a Nissl-stained reference aligned to the atlas",
     "borders": "the atlas regions, drawn as lines",
 }
 

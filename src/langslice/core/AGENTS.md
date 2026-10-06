@@ -215,8 +215,8 @@ for the flat plane).
   grid; its matrix is `linear_placement_matrix`, the one path from the six
   stored numbers to the atlas, which `core.maps` uses too),
   `correction_fingerprint` (everything an image correction's inputs
-  depend on; the trace's call key, the submit check and a traced fit's
-  staleness test all read it) and `digest`. A section without a written
+  depend on; the trace's call key and a traced fit's staleness test
+  read it) and `digest`. A section without a written
   transform is refused by `missing_transform_message(spec)`: with Linear
   (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller to
   supply the transforms (`inputs.transforms`, `--transforms`) or switch

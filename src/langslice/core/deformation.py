@@ -508,7 +508,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
             prepared.append(prepare_fit(
                 job.image, ctx.atlas, job.grid.placement, job.settings, lines=job.lines,
                 previous=job.previous,
-                abba=ctx.abba_atlas if job.choice.fit_atlas == "nissl" else None,
+                nissl=ctx.nissl_atlas if job.choice.fit_atlas == "nissl" else None,
             ))
             waiting.append(job)
         except Exception as exc:  # noqa: BLE001 - a bad candidate must not sink the rest
@@ -655,7 +655,7 @@ def _blend_atlas(
 
     def pulled(kind: str) -> np.ndarray:
         native = native_intensity(ctx.atlas, record.placement, kind,
-                                  abba=ctx.abba_atlas if kind == "nissl" else None)
+                                  nissl=ctx.nissl_atlas if kind == "nissl" else None)
         native = normalize_intensity(native, labels > 0)
         return cv2.remap(native.astype(np.float32), nx, ny, cv2.INTER_LINEAR,
                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)

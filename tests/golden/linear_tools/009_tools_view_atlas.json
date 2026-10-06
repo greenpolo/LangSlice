@@ -10,7 +10,7 @@
    "borders"
   ],
   "error": "ATLAS_CHANNEL_UNAVAILABLE",
-  "message": "The nissl atlas channel needs ABBA's cached Allen atlas matching allen_mouse_25um; this host has none.",
+  "message": "The nissl atlas channel is offered on Allen mouse atlases only; allen_mouse_25um does not cover the CCFv3 grid.",
   "status": "error"
  },
  "door": "tools",

@@ -29,7 +29,6 @@ from scipy import ndimage as ndi
 
 from langslice.core.atlas.render import family_labels
 from langslice.core.atlas.sides import split_side
-from langslice.core.deformable.abba_atlas import AbbaAtlas
 from langslice.core.deformable.atlas_images import (
     native_labels,
     placed_atlas_image,
@@ -58,6 +57,7 @@ from langslice.core.deformable.masks import (
     torn_edge_band,
     ventricle_holes,
 )
+from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.regions import named_regions
 from langslice.core.deformable.settings import (
@@ -209,7 +209,7 @@ def prepare_fit(
     lines: np.ndarray | None = None,
     torn_band: np.ndarray | None = None,
     previous: DeformableRecord | None = None,
-    abba: AbbaAtlas | None = None,
+    nissl: NisslAtlas | None = None,
 ) -> PreparedFit:
     """Build the working-grid images and masks for one candidate.
 
@@ -257,7 +257,7 @@ def prepare_fit(
 
     moving = placed_atlas_image(
         settings.atlas_image, native, atlas, placement, atlas_to_working, grid.size,
-        excluded_native, softening_px=softening_px, abba=abba,
+        excluded_native, softening_px=softening_px, nissl=nissl,
     )
     if offset is not None:
         moving = _remap(moving, offset)

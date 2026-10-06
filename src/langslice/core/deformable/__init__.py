@@ -5,7 +5,6 @@ library engines (ANTs SyN, Elastix B-spline), atlas images, masks, and the
 canonical per-section record. See ``CLAUDE.md`` in this package.
 """
 
-from langslice.core.deformable.abba_atlas import AbbaAtlas
 from langslice.core.deformable.atlas_images import (
     excluded_ids,
     ventricle_ids,
@@ -19,6 +18,7 @@ from langslice.core.deformable.fit import (
     prepare_fit,
 )
 from langslice.core.deformable.geometry import Placement, placement_from_handoff
+from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.render import (
     draw_warped_borders,
@@ -29,10 +29,10 @@ from langslice.core.deformable.render import (
 from langslice.core.deformable.settings import FitSettings, traced_settings
 
 __all__ = [
-    "AbbaAtlas",
     "CandidateFailure",
     "DeformableRecord",
     "FitSettings",
+    "NisslAtlas",
     "Placement",
     "PreparedFit",
     "diagnose",
