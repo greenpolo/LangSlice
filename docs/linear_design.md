@@ -80,13 +80,13 @@ with the atlas at each section's current position beneath, then the status
 table. `image_resolution` sets the long edge of each strip tile and of every
 later picture (`core.sizes.PICTURE_EDGES`); it never changes fits or stored
 transforms. Each picture a tool returns takes its options in one `view`
-argument (`core/display.py`; `langslice schema VERB` lists them). Every
+argument (`core/display.py`; `langslice-job schema VERB` lists them). Every
 picture is saved in the job folder as the JPEG the model got.
 
 ## Tools
 
 The verbs are the agent's tools, under the same names in every door;
-`langslice ops` lists them and `langslice schema VERB` gives the exact
+`langslice-job ops` lists them and `langslice-job schema VERB` gives the exact
 arguments:
 
 - Common: `status`, `view_slices`, `view_atlas`, `note`, `undo`, `redo`,

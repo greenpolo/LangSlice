@@ -9,30 +9,45 @@ verbs the agent tools and the CLI offer, by the same names and arguments
     job = langslice.open_job("/data/brain1")       # the job folder or its images
     job.status()["rows"]
     reply = job.set_positions(entries=[{"id": "s01.tif", "position_mm": 5.2}])
-    reply["images"]                                 # the pictures, as PIL images
+    reply["artifacts"]                              # the pictures' files
+    reply.images                                    # the pictures, as PIL images
 
-Each method returns the tool's reply as a dict, its pictures (PIL images)
-under ``"images"``; every picture is also saved in the job folder with its
-layers, as every door saves them. The look-before-commit gates do not apply
+Each method returns the tool's reply as a plain, JSON-safe dict
+(:class:`Reply`): the result the agent CLI gives under ``result`` (whole,
+not shortened), every status row with every field (null where absent), and
+under ``artifacts`` the files of its pictures, saved in the job folder with
+their layers as every door saves them, as the CLI lists them (``path``,
+``kind``, ``index``, ``label``). A method returns once its pictures are on
+disk; the pictures themselves, as PIL images, are on the reply's
+``images`` attribute (not a key). The look-before-commit gates do not apply
 (gates are tool-only) and ``view.resolution`` takes any size from 128 px to
 the source's own pixels. Writes go through the job: one undo step each,
 checkpointed, and picked up by an agent working on the same folder
 (``Job.sync``), whose writes this handle picks up before each call.
 
 A script makes a job with :func:`create_job` (a folder of sections and the
-settings ``langslice job FOLDER init`` takes, or a :class:`JobSpec`), the
+settings ``langslice-job FOLDER init`` takes, or a :class:`JobSpec`), the
 same ingest every host uses, and gets the same handle. Both take
 ``image_model=``: the model ``trace_borders`` calls, a provider name, a
 model profile (:func:`langslice.providers.profiles.image_model`) or a model
 of the caller's own (``docs/library.md``).
+
+An image-model verb (``trace_borders``) returns once its call has started;
+the call lands in the background. :meth:`JobHandle.close` (or leaving the
+``with`` block) waits for it, and a script that exits without either has
+every open job closed for it at exit, while threads can still start
+(:func:`langslice.job.views.at_exit`).
 
 Nothing here loads the agent framework or a model client.
 """
 
 from __future__ import annotations
 
+import functools
+import logging
 import math
 import os
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -43,9 +58,101 @@ from langslice.doors.jobs import Opened, open_folder
 if TYPE_CHECKING:
     from langslice.providers.registry import ImageModel
 
+logger = logging.getLogger(__name__)
+
 #: ``job.json``'s record of the image model a library job was made with
 #: (provider, model, profile, tested, the profile prompt's digest).
 IMAGE_MODEL_KEY = "image_model"
+
+
+class Reply(dict):  # type: ignore[type-arg]
+    """A verb's reply: a plain dict of JSON values (``json.dumps(reply)``
+    works), its pictures' files under ``artifacts``; the pictures
+    themselves, as PIL images in the order a model receives them, on
+    :attr:`images`, which is not a key."""
+
+    images: list[Any]
+
+    def __init__(self, body: Mapping[str, Any] | None = None,
+                 images: Sequence[Any] = ()) -> None:
+        super().__init__(body or {})
+        self.images = list(images)
+
+
+def plain(value: Any) -> Any:
+    """*value* as JSON values: mappings with text keys, lists, numbers,
+    text, booleans and null; a numpy value as its Python value, anything
+    else as its text (as the agent CLI prints it)."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = sorted(value, key=str) if isinstance(value, (set, frozenset)) else value
+        return [plain(item) for item in items]
+    import numpy as np
+
+    if isinstance(value, np.ndarray):
+        return plain(value.tolist())
+    if isinstance(value, np.generic):
+        return plain(value.item())
+    return str(value)
+
+
+def library_reply(verb: str, reply: Any, saved: Sequence[Any]) -> Reply:
+    """A tool's reply for a script: the pictures out of it (their files
+    under ``artifacts``, :func:`langslice.job.views.artifacts`; the images
+    on :attr:`Reply.images`; their lines of text under ``media_texts``), the
+    status rows uniform (:func:`langslice.core.status.with_uniform_rows`),
+    everything else JSON values (:func:`plain`); a picture that could not be
+    saved is a line under ``warnings``."""
+    from langslice.core.status import with_uniform_rows
+    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.job.views import artifacts
+
+    body = dict(reply) if isinstance(reply, Mapping) else {"result": reply}
+    media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
+    body.pop(TOOL_MEDIA_DELIVERY_ID_KEY, None)
+    media = media if isinstance(media, list) else []
+    texts = [item for item in media if isinstance(item, str)]
+    if texts:
+        body["media_texts"] = texts
+    out = plain(with_uniform_rows(body))
+    out["artifacts"], unsaved = artifacts(saved, verb)
+    if unsaved:
+        out["warnings"] = unsaved
+    return Reply(out, [item for item in media if not isinstance(item, str)])
+
+
+#: The jobs the library holds open, closed at interpreter exit (:func:`_close_open`).
+_OPEN: dict[int, weakref.ref[Opened]] = {}
+_EXIT_HOOKED = False
+
+
+def _track(opened: Opened) -> None:
+    global _EXIT_HOOKED
+    if not _EXIT_HOOKED:
+        from langslice.job.views import at_exit
+
+        at_exit(_close_open)
+        _EXIT_HOOKED = True
+    key = id(opened)
+    _OPEN[key] = weakref.ref(opened, lambda _ref: _OPEN.pop(key, None))
+
+
+def _close_open() -> None:
+    """Close every job a script left open: its image-model calls land and
+    its pictures are written before the interpreter stops taking work."""
+    for ref in list(_OPEN.values()):
+        opened = ref()
+        if opened is None:
+            continue
+        try:
+            opened.close()
+        except Exception:  # an exiting script has no one to raise to
+            logger.warning("Could not close the job %s at exit", opened.job.folder,
+                           exc_info=True)
+    _OPEN.clear()
 
 
 class JobHandle:
@@ -53,8 +160,26 @@ class JobHandle:
 
     def __init__(self, opened: Opened, imported: dict[str, Any] | None = None) -> None:
         self._opened = opened
-        self._tools = {tool.__name__: tool for tool in opened.tools().tools}
+        self._tools = {tool.__name__: self._method(tool) for tool in opened.tools().tools}
         self._imported = imported
+        _track(opened)
+
+    def _method(self, tool: Callable[..., Any]) -> Callable[..., Reply]:
+        """The verb *tool* as a method: the tool's call, then its pictures
+        written, then its reply for a script (:func:`library_reply`)."""
+        from langslice.job.views import captured
+
+        job = self._opened.job
+        name = tool.__name__
+
+        @functools.wraps(tool)
+        def method(*args: Any, **kwargs: Any) -> Reply:
+            with captured() as saved:
+                reply = tool(*args, **kwargs)
+            job.views.flush()  # the pictures are on disk before the method returns
+            return library_reply(name, reply, saved)
+
+        return method
 
     # --- the verbs ------------------------------------------------------------------
 
@@ -64,7 +189,7 @@ class JobHandle:
         hidden verb (``Verb.hidden``) is callable by name but not listed."""
         return self._opened.listed_verbs()
 
-    def __getattr__(self, name: str) -> Callable[..., dict[str, Any]]:
+    def __getattr__(self, name: str) -> Callable[..., Reply]:
         tools = self.__dict__.get("_tools") or {}
         if name in tools:
             return tools[name]
@@ -117,7 +242,9 @@ class JobHandle:
         return self._opened.ctx
 
     def close(self) -> None:
-        """Finish the job's background writes (pictures, image corrections)."""
+        """Finish the job's background work: its image-model calls land and
+        its pictures are written. The job stays usable; a script that exits
+        without closing has this done for it."""
         self._opened.close()
 
     def __enter__(self) -> JobHandle:
@@ -127,7 +254,7 @@ class JobHandle:
         self.close()
 
     def __repr__(self) -> str:
-        return f"<langslice job {self.folder} ({len(self.state.slices)} sections)>"
+        return f"<langslice-job {self.folder} ({len(self.state.slices)} sections)>"
 
 
 def as_image_model(value: Any) -> ImageModel | None:
@@ -167,7 +294,7 @@ def open_job(
     emit: Callable[[str], None] | None = None,
 ) -> JobHandle:
     """Open the job in *folder* (the job folder, or the image folder beside
-    it). Create one with :func:`create_job` or ``langslice job <images> init``.
+    it). Create one with :func:`create_job` or ``langslice-job <images> init``.
 
     *image_model* is the model ``trace_borders`` calls (a provider name, a
     profile, a model of your own: :func:`langslice.providers.profiles.image_model`);

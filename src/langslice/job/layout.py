@@ -189,7 +189,7 @@ def check_owner(layout: JobLayout) -> None:
     continued. The default job folder's images are its parent wherever it
     moves (:data:`IMAGES_ARE_PARENT`). An explicit folder whose image folder
     no longer exists is taken over by the images it is opened with (they
-    moved: ``langslice job NEW_IMAGES init --job-dir FOLDER``). Raises
+    moved: ``langslice-job NEW_IMAGES init --job-dir FOLDER``). Raises
     ``ValueError``.
     """
     held = read_job_file(layout)

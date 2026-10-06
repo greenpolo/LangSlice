@@ -1,4 +1,4 @@
-"""``langslice job FOLDER VERB [arguments]``: one verb on a job folder, for agents.
+"""``langslice-job FOLDER VERB [arguments]``: one verb on a job folder, for agents.
 
 The agent CLI: every verb of :data:`langslice.ops.registry.VERBS`
 under the tool's own name (kebab-case accepted: ``set-positions``), plus
@@ -8,7 +8,7 @@ statement and the opening pictures, :mod:`langslice.doors.cli.brief`),
 verb). FOLDER is the job folder or the image folder beside it.
 
 Arguments are the verb's declared arguments
-(:mod:`langslice.doors.declarations`, ``langslice schema VERB``): a JSON
+(:mod:`langslice.doors.declarations`, ``langslice-job schema VERB``): a JSON
 object with ``--args '{...}'`` or ``--args @file.json``, and/or one flag per
 argument, ``--name value`` (kebab or snake case; a JSON value, or plain text
 for a text argument; a list argument takes the flag again for each item).
@@ -62,6 +62,9 @@ CHECKED_ONLY = frozenset({"trace_borders", "trace_from_atlas", "fit_deformable"}
 #: Reply keys worth a warning when present and not empty.
 WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")
+#: A call with one of these answers with the verb's (or command's) schema,
+#: as ``langslice-job schema NAME`` does, and runs nothing.
+HELP_FLAGS = frozenset({"--help", "-h"})
 #: Verbs whose whole-stack ``rows`` are their answer (kept when concise).
 ROW_VERBS = frozenset({"status", "view_stack"})
 
@@ -87,12 +90,11 @@ class _Parser(argparse.ArgumentParser):
 # --- the command ------------------------------------------------------------------
 
 
-def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser(
-        "job", help="Agent CLI: one verb on a job folder, JSON on stdout "
-        "(see `langslice ops`)")
+def add_arguments(p: argparse.ArgumentParser) -> None:
+    """``FOLDER VERB [arguments]``, the ``langslice-job`` command's
+    (:mod:`langslice.doors.cli.jobcli`)."""
     p.add_argument("folder", help="The job folder, or the image folder beside it")
-    p.add_argument("verb", help="A verb (`langslice ops`), init, runs [ID] or wait [ID]")
+    p.add_argument("verb", help="A verb (`langslice-job ops`), init, runs [ID] or wait [ID]")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="--args JSON|@file, --name value, --dry-run, --background, "
                    "--verbose, --timeout SECONDS")
@@ -119,7 +121,7 @@ def execute(folder: str, verb: str, rest: list[str], *,
     except JobBusy as exc:
         envelope = Envelope.failure("JOB_BUSY", str(exc), exit=EXIT_REFUSED)
     except Exception as exc:  # the envelope reports it; the traceback goes to stderr
-        logger.exception("langslice job %s %s failed", folder, verb)
+        logger.exception("langslice-job %s %s failed", folder, verb)
         envelope = Envelope.failure("INTERNAL", f"{type(exc).__name__}: {exc}",
                                     exit=EXIT_INTERNAL)
     if run_id:
@@ -139,6 +141,10 @@ def _run_id(rest: list[str]) -> str | None:
 
 
 def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> Envelope:
+    if HELP_FLAGS & set(rest):  # what `langslice-job schema NAME` answers
+        from langslice.doors.cli.catalog import describe
+
+        return describe(name, folder)
     if name == "init":
         return init(folder, rest, atlas_loader=atlas_loader)
     options, arguments, positional = parse(rest)
@@ -384,7 +390,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
             run_id = background.start(opened.job.layout, verb, arguments,
                                       verbose=bool(options.get("verbose")))
             envelope = Envelope(result={"run": run_id, "verb": verb, "state": "running"},
-                                next=[f"langslice job {job_folder} wait {run_id}"])
+                                next=[f"langslice-job {job_folder} wait {run_id}"])
         elif dry_run and verb in CHECKED_ONLY:
             envelope = _checked(opened, verb, arguments)
         else:
@@ -403,7 +409,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
 
 def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
     """The command line that calls *verb* with *arguments* on the job."""
-    return (f"langslice job {job_folder} {verb} --args "
+    return (f"langslice-job {job_folder} {verb} --args "
             f"'{json.dumps(arguments, default=str)}'")
 
 
@@ -425,6 +431,7 @@ def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
 
 def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
          dry_run: bool, verbose: bool) -> Envelope:
+    from langslice.job.views import artifacts as picture_artifacts
     from langslice.job.views import captured
     from langslice.ops.registry import VERBS
 
@@ -448,16 +455,9 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     if verb == "export_maps" and isinstance(reply, dict) and not dry_run:
         artifacts += [dict(item) for item in reply.get("files") or []]
     job.views.flush()
-    for picture in saved:
-        # ``index`` is the picture's place among the call's pictures, the
-        # number the reply's ``image_indexes`` give; ``label`` what it shows.
-        label = ", ".join(picture.sections) + (f" ({picture.mode})" if picture.mode else "")
-        for path, kind in picture.files():
-            if path.exists():
-                artifacts.append({"path": str(path), "kind": kind, "index": picture.index,
-                                  **({"label": label or verb} if kind == "view" else {})})
-            elif kind == "view":
-                warnings.append(f"picture not saved: {path}")
+    pictures, unsaved = picture_artifacts(saved, verb)
+    artifacts += pictures
+    warnings += unsaved
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
         result["image_correction"] = _landed(job, result.get("id"))
@@ -517,15 +517,18 @@ def _landed(job: Any, section: Any) -> dict[str, Any]:
 
 
 def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
-    """A tool reply for the CLI: pictures out (they are artifacts); concise
-    unless *verbose* (no whole-stack rows on a write; a reply with pictures
-    keeps what they are as one line, ``picture_note``; *verbose* keeps the
+    """A tool reply for the CLI: pictures out (they are artifacts); status
+    rows uniform (every field, null where absent:
+    :func:`langslice.core.status.with_uniform_rows`); concise unless
+    *verbose* (no whole-stack rows on a write; a reply with pictures keeps
+    what they are as one line, ``picture_note``; *verbose* keeps the
     description and the pictures' text lines as written for a model)."""
+    from langslice.core.status import with_uniform_rows
     from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 
     if not isinstance(reply, dict):
         return reply
-    body = dict(reply)
+    body = with_uniform_rows(dict(reply))
     media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
     body.pop(TOOL_MEDIA_DELIVERY_ID_KEY, None)
     if verbose:
@@ -569,6 +572,23 @@ def changes(before: dict[str, Any], after: dict[str, Any], *,
 # --- init ---------------------------------------------------------------------------
 
 
+def init_parser() -> argparse.ArgumentParser:
+    """``init``'s flags: the job flags of ``langslice linear run``, plus
+    ``--notes`` and ``--viewer`` (``langslice-job schema init`` lists them)."""
+    from langslice.core.opening import VIEWER_LIMITS
+    from langslice.doors.cli.linear import add_linear_arguments
+
+    parser = _Parser(prog="langslice-job FOLDER init", add_help=False)
+    add_linear_arguments(parser)
+    parser.add_argument("--notes", default=None, metavar="TEXT",
+                        help="The user's notes for this job (job.json), which every door "
+                        "gives the registration agent")
+    parser.add_argument("--viewer", default=None, choices=sorted(VIEWER_LIMITS),
+                        help="Which model reads the pictures (job.json; default claude): "
+                        "it sets their largest size")
+    return parser
+
+
 def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     """Create (or continue) the job for the image folder *folder*: the job
     flags of ``langslice linear run``; ingest as every host does. With
@@ -578,20 +598,11 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     warnings are the envelope's (``BAD_REGISTRATION`` when it cannot be
     read, matched one to one, or places no section)."""
     from langslice.core.discovery import discover_slices
-    from langslice.core.opening import VIEWER_LIMITS
-    from langslice.doors.cli.linear import add_linear_arguments, spec_from_args
+    from langslice.doors.cli.linear import spec_from_args
     from langslice.doors.jobs import create, with_registration
     from langslice.job.job import InputsChanged
 
-    parser = _Parser(prog="langslice job FOLDER init", add_help=False)
-    add_linear_arguments(parser)
-    parser.add_argument("--notes", default=None, metavar="TEXT",
-                        help="The user's notes for this job (job.json), which every door "
-                        "gives the registration agent")
-    parser.add_argument("--viewer", default=None, choices=sorted(VIEWER_LIMITS),
-                        help="Which model reads the pictures (job.json; default claude): "
-                        "it sets their largest size")
-    args = parser.parse_args(rest)
+    args = init_parser().parse_args(rest)
     images = Path(folder).expanduser().resolve()
     if not images.is_dir() or not discover_slices(str(images)):
         return Envelope.failure("NO_IMAGES", f"No section images in {images}.")
@@ -643,7 +654,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         artifacts += written.artifacts
         return Envelope(result=result, artifacts=artifacts,
                         warnings=list((imported or {}).get("warnings") or []),
-                        next=[f"langslice job {layout.folder} brief"])
+                        next=[f"langslice-job {layout.folder} brief"])
     finally:
         opened.close()
 
@@ -694,7 +705,7 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     if verb == "runs" and not positional:
         listed = background.listing(layout)
         return Envelope(result={"runs": listed},
-                        next=[f"langslice job {job_folder} wait {run['id']}"
+                        next=[f"langslice-job {job_folder} wait {run['id']}"
                               for run in listed if run.get("state") == "running"][:1])
     run_id = positional[0] if positional else background.latest(layout)
     if run_id is None:
@@ -708,7 +719,7 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
                                 **({"envelope": record["envelope"]}
                                    if "envelope" in record else {})},
                         next=[] if record.get("state") != "running"
-                        else [f"langslice job {job_folder} wait {run_id}"])
+                        else [f"langslice-job {job_folder} wait {run_id}"])
     record = background.wait(layout, run_id, options.get("timeout"))
     if record is None:
         return Envelope.failure("UNKNOWN_RUN", f"No run {run_id}.", job=job_folder)
@@ -727,4 +738,4 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     return answer
 
 
-__all__ = ["EXIT_ARGUMENTS", "add_parser", "execute", "run"]
+__all__ = ["EXIT_ARGUMENTS", "add_arguments", "execute", "run"]

@@ -1,6 +1,6 @@
 """The agent CLI on the synthetic atlas, in a process of its own.
 
-``python -m tests.cli_child job FOLDER VERB ...`` is ``langslice job FOLDER
+``python -m tests.cli_child job FOLDER VERB ...`` is ``langslice-job FOLDER
 VERB ...`` with the golden recorder's synthetic atlas and fit settings
 (``tests/golden/record.py``): what a background run starts in the tests
 (``langslice.doors.cli.background.CHILD_COMMAND``), where BrainGlobe's
@@ -55,7 +55,7 @@ def main() -> int:
             commit(self, before)
 
         Job.commit = slow  # type: ignore[method-assign]
-    from langslice.cli import main as cli_main
+    from langslice.doors.cli.jobcli import main as cli_main
 
     return int(cli_main(sys.argv[1:]) or 0)
 

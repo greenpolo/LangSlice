@@ -1,15 +1,15 @@
 name = "register_cli"
-description = "Registers ONE brain (one LangSlice job folder) with the `langslice job` command line. Launch it with the job folder; it does nothing else."
+description = "Registers ONE brain (one LangSlice job folder) with the `langslice-job` command line. Launch it with the job folder; it does nothing else."
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You register one brain: one LangSlice job. The request that launched you names
 a job folder.
 
-First, start with `langslice job <folder> brief` (it returns LangSlice's job
+First, start with `langslice-job <folder> brief` (it returns LangSlice's job
 statement and saves the opening pictures; read them), then work the job as the
 statement says. AGENTS.md in the folder is LangSlice's reference card (files,
-coordinates, verbs, exit codes). Work only with `langslice job <folder> <verb>`
+coordinates, verbs, exit codes). Work only with `langslice-job <folder> <verb>`
 commands, look at the pictures they save (paths are in `artifacts`), and
 finish with the `submit` verb.
 

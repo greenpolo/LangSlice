@@ -109,61 +109,90 @@ def set_cutting_angles(job: Job, workspace: Workspace, pitch_deg: float, yaw_deg
 # --- searches: read, never written ----------------------------------------------------
 
 
+#: The coarse position grid's largest spacing (mm) in :func:`search_position`.
+SEARCH_STEP_MM = 0.25
+
+
 def search_position(
     job: Job, workspace: Workspace, ref: object, window_mm: Any, *, angles: bool,
+    around_mm: Any = None,
 ) -> dict[str, Any]:
-    """Search the atlas around a section's current position; writes nothing.
+    """Search the atlas for a section's position; writes nothing.
 
     Scores the section (its 512 px working render) against resampled atlas
-    planes within *window_mm* of its position (:func:`langslice.core.oblique.fit_oblique`)
-    and returns the best: ``id``, ``current_position_mm``, ``position_mm``,
-    ``pitch_deg``, ``yaw_deg``, ``score``, ``searched_window_mm``,
-    ``searched_angles``. *angles* also searches the cutting angles (±15
-    degrees); otherwise they are held at the section's own (the stack's
-    unless a registration was supplied per section). Refused:
-    ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``BAD_ARGS`` (a window that is
-    not a number), ``FIT_FAILED``.
+    planes (:func:`langslice.core.oblique.fit_oblique`, the coarse position
+    grid at most :data:`SEARCH_STEP_MM` apart) and returns the best: ``id``,
+    ``current_position_mm`` (None for a section without one),
+    ``position_mm``, ``pitch_deg``, ``yaw_deg``, ``score``,
+    ``searched_window_mm``, ``searched_range_mm`` and ``searched_angles``.
+    The search runs within *window_mm* of *around_mm* (None or negative:
+    the section's position), clamped to the atlas's valid range; a section
+    with neither is searched over the whole valid range. With the section's
+    pixel size known, a plane whose brain is too small to hold its tissue
+    is never chosen (``fit_oblique``'s ``section_um_per_px``). *angles* also
+    searches the cutting angles (±15 degrees); otherwise they are held at
+    the section's own (the stack's unless a registration was supplied per
+    section). Refused: ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (a window or
+    centre that is not a number), ``FIT_FAILED``.
     """
     import logging
+    import math
 
     from langslice.core.oblique import fit_oblique
-    from langslice.core.sections import render_slice
+    from langslice.core.sections import canvas_um_per_px, render_slice
     from langslice.core.space import Plane
 
     state = job.state
     record = state.resolve(ref)
     if record is None:
         raise Refused("UNKNOWN_SLICE_IDS", unknown=[ref])
-    if record.position_mm is None:
-        raise Refused("NO_POSITION", id=record.id)
     try:
         window = max(0.0, float(window_mm))
+        centre = None if around_mm is None else float(around_mm)
     except (TypeError, ValueError):
         raise Refused("BAD_ARGS") from None
+    if not math.isfinite(window) or (centre is not None and not math.isfinite(centre)):
+        raise Refused("BAD_ARGS")
+    if centre is None or centre < 0:
+        centre = record.position_mm
+    low, high = workspace.position_range
+    if centre is None:  # nothing to search around: the whole valid range
+        start, stop = low, high
+    else:
+        start, stop = max(low, centre - window), min(high, centre + window)
+        if start > stop:  # a centre outside the range: its nearest end
+            start = stop = min(max(centre, low), high)
     pitch, yaw = record.angles
     bounds = ((-15.0, 15.0), (-15.0, 15.0)) if angles else ((pitch, pitch), (yaw, yaw))
     section = render_slice(workspace, record, long_edge=512)
+    um_per_px, _source = canvas_um_per_px(workspace, record, long_edge=512)
     try:
         fit = fit_oblique(
             workspace.atlas,
             section,
-            record.position_mm,
+            (start + stop) / 2.0,
             cast(Plane, state.plane),
             pitch_bounds=bounds[0],
             yaw_bounds=bounds[1],
-            position_window_mm=window,
+            position_window_mm=(stop - start) / 2.0,
             allow_mirror=False,
+            position_step_mm=SEARCH_STEP_MM,
+            section_um_per_px=um_per_px,
         )
+        if not math.isfinite(float(fit["score"])):
+            raise ValueError("no atlas plane in the searched range can hold the section")
     except Exception as exc:
         logging.getLogger(__name__).warning("search_position failed for %s: %s", record.id, exc)
         raise Refused("FIT_FAILED", message=str(exc)) from exc
+    current = record.position_mm
     return {
         "id": record.id,
-        "current_position_mm": round(record.position_mm, 3),
+        "current_position_mm": round(current, 3) if current is not None else None,
         "position_mm": round(float(fit["position_mm"]), 3),
         "pitch_deg": round(float(fit["pitch_deg"]), 3),
         "yaw_deg": round(float(fit["yaw_deg"]), 3),
         "score": round(float(fit["score"]), 4),
-        "searched_window_mm": round(window, 3),
+        "searched_window_mm": round((stop - start) / 2.0, 3),
+        "searched_range_mm": [round(start, 3), round(stop, 3)],
         "searched_angles": bool(angles),
     }

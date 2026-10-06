@@ -80,7 +80,8 @@ TOOL_LINES: dict[str, str] = {
     "and cutting-angle combination was already seen in a full-canvas "
     "atlas-bearing placement view.",
     "search_position": "searches the atlas around one section's current position "
-    "and reports the best it found; writes nothing.",
+    "(or a centre you give; the whole range for a section without one) and "
+    "reports the best it found; writes nothing.",
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section, writes it as the section's transform, and returns the overlap, "
@@ -162,7 +163,7 @@ OPENING_PLACES: dict[str, str] = {
 }
 
 #: Tool lines worded for the agent CLI, which answers an image-model verb
-#: once its call has landed (``langslice job FOLDER trace_borders``) unless
+#: once its call has landed (``langslice-job FOLDER trace_borders``) unless
 #: it runs with ``--background``.
 _CLI_LINES: dict[str, tuple[str, str]] = {
     "trace_borders": (

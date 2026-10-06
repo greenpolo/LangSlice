@@ -218,6 +218,32 @@ def test_position_window_recovers_a_shifted_position(atlas: _Phantom) -> None:
     assert abs(fit["position_mm"] - truth_mm) < 0.15
 
 
+def test_a_whole_range_search_skips_planes_beyond_the_brain(atlas: _Phantom) -> None:
+    """The volume's end planes hold no brain (scored as the worst, never a
+    failure); with the section's pixel size, slivers too small to hold it
+    are skipped too, and a dense coarse grid finds the plane."""
+    truth_mm = 70 * RES_UM / 1000.0
+    section = sample_oblique_plane(atlas, truth_mm, "coronal", 0.0, 0.0)
+    span = SHAPE[0] * RES_UM / 1000.0
+
+    fit = fit_oblique(
+        atlas,
+        section,
+        span / 2.0,
+        "coronal",
+        pitch_bounds=(0.0, 0.0),
+        yaw_bounds=(0.0, 0.0),
+        position_window_mm=span / 2.0,
+        allow_mirror=False,
+        downsample=1,
+        position_step_mm=0.25,
+        section_um_per_px=RES_UM,
+    )
+
+    assert abs(fit["position_mm"] - truth_mm) < 0.3
+    assert fit["n_evals"] > 4 * span  # the coarse grid at most 0.25 mm apart
+
+
 def test_metric_dispatch_and_self_similarity(atlas: _Phantom) -> None:
     plane = sample_oblique_plane(atlas, 2.6, "coronal", 0.0, 0.0)
     other = sample_oblique_plane(atlas, 3.4, "coronal", 0.0, 0.0)

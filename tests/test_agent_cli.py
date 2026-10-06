@@ -1,4 +1,4 @@
-"""The agent CLI: ``langslice ops``, ``schema``, ``job FOLDER VERB``.
+"""The agent CLI: ``langslice-job ops``, ``schema``, ``job FOLDER VERB``.
 
 Run through ``langslice.cli.main`` as an agent runs it: one JSON envelope on
 stdout (``ok``, ``result``, ``artifacts``, ``warnings``, ``next``, and
@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from langslice.cli import main
+from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
 from tests.golden.record import (
     ID0,
@@ -62,7 +62,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 
 
 def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
-    code, envelope = cli(capsys, "job", str(images), "init", "--tasks",
+    code, envelope = cli(capsys, str(images), "init", "--tasks",
                          "reorder,position,transform,nonlinear", "--image-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          *flags)
@@ -122,7 +122,84 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     assert code == 0 and hidden["result"]["arguments"]["required"] == ["slices"]
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
-    assert "langslice ops" in unknown["error"]["fix"]
+    assert "langslice-job ops" in unknown["error"]["fix"]
+
+
+def test_init_is_described_by_schema_and_by_help(capsys, images):
+    code, envelope = cli(capsys, "schema", "init")
+    assert code == 0, envelope
+    result = envelope["result"]
+    assert result["verb"] == "init" and result["kind"] == "command"
+    flags = {row["flag"]: row for row in result["flags"]}
+    assert {"--tasks", "--atlas", "--registration", "--notes", "--viewer"} <= set(flags)
+    assert flags["--viewer"]["choices"] and flags["--notes"]["takes_value"] is True
+    assert all(row["help"] for row in result["flags"])
+    # `FOLDER init --help` answers the same and creates nothing.
+    code, helped = cli(capsys, str(images), "init", "--help")
+    assert code == 0 and helped["result"] == result
+    assert not (images / "langslice").exists()
+    code, waited = cli(capsys, "schema", "wait")
+    assert code == 0 and [row["flag"] for row in waited["result"]["flags"]] == ["--timeout"]
+    # Any verb: --help is its schema, declared for the folder's job.
+    init(capsys, images)
+    code, status = cli(capsys, str(images), "status", "--help")
+    assert code == 0 and status["result"]["verb"] == "status"
+    assert status["result"]["job"] == str(images / "langslice")
+
+
+def test_stdout_holds_the_envelope_alone_when_the_atlas_prints(capsys, images, monkeypatch):
+    """A library printing on stdout while a job opens (BrainGlobe's version
+    notice) lands on stderr: `schema VERB` in a job folder stays one JSON line."""
+    init(capsys, images)
+
+    def noisy(name: str) -> Any:
+        print("brainglobe_atlasapi: allen_mouse_25um version 3.0 is not the latest")
+        return loader(name)
+
+    loader = atlas_loader()
+    install(noisy, monkeypatch.setattr)
+    code, envelope = cli(capsys, "schema", "status", "--job", str(images))
+    assert code == 0 and envelope["result"]["job"] == str(images / "langslice")
+    code, envelope = cli(capsys, str(images), "status")
+    assert code == 0
+
+
+def test_load_atlas_keeps_brainglobe_notices_off_stdout(capsys, monkeypatch):
+    import brainglobe_atlasapi
+
+    from langslice.core.atlas.core import load_atlas
+
+    class Notice:
+        def __init__(self, name: str, **_kwargs: Any) -> None:
+            print(f"brainglobe_atlasapi: {name} version 3.0 is not the latest available")
+            self.atlas_name = name
+
+    monkeypatch.setattr(brainglobe_atlasapi, "BrainGlobeAtlas", Notice)
+    atlas = load_atlas.__wrapped__("allen_mouse_25um")
+    assert atlas.atlas_name == "allen_mouse_25um"
+    captured = capsys.readouterr()
+    assert captured.out == "" and "not the latest" in captured.err
+
+
+def test_search_position_needs_no_position(capsys, images):
+    from langslice.core.atlas.core import get_position_range_mm
+
+    job = init(capsys, images, "--bayesian")
+    code, envelope = cli(capsys, str(images), "search_position", "--id", ID1,
+                         "--window-mm", "0.05", "--angles", "false")
+    assert code == 0, envelope
+    found = envelope["result"]
+    low, high = get_position_range_mm(atlas_loader()("synthetic"), plane="coronal")
+    assert found["current_position_mm"] is None
+    assert found["searched_range_mm"] == [round(low, 3), round(high, 3)]  # the whole range
+    assert low <= found["position_mm"] <= high
+    code, around = cli(capsys, str(images), "search_position", "--id", ID1,
+                       "--window-mm", "0.05", "--angles", "false", "--around-mm", "0.15")
+    assert code == 0, around
+    assert around["result"]["searched_range_mm"] == [0.1, 0.2]
+    assert 0.1 <= around["result"]["position_mm"] <= 0.2
+    assert all(row["position_mm"] is None for row in
+               json.loads((job / "state.json").read_text())["slices"])  # nothing written
 
 
 def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
@@ -158,23 +235,25 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert job == images / "langslice"
     agents = (job / "AGENTS.md").read_text()
     assert agents == (job / "CLAUDE.md").read_text()
-    for needle in ("state.json", "coordinate_map", "langslice job", "set_positions",
+    for needle in ("state.json", "coordinate_map", "langslice-job", "set_positions",
                    "fit_deformable", "langslice.open_job", "i * resolution", " brief`",
-                   "BRIEF.md", "STALE_INPUT", "(write, Linear, long)"):
+                   "BRIEF.md", "STALE_INPUT", "(write, Linear, long)",
+                   "(read, Positioning; at most 4 pairs per call)", "schema init",
+                   "reply.images", "`scripts/`", "never in /tmp"):
         assert needle in agents
     assert len(agents.splitlines()) < 85  # one screen, its verb list included
-    code, envelope = cli(capsys, "job", str(images), "status")
+    code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     assert [row["id"] for row in envelope["result"]["rows"]] == [ID0, ID1, ID2]
     assert "fit_deformable" in envelope["result"]["verbs"]
     # Opening the job folder itself works too; a folder without a job is refused.
-    code, _envelope = cli(capsys, "job", str(job), "status")
+    code, _envelope = cli(capsys, str(job), "status")
     assert code == 0
-    code, missing = cli(capsys, "job", str(images.parent), "status")
+    code, missing = cli(capsys, str(images.parent), "status")
     assert code == 2 and missing["error"]["code"] == "NO_JOB"
     # A stale card is rewritten on the next open.
     (job / "AGENTS.md").write_text("old")
-    cli(capsys, "job", str(images), "status")
+    cli(capsys, str(images), "status")
     assert (job / "AGENTS.md").read_text() == agents
 
 
@@ -214,7 +293,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     from langslice.core.opening import DEFAULT_IMAGE_LIMIT
 
     job = init(capsys, images, "--notes", "Section 2 is torn.", "--viewer", "codex")
-    code, envelope = cli(capsys, "job", str(images), "brief")
+    code, envelope = cli(capsys, str(images), "brief")
     assert code == 0, envelope
     result = envelope["result"]
     statement = result["statement"]
@@ -259,20 +338,20 @@ def test_brief_writes_normalized_line_endings_on_every_platform(tmp_path: Path):
 
 
 def test_init_answers_with_the_statement_and_keeps_notes_and_viewer(capsys, images):
-    code, envelope = cli(capsys, "job", str(images), "init", "--tasks", "position",
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "position",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          "--notes", "Mind the bulbs.")
     assert code == 0, envelope
     statement = envelope["result"]["statement"]
     assert "You are an expert neuroanatomist" in statement
-    assert "`langslice job " in statement and " brief` saves them as picture files" in statement
+    assert "`langslice-job " in statement and " brief` saves them as picture files" in statement
     assert "User notes:\nMind the bulbs." in statement
     assert envelope["result"]["viewer"] == "claude"  # the default viewer
-    assert envelope["next"] == [f"langslice job {images / 'langslice'} brief"]
+    assert envelope["next"] == [f"langslice-job {images / 'langslice'} brief"]
     record = json.loads((images / "langslice" / "job.json").read_text())
     assert record["notes"] == "Mind the bulbs." and "viewer" not in record
     # Continuing the job keeps the notes; --viewer is stored.
-    code, again = cli(capsys, "job", str(images), "init", "--tasks", "position",
+    code, again = cli(capsys, str(images), "init", "--tasks", "position",
                       "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                       "--viewer", "openai")
     assert code == 0 and again["result"]["viewer"] == "openai"
@@ -282,12 +361,12 @@ def test_init_answers_with_the_statement_and_keeps_notes_and_viewer(capsys, imag
 
 def test_pictures_are_capped_at_the_viewers_largest(capsys, images):
     init(capsys, images)  # viewer claude (default): up to 2000 px
-    code, envelope = cli(capsys, "job", str(images), "view-slices", "--slices", ID1,
+    code, envelope = cli(capsys, str(images), "view-slices", "--slices", ID1,
                          "--view", '{"resolution": 5000}')
     assert code == 0, envelope
     assert "used 2000" in envelope["result"]["view"]["resolution_note"]
     init(capsys, images, "--viewer", "codex")
-    code, envelope = cli(capsys, "job", str(images), "view-slices", "--slices", ID1,
+    code, envelope = cli(capsys, str(images), "view-slices", "--slices", ID1,
                          "--view", '{"resolution": 5000}')
     assert "used 2048" in envelope["result"]["view"]["resolution_note"]
 
@@ -295,15 +374,15 @@ def test_pictures_are_capped_at_the_viewers_largest(capsys, images):
 def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
         capsys, images, monkeypatch):
     init(capsys, images, "--image-provider", "openai-oauth")  # HOME is private: no login
-    code, status = cli(capsys, "job", str(images), "status")
+    code, status = cli(capsys, str(images), "status")
     assert code == 0
     assert status["result"]["image_model"] == {
         "provider": "openai-oauth", "connected": False, "trace_borders": False}
     assert "trace_borders" not in status["result"]["verbs"]
-    code, refused = cli(capsys, "job", str(images), "trace_borders", "--id", ID0)
+    code, refused = cli(capsys, str(images), "trace_borders", "--id", ID0)
     assert code == 3 and refused["error"]["code"] == "IMAGE_MODEL_OFF"
     assert "langslice login" in refused["error"]["fix"]
-    code, brief = cli(capsys, "job", str(images), "brief")
+    code, brief = cli(capsys, str(images), "brief")
     from langslice.doors.statement import IMAGE_MODEL_OFF
 
     assert IMAGE_MODEL_OFF in brief["result"]["statement"]
@@ -311,7 +390,7 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     from langslice.doors.api import setup
 
     monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
-    code, status = cli(capsys, "job", str(images), "status")
+    code, status = cli(capsys, str(images), "status")
     assert status["result"]["image_model"]["connected"] is True
     assert "trace_borders" in status["result"]["verbs"]
 
@@ -319,21 +398,22 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
 def test_status_marks_what_the_user_locked_or_marked_damaged(capsys, images):
     init(capsys, images, "--locked", json.dumps([ID0]), "--damaged",
          json.dumps({ID1: "torn"}))
-    code, envelope = cli(capsys, "job", str(images), "status")
+    code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     rows = {row["id"]: row for row in envelope["result"]["rows"]}
-    assert rows[ID0].get("locked") is True and "damage_by_user" not in rows[ID0]
-    assert rows[ID1].get("damage_by_user") is True and "locked" not in rows[ID1]
-    assert "locked" not in rows[ID2] and "damage_by_user" not in rows[ID2]
+    # Every row carries both fields (uniform rows): true where set, else false.
+    assert rows[ID0]["locked"] is True and rows[ID0]["damage_by_user"] is False
+    assert rows[ID1]["damage_by_user"] is True and rows[ID1]["locked"] is False
+    assert rows[ID2]["locked"] is False and rows[ID2]["damage_by_user"] is False
 
 
 def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     traces = tmp_path / "traces"
     monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(traces))
     job = init(capsys, images)
-    code, envelope = cli(capsys, "job", str(images), "view_slices", "--slices", ID0)
+    code, envelope = cli(capsys, str(images), "view_slices", "--slices", ID0)
     assert code == 0
-    code, refused = cli(capsys, "job", str(images), "undo")
+    code, refused = cli(capsys, str(images), "undo")
     assert code == 3
     lines = [json.loads(line) for line in (job / "logs" / "calls.jsonl").read_text()
              .splitlines()]
@@ -364,7 +444,7 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
 
 def test_a_write_returns_its_pictures_as_artifact_paths(capsys, images):
     init(capsys, images)
-    code, envelope = cli(capsys, "job", str(images), "set-positions", "--args",
+    code, envelope = cli(capsys, str(images), "set-positions", "--args",
                          json.dumps({"entries": [{"id": ID0, "position_mm": 0.1}]}),
                          "--view", '{"mode": "overlay", "resolution": 300}')
     assert code == 0, envelope
@@ -381,31 +461,31 @@ def test_a_write_returns_its_pictures_as_artifact_paths(capsys, images):
     with Image.open(envelope["artifacts"][0]["path"]) as picture:
         assert max(picture.size) <= 300 + 64  # the caller's size (the caption band on top)
     # The flag form, a corrected index as a number, the verbose reply.
-    code, verbose = cli(capsys, "job", str(images), "set_positions", "--entries",
+    code, verbose = cli(capsys, str(images), "set_positions", "--entries",
                         '[{"id": 1, "position_mm": 0.15}]', "--verbose")
     assert code == 0 and "description" in verbose["result"]
 
 
 def test_exit_codes_and_fix_hints(capsys, images):
     init(capsys, images)
-    code, envelope = cli(capsys, "job", str(images), "set_positions", "--entries", "[]",
+    code, envelope = cli(capsys, str(images), "set_positions", "--entries", "[]",
                          "--bogus", "1")
     assert code == 2 and envelope["ok"] is False
     assert envelope["error"]["code"] == "UNKNOWN_ARGUMENTS"
-    assert "langslice schema set_positions" in envelope["error"]["fix"]
-    code, envelope = cli(capsys, "job", str(images), "view_slices")
+    assert "langslice-job schema set_positions" in envelope["error"]["fix"]
+    code, envelope = cli(capsys, str(images), "view_slices")
     assert code == 2 and envelope["error"]["code"] == "MISSING_ARGUMENTS"
-    code, envelope = cli(capsys, "job", str(images), "view_slices", "--slices", "nope.png")
+    code, envelope = cli(capsys, str(images), "view_slices", "--slices", "nope.png")
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_SLICE_IDS"
-    code, envelope = cli(capsys, "job", str(images), "set_positions", "--args", "{not json")
+    code, envelope = cli(capsys, str(images), "set_positions", "--args", "{not json")
     assert code == 2 and envelope["error"]["code"] == "BAD_JSON"
-    code, envelope = cli(capsys, "job", str(images), "undo")
+    code, envelope = cli(capsys, str(images), "undo")
     assert code == 3 and envelope["error"]["code"] == "NOTHING_TO_UNDO"
-    code, envelope = cli(capsys, "job", str(images), "submit", "--summary", "done",
+    code, envelope = cli(capsys, str(images), "submit", "--summary", "done",
                          "--notes", "[]", "--interval-breaks", "[]")
     assert code == 3 and envelope["error"]["code"] == "MISSING_POSITIONS"
     assert envelope["error"]["fix"] and envelope["result"]["missing_ids"] == [ID0, ID1, ID2]
-    code, envelope = cli(capsys, "job", str(images), "search_position", "--id", ID0)
+    code, envelope = cli(capsys, str(images), "search_position", "--id", ID0)
     assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
 
 
@@ -417,7 +497,7 @@ def test_an_internal_error_exits_4(capsys, images, monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(notes, "add_note", broken)
-    code, envelope = cli(capsys, "job", str(images), "note", "--text", "hello")
+    code, envelope = cli(capsys, str(images), "note", "--text", "hello")
     assert code == 4 and envelope["error"]["code"] == "INTERNAL"
     assert "boom" in envelope["error"]["message"]
 
@@ -426,7 +506,7 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     job = init(capsys, images)
     state_before = (job / "state.json").read_bytes()
     views_before = sorted(path.name for path in job.rglob("*"))
-    code, envelope = cli(capsys, "job", str(images), "set_positions", "--entries",
+    code, envelope = cli(capsys, str(images), "set_positions", "--entries",
                          json.dumps([{"id": ID1, "position_mm": 0.15}]), "--dry-run")
     assert code == 0, envelope
     assert envelope["result"]["dry_run"] is True
@@ -437,12 +517,12 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert (job / "state.json").read_bytes() == state_before
     assert sorted(path.name for path in job.rglob("*")) == views_before
     # A fit is checked, not run.
-    code, envelope = cli(capsys, "job", str(images), "fit_deformable", "--slices", ID0,
+    code, envelope = cli(capsys, str(images), "fit_deformable", "--slices", ID0,
                          "--dry-run")
     assert code == 0 and envelope["result"] == {"dry_run": True, "simulated": False,
                                                 "sections": [ID0]}
     # A dry run never starts a background run (that child would run the verb).
-    code, envelope = cli(capsys, "job", str(images), "fit_deformable", "--slices", ID0,
+    code, envelope = cli(capsys, str(images), "fit_deformable", "--slices", ID0,
                          "--dry-run", "--background")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
     assert not (job / "logs" / "runs").exists()
@@ -452,10 +532,10 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
 def test_the_cli_never_applies_the_look_before_commit_gates(capsys, images):
     init(capsys, images, "--gates")
     for name, position in ((ID0, 0.1), (ID1, 0.15), (ID2, 0.2)):
-        code, envelope = cli(capsys, "job", str(images), "set_positions", "--entries",
+        code, envelope = cli(capsys, str(images), "set_positions", "--entries",
                              json.dumps([{"id": name, "position_mm": position}]))
         assert code == 0 and envelope["result"]["rejected"] == [], envelope
-    code, envelope = cli(capsys, "job", str(images), "submit", "--summary", "done",
+    code, envelope = cli(capsys, str(images), "submit", "--summary", "done",
                          "--notes", "[]", "--interval-breaks", "[]")
     # Past the positions: the transforms gate (the job's rule), not NOT_REVIEWED.
     assert code == 3 and envelope["error"]["code"] == "MISSING_TRANSFORMS"
@@ -463,18 +543,18 @@ def test_the_cli_never_applies_the_look_before_commit_gates(capsys, images):
 
 def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
     job = init(capsys, images)
-    code, envelope = cli(capsys, "job", str(images), "export_maps")
+    code, envelope = cli(capsys, str(images), "export_maps")
     # Nothing placed yet: every section skipped, with its reason.
     assert code == 3 and envelope["error"]["code"] == "NOTHING_EXPORTED"
     assert {row["reason"] for row in envelope["result"]["skipped"]} == {"no position"}
-    cli(capsys, "job", str(images), "set_positions", "--entries", json.dumps(
+    cli(capsys, str(images), "set_positions", "--entries", json.dumps(
         [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
          {"id": ID2, "position_mm": 0.2}]))
-    code, envelope = cli(capsys, "job", str(images), "export-maps", "--slices", ID0,
+    code, envelope = cli(capsys, str(images), "export-maps", "--slices", ID0,
                          "--dry-run")
     assert code == 0 and envelope["result"]["files_written"] is False
     assert envelope["artifacts"] == [] and not (job / "sections/s0/coords.tif").exists()
-    code, envelope = cli(capsys, "job", str(images), "export_maps", "--slices", ID0)
+    code, envelope = cli(capsys, str(images), "export_maps", "--slices", ID0)
     assert code == 0, envelope
     assert envelope["result"]["written"] == [ID0] and envelope["result"]["n_files"] >= 5
     kinds = {artifact["kind"] for artifact in envelope["artifacts"]}
@@ -482,7 +562,7 @@ def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
             "visualign", "registration"} <= kinds
     assert all(Path(artifact["path"]).is_file() for artifact in envelope["artifacts"])
     # The verb is the CLI's and the library's: listed by status, never a model's tool.
-    code, envelope = cli(capsys, "job", str(images), "status")
+    code, envelope = cli(capsys, str(images), "status")
     assert "export_maps" in envelope["result"]["verbs"]
 
 
@@ -497,25 +577,25 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert background.CHILD_COMMAND[-1] == "tests.cli_child"
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO / "src"), str(REPO))))
     monkeypatch.chdir(REPO)
-    code, envelope = cli(capsys, "job", str(images), "view_slices", "--slices", ID0,
+    code, envelope = cli(capsys, str(images), "view_slices", "--slices", ID0,
                          "--background")
     assert code == 0 and envelope["result"]["state"] == "running"
     run = envelope["result"]["run"]
-    assert envelope["next"] == [f"langslice job {images / 'langslice'} wait {run}"]
-    code, waited = cli(capsys, "job", str(images), "wait", run, "--timeout", "120")
+    assert envelope["next"] == [f"langslice-job {images / 'langslice'} wait {run}"]
+    code, waited = cli(capsys, str(images), "wait", run, "--timeout", "120")
     assert code == 0, waited
     assert waited["result"]["run"] == run and waited["result"]["slices"] == [ID0]
     assert [artifact["kind"] for artifact in waited["artifacts"]] == ["view", "view_json"]
     assert Path(waited["artifacts"][0]["path"]).is_file()
-    code, one = cli(capsys, "job", str(images), "runs", run)
+    code, one = cli(capsys, str(images), "runs", run)
     assert code == 0 and one["result"]["state"] == "finished"
     assert one["result"]["exit"] == 0
-    code, listed = cli(capsys, "job", str(images), "runs")
+    code, listed = cli(capsys, str(images), "runs")
     assert listed["result"]["runs"][0]["id"] == run
-    code, unknown = cli(capsys, "job", str(images), "runs", "no-such-run")
+    code, unknown = cli(capsys, str(images), "runs", "no-such-run")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_RUN"
     # `status` is only the verb.
-    code, status = cli(capsys, "job", str(images), "status", run)
+    code, status = cli(capsys, str(images), "status", run)
     assert code == 2 and status["error"]["code"] == "BAD_ARGUMENTS"
 
 
@@ -541,10 +621,10 @@ def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images
     assert tools["set_positions"]([{"id": ID0, "position_mm": 0.1}])["status"] == "ok"
 
     # The CLI sees the agent's write and adds its own.
-    code, envelope = cli(capsys, "job", str(images), "set_positions", "--entries",
+    code, envelope = cli(capsys, str(images), "set_positions", "--entries",
                          json.dumps([{"id": ID1, "position_mm": 0.15}]))
     assert code == 0
-    code, envelope = cli(capsys, "job", str(images), "status")
+    code, envelope = cli(capsys, str(images), "status")
     positions = {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]}
     assert positions == {ID0: 0.1, ID1: 0.15, ID2: None}
 
@@ -556,9 +636,9 @@ def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images
     assert agent.state.resolve(ID0).position_mm == 0.1
 
     # And the CLI sees the agent's undo; its own undo takes the agent's write back.
-    code, envelope = cli(capsys, "job", str(images), "undo")
+    code, envelope = cli(capsys, str(images), "undo")
     assert code == 0
-    code, envelope = cli(capsys, "job", str(images), "status")
+    code, envelope = cli(capsys, str(images), "status")
     assert all(row.get("position_mm") is None for row in envelope["result"]["rows"])
     assert tools["status"]()["rows"][0].get("position_mm") is None
     agent.close()
@@ -575,11 +655,22 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
         assert "set_positions" in job.verbs and "set_positions" in dir(job)
         reply = job.set_positions(entries=[{"id": ID2, "position_mm": 0.2}],
                                   view={"mode": "overlay"})
-        assert reply["status"] == "ok" and reply["images"]
+        # A plain JSON reply; the pictures as files already on disk (as the
+        # CLI lists them), the images themselves on an attribute.
+        assert reply["status"] == "ok" and "images" not in reply
+        assert json.loads(json.dumps(reply)) == reply
+        views = [item for item in reply["artifacts"] if item["kind"] == "view"]
+        assert views and all(Path(item["path"]).is_file() for item in reply["artifacts"])
+        assert [item["index"] for item in views] == list(range(len(reply.images)))
         assert job.state.resolve(ID2).position_mm == 0.2
+        # Every status row carries every field: the last placed section's
+        # delta_to_next_mm is null, not missing.
+        rows = job.status()["rows"]
+        assert len({tuple(row) for row in rows}) == 1
+        assert rows[-1]["delta_to_next_mm"] is None and "transform_iou" in rows[0]
         with pytest.raises(AttributeError, match="search_position"):
             getattr(job, "search_position")  # noqa: B009 — a missing verb
-    code, envelope = cli(capsys, "job", str(images), "status")
+    code, envelope = cli(capsys, str(images), "status")
     assert envelope["result"]["rows"][2]["position_mm"] == 0.2
     saved = next((images / "langslice" / "sections").rglob("view.json"))
     xyz = langslice.coordinate_map(saved)
@@ -642,3 +733,76 @@ def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch, probe):
     waiter.start()
     waiter.join(5.0)
     assert answer and answer[0]["state"] == "lost"
+
+
+def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images):
+    """``Verb.limits`` (what the card lists) against what the tools do one
+    past each limit."""
+    import langslice
+    from langslice.ops.registry import VERBS
+
+    init(capsys, images)
+    limits = {name: dict(verb.limits) for name, verb in VERBS.items() if verb.limits}
+    assert set(limits) == {"view_slices", "view_atlas", "view_placement",
+                           "adjust_transforms", "fit_deformable"}
+    with langslice.open_job(images) as job:
+        cli(capsys, str(images), "set_positions", "--args", json.dumps(
+            {"entries": [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
+                         {"id": ID2, "position_mm": 0.2}]}))
+        most = limits["adjust_transforms"]["entries"]
+        entry = {"id": ID0, "rotation_deg": 0, "scale_x": 1, "scale_y": 1,
+                 "translate_x_mm": 0, "translate_y_mm": 0}
+        refused = job.adjust_transforms(entries=[entry] * (most + 1))
+        assert refused["error"] == "TOO_MANY_ENTRIES" and refused["max_entries"] == most
+        most = limits["view_atlas"]["positions"]
+        shown = job.view_atlas(positions_mm=[0.05 * i for i in range(most + 1)])
+        assert len(shown.images) == most and len(shown["dropped_positions_mm"]) == 1
+        most = limits["view_placement"]["pairs"]
+        shown = job.view_placement(entries=[{"id": ID0, "positions_mm": [
+            0.05 * i for i in range(most + 1)]}])
+        assert len(shown.images) == most
+        most = limits["fit_deformable"]["candidates"]
+        refused = job.fit_deformable(slices=[ID0], candidates=[{}] * (most + 1))
+        assert refused["error"] == "TOO_MANY_CANDIDATES" and refused["max_candidates"] == most
+        most = limits["fit_deformable"]["fits"]
+        refused = job.fit_deformable(slices=[ID0, ID1, ID2], candidates=[{}] * 3)
+        assert 9 > most and refused["error"] == "TOO_MANY_FITS"
+        assert refused["max_fits"] == most
+
+
+# --- a script that exits without closing its job ----------------------------------------
+
+_EXIT_SCRIPT = """
+import sys
+from tests.cli_child import install
+from tests.golden.record import ID0, ID1, ID2, apply_patches, atlas_loader
+apply_patches()
+install(atlas_loader())
+import langslice
+job = langslice.open_job(sys.argv[1])
+raw = {tool.__name__: tool for tool in job._opened.tools().tools}
+# The tool itself, which only queues its pictures: the writer is still busy
+# when the script ends, and no one calls close().
+raw["set_positions"](entries=[{"id": name, "position_mm": 0.1 + 0.05 * index}
+                              for index, name in enumerate([ID0, ID1, ID2])],
+                     view={"mode": "overlay"})
+"""
+
+
+def test_pictures_queued_by_a_script_are_written_when_it_exits(capsys, images):
+    """At exit the picture writer still runs (its TIFF encoder starts
+    threads), so a script that never closes its job keeps its pictures."""
+    import subprocess
+    import sys
+
+    job = init(capsys, images)
+    env = {**os.environ, "PYTHONPATH": str(REPO)}
+    done = subprocess.run([sys.executable, "-c", _EXIT_SCRIPT, str(images)], cwd=REPO,
+                          env=env, capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr
+    assert "cannot schedule new futures" not in done.stderr and "Could not save" not in done.stderr
+    lines = [json.loads(line) for line in (job / "views.jsonl").read_text().splitlines()]
+    placed = [line for line in lines if line["tool"] == "set_positions"]
+    assert len(placed) == 3 and all(line["layers"] for line in placed)
+    for line in placed:
+        assert (job / line["path"] / "labels.tif").is_file()

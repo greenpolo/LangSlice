@@ -2,7 +2,7 @@
 
 LangSlice's own agent (:mod:`langslice.agent.engine`), the MCP door
 (:mod:`langslice.doors.mcp.server`, ``start_job``) and the agent CLI
-(``langslice job FOLDER brief``, :mod:`langslice.doors.cli.job`) give the
+(``langslice-job FOLDER brief``, :mod:`langslice.doors.cli.job`) give the
 agent the same job: the statement :func:`langslice.agent.prompt.build_job_statement`
 words (job, run facts, one line per tool, constraints, method), the opening
 pictures (:func:`langslice.core.opening.opening_items`), the status table with
@@ -50,7 +50,7 @@ OPENING_SHOWS = (
 RECENT_NOTES = 12
 
 #: ``job.json``'s field holding the user's notes for the job (a saved Claude
-#: job's notes, ``langslice job FOLDER init --notes``).
+#: job's notes, ``langslice-job FOLDER init --notes``).
 NOTES_KEY = "notes"
 
 
@@ -96,7 +96,7 @@ def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
     *pictures* is how many opening pictures ``brief`` saved (None: not saved
     yet; ``init`` says how to)."""
     if pictures is None:
-        opening = (f"Opening pictures: `langslice job {folder} brief` saves them as "
+        opening = (f"Opening pictures: `langslice-job {folder} brief` saves them as "
                    "picture files; open every one before any write. ")
     else:
         opening = (f"Opening pictures: `brief` saved {pictures} picture files, listed in "
@@ -106,8 +106,8 @@ def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
         opening + OPENING_SHOWS,
         "",
         "Commands:",
-        f"- Every tool is a command: `langslice job {folder} TOOL --args '{{...}}'` (or "
-        "`--name value`); `langslice schema TOOL` gives its arguments and description. "
+        f"- Every tool is a command: `langslice-job {folder} TOOL --args '{{...}}'` (or "
+        "`--name value`); `langslice-job schema TOOL` gives its arguments and description. "
         "Pictures come back as files under `artifacts` (kind `view`, `index` matching "
         "the reply's image_indexes); open them to see them.",
         "- `--dry-run` runs a write without writing and reports what would change; "

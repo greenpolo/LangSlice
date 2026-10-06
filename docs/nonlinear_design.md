@@ -28,7 +28,7 @@ stands.
 `core/deformation.py` calls the engine in `src/langslice/core/deformable/`:
 ANTs SyN (the `registration` extra) or an Elastix B-spline with a bending
 penalty. It is the only deformation step; no deformation is fitted unless it
-is called. Main arguments (`langslice schema fit_deformable`):
+is called. Main arguments (`langslice-job schema fit_deformable`):
 
 | Argument | Choice |
 |---|---|

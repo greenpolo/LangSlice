@@ -257,12 +257,27 @@ when the job was submitted with no problems.
 
 The handle (`create_job` and `open_job` return the same) has every verb the
 job's tasks give as a method, with the agent tools' names and arguments
-(`langslice ops`, `langslice schema VERB`): `job.fit_affine(slices=[...])`,
+(`langslice-job ops`, `langslice-job schema VERB`): `job.fit_affine(slices=[...])`,
 `job.trace_borders(id=...)`, `job.fit_deformable(slices=[...], ...)`,
 `job.submit(summary=..., notes=[], interval_breaks=[])`,
-`job.export_maps()`, `job.status()`, `job.undo()`. Use it as a context
-manager or call `job.close()` when done. A script that needs another sequence
-calls the verbs itself; `register_job` is only the default sequence.
+`job.export_maps()`, `job.status()`, `job.undo()`. A script that needs another
+sequence calls the verbs itself; `register_job` is only the default sequence.
+
+Each method returns a plain dict of JSON values (`json.dumps(reply)` works):
+the verb's reply as the agent CLI gives it under `result`, in full; every
+status row with every field (null where a section has none: the last placed
+section's `delta_to_next_mm`); and `artifacts`, the files of its pictures as
+the CLI lists them (`path`, `kind`, `index`: the number the reply's
+`image_indexes` give, `label` for the `view` JPEG). A method returns once its
+pictures are written. The pictures themselves, as PIL images in the order a
+model would receive them, are on the reply's `images` attribute
+(`reply.images`), which is not a key.
+
+`trace_borders` returns once its image-model call has started; the call lands
+in the background. `job.close()` (or leaving a `with langslice.open_job(...)
+as job:` block) waits for it and for any picture still being written; a
+script that exits without closing has every job it opened closed for it at
+exit.
 
 ## Starting from an existing registration
 

@@ -1,6 +1,6 @@
 """The agent CLI's answer: one JSON envelope on stdout, an exit code.
 
-Every agent command (``langslice ops``, ``schema``, ``job FOLDER ...``)
+Every agent command (``langslice-job ops``, ``schema``, ``job FOLDER ...``)
 prints exactly one JSON object on stdout and nothing else; progress and logs
 go to stderr. The envelope::
 
@@ -8,7 +8,7 @@ go to stderr. The envelope::
      "result": {...},                       # the verb's reply, concise
      "artifacts": [{"path": "...", "kind": "view"}, ...],
      "warnings": ["..."],
-     "next": ["langslice job ... wait <id>"],
+     "next": ["langslice-job ... wait <id>"],
      "error": {"code": "...", "message": "...", "fix": "..."}}   # only when not ok
 
 Exit codes: 0 ok, 2 bad arguments (the call itself is wrong), 3 refused by
@@ -48,16 +48,16 @@ ARGUMENT_CODES = frozenset({
 #: What to do about a code (the envelope's ``error.fix``); ``{job}`` is the
 #: job folder, ``{verb}`` the verb.
 FIXES: dict[str, str] = {
-    "UNKNOWN_VERB": "List the verbs with `langslice ops`.",
-    "VERB_OFF": "This job's tasks do not include this verb; `langslice job {job} status` "
+    "UNKNOWN_VERB": "List the verbs with `langslice-job ops`.",
+    "VERB_OFF": "This job's tasks do not include this verb; `langslice-job {job} status` "
                 "lists the job's verbs under `verbs`.",
-    "UNKNOWN_ARGUMENTS": "Check the argument names with `langslice schema {verb}`.",
-    "MISSING_ARGUMENTS": "Give every required argument; see `langslice schema {verb}`.",
+    "UNKNOWN_ARGUMENTS": "Check the argument names with `langslice-job schema {verb}`.",
+    "MISSING_ARGUMENTS": "Give every required argument; see `langslice-job schema {verb}`.",
     "BAD_JSON": "Pass --args a JSON object, or @path/to/file.json.",
     "UNKNOWN_SLICE_IDS": "Use a filename or corrected index from "
-                         "`langslice job {job} status`.",
-    "UNKNOWN_SECTION": "Use a filename or corrected index from `langslice job {job} status`.",
-    "NO_JOB": "Create the job first: `langslice job <image folder> init`.",
+                         "`langslice-job {job} status`.",
+    "UNKNOWN_SECTION": "Use a filename or corrected index from `langslice-job {job} status`.",
+    "NO_JOB": "Create the job first: `langslice-job <image folder> init`.",
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
     "NOTHING_TO_REDO": "Redo follows an undo only.",
@@ -75,15 +75,15 @@ FIXES: dict[str, str] = {
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
     "NOTHING_ADJUSTED": "Each section's row under result.results names its problem.",
     "NOTHING_WRITTEN": "See result.unknown_ids and result.rejected.",
-    "UNKNOWN_RUN": "List the background runs with `langslice job {job} runs`.",
-    "STILL_RUNNING": "Wait again: `langslice job {job} wait <id>`.",
+    "UNKNOWN_RUN": "List the background runs with `langslice-job {job} runs`.",
+    "STILL_RUNNING": "Wait again: `langslice-job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "
                 "logs/runs/ and run the verb again.",
     "BAD_REGISTRATION": "Give --registration a QuickNII/VisuAlign JSON or XML, a DeepSlice "
                         "CSV/JSON/XML or a LangSlice registration.json whose entries name "
                         "this folder's section images (by file name, stem or _sNNN number) "
                         "on the job's atlas.",
-    "INPUTS_CHANGED": "Rerun `langslice job {job} init` with --fresh to start a new job "
+    "INPUTS_CHANGED": "Rerun `langslice-job {job} init` with --fresh to start a new job "
                       "from these inputs (the old one's work is replaced), or with the "
                       "inputs the job was made from (job.json, spec.inputs) to continue it.",
     "IMAGE_MODEL_OFF": "Connect the job's image model to LangSlice (`langslice login` for "
@@ -169,8 +169,8 @@ class Envelope:
         """A refused or failed call; *fix* defaults to :data:`FIXES`."""
         status = exit if exit is not None else exit_code(code)
         hint = fix if fix is not None else FIXES.get(code, (
-            f"See `langslice schema {verb}` for the arguments." if status == EXIT_ARGUMENTS
-            else f"See the stack with `langslice job {job} status`, then retry."
+            f"See `langslice-job schema {verb}` for the arguments." if status == EXIT_ARGUMENTS
+            else f"See the stack with `langslice-job {job} status`, then retry."
             if status == EXIT_REFUSED else "Report it; the log is on stderr."))
         hint = hint.replace("{job}", job).replace("{verb}", verb)
         return cls(ok=False, result=result, exit=status,

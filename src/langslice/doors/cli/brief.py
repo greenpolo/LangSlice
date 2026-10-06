@@ -1,4 +1,4 @@
-"""``langslice job FOLDER brief``: the job as LangSlice's own agent gets it.
+"""``langslice-job FOLDER brief``: the job as LangSlice's own agent gets it.
 
 A coding agent that registers a job through the agent CLI starts here. The
 brief is the job statement every door gives
@@ -114,7 +114,7 @@ def text(folder: Path, brief: Brief, *, pictures: bool) -> str:
     lines = [
         "# LangSlice job brief",
         "",
-        f"Written by `langslice job {folder} brief` at {when}; run it again for the "
+        f"Written by `langslice-job {folder} brief` at {when}; run it again for the "
         "stack as it stands now (`status` gives the table alone). Read this first, then "
         "open every opening picture listed at the end before any write. `AGENTS.md` "
         "(the same as `CLAUDE.md`) is the reference card: files, coordinates, verbs, "
@@ -128,7 +128,7 @@ def text(folder: Path, brief: Brief, *, pictures: bool) -> str:
         "",
     ]
     if not pictures:
-        lines.append(f"Not saved yet: run `langslice job {folder} brief`.")
+        lines.append(f"Not saved yet: run `langslice-job {folder} brief`.")
     for entry in brief.opening:
         if "text" in entry:
             lines += [entry["text"], ""]

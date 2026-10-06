@@ -3,7 +3,7 @@
 The product requirement: LangSlice works in ANY combination of its steps
 (Positioning, Linear, Nonlinear with or without an image model, or a
 registration made elsewhere with only Nonlinear on top) through every door:
-the agent CLI (``langslice job FOLDER VERB``), the library
+the agent CLI (``langslice-job FOLDER VERB``), the library
 (``langslice.open_job``), the agent tools (``build_tools`` /
 ``ops.registry.enabled``) driven by LangSlice's agent, and MCP.
 
@@ -38,8 +38,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.cli import main
+from langslice.cli import main as langslice_main
 from langslice.core.spec import JobSpec, NonlinearSpec
+from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
 from tests.golden.record import (
     ID0,
@@ -147,7 +148,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 
 def init(capsys: pytest.CaptureFixture[str], images: Path, tasks: str, *flags: str,
          provider: str = "none") -> Path:
-    code, envelope = cli(capsys, "job", str(images), "init", "--tasks", tasks,
+    code, envelope = cli(capsys, str(images), "init", "--tasks", tasks,
                          "--image-provider", provider, "--preprocess", "none",
                          "--pixel-size-um", str(PIXEL_SIZE_UM), "--no-debrief", *flags)
     assert code == 0, envelope
@@ -156,7 +157,7 @@ def init(capsys: pytest.CaptureFixture[str], images: Path, tasks: str, *flags: s
 
 def ok(capsys: pytest.CaptureFixture[str], images: Path, verb: str,
        *flags: str) -> dict[str, Any]:
-    code, envelope = cli(capsys, "job", str(images), verb, *flags)
+    code, envelope = cli(capsys, str(images), verb, *flags)
     assert code == 0 and envelope["ok"] is True, envelope
     return envelope
 
@@ -182,7 +183,7 @@ def test_init_takes_a_long_inline_json(capsys, images):
 
 
 def test_init_names_the_flag_of_a_bad_json_argument(capsys, images):
-    code, envelope = cli(capsys, "job", str(images), "init", "--tasks", "nonlinear",
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--image-provider", "none", "--positions", "no-such-file.json")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
     assert "--positions" in envelope["error"]["message"]
@@ -289,7 +290,7 @@ def test_1_positioning_only_through_the_cli(capsys, images):
     ok(capsys, images, "reorder-slices", "--slices", ID2, "--after", "start")
     ok(capsys, images, "set_positions", "--entries", json.dumps(
         [{"id": name, "position_mm": mm} for name, mm in POSITIONS.items()]))
-    code, envelope = cli(capsys, "job", str(images), "submit", *SUBMIT_FLAGS)
+    code, envelope = cli(capsys, str(images), "submit", *SUBMIT_FLAGS)
     # s2 was moved first: positions now run against the order.
     assert code == 3 and envelope["error"]["code"] == "ORDER_POSITION_MISMATCH"
     ok(capsys, images, "reorder-slices", "--slices", ID0, "--slices", ID1, "--slices", ID2)
@@ -352,9 +353,9 @@ def test_2_linear_on_supplied_positions_through_the_library(images):
 
 def test_2_linear_on_supplied_positions_through_the_cli(capsys, images):
     job = init(capsys, images, "transform", "--positions", json.dumps(POSITIONS))
-    code, envelope = cli(capsys, "job", str(images), "set_positions", "--entries", "[]")
+    code, envelope = cli(capsys, str(images), "set_positions", "--entries", "[]")
     assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
-    code, envelope = cli(capsys, "job", str(images), "submit", *SUBMIT_FLAGS)
+    code, envelope = cli(capsys, str(images), "submit", *SUBMIT_FLAGS)
     assert code == 3 and envelope["error"]["code"] == "MISSING_TRANSFORMS"
     ok(capsys, images, "adjust_transforms", "--entries", json.dumps(
         [{"id": name, **IDENTITY} for name in IDS]))
@@ -446,7 +447,7 @@ def test_4_nonlinear_verbs_called_directly_through_the_cli(capsys, images):
         [{"id": name, "position_mm": mm} for name, mm in POSITIONS.items()]))
     ok(capsys, images, "adjust_transforms", "--entries", json.dumps(
         [{"id": name, **IDENTITY} for name in IDS]))
-    code, envelope = cli(capsys, "job", str(images), "submit", *SUBMIT_FLAGS)
+    code, envelope = cli(capsys, str(images), "submit", *SUBMIT_FLAGS)
     assert code == 3 and envelope["error"]["code"] == "MISSING_DEFORMATIONS"
     for name in IDS:  # the CLI settles each trace before answering
         assert ok(capsys, images, "trace-borders", "--id", name)["result"]["status"] in (
@@ -490,7 +491,7 @@ def test_5_nonlinear_without_an_image_model_through_the_cli(capsys, images):
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
                "--transforms", transforms_file(images),
                "--pitch", str(EXTERNAL_ANGLES["pitch"]), "--yaw", str(EXTERNAL_ANGLES["yaw"]))
-    code, envelope = cli(capsys, "job", str(images), "trace_borders", "--id", ID0)
+    code, envelope = cli(capsys, str(images), "trace_borders", "--id", ID0)
     assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
     ok(capsys, images, "fit_deformable", "--slices", ID0, "--engine", "elastix")
     ok(capsys, images, "fit_deformable", "--slices", ID1, "--slices", ID2,
@@ -576,7 +577,7 @@ def test_6_external_registration_then_nonlinear_through_the_cli(capsys, images):
                "--pitch", str(EXTERNAL_ANGLES["pitch"]), "--yaw", str(EXTERNAL_ANGLES["yaw"]),
                provider="openai-oauth")
     for verb in ("set_positions", "adjust_transforms", "fit_affine"):
-        code, envelope = cli(capsys, "job", str(images), verb, "--args", "{}")
+        code, envelope = cli(capsys, str(images), verb, "--args", "{}")
         assert code == 3 and envelope["error"]["code"] == "VERB_OFF", envelope
     for name in IDS:
         ok(capsys, images, "trace_borders", "--id", name)
@@ -660,11 +661,11 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
              "--pixel-size-um", str(PIXEL_SIZE_UM), "--no-debrief")
 
     def positions() -> dict[str, float]:
-        _code, status = cli(capsys, "job", str(images), "status")
+        _code, status = cli(capsys, str(images), "status")
         return {row["id"]: row["position_mm"] for row in status["result"]["rows"]}
 
     # Different inputs: refused, naming --fresh; nothing rewritten.
-    code, envelope = cli(capsys, "job", str(images), "init", *flags,
+    code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(moved))
     assert code == 3 and envelope["error"]["code"] == "INPUTS_CHANGED", envelope
     assert "positions" in envelope["error"]["message"]
@@ -673,11 +674,11 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     assert spec["inputs"]["positions"] == POSITIONS
     assert positions() == POSITIONS
     # The same inputs: resumed as before.
-    code, envelope = cli(capsys, "job", str(images), "init", *flags,
+    code, envelope = cli(capsys, str(images), "init", *flags,
                          "--positions", json.dumps(POSITIONS))
     assert code == 0, envelope
     # --fresh: a new job from the new inputs.
-    code, envelope = cli(capsys, "job", str(images), "init", *flags, "--fresh",
+    code, envelope = cli(capsys, str(images), "init", *flags, "--fresh",
                          "--positions", json.dumps(moved))
     assert code == 0, envelope
     assert positions() == moved
@@ -735,7 +736,7 @@ def test_claude_prepare_cli_refuses_other_inputs(images):
     create(init_spec)
     moved = {name: round(mm + 0.02, 6) for name, mm in POSITIONS.items()}
     with pytest.raises(SystemExit, match="--fresh"):
-        main(["claude", "prepare", str(images), "--tasks", "nonlinear",
+        langslice_main(["claude", "prepare", str(images), "--tasks", "nonlinear",
               "--image-provider", "none", "--preprocess", "none", "--no-debrief",
               "--pixel-size-um", str(PIXEL_SIZE_UM), "--positions", json.dumps(moved)])
 
@@ -765,7 +766,7 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     ok(capsys, images, "export_maps")
     quicknii = tmp_path / "quicknii.json"
     shutil.copy(source / "exports" / "quicknii.json", quicknii)
-    code, envelope = cli(capsys, "job", str(images), "init", "--tasks", "nonlinear",
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--image-provider", "none", "--job-dir", str(tmp_path / "again"),
                          "--registration", str(quicknii))
     assert code == 0, envelope
@@ -1018,7 +1019,7 @@ def test_8_trace_from_atlas_through_the_cli_is_callable_and_unlisted(capsys, ima
     status = ok(capsys, images, "status")
     assert "trace_from_atlas" not in status["result"]["verbs"]
     assert "trace_borders" in status["result"]["verbs"]
-    code, refused = cli(capsys, "job", str(images), "trace_from_atlas", "--passes", "3",
+    code, refused = cli(capsys, str(images), "trace_from_atlas", "--passes", "3",
                         "--slices", ID0)
     assert code == 2 and refused["error"]["code"] == "BAD_ARGS", refused
 
@@ -1026,7 +1027,7 @@ def test_8_trace_from_atlas_through_the_cli_is_callable_and_unlisted(capsys, ima
 def test_8_trace_from_atlas_needs_the_image_model_in_the_job(capsys, images):
     init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
          "--transforms", transforms_file(images))
-    code, envelope = cli(capsys, "job", str(images), "trace_from_atlas", "--slices", ID0)
+    code, envelope = cli(capsys, str(images), "trace_from_atlas", "--slices", ID0)
     assert code == 3 and envelope["error"]["code"] == "VERB_OFF", envelope
     assert "trace_from_atlas" not in envelope["result"]["verbs"]
 

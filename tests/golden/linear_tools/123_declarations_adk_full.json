@@ -697,13 +697,18 @@
    }
   },
   {
-   "description": "Search the atlas around a section's current position. Writes nothing.\n\nScores the section against resampled atlas planes and returns the best\none it found.\n\nArgs:\n    id: Filename or corrected index. The section must already\n        have a position.\n    window_mm: Half-width of the position search, in millimetres.\n    angles: True also searches the cutting angles; False holds them at\n        the stack's current ones.\n\nReturns:\n    The best position (and angles) with its score.",
+   "description": "Search the atlas for a section's position. Writes nothing.\n\nScores the section against resampled atlas planes and returns the best\none it found. A section without a position, and no around_mm, is\nsearched over the atlas's whole valid range.\n\nArgs:\n    id: Filename or corrected index.\n    window_mm: Half-width of the position search, in millimetres,\n        centred on around_mm, else on the section's current position.\n    angles: True also searches the cutting angles; False holds them at\n        the stack's current ones.\n    around_mm: Centre of the search, in atlas millimetres; leave it out\n        (or negative) for the section's current position.\n\nReturns:\n    The best position (and angles) with its score, and the range searched.",
    "name": "search_position",
    "parameters_json_schema": {
     "properties": {
      "angles": {
       "title": "Angles",
       "type": "boolean"
+     },
+     "around_mm": {
+      "default": -1.0,
+      "title": "Around Mm",
+      "type": "number"
      },
      "id": {
       "title": "Id",

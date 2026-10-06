@@ -2,16 +2,20 @@
 
 ```text
 langslice linear run FOLDER        the built-in agent over a folder of sections
-langslice job FOLDER VERB          one verb on a job folder (agent CLI)
-langslice ops | schema [VERB]      the verbs; one verb's arguments (JSON)
 langslice mcp                      the verbs as an MCP server (stdio)
 langslice claude prepare FOLDER    save a job for Claude Desktop / Code and print its prompt
 langslice abba                     start ABBA from Python with the connector, viewer and log
 langslice serve --stdio            JSON-lines worker (what the Fiji connector starts)
 langslice login                    sign in with ChatGPT (OAuth)
 langslice version
+
+langslice-job FOLDER VERB          one verb on a job folder (the agent CLI)
+langslice-job ops | schema [VERB]  the verbs; one verb's arguments (JSON)
 ```
 
+`langslice-job` is a command of its own: the MCP tools as shell commands,
+for a coding agent ([agent_cli.md](agent_cli.md)). It starts no agent, server
+or host and signs nobody in, so allowing it allows only work on job folders.
 The commands live in `src/langslice/doors/cli/` and `src/langslice/hosts/cli.py`.
 `langslice linear run --help` lists every flag.
 

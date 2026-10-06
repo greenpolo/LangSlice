@@ -27,7 +27,7 @@ from langslice.job.checkpoint import write_json_atomic
 from langslice.job.layout import JobLayout
 
 #: How a background run starts the CLI again (tests start a helper instead).
-CHILD_COMMAND: list[str] = [sys.executable, "-m", "langslice"]
+CHILD_COMMAND: list[str] = [sys.executable, "-m", "langslice.doors.cli.jobcli"]
 #: A run whose process has not reported its id after this long is lost.
 START_GRACE_S = 120.0
 #: How often ``wait`` looks.
@@ -128,7 +128,7 @@ def start(layout: JobLayout, verb: str, arguments: dict[str, Any], *, verbose: b
     _write(layout, {"id": run_id, "verb": verb, "arguments": arguments, "state": "running",
                     "started_at": _now(), "started": time.time(), "pid": None,
                     "log": layout.relative(log)})
-    command = [*CHILD_COMMAND, "job", str(layout.folder), verb, "--args",
+    command = [*CHILD_COMMAND, str(layout.folder), verb, "--args",
                json.dumps(arguments), "--run-id", run_id, *(["--verbose"] if verbose else [])]
     with log.open("ab") as out:
         subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=out,  # noqa: S603

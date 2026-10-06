@@ -354,7 +354,11 @@ so a resumed run can still undo the steps before it.
   intensity affine, never a search from scratch: it does not turn sections,
   and moves them by fractions of a millimetre.
 - `search_position` is a thin wrapper over `core.oblique.fit_oblique`:
-  correct, not tuned, not benchmarked.
+  correct, not tuned, not benchmarked. Without a position it searches the
+  whole valid range; the pose fit normalises size away, so the planes at
+  the volume's ends (a sliver of brain) win unless the section's pixel size
+  is known (`fit_oblique`'s `section_um_per_px` skips planes too small to
+  hold the tissue).
 - True physical scale is honest, not flattering: a specimen smaller than the
   Allen brain shows the atlas outlines ~10–15% outside the tissue at
   identity. That is anatomy, not a calibration bug.

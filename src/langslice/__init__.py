@@ -18,7 +18,7 @@ loaded)::
 
 - :func:`open_job`, :func:`create_job` (:mod:`langslice.doors.library`): the
   job's verbs as methods, the same names and arguments as the agent tools
-  and ``langslice job FOLDER VERB`` (``langslice ops``, ``langslice schema
+  and ``langslice-job FOLDER VERB`` (``langslice-job ops``, ``langslice-job schema
   VERB``); ``create_job`` makes the job of a folder of sections.
 - :func:`image_model`, :func:`default_prompt`
   (:mod:`langslice.providers.profiles`): the image model profile the border

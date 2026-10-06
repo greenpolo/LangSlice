@@ -2,14 +2,14 @@
 
 The closest Codex equivalent of the Claude Code plugin
 (`connectors/claude-code/`): skills for the main session and one custom agent
-per access level that registers one brain. It uses the `langslice job` command
+per access level that registers one brain. It uses the `langslice-job` command
 line ([`docs/agent_cli.md`](../../docs/agent_cli.md)) and bundles no MCP
 server (MCP is for desktop apps without a shell). Codex documents no way to
 package custom agents in a plugin, so these are files you copy into place;
 nothing here is a Codex plugin.
 
 LangSlice must be installed (conda env of `environment.yml`) with `langslice`
-on PATH.
+and `langslice-job` on PATH.
 
 ## Install
 
@@ -28,9 +28,9 @@ mkdir -p ~/.codex/rules && cp rules/langslice.rules ~/.codex/rules/
 | --- | --- | --- |
 | `skills/register-brain` (`$register-brain`) | main session | prepares the job from the user's choices, launches one registration agent, checks results and exports; never registers itself |
 | `skills/abba` | main session | ABBA's own 0.24.x commands, how to reach a running Fiji, moving files between ABBA and a job |
-| `agents/register_cli.toml` | registers one brain | the `langslice job` CLI, workspace-write sandbox |
+| `agents/register_cli.toml` | registers one brain | the `langslice-job` CLI, workspace-write sandbox |
 | `agents/register_scripting.toml` | registers one brain | CLI plus Python-library scripts in the job folder, workspace-write sandbox |
-| `rules/langslice.rules` | sandboxing | allows `langslice` commands outside the sandbox, forbids `curl` |
+| `rules/langslice.rules` | sandboxing | allows `langslice-job` commands outside the sandbox, forbids `curl` |
 
 The role split is the same as in Claude Code: the main session owns setup,
 checking and import/export; each agent file has a minimal
@@ -38,7 +38,7 @@ checking and import/export; each agent file has a minimal
 card (`AGENTS.md` in the job folder). Ask Codex to spawn the agent by name,
 for example "have register_cli register the job in /data/M04".
 
-The agents start with `langslice job <folder> brief`: LangSlice's job
+The agents start with `langslice-job <folder> brief`: LangSlice's job
 statement for the job (the one its own agent gets), the user's notes, the
 status table and the opening pictures saved as files, also written to
 `BRIEF.md` in the job folder ([`docs/agent_cli.md`](../../docs/agent_cli.md)).
@@ -53,7 +53,7 @@ Codex's `view_image` (2048 px).
   the shell, so the sandbox is the boundary.
 - Rules (`prefix_rule`) apply only to commands that would run outside the
   sandbox; they are not an allowlist of everything the shell may run. A
-  "`langslice` only" shell is not possible.
+  "`langslice-job` only" shell is not possible.
 - Custom agents inherit the parent's sandbox and approval mode unless the file
   sets `sandbox_mode`; unattended, an action needing approval fails and the
   error goes back to the parent.

@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 NO_TRANSFORM_LINEAR_OFF = (
     "A written affine transform is required, and Linear is off for this job, so "
     "nothing here writes one. Supply the in-plane transforms with the job "
-    "(inputs.transforms; --transforms on `langslice job FOLDER init`), or switch "
+    "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or switch "
     "Linear on (task transform) and run fit_affine on the section first."
 )
 

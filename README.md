@@ -58,7 +58,7 @@ launcher.
   model runs on your Claude subscription: [setup](connectors/claude-desktop/README.md).
 - **Claude Code and Codex**: skills and one-brain registration agents over the agent
   CLI: [Claude Code](connectors/claude-code/README.md), [Codex](connectors/codex/README.md);
-  the CLI itself, `langslice job FOLDER VERB`, is in [docs/agent_cli.md](docs/agent_cli.md).
+  the CLI itself, `langslice-job FOLDER VERB`, is in [docs/agent_cli.md](docs/agent_cli.md).
 - **Command line agent**: `langslice linear run sections/` runs the built-in agent
   ([docs/cli.md](docs/cli.md)); add `--tasks nonlinear` for the deformation on a
   saved linear placement.

@@ -1,6 +1,8 @@
+import contextlib
 import importlib
 import logging
 import os
+import sys
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Protocol, cast
@@ -64,17 +66,24 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
             from brainglobe_atlasapi import config as bg_config
 
             bg_dir = bg_config.get_brainglobe_dir()
-            if not list(bg_dir.glob(f"{atlas_name}_v*")):
+            # brainglobe-atlasapi < 3: <dir>/<name>_v<version>; 3.x: one manifest
+            # per version under <dir>/brainglobe-atlasapi/atlases/<name>/.
+            if not (list(bg_dir.glob(f"{atlas_name}_v*")) or list(
+                    bg_dir.glob(f"brainglobe-atlasapi/atlases/{atlas_name}/*/manifest.json"))):
                 raise FileNotFoundError(
                     f"atlas not present in local cache {bg_dir} "
                     f"(offline mode; GIN download skipped)"
                 )
         brain_globe_atlas = cast(Callable[..., BrainGlobeAtlas], module.BrainGlobeAtlas)
-        atlas = (
-            brain_globe_atlas(atlas_name, check_latest=False)
-            if skip_latest
-            else brain_globe_atlas(atlas_name)
-        )
+        # BrainGlobe prints its notices ("... is not the latest available")
+        # on stdout, which belongs to the caller: a script's or the agent
+        # CLI's JSON. They go to stderr.
+        with contextlib.redirect_stdout(sys.stderr):
+            atlas = (
+                brain_globe_atlas(atlas_name, check_latest=False)
+                if skip_latest
+                else brain_globe_atlas(atlas_name)
+            )
     except Exception as exc:  # pragma: no cover - passthrough from external library
         raise ValueError(f"Atlas '{atlas_name}' not found or failed to load: {exc}") from exc
     return atlas

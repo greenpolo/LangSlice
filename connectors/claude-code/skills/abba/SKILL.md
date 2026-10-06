@@ -43,9 +43,9 @@ Names and parameters were read from the ABBA source at tag
 ## With a LangSlice job
 
 - Into LangSlice: export from ABBA (QuickNII dataset, or the registration
-  file) and start the job from it: `langslice job FOLDER init --registration
+  file) and start the job from it: `langslice-job FOLDER init --registration
   FILE`.
-- Out of LangSlice: `langslice job FOLDER export_maps` writes
+- Out of LangSlice: `langslice-job FOLDER export_maps` writes
   `exports/quicknii.json` and `exports/visualign.json`. ABBA takes the
   linear placement through `ABBA - Import QuickNII Project` with
   `quicknii.json`; ABBA has no VisuAlign import, so `visualign.json` (the
