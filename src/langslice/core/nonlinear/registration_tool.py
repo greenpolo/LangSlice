@@ -210,6 +210,37 @@ def _canvas_and_placement(
     return canvas, labels, placement
 
 
+def shown_labels(
+    atlas: Any, labels: np.ndarray, prepared: LinearRegistrationInput,
+    include: tuple[str, ...] = (), exclude: tuple[str, ...] = (),
+) -> np.ndarray:
+    """The merged region map whose borders the model is shown.
+
+    Every region outside *include* (when given) and every region in
+    *exclude* is set to background on the native plane, so only the kept
+    regions' borders are drawn and their edge with the rest is an outline.
+    Sides (``"CTX:left"``) are the section's as shown, through the placement.
+    Unknown names or sides raise ``ValueError``.
+    """
+    from langslice.core.atlas.sides import has_sides, native_left
+    from langslice.core.deformable.atlas_images import regions_mask
+
+    shown = _merge_classified(labels, atlas)
+    if not include and not exclude:
+        return shown
+    entries = [*include, *exclude]
+    left = (native_left(atlas, prepared.position_mm, prepared.plane, prepared.pitch_deg,
+                        prepared.yaw_deg, prepared.atlas_to_slice)
+            if has_sides(entries) else None)
+    keep = (regions_mask(atlas, labels, include, left) if include
+            else np.ones(labels.shape, dtype=bool))
+    if exclude:
+        keep &= ~regions_mask(atlas, labels, exclude, left)
+    if not keep.any():
+        raise ValueError("The include / exclude choice leaves no atlas region on this section")
+    return np.where(keep, shown, 0).astype(shown.dtype)
+
+
 #: Image-model requests one stack session keeps in flight at once. The agent
 #: never reads a reply, so calls run at the agent's pace rather than one by one.
 MAX_CONCURRENT_IMAGE_CALLS = 8
@@ -224,6 +255,8 @@ def start_correction(
     out: Path | None = None,
     image_model: ImageModel,
     calls_dir: Path | None = None,
+    include: tuple[str, ...] = (),
+    exclude: tuple[str, ...] = (),
 ) -> tuple[dict[str, Any], Callable[[], dict[str, Any]] | None]:
     """Prepare one image edit from an existing calibrated linear placement.
 
@@ -251,6 +284,14 @@ def start_correction(
     image may be retried; no reply is discarded. Different edits cannot
     regenerate or replace an existing reply.
     The caller checkpoints the returned record; the source linear state is untouched.
+
+    *include* / *exclude* are region entries (acronyms or ids, descendants
+    included, ``"CTX:left"`` naming one side of the section as shown): the
+    borders the model is shown are only the included regions' (all when
+    empty), and excluded regions join the background, so their lines vanish
+    and their edge with kept tissue becomes an outline (:func:`shown_labels`).
+    Both are part of the call key and are recorded on the result, where a
+    traced ``fit_deformable`` reads them.
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
@@ -261,6 +302,10 @@ def start_correction(
     key: dict[str, Any] = {
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     }
+    regions = {name: list(entries) for name, entries in
+               (("include", include), ("exclude", exclude)) if entries}
+    if regions:
+        key["regions"] = regions
     own_prompt = getattr(image_model, "prompt", None)
     own_order = getattr(image_model, "photograph_first", None)
     if own_prompt is not None or own_order is not None:  # a profile's own inputs
@@ -274,8 +319,9 @@ def start_correction(
         return {**previous, "cached": True}, None
 
     canvas, labels, placement = _canvas_and_placement(prepared, ctx, provider, model)
+    shown = shown_labels(ctx.atlas, labels, prepared, include, exclude)
     rough = smooth_border_overlay(
-        canvas, _merge_classified(labels, ctx.atlas), placement,
+        canvas, shown, placement,
         width_px=BORDER_WIDTH_PX * max(canvas.size) / 1536,
     )
     base_prompt, gpt_twin = profile_prompt(image_model, prepared.plane)
@@ -299,7 +345,7 @@ def start_correction(
     request = {
         "id": section_id, "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,
-        "provider": provider, "model": model, **marks,
+        "provider": provider, "model": model, **marks, **regions,
         "linear_handoff": prepared.metadata, "atlas_to_canvas": placement.tolist(),
         "attachments": [
             {"role": role, "path": paths[key],
@@ -311,7 +357,7 @@ def start_correction(
     result: dict[str, Any] = {
         "id": section_id, "geometry_fingerprint": fingerprint,
         "prompt_edited": sent != base_prompt,
-        "provider": provider, "model": model, **marks,
+        "provider": provider, "model": model, **marks, **regions,
         "output_kind": "border_annotation", "fit_performed": False,
         "artifact_dir": str(directory), "artifact_paths": paths, "cached": False,
         "attempt": attempt, "raw_received": False,

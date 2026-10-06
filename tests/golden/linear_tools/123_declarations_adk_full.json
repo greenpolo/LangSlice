@@ -1118,13 +1118,29 @@
    }
   },
   {
-   "description": "Trace one slice's atlas borders onto its anatomy with the image model.\n\nArgs:\n    id: Section filename or corrected index, with a position and linear transform.\n    prompt: The full image prompt for this section, edited from the base prompt.\n\nStarts the image call in the background and returns at once; the result is\nsaved, and submit waits for it. The first result at a placement is reused.\nDoes not fit a deformation.",
+   "description": "Trace one slice's atlas borders onto its anatomy with the image model.\n\nArgs:\n    id: Section filename or corrected index, with a position and linear transform.\n    prompt: The full image prompt for this section, edited from the base prompt.\n    include: Regions (acronyms or ids, descendants included) whose\n        borders the image model is shown. Empty shows every region.\n    exclude: Regions left out of the borders the image model is shown\n        (e.g. tissue that is missing from the section), descendants\n        included; their edge with the shown regions becomes an outline.\n        An include or exclude entry may name one side only, \"CTX:left\"\n        or \"CTX:right\": left and right of the section as the pictures\n        show it. A traced fit_deformable uses the same regions.\n\nStarts the image call in the background and returns at once; the result is\nsaved, and submit waits for it. The first result at a placement and region\nchoice is reused. Does not fit a deformation.",
    "name": "trace_borders",
    "parameters_json_schema": {
     "properties": {
+     "exclude": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Exclude",
+      "type": "array"
+     },
      "id": {
       "title": "Id",
       "type": "string"
+     },
+     "include": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Include",
+      "type": "array"
      },
      "prompt": {
       "default": "",

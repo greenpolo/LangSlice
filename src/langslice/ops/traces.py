@@ -112,6 +112,8 @@ def trace_borders(
     *,
     image_model: ImageModel,
     prompt: str = "",
+    include: tuple[str, ...] = (),
+    exclude: tuple[str, ...] = (),
     workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
 ) -> TraceStarted:
     """Start one section's image correction in the background, or reuse it.
@@ -124,7 +126,9 @@ def trace_borders(
     (*workers* at most at once; :meth:`~langslice.job.job.Job.start_image_job`).
     The section's ``image_correction`` record is written as ONE undo step
     when it changed; the call's result lands on it later (submit waits for
-    it). The edit is prepared outside the job's write lock; the start and
+    it). *include* / *exclude* choose the regions whose borders the model is
+    shown (``registration_tool.shown_labels``); a traced ``fit_deformable``
+    reads them from the record. The edit is prepared outside the job's write lock; the start and
     the write happen under it (:meth:`~langslice.job.job.Job.writing`),
     refused ``STALE_INPUT`` when the section's geometry changed meanwhile;
     the result lands only at the geometry it was made for. Refused:
@@ -136,7 +140,7 @@ def trace_borders(
     prepared = _prepare(job, workspace, ref, lambda state, ctx, section_id, calls_dir:
                         registration_tool.start_correction(
                             state, ctx, section_id, prompt=prompt, image_model=image_model,
-                            calls_dir=calls_dir))
+                            calls_dir=calls_dir, include=include, exclude=exclude))
     if prepared.problem is not None:
         code, facts = prepared.problem
         raise Refused(code, **({} if "unknown" in facts else {"id": prepared.id}), **facts)
@@ -188,8 +192,8 @@ def trace_from_atlas(
     corrective second call). The result is the section's
     ``image_correction`` record exactly as :func:`trace_borders` writes it,
     so ``fit_deformable`` with a traced fit section (starting from the
-    section's written linear placement), the submit gate and the maps read
-    it unchanged. Each section needs a position and a written transform.
+    section's written linear placement) and the maps read it unchanged.
+    Each section needs a position and a written transform.
 
     Long-verb semantics, as :func:`trace_borders`: every edit is prepared
     outside the job's write lock; under it each section's geometry is

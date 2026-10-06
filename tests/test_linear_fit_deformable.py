@@ -22,7 +22,7 @@ from langslice.doors.tools.media import package_result
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import ingest
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
+from tests.deformable_synthetic import HY, SMOOTH_FIELD, TH, SyntheticAtlas, render_section
 from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
@@ -426,6 +426,43 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     unknown = fit([ID], **FAST, fit_section="nope")
     assert unknown["error"] == "BAD_FIT_SECTION"
     assert unknown["fit_sections"] == ["fit", "traced_borders", "traced_lines"]
+
+
+def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas, monkeypatch):
+    from langslice.core import handoff
+
+    state, ctx, _, box = _setup(tmp_path, atlas)
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
+    _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
+    state.slices[0].image_correction["exclude"] = ["HY"]
+    fit = _tool(box, "fit_deformable")
+    result = fit([ID], **FAST, fit_section="traced_lines", exclude=["VS"])
+    assert result["status"] == "ok", result
+    row = result["results"][0]
+    assert row["trace_regions"] == {"include": [], "exclude": ["VS", "HY"]}
+    steps = state.slices[0].deformation["steps"]
+    assert steps[-1]["exclude"] == ["VS", "HY"]
+    # A stain fit ignores the trace's regions.
+    stain = fit([ID], **FAST)
+    assert "trace_regions" not in stain["results"][0]
+
+
+def test_the_model_is_shown_only_the_kept_regions(tmp_path: Path, atlas):
+    from langslice.core.handoff import prepare_linear_registration
+    from langslice.core.nonlinear.registration_tool import shown_labels
+
+    state, ctx, _, _ = _setup(tmp_path, atlas)
+    prepared = prepare_linear_registration(state, ctx, ID)
+    labels = np.asarray(atlas.annotation[0])
+    every = shown_labels(atlas, labels, prepared)
+    assert (every > 0).sum() == (labels > 0).sum()
+    without = shown_labels(atlas, labels, prepared, exclude=("HY",))
+    assert not without[labels == HY].any()
+    assert (without[labels == TH] > 0).all()
+    only = shown_labels(atlas, labels, prepared, include=("TH",))
+    assert (only > 0).sum() == (labels == TH).sum()
+    with pytest.raises(ValueError, match="no atlas region"):
+        shown_labels(atlas, labels, prepared, include=("TH",), exclude=("TH",))
 
 
 def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):

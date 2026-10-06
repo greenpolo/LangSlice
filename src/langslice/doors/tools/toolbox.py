@@ -1498,10 +1498,21 @@ def build_tools(
         }
 
 
-    def trace_borders(id: str, prompt: str) -> dict[str, Any]:
+    def trace_borders(id: str, prompt: str, include: list[str],
+                      exclude: list[str]) -> dict[str, Any]:
         assert image_model is not None  # the tool exists only when traces are on
+        kept = region_names(include, "include")
+        if isinstance(kept, dict):
+            return kept
+        dropped = region_names(exclude, "exclude")
+        if isinstance(dropped, dict):
+            return dropped
+        refusal = region_overlap(kept, dropped)
+        if refusal is not None:
+            return refusal
         try:
-            done = ops_traces.trace_borders(job, ctx, id, prompt=prompt, image_model=image_model)
+            done = ops_traces.trace_borders(job, ctx, id, prompt=prompt, image_model=image_model,
+                                            include=kept, exclude=dropped)
         except Refused as refusal:
             return refusal.payload()
         if done.running:
@@ -1510,6 +1521,7 @@ def build_tools(
         result = done.record
         response = {key: result[key] for key in (
             "status", "error", "message", "cached", "prompt_edited", "attempt",
+            "include", "exclude",
         ) if key in result}
         response["id"] = done.id
         if done.started:

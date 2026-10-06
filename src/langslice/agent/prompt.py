@@ -107,10 +107,13 @@ TOOL_LINES: dict[str, str] = {
     "transform, including any shear.",
     "trace_borders": "runs the image-model border-correction prompt on one "
     "section's existing linear placement, with your edited copy of the prompt "
-    "for that section. The image call runs in the background and the tool returns "
+    "for that section; include and exclude choose the regions whose borders the "
+    "model is shown (excluded regions join the background, their edge becomes an "
+    "outline), and a traced `fit_deformable` uses the same regions. The image call "
+    "runs in the background and the tool returns "
     "at once; the result is saved for the user; `submit` waits "
     "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
-    "it too. The first result at each placement is saved and reused. "
+    "it too. The first result at each placement and region choice is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
     "grep_atlas": "looks regions up in the atlas hierarchy by acronym, name "
     "substring or numeric id (at most 40 rows). Each row gives acronym, id, name, "

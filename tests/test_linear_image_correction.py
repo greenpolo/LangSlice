@@ -28,7 +28,7 @@ def _placed(tmp_path: Path):
     return state, ctx, spec
 
 
-def test_image_tool_is_opt_in_and_has_only_id_and_prompt(tmp_path: Path):
+def test_image_tool_is_opt_in_and_takes_id_prompt_and_regions(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
     state, ctx, spec = _stack(tmp_path, n=1)
@@ -39,7 +39,7 @@ def test_image_tool_is_opt_in_and_has_only_id_and_prompt(tmp_path: Path):
     schema = FunctionTool(_tool(box, "trace_borders"))._get_declaration()
     declaration = schema.model_dump()
     parameters = declaration["parameters"] or declaration["parameters_json_schema"]
-    assert set(parameters["properties"]) == {"id", "prompt"}
+    assert set(parameters["properties"]) == {"id", "prompt", "include", "exclude"}
     assert not {"fit_affine", "adjust_transforms", "search_atlas", "reject"} & set(box.names)
     restored = JobSpec.from_dict(spec.to_dict())
     assert restored.nonlinear == NonlinearSpec()
@@ -78,6 +78,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert calls == [("s0.png", {
         "prompt": "Edited prompt.",
         "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "image_correction",
+        "include": (), "exclude": (),
     })]
     # The tool returns while the image call is still running, with no images.
     assert result["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
@@ -200,3 +201,4 @@ def test_nonlinear_only_prompt_describes_fixed_supplied_placement(tmp_path):
     assert "Existing linear transforms are supplied and fixed" in prompt
     assert "its format is good and tested" in prompt
     assert "Transforms are not part" not in prompt
+
