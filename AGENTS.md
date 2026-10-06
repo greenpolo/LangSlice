@@ -69,8 +69,9 @@ and `environment.yml` hold the worker's source installation.
   in `docs/` in the same change. Docs state what the code does now, without
   plans or history. Do not document or commit `_local/`, `references/`, `out/`
   or `archive/`.
-- Debug output: `LANGSLICE_TRACE_DIR` (or `langslice linear run --trace-dir`)
-  writes a full-content JSONL trace of agent sessions;
+- Debug output: `langslice linear run` writes a full-content JSONL trace of
+  agent sessions to `--trace-dir`, else `LANGSLICE_TRACE_DIR`, else
+  `<job folder>/trace`;
   `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` writes redacted ADK request captures.
 
 ## Docs

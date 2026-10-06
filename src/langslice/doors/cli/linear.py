@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import textwrap
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -212,7 +213,7 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="PATH",
         help="Write a full-content JSONL trace of every agent session here. "
-        "Overrides LANGSLICE_TRACE_DIR",
+        "Overrides LANGSLICE_TRACE_DIR; without either, <job folder>/trace",
     )
     p.add_argument(
         "--fresh",
@@ -426,6 +427,12 @@ def run_linear(args: argparse.Namespace) -> None:
         spec = build_linear_spec(args, args.image_folder)
     except ValueError as exc:
         raise SystemExit(f"langslice linear run: {exc}") from exc
+    if not os.environ.get(TRACE_DIR_ENV):
+        # Every run keeps its full agent trace: by default in the job folder.
+        from langslice.job.layout import job_folder_for
+
+        folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
+        os.environ[TRACE_DIR_ENV] = str(folder / "trace")
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
