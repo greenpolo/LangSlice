@@ -220,7 +220,7 @@ longer exist be taken over by the images it is opened with.
   observers: `observe(fn)` calls *fn* with the state after every
   checkpoint and reload, the hosts' live views; one that raises is logged),
   the image-correction jobs (`start_image_job`, `settle_image_corrections`,
-  `wait_image_job`, `missing_image_corrections`), `nonlinear_refusal`
+  `wait_image_job`), `nonlinear_refusal`
   (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
   checked), `changed_inputs` / `refuse_changed_inputs` (above). The submit

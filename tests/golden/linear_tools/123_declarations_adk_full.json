@@ -1118,7 +1118,7 @@
    }
   },
   {
-   "description": "Trace one slice's atlas borders onto its anatomy with the image model.\n\nArgs:\n    id: Section filename or corrected index, with a position and linear transform.\n    prompt: The full image prompt for this section, edited from the base prompt.\n\nStarts the image call in the background and returns at once; the result is\nsaved and checked at submit. The first result at a placement is reused.\nDoes not fit a deformation.",
+   "description": "Trace one slice's atlas borders onto its anatomy with the image model.\n\nArgs:\n    id: Section filename or corrected index, with a position and linear transform.\n    prompt: The full image prompt for this section, edited from the base prompt.\n\nStarts the image call in the background and returns at once; the result is\nsaved, and submit waits for it. The first result at a placement is reused.\nDoes not fit a deformation.",
    "name": "trace_borders",
    "parameters_json_schema": {
     "properties": {

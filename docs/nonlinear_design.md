@@ -1,32 +1,83 @@
-# Nonlinear: image-model borders and the deformable fit
+# Nonlinear: the agent's deformation toolbox
 
 The `nonlinear` task gives each linearly placed section a deformation. It
 needs a linear placement first, made by the agent or supplied with the job
-(`--positions`, `--transforms`, `--registration`). Two steps, both verbs on
-the job:
+(`--positions`, `--transforms`, `--registration`).
 
-1. `trace_borders(id, prompt="")`: an image model corrects the placed atlas
-   borders onto the tissue (optional; off with `--image-provider none`).
-2. `fit_deformable(...)`: a library engine bends the placed atlas onto the
-   section, reading the stain or the traced lines.
+The agent works the way an expert drives a registration library. It looks at
+the section, decides which regions can steer a fit and which are torn or
+missing, adjusts the section image so those regions stand out, runs ANTs or
+Elastix with the settings it chooses, previews candidates and applies the
+best. The image model is one optional tool in that box: the agent decides
+which sections, if any, it traces. A run ends with every section carrying an
+applied deformation, or a `keep_linear` reason saying its linear placement
+stands.
 
-No image model is shown a colored atlas region map: the model sees the
-photograph and thin yellow atlas-family borders only.
+## The tools
 
-## `trace_borders`
+| Tool | What it does |
+|---|---|
+| `preprocess` | sets the section's appearance for what the agent views, for what a fit reads (`target` `view`, `fit` or `both`), stack-wide or per section: channel weights, CLAHE, N4 bias correction, denoising; returns before and after pictures |
+| `grep_atlas` | looks regions up in the atlas hierarchy by acronym, name or id: ancestry, descendants, and whether the region appears in the atlas plane at a section's placement |
+| `view_placement` | shows a section in its current registration; the shared picture options highlight chosen `regions` and draw atlas images (`ara`, `nissl`, `borders`) under the section |
+| `fit_deformable` | fits a deformation of the placed atlas onto sections (below) |
+| `trace_borders` | optional: an image model draws the atlas borders onto the tissue, for a fit to read (below) |
 
-Two images accompany the prompt: the clean photograph, and the same photograph
-in the same frame with the linearly placed atlas borders drawn in thin yellow.
-OpenAI providers get the clean photograph first; every other provider the
-bordered one first. The model slides or bends each line onto the tissue edge
-it belongs to and returns one photograph in the same frame.
+## `fit_deformable`
 
-- The agent supplies the slice id and optionally its own edited copy of the base
-  prompt (blank sends the base unchanged); user notes for the task
-  (`JobSpec.nonlinear.notes`) appear in the job statement. The base prompt,
-  the prompt sent and their word diff are saved with each attempt.
+`core/deformation.py` calls the engine in `src/langslice/core/deformable/`:
+ANTs SyN (the `registration` extra) or an Elastix B-spline with a bending
+penalty. It is the only deformation step; no deformation is fitted unless it
+is called. Main arguments (`langslice schema fit_deformable`):
+
+| Argument | Choice |
+|---|---|
+| `fit_section` | `fit`: the section's fit appearance (stain); `traced_borders`: a trace's lines turned into named regions (ANTs); `traced_lines`: a trace's lines against the atlas borders |
+| `fit_atlas` | for `fit`: `ara` (the atlas's reference template, default) or `nissl` (ABBA's cached Allen Nissl, ABBA hosts only); for a traced fit section: `borders` |
+| `include`, `exclude` | regions (acronyms or ids, descendants included, optionally one side: `"CTX:left"`); only included regions plus a 300 µm margin are fitted; excluded regions (for example tissue missing from the section) are removed from the atlas side |
+| `start` | `linear`, or `current` to compose onto the applied deformation (region-by-region steps) |
+| `stiffness`, `engine` | `soft`, `medium`, `firm`; `ants` or `elastix` |
+| `candidates` | 2 to 4 variants preview and write nothing; one setting applies it (undoable; identical fits are reused) |
+| `keep_linear` | a reason recording that the section's linear placement stands |
+
+The engine is the user's choice (`nonlinear.engine`: `ants` or `elastix`) or,
+left at `either`, the agent's per call.
+
+Masks cover the tissue (widened past its outline) minus a band along torn
+edges, and the atlas footprint minus excluded regions. The record stores a
+displacement field from section to placed atlas in millimetres, the warped
+labels clipped to tissue, and diagnostics: per-region area ratios, folds,
+displacement, and flags such as `DISPLACEMENT_OUTSIZED`. The flags report; they
+never enforce. Fits are deterministic (fixed seed and thread count). Records
+are kept in the job folder (`sections/<name>/deformable/`). Any later change
+to a section's linear placement clears its deformation. Engine details:
+`src/langslice/core/deformable/CLAUDE.md`.
+
+The Allen Nissl volume is not exactly aligned with the CCFv3 annotation
+(Piluso et al., *Imaging Neuroscience* 2025,
+[doi:10.1162/imag_a_00565](https://doi.org/10.1162/imag_a_00565)), so a fit
+against `nissl` inherits that offset; `ara` is the default.
+
+## `trace_borders` (optional)
+
+`trace_borders(id, prompt="")`: an image model corrects the placed atlas
+borders onto one section's tissue. Two images accompany the prompt: the clean
+photograph, and the same photograph in the same frame with the linearly
+placed atlas borders drawn in thin yellow. OpenAI providers get the clean
+photograph first; every other provider the bordered one first. The model
+slides or bends each line onto the tissue edge it belongs to and returns one
+photograph in the same frame. No image model is shown a colored atlas region
+map.
+
+- The model always sees the full set of atlas borders. Damage reaches it
+  through the prompt: the OpenAI base prompt tells it to leave out borders
+  over missing tissue (the general wording has no such sentence), and the
+  agent may edit the base prompt for the section (blank sends it unchanged). Region exclusions apply in `fit_deformable`
+  only. The base prompt, the prompt sent and their word diff are saved with
+  each attempt; user notes for the task (`JobSpec.nonlinear.notes`) appear in
+  the job statement.
 - The call runs in the background and returns at once; up to 8 run at a time.
-  `submit` and `fit_deformable` wait for running calls.
+  `submit` and a traced `fit_deformable` wait for running calls.
 - The first reply at a placement is kept: calls with the same image, geometry
   and settings return the saved reply; changing the linear placement needs a
   new trace and the old artifacts stay. No automatic retries; a transport
@@ -38,12 +89,13 @@ it belongs to and returns one photograph in the same frame.
   (`sections/<name>/image_correction/<call key>/attempt-NN/`, with the exact
   attachments, their hashes, the placement and the prompts);
   `SliceState.image_correction` points to them.
-- It fits no deformation and changes no transform. It checks completion, not
-  anatomical quality.
+- It fits no deformation and changes no transform. A fit reads the trace with
+  `fit_section` `traced_borders` (ANTs at medium stiffness is the recommended
+  pairing) or `traced_lines`.
 - The image model is the job's (`--image-provider`, `--image-model`; default
-  `openai-oauth`). A model profile (own prompt, attachment order, or a model
-  of your own) is described in [library.md](library.md); its traces are marked
-  `"untested": true`.
+  `openai-oauth`; `none` offers no `trace_borders`). A model profile (own
+  prompt, attachment order, or a model of your own) is described in
+  [library.md](library.md); its traces are marked `"untested": true`.
 
 Prompt text is in `src/langslice/core/nonlinear/prompts.py`. Rules a prompt
 edit keeps: every sentence is audited for a second reading; no line is made
@@ -51,31 +103,13 @@ conditional on visibility (the atlas alone decides which borders exist; the
 one exception is tissue torn away); the OpenAI wording uses "change only X"
 plus a preserve list, the Gemini wording positive framing only.
 
-## `fit_deformable`
+## Without an agent
 
-`core/deformation.py` calls the engine in `src/langslice/core/deformable/`:
-ANTs SyN (the `registration` extra) or an Elastix B-spline with a bending
-penalty. It is the only deformation step; no deformation is fitted unless it
-is called. Main arguments (`langslice schema fit_deformable`):
-
-| Argument | Choice |
-|---|---|
-| `fit_section` | `fit`: the section's fit appearance (stain) against `ara` or `nissl` (ABBA's cached Allen Nissl, ABBA hosts only); `traced_borders`: the trace's lines turned into named regions (ANTs); `traced_lines`: the lines against the atlas borders |
-| `include`, `exclude` | regions (acronyms or ids, descendants included, optionally one side: `"CTX:left"`); only included regions plus a margin are fitted; excluded regions (for example tissue missing from the section) are removed from the atlas side |
-| `start` | `linear`, or `current` to compose onto the applied deformation (region-by-region steps) |
-| `stiffness`, `engine` | `soft`, `medium`, `firm`; `ants` or `elastix` |
-| `candidates` | 2 to 4 variants preview and write nothing; one setting applies it (undoable; identical fits are reused) |
-| `keep_linear` | a reason recording that the section's linear placement stands |
-
-Masks cover the tissue (widened past its outline) minus a band along torn
-edges, and the atlas footprint minus excluded regions. The record stores a
-displacement field from section to placed atlas in millimetres, the warped
-labels clipped to tissue, and diagnostics: per-region area ratios, folds,
-displacement, and flags such as `DISPLACEMENT_OUTSIZED`. The flags report; they
-never enforce. Fits are deterministic (fixed seed and thread count). Records
-are kept in the job folder (`sections/<name>/deformable/`). Any later change
-to a section's linear placement clears its deformation. Engine details:
-`src/langslice/core/deformable/CLAUDE.md`.
+`langslice.register_job` (scripted, [library.md](library.md)) runs the same
+verbs in a fixed order: `trace_borders` on every section when the job has an
+image model, then `fit_deformable` with the traced lines against the atlas
+borders (Elastix, medium); without an image model, the stain against `ara`
+(Elastix, medium). A `fit=` argument replaces those settings.
 
 ## What the deformation becomes
 
@@ -102,9 +136,10 @@ atlas render.
 
 ## Review
 
-Inspect the raw reply first, then the extracted lines on the original tissue,
-then the fitted atlas overlay; a good reply can be degraded by the fit.
-Metrics and fit flags complement the visual check but do not prove anatomical
-correctness. Known limits: the yellow-line extractor can confuse naturally
-yellow tissue with drawn lines; the fit is not region-identity-aware and does
-not certify topology.
+Inspect the section and the fitted atlas overlay against the section's
+internal anatomy; for a traced section, inspect the raw reply first, then the
+extracted lines on the original tissue, then the fitted overlay (a good reply
+can be degraded by the fit). Metrics and fit flags complement the visual
+check but do not prove anatomical correctness. Known limits: the yellow-line
+extractor can confuse naturally yellow tissue with drawn lines; the fit is not
+region-identity-aware and does not certify topology.

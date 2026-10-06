@@ -507,7 +507,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("view_placement", [{"id": ID0, "positions_mm": [0.1]}],
          view={"mode": "overlay", "deformation": "none"})
     call("status")
-    call("submit", "Not yet: traces missing.", [], [])
+    call("view_stack")
     call("trace_borders", ID1)
     call("trace_borders", ID2, prompt="Trace only the surviving left half.")
     call("submit", "Placed, aligned and deformed three sections.", ["golden"], [])

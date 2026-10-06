@@ -1575,7 +1575,11 @@
     "views/000027_view_stack_spacing/view.jpg",
     "views/000027_view_stack_spacing/view.json",
     "views/000039_view_atlas_atlas/view.jpg",
-    "views/000039_view_atlas_atlas/view.json"
+    "views/000039_view_atlas_atlas/view.json",
+    "views/000066_view_stack_sheet/view.jpg",
+    "views/000066_view_stack_sheet/view.json",
+    "views/000067_view_stack_spacing/view.jpg",
+    "views/000067_view_stack_spacing/view.json"
    ],
    "job_file": {},
    "layers": {
@@ -1983,9 +1987,15 @@
     },
     "views/000039_view_atlas_atlas": {
      "view_json": "<hex>"
+    },
+    "views/000066_view_stack_sheet": {
+     "view_json": "<hex>"
+    },
+    "views/000067_view_stack_spacing": {
+     "view_json": "<hex>"
     }
    },
-   "pictures_sent": 65,
+   "pictures_sent": 67,
    "saved_jpegs_equal_sent": true,
    "views_index": [
     {
@@ -2761,6 +2771,34 @@
      ],
      "seq": 65,
      "tool": "view_placement"
+    },
+    {
+     "call": 40,
+     "layers": false,
+     "mode": "sheet",
+     "name": "000066_view_stack_sheet",
+     "path": "views/000066_view_stack_sheet",
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 66,
+     "tool": "view_stack"
+    },
+    {
+     "call": 40,
+     "layers": false,
+     "mode": "spacing",
+     "name": "000067_view_stack_spacing",
+     "path": "views/000067_view_stack_spacing",
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 67,
+     "tool": "view_stack"
     }
    ]
   }

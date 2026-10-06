@@ -20,8 +20,9 @@
 LangSlice puts a stack of histology sections on a [BrainGlobe](https://brainglobe.info)
 atlas. A vision-language model agent orders the sections, places each at its
 atlas position (with cutting angles) and aligns it in-plane against the atlas at
-true scale. Optionally an image model corrects the atlas borders onto the
-tissue and a deformable fit turns them into a per-section deformation. Results
+true scale. Optionally the agent then deforms the atlas onto each section with
+ANTs or Elastix, choosing the regions and settings itself and, where it
+chooses, reading borders an image model has traced on the tissue. Results
 are per-section coordinate and label maps, `registration.json`, and
 QuickNII / VisuAlign JSON. LangSlice complements registration software such as
 [ABBA](https://abba-documentation.readthedocs.io) and QUINT; it has no manual
@@ -59,8 +60,8 @@ launcher.
   CLI: [Claude Code](connectors/claude-code/README.md), [Codex](connectors/codex/README.md);
   the CLI itself, `langslice job FOLDER VERB`, is in [docs/agent_cli.md](docs/agent_cli.md).
 - **Command line agent**: `langslice linear run sections/` runs the built-in agent
-  ([docs/cli.md](docs/cli.md)); add `--tasks nonlinear` for the border correction
-  and deformation on a saved linear placement.
+  ([docs/cli.md](docs/cli.md)); add `--tasks nonlinear` for the deformation on a
+  saved linear placement.
 - **Python library**: `langslice.open_job`, `create_job`, `register_section`,
   `register_job` for a scripted pipeline: [docs/library.md](docs/library.md).
 

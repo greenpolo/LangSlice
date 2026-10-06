@@ -48,8 +48,8 @@ Image files are never modified.
    `nonlinear`. A task that is off builds no tools and takes its answer from
    the spec's `inputs` ([linear_design.md](linear_design.md)).
 3. The agent (or script) calls verbs: order, atlas position and cutting
-   angles, an in-plane affine per section, and with `nonlinear` an image-model
-   border trace and a deformable fit per section
+   angles, an in-plane affine per section, and with `nonlinear` a deformable
+   fit per section, optionally reading an image-model border trace
    ([nonlinear_design.md](nonlinear_design.md)).
 4. `submit` checks the gates and writes the results: `registration.json`, each
    section's coordinate and label maps, and the QuickNII / VisuAlign exports

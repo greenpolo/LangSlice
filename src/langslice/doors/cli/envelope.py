@@ -90,9 +90,6 @@ FIXES: dict[str, str] = {
                        "openai-oauth, or its API key) and call it again; without it, fit "
                        "each section's deformation to its stain with fit_deformable.",
     "NO_IMAGE_MODEL": "This job has no image model: use fit_section \"fit\" (the stain).",
-    "MISSING_IMAGE_CORRECTIONS": "Run trace_borders for each section listed under "
-                                 "result.sections at its current placement (a placement "
-                                 "change makes an earlier trace stale), then submit again.",
     "NOTHING_TRACED": "Each section's row under result.results names its problem; a "
                       "section needs a position and a transform (fit_affine or "
                       "adjust_transforms) before trace_borders.",
