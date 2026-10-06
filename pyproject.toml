@@ -28,6 +28,7 @@ dependencies = [
 
 [project.scripts]
 langslice = "langslice.cli:main"
+langslice-job = "langslice.doors.cli.jobcli:main"
 
 [project.optional-dependencies]
 # Deformable fit extras (langslice.core.deformable): the ANTs engine and the reader

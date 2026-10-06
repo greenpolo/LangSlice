@@ -3,11 +3,11 @@
 ``langslice.cli:main`` (the installed entry point) is :func:`main` here.
 Groups: :mod:`~langslice.doors.cli.linear` (``linear run`` and the shared
 job flags), :mod:`~langslice.doors.cli.claude` (``mcp``,
-``claude prepare``), the host commands (``abba``, ``serve``:
+``claude prepare``) and the host commands (``abba``, ``serve``:
 :mod:`langslice.hosts.cli`, loaded by module path through
-``HOST_COMMANDS``, so the doors never import a host), and the agent CLI:
-:mod:`~langslice.doors.cli.job` (``job FOLDER VERB``) and
-:mod:`~langslice.doors.cli.catalog` (``ops``, ``schema``).
+``HOST_COMMANDS``, so the doors never import a host). The agent CLI is a
+command of its own, ``langslice-job`` (:mod:`~langslice.doors.cli.jobcli`),
+so the verbs can be allowed without these.
 """
 
 from __future__ import annotations
@@ -18,20 +18,13 @@ import sys
 from typing import Any
 
 import langslice
-from langslice.doors.cli.catalog import add_parsers as add_catalog_parsers
-from langslice.doors.cli.catalog import run_ops, run_schema
 from langslice.doors.cli.claude import (
     add_claude_prepare_parser,
     add_mcp_parser,
     run_claude_prepare,
     run_mcp,
 )
-from langslice.doors.cli.job import add_parser as add_job_parser
-from langslice.doors.cli.job import run as run_job
 from langslice.doors.cli.linear import add_run_parser, run_linear
-
-#: The agent CLI's commands: JSON on stdout, an exit code returned.
-AGENT_COMMANDS = {"job": run_job, "ops": run_ops, "schema": run_schema}
 
 #: The commands that drive a host (the hosts layer), by module path: command
 #: -> (module, its add-parser function, its run function). The module is
@@ -87,28 +80,19 @@ def build_parser() -> argparse.ArgumentParser:
     claude_sub = claude.add_subparsers(dest="subcommand", required=True)
     add_claude_prepare_parser(claude_sub)
 
-    # The agent CLI: langslice job FOLDER VERB, langslice ops, langslice schema
-    add_job_parser(subparsers)
-    add_catalog_parsers(subparsers)
-
     return parser
 
 
-def main(argv: list[str] | None = None) -> int | None:
-    """Run one ``langslice`` command; the agent CLI's commands (``job``,
-    ``ops``, ``schema``) return their exit code (0, 2, 3 or 4)."""
+def main(argv: list[str] | None = None) -> None:
+    """Run one ``langslice`` command."""
     # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
     # reads it, not only the one whose module happens to be imported. The
-    # keys saved by setup too, except for the commands that need none (the
-    # agent CLI's verbs get them when their job opens: doors.jobs).
+    # keys saved by setup too, except for the commands that need none.
     from langslice.doors.api.setup import load_credentials
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    load_credentials(saved=args.command not in {"serve", "login", "version",
-                                                 *AGENT_COMMANDS})
-    if args.command in AGENT_COMMANDS:
-        return AGENT_COMMANDS[args.command](args)
+    load_credentials(saved=args.command not in {"serve", "login", "version"})
 
     # Group commands (`linear`, `claude`) carry the leaf name in
     # `subcommand`; top-level commands only set `command`. Leaf names are
@@ -132,4 +116,3 @@ def main(argv: list[str] | None = None) -> int | None:
     else:
         parser.print_help()
         sys.exit(1)
-    return None

@@ -69,11 +69,16 @@ wording; `registry.py` lists which.
   `not_shown`). `set_cutting_angles(job, workspace, pitch, yaw)` (every
   section gets the one plane, so a stack whose sections carried different
   angles is flattened, one undo step restoring them; drops the render
-  cache). `search_position(job, workspace, ref, window_mm, angles=)`
-  (a read: `oblique.fit_oblique` around the section's position, holding the
-  section's own angles unless `angles`, the best
-  position/angles/score; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`,
-  `FIT_FAILED`; offered when the spec's `position.bayesian` is on).
+  cache). `search_position(job, workspace, ref, window_mm, angles=,
+  around_mm=)` (a read: `oblique.fit_oblique` within the window of
+  `around_mm`, else of the section's position, clamped to the valid range;
+  a section with neither is searched over the whole range; the coarse
+  position grid at most `SEARCH_STEP_MM` apart; with the section's pixel
+  size known, planes too small to hold its tissue are skipped
+  (`section_um_per_px`); the section's own angles held unless `angles`; the
+  best position/angles/score and `searched_range_mm`; `UNKNOWN_SLICE_IDS`,
+  `BAD_ARGS`, `FIT_FAILED`; offered when the spec's `position.bayesian` is
+  on).
 - `order.py` — `reorder(job, filenames, after)` (one block, filenames only),
   `renumber(order)` (indices only, no undo step).
 - `orientation.py` — `orient_sections(job, entries, workspace=, options=)`:
@@ -217,7 +222,8 @@ wording; `registry.py` lists which.
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", alternates, when, long, scripting, image_model, hidden)`, in
+  "Nonlinear", alternates, when, long, scripting, image_model, hidden,
+  limits)`, in
   the order every door lists them; `enabled(spec, scripting=, image_model=,
   hidden=)`: the verbs a run of the spec has (`when`: the task switches and
   host switches that were `build_tools`' if-chain; `image_model` False
@@ -229,12 +235,18 @@ wording; `registry.py` lists which.
   scripting verb; `trace_from_atlas`) is in `enabled` only with `hidden=True`
   (what `build_tools(scripting=True)` passes, so the CLI and the library
   call it by name) and in no listing: `listed()` (every verb but the hidden
-  ones) is what `langslice ops`, `langslice schema` without a verb, the job
+  ones) is what `langslice-job ops`, `langslice-job schema` without a verb, the job
   folder's card, the library's `verbs` and the CLI's `verbs` lists show.
-  `fit_deformable`'s alternate is `keep_linear`. Every door is built from
+  `fit_deformable`'s alternate is `keep_linear`. `limits`: the most one
+  call takes, by what it counts (`view_slices` sections, `view_atlas`
+  positions, `view_placement` pairs, `adjust_transforms` entries: each
+  `core.sizes.MAX_IMAGES_PER_CALL`; `fit_deformable` sections, candidates
+  and fits: `core.deformation.MAX_CANDIDATES`, `MAX_FITS_PER_CALL`), the
+  values the tool door enforces; the reference card lists them
+  (`tests/test_agent_cli.py` drives each one past its limit). Every door is built from
   it: `build_tools` makes the tools
   `enabled(spec)` names (the ADK and MCP doors), the MCP door's
-  `readOnlyHint` is `kind == "read"`, and the agent CLI (`langslice ops`,
+  `readOnlyHint` is `kind == "read"`, and the agent CLI (`langslice-job ops`,
   `schema`, `job FOLDER VERB`), the library's job methods and the job
   folder's reference card list it (`src/langslice/doors/`). A verb is
   never renamed once shipped. `tests/test_ops_registry.py` and

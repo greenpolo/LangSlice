@@ -11,6 +11,10 @@
   "position_mm": 0.0,
   "score": 0.6965,
   "searched_angles": false,
+  "searched_range_mm": [
+   0.0,
+   0.2
+  ],
   "searched_window_mm": 0.1,
   "status": "ok",
   "yaw_deg": 0.0

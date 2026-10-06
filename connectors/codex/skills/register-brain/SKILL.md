@@ -29,15 +29,16 @@ Registration is always the subagent's, and it registers exactly one brain.
 - Notes about the brain (a tear, a damaged section).
 - Which subagent the user allows (step 3).
 
-`init` takes the job flags `langslice linear run --help` lists, plus `--notes
-TEXT` (the user's notes, saved in the job). Check that `langslice`
-runs (`langslice version`); if it does not, tell the user how the plugin
+`init` takes the job flags `langslice-job schema init` lists (each with its
+help, default and choices), among them `--notes TEXT` (the user's notes,
+saved in the job). Check that `langslice-job`
+runs (`langslice-job ops`); if it does not, tell the user how the plugin
 README says to install it, and stop.
 
 ## 2. Create the job
 
 ```bash
-langslice job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
+langslice-job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
   --pixel-size-um 4.0 --image-provider none
 ```
 
@@ -53,7 +54,7 @@ Pick the variant the user allows:
 
 | Subagent | Can do | Use when |
 | --- | --- | --- |
-| `register_cli` | Bash + Read: the `langslice job` command line | default |
+| `register_cli` | Bash + Read: the `langslice-job` command line | default |
 | `register_scripting` | Bash + Read + Write + Edit: also scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
 Ask Codex to spawn that custom agent by name. The request names only the job
@@ -70,7 +71,7 @@ only. If the user wants the agent limited, point them to
 
 When the subagent returns, do not trust its summary alone:
 
-- `langslice job FOLDER status`: the job's state, tasks and open items;
+- `langslice-job FOLDER status`: the job's state, tasks and open items;
   confirm the job was submitted.
 - Open `FOLDER/registration.json` (derived from `state.json`, the truth) and
   the maps and exports under `FOLDER/exports/` (`quicknii.json`,
@@ -84,7 +85,7 @@ When the subagent returns, do not trust its summary alone:
 
 ## 5. Import and export with other software
 
-`langslice job FOLDER export_maps` writes each placed section's maps,
+`langslice-job FOLDER export_maps` writes each placed section's maps,
 `exports/quicknii.json`, `exports/visualign.json` and `registration.json`
 from the job as it stands. Starting from another program's registration is
 `init --registration FILE` (step 1). For ABBA, Fiji, QuPath or QuickNII, use

@@ -50,7 +50,7 @@ VIEWER_KEY = "viewer"
 
 def job_viewer(layout: JobLayout) -> str:
     """The job's viewer for the agent CLI's pictures (``job.json``
-    ``viewer``, written by ``langslice job FOLDER init --viewer``), else
+    ``viewer``, written by ``langslice-job FOLDER init --viewer``), else
     :data:`langslice.core.opening.DEFAULT_VIEWER`."""
     from langslice.core.opening import DEFAULT_VIEWER, VIEWER_LIMITS
 
@@ -163,7 +163,7 @@ def read_spec(job_folder: Path) -> JobSpec:
     if images is None or not images.is_dir():
         raise NoJob(
             f"The images of the job in {job_folder} are not in {images} any more. If they "
-            "moved, reattach the job from their new folder: langslice job NEW_IMAGE_FOLDER "
+            "moved, reattach the job from their new folder: langslice-job NEW_IMAGE_FOLDER "
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
             "<images>/langslice).")
     data["image_folder"] = str(images)

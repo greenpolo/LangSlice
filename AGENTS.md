@@ -42,7 +42,7 @@ and `environment.yml` hold the worker's source installation.
 ## Rules that hold in the code
 
 - Every way in goes through one job folder and its verbs: the agent run
-  (`langslice linear run`), the agent CLI (`langslice job FOLDER VERB`, `ops`,
+  (`langslice linear run`), the agent CLI (`langslice-job FOLDER VERB`, `ops`,
   `schema`), the library (`langslice.open_job`, `create_job`, `register_job`),
   MCP and the Fiji worker. `trace_from_atlas` is an internal scripting verb
   (`Verb.hidden` in `ops/registry.py`) in no listing.

@@ -26,13 +26,16 @@ Saving never touches what the doors send and never slows a tool: the tool
 thread only numbers the pictures and queues them; one background thread per
 store encodes and writes, in order, and ends when the queue is empty.
 :meth:`ViewStore.flush` waits for it (the job calls it at submit, results and
-close; :func:`flush_all` runs at interpreter exit). A failed write is logged
-and skipped; it never reaches a tool.
+close; the library after every verb; :func:`flush_all` runs at interpreter
+exit, through :func:`at_exit`, while the writer can still start the threads
+its encoders use). A failed write is logged and skipped; it never reaches a
+tool.
 """
 
 from __future__ import annotations
 
 import atexit
+import concurrent.futures.thread  # noqa: F401  (its exit hook is registered first: at_exit)
 import contextlib
 import contextvars
 import json
@@ -116,6 +119,27 @@ class Saved:
         return listed
 
 
+def artifacts(saved: Iterable[Saved], tool: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """``(artifacts, warnings)`` of a call's saved pictures, once the store
+    is flushed: every file a picture's folder holds, ``{"path", "kind",
+    "index"}`` (``index`` its place among the call's pictures, the number a
+    reply's ``image_indexes`` give), the ``view`` with a ``label`` (the
+    sections and mode it shows, else *tool*); a warning per picture whose
+    JPEG is missing. What the doors that answer with file paths (the agent
+    CLI, the library) report."""
+    listed: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for picture in saved:
+        label = ", ".join(picture.sections) + (f" ({picture.mode})" if picture.mode else "")
+        for path, kind in picture.files():
+            if path.exists():
+                listed.append({"path": str(path), "kind": kind, "index": picture.index,
+                               **({"label": label or tool} if kind == "view" else {})})
+            elif kind == "view":
+                warnings.append(f"picture not saved: {path}")
+    return listed, warnings
+
+
 def has_frame(note: PictureNote | None) -> bool:
     """Whether a picture's note carries a frame its layers are drawn from: a
     placement picture's canvas, or a deformable-fit picture's record."""
@@ -142,6 +166,29 @@ def flush_all() -> None:
         store.flush()
 
 
+def at_exit(function: Callable[[], None]) -> None:
+    """Run *function* when the interpreter exits, while threads still run.
+
+    ``atexit`` is too late for work that starts threads: by then
+    ``concurrent.futures`` takes no new work ("cannot schedule new futures
+    after interpreter shutdown"), and the picture writer's TIFF encoder and
+    an image-model call use thread pools. Python's threading exit hooks run
+    before that one, last registered first; ``concurrent.futures.thread`` is
+    imported above so that its hook is registered before any of ours. Falls
+    back to ``atexit`` where the hook does not exist."""
+    register = getattr(threading, "_register_atexit", None)
+    if register is None:
+        atexit.register(function)
+        return
+    try:
+        register(function)
+    except RuntimeError:  # the interpreter is already shutting down
+        atexit.register(function)
+
+
+at_exit(flush_all)
+# And once more after every thread has been joined, for pictures queued by a
+# thread that was still running a tool when the first flush ran.
 atexit.register(flush_all)
 
 

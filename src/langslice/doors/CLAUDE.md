@@ -12,14 +12,14 @@ every door is generated from them and from the registry (`ops/registry.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
-| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, the hidden `trace_from_atlas`) and `brief` | Claude Code, Codex |
+| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, the hidden `trace_from_atlas`) and `brief` | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `pipeline.py` (`register_section`, `register_job`) calls those verbs in a fixed order | a script |
 
 A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
 placement-free image-model trace kept for experiments) is built by the
-scripting doors and called by name (`langslice job FOLDER trace_from_atlas`,
-`job.trace_from_atlas(...)`), but listed nowhere: not in `langslice ops`,
-`langslice schema` without a verb (`schema trace_from_atlas` answers by
+scripting doors and called by name (`langslice-job FOLDER trace_from_atlas`,
+`job.trace_from_atlas(...)`), but listed nowhere: not in `langslice-job ops`,
+`langslice-job schema` without a verb (`schema trace_from_atlas` answers by
 name), the card, the library's `verbs`, the CLI's `verbs` lists, the job
 statement, nor the public docs (`registry.listed()`).
 
@@ -114,11 +114,20 @@ the CLI is a process per call.
   that already supplies any of `REGISTRATION_EXCLUDES`. Every door that
   takes `--registration` / `registration=` goes through it.
 - `library.py` — `open_job(folder, image_model=, atlas_loader=, emit=)` ->
-  `JobHandle`: every verb the job has as a method (the tool itself: same
-  arguments, the reply dict with plain PIL pictures under `images`, saved
-  like every door's; the hidden verb by name), `verbs`, `folder`,
-  `image_model`, `job`, `state`, `workspace`, `imported`, `close`, a context
-  manager. `create_job(images | JobSpec, atlas=, plane=, tasks=,
+  `JobHandle`: every verb the job has as a method (the tool, same
+  arguments, run inside `job.views.captured()`, then the pictures flushed,
+  so a method returns once its pictures are on disk; the hidden verb by
+  name), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
+  `imported`, `close` (image-model calls settled, pictures flushed), a
+  context manager. A method's reply is `library_reply`: a `Reply` (a dict
+  of JSON values, `plain`; its status rows `core.status.with_uniform_rows`;
+  the pictures' files under `artifacts` as the CLI lists them,
+  `job.views.artifacts`; their text lines under `media_texts`; an unsaved
+  picture under `warnings`) whose `images` ATTRIBUTE holds the PIL
+  pictures. Every handle's job is tracked (`_track`) and closed at
+  interpreter exit by `_close_open`, registered with `job.views.at_exit`
+  (before `concurrent.futures` stops taking work), so a script that never
+  calls `close` keeps its `trace_borders` results and pictures. `create_job(images | JobSpec, atlas=, plane=, tasks=,
   image_model=, job_dir=, output=, positions=, transforms=, angles=,
   orientation=, pixel_size_um=, inputs=, registration=, fresh=, **JobSpec
   fields)`: six-number transforms become `{"kind": "interactive", "params",
@@ -150,10 +159,14 @@ the CLI is a process per call.
 - `card.py` — the job folder's reference card, `AGENTS.md` and `CLAUDE.md`
   (identical; Codex reads one, Claude Code the other): `card_text(layout)`
   (the folder's files, the maps and their coordinate convention, the CLI
-  with every listed verb, `long` marked, the Python entry point; first, run
-  `brief` and read `BRIEF.md`), `write_card` (writes where missing or worded
-  differently; never raises). Written by every door that opens or makes a
-  job.
+  with every listed verb, `long` marked and its per-call limits
+  (`limits_note` of `registry.Verb.limits`; `transform_cap_line`: the job's
+  own `transform.max_parallel` when lower), `schema init` and `--help`, the
+  Python entry point and what a method returns, and to keep the agent's own
+  files in `scripts/` and `scratch/` of the job folder, not `/tmp`; first,
+  run `brief` and read `BRIEF.md`; under 85 lines, `tests/test_agent_cli.py`),
+  `write_card` (writes where missing or worded differently; never raises).
+  Written by every door that opens or makes a job.
 - `trace.py` — `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`), `HostTrace` (the MCP
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
@@ -212,16 +225,21 @@ the CLI is a process per call.
   stack, so the tracker refuses a state whose sections differ in cutting
   angle (`refuse_mixed_angles`, `ABBA_MIXED_ANGLES`), which also fails the
   MCP door's opening of such a saved ABBA job.
-- `cli/` — every `langslice` command, one module per group;
-  `langslice/cli.py` keeps the entry point `langslice.cli:main`.
-  `__init__.py` (`build_parser`, `main`: the agent commands return their
-  exit code), `linear.py` (`linear run` and the job flags every
+- `cli/` — the `langslice` and `langslice-job` commands, one module per
+  group; `langslice/cli.py` keeps the entry point `langslice.cli:main`.
+  `__init__.py` (`build_parser`, `main`: `linear run`, `mcp`, `claude
+  prepare`, the host commands, `login`, `version`), `linear.py` (`linear run` and the job flags every
   stack-opening command shares: `add_linear_arguments`, `build_linear_spec`,
   `spec_from_args`; `--tasks` defaults to `DEFAULT_TASKS`, or with
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
   with a message), `claude.py` (`mcp`, `claude prepare`), and the agent CLI
-  (`docs/agent_cli.md`):
+  (`docs/agent_cli.md`), a command of its own so that allowing it allows
+  no agent, server, host or login:
+  - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,
+    also `python -m langslice.doors.cli.jobcli`): `ops` and `schema` first
+    (run inside `stdout_to_stderr`, their envelope printed after),
+    anything else `FOLDER VERB`; returns the exit code.
   - `envelope.py` — `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
     `next`, `error` {code, message, fix}), `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
     `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
@@ -239,9 +257,15 @@ the CLI is a process per call.
     `Declared.entry`: `summary`, `description`, `kind`, `group`, `long`,
     `arguments`, and for a picture verb `picture_options`; declared for the
     job given or of the current folder, else `FULL` with a `hint`; a job
-    that cannot be read answers `JOB_UNREADABLE`).
-  - `job.py` — `langslice job FOLDER VERB`: `execute` (never raises; every
-    call logged by `record` and, with `LANGSLICE_TRACE_DIR`, traced),
+    that cannot be read answers `JOB_UNREADABLE`; a job command,
+    `command_names()`, answers `command_entry`: summary, usage and `flags`,
+    `init`'s read off `job.init_parser` by `flags_table`). Both return the
+    envelope. `describe(name, folder)`: what `FOLDER NAME --help` answers,
+    `schema NAME` declared for FOLDER's job when it has one.
+  - `job.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every
+    call logged by `record` and, with `LANGSLICE_TRACE_DIR`, traced; any
+    `HELP_FLAGS` token, `--help` / `-h`, answers `catalog.describe` and runs
+    nothing),
     `parse` (`--args`, `--name value`, `--dry-run`, `--background`,
     `--verbose`, `--timeout`, the child's `--run-id`), `arguments_for` (flags
     read as the verb declares them), `call` (open, `VERB_OFF` /
@@ -249,16 +273,18 @@ the CLI is a process per call.
     start, dry run, run), `_run` (the tool inside `job.views.captured()`; an
     image-model verb's calls settled before answering, each landed outcome
     shown; `submit` writes the results; pictures listed as artifacts with
-    `index` and `label`; `would_change` on a dry run), `shape` (concise: a
-    reply with pictures keeps its description as `picture_note`, a write's
-    whole-stack `rows` as `n_rows`), `changes`, `init` (the job flags of
-    `linear run`; `--registration`'s report under `result.registration`,
+    `index` and `label`, `job.views.artifacts`; `would_change` on a dry
+    run), `shape` (status rows uniform, `core.status.with_uniform_rows`;
+    concise: a reply with pictures keeps its description as `picture_note`,
+    a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
+    parser `init_parser`: the job flags of `linear run`, `--notes`,
+    `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`). `CHECKED_ONLY`:
     `trace_borders`, `trace_from_atlas` and `fit_deformable` are checked,
     not run, by `--dry-run`.
   - `background.py` — `--background`: `start` (a record in
-    `logs/runs/<id>.json`, then `CHILD_COMMAND` + `job FOLDER VERB --args ...
+    `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
     --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish` (in the
     child), `read` (a running run whose process is gone, or that never
     started within `START_GRACE_S`, is `lost`; the process probed with a null

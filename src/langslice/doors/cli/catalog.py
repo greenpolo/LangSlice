@@ -1,9 +1,9 @@
-"""``langslice ops`` and ``langslice schema [VERB]``: what the agent CLI offers.
+"""``langslice-job ops`` and ``langslice-job schema [VERB]``: what the agent CLI offers.
 
 Both read the registry (:data:`langslice.ops.registry.VERBS`) and the
 verbs' declarations (:mod:`langslice.doors.declarations`), the same ones the
 agent and MCP tools are built from, so the list and the schemas are what
-``langslice job FOLDER VERB`` accepts. ``ops`` lists every verb (name, kind,
+``langslice-job FOLDER VERB`` accepts. ``ops`` lists every verb (name, kind,
 group, one line, ``long`` where it computes outside the job lock and may
 take minutes). ``schema`` gives per verb what a model reads of it: the
 whole declared description, the one-line summary, the argument schema, the
@@ -13,7 +13,12 @@ job's settings declare it with ``--job FOLDER``, or the job of the folder it
 runs in, otherwise every argument (``hint`` says how to narrow it).
 ``schema`` is versioned (:data:`SCHEMA_VERSION`); a verb is never renamed
 once shipped. A hidden verb (``registry.Verb.hidden``) is in neither list;
-``schema VERB`` still answers for it by name.
+``schema VERB`` still answers for it by name. ``schema`` of a job command
+(``init``, ``brief``, ``runs``, ``wait``: :data:`JOB_COMMANDS`) gives its
+summary, usage and flags (``init``'s are its parser's,
+:func:`langslice.doors.cli.job.init_parser`); ``langslice-job FOLDER NAME
+--help`` answers as ``schema NAME`` does (:func:`describe`). Both return
+the envelope; :mod:`langslice.doors.cli.jobcli` prints it.
 """
 
 from __future__ import annotations
@@ -23,16 +28,16 @@ import logging
 import os
 from typing import Any
 
-from langslice.doors.cli.envelope import EXIT_INTERNAL, EXIT_REFUSED, Envelope, emit
+from langslice.doors.cli.envelope import EXIT_INTERNAL, EXIT_REFUSED, Envelope
 
 logger = logging.getLogger(__name__)
 
-#: The version of what ``langslice schema`` prints (bumped when a verb's
+#: The version of what ``langslice-job schema`` prints (bumped when a verb's
 #: arguments change incompatibly). 2: each verb an object with its
 #: description, summary, arguments, picture options and ``long``.
 SCHEMA_VERSION = 2
 
-#: The agent CLI's own commands besides the verbs (``langslice job FOLDER ...``).
+#: The agent CLI's own commands besides the verbs (``langslice-job FOLDER ...``).
 JOB_COMMANDS: dict[str, str] = {
     "init": "Create the job for a folder of section images (the job flags of "
             "`langslice linear run`, plus --notes TEXT and --viewer claude|codex|openai; "
@@ -45,6 +50,55 @@ JOB_COMMANDS: dict[str, str] = {
                 "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID); --timeout SECONDS.",
 }
+
+
+def command_names() -> list[str]:
+    """The job commands by name (``init``, ``brief``, ``runs``, ``wait``)."""
+    return [key.split()[0] for key in JOB_COMMANDS]
+
+
+def flags_table(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:
+    """An argparse parser's options as data: per option its ``flag`` (the
+    long form), ``aliases``, ``help``, ``default``, ``choices``,
+    ``takes_value`` and ``metavar``."""
+    formatter = parser._get_formatter()
+    rows: list[dict[str, Any]] = []
+    for action in parser._actions:
+        if not action.option_strings or isinstance(action, argparse._HelpAction):
+            continue
+        strings = sorted(action.option_strings, key=lambda text: (-len(text), text))
+        try:
+            text = formatter._expand_help(action) if action.help else ""
+        except (KeyError, TypeError, ValueError):
+            text = action.help or ""
+        rows.append({
+            "flag": strings[0], "aliases": strings[1:], "help": " ".join(text.split()),
+            "default": action.default if action.default is not argparse.SUPPRESS else None,
+            "choices": list(action.choices) if action.choices is not None else None,
+            "takes_value": action.nargs != 0,
+            "metavar": action.metavar if isinstance(action.metavar, str) else None,
+        })
+    return rows
+
+
+def command_entry(name: str) -> dict[str, Any]:
+    """A job command as ``schema`` gives it: its summary, usage and flags."""
+    key = next(key for key in JOB_COMMANDS if key.split()[0] == name)
+    entry: dict[str, Any] = {"summary": JOB_COMMANDS[key], "kind": "command",
+                             "usage": f"langslice-job FOLDER {key}"}
+    if name == "init":
+        from langslice.doors.cli.job import init_parser
+
+        entry["usage"] = "langslice-job IMAGE_FOLDER init [--flag value ...]"
+        entry["flags"] = flags_table(init_parser())
+    elif name == "wait":
+        entry["flags"] = [{"flag": "--timeout", "aliases": [], "default": None,
+                           "help": "Seconds to wait before answering with the run still "
+                                   "running", "choices": None, "takes_value": True,
+                           "metavar": "SECONDS"}]
+    else:
+        entry["flags"] = []
+    return entry
 
 
 def canonical_verb(name: str) -> str:
@@ -145,21 +199,28 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
                         "of the current folder, if any)")
 
 
-def run_ops(_args: argparse.Namespace) -> int:
-    return emit(Envelope(result={
+def ops(_args: argparse.Namespace) -> Envelope:
+    """``langslice-job ops``."""
+    return Envelope(result={
         "verbs": verbs_table(),
-        "usage": "langslice job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
+        "usage": "langslice-job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
                  "[--background] [--verbose]",
         "long": "A long verb computes outside the job lock and may take minutes: run it "
                 "with --background (answers at once with a run id), then `wait ID`.",
         "job_commands": JOB_COMMANDS,
-    }, next=["langslice job FOLDER brief", "langslice schema VERB"]))
+    }, next=["langslice-job FOLDER brief", "langslice-job schema VERB"])
 
 
-def run_schema(args: argparse.Namespace) -> int:
+def schema(args: argparse.Namespace) -> Envelope:
+    """``langslice-job schema [VERB] [--job FOLDER]``."""
     from langslice.doors.jobs import NoJob
     from langslice.ops.registry import VERBS, listed
 
+    if args.verb is not None and canonical_verb(args.verb) in command_names():
+        name = canonical_verb(args.verb)  # init, brief, runs, wait: no job needed
+        entry = command_entry(name)
+        return Envelope(result={"schema_version": SCHEMA_VERSION, "verb": name, **entry},
+                        next=[entry["usage"]])
     try:
         declared = Declared(args.job)
         if args.verb is None:  # every listed verb; a hidden one only by name
@@ -169,18 +230,32 @@ def run_schema(args: argparse.Namespace) -> int:
         else:
             name = canonical_verb(args.verb)
             if name not in VERBS:
-                return emit(Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}."))
+                return Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}.")
             result = {"schema_version": SCHEMA_VERSION, "verb": name, **declared.facts(),
                       **declared.entry(name)}
             folder = declared.folder or "FOLDER"
-            nexts = [f"langslice job {folder} {name} --args '{{...}}'"
+            nexts = [f"langslice-job {folder} {name} --args '{{...}}'"
                      + (" --background" if VERBS[name].long else "")]
     except NoJob as exc:
-        return emit(Envelope.failure("NO_JOB", str(exc)))
+        return Envelope.failure("NO_JOB", str(exc))
     except (FileNotFoundError, ValueError) as exc:
-        return emit(Envelope.failure("JOB_UNREADABLE", str(exc), exit=EXIT_REFUSED))
+        return Envelope.failure("JOB_UNREADABLE", str(exc), exit=EXIT_REFUSED)
     except Exception as exc:  # the envelope reports it; the traceback goes to stderr
-        logger.exception("langslice schema failed")
-        return emit(Envelope.failure("INTERNAL", f"{type(exc).__name__}: {exc}",
-                                     exit=EXIT_INTERNAL))
-    return emit(Envelope(result=result, next=nexts))
+        logger.exception("langslice-job schema failed")
+        return Envelope.failure("INTERNAL", f"{type(exc).__name__}: {exc}",
+                                exit=EXIT_INTERNAL)
+    return Envelope(result=result, next=nexts)
+
+
+def describe(name: str, folder: str) -> Envelope:
+    """What ``langslice-job FOLDER NAME --help`` answers: ``schema NAME``,
+    declared for FOLDER's job when it has one."""
+    from langslice.doors.jobs import NoJob, find
+
+    job: str | None = None
+    if canonical_verb(name) not in command_names():
+        try:
+            job = str(find(folder))
+        except (NoJob, OSError):
+            job = None
+    return schema(argparse.Namespace(verb=name, job=job))

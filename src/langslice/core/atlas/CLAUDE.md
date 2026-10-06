@@ -4,7 +4,12 @@ Package guide for `src/langslice/core/atlas/`. The repo-level `CLAUDE.md` holds 
 project-wide rules; this file holds what is specific to this package. `AGENTS.md`
 here is a verbatim copy — edit one, mirror to the other.
 
-- `core.py` — BrainGlobe loading (`load_atlas`, `canonicalize_atlas_name`),
+- `core.py` — BrainGlobe loading (`load_atlas`, `canonicalize_atlas_name`;
+  BrainGlobe's notices, such as its atlas-version check, printed on stderr,
+  never the caller's stdout; with `LANGSLICE_ATLAS_SKIP_LATEST_CHECK` set,
+  offline: only an atlas already in the local cache loads, in either
+  brainglobe-atlasapi layout, `<name>_v*/` or 3.x's
+  `brainglobe-atlasapi/atlases/<name>/`),
   position helpers (`position_mm_to_index`, `index_to_position_mm`,
   `get_position_range_mm`), the reference plate (`get_reference_slice`) and
   `get_root_mask`. The public surface is deliberately small: what LangSlice

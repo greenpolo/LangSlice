@@ -1122,9 +1122,11 @@ def build_tools(
         result[TOOL_MEDIA_PARTS_KEY] = list(pictured.pictures)
         return result
 
-    def search_position(id: str, window_mm: float, angles: bool) -> dict[str, Any]:
+    def search_position(id: str, window_mm: float, angles: bool,
+                        around_mm: float = -1.0) -> dict[str, Any]:
         try:
-            found = ops_positions.search_position(job, ctx, id, window_mm, angles=bool(angles))
+            found = ops_positions.search_position(job, ctx, id, window_mm, angles=bool(angles),
+                                                  around_mm=around_mm)
         except Refused as refusal:
             return refusal.payload()
         return {"status": "ok", **found}

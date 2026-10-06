@@ -3,7 +3,7 @@
 The public files a LangSlice job folder (`<images>/langslice/`) holds for
 scripts and other programs. `state.json` is the job's one working source and
 the truth; every file below is DERIVED from it and never read back as input.
-Change a registration through the verbs (`langslice job FOLDER VERB`, or
+Change a registration through the verbs (`langslice-job FOLDER VERB`, or
 `langslice.open_job(...)` in Python), never by editing these files.
 
 Code: `src/langslice/core/maps.py` (the geometry), `src/langslice/job/formats.py`
@@ -113,6 +113,13 @@ micrometres. A `fit_deformable` picture showing its deformation adds
 pixels, zero in the caption band); its frame's `residual` names it, and
 `coordinate_map` applies it.
 
+## A coding agent's own files
+
+The reference card (`AGENTS.md`, `CLAUDE.md`) asks a coding agent to keep the
+files it makes in the job folder rather than in `/tmp`: its scripts in
+`scripts/`, anything else (montages, tables) in `scratch/`. LangSlice neither
+writes, reads nor removes either folder.
+
 ## Exports (`exports/`)
 
 Written with the maps. Both are QuickNII-format JSON (`name`, `target`,
@@ -148,7 +155,7 @@ pixels and `nr` the corrected index + 1.
 
 `langslice.job.imports` reads a linear registration made by another program
 (or an earlier job) and returns each section's placement in LangSlice's own
-terms. A job is made from one with `langslice job FOLDER init --registration
+terms. A job is made from one with `langslice-job FOLDER init --registration
 FILE` (`docs/agent_cli.md`) or `langslice.create_job(FOLDER,
 registration=FILE)` (`docs/library.md`, "Starting from an existing
 registration"): the placements become the job's supplied inputs

@@ -82,6 +82,52 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     return rows
 
 
+#: Every field a status row can carry, in order. A model gets rows without
+#: their null and empty fields (:func:`compact_rows`); a script or a coding
+#: agent gets every row with all of them (:func:`uniform_rows`).
+ROW_FIELDS: tuple[str, ...] = (
+    "index", "id", "position_mm", "delta_to_next_mm", "flip", "rotation_deg",
+    "cutting_angles_deg", "damaged", "damage_note", "transform", "transform_iou",
+    "transform_mirrored", "keep_linear", "deformation_steps", "caveats",
+    "locked", "damage_by_user",
+)
+#: What :func:`uniform_rows` fills in where a row has no value (else null):
+#: ``locked`` and ``damage_by_user`` (``ops.views.status``) are set only
+#: when true.
+ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "locked": False, "damage_by_user": False}
+#: The reply keys that hold status rows (``status``, ``view_stack``: the
+#: whole table; a write: the rows it changed).
+ROW_KEYS: tuple[str, ...] = ("rows", "changed")
+
+
+def uniform_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows (whole or compacted) with every field of :data:`ROW_FIELDS`:
+    null where a row has no value (or its :data:`ROW_DEFAULTS` value), then
+    any other field a row carries. One schema for every row, so a script can
+    read any field of any row (the last placed section's
+    ``delta_to_next_mm`` is null, not missing)."""
+    extra = list(dict.fromkeys(key for row in rows for key in row if key not in ROW_FIELDS))
+    def filled(row: dict[str, Any], key: str) -> Any:
+        if key in row:
+            return row[key]
+        default = ROW_DEFAULTS.get(key)
+        return list(default) if isinstance(default, list) else default
+
+    return [{**{key: filled(row, key) for key in ROW_FIELDS},
+             **{key: row.get(key) for key in extra}} for row in rows]
+
+
+def with_uniform_rows(reply: Any) -> Any:
+    """A tool reply with its status rows (:data:`ROW_KEYS`) made uniform
+    (:func:`uniform_rows`); anything else as it is. For the doors a script
+    reads (the agent CLI, the library)."""
+    if not isinstance(reply, dict):
+        return reply
+    return {key: uniform_rows(value) if key in ROW_KEYS and isinstance(value, list)
+            and all(isinstance(row, dict) for row in value) else value
+            for key, value in reply.items()}
+
+
 def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rows without their null and empty fields, for a tool payload.
 

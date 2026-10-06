@@ -1,4 +1,4 @@
-"""A job made from a registration made elsewhere: ``langslice job FOLDER init
+"""A job made from a registration made elsewhere: ``langslice-job FOLDER init
 --registration FILE`` and ``langslice.create_job(..., registration=FILE)``.
 
 A source job is given varied placements (positions, quarter turns, flips,
@@ -23,9 +23,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.cli import main
 from langslice.core.layers import atlas_facts
 from langslice.core.spec import NonlinearSpec
+from langslice.doors.cli.jobcli import main
 from langslice.job.quint import job_export
 from tests.cli_child import install
 from tests.golden.record import (
@@ -114,14 +114,14 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 
 def ok(capsys: pytest.CaptureFixture[str], folder: Path, verb: str,
        *flags: str) -> dict[str, Any]:
-    code, envelope = cli(capsys, "job", str(folder), verb, *flags)
+    code, envelope = cli(capsys, str(folder), verb, *flags)
     assert code == 0 and envelope["ok"] is True, envelope
     return envelope
 
 
 def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str,
          atlas_name: str = "synthetic_deep_50um") -> dict[str, Any]:
-    code, envelope = cli(capsys, "job", str(images), "init", "--atlas", atlas_name,
+    code, envelope = cli(capsys, str(images), "init", "--atlas", atlas_name,
                          "--preprocess", "none", "--no-debrief", *flags)
     assert code == 0, envelope
     return envelope
@@ -221,7 +221,7 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
     assert set(spec["inputs"]["transforms"][ID0]["physical"]) >= {
         "rotation_deg", "scale_x", "scale_y", "shear", "translate_x_mm", "translate_y_mm"}
     # The same init again continues the job (the same inputs).
-    code, envelope = cli(capsys, "job", str(images), "init", "--atlas",
+    code, envelope = cli(capsys, str(images), "init", "--atlas",
                          "synthetic_deep_50um", "--preprocess", "none", "--no-debrief",
                          "--image-provider", "openai-oauth", "--pixel-size-um",
                          str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
@@ -329,7 +329,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
     path = tmp_path / "quicknii.json"
     path.write_text(json.dumps(job_export(export_rows(workspace, PER_SECTION),
                                           atlas_facts(atlas))))
-    base = ("job", str(images), "init", "--atlas", "synthetic_deep_50um",
+    base = (str(images), "init", "--atlas", "synthetic_deep_50um",
             "--image-provider", "none", "--registration", str(path))
     for flags, named in ((("--positions", json.dumps({ID0: 1.0})), "--positions"),
                          (("--pitch", "1"), "--pitch"),
@@ -345,7 +345,7 @@ def test_refusals(capsys, images, atlas, tmp_path):
     twice.write_text(json.dumps(job_export(
         [*rows, dict(rows[0], filename=rows[0]["filename"].replace(".png", ".PNG"))],
         atlas_facts(atlas))))
-    code, envelope = cli(capsys, "job", str(images), "init", "--atlas", "synthetic_deep_50um",
+    code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
                          "--image-provider", "none", "--registration", str(twice))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
     assert "several entries" in envelope["error"]["message"]
@@ -354,11 +354,11 @@ def test_refusals(capsys, images, atlas, tmp_path):
     nothing.write_text(json.dumps(job_export([dict(row, filename=f"x{i}.png")
                                               for i, row in enumerate(rows)],
                                              atlas_facts(atlas))))
-    code, envelope = cli(capsys, "job", str(images), "init", "--atlas", "synthetic_deep_50um",
+    code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
                          "--image-provider", "none", "--registration", str(nothing))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
     assert "No section could be placed" in envelope["error"]["message"]
-    code, envelope = cli(capsys, "job", str(images), "init", "--atlas", "synthetic_deep_50um",
+    code, envelope = cli(capsys, str(images), "init", "--atlas", "synthetic_deep_50um",
                          "--registration", str(tmp_path / "missing.json"))
     assert code == 2 and envelope["error"]["code"] == "BAD_REGISTRATION", envelope
 

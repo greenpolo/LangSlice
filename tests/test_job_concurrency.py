@@ -21,8 +21,8 @@ from typing import Any
 import pytest
 
 import langslice
-from langslice.cli import main
 from langslice.core import deformation
+from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
 from tests.golden.record import (
     ID0,
@@ -62,14 +62,14 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     install(atlas_loader(), monkeypatch.setattr)
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
-    code, envelope = cli(capsys, "job", str(folder), "init", "--tasks",
+    code, envelope = cli(capsys, str(folder), "init", "--tasks",
                          "position,transform,nonlinear", "--image-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
-    code, envelope = cli(capsys, "job", str(folder), "set_positions", "--entries", json.dumps(
+    code, envelope = cli(capsys, str(folder), "set_positions", "--entries", json.dumps(
         [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}]))
     assert code == 0, envelope
-    code, envelope = cli(capsys, "job", str(folder), "adjust_transforms", "--entries",
+    code, envelope = cli(capsys, str(folder), "adjust_transforms", "--entries",
                          json.dumps([{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}]))
     assert code == 0, envelope
     return folder
@@ -99,7 +99,7 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.set_positions(entries=[{"id": ID2, "position_mm": 0.2}]))
-    code, envelope = cli(capsys, "job", str(images), "fit_deformable", "--slices", ID0)
+    code, envelope = cli(capsys, str(images), "fit_deformable", "--slices", ID0)
     assert code == 0, envelope
     assert envelope["result"]["results"][0]["written"] is True
     held = saved(images)
@@ -116,7 +116,7 @@ def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.set_positions(entries=[{"id": ID0, "position_mm": 0.11}]))
-    code, envelope = cli(capsys, "job", str(images), "fit_deformable", "--slices",
+    code, envelope = cli(capsys, str(images), "fit_deformable", "--slices",
                          json.dumps([ID0, ID1]))
     assert code == 0, envelope
     rows = {row["id"]: row for row in envelope["result"]["results"]}
@@ -136,7 +136,7 @@ def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, 
     during(monkeypatch, transform, "fit_silhouette",
            lambda: agent.adjust_transforms(entries=[{"id": ID1, **IDENTITY,
                                                      "rotation_deg": 3.0}]))
-    code, envelope = cli(capsys, "job", str(images), "fit_affine", "--slices",
+    code, envelope = cli(capsys, str(images), "fit_affine", "--slices",
                          json.dumps([ID0, ID1]), "--method", "silhouette")
     assert code == 0, envelope
     rows = {row["id"]: row for row in envelope["result"]["results"]}
@@ -155,7 +155,7 @@ def test_cli_processes_writing_at_once_all_land(images):
            "LANGSLICE_TEST_COMMIT_DELAY": "0.4"}
 
     def start(*argv: str) -> subprocess.Popen[str]:
-        return subprocess.Popen([sys.executable, "-m", "tests.cli_child", "job", str(images),
+        return subprocess.Popen([sys.executable, "-m", "tests.cli_child", str(images),
                                  *argv], cwd=REPO, env=env, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True)
 

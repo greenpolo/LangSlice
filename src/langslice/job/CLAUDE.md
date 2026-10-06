@@ -90,7 +90,7 @@ logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, arti
 prompt.txt           a saved Claude job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
-BRIEF.md             the agent CLI's brief (`langslice job FOLDER brief`, `init`):
+BRIEF.md             the agent CLI's brief (`langslice-job FOLDER brief`, `init`):
                      the job statement and the opening pictures' paths
 ```
 
@@ -174,7 +174,7 @@ moves or is renamed with its images; an explicit job folder stores the
 absolute path; `registration.json` stores it the same way.
 `layout.held_image_folder` resolves it, the CLI and library
 (`doors.jobs.read_spec`) open the images there, and when
-they are gone say how to reattach (`langslice job NEW_IMAGES init
+they are gone say how to reattach (`langslice-job NEW_IMAGES init
 --job-dir FOLDER`); `check_owner` lets an explicit folder whose images no
 longer exist be taken over by the images it is opened with.
 
@@ -289,14 +289,23 @@ longer exist be taken over by the images it is opened with.
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`). One background
   thread per store, ending when its queue is empty; `flush` (`ops.submit`,
-  `Job.emit_results`, `Job.close`) and `flush_all` (interpreter exit) wait
-  for it. A failed write is logged and skipped; only the numbering and
+  `Job.emit_results`, `Job.close`, the library after every verb) and
+  `flush_all` (interpreter exit) wait for it. `at_exit(fn)` runs a function
+  at interpreter exit while threads can still start: Python's threading
+  exit hooks, which run before `concurrent.futures` stops taking work (the
+  writer's TIFF encoder and an image-model call use thread pools; plain
+  `atexit` is too late), `concurrent.futures.thread` imported first so its
+  hook runs after ours; `flush_all` and the library's open jobs use it
+  (`flush_all` runs once more from `atexit`, for a picture a still-running
+  thread queued after the first flush). A failed write is logged and skipped; only the numbering and
   queueing run on the tool's thread. `DiscardedViews` saves nothing (a
   dry run, a lean job). `captured()` collects every
   picture any store queues inside the block (`Saved`: its folder,
   whether it gets layers and a residual, its note's sections and mode, its
   index among the call's pictures; `files()` lists `view.jpg`,
-  `view.json` and the layers with their kinds): the agent CLI's `artifacts`. The numbering reads the index as it grows
+  `view.json` and the layers with their kinds); `artifacts(saved, tool)`
+  turns them into the `{"path", "kind", "index", "label"}` entries the agent
+  CLI and the library report (and a warning per unsaved picture). The numbering reads the index as it grows
   (each save reads the lines appended since the last), so two stores on one
   folder (a running agent and a CLI call) continue each other's numbers, and the numbers are reserved
   across processes before anything is written (`views.seq`, the next picture

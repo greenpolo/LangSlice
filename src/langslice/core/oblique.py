@@ -612,6 +612,20 @@ def align_section_to_plane(
 # --------------------------------------------------------------------------
 
 
+#: A plane whose brain is smaller than the section's tissue divided by this
+#: cannot be the section's plane (:func:`fit_oblique` ``section_um_per_px``):
+#: one-sided, so a partial or damaged section still matches a whole plane.
+MIN_PLANE_AREA_RATIO = 1.5
+
+
+def plane_pixel_area_mm2(atlas: Any, plane: Plane, downsample: int) -> float:
+    """The area in mm² of one pixel of a plane sampled at *downsample*."""
+    context = atlas_space_context(atlas)
+    normal = slice_axis_index(context, plane)
+    sides = [float(context.resolution_um[axis]) for axis in range(3) if axis != normal]
+    return sides[0] * sides[1] * downsample * downsample / 1e6
+
+
 def _grid_points(bounds: tuple[float, float], n: int) -> np.ndarray:
     lo, hi = float(bounds[0]), float(bounds[1])
     if math.isclose(lo, hi) or n <= 1:
@@ -633,10 +647,17 @@ def _fit_one_branch(
     grid: int,
     refine: bool,
     blur_fraction: float,
+    position_points: int = 5,
+    section_um_per_px: float | None = None,
 ) -> dict[str, Any]:
     silhouette = section_silhouette(section_gray)
     evals = 0
     last_iou = 0.0
+    min_plane_area_mm2 = 0.0
+    if section_um_per_px and section_um_per_px > 0:
+        tissue_mm2 = float(np.count_nonzero(silhouette)) * (section_um_per_px / 1000.0) ** 2
+        min_plane_area_mm2 = tissue_mm2 / MIN_PLANE_AREA_RATIO
+    pixel_area = plane_pixel_area_mm2(atlas, plane, downsample) if min_plane_area_mm2 else 0.0
 
     def score(pitch: float, yaw: float, pos: float) -> float:
         nonlocal evals, last_iou
@@ -665,6 +686,10 @@ def _fit_one_branch(
             )
             > 0
         )
+        if not target_mask.any() or (  # a plane beyond the brain (the volume's ends)
+                min_plane_area_mm2 and target_mask.sum() * pixel_area < min_plane_area_mm2):
+            last_iou = 0.0  # or one whose brain is too small to hold the section
+            return -np.inf
         warped, warped_mask, last_iou = align_section_to_plane(
             section_gray, target_mask, section_mask=silhouette
         )
@@ -690,7 +715,7 @@ def _fit_one_branch(
     pos_bounds = (position_mm - position_window_mm, position_mm + position_window_mm)
     free_position = position_window_mm > 0
     bounds = [pitch_bounds, yaw_bounds, pos_bounds]
-    counts = [grid, grid, 5 if free_position else 1]
+    counts = [grid, grid, max(5, position_points) if free_position else 1]
 
     # Coarse-to-fine grid. Nelder-Mead was the first thing tried here and it is
     # the wrong tool: on a sub-degree scale the metric surface is bumpy enough
@@ -753,6 +778,8 @@ def fit_oblique(
     grid: int = 7,
     refine: bool = True,
     blur_fraction: float = DEFAULT_BLUR_FRACTION,
+    position_step_mm: float | None = None,
+    section_um_per_px: float | None = None,
 ) -> dict[str, Any]:
     """Fit signed oblique angles for one section at a known atlas position.
 
@@ -785,6 +812,15 @@ def fit_oblique(
         blur_fraction: Gaussian blur applied to both images before scoring, as
             a fraction of the atlas plane's long edge, to absorb residual pose
             error.
+        position_step_mm: The coarse grid's largest spacing along the
+            position window (more points for a wide window); None: five
+            points whatever the window.
+        section_um_per_px: The section image's calibrated pixel size. The
+            pose normalisation discards size, so a plane at the volume's
+            ends, holding a sliver of brain, can outscore the right one;
+            with the pixel size, a plane whose brain is smaller than the
+            section's tissue divided by :data:`MIN_PLANE_AREA_RATIO` is never
+            chosen. None: no such test.
 
     Returns:
         Dict with the winning ``pitch_deg``, ``yaw_deg``, ``position_mm``,
@@ -810,8 +846,13 @@ def fit_oblique(
             grid,
             refine,
             blur_fraction,
+            position_points,
+            section_um_per_px,
         )
 
+    position_points = 5
+    if position_step_mm and position_step_mm > 0 and position_window_mm > 0:
+        position_points = int(math.ceil(2 * position_window_mm / position_step_mm)) + 1
     as_is = run(gray)
     mirror = run(np.ascontiguousarray(gray[:, ::-1])) if allow_mirror else None
 

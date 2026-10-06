@@ -1,17 +1,23 @@
 # The agent CLI
 
-`langslice job FOLDER VERB` runs one verb on a job folder and answers with one
+`langslice-job FOLDER VERB` runs one verb on a job folder and answers with one
 JSON object on stdout. It is built for coding agents (Claude Code, Codex)
-working in their own shell. Code: `src/langslice/doors/cli/`.
+working in their own shell: the MCP tools as shell commands, and nothing
+else. It starts no agent, server or host and signs nobody in (those are the
+`langslice` command's), so a coding agent allowed to run `langslice-job` can
+register a brain but cannot start another agent through it. `ops` and
+`schema` are read as commands, so a job folder of either name is given as a
+path (`./ops`). Code: `src/langslice/doors/cli/`.
 
 ```bash
-langslice job sections/ init --tasks position,transform --pixel-size-um 0.65
-langslice job sections/ brief                      # the job statement, opening pictures, status
-langslice ops                                      # every verb: name, kind, group, one line, long
-langslice schema fit_deformable                    # one verb's description and arguments
-langslice job sections/ set_positions --entries '[{"id": "s01.tif", "position_mm": 5.2}]'
-langslice job sections/ view_slices --slices s01.tif --view '{"resolution": 1200}'
-langslice job sections/ fit_deformable --slices s01.tif --background   # then: wait
+langslice-job sections/ init --tasks position,transform --pixel-size-um 0.65
+langslice-job sections/ brief                  # the job statement, opening pictures, status
+langslice-job ops                              # every verb: name, kind, group, one line, long
+langslice-job schema fit_deformable            # one verb's description and arguments
+langslice-job schema init                      # init's job flags (or: FOLDER init --help)
+langslice-job sections/ set_positions --entries '[{"id": "s01.tif", "position_mm": 5.2}]'
+langslice-job sections/ view_slices --slices s01.tif --view '{"resolution": 1200}'
+langslice-job sections/ fit_deformable --slices s01.tif --background   # then: wait
 ```
 
 `FOLDER` is the job folder or the image folder beside it.
@@ -28,17 +34,33 @@ switch on (`status` lists them). Kebab-case is accepted (`set-positions`).
 writes each placed section's maps and the exports from the job as it stands
 ([file_formats.md](file_formats.md)).
 
-`langslice schema [VERB] [--job FOLDER]` gives, per verb, its `description`,
+`langslice-job schema [VERB] [--job FOLDER]` gives, per verb, its `description`,
 `summary`, `kind`, `group`, `long`, the argument schema and, for a verb that
 returns pictures, `picture_options`. With `--job` (or run inside a job
 folder) it declares the verbs as that job's settings do. A long verb
 (`fit_affine`, `fit_deformable`, `trace_borders`, `export_maps`) may take
 minutes: `ops` marks it `long` and `schema` or a dry run gives the
-`--background` command.
+`--background` command. `schema` of a command on FOLDER (`init`, `brief`,
+`runs`, `wait`) gives its summary, usage and `flags` (each with its `help`,
+`default`, `choices` and whether it `takes_value`). `langslice-job FOLDER
+NAME --help` (or `-h`) answers what `schema NAME` does, declared for
+FOLDER's job when it has one, and runs nothing.
+
+Some verbs take a bounded number of items per call (`Verb.limits` in
+`src/langslice/ops/registry.py`; the reference card lists them):
+`view_slices` 4 sections, `view_atlas` 4 positions, `view_placement` 4
+section-position pairs and `adjust_transforms` 4 entries; `fit_deformable` 4
+sections, 4 candidates and 8 fits (sections times candidates). A job's
+`transform.max_parallel` can lower `fit_affine`'s and `adjust_transforms`'s.
+
+`search_position` (offered with `--bayesian`) needs no written position:
+without one, and without `around_mm` (a centre to search around), it
+searches the atlas's whole valid range; it writes nothing.
 
 ## Commands on FOLDER
 
-- `init`: create the job with the job flags of `langslice linear run` (`--tasks`,
+- `init`: create the job with the job flags of `langslice linear run`
+  (`langslice-job schema init` lists them: `--tasks`,
   `--atlas`, `--plane`, `--pixel-size-um`, `--image-provider none`,
   `--positions`, `--transforms`, ...); no agent runs. `--notes TEXT` keeps the
   user's notes in `job.json` (every door gives them to the agent);
@@ -118,7 +140,10 @@ that model is connected here (a key or login present, checked offline by
 ```
 
 When `ok` is false, `error` has a `code`, a `message` and a `fix`; `result` still
-holds the verb's reply.
+holds the verb's reply. stdout holds the envelope alone: anything else printed
+while a command runs (BrainGlobe's atlas-version notice, native libraries) goes
+to stderr, so `langslice-job ... | python -c "import json, sys; json.load(sys.stdin)"`
+always parses.
 
 | Exit | Meaning |
 | --- | --- |
@@ -127,7 +152,11 @@ holds the verb's reply.
 | 3 | the job refused it: a gate or rule (`MISSING_TRANSFORMS`, `LOCKED`, `NOTHING_TO_UNDO`, a verb this job's tasks do not have, `STALE_INPUT` for every section), another writer holding the lock past 300 s (`JOB_BUSY`), a background run still running at `wait --timeout` |
 | 4 | internal error (traceback on stderr); a background run that ended without an answer |
 
-`result` is concise by default; `--verbose` gives the full text. Pictures are
+`result` is concise by default; `--verbose` gives the full text. Status rows
+(`status`, `view_stack`, a write's `changed`) carry every field on every row,
+null where a section has none (the last placed section's `delta_to_next_mm`,
+an untransformed section's `transform`), `false` for `locked` and
+`damage_by_user` when unset, `[]` for no `caveats`. Pictures are
 never inlined: each is saved in the job folder and listed under `artifacts` by
 absolute path and `kind` with its `index` (the number the reply's
 `image_indexes` give): `view` (the JPEG), `view_json` (its frame:
@@ -158,16 +187,24 @@ that section's row, `STALE_INPUT` (run it again), and the others apply.
 Every job folder holds `AGENTS.md` and `CLAUDE.md` (identical, generated by
 `src/langslice/doors/card.py`): run `brief` first; what the folder holds
 (`state.json` is the truth; `registration.json`, pictures and maps are derived);
-the coordinate convention; that calls may run in parallel; the verbs; and the
-Python entry point:
+the coordinate convention; that calls may run in parallel; the verbs with
+their per-call limits; the Python entry point and what its methods return;
+and that the agent keeps its own files in the job folder (`scripts/`,
+`scratch/`), not in `/tmp`:
 
 ```python
 import langslice
 
 job = langslice.open_job("/data/sections")   # the verbs as methods
-job.set_positions(entries=[{"id": "s0.png", "position_mm": 5.2}])["images"]   # PIL images
+reply = job.set_positions(entries=[{"id": "s0.png", "position_mm": 5.2}])
+reply["artifacts"]                           # the pictures' files, as the CLI lists them
+reply.images                                 # the same pictures as PIL images
 langslice.coordinate_map(".../view.json")    # (rows, cols, 3) float32 atlas micrometres
 ```
+
+A method's reply is a JSON-safe dict (`json.dumps(reply)` works): the CLI's
+`result` in full (not shortened), uniform status rows, and `artifacts`; it
+returns once its pictures are written ([library.md](library.md)).
 
 `import langslice` loads no agent framework or model client. A scripted
 pipeline (`create_job`, image-model profiles, `register_section`,

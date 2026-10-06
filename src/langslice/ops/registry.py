@@ -14,8 +14,8 @@ group that introduces it.
 Every door is generated from this list: the agent tools and the
 MCP tools (``build_tools`` builds the verbs :func:`enabled` names for the
 run, in this order, each one declared by
-:mod:`langslice.doors.declarations`), the agent CLI (``langslice ops``,
-``langslice schema``, ``langslice job FOLDER VERB``), the library's job
+:mod:`langslice.doors.declarations`), the agent CLI (``langslice-job ops``,
+``langslice-job schema``, ``langslice-job FOLDER VERB``), the library's job
 methods and the job folder's reference card. A verb is never renamed once
 shipped: scripts and agents call it by name.
 """
@@ -26,6 +26,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from langslice.core.deformation import MAX_CANDIDATES, MAX_FITS_PER_CALL
+from langslice.core.sizes import MAX_IMAGES_PER_CALL
 from langslice.ops import (
     appearance,
     atlas,
@@ -77,12 +79,23 @@ class Verb:
     image_model: bool = False
     #: A hidden verb (always a scripting verb) is in no listing: not in
     #: :func:`enabled`'s answer unless asked for (``hidden=True``), not in
-    #: ``langslice ops``, the ``langslice schema`` of every verb, the job
+    #: ``langslice-job ops``, the ``langslice-job schema`` of every verb, the job
     #: folder's card, the library's ``verbs`` or the public docs. The
-    #: scripting doors still build it, so the agent CLI (``langslice job
+    #: scripting doors still build it, so the agent CLI (``langslice-job
     #: FOLDER VERB``) and the library call it by name (``trace_from_atlas``:
     #: kept reachable for experiments, not advertised).
     hidden: bool = False
+    #: The most one call takes, by what it counts (``sections``,
+    #: ``positions``, ``pairs``, ``entries``, ``candidates``, ``fits``: sections
+    #: times candidates), as the tool door enforces them (past a limit the
+    #: rest is not shown, or the call is refused; the reply says which). The
+    #: reference card lists them. A job may lower the transform verbs'
+    #: (``TransformSpec.max_parallel``).
+    limits: Mapping[str, int] = field(default_factory=dict)
+
+
+#: The pictures one viewing call shows (``core.sizes.MAX_IMAGES_PER_CALL``).
+_PICTURED = MAX_IMAGES_PER_CALL
 
 
 def _verbs(*verbs: Verb) -> dict[str, Verb]:
@@ -92,8 +105,9 @@ def _verbs(*verbs: Verb) -> dict[str, Verb]:
 #: Every verb, in the order every door lists them.
 VERBS: dict[str, Verb] = _verbs(
     Verb("status", views.status, "read", "Common"),
-    Verb("view_slices", views.view_slices, "read", "Common"),
-    Verb("view_atlas", views.view_atlas, "read", "Common"),
+    Verb("view_slices", views.view_slices, "read", "Common",
+         limits={"sections": _PICTURED}),
+    Verb("view_atlas", views.view_atlas, "read", "Common", limits={"positions": _PICTURED}),
     Verb("note", notes.add_note, "write", "Common"),
     Verb("undo", history.undo, "write", "Common"),
     Verb("redo", history.redo, "write", "Common"),
@@ -108,6 +122,7 @@ VERBS: dict[str, Verb] = _verbs(
     # The read-only view of the complete registration (placement and applied
     # deformation), wherever there is a placement to look at.
     Verb("view_placement", views.view_placement, "read", "Positioning",
+         limits={"pairs": _PICTURED},
          when=lambda spec: any(spec.has(task) for task in ("position", "transform",
                                                              "nonlinear"))),
     Verb("view_stack", views.view_stack, "read", "Positioning",
@@ -122,6 +137,7 @@ VERBS: dict[str, Verb] = _verbs(
     Verb("fit_affine", transforms.fit_affine, "write", "Linear", long=True,
          when=lambda spec: spec.has("transform") and spec.transform.automatic),
     Verb("adjust_transforms", transforms.adjust_transforms, "write", "Linear",
+         limits={"entries": _PICTURED},
          when=lambda spec: spec.has("transform") and spec.transform.interactive),
     Verb("set_cutting_angles", positions.set_cutting_angles, "write", "Linear",
          when=lambda spec: spec.has("transform") and spec.transform.angles),
@@ -137,6 +153,8 @@ VERBS: dict[str, Verb] = _verbs(
          when=lambda spec: spec.has("nonlinear")),
     Verb("fit_deformable", deformable.fit_deformable, "write", "Nonlinear", long=True,
          alternates={"keep_linear": deformable.keep_linear},
+         limits={"sections": _PICTURED, "candidates": MAX_CANDIDATES,
+                 "fits": MAX_FITS_PER_CALL},
          when=lambda spec: spec.has("nonlinear")),
     Verb("submit", submit.submit, "write", "Common"),
     # The job folder's derived files on demand (submit writes them too):
@@ -163,6 +181,6 @@ def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True,
 
 
 def listed() -> dict[str, Verb]:
-    """Every verb a listing shows (``langslice ops``, ``langslice schema``,
+    """Every verb a listing shows (``langslice-job ops``, ``langslice-job schema``,
     the job folder's card): :data:`VERBS` without the hidden ones."""
     return {name: verb for name, verb in VERBS.items() if not verb.hidden}

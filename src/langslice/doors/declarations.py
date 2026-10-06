@@ -8,8 +8,8 @@ Every door is generated from these declarations:
 - the agent tools and the MCP tools: ``langslice.doors.tools.toolbox.build_tools``
   puts each tool body behind :func:`declare`, so ADK's function declaration
   and FastMCP's input schema are read off these signatures and docstrings;
-- the agent CLI: ``langslice ops`` (:func:`summary`), ``langslice schema
-  VERB`` (:func:`arguments_schema`), ``langslice job FOLDER VERB``;
+- the agent CLI: ``langslice-job ops`` (:func:`summary`), ``langslice-job schema
+  VERB`` (:func:`arguments_schema`), ``langslice-job FOLDER VERB``;
 - the job folder's reference card and the library's job methods.
 
 The description is the stub's docstring, which a model reads verbatim (ADK
@@ -315,21 +315,26 @@ def view_stack(
     ...
 
 
-def search_position(id: str, window_mm: float, angles: bool) -> dict[str, Any]:
-    """Search the atlas around a section's current position. Writes nothing.
+def search_position(
+    id: str, window_mm: float, angles: bool, around_mm: float = -1.0,
+) -> dict[str, Any]:
+    """Search the atlas for a section's position. Writes nothing.
 
     Scores the section against resampled atlas planes and returns the best
-    one it found.
+    one it found. A section without a position, and no around_mm, is
+    searched over the atlas's whole valid range.
 
     Args:
-        id: Filename or corrected index. The section must already
-            have a position.
-        window_mm: Half-width of the position search, in millimetres.
+        id: Filename or corrected index.
+        window_mm: Half-width of the position search, in millimetres,
+            centred on around_mm, else on the section's current position.
         angles: True also searches the cutting angles; False holds them at
             the stack's current ones.
+        around_mm: Centre of the search, in atlas millimetres; leave it out
+            (or negative) for the section's current position.
 
     Returns:
-        The best position (and angles) with its score.
+        The best position (and angles) with its score, and the range searched.
     """
     ...
 
@@ -738,7 +743,7 @@ def _door_doc(name: str, doc: str, door: str) -> str:
 
 
 #: The variant a caller without a job sees: every argument, every option.
-#: The CLI's ``langslice schema`` uses it with ``auto`` (the CLI's pictures
+#: The CLI's ``langslice-job schema`` uses it with ``auto`` (the CLI's pictures
 #: are sized by the caller).
 FULL = Variant()
 

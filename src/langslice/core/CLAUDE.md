@@ -155,7 +155,11 @@ for the flat plane).
   `reference_slice_picture`, `stack_sheet` (one contact sheet, shrunk under
   `SHEET_MAX_LONG_EDGE`), `grid`, `beside`, `stacked`, `spacing_plot`.
 - `status.py` — the status table, data for the doors rather than a
-  picture: `status_rows`, `compact_rows`, `status_text`, `slice_flags`.
+  picture: `status_rows`, `compact_rows` (a model's: null and empty fields
+  left out), `uniform_rows` / `with_uniform_rows` (a script's: every
+  `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
+  absent, for `ROW_KEYS` `rows` and `changed`; the agent CLI and the
+  library), `status_text`, `slice_flags`.
 - `sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
   `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.

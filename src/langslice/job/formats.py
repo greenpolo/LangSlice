@@ -88,7 +88,7 @@ CONVENTION = (
 #: What ``registration.json`` says about itself.
 NOTE = (
     "Derived from state.json on every change and never read back: edit nothing "
-    "here. Change a registration through the verbs (langslice job FOLDER VERB, or "
+    "here. Change a registration through the verbs (langslice-job FOLDER VERB, or "
     "langslice.open_job in Python). Edited maps or label images become a "
     "registration only through a fit (see docs/file_formats.md)."
 )
