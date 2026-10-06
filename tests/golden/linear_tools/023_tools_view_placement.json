@@ -41,12 +41,7 @@
    "deformation": "applied",
    "mode": "checkerboard",
    "outlines": "all",
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   }
  },
  "door": "tools",
@@ -56,7 +51,7 @@
    "mode": "RGB",
    "size": [
     338,
-    368
+    350
    ]
   }
  ],

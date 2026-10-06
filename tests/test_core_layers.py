@@ -25,7 +25,9 @@ def test_a_panel_frame_per_picture_on_the_pictures_grid():
     images, panels = _draw(mode="side_by_side", zoom=[0.1, 0.1, 0.9, 0.8])
     assert len(panels) == len(images) == 2
     for image, panel in zip(images, panels, strict=True):
-        assert panel.size == image.size and panel.content_box[3] == image.height
+        # The content starts at the top; the caption band is below it.
+        assert panel.size == image.size and panel.content_box[1] == 0
+        assert panel.content_box[3] < image.height
         assert layers.labels_layer(panel).shape == image.size[::-1]
         assert layers.borders_layer(panel).dtype == np.uint8
 

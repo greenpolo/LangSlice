@@ -31,7 +31,6 @@ from langslice.core.display import (
     DEFAULT_BORDER_COLOR,
     DEFAULT_BORDER_THICKNESS,
     DEFORMATION_CHOICES,
-    FULL_VIEW,
     MAX_OVERLAY_CHANNELS,
     MODE_RULES,
     OUTLINE_CHOICES,
@@ -341,16 +340,18 @@ def parse_view(
             return _error("BAD_VIEW", "view.deformation must be applied or none.",
                           deformation=list(DEFORMATION_CHOICES))
 
+    zoom_text = ("view.zoom must be [x0, y0, x1, y1]: pixels of the picture this call "
+                 "returns without a zoom, from its top-left corner, x0 < x1 and y0 < y1")
     try:
         window = tuple(float(value) for value in (view.get("zoom") or []))
     except (TypeError, ValueError):
-        return _error("BAD_ZOOM", "view.zoom must be [x0, y0, x1, y1] fractions")
-    if window and (len(window) != 4 or not all(math.isfinite(v) for v in window)):
-        return _error("BAD_ZOOM", "view.zoom must be [x0, y0, x1, y1] fractions of the picture")
-    if window and window != FULL_VIEW and profile.zoom_modes is not None \
-            and mode not in profile.zoom_modes:
+        return _error("BAD_ZOOM", zoom_text)
+    if window and (len(window) != 4 or not all(math.isfinite(v) and v >= 0 for v in window)
+                   or window[2] <= window[0] or window[3] <= window[1]):
+        return _error("BAD_ZOOM", zoom_text)
+    if window and profile.zoom_modes is not None and mode not in profile.zoom_modes:
         return _error("ZOOM_UNSUPPORTED", f"Mode {mode} of this tool takes no zoom.",
-                      mode=mode, supported_zoom=list(FULL_VIEW))
+                      mode=mode)
 
     if unused:
         return {

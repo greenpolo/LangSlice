@@ -40,12 +40,7 @@
    "deformation": "none",
    "mode": "overlay",
    "outlines": "all",
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   }
  },
  "door": "tools",

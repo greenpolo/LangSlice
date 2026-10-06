@@ -17,12 +17,7 @@
    ],
    "mode": "section",
    "resolution": 200,
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   }
  },
  "door": "auto",

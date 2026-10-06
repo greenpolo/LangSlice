@@ -293,22 +293,22 @@ def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[fl
     if angles != (0.0, 0.0):
         _tool(box, "set_cutting_angles")(*angles)
     _tool(box, "view_placement")([{"id": ID1, "positions_mm": [0.15]}],
-                                 view={"mode": "overlay", "zoom": [0.1, 0.1, 0.8, 0.9]})
+                                 view={"mode": "overlay", "zoom": [40, 40, 330, 380]})
     flush_all()
     view = next((tmp_path / "stack" / "langslice").glob("sections/s1/views/*view_placement*"))
     coords = coordinate_map(view / "view.json")
     labels = tifffile.imread(view / "labels.tif")
     record = json.loads((view / "view.json").read_text())
     assert coords.shape == labels.shape + (3,) and coords.dtype == np.float32
-    top = record["frame"]["content_box"][1]
-    assert np.isnan(coords[:top]).all() and np.isfinite(coords[top:]).all()
+    bottom = record["frame"]["content_box"][3]  # the caption band is below the content
+    assert np.isnan(coords[bottom:]).all() and np.isfinite(coords[:bottom]).all()
     annotation = np.asarray(SyntheticAtlas().annotation)
-    voxel = np.rint(coords[top:] / np.asarray(record["frame"]["atlas"]["resolution_um"]))
+    voxel = np.rint(coords[:bottom] / np.asarray(record["frame"]["atlas"]["resolution_um"]))
     inside = ((voxel >= 0) & (voxel < np.asarray(annotation.shape))).all(axis=-1)
     found = np.zeros(voxel.shape[:2], dtype=np.int64)
     hit = voxel[inside].astype(int)
     found[inside] = annotation[hit[:, 0], hit[:, 1], hit[:, 2]]
-    assert (found == labels[top:]).mean() > 0.99
+    assert (found == labels[:bottom]).mean() > 0.99
 
 
 def test_saving_does_not_hold_up_a_tool(tmp_path: Path):

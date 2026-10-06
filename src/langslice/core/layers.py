@@ -90,7 +90,8 @@ class WarpNote:
     """How a ``fit_deformable`` picture was drawn: the record resampled onto
     the picture's content (``record``, a
     :class:`~langslice.core.deformable.record.DeformableRecord` on the picture's
-    grid below its caption band of ``band`` rows), whether the residual was
+    content, which starts ``band`` rows down: 0, the caption band being
+    below it), whether the residual was
     drawn (``warped``; False is the linear placement alone), and the border
     style the lines were drawn with (``langslice.core.deformable.draw_warped_borders``)."""
 

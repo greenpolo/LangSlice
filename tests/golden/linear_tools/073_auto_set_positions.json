@@ -47,12 +47,7 @@
    "deformation": "applied",
    "mode": "stacked",
    "resolution": 160,
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   },
   "written": [
    {

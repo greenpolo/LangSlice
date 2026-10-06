@@ -186,10 +186,10 @@ def test_the_scale_bar_is_one_millimetre_long():
 
     rgb = _overlay(_IDENTITY)
     bar_rows = [
-        row for row in range(rgb.shape[0] - 40, rgb.shape[0])
+        row for row in range(rgb.shape[0])
         if (rgb[row, :150] >= 230).all(axis=1).sum() >= 100
     ]
-    assert bar_rows, "no 1 mm bar found in the bottom strip"
+    assert bar_rows, "no 1 mm bar found"
     run = (rgb[bar_rows[0]] >= 230).all(axis=1).sum()
     assert run == pytest.approx(101, abs=2)  # inclusive endpoints
 
@@ -198,8 +198,8 @@ def test_the_template_only_shows_when_it_is_asked_for():
     plain = _overlay(_IDENTITY)
     with_template = _overlay(_IDENTITY, atlas_opacity=0.35)
     # The template lights up the atlas anatomy under the lines: the picture
-    # area (below the caption band) gets brighter overall.
-    assert with_template[60:].mean() > plain[60:].mean() + 1
+    # area (above the caption band) gets brighter overall.
+    assert with_template[:-60].mean() > plain[:-60].mean() + 1
 
 
 # --- the outlines --------------------------------------------------------

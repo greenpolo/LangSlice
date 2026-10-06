@@ -535,7 +535,8 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
 class Style:
     """How one call's pictures are drawn (its display options)."""
 
-    #: Zoom fractions; empty is the whole section.
+    #: Zoom in pixels of the unzoomed picture (``display.zoom_fractions``);
+    #: empty is the whole section.
     zoom: tuple[float, ...]
     #: Regions drawn strong; empty draws every border strong.
     highlight: tuple[str, ...]
@@ -575,10 +576,11 @@ def picture(
     from langslice.core import layers
     from langslice.core.canvas import zoom_box
     from langslice.core.captions import caption
+    from langslice.core.display import zoom_fractions
 
     width, height = record.section_size
-    zoom = style.zoom
-    box = zoom_box(list(zoom), (width, height)) if zoom else (0, 0, width, height)
+    zoom = list(zoom_fractions(style.zoom, unzoomed_size((width, height), style.long_edge)))
+    box = zoom_box(zoom, (width, height)) if zoom else (0, 0, width, height)
     crop = (box[2] - box[0], box[3] - box[1])
     factor = min(1.0, int(style.long_edge) / float(max(crop)))
     full = (max(8, int(round(width * factor))), max(8, int(round(height * factor))))
@@ -600,10 +602,17 @@ def picture(
     captioned = caption(drawn, title)
     if note is not None:
         layers.note(captioned, **note, warp=layers.WarpNote(
-            record=small, band=captioned.height - drawn.height, warped=warped,
+            record=small, band=0, warped=warped,
             highlight=tuple(style.highlight), marked=tuple(style.marked),
             outlines=style.outlines, width_px=float(style.thickness), native=native))
     return captioned
+
+
+def unzoomed_size(size: tuple[int, int], long_edge: int) -> tuple[int, int]:
+    """The content size :func:`picture` and :func:`trace_picture` draw a whole
+    image of *size* at: *long_edge* on its long side, never upsampled."""
+    factor = min(1.0, int(long_edge) / float(max(size)))
+    return (max(8, int(round(size[0] * factor))), max(8, int(round(size[1] * factor))))
 
 
 def trace_picture(
@@ -617,9 +626,11 @@ def trace_picture(
     """
     from langslice.core.canvas import zoom_box
     from langslice.core.captions import caption
+    from langslice.core.display import zoom_fractions
 
     width, height = image.size
-    box = zoom_box(list(style.zoom), (width, height)) if style.zoom else (0, 0, width, height)
+    zoom = list(zoom_fractions(style.zoom, unzoomed_size((width, height), style.long_edge)))
+    box = zoom_box(zoom, (width, height)) if zoom else (0, 0, width, height)
     crop = (box[2] - box[0], box[3] - box[1])
     factor = min(1.0, int(style.long_edge) / float(max(crop)))
     shown = (max(8, int(round(crop[0] * factor))), max(8, int(round(crop[1] * factor))))

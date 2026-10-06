@@ -395,7 +395,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("status")
     call("view_slices", [ID0, ID1, ID2])
     call("view_slices", [ID1], view={"mode": "channels"})
-    call("view_slices", [ID1], view={"channels": ["red", "green"], "zoom": [0.1, 0.1, 0.7, 0.8]})
+    call("view_slices", [ID1], view={"channels": ["red", "green"], "zoom": [26, 20, 180, 160]})
     # A picture key given at the top level is refused by the strict check.
     call("view_slices", slices=[ID0], mode="section")
     call("view_atlas", [0.05, 0.2])
@@ -426,7 +426,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("view_placement", [{"id": ID1, "positions_mm": [0.15]}],
          view={"mode": "overlay", "atlas_channels": ["ara", "borders"], "atlas_opacity": 0.3,
                "regions": ["CTX:right"],
-               "zoom": [0.2, 0.2, 0.8, 0.9]})
+               "zoom": [68, 60, 270, 270]})
     call("view_placement", [{"id": ID0, "positions_mm": [0.1]}], view={"mode": "checkerboard"})
     call("view_placement", [{"id": ID2, "positions_mm": [0.2]}],
          view={"mode": "outlines", "atlas_channels": ["ara", "borders"]})
@@ -473,7 +473,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
                                 "translate_x_mm": 0.02, "translate_y_mm": 0.0},
                                {"id": ID0, "rotation_deg": 1.0, "scale_x": 1.0, "scale_y": 1.01,
                                 "translate_x_mm": 0.0, "translate_y_mm": 0.01}],
-         view={"mode": "checkerboard", "zoom": [0.0, 0.0, 0.6, 0.6]})
+         view={"mode": "checkerboard", "zoom": [0, 0, 203, 180]})
     call("adjust_transforms", [{"id": ID2, "rotation_deg": 3.0, "scale_x": 1.05, "scale_y": 0.98,
                                 "translate_x_mm": 0.05, "translate_y_mm": -0.02,
                                 "pivot": "tissue"}], view={"mode": "side_by_side"})

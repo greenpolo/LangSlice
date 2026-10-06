@@ -52,12 +52,7 @@
    "mode": "borders",
    "outlines": "all",
    "resolution": 300,
-   "zoom": [
-    0.0,
-    0.0,
-    1.0,
-    1.0
-   ]
+   "zoom": []
   }
  },
  "door": "auto",
