@@ -33,7 +33,7 @@ is called. Main arguments (`langslice schema fit_deformable`):
 | Argument | Choice |
 |---|---|
 | `fit_section` | `fit`: the section's fit appearance (stain); `traced_borders`: a trace's lines turned into named regions (ANTs); `traced_lines`: a trace's lines against the atlas borders |
-| `fit_atlas` | for `fit`: `ara` (the atlas's reference template, default) or `nissl` (ABBA's cached Allen Nissl, ABBA hosts only); for a traced fit section: `borders` |
+| `fit_atlas` | for `fit`: `ara` (the atlas's reference template, default) or `nissl` (a Nissl template aligned to the CCFv3, Allen mouse atlases, below); for a traced fit section: `borders` |
 | `include`, `exclude` | regions (acronyms or ids, descendants included, optionally one side: `"CTX:left"`); only included regions plus a 300 µm margin are fitted; excluded regions (for example tissue missing from the section) are removed from the atlas side |
 | `start` | `linear`, or `current` to compose onto the applied deformation (region-by-region steps) |
 | `stiffness`, `engine` | `soft`, `medium`, `firm`; `ants` or `elastix` |
@@ -53,10 +53,14 @@ are kept in the job folder (`sections/<name>/deformable/`). Any later change
 to a section's linear placement clears its deformation. Engine details:
 `src/langslice/core/deformable/CLAUDE.md`.
 
-The Allen Nissl volume is not exactly aligned with the CCFv3 annotation
-(Piluso et al., *Imaging Neuroscience* 2025,
-[doi:10.1162/imag_a_00565](https://doi.org/10.1162/imag_a_00565)), so a fit
-against `nissl` inherits that offset; `ara` is the default.
+`nissl` is the Blue Brain population-averaged Nissl template, aligned to the
+CCFv3 (Piluso et al., *Imaging Neuroscience* 2025,
+[doi:10.1162/imag_a_00565](https://doi.org/10.1162/imag_a_00565)), read from
+BrainGlobe's `ccfv3augmented_mouse_25um` (downloaded on first use) and sampled
+on any Allen mouse (CCFv3) atlas: that atlas is the CCFv3 grid extended 0.35 mm
+at the front (`core/deformable/nissl.py`). The Allen Institute's own Nissl
+volume, the one ABBA displays, is misaligned with the CCFv3 annotation and is
+not used.
 
 ## `trace_borders` (optional)
 

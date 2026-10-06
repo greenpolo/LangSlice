@@ -22,7 +22,7 @@ Stiffness = Literal["soft", "medium", "firm"]
 #: was 4-5x slower with no visible gain.
 Detail = Literal["coarse", "standard"]
 #: ``ara``: the atlas's own BrainGlobe reference (for Allen, the ARA average
-#: template). ``nissl``: ABBA's cached Allen Nissl volume (ABBA hosts only).
+#: template). ``nissl``: a Nissl template aligned to the Allen CCFv3 (``nissl.py``).
 #: ``borders``: every region boundary from the annotation. ``borders_merged``:
 #: the color-family set the image model is shown (``trace_borders``). The
 #: grayscale images pair with the stain, the border images with model lines

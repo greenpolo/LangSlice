@@ -14,9 +14,9 @@ pictures below):
   ``view`` (the agent's own appearance, the default) or ``fit`` (what
   registration reads). Raw channels and a version cannot be mixed.
 - ``atlas_channels`` — what of the ATLAS is shown: any of ``ara`` (the
-  reference template), ``nissl`` (ABBA's cached Allen Nissl, only where that
-  cache is installed and matches the run's atlas,
-  :mod:`langslice.core.deformable.abba_atlas`) and ``borders`` (the region lines).
+  reference template), ``nissl`` (a Nissl template aligned to the Allen CCFv3,
+  Allen mouse atlases only, :mod:`langslice.core.deformable.nissl`) and
+  ``borders`` (the region lines).
   Images are drawn under the section at ``atlas_opacity`` (overlay modes) or
   as the atlas picture; two images are added in two colours. No ``borders``
   means no lines. The defaults per mode reproduce the pictures each mode drew
@@ -274,7 +274,7 @@ class DisplayOptions:
 
 def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
     """The atlas channels this host can draw."""
-    return ATLAS_CHANNELS if ctx.abba_atlas is not None else ("ara", "borders")
+    return ATLAS_CHANNELS if ctx.nissl_atlas is not None else ("ara", "borders")
 
 
 def default_options(
@@ -298,12 +298,12 @@ def _nissl_plane(
     ctx: Workspace, state: StackState, position_mm: float, labels: np.ndarray,
     angles: Angles,
 ) -> np.ndarray:
-    """ABBA's Nissl on the native plane grid, percentile-stretched to 0..1."""
-    source = ctx.abba_atlas
+    """The aligned Nissl on the native plane grid, percentile-stretched to 0..1."""
+    source = ctx.nissl_atlas
     if source is None:
-        raise ValueError("The nissl atlas channel needs ABBA's cached Allen atlas")
+        raise ValueError("The nissl atlas channel needs an Allen mouse (CCFv3) atlas")
     values = np.asarray(source.sample_plane(
-        "NISSL", ctx.atlas, position_mm, cast(Plane, state.plane), *angles,
+        ctx.atlas, position_mm, cast(Plane, state.plane), *angles,
     ), dtype=np.float32)
     inside = values[(labels > 0) & (values > 0)]
     top = float(np.percentile(inside, NISSL_PERCENTILE)) if inside.size else 0.0
@@ -322,7 +322,7 @@ def atlas_image_picture(
     or the stack's when None).
 
     ``ara`` alone is left to the renderers' own reference path (the pixels
-    every earlier picture showed). ``nissl`` is ABBA's Nissl, stretched
+    every earlier picture showed). ``nissl`` is the aligned Nissl, stretched
     inside the atlas anatomy. Two images are added in their two colours
     (:func:`langslice.core.appearance.channel_colors`); no image is a black
     plane (the lines alone).

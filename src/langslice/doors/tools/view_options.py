@@ -257,8 +257,8 @@ def parse_view(
         absent = [name for name in ATLAS_CHANNELS if name in lowered and name not in available]
         if absent:
             return _error("ATLAS_CHANNEL_UNAVAILABLE",
-                          f"The {', '.join(absent)} atlas channel needs ABBA's cached Allen atlas "
-                          f"matching {state.atlas}; this host has none.",
+                          f"The {', '.join(absent)} atlas channel is offered on Allen mouse "
+                          f"atlases only; {state.atlas} does not cover the CCFv3 grid.",
                           available=list(available))
         atlas_channels = tuple(name for name in ATLAS_CHANNELS if name in lowered)
     images = [kind for kind in atlas_channels if kind in ATLAS_IMAGES]

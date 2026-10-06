@@ -471,8 +471,7 @@ def _fit_payload(
 # --- the Elastix affine ----------------------------------------------------
 
 #: The atlas image the Elastix affine fits the section to: the ARA
-#: template's pial outline lies on a fluorescent section's bright rim, where
-#: ABBA's Nissl sits 40-80 um inside it.
+#: template's pial outline lies on a fluorescent section's bright rim.
 ELASTIX_ATLAS_IMAGE = "ara"
 #: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um).
 ELASTIX_DETAIL = "standard"
@@ -485,8 +484,8 @@ def elastix_settings(
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
     The section's ``fit`` appearance against *atlas_image* (``ara``, the
-    default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` where ABBA's atlas is
-    installed: ``fit_affine``'s ``fit_atlas``),
+    default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` on an Allen mouse atlas:
+    ``fit_affine``'s ``fit_atlas``),
     mutual information plus the edge channel (the Elastix stain fit's own
     pairing). *include* becomes the restricted ``structures`` (the regions
     plus 300 um), *exclude* the excluded regions; one-sided entries such as
@@ -606,7 +605,7 @@ def elastix_affine(
     torn = None if record.damaged else np.zeros((height, width), dtype=bool)
     prepared = prepare_fit(image, ctx.atlas, grid.placement,
                            elastix_settings(include, exclude, atlas_image), torn_band=torn,
-                           abba=ctx.abba_atlas if atlas_image == "nissl" else None)
+                           nissl=ctx.nissl_atlas if atlas_image == "nissl" else None)
     result = run_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.

@@ -20,8 +20,8 @@ atlas-plane pixel centres to section pixel centres, section mm/px) and one
 and returns a `record.DeformableRecord`. No custom solver.
 
 - Route A (no image model): the stain image (`section_image="stain"`) against
-  an atlas image — `ara` (BrainGlobe reference), or `nissl` (ABBA's cached
-  Allen Nissl, read by `abba_atlas.py`; needs ABBA's cache). Metric
+  an atlas image — `ara` (BrainGlobe reference), or `nissl` (the Nissl
+  template aligned to the CCFv3, `nissl.py`; Allen mouse atlases). Metric
   (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
   cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
   (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); Elastix has
@@ -128,12 +128,12 @@ lateral-ventricle pieces pulled into a dorsal third-ventricle hole, since the
 ventricle channel pairs all ventricles with all holes). There is no `stiff`
 setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
 slower, worse outlines) and the linear tool always runs `standard`; line
-softening is the constant `LINE_SOFTENING_UM` = 60. On fluorescent data the
-Nissl reference's pial outline sat 40-80 µm inside the tissue's bright
-surface rim with every engine, where `ara` followed the edge; Nissl stays
-available, untested on brightfield Nissl stains. On synthetic sections (flat
-regions, no texture) local correlation recovers a known warp worse than
-mutual information, so the mechanism tests pin mutual information.
+softening is the constant `LINE_SOFTENING_UM` = 60. `ara` is the default
+stain atlas image; the aligned `nissl` is untested on real sections (the
+misaligned Allen Nissl it replaced sat 40-80 µm inside fluorescent tissue).
+On synthetic sections (flat regions, no texture) local correlation recovers a
+known warp worse than mutual information, so the mechanism tests pin mutual
+information.
 
 **One side of a region.** Any `exclude` or `structures` entry may name one
 side, `"CTX:left"` / `"CTX:right"` (`core.atlas.sides`): left and right of the
@@ -190,17 +190,22 @@ stretch over a displaced flap, or the raw blue channel against Nissl); ANTs
 fits stay well under it. The median limit sits above every observed median:
 0.4 mm would flag Elastix fits whose borders look as plausible as ANTs's.
 
-## ABBA's Allen volume (`abba_atlas.py`)
+## The aligned Nissl (`nissl.py`)
 
-Reads `~/cached_atlas/ccf2017-mod65000-border-centered-mm-bc.h5` (+
-`mouse_brain_ccfv3p1.xml`) lazily with h5py: the pyramid level no coarser
-than the atlas voxel, only the slab the plane crosses, sampled at
-`oblique.plane_index_coordinates` (BrainGlobe voxel centres mapped onto the
-10 µm grid). ML order: h5 index k = BrainGlobe ML index k. The module
-docstring gives the evidence (XML affine keeps data in native order; ABBA's
-Nissl correlates with the Allen Institute's own `ara_nissl_50.nrrd` with a
-positive antisymmetric part). Unverifiable by images: BrainGlobe's own
-packaging of the symmetric volume. An XML with a different affine is refused.
+`NisslAtlas` serves the `nissl` image on any asr atlas covering the Allen
+CCFv3 extent (13.2 x 8.0 x 11.4 mm, `compatible`): the reference image of
+BrainGlobe's `ccfv3augmented_mouse_25um` v1.0, the Blue Brain
+population-averaged Nissl template (Piluso et al. 2025), loaded once per
+process through the workspace's atlas loader (downloaded on first use; a
+different shape is refused). That atlas is the CCFv3 grid extended along AP:
+the CCFv3 starts `AP_OFFSET_MM` (0.35 mm, 14 voxels) into it, where tissue
+outlines agree with `allen_mouse_25um` at Dice 0.997
+(`test_the_augmented_atlas_holds_the_ccfv3_at_the_offset`). `sample_plane`
+maps the run atlas's plane (`oblique.plane_index_coordinates`, any
+resolution, cutting angles included) to millimetres, adds the offset, samples
+trilinearly, and zeroes pixels outside the run atlas's brain (the averaged
+template glows faintly beyond the tissue). The Allen Institute's own Nissl
+(ABBA's) is misaligned with the CCFv3 annotation and is not read.
 
 ## Visual review
 

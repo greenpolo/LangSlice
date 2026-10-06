@@ -11,20 +11,20 @@ from scipy import ndimage as ndi
 
 from langslice.core.atlas.render import family_labels
 from langslice.core.deformable import (
-    AbbaAtlas,
     CandidateFailure,
     DeformableRecord,
     FitSettings,
+    NisslAtlas,
     diagnose,
     excluded_ids,
     fit_section,
     prepare_fit,
     ventricle_ids,
 )
-from langslice.core.deformable.abba_atlas import SHAPE_AP_DV_ML
 from langslice.core.deformable.engines import FIT_THREADS, RANDOM_SEED, invert_field, run_engine
 from langslice.core.deformable.fit import finish_fit, fit_prepared
 from langslice.core.deformable.masks import torn_edge_band
+from langslice.core.deformable.nissl import AP_OFFSET_MM, NISSL_SHAPE, NISSL_VOXEL_MM
 from langslice.core.deformable.record import jacobian_determinant
 from langslice.core.deformable.regions import named_regions
 from langslice.core.nonlinear.image_gen_helpers import _merge_classified
@@ -407,42 +407,65 @@ def test_plane_coordinates_match_the_samplers(atlas):
     assert np.allclose(sampled, expected, atol=1e-3)
 
 
-ABBA = AbbaAtlas.find()
+class _Ccfv3At50um:
+    """An Allen CCFv3 atlas at 50 um: the extent the Nissl template covers."""
 
-
-class _AllenShape:
-    """Just enough of allen_mouse_10um for plane geometry (no volumes loaded)."""
-
-    atlas_name = "allen_mouse_10um"
+    atlas_name = "allen_mouse_50um"
     orientation = "asr"
-    resolution = (10.0, 10.0, 10.0)
-
-    class _Template:
-        shape = SHAPE_AP_DV_ML
-
-    template = _Template()
+    resolution = (50.0, 50.0, 50.0)
+    template = np.zeros((264, 160, 228), dtype=np.uint8)
+    annotation = np.ones((264, 160, 228), dtype=np.uint8)
 
 
-@pytest.mark.skipif(ABBA is None, reason="ABBA's cached Allen atlas is not installed")
-def test_abba_nissl_reader_matches_its_own_volume_on_a_flat_plane():
-    h5py = pytest.importorskip("h5py")
+class _NisslSource:
+    """A stand-in for the augmented atlas: each voxel holds its AP index."""
 
-    assert ABBA is not None
-    shape_atlas = _AllenShape()
-    assert ABBA.compatible(shape_atlas)
-    ara = ABBA.sample_plane("ARA", shape_atlas, 6.5, "coronal")
-    with h5py.File(ABBA.h5_path, "r") as handle:
-        direct = np.asarray(handle["t00000/s02/0/cells"][:, :, 650], dtype=np.float32).T
-    assert ara.shape == (800, 1140)
-    assert np.allclose(ara, direct, atol=1e-6)
-    nissl = ABBA.sample_plane("NISSL", shape_atlas, 6.5, "coronal", pitch_deg=2.0)
-    assert nissl.shape == (800, 1140) and nissl.max() > 0
-    reference = Path.home() / ".brainglobe/allen_mouse_10um_v1.2/reference.tiff"
-    if reference.exists():
-        import tifffile
+    def __init__(self) -> None:
+        ap = np.arange(NISSL_SHAPE[0], dtype=np.uint16)[:, None, None]
+        self.reference = np.broadcast_to(ap, NISSL_SHAPE)
 
-        brainglobe = np.asarray(tifffile.memmap(reference)[650], dtype=np.float32)
-        assert np.allclose(brainglobe, ara, atol=1e-6)
+
+def test_nissl_is_sampled_at_the_ccfv3_offset_inside_the_brain():
+    from langslice.core.deformable import nissl as nissl_module
+
+    atlas = _Ccfv3At50um()
+    atlas.annotation = atlas.annotation.copy()
+    atlas.annotation[:, :10] = 0  # the top rows are outside the brain
+    nissl_module._volumes.clear()
+    try:
+        source = NisslAtlas(loader=lambda name: _NisslSource())
+        assert source.compatible(atlas)
+        plane = source.sample_plane(atlas, 6.5, "coronal")
+        ap_index = plane_index_coordinates(atlas, 6.5, "coronal")[0]
+        expected = ((ap_index + 0.5) * 0.05 + AP_OFFSET_MM) / NISSL_VOXEL_MM - 0.5
+        assert plane.shape == (160, 228)
+        assert np.allclose(plane[20:], expected[20:], atol=1e-3)
+        assert np.all(plane[:10] == 0)
+    finally:
+        nissl_module._volumes.clear()
+
+
+def test_nissl_is_offered_only_for_the_ccfv3_extent(atlas):
+    assert NisslAtlas.compatible(_Ccfv3At50um())
+    assert not NisslAtlas.compatible(atlas)
+
+
+AUGMENTED = Path.home() / ".brainglobe/ccfv3augmented_mouse_25um_v1.0"
+ALLEN_25 = Path.home() / ".brainglobe/allen_mouse_25um_v1.2"
+
+
+@pytest.mark.skipif(not (AUGMENTED.exists() and ALLEN_25.exists()),
+                    reason="the cached ccfv3augmented and allen_mouse 25 um atlases")
+def test_the_augmented_atlas_holds_the_ccfv3_at_the_offset():
+    import tifffile
+
+    allen = tifffile.imread(ALLEN_25 / "annotation.tiff") > 0
+    augmented = tifffile.imread(AUGMENTED / "annotation.tiff") > 0
+    assert augmented.shape == NISSL_SHAPE
+    start = round(AP_OFFSET_MM / NISSL_VOXEL_MM)
+    window = augmented[start:start + allen.shape[0]]
+    dice = 2 * (allen & window).sum() / (allen.sum() + window.sum())
+    assert dice > 0.99
 
 
 def test_section_mm_per_px_constant_is_the_synthetic_scale():

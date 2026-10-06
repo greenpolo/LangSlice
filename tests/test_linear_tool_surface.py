@@ -350,17 +350,16 @@ def test_atlas_channels_overlay_and_the_host_without_nissl(tmp_path: Path):
                                            "atlas_channels": ["ara", "borders"],
                                            "atlas_opacity": 0.6})
     assert under["view"]["atlas_opacity"] == 0.6
-    ctx._abba, ctx._abba_checked = None, True
+    ctx._nissl, ctx._nissl_checked = None, True
     refused = show([{"id": "s0.png"}], view={"mode": "template", "atlas_channels": ["nissl"]})
     assert refused["error"] == "ATLAS_CHANNEL_UNAVAILABLE"
     assert refused["available"] == ["ara", "borders"]
 
     class _Nissl:
-        def sample_plane(self, channel, atlas, position_mm, plane, pitch, yaw):
-            assert channel == "NISSL"
+        def sample_plane(self, atlas, position_mm, plane, pitch, yaw):
             return np.linspace(0, 500, 48 * 64, dtype=np.float32).reshape(48, 64)
 
-    ctx._abba = _Nissl()
+    ctx._nissl = _Nissl()
     both = show([{"id": "s0.png"}], view={"mode": "template",
                                           "atlas_channels": ["ara", "nissl"]})
     assert both["status"] == "ok", both
