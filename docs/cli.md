@@ -63,7 +63,8 @@ Both allow one final `submit`; writes made before the stop are kept.
 
 ## Traces
 
-`--trace-dir PATH` (or `LANGSLICE_TRACE_DIR`) writes one JSONL file per agent
+`langslice linear run` always writes a trace: to `--trace-dir PATH`, else
+`LANGSLICE_TRACE_DIR`, else `<job folder>/trace`. One JSONL file per agent
 session, `<run_label>_<8 hex>.jsonl`, one record per event: `session`, `seed`
 (the first message; images as descriptors), `model` (text, thought summary,
 function calls, token usage), `tool_result`, `nudge`, `summary`. Images are
