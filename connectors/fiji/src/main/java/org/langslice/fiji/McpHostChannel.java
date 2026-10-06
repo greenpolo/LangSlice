@@ -10,13 +10,13 @@ import java.util.Base64;
 import java.util.function.Consumer;
 
 /** One authenticated, loopback-only connection. No scripts or host commands are accepted. */
-final class ClaudeHostChannel implements AutoCloseable {
+final class McpHostChannel implements AutoCloseable {
     private final ServerSocket listener;
     private final String token;
     private volatile Socket client;
     private volatile boolean closed;
 
-    ClaudeHostChannel() throws IOException {
+    McpHostChannel() throws IOException {
         listener = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"));
         byte[] secret = new byte[32]; new SecureRandom().nextBytes(secret);
         token = Base64.getUrlEncoder().withoutPadding().encodeToString(secret);

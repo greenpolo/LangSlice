@@ -14,7 +14,7 @@ EngineMethod = Literal[
     "setup.login",
     "setup.api_key",
     "linear.run",
-    "claude.prepare",
+    "mcp.prepare",
     "preprocess.preview",
     "linear.estimate",
 ]
@@ -24,7 +24,7 @@ ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "setup.login",
     "setup.api_key",
     "linear.run",
-    "claude.prepare",
+    "mcp.prepare",
     "preprocess.preview",
     "linear.estimate",
 )

@@ -30,7 +30,7 @@ the same `Job`:
 
 - `langslice linear run FOLDER`: the built-in agent (ADK) in one session.
 - `langslice mcp`: the verbs as MCP tools for a host that brings its own model
-  (Claude Desktop); `langslice claude prepare` saves a job for it.
+  (Claude Desktop), opening a job folder made with `langslice-job FOLDER init`.
 - `langslice-job FOLDER VERB`: the agent CLI, for coding agents with a shell.
 - `langslice.open_job`, `create_job`, `register_job`: the Python library.
 - `langslice serve --stdio`: the JSON-lines worker the Fiji connector starts.

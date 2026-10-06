@@ -95,11 +95,11 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
             id=request.id, type="result", result=preview.model_dump(mode="json"),
         )
 
-    if request.method == "claude.prepare":
-        from langslice.doors.api.claude_jobs import prepare_claude
+    if request.method == "mcp.prepare":
+        from langslice.doors.api.saved_jobs import prepare_saved_job
 
         return EngineResultEnvelope(
-            id=request.id, type="result", result=prepare_claude(request.params),
+            id=request.id, type="result", result=prepare_saved_job(request.params),
         )
 
     if request.method != "version":

@@ -1,15 +1,14 @@
-"""Saved Claude jobs: a job folder next to the images, found by id.
+"""Saved ABBA jobs: a job folder next to the snapshots, found by id.
 
-``prepare_claude`` (ABBA's Claude mode) and ``prepare_folder`` (``langslice
-claude prepare``) save a job the MCP server opens later by id. The job lives
-in the job folder next to its images (``<images>/langslice/``,
+``prepare_saved_job`` (the engine method ``mcp.prepare``: ABBA's Claude
+mode) saves a job an MCP host opens later by id. The job lives in the job
+folder next to its images (``<images>/langslice/``,
 :mod:`langslice.job.layout`): ``job.json`` there holds the settings and,
-under ``host``, the kind (``host`` or ``folder``), the host's parameters,
-the notes and the trace folder; ``prompt.txt`` the copy prompt. The id leads
-there through the index (:mod:`langslice.job.index`,
-``~/.langslice/jobs/<id>.json``), which also holds the host's loopback
-channel. No model access; the image provider's key or login is only
-checked for presence (``setup.image_model_connected``).
+under ``host``, the kind (``host``), the host's parameters and the notes;
+``prompt.txt`` the copy prompt. The id leads there through the index
+(:mod:`langslice.job.index`, ``~/.langslice/jobs/<id>.json``), which also
+holds the host's loopback channel. No model access; the image provider's
+key or login is only checked for presence (``setup.image_model_connected``).
 """
 from __future__ import annotations
 
@@ -21,7 +20,6 @@ from langslice.core.spec import JobSpec
 from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import prepare_linear
 from langslice.job import index
-from langslice.job.job import refuse_changed_inputs
 from langslice.job.layout import (
     JobLayout,
     check_owner,
@@ -56,7 +54,7 @@ def validate_channel(value: Any) -> dict[str, Any] | None:
 
 
 def copy_prompt(job_id: str, spec: Any) -> str:
-    """The prompt the user pastes into Claude: the job id, its settings and
+    """The prompt the user pastes into the MCP host: the job id, its settings and
     how to begin. The user's notes are not repeated here: ``start_job``'s
     statement carries them (``job.json`` ``notes``), as every door's does."""
     labels = {"reorder": "section order", "position": "positioning",
@@ -100,7 +98,7 @@ def copy_prompt(job_id: str, spec: Any) -> str:
     return "\n".join(lines)
 
 
-def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
+def prepare_saved_job(params: dict[str, Any]) -> dict[str, Any]:
     notes = params.get("notes", "")
     if not isinstance(notes, str):
         raise ValueError("notes must be text")
@@ -116,36 +114,6 @@ def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
             "prompt": _save_prompt(layout, copy_prompt(job_id, prepared.spec))}
 
 
-def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> dict[str, Any]:
-    """A saved job for a plain folder of sections: the CLI's Copy prompt.
-
-    No host and no live channel. The job folder next to the sections holds
-    it; the server resumes it from the checkpoint there (a job folder that
-    already holds a checkpoint is continued: one folder, one job). A
-    checkpoint made from other supplied inputs is refused here, when the job
-    is saved (``job.refuse_changed_inputs``: ``InputsChanged``, naming
-    ``--fresh``). With ``spec.resume`` False (``--fresh``) nothing is
-    checked and the saved job is marked ``fresh``: the server's first open
-    starts it over exactly as ``linear run --fresh`` does (``Job.open``
-    without resume: a new ingest, the old checkpoint and history replaced),
-    then clears the mark so later opens resume.
-    """
-    from langslice.core.discovery import discover_slices
-
-    folder = Path(spec.image_folder).expanduser().resolve(strict=True)
-    if not discover_slices(str(folder)):
-        raise ValueError(f"No section images found in {folder}")
-    spec.image_folder = str(folder)
-    job_id, layout = _write_job(
-        folder, {"kind": "folder",
-                 "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None,
-                 **({} if spec.resume else {"fresh": True})},
-        spec=spec, channel=None, notes=notes,
-    )
-    return {"job_id": job_id, "job_dir": str(layout.folder),
-            "prompt": _save_prompt(layout, copy_prompt(job_id, spec))}
-
-
 def _save_prompt(layout: JobLayout, prompt: str) -> str:
     """Keep the prompt in the job folder, so it can be copied (or run) again."""
     layout.prompt_file.write_text(prompt + "\n", encoding="utf-8")
@@ -157,8 +125,7 @@ def _write_job(
     channel: dict[str, Any] | None, notes: str = "",
 ) -> tuple[str, JobLayout]:
     """Save the job: its folder located and checked (another image
-    folder's job, and with ``spec.resume`` a checkpoint made from other
-    inputs, are refused before anything is written), ``job.json`` (the
+    folder's job is refused before anything is written), ``job.json`` (the
     user's *notes* under ``notes``, which every door reads:
     :func:`langslice.doors.statement.read_notes`) and the index entry."""
     job_id = index.new_id()
@@ -167,8 +134,6 @@ def _write_job(
                                          job_id=job_id, register=False)
     layout = JobLayout(folder, images)
     check_owner(layout)
-    if spec.resume:
-        refuse_changed_inputs(layout, spec)
     layout.ensure()
     write_job_file(layout, job_id=job_id, spec=spec.to_dict(), notes=notes,
                    host={"format": FORMAT_VERSION, **host})
@@ -201,7 +166,7 @@ def load_job(job_id: str) -> tuple[Path, dict[str, Any]]:
                          "to open it.")
     record = {**host, "job_id": job_id, "spec": data.get("spec"),
               "host_channel": validate_channel(entry.get("host_channel"))}
-    record.setdefault("kind", "host")
-    if record["kind"] not in ("host", "folder"):
-        raise ValueError(f"Unknown LangSlice job kind {record['kind']!r}")
+    if record.setdefault("kind", "host") != "host":
+        raise ValueError(f"Saved job {job_id} is no ABBA job; open its image folder "
+                         f"instead: start_job(image_folder=...)")
     return layout.folder, record

@@ -1,7 +1,7 @@
 """Saved host jobs by id: a small index pointing at job folders.
 
-A Claude job (``langslice claude prepare``, ABBA's Claude mode) is opened by
-id (``start_job(job_id=...)``), so the id has to lead to a job folder.
+A saved ABBA job (ABBA's Claude mode) is opened by id
+(``start_job(job_id=...)``), so the id has to lead to a job folder.
 ``~/.langslice/jobs/<id>.json`` is that pointer: the job folder's absolute
 path, plus the one thing that does not belong in a folder that may be
 shared with colleagues, the host's loopback channel token. Owner-only on

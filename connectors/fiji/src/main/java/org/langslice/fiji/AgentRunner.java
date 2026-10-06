@@ -337,13 +337,13 @@ public final class AgentRunner {
             List<SliceSources> selected, Map<SliceSources, String> damaged, Set<SliceSources> nonlinearSkip, List<String> channelNames) {
         RUNNING.add(mp);
         RunWindow window = new RunWindow(settings.showLog);
-        AtomicReference<ClaudeHostChannel> listener = new AtomicReference<>();
+        AtomicReference<McpHostChannel> listener = new AtomicReference<>();
         AtomicReference<AbbaHostSession> session = new AtomicReference<>();
         AtomicReference<String> jobDir = new AtomicReference<>();
         AtomicBoolean stopping = new AtomicBoolean();
         Runnable stop = () -> {
             stopping.set(true);
-            ClaudeHostChannel channel = listener.get(); if (channel != null) channel.close();
+            McpHostChannel channel = listener.get(); if (channel != null) channel.close();
         };
         window.stop.setText("Disconnect"); window.close.setEnabled(true);
         window.stop.addActionListener(e -> stop.run());
@@ -356,20 +356,20 @@ public final class AgentRunner {
             protected String doInBackground() throws Exception {
                 Path root = Paths.get(System.getProperty("user.home"), ".langslice", "snapshots");
                 Files.createDirectories(root);
-                Path folder = Files.createTempDirectory(root, "claude-");
+                Path folder = Files.createTempDirectory(root, "mcp-");
                 window.status("Preparing calibrated snapshots…");
                 AbbaHostSession host = new AbbaHostSession(mp, folder);
                 JsonObject request = prepareRun(host, settings, selected, damaged, nonlinearSkip, channelNames, "claude");
                 session.set(host);
                 request.addProperty("notes", "");
                 if (stopping.get()) throw new CancellationException();
-                try (ClaudeHostChannel channel = new ClaudeHostChannel()) {
+                try (McpHostChannel channel = new McpHostChannel()) {
                     listener.set(channel);
                     if (stopping.get()) throw new CancellationException();
                     request.add("host_channel", channel.settings());
                     JsonObject prepared;
                     try (WorkerClient worker = new WorkerClient(environment)) {
-                        prepared = worker.request("claude.prepare", request, null, Duration.ofMinutes(5));
+                        prepared = worker.request("mcp.prepare", request, null, Duration.ofMinutes(5));
                     }
                     if (stopping.get()) throw new CancellationException();
                     JsonObject job = new JsonObject();

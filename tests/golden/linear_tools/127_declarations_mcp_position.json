@@ -3,7 +3,7 @@
  "images": [],
  "tools": [
   {
-   "description": "Open a saved LangSlice job by job_id, or a development image_folder.\n\n        Returns the job facts and status table without images. Read every\n        show_stack page before writing. Omit both arguments to repeat the\n        current briefing. Never supply both job_id and image_folder.\n        ",
+   "description": "Open the job the user named: an image_folder (or its job folder),\n        or a saved ABBA job's job_id.\n\n        Returns the job facts and status table without images. Read every\n        show_stack page before writing. Omit both arguments to repeat the\n        current briefing. Never supply both job_id and image_folder.\n        ",
    "inputSchema": {
     "properties": {
      "image_folder": {

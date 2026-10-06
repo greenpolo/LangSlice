@@ -33,7 +33,7 @@ worker and its children.
 | `setup.status` | environment location and offline credential presence |
 | `setup.login` | browser OAuth; emits a `login_url` event |
 | `setup.api_key` | save an OpenAI or Gemini key (never echoed) |
-| `claude.prepare` | validate the host snapshots and save a job for Claude (MCP); returns `job_id`, `job_dir` and the prompt to copy |
+| `mcp.prepare` | validate the host snapshots and save a job for an MCP host such as Claude; returns `job_id`, `job_dir` and the prompt to copy |
 | `linear.run` | run calibrated snapshots through the agent |
 | `linear.estimate` | estimated cost of a `linear.run` spec |
 | `preprocess.preview` | the grayscale image the agent would see for one snapshot and preprocessing choice |
@@ -82,7 +82,7 @@ slices selected when it opens (or all). Controls map to the job spec:
 
 | Control | Request |
 |---|---|
-| Provider ChatGPT / Claude; agent model; reasoning | `spec.model` (`openai-oauth/...`), `spec.reasoning`; Claude saves a job via `claude.prepare` |
+| Provider ChatGPT / Claude; agent model; reasoning | `spec.model` (`openai-oauth/...`), `spec.reasoning`; Claude saves a job via `mcp.prepare` |
 | Image model (always with "None (fit to the stain only)") | `spec.nonlinear.provider`, `spec.nonlinear.image_model` |
 | Image resolution | `spec.image_resolution` |
 | Show agent log; Open agent viewer (only when ABBA was started with `langslice abba`) | log window or compact status window; `viewer` in the `run_started` event |
@@ -99,10 +99,10 @@ At least one of the three tasks must be on. The cost line calls
 
 ## Claude mode
 
-`claude.prepare` takes the exact `linear.run` parameters plus `notes` and an
+`mcp.prepare` takes the exact `linear.run` parameters plus `notes` and an
 optional `host_channel`. It shares `abba_worker.prepare_linear` and the
 checkpoint translator with the ADK path, loads no credentials and calls no model.
-The snapshots stay under `~/.langslice/snapshots/claude-*` (no automatic
+The snapshots stay under `~/.langslice/snapshots/mcp-*` (no automatic
 cleanup). The job lives in the job folder beside them
 (`.../langslice/`): `job.json` holds the settings, the notes and the original
 request; `prompt.txt` the copy prompt; `~/.langslice/jobs/<id>.json` leads

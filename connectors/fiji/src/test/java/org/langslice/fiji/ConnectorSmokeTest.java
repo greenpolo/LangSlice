@@ -57,10 +57,10 @@ public final class ConnectorSmokeTest {
         public void status(String text) { lines.add("status: " + text); }
     }
 
-    static void claudeChannel() throws Exception {
+    static void hostChannel() throws Exception {
         Recorder progress = new Recorder();
         AtomicReference<JsonObject> applied = new AtomicReference<>();
-        try (ClaudeHostChannel channel = new ClaudeHostChannel()) {
+        try (McpHostChannel channel = new McpHostChannel()) {
             JsonObject settings = channel.settings();
             java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
             try {
@@ -87,7 +87,7 @@ public final class ConnectorSmokeTest {
     }
 
     public static void main(String[] args) throws Exception {
-        claudeChannel();
+        hostChannel();
         Path prefix = Files.createTempDirectory("langslice connector space ");
         boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
         Path python = windows ? prefix.resolve("python.exe") : prefix.resolve("bin/python");

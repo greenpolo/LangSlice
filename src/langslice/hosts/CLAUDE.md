@@ -34,7 +34,7 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   its runs.
 - `api/` — `service.py` (`langslice serve --stdio`: the JSON-lines engine
   service the Fiji connector starts). The protocol models, the runtime
-  handlers, setup, saved Claude jobs and the JVM-free snapshot worker
+  handlers, setup, saved ABBA jobs and the JVM-free snapshot worker
   (`abba_worker.py`, whose checkpoints carry the affine and warp rows) are
   door-level, in `doors/api/`. `docs/abba_plugin_design.md`,
   `docs/abba_installation.md`.

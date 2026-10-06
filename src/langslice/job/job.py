@@ -357,17 +357,6 @@ def inputs_changed(folder: str | os.PathLike[str], changed: list[str]) -> Inputs
     )
 
 
-def refuse_changed_inputs(layout: JobLayout, spec: JobSpec) -> None:
-    """Raise :func:`inputs_changed` when *layout*'s checkpoint was made from
-    other supplied inputs than *spec*'s; nothing without a checkpoint. For a
-    door that saves a job to be opened later (``claude prepare``), so the
-    refusal comes when the job is saved, not when it is opened."""
-    data = read_checkpoint(str(layout.state_file))
-    changed = [] if data is None else changed_inputs(data.get("spec"), spec)
-    if changed:
-        raise inputs_changed(layout.folder, changed)
-
-
 def emit_results(
     state: StackState, results_path: str, progress: Callable[[str], None] | None = None,
 ) -> StackState:

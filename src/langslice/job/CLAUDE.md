@@ -29,17 +29,16 @@ LangSlice, so a job travels with its images:
 | Host | Images | Job folder |
 |---|---|---|
 | `langslice linear run FOLDER` | `FOLDER` | `FOLDER/langslice/` |
-| `langslice claude prepare FOLDER` | `FOLDER` | `FOLDER/langslice/` (id in the index) |
-| `langslice mcp`, `start_job(image_folder=...)` | that folder | `<folder>/langslice/` |
+| `langslice mcp`, `start_job(image_folder=...)` | that folder (or the named job folder's) | `<folder>/langslice/`, or the named job folder |
 | `langslice mcp`, `start_job(job_id=...)` | the saved job's | the index entry's job folder |
 | ABBA worker `linear.run` (Fiji connector) | the connector's snapshot folder, a fresh `langslice-abba-*` temporary folder per run | `<snapshots>/langslice/` (or the spec's `job_dir`, or the read-only fallback); the result's `output_dir` names the one used |
-| ABBA Claude mode (`claude.prepare`) | `~/.langslice/snapshots/claude-*/` | `<snapshots>/langslice/` (id in the index) |
+| ABBA Claude mode (`mcp.prepare`) | `~/.langslice/snapshots/mcp-*/` | `<snapshots>/langslice/` (id in the index) |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
-`Job.open`, `engine.build_context` and the Claude job preparation):
+`Job.open`, `engine.build_context` and the saved ABBA job preparation):
 
 - **An explicit folder.** `JobSpec.job_dir` (`--job-dir PATH` on `linear
-  run`, `mcp` and `claude prepare`) puts the job folder exactly there, same
+  run`, `mcp` and `init`) puts the job folder exactly there, same
   layout, e.g. one per experiment on one dataset folder; the image folder
   is then never written. Two
   jobs never share a folder silently: `layout.check_owner` refuses a folder
@@ -51,7 +50,7 @@ Two exceptions, both from `layout.locate_job_folder` (used by
   the image folder; no file remains after the check), the
   job folder is `~/.langslice/jobs/<id>/`, same layout. The id is the
   image folder's path hashed (`index.folder_id`), so a reopen finds it
-  again; a saved Claude job uses its own id. Said once through the
+  again; a saved ABBA job uses its own id. Said once through the
   progress/emit log (`[job] ... cannot be created or written; the job
   folder is ...`) and recorded in the id's index entry under `fallback`
   (`image_folder`, `reason`).
@@ -63,8 +62,8 @@ job.lock             the write lock (lock.py), held while a writer syncs and com
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; the user's "notes" (every door
                      gives them to the agent); the agent CLI's "viewer"; a saved
-                     Claude job's job_id and its own fields under "host" (kind,
-                     params, trace_dir)
+                     ABBA job's job_id and its own fields under "host" (kind,
+                     params)
 state.json           the checkpoint (StackState, state format 3): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
@@ -87,7 +86,7 @@ exports/             linear_results.json (the run's result; spec.out overrides
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, artifacts)
-prompt.txt           a saved Claude job's copy prompt
+prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
 BRIEF.md             the agent CLI's brief (`langslice-job FOLDER brief`, `init`):
@@ -129,15 +128,9 @@ on a folder whose checkpoint was made from other supplied inputs
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--fresh`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
-agent CLI's `init` answers `INPUTS_CHANGED` (exit 3). A door that saves a
-job to be opened later checks at save time with
-`refuse_changed_inputs(layout, spec)` (the same refusal, `inputs_changed`):
-`claude prepare` (`doors.api.claude_jobs._write_job`, when `spec.resume`).
-`claude prepare --fresh` marks the saved job `fresh` (job.json `host`);
-the MCP door's first open of it (`server.open_folder_job`) runs `Job.open`
-without resume, as `linear run --fresh`, and clears the mark. ABBA's
-Claude mode (`prepare_claude`) never resumes (`prepare_linear` sets
-`resume` False), so it is never refused.
+agent CLI's `init` answers `INPUTS_CHANGED` (exit 3). ABBA's Claude mode
+(`prepare_saved_job`) never resumes (`prepare_linear` sets `resume` False),
+so it is never refused.
 
 **Opening a job without writing.** `Job.open` writes `job.json` and a
 first checkpoint. `Job.load(spec, workspace, folder=)` opens an
@@ -223,7 +216,7 @@ longer exist be taken over by the images it is opened with.
   `wait_image_job`), `nonlinear_refusal`
   (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
-  checked), `changed_inputs` / `refuse_changed_inputs` (above). The submit
+  checked), `changed_inputs` (above). The submit
   gates, `submit_errors`, in order and only for the tasks that are on:
   `MISSING_POSITIONS`, `ORDER_POSITION_MISMATCH`, `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `DAMAGED_REQUIRES_MANUAL_TRANSFORM` (a

@@ -49,7 +49,7 @@ OPENING_SHOWS = (
 #: How many run notes the status text repeats (the newest).
 RECENT_NOTES = 12
 
-#: ``job.json``'s field holding the user's notes for the job (a saved Claude
+#: ``job.json``'s field holding the user's notes for the job (a saved ABBA
 #: job's notes, ``langslice-job FOLDER init --notes``).
 NOTES_KEY = "notes"
 

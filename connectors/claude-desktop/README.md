@@ -29,37 +29,36 @@ the job, and click **Copy prompt**. Paste it into Claude; the prompt names the
 saved job and asks for `start_job(job_id=...)`. Keep the ABBA progress window
 open for live section moves. Closing it disconnects ABBA but does not stop
 Claude; results remain in the job folder next to the exported snapshots,
-`~/.langslice/snapshots/claude-*/langslice/`. Enable only LangSlice for this
+`~/.langslice/snapshots/mcp-*/langslice/`. Enable only LangSlice for this
 conversation, never a general Fiji scripting connector.
 
-Without a registration host, the command line is the Copy prompt:
+Without a registration host, make the job with the agent CLI, then name its
+folder in the chat:
 
 ```bash
-langslice claude prepare FOLDER --interval 200 --notes "Section 12 has a large tear."
+langslice-job FOLDER init --interval 200 --notes "Section 12 has a large tear."
 ```
 
-It takes every `langslice linear run` job flag, saves the job in the job
-folder next to the sections, `FOLDER/langslice/`, and prints the prompt to
-paste. The job's settings, checkpoint, undo history, the pictures Claude was
-shown and the results live in that folder (the section images themselves are
-never written), and reopening the job (a restarted Desktop, a new chat)
-resumes from the checkpoint with its undo history. The job id leads to the
-folder through `~/.langslice/jobs/<job-id>.json`. A folder already holding a
-job (from `langslice linear run` or an earlier prepare) is continued: one
-image folder, one job, and a new prepare's id replaces the earlier one. A job
-made from other supplied inputs (`--positions`, `--transforms`, ...) is not
-continued with the new ones: `claude prepare` itself refuses, naming the
-inputs that differ and `--fresh`. With `--fresh`, the first `start_job`
-starts the job over from the new inputs, exactly as `langslice linear run
---fresh` does (a new ingest; the old checkpoint and undo history are
-replaced), and every later open resumes it. `--job-dir PATH` puts the job folder elsewhere; when the sections'
-folder cannot be written, the job folder is `~/.langslice/jobs/<job-id>/`
-(the index entry says so).
+and paste, for example, `Use the LangSlice connector: call
+start_job(image_folder="FOLDER") and register the sections.` `init` takes
+every `langslice linear run` job flag plus `--notes`, and makes the job in the
+job folder next to the sections, `FOLDER/langslice/`. `start_job` opens it as
+saved, with its settings and notes; `langslice mcp`'s own job flags never
+change it. The job's settings, checkpoint, undo history, the pictures the host
+was shown and the results live in that folder (the section images themselves
+are never written), and reopening the job (a restarted Desktop, a new chat)
+resumes from the checkpoint with its undo history. One image folder holds one
+job: `init` on a folder that already holds one continues it, refuses other
+supplied inputs (`--positions`, `--transforms`, ...) with `INPUTS_CHANGED`,
+and starts over from the new inputs with `--fresh`. `--job-dir PATH` puts the
+job folder elsewhere; when the sections' folder cannot be written, the job
+folder is `~/.langslice/jobs/<id>/`. `init` prints the job folder, and
+`start_job` takes the job folder as well as the image folder.
 
-For development, ask Claude to register a folder of sections. Claude calls
-`start_job` with the folder path. `langslice mcp` takes every `langslice linear
-run` flag (`--tasks`, `--interval`, `--atlas`, `--trace-dir`, ...), and those
-flags apply to development folders, not saved jobs. Put them in `args`.
+A folder without a job gets a new one when the host names it: `langslice mcp`
+takes every `langslice linear run` flag (`--tasks`, `--interval`, `--atlas`,
+`--trace-dir`, ...) for such folders; with `--fresh` they start every folder
+the host names over, a saved job included. Put them in `args`.
 
 The Nonlinear task (`--tasks ...,nonlinear`) works through this connector:
 its fitting tools (`fit_deformable`, including `keep_linear`, and
@@ -67,7 +66,7 @@ its fitting tools (`fit_deformable`, including `keep_linear`, and
 (`trace_borders`) is offered only when the job's image provider is not
 `none` and its key or login is present on this machine (`langslice login`,
 or a saved or environment API key); otherwise it is simply not listed, and
-the job statement and the copy prompt say that the image-model tool is off
+the job statement (and ABBA's copy prompt) says that the image-model tool is off
 because no image model is connected. The job keeps its provider setting, so
 a later session with the login present offers the tool again.
 
