@@ -122,10 +122,9 @@ whose inputs changed meanwhile is refused as `STALE_INPUT`.
   adjustment or `fit_affine` with `include` / `exclude` regions satisfies it).
   Locked sections are exempt.
 - `nonlinear` on: a section with neither a deformation at its current
-  placement nor a `keep_linear` reason (`MISSING_DEFORMATIONS`); with an image
-  model, a section without a completed trace at its current placement
-  (`MISSING_IMAGE_CORRECTIONS`; submit waits for running traces). Sections the
-  host kept out of Nonlinear need neither.
+  placement nor a `keep_linear` reason (`MISSING_DEFORMATIONS`). No section
+  needs an image-model trace; submit waits for traces still running. Sections
+  the host kept out of Nonlinear need neither.
 
 `--gates` additionally refuses `set_positions` for a section not compared since
 its last write, and `submit` until `view_stack` has run after the last write.

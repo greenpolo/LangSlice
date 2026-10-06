@@ -5,23 +5,23 @@
   []
  ],
  "data": {
-  "error": "MISSING_IMAGE_CORRECTIONS",
-  "message": "Each section requires a completed image correction at its current linear placement. This checks completion and geometry, not anatomical quality.",
+  "error": "MISSING_DEFORMATIONS",
+  "message": "3 of 3 section(s) carry no deformation at their current placement. Apply one fit_deformable result per section, or give fit_deformable keep_linear with a reason where the linear placement stands.",
   "sections": [
    {
     "id": "s0.png",
-    "reason": "No completed image correction"
+    "reason": "no deformation and no keep_linear reason"
    },
    {
     "id": "s1.png",
-    "reason": "No completed image correction"
+    "reason": "no deformation and no keep_linear reason"
    },
    {
     "id": "s2.png",
-    "reason": "No completed image correction"
+    "reason": "no deformation and no keep_linear reason"
    }
   ],
-  "status": "refused"
+  "status": "error"
  },
  "door": "tools",
  "images": [],

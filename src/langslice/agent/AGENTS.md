@@ -245,7 +245,7 @@ every section holds a deformation at its current `linear_key` or a
 `keep_linear` record (`fit_deformable(slices, keep_linear="reason")`: no
 fit, one undo step, cleared by a placement change like a fit; it lives on
 the state so it is undoable, checkpointed, visible in `status` and exported).
-With an image model the trace gate (`MISSING_IMAGE_CORRECTIONS`) comes first.
+`trace_borders` is a tool the agent may use or not; no section needs a trace.
 
 - `trace_borders(id, prompt="")`: one image-model call on the supplied
   linear placement with the agent's per-section edit of the base prompt

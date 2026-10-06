@@ -60,16 +60,13 @@ def submit(
     """Check the job's submit gates, then end the run: ONE undo step.
 
     The gates, in order: the job's (:meth:`~langslice.job.job.Job.submit_errors`:
-    positions, order, interval breaks, transforms, deformations), then, with
-    *traces* (the image model is part of the run; *workspace*, the run's,
-    reads each section's current geometry) and the nonlinear task on, every
-    section's completed image correction at its current placement
-    (:meth:`~langslice.job.job.Job.missing_image_corrections`), which is
-    reported before a missing deformation since a deformation may be fitted
-    to its section's trace. *gate*, when given, runs last, before
-    anything is written: a door's own check (the tool door's "view_stack
-    first"); a payload it returns refuses the call. A refusal is
-    :class:`Refused` with the gate's payload, nothing written.
+    positions, order, interval breaks, transforms, deformations), then
+    *gate*, when given, before anything is written: a door's own check (the
+    tool door's "view_stack first"); a payload it returns refuses the call.
+    A refusal is :class:`Refused` with the gate's payload, nothing written.
+    With *traces* (the image model is part of the run), image-model traces
+    still running are waited for and recorded first; tracing is the agent's
+    choice, so no section needs one.
 
     The write: the interval breaks (sorted, unique), the corrected order
     reversed when it runs against the atlas (a convention, not an inference:
@@ -81,23 +78,9 @@ def submit(
     the submit stands).
     """
     breaks = clean_breaks(interval_breaks)
+    if traces:
+        job.settle_image_corrections()
     refusal = job.submit_errors(breaks)
-    # With the image model, missing traces are reported before missing
-    # deformations: a deformation may be fitted to its section's trace.
-    if traces and workspace is None:
-        raise ValueError("submit: checking the image corrections needs the workspace")
-    if refusal is not None and not (traces and refusal.get("error") == "MISSING_DEFORMATIONS"):
-        raise Refused.of(refusal)
-    if traces and job.spec.has("nonlinear"):
-        assert workspace is not None
-        pending = job.missing_image_corrections(workspace)
-        if pending:
-            raise Refused(
-                "MISSING_IMAGE_CORRECTIONS", status="refused", sections=pending,
-                message="Each section requires a completed image correction at its current "
-                "linear placement. This checks completion and geometry, "
-                "not anatomical quality.",
-            )
     if refusal is not None:
         raise Refused.of(refusal)
     if gate is not None:

@@ -171,12 +171,12 @@ class TransformSpec:
 @dataclass
 class NonlinearSpec:
     """Knobs of the ``nonlinear`` task: a deformation per section on top of
-    its linear placement, fitted to the stain and, when an image provider is
-    set, to the borders the image model traces.
+    its linear placement, fitted to the stain or, for a section the agent
+    chooses to trace, to the borders the image model draws.
 
     ``provider`` is the image model's access method (``providers/registry``);
     ``"none"`` runs the task without an image model: no ``trace_borders``,
-    no traced section images, no trace requirement at submit. ``"custom"``
+    no traced section images. No section ever needs a trace. ``"custom"``
     (:data:`langslice.core.provider_names.CUSTOM_PROVIDER`): an image model
     the caller hands the library itself (``langslice.open_job(...,
     image_model=...)``); a door that is handed none offers no

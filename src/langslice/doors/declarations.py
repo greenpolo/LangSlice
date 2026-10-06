@@ -481,7 +481,7 @@ def trace_borders(id: str, prompt: str = "") -> dict[str, Any]:
         prompt: The full image prompt for this section, edited from the base prompt.
 
     Starts the image call in the background and returns at once; the result is
-    saved and checked at submit. The first result at a placement is reused.
+    saved, and submit waits for it. The first result at a placement is reused.
     Does not fit a deformation.
     """
     ...
@@ -501,7 +501,7 @@ def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
         passes: 1, or 2 for the corrective second call.
 
     Starts the image calls in the background and returns at once; the
-    results are saved and checked at submit. Does not fit a deformation.
+    results are saved, and submit waits for them. Does not fit a deformation.
     """
     ...
 
@@ -702,17 +702,17 @@ _DOOR_DOCS: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
     ),),
     "trace_borders": ((
         "Starts the image call in the background and returns at once; the result is\n"
-        "        saved and checked at submit.",
+        "        saved, and submit waits for it.",
         {"cli": "Runs the image call and answers once it has landed (with --background\n"
-                "        at once; `wait` collects the answer); the result is saved and\n"
-                "        checked at submit."},
+                "        at once; `wait` collects the answer); the result is saved, and\n"
+                "        submit waits for it."},
     ),),
     "trace_from_atlas": ((
         "Starts the image calls in the background and returns at once; the\n"
-        "        results are saved and checked at submit.",
+        "        results are saved, and submit waits for them.",
         {"cli": "Runs the image calls and answers once they have landed (with\n"
                 "        --background at once; `wait` collects the answer); the results\n"
-                "        are saved and checked at submit."},
+                "        are saved, and submit waits for them."},
     ),),
 }
 

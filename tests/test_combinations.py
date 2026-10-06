@@ -447,7 +447,7 @@ def test_4_nonlinear_verbs_called_directly_through_the_cli(capsys, images):
     ok(capsys, images, "adjust_transforms", "--entries", json.dumps(
         [{"id": name, **IDENTITY} for name in IDS]))
     code, envelope = cli(capsys, "job", str(images), "submit", *SUBMIT_FLAGS)
-    assert code == 3 and envelope["error"]["code"] == "MISSING_IMAGE_CORRECTIONS"
+    assert code == 3 and envelope["error"]["code"] == "MISSING_DEFORMATIONS"
     for name in IDS:  # the CLI settles each trace before answering
         assert ok(capsys, images, "trace-borders", "--id", name)["result"]["status"] in (
             "running", "ok")

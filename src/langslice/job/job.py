@@ -1168,36 +1168,6 @@ class Job:
                 self.checkpoint()
         return True
 
-    def missing_image_corrections(self, workspace: Workspace) -> list[dict[str, str]]:
-        """Sections without a completed image correction at their current geometry.
-
-        A section's current geometry is the core's fingerprint
-        (:func:`langslice.core.handoff.correction_fingerprint`), read through
-        *workspace* (the section files and the spec it renders with). Running
-        corrections are settled first. The sections the host kept out of
-        Nonlinear (:attr:`keep_warp`, :attr:`nonlinear_skip`) need none.
-        """
-        from langslice.core import handoff
-
-        self.settle_image_corrections()
-        pending: list[dict[str, str]] = []
-        for record in self.state.in_order():
-            if record.id in self.keep_warp or record.id in self.nonlinear_skip:
-                continue
-            result = record.image_correction or {}
-            try:
-                current = handoff.correction_fingerprint(self.state, workspace, record.id)
-            except (OSError, ValueError) as exc:
-                pending.append({"id": record.id, "reason": str(exc)})
-                continue
-            if result.get("status") != "ok":
-                pending.append({"id": record.id, "reason": "No completed image correction"})
-            elif result.get("geometry_fingerprint") != current:
-                pending.append({
-                    "id": record.id, "reason": "Placement changed since image correction",
-                })
-        return pending
-
     # --- results ----------------------------------------------------------------------
 
     def emit_results(self, progress: Callable[[str], None] | None = None) -> StackState:

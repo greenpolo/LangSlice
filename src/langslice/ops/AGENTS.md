@@ -92,12 +92,10 @@ wording; `registry.py` lists which.
   sections whose position the step changed, which the tool door's gates
   forget, `depth`); `moved_positions(before, state)`.
 - `submit.py` — `submit(job, summary=, notes=, interval_breaks=,
-  traces=, workspace=, gate=)`: the job's gates (`Job.submit_errors`), then
-  with *traces* (the image model is in the run; *workspace* reads each
-  section's geometry) and the nonlinear task every section's completed image
-  correction (`MISSING_IMAGE_CORRECTIONS`, reported before a missing
-  deformation; the sections the host kept out of Nonlinear need neither),
-  then the door's *gate*; then ONE undo step: the interval
+  traces=, workspace=, gate=)`: with *traces* (the image model is in the
+  run) the running traces are waited for and recorded first (tracing is the
+  agent's choice: no section needs a trace); then the job's gates
+  (`Job.submit_errors`), then the door's *gate*; then ONE undo step: the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
   `submit: <summary>` note, `submitted`; then every queued picture written
   (`job.views.flush`) and, with the workspace, every placed section's maps

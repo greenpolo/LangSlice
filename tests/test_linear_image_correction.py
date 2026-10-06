@@ -120,15 +120,18 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
 @pytest.mark.parametrize("result", [None, {"status": "error"}, {
     "status": "ok", "geometry_fingerprint": "previous-placement",
 }])
-def test_submit_requires_completed_correction_at_current_geometry(tmp_path, monkeypatch, result):
+def test_submit_needs_no_completed_correction(tmp_path, monkeypatch, result):
+    """Tracing is the agent's choice: with or without a current trace, submit
+    asks only for the deformation (or a keep_linear reason)."""
     state, ctx, spec = _placed(tmp_path)
     state.slices[0].image_correction = result
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     response = _tool(box, "submit")("Done", [], [])
-    assert response["error"] == "MISSING_IMAGE_CORRECTIONS"
-    assert response["sections"][0]["id"] == "s0.png"
-    assert not state.submitted
+    assert response["error"] == "MISSING_DEFORMATIONS"
+    _tool(box, "fit_deformable")(["s0.png"], keep_linear="The placement already fits.")
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
+    assert state.submitted
 
 
 @pytest.mark.parametrize("key,code", [("keep_warp", "KEEPS_HOST_WARP"),
@@ -172,8 +175,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
     assert response["error"] == "INVALID_LINEAR_PLACEMENT"
     assert state.slices[0].image_correction is None
     assert not box.job.undo_stack
-    refusal = _tool(box, "submit")("Done", [], [])
-    assert "requires a position" in refusal["sections"][0]["reason"]
+    assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
 
 
 def test_host_inputs_preserve_complete_transform_and_do_not_alias_it(tmp_path):

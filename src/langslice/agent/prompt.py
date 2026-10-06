@@ -108,7 +108,7 @@ TOOL_LINES: dict[str, str] = {
     "trace_borders": "runs the image-model border-correction prompt on one "
     "section's existing linear placement, with your edited copy of the prompt "
     "for that section. The image call runs in the background and the tool returns "
-    "at once; the result is saved for the user and checked at submit, which waits "
+    "at once; the result is saved for the user; `submit` waits "
     "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
     "it too. The first result at each placement is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
@@ -164,13 +164,13 @@ OPENING_PLACES: dict[str, str] = {
 _CLI_LINES: dict[str, tuple[str, str]] = {
     "trace_borders": (
         "The image call runs in the background and the tool returns "
-        "at once; the result is saved for the user and checked at submit, which waits "
+        "at once; the result is saved for the user; `submit` waits "
         "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
         "it too.",
         "The command answers once the image call has landed (with --background it "
         "answers at once and `wait` collects the answer); the result is saved for the "
-        "user and checked at submit, and `fit_deformable` with a traced `fit_section` "
-        "waits for a call still running.",
+        "user, and `submit` and `fit_deformable` with a traced `fit_section` wait for "
+        "a call still running.",
     ),
 }
 
@@ -404,10 +404,10 @@ def build_job_statement(
     if spec.has("nonlinear"):
         jobs.append(
             "give every section a deformation onto the atlas, on top of its linear "
-            "placement, with the section's stain"
-            + (" and the borders the image model traces on it"
+            "placement, with the section's stain as the evidence"
+            + (", or, for a section you choose to trace, the borders the image model "
+               "traces on it"
                if spec.nonlinear.uses_image_model else "")
-            + " as the evidence"
         )
     job = "; ".join(jobs) if jobs else "review the stack"
 
@@ -488,14 +488,11 @@ def build_job_statement(
         traced = spec.nonlinear.uses_image_model
         if traced:
             constraints.append(
-                "- Image correction requires a position and an existing linear transform. "
-                "Edit the base image prompt below for each section: its format is good and "
-                "tested, so make small changes or add a special instruction for that "
-                "particular section."
-            )
-            constraints.append(
-                "- `submit` requires a completed image correction for every section at "
-                "its current placement. Completion does not certify anatomical quality."
+                "- `trace_borders` is optional: you decide which sections, if any, to "
+                "trace. A trace requires a position and an existing linear transform. "
+                "Edit the base image prompt below for each section you trace: its format "
+                "is good and tested, so make small changes or add a special instruction "
+                "for that particular section."
             )
         constraints.append(
             "- `submit` is refused unless every section carries a deformation applied "
@@ -580,7 +577,8 @@ def build_job_statement(
         method.append(
             "- Compare candidates before applying, and inspect each returned fit's "
             "borders against the section's internal anatomy"
-            + (" and its traced borders" if spec.nonlinear.uses_image_model else "")
+            + (" and, where traced, its traced borders"
+               if spec.nonlinear.uses_image_model else "")
             + ". Apply the fit that matches best; keep the linear placement only "
             "where no fit improves on it."
         )

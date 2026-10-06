@@ -449,15 +449,16 @@ def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atla
     state, _, spec, box = _setup(tmp_path, atlas)
     text = _statement(spec, state, box)
     assert ("give every section a deformation onto the atlas, on top of its linear "
-            "placement, with the section's stain and the borders the image model traces "
-            "on it as the evidence.") in text
+            "placement, with the section's stain as the evidence, or, for a section you "
+            "choose to trace, the borders the image model traces on it.") in text
     assert "use the image model to correct" not in text
     assert "or a `keep_linear` reason saying its linear placement stands" in text
-    assert "`trace_borders`:" in text and "completed image correction" in text
+    assert "`trace_borders`:" in text and "`trace_borders` is optional" in text
+    assert "completed image correction" not in text
     assert "a call waits for a trace that is still running" in text
     assert "Base image-model prompt" in text
-    assert ("inspect each returned fit's borders against the section's internal anatomy and its "
-            "traced borders") in text
+    assert ("inspect each returned fit's borders against the section's internal anatomy "
+            "and, where traced, its traced borders") in text
 
     (tmp_path / "none").mkdir()
     none_state, _, none_spec, none_box = _setup(tmp_path / "none", atlas, provider="none")
@@ -500,15 +501,13 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
     assert JobSpec.from_dict(spec.to_dict()).nonlinear.provider == "none"
 
 
-def test_with_the_image_model_submit_wants_traces_then_deformations(tmp_path: Path, atlas,
-                                                                     monkeypatch):
+def test_with_the_image_model_submit_wants_deformations_not_traces(tmp_path: Path, atlas,
+                                                                    monkeypatch):
     from langslice.core import handoff
 
-    state, ctx, _, box = _setup(tmp_path, atlas)
+    _, _, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     submit = _tool(box, "submit")
-    assert submit("Done", [], [])["error"] == "MISSING_IMAGE_CORRECTIONS"
-    _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
     assert submit("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
     _tool(box, "fit_deformable")([ID], keep_linear="Matches already.")
     assert submit("Done", [], [])["status"] == "ok"
