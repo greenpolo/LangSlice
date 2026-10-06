@@ -73,18 +73,25 @@ slides or bends each line onto the tissue edge it belongs to and returns one
 photograph in the same frame. No image model is shown a colored atlas region
 map.
 
-- The model always sees the full set of atlas borders. Damage reaches it
-  through the prompt: the OpenAI base prompt tells it to leave out borders
-  over missing tissue (the general wording has no such sentence), and the
-  agent may edit the base prompt for the section (blank sends it unchanged). Region exclusions apply in `fit_deformable`
-  only. The base prompt, the prompt sent and their word diff are saved with
-  each attempt; user notes for the task (`JobSpec.nonlinear.notes`) appear in
-  the job statement.
+- `include` and `exclude` (region entries as in `fit_deformable`, sides
+  allowed) choose the regions whose borders the model is shown: only the
+  included regions (all when empty), without the excluded ones, which join
+  the background so their edge with the shown regions becomes an outline
+  (`registration_tool.shown_labels`). A traced `fit_deformable` adds the
+  trace's regions to its own (its exclude plus the trace's; its include,
+  else the trace's), so the atlas side matches what the model was shown,
+  and reports them as `trace_regions`.
+- Damage also reaches the model through the prompt: the OpenAI base prompt
+  tells it to leave out borders over missing tissue (the general wording has
+  no such sentence), and the agent may edit the base prompt for the section
+  (blank sends it unchanged). The base prompt, the prompt sent and their
+  word diff are saved with each attempt; user notes for the task
+  (`JobSpec.nonlinear.notes`) appear in the job statement.
 - The call runs in the background and returns at once; up to 8 run at a time.
   `submit` and a traced `fit_deformable` wait for running calls.
-- The first reply at a placement is kept: calls with the same image, geometry
-  and settings return the saved reply; changing the linear placement needs a
-  new trace and the old artifacts stay. No automatic retries; a transport
+- The first reply at a placement is kept: calls with the same image,
+  geometry, regions and settings return the saved reply; changing the linear
+  placement needs a new trace and the old artifacts stay. No automatic retries; a transport
   failure that returned no image may be retried by a later call.
 - The yellow lines are extracted from the raw reply (HSV threshold, crop to the
   canvas aspect, thinning to one pixel) and drawn on the untouched photograph,

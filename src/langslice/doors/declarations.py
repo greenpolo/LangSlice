@@ -473,16 +473,26 @@ def set_cutting_angles(pitch_deg: float, yaw_deg: float) -> dict[str, Any]:
     ...
 
 
-def trace_borders(id: str, prompt: str = "") -> dict[str, Any]:
+def trace_borders(
+    id: str, prompt: str = "", include: list[str] = [], exclude: list[str] = [],
+) -> dict[str, Any]:
     """Trace one slice's atlas borders onto its anatomy with the image model.
 
     Args:
         id: Section filename or corrected index, with a position and linear transform.
         prompt: The full image prompt for this section, edited from the base prompt.
+        include: Regions (acronyms or ids, descendants included) whose
+            borders the image model is shown. Empty shows every region.
+        exclude: Regions left out of the borders the image model is shown
+            (e.g. tissue that is missing from the section), descendants
+            included; their edge with the shown regions becomes an outline.
+            An include or exclude entry may name one side only, "CTX:left"
+            or "CTX:right": left and right of the section as the pictures
+            show it. A traced fit_deformable uses the same regions.
 
     Starts the image call in the background and returns at once; the result is
-    saved, and submit waits for it. The first result at a placement is reused.
-    Does not fit a deformation.
+    saved, and submit waits for it. The first result at a placement and region
+    choice is reused. Does not fit a deformation.
     """
     ...
 

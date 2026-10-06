@@ -140,7 +140,9 @@ wording; `registry.py` lists which.
   section's linear placement. The door validates the arguments and resolves
   each candidate into a `deformation.Choice`; this runs every fit (the fit
   grid, the image each fit reads, a traced fit section waiting for its
-  running trace under one `TRACE_WAIT_S` deadline, the record cache, the
+  running trace under one `TRACE_WAIT_S` deadline and adding the trace's
+  regions to the call's (`traced_regions`; the row's `trace_regions`, and
+  the record keeps the regions each fit ran with), the record cache, the
   engines) and, with exactly one choice, applies each section's result as
   ONE undo step (an unchanged key writes nothing, `written: false`).
   Several choices are a preview, nothing written. Per-section problems
@@ -163,7 +165,8 @@ wording; `registry.py` lists which.
   the trace's artifacts under the job folder (`traced_lines(root=...)`).
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
-  workers=)`: one section's image correction. The section's current
+  include=, exclude=, workers=)`: one section's image correction, showing
+  the model only the chosen regions' borders (recorded on the result). The section's current
   geometry is `core.handoff.correction_fingerprint`;
   `registration_tool.start_correction` prepares the edit for *image_model*
   (resolved by the door: the toolbox's `build_tools(image_model=...)`

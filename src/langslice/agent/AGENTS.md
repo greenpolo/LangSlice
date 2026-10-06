@@ -247,9 +247,12 @@ fit, one undo step, cleared by a placement change like a fit; it lives on
 the state so it is undoable, checkpointed, visible in `status` and exported).
 `trace_borders` is a tool the agent may use or not; no section needs a trace.
 
-- `trace_borders(id, prompt="")`: one image-model call on the supplied
-  linear placement with the agent's per-section edit of the base prompt
-  (a profile's own prompt replaces the base prompt for a script). The image
+- `trace_borders(id, prompt="", include=[], exclude=[])`: one image-model
+  call on the supplied linear placement with the agent's per-section edit of
+  the base prompt (a profile's own prompt replaces the base prompt for a
+  script), showing the model only the chosen regions' borders
+  (`registration_tool.shown_labels`; a traced `fit_deformable` adds the
+  trace's regions to its own, `ops.deformable.traced_regions`). The image
   model is the door's binding (`build_tools(image_model=)`, else
   `providers.registry.resolve_image_model` from `nonlinear.provider` /
   `nonlinear.image_model`). It runs in the background

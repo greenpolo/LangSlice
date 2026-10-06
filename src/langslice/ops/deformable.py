@@ -80,6 +80,27 @@ class DeformableFit:
     render_failed: list[dict[str, str]] = field(default_factory=list)
 
 
+def traced_regions(
+    record: SliceState, include: tuple[str, ...], exclude: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The regions a traced fit uses: the call's own, completed by the trace's.
+
+    The model was shown only the trace's regions (``trace_borders`` include /
+    exclude), so the atlas side drops the same ones: the call's *exclude*
+    plus the trace's, and the call's *include*, else the trace's.
+    """
+    held = record.image_correction or {}
+    traced_in = tuple(str(name) for name in held.get("include") or ())
+    traced_out = tuple(str(name) for name in held.get("exclude") or ())
+    return include or traced_in, tuple(dict.fromkeys((*exclude, *traced_out)))
+
+
+def fit_regions(fit: deformation.Job) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``(include, exclude)`` one fit ran with, as region entries."""
+    return (tuple(str(name) for name in fit.settings.structures),
+            tuple(str(name) for name in fit.settings.exclude))
+
+
 def fit_deformable(
     job: Job,
     workspace: Workspace,
@@ -98,7 +119,8 @@ def fit_deformable(
     placement) or ``current`` (composed onto the section's applied
     deformation). A traced choice waits for the section's trace still running
     (one :data:`~langslice.core.deformation.TRACE_WAIT_S` deadline for the
-    call; a trace that lands is checkpointed without an undo step).
+    call; a trace that lands is checkpointed without an undo step) and adds the
+    trace's own regions (:func:`traced_regions`; the row's ``trace_regions``).
     Identical inputs reuse a cached or saved result; applying a section's own
     current key again writes nothing (``written: false``). With *options*,
     every fit and every traced section's trace is then drawn (:func:`pictures`).
@@ -154,6 +176,8 @@ def fit_deformable(
         for number, choice in enumerate(choices, start=1):
             failure = {"id": record.id, "status": "error", "settings": choice.echo(),
                        **({} if applying else {"candidate": number})}
+            regions = (traced_regions(record, include, exclude)
+                       if choice.fit_section in deformation.TRACED else (include, exclude))
             try:
                 image, identity = deformation.stain_image(workspace, state, grid,
                                                           choice.fit_section)
@@ -164,7 +188,7 @@ def fit_deformable(
                         waited_s=deformation.TRACE_WAIT_S, root=job.folder)
                     identity = {**identity, "trace": trace}
                     traced.setdefault(record.id, (image, lines))
-                settings = choice.settings(include, exclude)
+                settings = choice.settings(*regions)
             except deformation.FitRefusal as refusal:
                 rows.append({**failure, **refusal.payload, "id": record.id})
                 continue
@@ -178,26 +202,28 @@ def fit_deformable(
                 image_identity=identity, previous=previous, image=image, lines=lines,
                 result=cached, cached=cached is not None,
             ))
+            inherited = regions != (include, exclude)
             rows.append({"id": record.id, "job": len(jobs) - 1,
-                         **({} if applying else {"candidate": number})})
+                         **({} if applying else {"candidate": number}),
+                         **({"trace_regions": {"include": list(regions[0]),
+                                               "exclude": list(regions[1])}}
+                            if inherited else {})})
     deformation.run_jobs(workspace, jobs)
 
     with job.writing() if applying else contextlib.nullcontext():
         before = job.snapshot()
-        done = _apply(job, rows, jobs, applying=applying, expected=expected,
-                      include=include, exclude=exclude, start=start)
+        done = _apply(job, rows, jobs, applying=applying, expected=expected, start=start)
         if done.written:
             job.commit(before)
     done = replace(done, traced=traced)
     if options is None:
         return done
-    return pictures(workspace, done, options, candidates=len(choices), include=include,
-                    exclude=exclude, start=start)
+    return pictures(workspace, done, options, candidates=len(choices), start=start)
 
 
 def _apply(
     job: Job, rows: list[dict[str, Any]], jobs: list[deformation.Job], *, applying: bool,
-    expected: dict[str, str], include: tuple[str, ...], exclude: tuple[str, ...], start: str,
+    expected: dict[str, str], start: str,
 ) -> DeformableFit:
     """Every fit's row; with *applying* (under the job's lock), each section's
     result as its deformation when its inputs are unchanged."""
@@ -233,6 +259,7 @@ def _apply(
                    cached=fit.cached)
         if applying:
             linear = deformation.linear_key(state, record)
+            include, exclude = fit_regions(fit)
             outcome.provenance = deformation.provenance(
                 fit.grid, fit.choice, include, exclude, start, fit.image_identity, linear)
             held = record.deformation or {}
@@ -262,8 +289,6 @@ def pictures(
     options: DisplayOptions,
     *,
     candidates: int,
-    include: tuple[str, ...] = (),
-    exclude: tuple[str, ...] = (),
     start: str = "linear",
 ) -> DeformableFit:
     """*done* with its pictures: per drawn row, the final atlas borders on the
@@ -281,16 +306,18 @@ def pictures(
 
     parts: list[Image.Image] = []
     failed: list[dict[str, str]] = []
-    highlight = [name for name, _ids in options.regions] or list(include)
     color, thickness = normalize_border_style(options.border_color, options.border_thickness)
     style = deformation.Style(
-        zoom=() if options.full_view else tuple(options.zoom), highlight=tuple(highlight),
-        marked=exclude, outlines=options.layer, color=color, thickness=thickness,
+        zoom=() if options.full_view else tuple(options.zoom),
+        highlight=tuple(name for name, _ids in options.regions), marked=(),
+        outlines=options.layer, color=color, thickness=thickness,
         atlas_opacity=options.atlas_opacity, long_edge=options.long_edge,
     )
     for fitted in done.fitted:
         row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
         record = fit.grid.record
+        include, exclude = fit_regions(fit)
+        fit_style = replace(style, highlight=style.highlight or include, marked=exclude)
         heading = (f"{record.id}  " + ("applied" if done.applied else
                    f"candidate {row['candidate']}/{candidates}")
                    + f": {fit.choice.engine} {fit.choice.stiffness}")
@@ -306,18 +333,18 @@ def pictures(
                                  if options.mode == "ab" else options.mode)}
 
             images = [deformation.picture(workspace, fit.image, outcome, warped=True,
-                                          style=style, atlas_images=shown_atlas,
+                                          style=fit_style, atlas_images=shown_atlas,
                                           title=f"{heading}\n{detail_line}", note=noted(0))]
             if options.mode == "ab":
                 if fit.previous is not None:
                     images.append(deformation.picture(
-                        workspace, fit.image, fit.previous, warped=True, style=style,
+                        workspace, fit.image, fit.previous, warped=True, style=fit_style,
                         atlas_images=shown_atlas,
                         title=f"{record.id}  before: the deformation it started from",
                         note=noted(1)))
                 else:
                     images.append(deformation.picture(
-                        workspace, fit.image, outcome, warped=False, style=style,
+                        workspace, fit.image, outcome, warped=False, style=fit_style,
                         atlas_images=shown_atlas,
                         title=f"{record.id}  before: the linear placement", note=noted(1)))
             parts.extend(images)
