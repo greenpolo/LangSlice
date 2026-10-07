@@ -69,7 +69,17 @@ wording; `registry.py` lists which.
   `not_shown`). `set_cutting_angles(job, workspace, pitch, yaw)` (every
   section gets the one plane, so a stack whose sections carried different
   angles is flattened, one undo step restoring them; drops the render
-  cache). `search_position(job, workspace, ref, window_mm, angles=,
+  cache). `position_sections(job, workspace, [{id, position_mm}],
+  cutting_angles={pitch_deg, yaw_deg}, options=, show=)`: both writes in ONE
+  undo step (the same clamping and render-cache drop), then the stack is
+  numbered by position (`order_by_position`: placed sections by increasing
+  position take the places placed sections held, an unplaced one keeps its
+  own); returns `SectionsPositioned` (`written`, `clamped`, `unknown`,
+  `cutting_angles`, `order`, `reordered`, `view`, `not_shown`). Refused:
+  `BAD_ARGS`, `POSITIONS_SUPPLIED` (the spec has no `position` task: the
+  host supplied them), `ANGLES_SUPPLIED` (neither the `position` task nor
+  `transform.angles`); angles alone are allowed under supplied positions
+  when `transform.angles` is on. `search_position(job, workspace, ref, window_mm, angles=,
   around_mm=)` (a read: `oblique.fit_oblique` within the window of
   `around_mm`, else of the section's position, clamped to the valid range;
   a section with neither is searched over the whole range; the coarse
@@ -116,6 +126,14 @@ wording; `registry.py` lists which.
   channel, its sample type, range and 1st/99.5th percentiles). Neither is
   a registered verb yet.
 - `notes.py` — `add_note(job, text)`.
+- `files.py` — read-only file access over the job folder for the native agent
+  (`job.browse` keeps every path inside it; `BAD_PATH` otherwise):
+  `list_files(job, path=".", pattern="")` -> `Listing`, `search_files(job, query,
+  path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
+  `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
+  file is answered with its `views.jsonl` record (`job.views.records()`) and the
+  number to give `zoom` or `look`, never pixels; `views.jsonl`, `state.json`
+  (the run notes) and `job.json` read as text.
 - `history.py` — `undo(job)` / `redo(job)`: `Stepped` (`done`, `moved`: the
   sections whose position the step changed, which the tool door's gates
   forget, `depth`); `moved_positions(before, state)`.
@@ -145,7 +163,7 @@ wording; `registry.py` lists which.
   `core.maps.residual_markers`), then `registration.json`. A job that
   persists nothing writes nothing and lists what it would (`written`
   False). `UNKNOWN_SLICE_IDS`. Returns `Exported`.
-- `transforms.py` — the stored transform: `interactive_transform` (knobs,
+- `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (`fit_affine`'s record), `set_transforms(job, {id: record})` (one undo step
   for the batch; locked sections refused). The shear convention is `affine.decompose_affine`'s.
@@ -167,6 +185,24 @@ wording; `registry.py` lists which.
   every changed record written as one undo step; `Adjusted` (one
   `Adjustment` per entry: `error`, `staged`, `previous`, `transform`,
   `written`, `pictures`).
+  `interactive_transform(job, workspace, sections, options=)`: orientation
+  (`flip`, `rotate_quarter` 0/90/180/270) and the knobs together, absolute
+  values, a value left out keeps what the section has (identity without a
+  transform, the stored pivot too), ONE undo step for the call. A changed
+  orientation keeps the knob values: the transform is rebuilt on the new
+  orientation, not dropped, and the entry's `kept` and `message` say so;
+  with no transform and no knob given, the orientation alone is set. Per
+  entry `LOCKED`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `BAD_ROTATION`,
+  `FLIP_DISABLED`, `NO_POSITION`, the stager's codes, `RENDER_FAILED`; the
+  picture is drawn first, under the new orientation. Returns `Adjusted`
+  (each `Adjustment` also has `id`, `orientation`, `kept`).
+  `elastix_affine(job, workspace, sections=(), restrict_to=(),
+  atlas_image="template"|"nissl", options=)`: `fit_affine(method="elastix")`
+  (so marked damage regions are left out on their own) over the named
+  sections, else `fit_targets`; `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. With
+  `restrict_to`, each ok row carries `restrict_box`: the regions'
+  bounding box on that section's canvas as `[x0, y0, x1, y1]` fractions
+  (`region_box`; `core.canvas.zoom_box`'s zoom). Returns `AffineFit`.
 - `deformable.py` — `fit_deformable(job, workspace, records,
   choices, restrict_to=, include=, exclude=, start=)`: the deformation on top of each
   section's linear placement, each section's marked regions excluded

@@ -314,6 +314,13 @@ longer exist be taken over by the images it is opened with.
   and last call numbers, under its own file lock `views.seq.lock`;
   `ViewStore._numbering`), so two stores that queue pictures before either
   writes never share one.
+- `browse.py` — read-only browsing of the job folder for `ops/files.py`: `resolve`
+  (a path relative to the folder, or absolute inside it; `..` and a symlink
+  pointing out are refused with `PathRefused`), `list_entries`, `search`
+  (regex, else plain text; case-insensitive; text files only), `read_lines`,
+  `kind_of` (dir/text/picture/binary), and the caps (`LIST_ENTRIES`,
+  `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips
+  symlinks leaving the folder.
 - `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
   placed sections, each anchoring from its exact pixel -> atlas map, so any
   plane and cutting angle; `exports/quicknii.json` and `visualign.json`,
