@@ -274,13 +274,18 @@ longer exist be taken over by the images it is opened with.
   sequence across the job's life, continued on reopen) with `view.jpg` (the
   exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
-  number and id, arguments, sections, mode, picture size and bytes, `frame`)
+  number and id, arguments, `caption`, `step`, `recipe`, sections, mode, picture size and bytes, `frame`)
   and, for a placement picture or a `fit_deformable` picture (its note's
   `warp`, `core.layers.warp_layers`), `labels.tif` (uint32, zlib) and
   `borders.png` (8-bit coverage), plus `residual.tif` for a `fit_deformable`
   picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
-  `path`, `tool`, `call`, `sections`, `mode`, `layers`). One background
+  `path`, `tool`, `call`, `sections`, `mode`, `layers`, and `caption`, `step`,
+  `recipe` when set). `recipe` is `{"renderer": name, "args": {...}}`, enough to
+  redraw the picture (from the note's `recipe=` / `caption=`, or the `recipes` /
+  `captions` lists of `save`); `step` is `save(step=)` or `ViewStore.step_source()`.
+  `lookup(seq)` and `latest(exclude_tool="zoom")` return a `PictureRecord` from
+  the index. One background
   thread per store, ending when its queue is empty; `flush` (`ops.submit`,
   `Job.emit_results`, `Job.close`, the library after every verb) and
   `flush_all` (interpreter exit) wait for it. `at_exit(fn)` runs a function
@@ -291,8 +296,9 @@ longer exist be taken over by the images it is opened with.
   hook runs after ours; `flush_all` and the library's open jobs use it
   (`flush_all` runs once more from `atexit`, for a picture a still-running
   thread queued after the first flush). A failed write is logged and skipped; only the numbering and
-  queueing run on the tool's thread. `DiscardedViews` saves nothing (a
-  dry run, a lean job). `captured()` collects every
+  queueing run on the tool's thread. `DiscardedViews` writes nothing (a
+  dry run, a lean job) but keeps the same index in memory, with the newest
+  pictures' images, for `lookup` / `latest`. `captured()` collects every
   picture any store queues inside the block (`Saved`: its folder,
   whether it gets layers and a residual, its note's sections and mode, its
   index among the call's pictures; `files()` lists `view.jpg`,

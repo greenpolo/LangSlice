@@ -83,6 +83,11 @@ class PictureNote:
     #: A deformable-fit picture's frame (:class:`WarpNote`): the section on
     #: its fit grid with the record's borders.
     warp: WarpNote | None = None
+    #: What a later stage needs to redraw the picture: a JSON-able
+    #: ``{"renderer": name, "args": {...}}`` (None: not redrawable).
+    recipe: dict[str, Any] | None = None
+    #: The one-line caption sent beside the picture (None: none).
+    caption: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,7 +126,8 @@ def collecting() -> Iterator[list[tuple[Image.Image, PictureNote]]]:
 
 
 def note(image: Image.Image, **fields: Any) -> Image.Image:
-    """Note what *image* shows (:class:`PictureNote` fields); returns it."""
+    """Note what *image* shows (:class:`PictureNote` fields, among them
+    ``recipe=`` and ``caption=``); returns it."""
     notes = _NOTES.get()
     if notes is not None:
         sections = fields.pop("sections", ())
