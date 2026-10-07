@@ -483,7 +483,7 @@ def elastix_settings(
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
-    The section's ``fit`` appearance against *atlas_image* (``template``, the
+    The section's preprocessed channel against *atlas_image* (``template``, the
     default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` on an Allen mouse atlas:
     ``fit_affine``'s ``fit_atlas``),
     mutual information plus the edge channel (the Elastix stain fit's own
@@ -582,7 +582,8 @@ def elastix_affine(
     scale its pictures draw it, :func:`calibrate`) and never searches from
     scratch: the atlas plane is placed there on the deformable fit grid
     (``deformation.fit_grid``), the
-    section's ``fit`` appearance and the placed ARA template are prepared
+    section's preprocessed channel (:func:`langslice.core.deformation.stain_image`)
+    and the placed atlas template are prepared
     exactly as a deformable stain fit prepares them (tissue and atlas masks,
     excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
     and :func:`langslice.core.deformable.engines.run_elastix_affine` fits an affine

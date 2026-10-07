@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.core import handoff
+from langslice.core.damage import exclusions
 from langslice.core.nonlinear import registration_tool
 from langslice.ops.inputs import STALE_INPUT
 from langslice.ops.refusal import Refused
@@ -112,6 +113,7 @@ def trace_borders(
     *,
     image_model: ImageModel,
     prompt: str = "",
+    restrict_to: tuple[str, ...] = (),
     include: tuple[str, ...] = (),
     exclude: tuple[str, ...] = (),
     workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
@@ -126,10 +128,13 @@ def trace_borders(
     (*workers* at most at once; :meth:`~langslice.job.job.Job.start_image_job`).
     The section's ``image_correction`` record is written as ONE undo step
     when it changed; the call's result lands on it later (submit waits for
-    it). *include* / *exclude* choose the regions whose borders the model is
-    shown (``registration_tool.shown_labels``); a traced ``fit_deformable``
-    reads them from the record. The edit is prepared outside the job's write lock; the start and
-    the write happen under it (:meth:`~langslice.job.job.Job.writing`),
+    it). *restrict_to* (*include*, its older name, when it is empty) and
+    *exclude* choose the regions whose borders the model is shown
+    (``registration_tool.shown_labels``); the section's marked regions are
+    excluded on their own (:func:`langslice.core.damage.exclusions`). A
+    traced ``fit_deformable`` reads them from the record. The edit is
+    prepared outside the job's write lock; the start and the write happen
+    under it (:meth:`~langslice.job.job.Job.writing`),
     refused ``STALE_INPUT`` when the section's geometry changed meanwhile;
     the result lands only at the geometry it was made for. Refused:
     ``UNKNOWN_SLICE_IDS``, ``KEEPS_HOST_WARP`` / ``NONLINEAR_SKIPPED`` (the
@@ -137,10 +142,16 @@ def trace_borders(
     ``INVALID_LINEAR_PLACEMENT`` (the placement cannot be prepared),
     ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``.
     """
-    prepared = _prepare(job, workspace, ref, lambda state, ctx, section_id, calls_dir:
-                        registration_tool.start_correction(
-                            state, ctx, section_id, prompt=prompt, image_model=image_model,
-                            calls_dir=calls_dir, include=include, exclude=exclude))
+    chosen = tuple(restrict_to) or tuple(include)
+
+    def prepare(state: Any, ctx: Any, section_id: str, calls_dir: Any,
+                ) -> tuple[dict[str, Any], Any]:
+        kept, dropped = exclusions(state.by_id(section_id), chosen, exclude)
+        return registration_tool.start_correction(
+            state, ctx, section_id, prompt=prompt, image_model=image_model,
+            calls_dir=calls_dir, include=kept, exclude=dropped)
+
+    prepared = _prepare(job, workspace, ref, prepare)
     if prepared.problem is not None:
         code, facts = prepared.problem
         raise Refused(code, **({} if "unknown" in facts else {"id": prepared.id}), **facts)

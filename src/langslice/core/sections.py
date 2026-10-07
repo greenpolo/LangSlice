@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.core import channels
 from langslice.core.appearance import Look, look_token
 from langslice.core.image_prep import (
     adaptive_preprocess,
@@ -109,17 +109,6 @@ def render_slice(
     return prepped
 
 
-def fine_detail(stretched: np.ndarray) -> float:
-    """Fine structure of one stretched channel (0..1): the spread of what a
-    3 px blur removes, over the pixels brighter than the background. Nuclei,
-    layers and fibre edges score high; flat autofluorescence scores low."""
-    tissue = stretched > 0.05
-    if not tissue.any():
-        return 0.0
-    fine = stretched - cv2.GaussianBlur(stretched, (0, 0), 3.0)
-    return float(fine[tissue].std())
-
-
 def _look_image(
     ctx: Workspace,
     record: SliceState,
@@ -152,41 +141,25 @@ def _look_image(
             raise ValueError(f"{record.id} has no channel {name!r}; channels: {', '.join(names)}")
         return planes[names.index(name)]
 
+    properties = look.get("properties") or {}
+    ranges = (channels.intensity_ranges(ctx, record.id)
+              if any((value or {}).get("contrast_limits") is not None
+                     for value in properties.values()) else None)
     if "channel" in look:
-        plane = placed(named(str(look["channel"])))
-        return Image.fromarray(np.stack([plane, plane, plane], axis=-1))
+        name = str(look["channel"])
+        if name not in properties:  # as read
+            plane = placed(named(name))
+            return Image.fromarray(np.stack([plane, plane, plane], axis=-1))
+        whole = np.asarray(at_working(named(name)), dtype=np.float32)
+        return channels.composite([(name, whole)], framed=framed, size=size,
+                                  properties=properties, ranges=ranges, single=True)
     if "overlay" in look:
         # Each channel stretched on its WHOLE working plane (so a framed and
         # an unframed picture share one stretch), then added in its colour.
-        from langslice.core.appearance import OVERLAY_STRETCH, channel_colors
-
-        total = np.zeros((size[1], size[0], 3), dtype=np.float32)
-        names_shown = list(look["overlay"])
-        # One channel is gray; several are each added in their colour.
-        colors = ([(names_shown[0], "gray", (255, 255, 255))] if len(names_shown) == 1
-                  else channel_colors(names_shown))
-        stretched_planes: list[np.ndarray] = []
-        detail: list[float] = []
-        for name, _word, _rgb in colors:
-            whole = np.asarray(at_working(named(name)), dtype=np.float32)
-            low, high = (float(v) for v in np.percentile(whole, OVERLAY_STRETCH))
-            if high <= low:
-                high = low + 1.0
-            stretched = np.clip((whole - low) / (high - low), 0.0, 1.0)
-            stretched_planes.append(stretched)
-            detail.append(fine_detail(stretched))
-        # Several channels: each is dimmed by its fine detail relative to the
-        # most detailed one, so a flat autofluorescence channel (stretched to
-        # full brightness on its own) cannot wash out the stain under it.
-        top = max(detail) if len(colors) > 1 else 0.0
-        for (_name, _word, rgb), stretched, amount in zip(
-            colors, stretched_planes, detail, strict=True
-        ):
-            gain = amount / top if top > 0 else 1.0
-            shown = np.asarray(framed(Image.fromarray((stretched * 255.0).astype(np.uint8))),
-                               dtype=np.float32) / 255.0
-            total += gain * shown[..., None] * np.asarray(rgb, dtype=np.float32)
-        return Image.fromarray(np.clip(total, 0.0, 255.0).astype(np.uint8), mode="RGB")
+        shown = [(str(name), np.asarray(at_working(named(str(name))), dtype=np.float32))
+                 for name in look["overlay"]]
+        return channels.composite(shown, framed=framed, size=size,
+                                  properties=properties, ranges=ranges)
     return custom_appearance(
         [placed(plane) for plane in planes],
         channel_weights=look.get("channel_weights"),

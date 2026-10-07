@@ -102,8 +102,9 @@ def test_view_and_fit_appearances_are_set_independently(tmp_path: Path):
     assert result[TOOL_MEDIA_PARTS_KEY]
     assert looks.section_settings(state, "view", "s0.png")["channel_weights"] == [0, 0, 1]
     assert looks.section_settings(state, "fit", "s0.png") is None
-    # The fit still reads the default appearance; the view does not.
-    assert np.array_equal(np.asarray(looks.fit_image(ctx, state, record, long_edge=512)), baseline)
+    # The fits still read the default preprocessed channel; the view does not.
+    preprocessed = looks.preprocessed_image(ctx, state, record, long_edge=512)
+    assert np.array_equal(np.asarray(preprocessed), baseline)
     viewed = render_slice(ctx, record, long_edge=512, look=looks.view_look(state, record))
     assert not np.array_equal(np.asarray(viewed), baseline)
 
@@ -111,7 +112,7 @@ def test_view_and_fit_appearances_are_set_independently(tmp_path: Path):
     assert looks.section_settings(state, "fit", "s0.png")["channel_weights"] == [0, 1, 0]
     assert looks.section_settings(state, "view", "s0.png")["channel_weights"] == [0, 0, 1]
     assert not np.array_equal(
-        np.asarray(looks.fit_image(ctx, state, record, long_edge=512)), np.asarray(viewed),
+        np.asarray(looks.preprocessed_image(ctx, state, record, long_edge=512)), np.asarray(viewed),
     )
 
 
@@ -138,11 +139,15 @@ def test_preprocess_is_one_undoable_checkpointed_write(tmp_path: Path):
     from langslice.job.checkpoint import load_checkpoint
 
     saved = load_checkpoint(ctx.checkpoint_path)
-    assert saved is not None and saved.appearance["view"]["stack"]["channel_weights"] == [0, 1, 0]
+    # The preprocessed channel is saved; the view look is not read back.
+    assert saved is not None
+    assert saved.appearance["preprocessed"]["stack"]["channel_weights"] == [0, 1, 0]
+    assert "view" not in saved.appearance and "view" in state.appearance
     assert _tool(box, "undo")()["status"] == "ok"
     assert state.appearance == {}
     assert _tool(box, "redo")()["status"] == "ok"
-    assert state.appearance["fit"]["stack"]["channel_weights"] == [0, 1, 0]
+    assert state.appearance["preprocessed"]["stack"]["channel_weights"] == [0, 1, 0]
+    assert state.appearance["view"]["stack"]["channel_weights"] == [0, 1, 0]
 
 
 def test_preprocess_refuses_bad_settings_before_writing(tmp_path: Path):
@@ -163,7 +168,9 @@ def test_ants_steps_run_when_the_extra_is_installed(tmp_path: Path):
     assert looks.section_settings(state, "view", "s0.png")["n4"] is True
 
 
-def test_the_image_model_input_ignores_the_agents_appearance(tmp_path: Path):
+def test_the_default_render_ignores_the_agents_appearance(tmp_path: Path):
+    """Geometry (calibration, the silhouette, the tissue pivot) is measured on
+    the default render, whatever the preprocessed channel's recipe."""
     state, ctx, _, box = _setup(tmp_path, agent_preprocessing=True)
     record = state.by_id("s0.png")
     before = np.asarray(render_slice(ctx, record, long_edge=2048, frame=False)).copy()
@@ -293,7 +300,7 @@ def test_raw_channels_one_in_gray_several_overlaid_in_colour(tmp_path: Path):
 
 
 def test_a_flat_channel_is_dimmed_in_an_overlay():
-    from langslice.core.sections import fine_detail
+    from langslice.core.channels import fine_detail
 
     rng = np.random.default_rng(0)
     textured = rng.uniform(0.2, 1.0, (64, 64)).astype(np.float32)

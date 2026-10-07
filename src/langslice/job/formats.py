@@ -154,6 +154,7 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
         "affine": affine,
         "deformation": deformation,
         "damaged": bool(record.damaged),
+        "damaged_regions": list(record.damaged_regions),
     }
 
 

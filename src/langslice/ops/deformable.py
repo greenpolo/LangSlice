@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from PIL import Image
 
 from langslice.core import deformation, handoff
+from langslice.core.damage import exclusions
 from langslice.core.state import SliceState
 from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
@@ -107,6 +108,7 @@ def fit_deformable(
     records: list[SliceState],
     choices: list[deformation.Choice],
     *,
+    restrict_to: tuple[str, ...] = (),
     include: tuple[str, ...] = (),
     exclude: tuple[str, ...] = (),
     start: str = "linear",
@@ -114,8 +116,11 @@ def fit_deformable(
 ) -> DeformableFit:
     """Fit every choice on every section; with one choice, apply it.
 
-    *include* / *exclude* are region entries (the engine's ``structures`` /
-    ``exclude``, sides allowed); *start* is ``linear`` (from the linear
+    *restrict_to* / *exclude* are region entries (the engine's
+    ``structures`` / ``exclude``, sides allowed; *include* is
+    *restrict_to*'s older name, used when it is empty). Each section's
+    marked regions are excluded on their own
+    (:func:`langslice.core.damage.exclusions`). *start* is ``linear`` (from the linear
     placement) or ``current`` (composed onto the section's applied
     deformation). A traced choice waits for the section's trace still running
     (one :data:`~langslice.core.deformation.TRACE_WAIT_S` deadline for the
@@ -142,6 +147,7 @@ def fit_deformable(
     traced: dict[str, tuple[Image.Image, Any]] = {}
     trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
     traced_choice = any(choice.fit_section in deformation.TRACED for choice in choices)
+    chosen = tuple(restrict_to) or tuple(include)
     expected: dict[str, str] = {}
     for record in records:
         refusal = job.nonlinear_refusal(record.id)
@@ -173,11 +179,12 @@ def fit_deformable(
                              "applied deformation; this section has none."})
                 continue
             previous_key = str((record.deformation or {}).get("key"))
+        own = exclusions(record, chosen, exclude)
         for number, choice in enumerate(choices, start=1):
             failure = {"id": record.id, "status": "error", "settings": choice.echo(),
                        **({} if applying else {"candidate": number})}
-            regions = (traced_regions(record, include, exclude)
-                       if choice.fit_section in deformation.TRACED else (include, exclude))
+            regions = (traced_regions(record, *own)
+                       if choice.fit_section in deformation.TRACED else own)
             try:
                 image, identity = deformation.stain_image(workspace, state, grid,
                                                           choice.fit_section)
@@ -202,7 +209,7 @@ def fit_deformable(
                 image_identity=identity, previous=previous, image=image, lines=lines,
                 result=cached, cached=cached is not None,
             ))
-            inherited = regions != (include, exclude)
+            inherited = regions != own
             rows.append({"id": record.id, "job": len(jobs) - 1,
                          **({} if applying else {"candidate": number}),
                          **({"trace_regions": {"include": list(regions[0]),

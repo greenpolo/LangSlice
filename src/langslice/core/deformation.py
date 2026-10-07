@@ -7,9 +7,9 @@ engine package :mod:`langslice.core.deformable`. What lives here:
   :data:`FIT_LONG_EDGE` with its linear placement
   (:func:`langslice.core.handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
-  the section's ``fit`` appearance (one raw channel is a fit appearance the
-  ``preprocess`` tool sets), or the image model's traced lines mapped onto
-  that grid;
+  the section's preprocessed channel (:mod:`langslice.core.appearance`; one
+  raw channel is a recipe the ``preprocess`` tool's ``fit`` target sets), or
+  the image model's traced lines mapped onto that grid;
 - one resolved :class:`Choice` per candidate and its engine settings;
 - :class:`RecordStore`: results cached by a digest of every input (so
   applying a previewed candidate reuses it), applied records saved under the
@@ -196,16 +196,18 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
 def stain_image(
     ctx: Workspace, state: StackState, grid: Grid, fit_section: str,
 ) -> tuple[Image.Image, Any]:
-    """``(image, identity)`` of the stain a fit reads: the section's fit appearance.
+    """``(image, identity)`` of the stain a fit reads: the section's
+    preprocessed channel (:mod:`langslice.core.appearance`).
 
     Traced fit sections draw their pictures on it too. A raw channel is a
-    fit appearance (``preprocess`` target ``fit``), not a fit section.
+    preprocessed-channel recipe (``preprocess`` target ``fit``), not a fit
+    section.
     """
     if fit_section not in FIT_SECTIONS:
         raise ValueError(f"Unknown fit section {fit_section!r}")
     record = grid.record
-    look = looks.section_settings(state, "fit", record.id)
-    image = looks.fit_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
+    look = looks.preprocessed_settings(state, record.id)
+    image = looks.preprocessed_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
     identity: dict[str, Any] = {"fit_look": look}
     if look is None:  # the default appearance: what it is drawn from, so a
         # saved fit is not reused after the run's preprocessing changes

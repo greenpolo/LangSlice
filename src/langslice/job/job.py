@@ -146,7 +146,7 @@ NONLINEAR_SKIPPED = ("NONLINEAR_SKIPPED", "The user chose not to have this secti
 
 
 def host_damaged_ids(spec: JobSpec) -> set[str]:
-    """Sections the host marked damaged; the agent cannot clear these flags."""
+    """Sections the host marked damaged; the agent cannot remove these marks."""
     return _named(spec, "damaged")
 
 
@@ -212,9 +212,12 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     missing key leaves that part as it is), damage as a filename -> note
     mapping, and transforms as filename -> stored transform dictionaries.
     Anything the host supplies for a task that IS on is applied too — it is
-    a starting point, not a constraint. Two exceptions are constraints: ``damaged`` flags the
-    agent cannot clear, and ``locked`` sections (a list of filenames) whose
-    flip, rotation and transform the agent cannot change; a locked section
+    a starting point, not a constraint. Two exceptions are constraints:
+    ``damaged`` marks (a note, no regions:
+    :attr:`~langslice.core.state.SliceState.damage_marked`) the agent cannot
+    remove, though it may add regions to them, and ``locked`` sections (a
+    list of filenames) whose flip, rotation and transform the agent cannot
+    change; a locked section
     without a supplied transform carries the ``"host"`` identity
     (:func:`host_transform`), because its snapshot is already aligned.
     """
@@ -292,11 +295,11 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     damaged = inputs.get("damaged") or {}
     if damaged:
         # Damage is normally the agent's own classification; a host may
-        # assert it up front so the automatic fits refuse the section unless
-        # regions restrict them.
+        # assert it up front (a note, no regions): the automatic fits refuse
+        # the section until regions restrict them or are marked.
         for name, note in damaged.items():
             record = _section(state, "damaged", name)
-            record.damaged = True
+            record.damage_marked = True
             record.damage_note = str(note or "")
         state.notes.append(f"inputs: {len(damaged)} section(s) marked damaged by the host")
 
@@ -748,7 +751,8 @@ class Job:
         #: Sections the user left out of Nonlinear (``fit_deformable`` and
         #: ``trace_borders`` refuse them, ``NONLINEAR_SKIPPED``).
         self.nonlinear_skip = frozenset(nonlinear_skip_ids(spec))
-        #: Sections the host marked damaged; their flags cannot be cleared.
+        #: Sections the host marked damaged; the agent cannot remove these
+        #: marks (it may add regions to them).
         self.host_damaged = frozenset(host_damaged_ids(spec))
         #: Whole states, oldest first; the last one is what ``undo`` restores.
         self.undo_stack: list[dict[str, Any]] = list(undo or [])[-UNDO_DEPTH:]

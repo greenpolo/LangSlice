@@ -108,9 +108,16 @@ class SliceState:
     flip: bool = False
     #: Quarter-turn applied before the flip; one of :data:`ROTATIONS`.
     rotation_deg: int = 0
-    #: Set by the agent (``mark_damaged``) or the host (``inputs.damaged``):
-    #: the automatic affine fits the section only with a region restriction.
-    damaged: bool = False
+    #: The atlas regions this section is missing, or has so badly displaced
+    #: that they would wreck a fit (``mark_damage``): acronyms or ids, each
+    #: optionally one side (``"CTX:left"``, :mod:`langslice.core.atlas.sides`).
+    #: Every fit and the image model's trace leave them out
+    #: (:func:`langslice.core.damage.exclusions`).
+    damaged_regions: list[str] = field(default_factory=list)
+    #: A damage mark that names no regions: the host's ``inputs.damaged``
+    #: (``{filename: note}``, which the agent cannot remove) or a
+    #: ``mark_damaged`` flag. Regions may be added beside it.
+    damage_marked: bool = False
     damage_note: str = ""
     position_mm: float | None = None
     transform: dict[str, Any] | None = None
@@ -130,6 +137,12 @@ class SliceState:
     #: section keeps each its own (``inputs.angles``). Serialized on the
     #: stack when all sections share one (:meth:`StackState.to_dict`).
     cutting_angles_deg: dict[str, float] = field(default_factory=flat_angles)
+
+    @property
+    def damaged(self) -> bool:
+        """Whether the section is marked damaged: it has marked regions, or a
+        mark that names none (:attr:`damage_marked`). Read-only."""
+        return bool(self.damaged_regions) or bool(self.damage_marked)
 
     @property
     def angles(self) -> Angles:
@@ -289,13 +302,19 @@ class StackState:
 
         A section row without its own angles carries the stack's
         (``cutting_angles_deg`` on the stack, flat without), which is how a
-        single-angle state and every state before format 3 read.
+        single-angle state and every state before format 3 read. A row
+        saved with the older ``damaged`` flag and no ``damage_marked``
+        reads as a mark that names no regions (its note kept).
         """
         slice_fields = SliceState.__dataclass_fields__
         stack = data.get(ANGLES_KEY)
         slices = []
         for row in data.get("slices", []):
             kwargs = {k: v for k, v in row.items() if k in slice_fields}
+            if "damage_marked" not in row and row.get("damaged"):
+                kwargs["damage_marked"] = True
+            kwargs["damaged_regions"] = [str(name) for name in
+                                         kwargs.get("damaged_regions") or ()]
             own = kwargs.get(ANGLES_KEY)
             kwargs[ANGLES_KEY] = dict(own if isinstance(own, dict) else
                                       stack if isinstance(stack, dict) else flat_angles())

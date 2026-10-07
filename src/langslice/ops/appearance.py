@@ -1,13 +1,18 @@
-"""How sections look: the ``view`` and ``fit`` appearances (:mod:`langslice.core.appearance`)."""
+"""How sections look: the preprocessed channel every fit and the image model
+read (:mod:`langslice.core.appearance`), the raw channels' display properties
+(:mod:`langslice.core.channels`), and the ``preprocess`` tool's ``view`` and
+``fit`` targets."""
 
 from __future__ import annotations
 
 import copy
+import importlib.util
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.core import appearance as looks
+from langslice.core import channels
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
@@ -140,3 +145,138 @@ def preprocess(
             raise Refused("RENDER_FAILED", message=str(exc)) from exc
     written = set_appearance(job, targets, ids, settings)
     return Preprocessed(written=written, target=pictured, pictures=pairs)
+
+
+# --- the preprocessed channel ------------------------------------------------
+
+
+def set_preprocessed(
+    job: Job,
+    workspace: Workspace,
+    section_ids: Sequence[str] | None,
+    *,
+    channel_weights: Sequence[float] | None = None,
+    clahe_clip: float = looks.DEFAULT_CLAHE_CLIP,
+    clahe_tiles: int = looks.DEFAULT_CLAHE_TILES,
+    n4: bool = False,
+    denoise: bool = False,
+    reset: bool = False,
+    shown: Sequence[SliceState] = (),
+    options: DisplayOptions | None = None,
+) -> Preprocessed:
+    """Set the preprocessed channel's recipe, stack-wide (*section_ids* None)
+    or as an override for those sections; *reset* returns them to the
+    default (a section reset removes its override, so it follows the stack).
+    One undo step.
+
+    The recipe is checked first (:func:`langslice.core.appearance.validate_settings`,
+    ``BAD_ARGS``): *channel_weights* is one weight per raw channel, empty for
+    automatic weights (``CHANNEL_COUNT_MISMATCH`` for a section with another
+    channel count), N4 and denoising need antspyx (``UNAVAILABLE``), and every
+    id must be a section (``UNKNOWN_SLICE_IDS``). With *options*, each section
+    in *shown* is pictured BEFORE and AFTER (:func:`preprocess`).
+    """
+    state = job.state
+    ids = None if section_ids is None else [str(name) for name in section_ids]
+    if ids is not None:
+        unknown = [name for name in ids if state.by_id(name) is None]
+        if unknown or not ids:
+            raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+    scope = state.in_order() if ids is None else [state.by_id(name) for name in ids]
+    settings: dict[str, Any] | None = None
+    if not reset:
+        try:
+            settings = looks.validate_settings(
+                channel_weights=list(channel_weights or []) or None,
+                clahe_clip=clahe_clip, clahe_tiles=clahe_tiles, n4=n4, denoise=denoise,
+            )
+        except ValueError as exc:
+            raise Refused("BAD_ARGS", message=str(exc)) from exc
+        weights = settings["channel_weights"]
+        if weights is not None:
+            mismatched = {
+                record.id: list(names) for record in scope if record is not None
+                and len(names := workspace.section_channels(record.id)[0]) != len(weights)
+            }
+            if mismatched:
+                raise Refused("CHANNEL_COUNT_MISMATCH", weights=len(weights),
+                              channels=mismatched)
+        if (n4 or denoise) and importlib.util.find_spec("ants") is None:
+            raise Refused("UNAVAILABLE", message=(
+                "N4 and denoising need antspyx: install LangSlice's 'registration' "
+                "extra (pip install 'langslice[registration]')."))
+    return preprocess(job, workspace, [looks.PREPROCESSED], ids, settings,
+                      shown=shown, options=options)
+
+
+# --- the raw channels' display properties ------------------------------------
+
+
+@dataclass(frozen=True)
+class ChannelPropertiesSet:
+    """What :func:`set_channel_properties` wrote and what is now in force."""
+
+    channel: str
+    #: The properties now in force (None: none, the default display).
+    properties: dict[str, Any] | None
+    #: The sections that have the channel.
+    sections: list[str]
+    #: The channel's file intensities over those sections
+    #: (:func:`langslice.core.channels.channel_summary`): the sample type and
+    #: its range, and the 1st and 99.5th percentiles.
+    intensities: dict[str, Any] | None
+    #: Whether this call changed anything (an unchanged call takes no undo step).
+    changed: bool
+
+
+def set_channel_properties(
+    job: Job,
+    workspace: Workspace,
+    channel: str,
+    *,
+    contrast_limits: Sequence[float] | None = None,
+    gamma: float | None = None,
+    colormap: str | None = None,
+    reset: bool = False,
+) -> ChannelPropertiesSet:
+    """Set how the raw channel *channel* is displayed, stack-wide.
+
+    Display only (:mod:`langslice.core.channels`): the pictures that draw raw
+    channels change, nothing a fit or the image model reads does, and the
+    user's images are never edited. An argument left None keeps the
+    channel's current value; *reset* clears them all. *contrast_limits* are
+    file intensities. One undo step, none when nothing changed.
+    ``UNKNOWN_CHANNEL`` when no section has the channel, ``BAD_ARGS`` for a
+    bad value.
+    """
+    state = job.state
+    name = str(channel)
+    names_by_section = {record.id: workspace.section_channels(record.id)[0]
+                        for record in state.in_order()}
+    having = [section for section, names in names_by_section.items() if name in names]
+    if not having:
+        known = sorted({value for names in names_by_section.values() for value in names})
+        raise Refused("UNKNOWN_CHANNEL", channel=name, channels=known)
+    current = channels.channel_properties(state, name) or channels.ChannelProperties()
+    target: channels.ChannelProperties | None = None
+    if not reset:
+        try:
+            target = channels.validate_properties(
+                contrast_limits=(list(contrast_limits) if contrast_limits is not None
+                                 else current.contrast_limits),
+                gamma=gamma if gamma is not None else current.gamma,
+                colormap=colormap if colormap is not None else current.colormap,
+            )
+        except ValueError as exc:
+            raise Refused("BAD_ARGS", message=str(exc)) from exc
+    was = channels.channel_properties(state, name)
+    now = None if target is None or target.is_default else target
+    changed = was != now
+    if changed:
+        before = job.snapshot()
+        channels.set_properties(state, name, now)
+        job.commit(before)
+    return ChannelPropertiesSet(
+        channel=name, properties=None if now is None else now.to_dict(), sections=having,
+        intensities=channels.channel_summary(workspace, having, name), changed=changed,
+    )

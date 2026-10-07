@@ -6,6 +6,7 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -689,6 +690,113 @@ def channel_planes(
     if names is not None and len(names) == len(planes):
         return tuple(str(name) for name in names), planes
     return tuple(f"ch{index + 1}" for index in range(len(planes))), planes
+
+
+@dataclass(frozen=True)
+class IntensityRange:
+    """How one page's FILE intensities map onto its 8-bit working planes.
+
+    Reading a file stretches it linearly: *low* becomes 0 and *high* 255
+    (an 8-bit page is read as it is, ``0..255``; a 16-bit, integer or float
+    one from its own minimum to its maximum). *dtype* and
+    ``dtype_min``/``dtype_max`` are the file's sample type and its range
+    (the observed range for a float file).
+    """
+
+    dtype: str
+    dtype_min: float
+    dtype_max: float
+    low: float
+    high: float
+
+    def to_plane(self, value: float) -> float:
+        """A file intensity as a working-plane value (not clipped to 0..255)."""
+        return (float(value) - self.low) / (self.high - self.low) * 255.0
+
+    def to_file(self, value: Any) -> Any:
+        """Working-plane values as file intensities."""
+        return self.low + np.asarray(value, dtype=np.float64) / 255.0 * (self.high - self.low)
+
+
+def _intensity_range(dtype: np.dtype, low: float, high: float,
+                     observed: tuple[float, float] | None = None) -> IntensityRange:
+    if dtype == np.bool_:
+        span = (0.0, 1.0)
+    elif dtype.kind in "ui":
+        info = np.iinfo(dtype)
+        span = (float(info.min), float(info.max))
+    else:
+        span = observed if observed is not None else (low, high)
+    if not high > low:  # a flat page reads as zeros
+        high = low + 1.0
+    return IntensityRange(str(dtype), span[0], span[1], float(low), float(high))
+
+
+def _array_range(page: np.ndarray) -> IntensityRange:
+    """The stretch :func:`_page_image` applies to *page* (and ``_page_channel``
+    to a gray page): identity for 8-bit and boolean samples, else its own
+    minimum to maximum."""
+    array = np.asarray(page)
+    if array.dtype == np.bool_:
+        return _intensity_range(array.dtype, 0.0, 1.0)
+    if array.dtype == np.uint8:
+        return _intensity_range(array.dtype, 0.0, 255.0)
+    low, high = float(array.min()), float(array.max())
+    return _intensity_range(array.dtype, low, high, (low, high))
+
+
+def _pil_range(image: Image.Image) -> IntensityRange:
+    """The stretch :func:`normalize_image` applies to *image*."""
+    if image.mode in ("I", "I;16", "I;16B", "I;32", "F"):
+        array = np.asarray(image)
+        low, high = float(array.min()), float(array.max())
+        return _intensity_range(array.dtype, low, high, (low, high))
+    if image.mode == "1":
+        return _intensity_range(np.dtype(np.bool_), 0.0, 1.0)
+    return _intensity_range(np.dtype(np.uint8), 0.0, 255.0)
+
+
+def working_intensity_ranges(
+    path: str | Path, min_edge: int = WORKING_MIN_EDGE,
+) -> list[IntensityRange]:
+    """One :class:`IntensityRange` per page :func:`read_working_pages` reads.
+
+    It reads the same level or page the working copy is drawn from (a
+    decode of the file; callers cache it), so a working-plane value maps
+    back to the file intensity it was stretched from. A single-page file
+    gives one range, shared by its colour planes.
+    """
+    if page_count(path) <= 1:
+        if Path(path).suffix.lower() in (".tif", ".tiff"):
+            import tifffile
+
+            with tifffile.TiffFile(path) as handle:
+                series = handle.series[0] if handle.series else None
+                if (series is not None and series.axes in ("YX", "YXS")
+                        and series.dtype in (np.uint8, np.uint16)):
+                    levels = list(series.levels)
+                    chosen = levels[0]
+                    for level in levels[1:]:
+                        if max(level.shape[0], level.shape[1]) >= min_edge:
+                            chosen = level
+                    array = np.asarray(chosen.asarray())
+                    if array.ndim == 2 or array.shape[-1] in (3, 4):
+                        return [_array_range(array)]
+        with Image.open(path) as handle:
+            return [_pil_range(handle)]
+    import tifffile
+
+    with tifffile.TiffFile(path) as handle:
+        series = handle.series[0] if handle.series else None
+        levels = list(series.levels) if series is not None else []
+        if (series is not None and len(levels) > 1 and len(series.axes) == 3
+                and series.axes.endswith("YX")):
+            chosen = levels[0]
+            for level in levels[1:]:
+                if max(level.shape[-2], level.shape[-1]) >= min_edge:
+                    chosen = level
+            return [_array_range(plane) for plane in np.asarray(chosen.asarray())]
+        return [_array_range(np.asarray(page.asarray())) for page in handle.pages]
 
 
 def ants_enhance(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:

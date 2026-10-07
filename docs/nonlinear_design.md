@@ -17,7 +17,7 @@ stands.
 
 | Tool | What it does |
 |---|---|
-| `preprocess` | sets the section's appearance for what the agent views, for what a fit reads (`target` `view`, `fit` or `both`), stack-wide or per section: channel weights, CLAHE, N4 bias correction, denoising; returns before and after pictures |
+| `preprocess` | sets a recipe (channel weights, CLAHE, N4 bias correction, denoising), stack-wide or per section, for what the agent views (`target` `view`) or for the section's preprocessed channel (`fit`), or both; the preprocessed channel is what `fit_affine`'s Elastix method, `fit_deformable` and the image model read, and without a recipe it is the default rendering; returns before and after pictures |
 | `grep_atlas` | looks regions up in the atlas hierarchy by acronym, name or id: ancestry, descendants, and whether the region appears in the atlas plane at a section's placement |
 | `view_placement` | shows a section in its current registration; the shared picture options highlight chosen `regions` and draw atlas images (`template`, `nissl`, `borders`) under the section |
 | `fit_deformable` | fits a deformation of the placed atlas onto sections (below) |
@@ -32,7 +32,7 @@ is called. Main arguments (`langslice-job schema fit_deformable`):
 
 | Argument | Choice |
 |---|---|
-| `fit_section` | `fit`: the section's fit appearance (stain); `traced_borders`: a trace's lines turned into named regions (ANTs); `traced_lines`: a trace's lines against the atlas borders |
+| `fit_section` | `fit`: the section's preprocessed channel (stain); `traced_borders`: a trace's lines turned into named regions (ANTs); `traced_lines`: a trace's lines against the atlas borders |
 | `fit_atlas` | for `fit`: `template` (the atlas's reference template, default) or `nissl` (a Nissl template aligned to the CCFv3, Allen mouse atlases, below); for a traced fit section: `borders` |
 | `include`, `exclude` | regions (acronyms or ids, descendants included, optionally one side: `"CTX:left"`); only included regions plus a 300 µm margin are fitted; excluded regions (for example tissue missing from the section) are removed from the atlas side |
 | `start` | `linear`, or `current` to compose onto the applied deformation (region-by-region steps) |
@@ -66,8 +66,10 @@ not used.
 
 `trace_borders(id, prompt="")`: an image model corrects the placed atlas
 borders onto one section's tissue. Two images accompany the prompt: the clean
-photograph, and the same photograph in the same frame with the linearly
-placed atlas borders drawn in thin yellow. OpenAI providers get the clean
+photograph (the section's preprocessed channel), and the same photograph in
+the same frame with the linearly placed atlas borders drawn in thin yellow. A
+preprocessed-channel recipe other than the default is part of the call key,
+so a changed recipe makes a new call. OpenAI providers get the clean
 photograph first; every other provider the bordered one first. The model
 slides or bends each line onto the tissue edge it belongs to and returns one
 photograph in the same frame. No image model is shown a colored atlas region

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.affine import normalized_physical_affine
+from langslice.core.damage import exclusions
 from langslice.core.display import canonical_atlas_name
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
@@ -147,11 +148,13 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
 # --- fit_affine ------------------------------------------------------------------------
 
 def fit_targets(job: Job) -> list[SliceState]:
-    """The sections ``fit_affine`` fits when none are named: every positioned,
-    undamaged section the host did not lock, in corrected order."""
+    """The sections ``fit_affine`` fits when none are named: every positioned
+    section the host did not lock, in corrected order, except a damaged one
+    whose mark names no regions (nothing to leave out, so it is refused)."""
     return [
         record for record in job.state.in_order()
-        if record.position_mm is not None and not record.damaged
+        if record.position_mm is not None
+        and not (record.damaged and not record.damaged_regions)
         and record.id not in job.locked
     ]
 
@@ -180,6 +183,7 @@ def fit_affine(
     *,
     method: str = "elastix",
     fit_atlas: str = "template",
+    restrict_to: tuple[str, ...] = (),
     include: tuple[str, ...] = (),
     exclude: tuple[str, ...] = (),
     options: DisplayOptions | None = None,
@@ -190,9 +194,13 @@ def fit_affine(
     atlas image *fit_atlas* (``template`` or ``nissl``,
     :func:`langslice.core.transform.fit_elastix`); ``silhouette`` fits the
     tissue outline from scratch (:func:`~langslice.core.transform.fit_silhouette`).
-    *include* / *exclude* restrict the fit to atlas regions (sides allowed).
+    *restrict_to* fits by those atlas regions only (sides allowed; empty:
+    every region); *include* is its older name, used when *restrict_to* is
+    empty. Each section's marked regions are left out on their own
+    (:func:`langslice.core.damage.exclusions`), with the call's *exclude*.
     The job's rules, per section: a locked section is refused (``LOCKED``),
-    a damaged one too unless regions restrict the fit (``DAMAGED``).
+    a damaged one whose mark names no regions too unless the call gives
+    regions (``DAMAGED``).
 
     With *options*, each fit is drawn under its new transform
     (:func:`langslice.core.placement.fit_picture`) BEFORE anything is
@@ -213,21 +221,22 @@ def fit_affine(
     state = job.state
     fitter = (functools.partial(fit_elastix, atlas_image=fit_atlas) if method == "elastix"
               else fit_silhouette)
-    restricted = bool(include or exclude)
+    chosen = tuple(restrict_to) or tuple(include)
     rows: list[dict[str, Any]] = []
     pictures: list[Image.Image] = []
-    fits: list[tuple[SliceState, dict[str, Any]]] = []
+    fits: list[tuple[SliceState, dict[str, Any], tuple[str, ...], tuple[str, ...]]] = []
     expected: dict[str, str] = {}
     for record in records:
         expected[record.id] = section_inputs(state, record)
         if record.id in job.locked:
             rows.append({"id": record.id, "status": "error", "error": "LOCKED"})
             continue
-        if record.damaged and not restricted:
+        kept, dropped = exclusions(record, chosen, exclude)
+        if record.damaged and not (kept or dropped):
             rows.append({"id": record.id, "status": "error", "error": "DAMAGED"})
             continue
         try:
-            outcome = fitter(state, workspace, record, include=include, exclude=exclude)
+            outcome = fitter(state, workspace, record, include=kept, exclude=dropped)
             frame = outcome.pop(FIT_FRAME_KEY, None)
             panels = (fit_picture(workspace, state, record, frame, options)
                       if frame is not None and options is not None else [])
@@ -243,14 +252,14 @@ def fit_affine(
         turn = _turn_deg(record.transform, outcome)
         if turn > LARGE_TURN_DEG:
             outcome["turn_deg"] = round(turn, 1)
-        fits.append((record, outcome))
+        fits.append((record, outcome, kept, dropped))
         if options is not None:
             # Every fit returns its picture, however many sections the call fits.
             outcome["image_indexes"] = list(range(len(pictures), len(pictures) + len(panels)))
             pictures.extend(panels)
     with job.writing():
-        kept: dict[str, dict[str, Any]] = {}
-        for record, outcome in fits:
+        records_out: dict[str, dict[str, Any]] = {}
+        for record, outcome, kept, dropped in fits:
             now = state.by_id(record.id)
             if now is None or section_inputs(state, now) != expected[record.id]:
                 indexes = outcome.get("image_indexes")
@@ -259,9 +268,9 @@ def fit_affine(
                 if indexes is not None:
                     outcome["image_indexes"] = indexes
                 continue
-            kept[record.id] = fit_transform(method, outcome, include=include,
-                                            exclude=exclude, fit_atlas=fit_atlas)
-        written = set_transforms(job, kept)
+            records_out[record.id] = fit_transform(method, outcome, include=kept,
+                                                   exclude=dropped, fit_atlas=fit_atlas)
+        written = set_transforms(job, records_out)
     return AffineFit(rows=rows, fitted=written, pictures=pictures)
 
 

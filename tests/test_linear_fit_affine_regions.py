@@ -130,7 +130,7 @@ def test_include_restricts_and_says_what_it_cannot_measure(tmp_path: Path):
     assert _fit(box, ["s0.png"], "silhouette", include=["L"],
                 exclude=["l"])["error"] == "BAD_ARGS"
     # Regions given, a damaged section is fitted; without them it is refused.
-    state.slices[0].damaged = True
+    state.slices[0].damage_marked = True
     assert _fit(box, ["s0.png"], "silhouette")["results"][0]["error"] == "DAMAGED"
     assert _fit(box, ["s0.png"], "silhouette", exclude=["R"])["status"] == "ok"
 

@@ -41,7 +41,7 @@ wording; `registry.py` lists which.
   look-before-commit gates (`compared`/`reviewed`): those are the tool
   door's (`submit` takes the door's gate as a callable, `set_positions` the
   door's "not already seen" filter as a predicate). Job rules (locked
-  sections, host damage flags, the spec's flip switch, the submit gates)
+  sections, host damage marks, the spec's flip switch, the submit gates)
   are the job's and are applied here; the transform cap (`Job.over_cap`)
   is checked by the tool door with its other arguments.
 - A model is passed in, never chosen here: `traces.trace_borders` (and
@@ -85,13 +85,36 @@ wording; `registry.py` lists which.
   flip and quarter turns; a change drops the section's transform; `LOCKED`,
   `FLIP_DISABLED`, `BAD_ROTATION` per entry; with options, the first four
   sections reached pictured as they now stand (`render_failed` per failure).
-- `damage.py` — `mark_damaged(job, entries)`; a host flag cannot be cleared.
+- `damage.py` — `mark_damage(job, workspace, section, regions, note="",
+  options=)`: the section's marked regions (checked against the atlas,
+  normalized; `UNKNOWN_REGIONS`, `BAD_ARGS`, `NO_SIDES`, `UNKNOWN_SLICE_IDS`)
+  and note, one undo step (the same mark again writes nothing); empty
+  regions clear the agent's marks. A host mark (`inputs.damaged`, a note
+  and no regions) stays: the agent may add regions, its note follows the
+  user's. With *options*, `core.damage.damage_picture` (a picture that
+  fails is `render_failed`, the write standing). Returns `DamageRegions`.
+  `mark_damaged(job, entries)`: the older flag, a mark naming no regions
+  (clearing removes the regions too); a host mark cannot be cleared.
 - `appearance.py` — `set_appearance(job, targets, ids, settings)`,
   `planned_settings` (what a write would leave, written nowhere) and
   `preprocess(job, workspace, targets, ids, settings, shown=, options=)`:
   per shown section the first target's BEFORE and AFTER pictures (uncaptioned,
   `BeforeAfter`), drawn before the write; a failure refuses the call
-  (`RENDER_FAILED`), nothing written.
+  (`RENDER_FAILED`), nothing written. Targets: `view` (the view look) and
+  `fit` or `preprocessed` (the preprocessed channel every fit and the image
+  model read, `core/appearance.py`). `set_preprocessed(job, workspace, ids,
+  channel_weights=, clahe_clip=, clahe_tiles=, n4=, denoise=, reset=,
+  shown=, options=)`: the preprocessed channel's recipe, checked first
+  (`UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `CHANNEL_COUNT_MISMATCH`, `UNAVAILABLE`
+  without antspyx for N4 or denoising), then `preprocess`'s before and after
+  pictures and write. `set_channel_properties(job, workspace, channel,
+  contrast_limits=, gamma=, colormap=, reset=)`: a raw channel's display
+  properties, stack-wide (`core/channels.py`; contrast limits in file
+  intensities; an argument left None keeps its value; `UNKNOWN_CHANNEL`,
+  `BAD_ARGS`; no undo step when nothing changed); returns
+  `ChannelPropertiesSet` (the properties in force, the sections with the
+  channel, its sample type, range and 1st/99.5th percentiles). Neither is
+  a registered verb yet.
 - `notes.py` — `add_note(job, text)`.
 - `history.py` — `undo(job)` / `redo(job)`: `Stepped` (`done`, `moved`: the
   sections whose position the step changed, which the tool door's gates
@@ -126,13 +149,17 @@ wording; `registry.py` lists which.
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (`fit_affine`'s record), `set_transforms(job, {id: record})` (one undo step
   for the batch; locked sections refused). The shear convention is `affine.decompose_affine`'s.
-  `fit_affine(job, workspace, records, method=, fit_atlas=, include=,
-  exclude=, options=)`: the fitter (`elastix` refining the current placement
-  against `fit_atlas`, or `silhouette`), `LOCKED`, `DAMAGED` unless regions
-  restrict the fit (a restricted fit records its `regions`, and the job's
-  damaged-section gate accepts it), each fit drawn (`core.placement.fit_picture`) before
+  `fit_affine(job, workspace, records, method=, fit_atlas=, restrict_to=,
+  include=, exclude=, options=)`: the fitter (`elastix` refining the current
+  placement against `fit_atlas`, or `silhouette`), each section's regions
+  from `core.damage.exclusions` (its marked regions excluded on their own;
+  `include` is `restrict_to`'s older name), `LOCKED`, `DAMAGED` for a mark
+  naming no regions unless the call gives regions (a restricted fit
+  records its `regions`, and the job's damaged-section gate accepts it),
+  each fit drawn (`core.placement.fit_picture`) before
   every successful fit is written as one undo step; `AffineFit` (`rows`,
-  `fitted`, `pictures`). `fit_targets(job)`: the default sections.
+  `fitted`, `pictures`). `fit_targets(job)`: the default sections (not a
+  section whose mark names no regions).
   `adjust_transforms(job, workspace, entries, options=)`: per entry the
   knobs checked (a left-out shear keeps the current one), the section staged
   (`core.placement.stage`), its record built and drawn
@@ -141,8 +168,9 @@ wording; `registry.py` lists which.
   `Adjustment` per entry: `error`, `staged`, `previous`, `transform`,
   `written`, `pictures`).
 - `deformable.py` — `fit_deformable(job, workspace, records,
-  choices, include=, exclude=, start=)`: the deformation on top of each
-  section's linear placement. The door validates the arguments and resolves
+  choices, restrict_to=, include=, exclude=, start=)`: the deformation on top of each
+  section's linear placement, each section's marked regions excluded
+  (`core.damage.exclusions`). The door validates the arguments and resolves
   each candidate into a `deformation.Choice`; this runs every fit (the fit
   grid, the image each fit reads, a traced fit section waiting for its
   running trace under one `TRACE_WAIT_S` deadline and adding the trace's
@@ -170,8 +198,9 @@ wording; `registry.py` lists which.
   the trace's artifacts under the job folder (`traced_lines(root=...)`).
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
-  include=, exclude=, workers=)`: one section's image correction, showing
-  the model only the chosen regions' borders (recorded on the result). The section's current
+  restrict_to=, include=, exclude=, workers=)`: one section's image correction, showing
+  the model only the chosen regions' borders, its marked regions excluded
+  (`core.damage.exclusions`; recorded on the result). The section's current
   geometry is `core.handoff.correction_fingerprint`;
   `registration_tool.start_correction` prepares the edit for *image_model*
   (resolved by the door: the toolbox's `build_tools(image_model=...)`
@@ -204,14 +233,14 @@ wording; `registry.py` lists which.
 - `inputs.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
   position, plane, angles, flip, rotation, transform; its fit appearance;
-  damage; with `deformation` the applied deformation's key, with `trace`
+  damage: marked regions and a mark naming none; with `deformation` the applied deformation's key, with `trace`
   its image correction), `STALE_INPUT`, `stale_row`.
 - `atlas.py` — `grep_atlas(job, workspace, query, section="")`: the region
   hierarchy searched like text (`core/atlas_grep.py`), with `in_section`
   per row for a placed section.
 - `views.py` — the read verbs, one per viewing tool: `status(job)`
   (`StackStatus`: the status rows, angles, breaks; a row the user locked
-  carries `locked: true`, one whose damage flag the user set
+  carries `locked: true`, one the user marked damaged
   `damage_by_user: true`), `view_slices(job,
   workspace, records, options, keep_going=)` (`SectionsView`),
   `view_atlas(job, workspace, positions, options)` (`AtlasView`, with

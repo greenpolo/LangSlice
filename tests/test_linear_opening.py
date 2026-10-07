@@ -113,7 +113,7 @@ def test_tall_paired_strips_stay_inside_the_patch_budget(tmp_path: Path, level: 
     state, ctx = _stack(tmp_path / level, 10, size=(1200, 1800), level=level)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 1.0 + 0.2 * index
-        record.damaged = True  # a longer label
+        record.damage_marked = True  # a longer label
     for limit in (None, CLAUDE_IMAGE_LIMIT):
         edge, budget = limit or (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
         for _text, image in _strips(opening_parts(state, ctx, limit=limit)):
@@ -158,7 +158,7 @@ def test_tile_labels_name_index_file_and_short_flags(tmp_path: Path):
     state, _ctx = _stack(tmp_path / "s", 2)
     record = state.in_order()[1]
     assert tile_label(record) == "1: s01.png"
-    record.rotation_deg, record.flip, record.damaged = 90, True, True
+    record.rotation_deg, record.flip, record.damage_marked = 90, True, True
     record.damage_note = "a long note about the tear that belongs in the status table"
     assert tile_label(record) == "1: s01.png [rot 90, flipped, damaged]"
 

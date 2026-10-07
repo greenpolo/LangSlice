@@ -1,25 +1,39 @@
-"""What a section looks like: the default appearance, the agent's settings, raw channels.
+"""What a section looks like: its preprocessed channel, and the view look.
 
-Every section has a DEFAULT appearance, the tested one: ``preprocess`` auto
-(:func:`langslice.core.image_prep.adaptive_preprocess`) for a plain image file, or
-the host's channel blend (:func:`langslice.core.image_prep.host_preprocess`, the
-image ``preprocess.preview`` shows) for snapshots exported one page per
-channel. The blend is an appearance, not a lossy step: the raw channels stay
-readable (:meth:`langslice.core.workspace.Workspace.section_channels`).
+Every section has exactly ONE preprocessed channel, derived from its raw
+channels, and it is what every algorithm and the image model read: the
+Elastix affine and every deformable fit (``core.deformation.stain_image``)
+and the image-model routes (``core.nonlinear.registration_tool``, through
+:func:`langslice.core.handoff.prepare_linear_registration` with
+``preprocessed=True``). Its DEFAULT is the tested appearance: ``preprocess``
+auto (:func:`langslice.core.image_prep.adaptive_preprocess`) for a plain
+image file, or the host's channel blend
+(:func:`langslice.core.image_prep.host_preprocess`, the image
+``preprocess.preview`` shows) for snapshots exported one page per channel. A
+recipe (:func:`validate_settings`: channel weights, CLAHE, N4, denoising)
+replaces the default, stack-wide or per section; ``None`` is the default.
+The raw channels stay readable and are never edited
+(:meth:`langslice.core.workspace.Workspace.section_channels`); how a raw
+channel is DISPLAYED is :mod:`langslice.core.channels`.
 
-With ``JobSpec.agent_preprocessing`` the ``preprocess`` tool may replace the
-default per TARGET, independently:
+``StackState.appearance`` holds, so a change is undone and checkpointed with
+everything else:
 
-- ``"view"`` — every picture the agent is shown (seed, views, write pictures);
-- ``"fit"`` — the image a deformable fit reads (:func:`fit_image`).
+- ``"preprocessed"``: ``{"stack": recipe or None, "sections": {id: recipe}}``;
+- ``"channels"``: the raw channels' display properties, by channel name
+  (:mod:`langslice.core.channels`);
+- ``"view"``: the look the ``preprocess`` tool's ``view`` target gives the
+  agent's pictures, the shape of ``"preprocessed"``. It is kept in memory and
+  in undo steps only: :func:`migrated` drops it from a state read from disk.
 
-Each target holds a stack-wide setting and per-section overrides on
-``StackState.appearance``, so a change is undone and checkpointed with
-everything else. A look that is ``None`` is the default appearance.
+A state saved before the preprocessed channel held its recipe under
+``"fit"``; :func:`migrated` moves it to ``"preprocessed"``, and every reader
+here reads it there too. ``preprocess``'s targets are ``"view"`` and
+``"fit"`` (the preprocessed channel).
 
-Computation never follows the view target: the silhouette fit, calibration,
-the tissue pivot and the image model's input (``trace_borders``) all read the
-default appearance, so what the agent chooses to look at cannot move a fit.
+The silhouette fit, calibration and the tissue pivot measure geometry on the
+default render whatever the recipe, so neither a recipe nor a display
+property can move them.
 """
 
 from __future__ import annotations
@@ -33,10 +47,19 @@ from PIL import Image
 from langslice.core.state import SliceState, StackState
 from langslice.core.workspace import Workspace
 
-#: The images an appearance can be set for.
-TARGETS: tuple[str, ...] = ("view", "fit")
+#: The preprocessed channel's key on ``StackState.appearance``.
+PREPROCESSED = "preprocessed"
+#: The ``preprocess`` tool's view look's key.
+VIEW = "view"
+#: The key a state saved before the preprocessed channel held it under, and
+#: the ``preprocess`` tool's name for it.
+FIT = "fit"
+#: ``preprocess``'s targets.
+TARGETS: tuple[str, ...] = (VIEW, FIT)
 #: ``preprocess``'s ``target`` values.
 TARGET_CHOICES: tuple[str, ...] = (*TARGETS, "both")
+#: Where each name is held on ``StackState.appearance``.
+HELD_UNDER: dict[str, str] = {VIEW: VIEW, FIT: PREPROCESSED, PREPROCESSED: PREPROCESSED}
 #: CLAHE clip limit and tile grid of the automatic path.
 DEFAULT_CLAHE_CLIP = 4.0
 DEFAULT_CLAHE_TILES = 8
@@ -47,8 +70,9 @@ MAX_CLAHE_TILES = 32
 #: A look: ``None`` (the default appearance), ``{"channel": name}`` (one raw
 #: channel, unenhanced: the `channels` strip), ``{"overlay": [names]}`` (raw
 #: channels, each stretched by percentile; one in gray, several added in their
-#: colours, :func:`channel_colors`)
-#: or a settings dict from :func:`validate_settings`.
+#: colours, :func:`channel_colors`), either with ``"properties"`` (their
+#: display properties, :func:`langslice.core.channels.with_properties`), or
+#: a settings dict from :func:`validate_settings`.
 Look = dict[str, Any] | None
 
 #: Colours an overlay gives its channels, in order. A channel NAMED after a
@@ -62,7 +86,7 @@ OVERLAY_PALETTE: tuple[tuple[str, tuple[int, int, int]], ...] = (
     ("red", (255, 0, 0)),
     ("blue", (0, 96, 255)),
 )
-_NAMED_COLORS: dict[str, tuple[int, int, int]] = {
+NAMED_COLORS: dict[str, tuple[int, int, int]] = {
     "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
 }
 #: Percentiles an overlay maps to black and white, per channel.
@@ -72,12 +96,12 @@ OVERLAY_STRETCH = (1.0, 99.5)
 def channel_colors(names: Any) -> list[tuple[str, str, tuple[int, int, int]]]:
     """``(name, colour word, rgb)`` per channel of an overlay, in order."""
     out: list[tuple[str, str, tuple[int, int, int]]] = []
-    taken = {str(name).lower() for name in names if str(name).lower() in _NAMED_COLORS}
+    taken = {str(name).lower() for name in names if str(name).lower() in NAMED_COLORS}
     palette = [entry for entry in OVERLAY_PALETTE if entry[0] not in taken]
     for name in names:
         key = str(name).lower()
-        if key in _NAMED_COLORS:
-            out.append((str(name), key, _NAMED_COLORS[key]))
+        if key in NAMED_COLORS:
+            out.append((str(name), key, NAMED_COLORS[key]))
         else:
             word, rgb = palette.pop(0) if palette else ("white", (255, 255, 255))
             out.append((str(name), word, rgb))
@@ -92,7 +116,7 @@ def validate_settings(
     n4: bool,
     denoise: bool,
 ) -> dict[str, Any]:
-    """One appearance as stored, or ``ValueError`` naming what is wrong.
+    """One recipe as stored, or ``ValueError`` naming what is wrong.
 
     *channel_weights* None (or empty) means automatic weights (squared tissue
     coverage, as the default appearance weighs channels).
@@ -127,18 +151,45 @@ def validate_settings(
     }
 
 
-def _target(state: StackState, target: str) -> dict[str, Any]:
-    return state.appearance.get(target) or {}
+def migrated(appearance: Any) -> dict[str, Any]:
+    """A saved state's ``appearance`` as this version holds it.
+
+    ``"fit"`` (a state saved before the preprocessed channel) becomes
+    ``"preprocessed"`` unless that is there already; ``"view"`` is dropped;
+    everything else is kept. The input is not changed.
+    """
+    if not isinstance(appearance, dict):
+        return {}
+    out = {key: value for key, value in appearance.items() if key not in (VIEW, FIT)}
+    if PREPROCESSED not in out and appearance.get(FIT) is not None:
+        out[PREPROCESSED] = appearance[FIT]
+    return out
+
+
+def _held(state: StackState, target: str) -> dict[str, Any]:
+    if target not in HELD_UNDER:
+        raise ValueError(f"target must be one of {tuple(HELD_UNDER)}")
+    key = HELD_UNDER[target]
+    held = state.appearance.get(key)
+    if held is None and key == PREPROCESSED:
+        held = state.appearance.get(FIT)
+    return held or {}
 
 
 def section_settings(state: StackState, target: str, section_id: str) -> Look:
-    """The look *target* uses for one section: its override, else the stack's."""
-    held = _target(state, target)
+    """The recipe *target* (``"preprocessed"``, or ``preprocess``'s ``"fit"``
+    or ``"view"``) uses for one section: its override, else the stack's."""
+    held = _held(state, target)
     override = (held.get("sections") or {}).get(section_id)
     if override is not None:
         return dict(override)
     stack = held.get("stack")
     return dict(stack) if stack is not None else None
+
+
+def preprocessed_settings(state: StackState, section_id: str) -> Look:
+    """The section's preprocessed-channel recipe (None: the default)."""
+    return section_settings(state, PREPROCESSED, section_id)
 
 
 def set_settings(
@@ -149,9 +200,10 @@ def set_settings(
     Stack-wide writes leave per-section overrides in place; a section reset
     removes its override, so it follows the stack again.
     """
-    if target not in TARGETS:
-        raise ValueError(f"target must be one of {TARGETS}")
-    held = {**_target(state, target)}
+    held = {**_held(state, target)}
+    key = HELD_UNDER[target]
+    if key == PREPROCESSED:
+        state.appearance.pop(FIT, None)  # now held under its own name
     sections = dict(held.get("sections") or {})
     if section_ids is None:
         held["stack"] = settings
@@ -163,9 +215,9 @@ def set_settings(
                 sections[name] = dict(settings)
     held["sections"] = sections
     if held.get("stack") is None and not sections:
-        state.appearance.pop(target, None)
+        state.appearance.pop(key, None)
     else:
-        state.appearance[target] = held
+        state.appearance[key] = held
 
 
 def look_token(ctx: Workspace, look: Look) -> str:
@@ -176,24 +228,23 @@ def look_token(ctx: Workspace, look: Look) -> str:
 
 
 def view_look(state: StackState, record: SliceState) -> Look:
-    """What a picture of *record* shows by default: its view appearance."""
-    return section_settings(state, "view", record.id)
+    """What a picture of *record* shows by default: its view look."""
+    return section_settings(state, VIEW, record.id)
 
 
-def fit_image(
+def preprocessed_image(
     ctx: Workspace, state: StackState, record: SliceState, *, long_edge: int,
 ) -> Image.Image:
-    """The section as a deformable fit reads it: the fit appearance, unframed.
+    """The section's preprocessed channel, unframed: what the fits read.
 
     Same frame as :func:`langslice.core.handoff.prepare_linear_registration`
-    (oriented, not tissue-framed) at *long_edge*.
+    (oriented, not tissue-framed) at *long_edge*; with the default recipe it
+    is that function's render exactly.
     """
     from langslice.core.sections import render_slice
 
-    return render_slice(
-        ctx, record, long_edge=long_edge, frame=False,
-        look=section_settings(state, "fit", record.id),
-    )
+    return render_slice(ctx, record, long_edge=long_edge, frame=False,
+                        look=preprocessed_settings(state, record.id))
 
 
 def describe(look: Look) -> str:

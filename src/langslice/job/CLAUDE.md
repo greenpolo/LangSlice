@@ -203,7 +203,10 @@ longer exist be taken over by the images it is opened with.
   `STATE_FORMAT_VERSION` 3), `read_checkpoint` / `load_checkpoint`,
   `current_state` (refuses any other format: a newer LangSlice's asks for
   an update, an older pre-release's for a new job, `--fresh` or
-  `resume=False`), `write_json_atomic` (every job file's writer),
+  `resume=False`; a saved `appearance` passes through
+  `core.appearance.migrated`: an older `fit` recipe read as `preprocessed`,
+  the `preprocess` tool's `view` look dropped; history steps are read the
+  same way), `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
 - `job.py` — `Job`: `open` (resume or ingest, then the first checkpoint;

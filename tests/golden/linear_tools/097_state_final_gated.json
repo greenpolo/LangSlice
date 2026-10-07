@@ -20,8 +20,9 @@
   "slices": [
    {
     "caveats": [],
+    "damage_marked": false,
     "damage_note": "",
-    "damaged": false,
+    "damaged_regions": [],
     "deformation": null,
     "flip": false,
     "id": "s0.png",
@@ -34,8 +35,9 @@
    },
    {
     "caveats": [],
+    "damage_marked": false,
     "damage_note": "",
-    "damaged": false,
+    "damaged_regions": [],
     "deformation": null,
     "flip": false,
     "id": "s1.png",
@@ -48,8 +50,9 @@
    },
    {
     "caveats": [],
+    "damage_marked": false,
     "damage_note": "",
-    "damaged": false,
+    "damaged_regions": [],
     "deformation": null,
     "flip": false,
     "id": "s2.png",
