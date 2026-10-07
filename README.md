@@ -75,13 +75,6 @@ Output files: [docs/file_formats.md](docs/file_formats.md). How the pieces fit:
 [docs/architecture_overview.md](docs/architecture_overview.md). Full documentation:
 [langslice.readthedocs.io](https://langslice.readthedocs.io).
 
-## Related repositories
-
-- **LangSlice-Training**: training infrastructure for local models.
-- **SliceBench**: a position-estimation benchmark.
-
-Both depend on LangSlice; neither is needed to run it.
-
 ## Citation and license
 
 Cite the project metadata in [`CITATION.cff`](./CITATION.cff) (GitHub's "Cite this
