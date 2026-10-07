@@ -314,7 +314,34 @@ wording; `registry.py` lists which.
   its image correction), `STALE_INPUT`, `stale_row`.
 - `atlas.py` — `grep_atlas(job, workspace, query, section="")`: the region
   hierarchy searched like text (`core/atlas_grep.py`), with `in_section`
-  per row for a placed section.
+  per row for a placed section. `grep_atlas_view(job, workspace, regions,
+  positions_mm)`: the atlas template at each position (clamped into the
+  range) at the stack's view angles with the named regions' borders
+  highlighted (`"CTX:left"` allowed; the other lines faint), saved like a
+  `look` picture (so it can be zoomed: it registers its recipe renderer
+  `grep_atlas_view` with `core.zoom.RENDERERS`); returns `RegionsView`
+  (`pictures`, `entries`, `not_shown`, `regions`, `regions_not_in_plane`,
+  `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
+  `NO_SIDES`.
+- `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
+  channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=)` and
+  `zoom(job, workspace, box, picture=None)`. Unlike the older read verbs they
+  save their own pictures (`save_pictures`: `job.views.save` with the note's
+  recipe and caption), so each has a picture number at once: the reply
+  (`Looked`, `Zoomed`) carries `pictures` (PIL) and `entries`
+  `[{"id", "caption"}]`, and the door must not save them again. `look` shows at
+  most `MAX_LOOK_PICTURES` (4) of the pictures `core.look.look` draws; the rest
+  are `not_shown`, each with the arguments that get it. `zoom` redraws a box
+  of picture `picture` (default: `views.latest(exclude_tool="zoom")`) through
+  `core.zoom.redraw` and saves it as tool `zoom`; `stale` when the stack has
+  changed since; a picture with no recipe or whose sections are gone is cropped
+  from its saved image (`redrawn` False) and its crop recipe names its
+  `source` picture, so a crop of a crop is cut from the original. Refused:
+  `NO_PICTURE`, `UNKNOWN_PICTURE`, `PICTURE_NOT_SAVED` (no saved image to
+  crop, or a lean job's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
+  refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_CHANNEL`,
+  `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`). Not registered verbs yet.
 - `views.py` — the read verbs, one per viewing tool: `status(job)`
   (`StackStatus`: the status rows, angles, breaks; a row the user locked
   carries `locked: true`, one the user marked damaged
