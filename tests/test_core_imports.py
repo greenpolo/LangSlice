@@ -79,6 +79,9 @@ CORE_MODULES = (
     "langslice.ops.atlas",
     "langslice.ops.registry",
     "langslice.ops.exports",
+    "langslice.ops.look",
+    "langslice.ops.files",
+    "langslice.ops.inputs",
 )
 
 #: The doors: an operation (``langslice.ops``) must load none of them.
@@ -96,6 +99,10 @@ FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 #: server package them): they load no agent framework or model client either.
 PLAIN_DOORS = (
     "langslice.doors.tools.toolbox",
+    "langslice.doors.tools.door",
+    "langslice.doors.tools.looking",
+    "langslice.doors.tools.changing",
+    "langslice.doors.tools.fitting",
     "langslice.doors.tools.view_options",
     "langslice.doors.declarations",
     "langslice.doors.jobs",
@@ -169,7 +176,9 @@ create(JobSpec(image_folder=str(images), preprocess="none",
                inputs={"pixel_size_um": PIXEL_SIZE_UM}), atlas_loader=loader).close()
 job = langslice.open_job(images, atlas_loader=loader)
 job.status()
-job.set_positions(entries=[{"id": "s0.png", "position_mm": 0.1}], view={"mode": "overlay"})
+job.position_sections(sections=[{"id": "s0.png", "position_mm": 0.1}])
+job.interactive_transform(sections=[{"id": "s0.png", "rotation_deg": 1.0}])
+job.look(mode="overlay", sections=["s0.png"])
 job.close()
 apply_patches()
 model = langslice.image_model(lambda request: request.slice_image, prompt="Image 1 ... {plane}")

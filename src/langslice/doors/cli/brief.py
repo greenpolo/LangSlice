@@ -79,7 +79,7 @@ def build(opened: Any, *, pictures: bool = True) -> Brief:
     connected = opened.image_model_connected
     spec = job.spec
     statement = job_statement(
-        spec, job.state, opened.ctx, door="cli", tool_names=box.names,
+        spec, job.state, opened.ctx, door="cli", tool_names=opened.listed_verbs(),
         opening=opening_for_cli(folder, len(saved) if pictures else None),
         notes=read_notes(job.layout), max_resolution=box.max_view_edge,
         image_model_off=image_model_off(spec, connected), auto=True, gates=False,

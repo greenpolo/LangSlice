@@ -45,15 +45,15 @@ NO_TRANSFORM_LINEAR_OFF = (
     "A written affine transform is required, and Linear is off for this job, so "
     "nothing here writes one. Supply the in-plane transforms with the job "
     "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or switch "
-    "Linear on (task transform) and run fit_affine on the section first."
+    "Linear on (task transform) and run elastix_affine on the section first."
 )
 
 
 def missing_transform_message(spec: Any) -> str:
     """The refusal for a section with no written in-plane transform: with
     Linear (task ``transform``) off, :data:`NO_TRANSFORM_LINEAR_OFF`, what to
-    do instead; with it on, the plain requirement (``fit_affine`` and
-    ``adjust_transforms`` are the job's own tools)."""
+    do instead; with it on, the plain requirement (``elastix_affine`` and
+    ``interactive_transform`` are the job's own tools)."""
     has = getattr(spec, "has", None)
     if callable(has) and not has("transform"):
         return NO_TRANSFORM_LINEAR_OFF

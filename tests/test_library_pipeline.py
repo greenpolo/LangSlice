@@ -94,15 +94,15 @@ class Stub:
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """The operations the library ran, in order."""
+    """The verbs' operations the library ran, in order."""
     import langslice.ops.deformable as deformable
     import langslice.ops.submit as submit
     import langslice.ops.traces as traces
     import langslice.ops.transforms as transforms
 
     seen: list[str] = []
-    for module, name in ((transforms, "fit_affine"), (traces, "trace_borders"),
-                         (deformable, "fit_deformable"), (submit, "submit")):
+    for module, name in ((transforms, "elastix_affine"), (traces, "trace_borders"),
+                         (deformable, "ants_syn"), (submit, "submit")):
         original = getattr(module, name)
 
         def spy(*args: Any, _original: Any = original, _name: str = name, **kwargs: Any) -> Any:
@@ -168,7 +168,8 @@ def test_create_job_from_a_folder(images):
         assert Path(job.folder) == images / "langslice"
         assert job.job.spec.tasks == ["nonlinear"]  # every section has a transform
         assert job.job.spec.nonlinear.provider == "none"
-        assert "trace_borders" not in job.verbs and "fit_affine" not in job.verbs
+        assert "trace_borders" not in job.verbs and "elastix_affine" not in job.verbs
+        assert "ants_syn" in job.verbs
         record = job.state.by_id(ID0)
         assert record.position_mm == POSITIONS[ID0]
         assert record.transform == {"kind": "interactive", "params": TRANSFORMS[ID0],
@@ -179,11 +180,11 @@ def test_create_job_from_a_folder(images):
         assert Path(job.folder) == elsewhere
         assert job.job.spec.tasks == ["transform", "nonlinear"]
         assert job.job.spec.nonlinear.provider == "custom"
-        assert {"fit_affine", "trace_borders", "fit_deformable"} <= set(job.verbs)
+        assert {"elastix_affine", "trace_borders", "ants_syn"} <= set(job.verbs)
     record = json.loads((elsewhere / "job.json").read_text())["image_model"]
     assert record["provider"] == "custom" and record["tested"] is False
     with langslice.open_job(elsewhere) as job:  # a model of one's own is never resolved
-        assert "trace_borders" not in job.verbs and "fit_deformable" in job.verbs
+        assert "trace_borders" not in job.verbs and "ants_syn" in job.verbs
     with pytest.raises(ValueError, match="Unknown job setting"):
         langslice.create_job(images, no_such_setting=1)
 
@@ -242,10 +243,11 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=profile) as job:
-        assert job.trace_borders(id=ID0)["status"] in ("running", "ok")
+        assert job.trace_borders(section=ID0)["status"] == "started"
         edited = PROFILE_PROMPT.replace("{plane}", "coronal") + " Keep the lines thin."
-        assert job.trace_borders(id=ID1, prompt=edited)["status"] in ("running", "ok")
+        assert job.trace_borders(section=ID1, prompt=edited)["status"] == "started"
         job.job.settle_image_corrections()
+        job.job.background.wait_all()
         first, second = (job.state.by_id(name).image_correction for name in (ID0, ID1))
     sent = PROFILE_PROMPT.replace("{plane}", "coronal")
     assert [request.prompt for request in stub.requests] == [sent, edited]
@@ -281,8 +283,9 @@ def test_a_builtin_profile_is_not_marked(images):
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=model) as job:
-        job.trace_borders(id=ID0)
+        assert job.trace_borders(section=ID0)["status"] == "started"
         job.job.settle_image_corrections()
+        job.job.background.wait_all()
         record = job.state.by_id(ID0).image_correction
     assert record["status"] == "ok" and "untested" not in record and "profile" not in record
     assert stub.requests[0].prompt == langslice.default_prompt("openai-oauth")
@@ -300,7 +303,8 @@ def test_register_section_with_a_transform_traces_fits_and_exports(images, tmp_p
         pitch_deg=1.0, yaw_deg=-0.5, pixel_size_um=PIXEL_SIZE_UM,
         image_model=langslice.image_model(stub, prompt=PROFILE_PROMPT),
         folder=tmp_path / "one", arrays=True)
-    assert calls == ["trace_borders", "fit_deformable", "submit"]
+    # The packaged trace fits what it drew itself: no ants_syn call.
+    assert calls == ["trace_borders", "submit"]
     assert result.ok and result.submitted
     assert result.job_folder == tmp_path / "one" / "langslice"
     assert (tmp_path / "one" / ID0).is_file()
@@ -329,10 +333,10 @@ def test_register_section_with_a_position_only_aligns_first(images, tmp_path, ca
     result = langslice.register_section(
         images / ID1, position_mm=POSITIONS[ID1], pixel_size_um=PIXEL_SIZE_UM,
         image_model=Stub(), folder=tmp_path / "one")
-    assert calls == ["fit_affine", "trace_borders", "fit_deformable", "submit"]
+    assert calls == ["elastix_affine", "trace_borders", "submit"]
     assert result.ok
     state = json.loads((result.job_folder / "state.json").read_text())
-    assert state["slices"][0]["transform"]["kind"] == "elastix"  # fit_affine's default
+    assert state["slices"][0]["transform"]["kind"] == "elastix"
     assert result.section(ID1).residual is not None
 
 
@@ -343,7 +347,7 @@ def test_register_section_takes_an_array_and_no_image_model(images, tmp_path, ca
     result = langslice.register_section(
         plane, position_mm=POSITIONS[ID0], transform=TRANSFORMS[ID0],
         pixel_size_um=PIXEL_SIZE_UM, folder=tmp_path / "array", name="s07.tif")
-    assert calls == ["fit_deformable", "submit"]  # no image model: the stain fit, no trace
+    assert calls == ["ants_syn", "submit"]  # no image model: the stain fit, no trace
     written = tmp_path / "array" / "s07.tif"
     import tifffile
 
@@ -397,8 +401,7 @@ def test_lean_keeps_the_results_only(images, tmp_path):
     def run(output: str) -> set[str]:
         result = langslice.register_section(
             images / ID0, position_mm=POSITIONS[ID0], pixel_size_um=PIXEL_SIZE_UM,
-            image_model=Stub(), folder=tmp_path / output, output=output,
-            affine_method="silhouette")
+            image_model=Stub(), folder=tmp_path / output, output=output)
         assert result.ok
         return files_in(result.job_folder)
 
@@ -429,7 +432,8 @@ def test_a_lean_job_still_undoes_within_its_process(images):
 
     with langslice.create_job(images, positions=POSITIONS, output="lean",
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none") as job:
-        job.fit_affine(slices=[ID0], method="silhouette")
+        assert job.interactive_transform(
+            sections=[{"id": ID0, "rotation_deg": 2.0}], view=False)["status"] == "ok"
         assert job.state.by_id(ID0).transform is not None
         assert job.undo()["status"] == "ok"
         assert job.state.by_id(ID0).transform is None
@@ -448,9 +452,44 @@ def test_register_job_over_a_folder(images, calls):
                                image_model=stub, output="lean")
     result = langslice.register_job(job)
     assert result.ok and len(stub.requests) == 3
-    assert calls == ["trace_borders"] * 3 + ["fit_deformable", "submit"]
+    assert calls == ["trace_borders"] * 3 + ["submit"]
     assert result.job_folder == images / "langslice"
     assert [section.id for section in result.sections] == [ID0, ID1, ID2]
     assert all(section.residual is not None and section.untested for section in result.sections)
     document = json.loads(result.registration.read_text())
     assert [entry["mapping"] for entry in document["sections"]] == ["linear + residual"] * 3
+
+
+def test_register_job_submits_a_failed_trace_as_left_linear(images, calls):
+    """A section whose deformation failed is named in submit's left_linear
+    with the reason; the others are deformed and the job is submitted."""
+    import threading
+
+    import langslice
+
+    stub = Stub()
+    lock = threading.Lock()
+    answered: list[int] = []
+
+    def first_fails(request: Any) -> Image.Image:
+        with lock:
+            answered.append(1)
+            first = len(answered) == 1
+        if first:
+            raise RuntimeError("model down")
+        return stub.call(request)
+
+    job = langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
+                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
+                               image_model=first_fails)
+    result = langslice.register_job(job)
+    assert calls == ["trace_borders"] * 3 + ["submit"]
+    assert result.submitted and not result.ok
+    (failed, reason), = result.problems.items()
+    assert reason.startswith("trace_borders: ") and "model down" in reason
+    state = json.loads((result.job_folder / "state.json").read_text())
+    rows = {row["id"]: row for row in state["slices"]}
+    assert rows[failed]["deformation"]["keep_linear"] == reason
+    for name in set(POSITIONS) - {failed}:
+        assert result.section(name).residual is not None
+        assert rows[name]["deformation"].get("keep_linear") is None

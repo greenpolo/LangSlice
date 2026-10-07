@@ -11,6 +11,7 @@ replayed.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import os
 from collections.abc import Callable
@@ -157,6 +158,24 @@ def with_seed_views(on_event: LiveCallback | None, views: list[str]) -> LiveCall
     return observe
 
 
+def background_message(job: Job) -> list[Any] | None:
+    """What the session says when the model ends its turn while background
+    work runs: it waits for the first piece to finish, then hands out every
+    finished piece's notice and pictures (each once). None when no work ran
+    or none finished since the last notices."""
+    if job.background.running():
+        job.background.wait_any()
+    finished = job.background.notices()
+    if not finished:
+        return None
+    items: list[Any] = ["Background work finished:\n" + "\n".join(
+        work.notice for work in finished)]
+    for work in finished:
+        for number, image in zip(work.pictures, work.images, strict=False):
+            items += [f"picture {number} ({work.id})", image]
+    return items
+
+
 async def run_session(
     state: StackState,
     ctx: EngineContext,
@@ -207,6 +226,7 @@ async def run_session(
         max_quota_percent=spec.max_quota_percent,
         tool_media_delivered=box.mark_placement_views_delivered,
         on_event=on_event,
+        background=functools.partial(background_message, box.job),
     )
     if sink and sink[0]:
         state.debrief = sink[0]

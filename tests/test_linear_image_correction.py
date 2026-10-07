@@ -16,7 +16,8 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
 from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import apply_host_inputs
-from tests.test_linear_toolbox import _stack, _tool
+from tests.linear_tool_helpers import stack as _stack
+from tests.linear_tool_helpers import tool_named as _tool
 
 
 def _placed(tmp_path: Path):
@@ -39,8 +40,9 @@ def test_image_tool_is_opt_in_and_takes_id_prompt_and_regions(tmp_path: Path):
     schema = FunctionTool(_tool(box, "trace_borders"))._get_declaration()
     declaration = schema.model_dump()
     parameters = declaration["parameters"] or declaration["parameters_json_schema"]
-    assert set(parameters["properties"]) == {"id", "prompt", "include", "exclude"}
-    assert not {"fit_affine", "adjust_transforms", "search_atlas", "reject"} & set(box.names)
+    assert set(parameters["properties"]) == {"section", "prompt", "restrict_to"}
+    assert not {"elastix_affine", "interactive_transform", "position_sections"} & set(
+        box.names)
     restored = JobSpec.from_dict(spec.to_dict())
     assert restored.nonlinear == NonlinearSpec()
 
@@ -72,6 +74,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
     result = _tool(box, "trace_borders")("0", "Edited prompt.")
+    assert result["status"] == "started" and result["work"] == "w1", result
     # The door resolved the spec's provider and model once; the operation got it.
     model = calls[0][1].pop("image_model")
     assert (model.provider, model.model) == ("openai-api", "test-model")
@@ -81,8 +84,9 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
         "include": (), "exclude": (),
     })]
     # The tool returns while the image call is still running, with no images.
-    assert result["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
-    assert _tool(box, "trace_borders")("0")["status"] == "running"
+    assert result["trace"]["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
+    again = _tool(box, "trace_borders")("0")
+    assert again["status"] == "running" and again["work"] == "w1"
     assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved.slices[0].image_correction == state.slices[0].image_correction
@@ -94,13 +98,15 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     _tool(box, "redo")()
     assert state.slices[0].image_correction["status"] == "running"
     release.set()
+    # submit waits for the work; the stand-in's trace has no lines to fit.
     assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
-    _tool(box, "fit_deformable")(["0"], keep_linear="The placement already fits.")
-    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
+    assert box.job.background.running() == []
+    assert _tool(box, "submit")("Done", [], [], left_linear=[
+        {"id": "0", "reason": "The placement already fits."}])["status"] == "ok"
     assert state.slices[0].image_correction["status"] == "ok"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
     assert state.slices[0].transform == transform
-    assert _tool_target_ids(state, "trace_borders", {"id": "0"}) == ["s0.png"]
+    assert _tool_target_ids(state, "trace_borders", {"section": "0"}) == ["s0.png"]
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):
@@ -116,6 +122,8 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     _tool(box, "undo")()
     assert box.job.settle_image_corrections() is False
     assert state.slices[0].image_correction is None
+    box.job.background.wait_all()
+    assert state.slices[0].deformation is None
 
 
 @pytest.mark.parametrize("result", [None, {"status": "error"}, {
@@ -123,15 +131,15 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
 }])
 def test_submit_needs_no_completed_correction(tmp_path, monkeypatch, result):
     """Tracing is the agent's choice: with or without a current trace, submit
-    asks only for the deformation (or a keep_linear reason)."""
+    asks only for the deformation (or the section named in left_linear)."""
     state, ctx, spec = _placed(tmp_path)
     state.slices[0].image_correction = result
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     response = _tool(box, "submit")("Done", [], [])
     assert response["error"] == "MISSING_DEFORMATIONS"
-    _tool(box, "fit_deformable")(["s0.png"], keep_linear="The placement already fits.")
-    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
+    assert _tool(box, "submit")("Done", [], [], left_linear=[
+        {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
     assert state.submitted
 
 
@@ -156,8 +164,8 @@ def test_sections_kept_out_of_nonlinear_need_no_trace_and_no_deformation(
     assert _tool(box, "trace_borders")("s1.png")["error"] == code
     rows = traces.trace_from_atlas(box.job, ctx, ["s1.png"], image_model=None).rows  # type: ignore[arg-type]
     assert [row["error"] for row in rows] == [code]
-    _tool(box, "fit_deformable")(["s0.png"], keep_linear="The placement already fits.")
-    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
+    assert _tool(box, "submit")("Done", [], [], left_linear=[
+        {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
     assert state.slices[1].deformation is None
 
 
@@ -198,7 +206,8 @@ def test_nonlinear_only_prompt_describes_fixed_supplied_placement(tmp_path):
         spec, state, tool_names=build_tools(state, ctx, spec).names,
         species="mouse", pos_lo=0, pos_hi=10, axis_ends=("anterior", "posterior"),
     )
-    assert "Existing linear transforms are supplied and fixed" in prompt
-    assert "its format is good and tested" in prompt
-    assert "Transforms are not part" not in prompt
+    prompt = " ".join(prompt.split())
+    assert ("- Existing linear transforms are supplied and fixed for this run, "
+            "orientation included.") in prompt
+    assert "transforms are not part of this run" not in prompt
 

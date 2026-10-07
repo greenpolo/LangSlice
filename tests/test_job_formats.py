@@ -1,12 +1,13 @@
 """The job folder's public files: ``registration.json`` and each section's maps.
 
 One synthetic stack (the golden recorder's), placed through the library as a
-script would: s0 warped by a deformable fit, s1 turned a quarter, flipped
-and kept linear, s2 placed without a transform (the identity, as its
-pictures show it). Checked: the matrices agree with what every picture
-shows (placement pictures and ``fit_deformable`` pictures, through
-``coordinate_map``), ``labels.tif`` is the atlas read at ``coords.tif``,
-``coords = pixel_to_atlas_um @ (p + residual)``, the QuickNII anchoring and
+script would: s0 warped by a deformable fit (``ops.deformable.fit_deformable``,
+Elastix), s1 turned a quarter, flipped and kept linear, s2 placed without a
+transform (the identity, as its pictures show it). Checked: the matrices
+agree with what every picture shows (``look`` and ``zoom`` placement
+pictures and the deformable-fit pictures ``ops.deformable.fit_deformable``
+draws, through ``coordinate_map``), ``labels.tif`` is the atlas read at
+``coords.tif``, ``coords = pixel_to_atlas_um @ (p + residual)``, the QuickNII anchoring and
 VisuAlign markers reproduce the maps, the files are what
 ``docs/file_formats.md`` says, and a job that persists nothing writes none.
 """
@@ -35,11 +36,33 @@ from tests.golden.record import (
 )
 
 
+def _fit_deformable(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
+    """``ops.deformable.fit_deformable`` with one Elastix setting, applied, its
+    pictures (a deformable-fit picture, with the residual layer) saved as a
+    door saves a tool's pictures (``Job.views.shown``)."""
+    from langslice.core import deformation
+    from langslice.core.display import default_options
+    from langslice.ops.deformable import fit_deformable
+
+    choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
+                                engine="elastix", stiffness="medium")
+    options = (default_options("overlay") if long_edge is None
+               else default_options("overlay", long_edge=long_edge))
+    job, workspace = handle.job, handle.workspace
+    with job.views.shown("fit_deformable", atlas_of=lambda: workspace.atlas) as shown:
+        done = fit_deformable(job, workspace, [job.state.by_id(name) for name in ids],
+                              [choice], options=options)
+        shown.show(list(done.pictures), arguments={"slices": ids})
+    job.views.flush()
+    return done
+
+
 @pytest.fixture(scope="module")
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     import langslice
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
+    from langslice.ops.deformable import keep_linear
 
     root = tmp_path_factory.mktemp("formats")
     patch = pytest.MonkeyPatch()
@@ -51,26 +74,32 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
                                agent_preprocessing=False)
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
-                               {"id": ID2, "position_mm": 0.2}])
-    job.orient_slices(entries=[{"id": ID1, "flip": True, "rotate_deg": 90}])
-    job.adjust_transforms(entries=[
+    assert job.position_sections(sections=[
+        {"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
+        {"id": ID2, "position_mm": 0.2}], view=False)["status"] == "ok"
+    assert job.interactive_transform(sections=[
         {"id": ID0, "rotation_deg": 3.0, "scale_x": 1.05, "scale_y": 0.97,
          "translate_x_mm": 0.1, "translate_y_mm": -0.05, "shear": 0.04},
-        {"id": ID1, "rotation_deg": -4.0, "scale_x": 1.0, "scale_y": 1.0,
-         "translate_x_mm": 0.0, "translate_y_mm": 0.02}])
-    assert job.fit_deformable(slices=[ID0], engine="elastix")["status"] == "ok"
-    job.fit_deformable(slices=[ID1], keep_linear="kept for the test")
-    job.view_placement(entries=[{"id": ID1, "positions_mm": [0.15]}],
-                       view={"mode": "overlay", "resolution": 700})
-    job.view_placement(entries=[{"id": ID2, "positions_mm": [0.2]}],
-                       view={"mode": "overlay", "resolution": 300, "zoom": [30, 25, 270, 200]})
+        {"id": ID1, "flip": True, "rotate_quarter": 90, "rotation_deg": -4.0, "scale_x": 1.0,
+         "scale_y": 1.0, "translate_x_mm": 0.0, "translate_y_mm": 0.02}],
+        view=False)["status"] == "ok"
+    fitted = _fit_deformable(job, [ID0])
+    assert fitted.written == [ID0], fitted.rows
+    keep_linear(job.job, [job.state.by_id(ID1)], "kept for the test")
+    job.look(mode="overlay", sections=[ID1], resolution=700)
+    job.look(mode="overlay", sections=[ID2], resolution=300)
+    job.zoom(box=[30, 25, 270, 200])
     # A picture smaller than the fit grid, so the residual is resampled.
-    job.fit_deformable(slices=[ID0], engine="elastix", view={"resolution": 160})
+    again = _fit_deformable(job, [ID0], long_edge=160)
+    assert again.rows[0]["status"] == "ok" and not again.written  # the same fit
     exported = job.export_maps()
     job.close()
     yield job, Path(job.folder), exported
     patch.undo()
+
+
+#: The tools whose saved pictures are placement pictures (one atlas plane).
+PLACEMENT_TOOLS = ("look", "zoom")
 
 
 def _views(root: Path, tool: str) -> list[Path]:
@@ -185,7 +214,7 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
     registration = json.loads((root / "registration.json").read_text())
     by_id = {entry["id"]: entry for entry in registration["sections"]}
     checked = 0
-    for folder in _views(root, "view_placement"):
+    for folder in [path for tool in PLACEMENT_TOOLS for path in _views(root, tool)]:
         view = json.loads((folder / "view.json").read_text())
         section = view["sections"][0]
         record = job.state.by_id(section)
@@ -208,7 +237,7 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
 
 
 def test_residual_maps_agree_with_the_fit_deformable_pictures(placed):
-    """A fit_deformable picture's coordinate map (its residual layer
+    """A deformable-fit picture's coordinate map (its residual layer
     included) and the section's own composed map agree, up to resampling
     the field at the picture's size."""
     from langslice.core.affine import pixel_center_map
@@ -327,13 +356,13 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     opened = open_folder(images, atlas_loader=atlas_loader(), persist=False)
     tools = {tool.__name__: tool for tool in opened.tools().tools}
     dry = tools["export_maps"]()
-    tools["set_positions"](entries=[{"id": ID2, "position_mm": 0.25}])
+    tools["position_sections"](sections=[{"id": ID2, "position_mm": 0.25}], view=False)
     opened.close()
     assert dry["files_written"] is False and dry["files"]
     assert path.stat().st_mtime_ns == stamp
     # A write rewrites it; the maps written before are no longer current.
     job = langslice.open_job(str(images), atlas_loader=atlas_loader())
-    job.set_positions(entries=[{"id": ID2, "position_mm": 0.25}])
+    job.position_sections(sections=[{"id": ID2, "position_mm": 0.25}], view=False)
     job.close()
     after = json.loads(path.read_text())
     moved = after["sections"][2]
@@ -342,6 +371,51 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     assert moved["pixel_to_atlas_um"][0][2] == 250.0 != entry["pixel_to_atlas_um"][0][2]
     assert moved["maps"]["current"] is False
     assert after["sections"][0]["maps"]["current"] is True
+
+
+def test_a_starting_position_is_said_in_registration_json_and_the_maps(tmp_path, monkeypatch):
+    """A section still at the starting position the job gave it is
+    ``parameters.plane.starting_position`` true in registration.json, and maps
+    written while it sits there say ``"starting_position": true``. Writing its
+    position, even the very same value, makes it the writer's own: both go."""
+    import langslice
+    from langslice.core.spec import NonlinearSpec
+    from langslice.doors.jobs import create
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    apply_patches()
+    folder = tmp_path / "stack"
+    write_sections(folder)
+    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
+                               agent_preprocessing=False)
+    create(spec, atlas_loader=atlas_loader()).close()
+    job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
+    root = Path(job.folder)
+
+    def planes() -> dict[str, dict[str, Any]]:
+        return {entry["id"]: entry["parameters"]["plane"] for entry in json.loads(
+            (root / "registration.json").read_text())["sections"]}
+
+    def maps(stem: str) -> dict[str, Any]:
+        return json.loads((root / "sections" / stem / "maps.json").read_text())
+
+    status = {row["id"]: row for row in job.status()["rows"]}
+    assert all(row["position_source"] == "default" for row in status.values())
+    assert all(plane["starting_position"] is True for plane in planes().values())
+    exported = job.export_maps(slices=[ID0, ID1])
+    assert exported["written"] == [ID0, ID1]
+    assert maps("s0")["starting_position"] is True and maps("s1")["starting_position"] is True
+
+    start = status[ID0]["position_mm"]
+    assert job.position_sections(sections=[{"id": ID0, "position_mm": start}],
+                                 view=False)["status"] == "ok"
+    held = planes()
+    assert held[ID0]["starting_position"] is False and held[ID0]["position_mm"] == start
+    assert held[ID1]["starting_position"] is True
+    job.export_maps(slices=[ID0, ID1])
+    job.close()
+    assert "starting_position" not in maps("s0")
+    assert maps("s1")["starting_position"] is True
 
 
 def test_full_resolution_maps_are_on_the_file_pixels(placed, tmp_path, monkeypatch):
@@ -460,7 +534,7 @@ def _picture_um_per_section_px(root: Path, section: str) -> float:
     """Micrometres per section-render pixel (along a column step) in the
     last placement picture of *section*."""
     entries = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
-    view = [e for e in entries if e["tool"] == "view_placement" and section in e["sections"]][-1]
+    view = [e for e in entries if e["tool"] == "look" and section in e["sections"]][-1]
     frame = json.loads((root / view["path"] / "view.json").read_text())["frame"]
     to_atlas = np.asarray(frame["pixel_to_atlas_um"]) @ np.asarray(frame["section_to_picture"])
     return float(np.linalg.norm(to_atlas[:, 1]))
@@ -472,13 +546,12 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
     exports, the same frame) uses that same scale, not the one stored with
     a transform written at another position."""
     job = _uncalibrated_job(tmp_path, monkeypatch)
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
-    job.adjust_transforms(entries=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
-                                    "scale_y": 1.0, "translate_x_mm": 0.0,
-                                    "translate_y_mm": 0.0}])
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.25}])
-    job.view_placement(entries=[{"id": ID0, "positions_mm": [0.25]}],
-                       view={"mode": "overlay", "resolution": 512})
+    job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
+    job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
+                                         "scale_y": 1.0, "translate_x_mm": 0.0,
+                                         "translate_y_mm": 0.0}], view=False)
+    job.position_sections(sections=[{"id": ID0, "position_mm": 0.25}], view=False)
+    job.look(mode="overlay", sections=[ID0], resolution=512)
     job.close()
     root = Path(job.folder)
     entry = {e["id"]: e for e in json.loads(
@@ -504,14 +577,13 @@ def test_an_uncalibrated_section_is_fitted_at_the_scale_its_pictures_draw(tmp_pa
     from langslice.core.sections import PREVIEW_LONG_EDGE
 
     job = _uncalibrated_job(tmp_path, monkeypatch)
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
-    job.adjust_transforms(entries=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
-                                    "scale_y": 1.0, "translate_x_mm": 0.0,
-                                    "translate_y_mm": 0.0}])
+    job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
+    job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
+                                         "scale_y": 1.0, "translate_x_mm": 0.0,
+                                         "translate_y_mm": 0.0}], view=False)
     stored = job.state.by_id(ID0).transform["calibration"]["section_um_per_px"]
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.25}])
-    job.view_placement(entries=[{"id": ID0, "positions_mm": [0.25]}],
-                       view={"mode": "overlay", "resolution": 512})
+    job.position_sections(sections=[{"id": ID0, "position_mm": 0.25}], view=False)
+    job.look(mode="overlay", sections=[ID0], resolution=512)
     handoff = prepare_linear_registration(job.state, job.workspace, ID0,
                                           long_edge=PREVIEW_LONG_EDGE).metadata
     job.close()
@@ -538,9 +610,8 @@ def test_an_uncalibrated_section_without_a_transform_is_the_identity(tmp_path, m
 
     job = _uncalibrated_job(tmp_path, monkeypatch)
     with caplog.at_level(logging.WARNING):
-        job.set_positions(entries=[{"id": ID2, "position_mm": 0.2}])
-        job.view_placement(entries=[{"id": ID2, "positions_mm": [0.2]}],
-                           view={"mode": "overlay", "resolution": 512})
+        job.position_sections(sections=[{"id": ID2, "position_mm": 0.2}], view=False)
+        job.look(mode="overlay", sections=[ID2], resolution=512)
     job.close()
     assert not [r for r in caplog.records if r.exc_info], [r.getMessage() for r in caplog.records]
     root = Path(job.folder)
@@ -604,7 +675,7 @@ def test_export_maps_syncs_before_it_writes(placed, tmp_path, monkeypatch):
 
     first, second = _two_jobs(tmp_path, monkeypatch, placed)
     first.status()  # first holds the state as it was
-    second.set_positions(entries=[{"id": ID2, "position_mm": 0.25}])
+    second.position_sections(sections=[{"id": ID2, "position_mm": 0.25}], view=False)
     done = export_maps(first.job, first.workspace, [ID2])
     first.close()
     second.close()
@@ -636,7 +707,7 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
         with other.held():
             seen.append(True)
         if frame.section_id == ID1 and len(seen) == 2:
-            second.set_positions(entries=[{"id": ID1, "position_mm": 0.2}])
+            second.position_sections(sections=[{"id": ID1, "position_mm": 0.2}], view=False)
         return real(workspace, frame, warp, **kwargs)
 
     monkeypatch.setattr(core_maps, "section_maps", meanwhile)

@@ -53,8 +53,8 @@ class StackStatus:
 def status(job: Job) -> StackStatus:
     """The status table (``status``). A section the user locked (its
     in-plane alignment done, ``inputs.locked``) carries ``locked: true``,
-    one whose damage flag the user set (``inputs.damaged``, which cannot
-    be cleared) ``damage_by_user: true``; the others carry neither."""
+    one the user gave a damage note (``inputs.damaged``: a note, not damage)
+    ``damage_by_user: true``; the others carry neither."""
     state = job.state
     rows = status_rows(state)
     for row in rows:

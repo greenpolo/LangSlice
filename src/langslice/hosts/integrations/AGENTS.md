@@ -61,8 +61,8 @@ ABBA's sign table for the cutting angles is `core/abba_angles.py`.
 them inside its lock, with corrected-index references resolved to stable
 filenames). Model `tool_call` announcements may be batched ahead of
 execution and never drive the viewer. `_FOLLOWED` names the tools whose
-targets are shown; every one in `_WRITES` (all but the looks and
-`preprocess`) refreshes its targets on its end event, after the connector
+targets are shown; every one in `_WRITES` (all but `look` and
+`set_preprocessed_channel_properties`) refreshes its targets on its end event, after the connector
 has applied the checkpoint's rows. Every followed event goes to the
 comparison window its `comparison_factory` builds on first use; the main
 ABBA view, its camera, selection and display modes are never touched, and

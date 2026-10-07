@@ -97,7 +97,9 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     folder = _folder(tmp_path)
     job, ctx = _open(folder, tasks=["position"])
     box = build_tools(job.state, ctx, job.spec, job=job)
-    assert _tool(box, "set_positions")([{"id": "s1.png", "position_mm": 2.0}])["status"] == "ok"
+    written = _tool(box, "position_sections")([{"id": "s1.png", "position_mm": 2.0}],
+                                              view=False)
+    assert written["status"] == "ok"
 
     again, ctx = _open(folder, tasks=["position"])
     box = build_tools(again.state, ctx, again.spec, job=again)
@@ -141,7 +143,7 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
     folder = _folder(tmp_path)
     job, ctx = _open(folder, tasks=["position"])
     box = build_tools(job.state, ctx, job.spec, job=job)
-    _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 1.0}])
+    _tool(box, "position_sections")([{"id": "s0.png", "position_mm": 1.0}], view=False)
 
     def script(data: dict[str, Any]) -> None:
         data["slices"][1]["position_mm"] = 4.5
@@ -224,10 +226,16 @@ def test_the_job_is_never_gated_and_undo_resets_the_door_gates(tmp_path: Path):
     assert job.submit_errors([]) is None
 
     box = build_tools(job.state, ctx, job.spec, job=job)
-    _tool(box, "view_placement")([{"id": "s0.png", "positions_mm": [1.5]}])
-    _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 1.5}])
-    _tool(box, "view_placement")([{"id": "s0.png", "positions_mm": [1.5]}])
-    _tool(box, "view_stack")()
+    look = _tool(box, "look")
+    position = _tool(box, "position_sections")
+    # The tool door's gate: a section not looked at since its last write is refused.
+    refused = position([{"id": "s0.png", "position_mm": 1.5}], view=False)
+    assert refused["error"] == "NOT_COMPARED"
+    assert job.state.by_id("s0.png").position_mm == 1.0
+    look("overlay", sections=["s0.png"])
+    assert position([{"id": "s0.png", "position_mm": 1.5}], view=False)["status"] == "ok"
+    look("overlay", sections=["s0.png"])
+    look("positioning")
     assert box.reviewed and box.compared.get("s0.png")
     # Undo moves s0 back to 1.0: that is a write to its position.
     assert _tool(box, "undo")()["status"] == "ok"
@@ -235,7 +243,7 @@ def test_the_job_is_never_gated_and_undo_resets_the_door_gates(tmp_path: Path):
     refused = _tool(box, "submit")("summary", [], [])
     assert refused["error"] == "NOT_REVIEWED"
     # An undo that moves no position leaves the looks alone.
-    _tool(box, "view_stack")()
+    look("positioning")
     _tool(box, "note")("a note")
     assert _tool(box, "undo")()["status"] == "ok"
     assert box.reviewed

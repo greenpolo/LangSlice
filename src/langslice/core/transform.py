@@ -230,7 +230,7 @@ def region_silhouette_fit(
                 "REGIONS_INSIDE_OUTLINE",
                 "The included regions (plus 300 um) do not reach the atlas outline at this "
                 "position. A silhouette fit compares outlines only, so it has nothing to "
-                "fit them by; use adjust_transforms or fit_deformable.")
+                "fit them by; set the transform by hand or fit by other regions.")
         notes.append(f"Only the outline counts: the included regions reach {share:.0%} of "
                      "the atlas outline, and only that part steers this fit.")
     if exclude and not (outline(footprint) & dropped).any():

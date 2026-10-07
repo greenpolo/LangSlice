@@ -43,7 +43,10 @@ def _write_positions(
     job: Job, workspace: Workspace, positions: Iterable[tuple[object, float]],
 ) -> tuple[list[tuple[str, float]], list[tuple[str, float, float]], list[str]]:
     """Write each pair into the state, clamped; ``(written, clamped, unknown)``.
-    No undo step: :func:`set_positions` and :func:`position_sections` take it."""
+    A written position is the writer's own, so a section's starting-position
+    mark (``position_source`` "default") goes even when the value written
+    is the starting one. No undo step: :func:`set_positions` and
+    :func:`position_sections` take it."""
     low, high = workspace.position_range
     written: list[tuple[str, float]] = []
     clamped: list[tuple[str, float, float]] = []
@@ -57,6 +60,7 @@ def _write_positions(
         if value != requested:
             clamped.append((record.id, requested, value))
         record.position_mm = value
+        record.position_source = ""
         written.append((record.id, value))
     return written, clamped, unknown
 

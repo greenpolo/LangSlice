@@ -145,6 +145,9 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
             "name": state.plane,
             "position_mm": position,
             "position_um": None if position is None else float(position) * 1000.0,
+            # The evenly spaced starting position the job gave the section
+            # (``position_source`` "default"): not yet placed by anyone.
+            "starting_position": record.position_source == "default",
             "pitch_deg": record.pitch_deg,
             "yaw_deg": record.yaw_deg,
         },
@@ -362,11 +365,13 @@ def write_labels(folder: Path, labels: np.ndarray, atlas: Any, um_per_px: float,
 
 def write_section_maps(
     layout: JobLayout, maps: SectionMaps, atlas: Any, *, parameters_digest: str,
-    deformation_record: str | None,
+    deformation_record: str | None, starting_position: bool = False,
 ) -> list[tuple[Path, str]]:
     """Write one section's maps (see the module text); return ``(path, kind)``
     of every file written. A residual left by an earlier export is removed
-    when the section has no deformation now."""
+    when the section has no deformation now. *starting_position*: the
+    section still sits at the starting position the job gave it (not yet
+    placed), said in ``maps.json``."""
     folder = layout.section_dir(maps.section_id)
     folder.mkdir(parents=True, exist_ok=True)
     info = {
@@ -374,6 +379,7 @@ def write_section_maps(
         "full_resolution": maps.full_resolution, "um_per_px": maps.um_per_px,
         "pixel_to_atlas_um": maps.pixel_to_atlas_um.tolist(),
         "parameters_digest": parameters_digest, "written_by": f"LangSlice {langslice.__version__}",
+        **({"starting_position": True} if starting_position else {}),
     }
     written: list[tuple[Path, str]] = []
     write_float_channels(folder / COORDS_FILE, np.moveaxis(maps.coords, -1, 0),

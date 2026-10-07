@@ -1,18 +1,19 @@
 """Damage marks: the atlas regions a section is missing, which every fit leaves out.
 
-A section is damaged when it has marked regions (``SliceState.damaged_regions``)
-or a mark that names none (``SliceState.damage_marked``: the host's
-``inputs.damaged`` ``{filename: note}``, or a :func:`mark_damaged` flag).
-:func:`mark_damage` sets a section's regions and note; the fits and the
-image model's trace read them (:func:`langslice.core.damage.exclusions`).
-The host's marks stay: the agent may add regions to them, never remove them.
+A section is damaged exactly when it has marked regions
+(``SliceState.damaged_regions``). :func:`mark_damage` sets a section's
+regions and note; the fits and the image model's trace read them
+(:func:`langslice.core.damage.exclusions`). A host's note
+(``inputs.damaged``, ``{filename: note}``) is the section's
+``damage_note`` alone: it stays first in the note, and the agent marks the
+regions.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
@@ -38,9 +39,9 @@ class DamageRegions:
     regions: list[str] = field(default_factory=list)
     #: The section's note after the call.
     note: str = ""
-    #: Whether the section is still damaged (regions, or the host's mark).
+    #: Whether the section is damaged after the call (it has marked regions).
     damaged: bool = False
-    #: Whether the host's mark (which the agent cannot remove) is on it.
+    #: Whether the note starts with the host's note (``inputs.damaged``).
     by_user: bool = False
     #: Whether anything changed (False: the same mark again, no undo step).
     written: bool = False
@@ -82,10 +83,9 @@ def mark_damage(
     *regions* are atlas region entries (acronyms or ids, ``"CTX:left"`` for
     one side), checked against the atlas and stored normalized
     (:func:`langslice.core.damage.normalized_entries`). They replace the
-    section's regions; empty clears the agent's marks (regions, its note and
-    a :func:`mark_damaged` flag). A mark the host set stays: its note is
-    kept first, the agent's after it, and clearing leaves the host's mark
-    and note. The same mark again writes nothing (``written`` False).
+    section's regions; empty clears them and the agent's note. A note the
+    host gave stays first, the agent's after it, and clearing leaves the
+    host's note. The same mark again writes nothing (``written`` False).
 
     With *options* (its size and border style), the result carries the
     picture of the marked regions on the section and on the atlas
@@ -121,13 +121,11 @@ def mark_damage(
         by_user = record.id in job.host_damaged
         user = _user_note(job, record)
         agent = str(note or "").strip() if names else ""
-        after = (names, by_user, _joined_note(user, agent) if by_user else agent)
-        written = after != (list(record.damaged_regions), record.damage_marked,
-                            record.damage_note)
+        after = (names, _joined_note(user, agent) if by_user else agent)
+        written = after != (list(record.damaged_regions), record.damage_note)
         if written:
             before = job.snapshot()
-            record.damaged_regions, record.damage_marked, record.damage_note = (
-                list(after[0]), after[1], after[2])
+            record.damaged_regions, record.damage_note = list(after[0]), after[1]
             job.commit(before)
         result = {"id": record.id, "regions": list(record.damaged_regions),
                   "note": record.damage_note, "damaged": record.damaged,
@@ -145,55 +143,3 @@ def mark_damage(
         except Exception as exc:  # noqa: BLE001 - the write stands; say why
             failed = {"error": getattr(exc, "code", "RENDER_FAILED"), "message": str(exc)}
     return DamageRegions(**result, pictures=drawn, render_failed=failed)
-
-
-# --- mark_damaged: the older flag -----------------------------------------------------
-
-
-@dataclass(frozen=True)
-class DamageMarked:
-    """What :func:`mark_damaged` set and cleared."""
-
-    marked: list[str] = field(default_factory=list)
-    unmarked: list[str] = field(default_factory=list)
-    unknown: list[str] = field(default_factory=list)
-    #: ``{"id", "error": "DAMAGE_SET_BY_USER"}``: a host mark cannot be cleared.
-    rejected: list[dict[str, str]] = field(default_factory=list)
-
-    @property
-    def touched(self) -> list[str]:
-        return [*self.marked, *self.unmarked]
-
-
-def mark_damaged(job: Job, entries: Iterable[Mapping[str, Any]]) -> DamageMarked:
-    """Set or clear a mark per ``{"id", "damaged"?: bool = True, "note"?}`` entry.
-
-    Setting is a mark that names no regions (``damage_marked``, the note
-    replacing the section's); clearing removes the section's whole mark,
-    its regions and note too. A mark the host set cannot be cleared. One
-    undo step, always taken.
-    """
-    state = job.state
-    before = job.snapshot()
-    marked: list[str] = []
-    unmarked: list[str] = []
-    unknown: list[str] = []
-    rejected: list[dict[str, str]] = []
-    for entry in entries:
-        if not isinstance(entry, Mapping):
-            continue
-        record = state.resolve(entry.get("id", ""))
-        if record is None:
-            unknown.append(str(entry.get("id", "")))
-            continue
-        damaged = bool(entry.get("damaged", True))
-        if record.id in job.host_damaged and not damaged:
-            rejected.append({"id": record.id, "error": "DAMAGE_SET_BY_USER"})
-            continue
-        record.damage_marked = damaged
-        record.damage_note = str(entry.get("note", "")).strip() if damaged else ""
-        if not damaged:
-            record.damaged_regions = []
-        (marked if damaged else unmarked).append(record.id)
-    job.commit(before)
-    return DamageMarked(marked=marked, unmarked=unmarked, unknown=unknown, rejected=rejected)

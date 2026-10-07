@@ -18,7 +18,6 @@ from test_linear_physical import TwoRegionAtlas, _ctx
 
 from langslice.core.canvas import canvas_geometry, physical_views
 from langslice.core.captions import scale_bar_px
-from tests.linear_tool_helpers import single_adjust
 
 _IDENTITY = {
     "rotation_deg": 0.0,
@@ -209,113 +208,65 @@ def _tools(tmp_path: Path):
     return {tool.__name__: tool for tool in box.tools}, box, state
 
 
-def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_path: Path):
-    tools, box, _state = _tools(tmp_path)
-    preview = single_adjust(tools["adjust_transforms"])
+def test_the_hand_transform_payload_is_concise(tmp_path: Path):
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
-    first = preview("s.tif", 0.0, 1.0, 1.0, 0.25, 0.0)
+    tools, box, state = _tools(tmp_path)
+    adjust = tools["interactive_transform"]
+
+    first = adjust([{"id": "s.tif", **_IDENTITY, "translate_x_mm": 0.25}])
     assert first["status"] == "ok"
-    assert first["physical"]["translate_x_mm"] == 0.25
-    assert first["physical"]["pivot"] == [0.5, 0.5]
+    (row,) = first["results"]
+    assert row["written"] is True
+    assert row["transform"]["translate_x_mm"] == 0.25
+    assert row["transform"]["pivot"] == [0.5, 0.5]
     # No overlap number: silhouette overlap against the whole atlas plate
     # rewarded inflating a damaged remnant to fill it (0.29 -> 0.51 at scale 1.35), and this loop
     # exists for damaged sections.
-    assert "silhouette_iou" not in first
-    assert {key: first["view"][key] for key in ("mode", "zoom", "outlines")} == {
-        "mode": "overlay",
-        "zoom": [],
-        "outlines": "all",
-    }
-    # The normalized matrix, derived pixel shift/decomposition, generic status
-    # row and accumulated history stay host-side instead of growing each reply.
-    assert not {
-        "matrix_params", "translate_px", "decomposition", "changed", "history"
-    } & set(first)
+    assert "silhouette_iou" not in first and "silhouette_iou" not in row
+    # The normalized matrix, derived pixel shift/decomposition and any history
+    # stay host-side instead of growing each reply; no echo of picture options.
+    assert not {"matrix_params", "translate_px", "decomposition", "history", "view",
+                "image_indexes", "description"} & (set(first) | set(row))
+    # One picture of what was written, listed by its number.
+    assert len(first[TOOL_MEDIA_PARTS_KEY]) == 1 == len(first["pictures"])
+    assert state.slices[0].transform["physical"]["translate_x_mm"] == 0.25
 
-    preview("s.tif", 2.0, 1.0, 1.0, 0.0, 0.0)
-    # The history is per section, kept on the toolbox for the whole run.
-    assert len(box.transform_history["s.tif"]) == 2
-    assert [entry["rotation_deg"] for entry in box.transform_history["s.tif"]] == [0.0, 2.0]
+    # The same values again write nothing (and take no undo step).
+    depth = len(box.job.undo_stack)
+    again = adjust([{"id": "s.tif", **_IDENTITY, "translate_x_mm": 0.25}])
+    assert again["results"][0]["written"] is False
+    assert len(box.job.undo_stack) == depth
 
-
-def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-
-    preview = single_adjust(_tools(tmp_path)[0]["adjust_transforms"])
-
-    pair = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "side_by_side")
-    assert len(pair[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert pair["view"]["mode"] == "side_by_side"
-
-    zoomed = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [60, 60, 200, 200], 0.5,
-                     atlas_channels=["template", "borders"])
-    assert len(zoomed[TOOL_MEDIA_PARTS_KEY]) == 1
-    assert zoomed["view"]["zoom"] == [60, 60, 200, 200]
-
-    assert preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "flicker")["error"] == "BAD_MODE"
-    assert preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [0.3, 0.7])["error"] == "BAD_ZOOM"
-    assert preview("ghost.tif", 0.0, 1.0, 1.0, 0.0, 0.0)["error"] == "UNKNOWN_SLICE_IDS"
+    ghost = adjust([{"id": "ghost.tif", **_IDENTITY}])
+    assert ghost["status"] == "error" and ghost["error"] == "NOTHING_WRITTEN"
+    assert ghost["results"][0]["error"] == "UNKNOWN_SLICE_IDS"
+    # The picture can be left out.
+    quiet = adjust([{"id": "s.tif", "rotation_deg": 2.0}], view=False)
+    assert quiet["status"] == "ok" and TOOL_MEDIA_PARTS_KEY not in quiet
 
 
-def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-
-    tools, _box, _state = _tools(tmp_path)
-    against_identity = single_adjust(tools["adjust_transforms"])(
-        "s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab"
-    )
-    assert len(against_identity[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert against_identity["view"]["mode"] == "ab"
-    assert "identity" in against_identity["description"]
-    assert against_identity["ab_reference"]["source"] == "identity"
-
-    single_adjust(tools["adjust_transforms"])("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0)
-    against_stored = single_adjust(tools["adjust_transforms"])(
-        "s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab"
-    )
-    assert len(against_stored[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert "before" in against_stored["description"]
-    # The B side is what the section carried before this call, which is the
-    # before/after view; the call itself wrote the A side.
-    assert against_stored["ab_reference"]["params"]["rotation_deg"] == 3.0
-    assert _state.slices[0].transform["physical"]["rotation_deg"] == 6.0
-
-
-def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path):
+def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     tools, _box, state = _tools(tmp_path)
-    compare = tools["view_placement"]
+    look = tools["look"]
 
-    current = compare([{"id": "s.tif"}])
+    current = look("overlay", sections=["s.tif"])
     assert current["status"] == "ok"
-    assert current["compared"][0]["position_mm"] == 0.2
-    assert current["compared"][0]["current_position_mm"] == 0.2
-    assert len(current[TOOL_MEDIA_PARTS_KEY]) == 1  # side_by_side: one stitched image
+    assert "at 0.20 mm" in current["pictures"][0]["caption"]
+    assert len(current[TOOL_MEDIA_PARTS_KEY]) == 1
 
-    stepped = compare(
-        [{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}],
-        view={"mode": "overlay", "atlas_channels": ["template", "borders"], "atlas_opacity": 0.3},
-    )
-    assert [row["position_mm"] for row in stepped["compared"]] == [0.1, 0.2, 0.3]
-    assert len(stepped[TOOL_MEDIA_PARTS_KEY]) == 3
-    assert stepped["render_failed"] == []
+    # Candidate positions: the atlas at each, the section joined to its own.
+    stepped = look("positioning", sections=["s.tif"], positions_mm=[0.1, 0.2, 0.3])
+    assert stepped["status"] == "ok" and len(stepped[TOOL_MEDIA_PARTS_KEY]) >= 1
     # A look, not a write.
     assert state.slices[0].position_mm == 0.2
 
-    # A batch: several sections, several candidates each, capped at 4 pairs
-    # (one image each: the most any call returns).
-    many = compare(
-        [{"id": "s.tif", "positions_mm": [0.1] * 3}, {"id": "0", "positions_mm": [0.3] * 3}],
-        view={"mode": "overlay"},
-    )
-    assert len(many["compared"]) == 4 and many["truncated"] and many["dropped_pairs"] == 2
-    assert len(many[TOOL_MEDIA_PARTS_KEY]) == 4
-
-    assert compare([{"id": "s.tif"}], view={"mode": "flicker"})["error"] == "BAD_MODE"
-    assert compare([{"id": "ghost.tif"}])["error"] == "UNKNOWN_SLICE_IDS"
+    assert look("flicker", sections=["s.tif"])["error"] == "UNKNOWN_MODE"
+    assert look("overlay", sections=["ghost.tif"])["error"] == "UNKNOWN_SLICE_IDS"
     state.slices[0].position_mm = None
-    assert compare([{"id": "s.tif"}])["error"] == "NO_POSITION"
+    assert look("overlay", sections=["s.tif"])["error"] == "NO_POSITION"
 
 
 # --- the pivot -----------------------------------------------------------
@@ -362,19 +313,23 @@ def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path)
 
 
 def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
-    tools, _box, state = _tools(tmp_path)
-    preview = single_adjust(tools["adjust_transforms"])
+    """The pivot is the operation's (``ops.transforms.adjust_transforms``; no
+    tool takes one): a hand transform afterwards keeps the stored pivot."""
+    from langslice.ops import transforms
 
-    centred = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
-    corner = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75])
-    assert corner["physical"]["pivot"] == [0.25, 0.75]
-    assert preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "middle")[
-        "error"
-    ] == "BAD_PIVOT"
+    tools, box, state = _tools(tmp_path)
+    job, ctx = box.job, box.job.workspace
 
-    single_adjust(tools["adjust_transforms"])(
-        "s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75]
-    )
+    def adjust(pivot: object) -> transforms.Adjustment:
+        done = transforms.adjust_transforms(job, ctx, [{
+            "id": "s.tif", **_IDENTITY, "rotation_deg": 10.0, "pivot": pivot}])
+        return done.entries[0]
+
+    centred = adjust("canvas")
+    corner = adjust([0.25, 0.75])
+    assert corner.transform["physical"]["pivot"] == [0.25, 0.75]
+    assert adjust("middle").error["error"] == "BAD_PIVOT"
+
     stored = state.slices[0].transform
     assert stored["physical"]["pivot"] == [0.25, 0.75]
     # Same rotation, different pivot: the same map only up to a translation,
@@ -382,13 +337,14 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     assert stored["params"][:2] == pytest.approx(
         [np.cos(np.radians(10.0)), np.sin(np.radians(10.0)) * 512 / 512], abs=1e-6
     )
-    single_adjust(tools["adjust_transforms"])(
-        "s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas"
+    assert centred.transform["params"][2] != stored["params"][2]
+    assert centred.transform["physical"]["rotation_deg"] == pytest.approx(
+        corner.transform["physical"]["rotation_deg"]
     )
-    assert state.slices[0].transform["params"][2] != stored["params"][2]
-    assert centred["physical"]["rotation_deg"] == pytest.approx(
-        corner["physical"]["rotation_deg"]
-    )
+    # The hand tool turns about the stored pivot (a value left out keeps it).
+    done = tools["interactive_transform"]([{"id": "s.tif", "rotation_deg": 12.0}], view=False)
+    assert done["results"][0]["transform"]["pivot"] == [0.25, 0.75]
+    assert state.slices[0].transform["physical"]["pivot"] == [0.25, 0.75]
 
 
 def _bodies(**kwargs) -> list[np.ndarray]:
@@ -416,23 +372,6 @@ def test_clean_section_and_template_views_carry_no_outlines():
     # The template alone is the side-by-side's second panel minus its lines.
     assert template_only.shape == pair[1].shape
     assert not np.array_equal(template_only[:-40], pair[1][:-40])
-
-
-def test_the_adjust_tool_takes_the_outline_layer(tmp_path: Path):
-    preview = single_adjust(_tools(tmp_path)[0]["adjust_transforms"])
-
-    plain = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0)
-    assert plain["view"]["outlines"] == "all"
-
-    outer = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "outer")
-    assert outer["view"]["outlines"] == "outer"
-    assert "OUTER boundary" in outer["description"]
-
-    bare = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "none")
-    assert "No atlas outlines" in bare["description"]
-
-    bad = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "midline")
-    assert bad["error"] == "BAD_VIEW"
 
 
 @pytest.mark.parametrize("color", ["cyan", "#00ffff"])
@@ -467,39 +406,6 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
             widths[thickness].append(int((screen[y, x-6:x+7, 0] > 127).sum()))
         assert len(set(widths[thickness])) == 1
     assert widths[4][0] > widths[1][0]
-
-
-@pytest.mark.parametrize("style", [
-    {"border_color": "not-a-color"}, {"border_color": "#abc"},
-    {"border_thickness": 0}, {"border_thickness": 9},
-    {"border_thickness": float("nan")}, {"border_thickness": True},
-])
-def test_invalid_border_style_does_not_write_a_transform(tmp_path: Path, style):
-    tools, box, state = _tools(tmp_path)
-    before = state.to_dict()
-    response = single_adjust(tools["adjust_transforms"])("s.tif", 5.0, 1.0, 1.0, 0.0, 0.0, **style)
-    assert response["error"] == "INVALID_BORDER_STYLE"
-    assert state.to_dict() == before
-    assert not box.job.undo_stack
-
-
-def test_batch_border_style_changes_only_the_render(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-
-    tools, box, state = _tools(tmp_path)
-    entry = {"id": "s.tif", **_IDENTITY, "rotation_deg": 5.0}
-    first = tools["adjust_transforms"]([entry])
-    before = state.to_dict()
-    undo_depth = len(box.job.undo_stack)
-    second = tools["adjust_transforms"](
-        [entry], view={"border_color": "cyan", "border_thickness": 3},
-    )
-    assert first["status"] == second["status"] == "ok"
-    assert state.to_dict() == before
-    assert len(box.job.undo_stack) == undo_depth
-    first_image = np.asarray(first[TOOL_MEDIA_PARTS_KEY][0])
-    second_image = np.asarray(second[TOOL_MEDIA_PARTS_KEY][0])
-    assert not np.array_equal(first_image, second_image)
 
 
 @pytest.mark.parametrize("mode", ["overlay", "side_by_side", "checkerboard", "outlines"])

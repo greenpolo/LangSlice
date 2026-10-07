@@ -38,8 +38,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     comparison against the nominal interval, no verdict. ``position_source``
     ``"default"``: the section still holds the starting position the job gave
     it (``job.job.default_positions``). ``damaged_regions``
-    are the section's marked regions (``damaged`` is also true for a mark
-    that names none). When the sections'
+    are the section's marked regions (``damaged``: it has some); a
+    ``damage_note`` may stand alone (a host's note). When the sections'
     cutting angles differ (a registration supplied per section), each row
     also carries its own ``cutting_angles_deg``; a single-angle stack's rows
     do not (the stack's angle is reported once, beside them).
@@ -165,6 +165,8 @@ def status_text(state: StackState) -> str:
             flags.append(f"rotated {row['rotation_deg']}")
         if row["damaged"]:
             flags.append(_damage_flag(row["damaged_regions"], row["damage_note"]))
+        elif row["damage_note"]:
+            flags.append(f"damage note: {row['damage_note']}")
         flags.extend(row["caveats"])
         position = (
             "unplaced" if row["position_mm"] is None else f"{row['position_mm']:.3f} mm"
@@ -202,6 +204,8 @@ def slice_flags(record: SliceState) -> list[str]:
         flags.append("flipped")
     if record.damaged:
         flags.append(_damage_flag(record.damaged_regions, record.damage_note))
+    elif record.damage_note:
+        flags.append(f"damage note: {record.damage_note}")
     return flags
 
 

@@ -57,7 +57,7 @@ def transform_cap_line(layout: JobLayout) -> str:
         return ""
     if cap >= MAX_PARALLEL_TRANSFORMS:
         return ""
-    return (f"\nThis job: at most {cap} sections per `fit_affine` or `adjust_transforms` "
+    return (f"\nThis job: at most {cap} sections per `elastix_affine` or `interactive_transform` "
             "call.")
 
 
@@ -113,8 +113,8 @@ in `state.json` and the verbs are millimetres along the slicing axis.
 ## CLI (JSON on stdout: ok, result, artifacts, warnings, next)
 `langslice-job {layout.folder} VERB --args '{{...}}'` (or `--key value`); `--dry-run`
 (writes nothing), `--background` then `wait [id]` (`runs` lists background runs), `--verbose`.
-Pictures come back as file paths under `artifacts`, each with the `index` a reply's
-`image_indexes` name. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job
+Pictures come back as file paths under `artifacts`, each with its `index` in the
+reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad arguments, 3 refused by the job
 (`error.code`, `error.fix`), 4 internal. Calls may run in parallel (each write holds the
 folder's lock; a long verb re-checks each section first: `STALE_INPUT`, run it again for
 that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` (or
@@ -124,7 +124,7 @@ that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` 
 ## Python
 `import langslice; job = langslice.open_job("{layout.folder}")`; the verbs are methods
 with the same arguments (`job.status()`,
-`job.set_positions(entries=[{{"id": "<file>", "position_mm": 5.2}}])`). Each returns, once
+`job.position_sections(sections=[{{"id": "<file>", "position_mm": 5.2}}])`). Each returns, once
 its pictures are on disk, a JSON-safe dict: the CLI's `result` in full (status rows with
 every field, null where unset) plus `artifacts` as the CLI lists them; `reply.images`
 holds the pictures as PIL images. `trace_borders` lands in the background: `job.close()`

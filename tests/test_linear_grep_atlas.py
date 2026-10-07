@@ -1,10 +1,12 @@
-"""grep_atlas: text lookup of atlas regions, with optional in-plane presence."""
+"""grep_atlas: text lookup of atlas regions, with optional in-plane presence,
+in every run."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
@@ -12,7 +14,7 @@ from langslice.core.spec import JobSpec
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
-from tests.test_linear_toolbox import _tool
+from tests.linear_tool_helpers import tool_named as _tool
 
 _REGIONS = [
     (1, "root", "root", [1]),
@@ -52,13 +54,11 @@ def _grep(tmp_path: Path):
     return state, _tool(build_tools(state, ctx, spec), "grep_atlas")
 
 
-def test_tool_is_present_with_linear_or_nonlinear(tmp_path: Path):
-    state, ctx, spec = _stack(tmp_path, ["position"])
-    assert "grep_atlas" not in build_tools(state, ctx, spec).names
-    spec.tasks = ["transform"]
-    assert "grep_atlas" in build_tools(state, ctx, spec).names
-    spec.tasks = ["nonlinear"]
-    assert "grep_atlas" in build_tools(state, ctx, spec).names
+@pytest.mark.parametrize("tasks", [[], ["position"], ["transform"], ["nonlinear"]])
+def test_the_tool_is_in_every_run(tmp_path: Path, tasks: list[str]):
+    state, ctx, spec = _stack(tmp_path, tasks)
+    names = build_tools(state, ctx, spec).names
+    assert {"grep_atlas", "grep_atlas_view"} <= set(names)
 
 
 def test_lookup_by_acronym_name_and_id_with_ancestry(tmp_path: Path):

@@ -98,6 +98,11 @@ def patches(size: tuple[int, int]) -> int:
     return math.ceil(size[0] / 32) * math.ceil(size[1] / 32)
 
 
+#: ``SliceState.position_source`` of a starting position the job gave a
+#: section at ingest (``job.job.DEFAULT_POSITION``): not yet placed.
+STARTING_POSITION = "default"
+
+
 def strip_layout(edge: int, tile_edge: int) -> tuple[int, int]:
     """``(tiles per strip, tile edge)``: as many tiles as fit along *edge*.
 
@@ -240,14 +245,16 @@ def opening_items(
     ordered = list(state.in_order())
     placed = any(record.position_mm is not None for record in ordered)
     unplaced = [record for record in ordered if record.position_mm is None]
+    starting = any(record.position_source == STARTING_POSITION for record in ordered)
 
     columns: list[list[Image.Image]] = []
     for record in ordered:
         position = record.position_mm
         if placed and position is not None:
             section, atlas = pair_tiles(ctx, state, record, position, tile)
+            start = " start" if record.position_source == STARTING_POSITION else ""
             column = [_cell(section, tile_label(record), tile),
-                      _cell(atlas, f"atlas {position:.2f} mm", tile)]
+                      _cell(atlas, f"atlas {position:.2f} mm{start}", tile)]
         else:
             column = [_cell(section_tile(ctx, state, record, tile), tile_label(record), tile)]
             if placed:
@@ -261,6 +268,8 @@ def opening_items(
         " Beneath each section is the atlas at that section's current position "
         f"{planes}, labelled 'atlas <position> mm' "
         "('no position' where it has none)."
+        + (" A label ending 'start' marks an evenly spaced starting position the job "
+           "gave the section: it is not yet placed." if starting else "")
         if placed else ""
     )
     items: list[str | Image.Image] = [(

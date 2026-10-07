@@ -302,6 +302,12 @@ class Shown:
     pictures: list[Image.Image] = field(default_factory=list)
     arguments: Any = None
     call_id: str | None = None
+    #: Once the block has ended: the saved pictures' names and numbers, in
+    #: order, and their captions (from their notes; None when a note gave
+    #: none). Empty when nothing was saved.
+    names: list[str] = field(default_factory=list)
+    numbers: list[int] = field(default_factory=list)
+    captions: list[str | None] = field(default_factory=list)
 
     def show(self, pictures: Iterable[Image.Image], *, arguments: Any = None,
              call_id: str | None = None) -> None:
@@ -495,9 +501,11 @@ class ViewStore:
         noted = [(picture, note_for(picture, notes)) for picture in call.pictures]
         placed = any(has_frame(held) for _p, held in noted)
         try:
-            self.save(tool=tool, pictures=list(noted), arguments=call.arguments,
-                      call_id=call.call_id,
-                      atlas=atlas_of() if placed and atlas_of is not None else None)
+            call.names = self.save(tool=tool, pictures=list(noted), arguments=call.arguments,
+                                   call_id=call.call_id,
+                                   atlas=atlas_of() if placed and atlas_of is not None else None)
+            call.numbers = [int(name.split("_", 1)[0]) for name in call.names]
+            call.captions = [held.caption if held is not None else None for _p, held in noted]
         except Exception:  # saving must never break a tool
             logger.warning("Could not queue the pictures of %s", tool, exc_info=True)
 

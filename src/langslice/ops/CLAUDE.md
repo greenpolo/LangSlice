@@ -21,7 +21,7 @@ wording; `registry.py` lists which.
   dataclass with `touched`, or plain data). It runs under the job folder's
   write lock (`Job.writing`: lock, sync, apply, commit): the doors hold it
   around every verb except the long ones (`registry.Verb.long`:
-  `fit_affine`, `fit_deformable`, `trace_borders`, and the scripting
+  `elastix_affine`, `ants_syn`, `trace_borders`, and the scripting
   verbs `trace_from_atlas` and `export_maps`), which compute outside
   it from the state they read and take it themselves to apply, comparing
   each section's `inputs.section_inputs` with the value they computed from:
@@ -71,7 +71,10 @@ wording; `registry.py` lists which.
   angles is flattened, one undo step restoring them; drops the render
   cache). `position_sections(job, workspace, [{id, position_mm}],
   cutting_angles={pitch_deg, yaw_deg}, options=, show=)`: both writes in ONE
-  undo step (the same clamping and render-cache drop), then the stack is
+  undo step (the same clamping and render-cache drop; a written position
+  is the writer's own, so it drops the section's starting-position mark,
+  `position_source` "default", even when the value is the starting one),
+  then the stack is
   numbered by position (`order_by_position`: placed sections by increasing
   position take the places placed sections held, an unplaced one keeps its
   own); returns `SectionsPositioned` (`written`, `clamped`, `unknown`,
@@ -99,12 +102,12 @@ wording; `registry.py` lists which.
   options=)`: the section's marked regions (checked against the atlas,
   normalized; `UNKNOWN_REGIONS`, `BAD_ARGS`, `NO_SIDES`, `UNKNOWN_SLICE_IDS`)
   and note, one undo step (the same mark again writes nothing); empty
-  regions clear the agent's marks. A host mark (`inputs.damaged`, a note
-  and no regions) stays: the agent may add regions, its note follows the
-  user's. With *options*, `core.damage.damage_picture` (a picture that
-  fails is `render_failed`, the write standing). Returns `DamageRegions`.
-  `mark_damaged(job, entries)`: the older flag, a mark naming no regions
-  (clearing removes the regions too); a host mark cannot be cleared.
+  regions clear them and the agent's note. A section is damaged exactly
+  when it has marked regions. A host's note (`inputs.damaged`, a note and
+  no regions) is the section's `damage_note` alone: it stays first, the
+  agent's note after it. With *options*, `core.damage.damage_picture` (a
+  picture that fails is `render_failed`, the write standing). Returns
+  `DamageRegions`.
 - `appearance.py` — `set_appearance(job, targets, ids, settings)`,
   `planned_settings` (what a write would leave, written nowhere) and
   `preprocess(job, workspace, targets, ids, settings, shown=, options=)`:
@@ -123,8 +126,8 @@ wording; `registry.py` lists which.
   intensities; an argument left None keeps its value; `UNKNOWN_CHANNEL`,
   `BAD_ARGS`; no undo step when nothing changed); returns
   `ChannelPropertiesSet` (the properties in force, the sections with the
-  channel, its sample type, range and 1st/99.5th percentiles). Neither is
-  a registered verb yet.
+  channel, its sample type, range and 1st/99.5th percentiles). The verbs
+  `set_channel_properties` and `set_preprocessed_channel_properties`.
 - `notes.py` — `add_note(job, text)`.
 - `files.py` — read-only file access over the job folder for the native agent
   (`job.browse` keeps every path inside it; `BAD_PATH` otherwise):
@@ -132,7 +135,7 @@ wording; `registry.py` lists which.
   path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
   `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`) and the
-  number to give `zoom` or `look`, never pixels; `views.jsonl`, `state.json`
+  number to give `zoom`, never pixels; `views.jsonl`, `state.json`
   (the run notes) and `job.json` read as text.
 - `history.py` — `undo(job)` / `redo(job)`: `Stepped` (`done`, `moved`: the
   sections whose position the step changed, which the tool door's gates
@@ -204,7 +207,8 @@ wording; `registry.py` lists which.
   entry `LOCKED`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `BAD_ROTATION`,
   `FLIP_DISABLED`, `NO_POSITION`, the stager's codes, `RENDER_FAILED`; the
   picture is drawn first, under the new orientation. Returns `Adjusted`
-  (each `Adjustment` also has `id`, `orientation`, `kept`).
+  (each `Adjustment` also has `id`, `orientation`, `kept`); the verb
+  `interactive_transform`.
   `elastix_affine(job, workspace, sections=(), restrict_to=(),
   atlas_image="template"|"nissl", options=)`: `fit_affine(method="elastix")`
   (so marked damage regions are left out on their own) over the named
@@ -240,7 +244,9 @@ wording; `registry.py` lists which.
   off, the message adds `handoff.NO_TRANSFORM_LINEAR_OFF`). An applied
   record is saved in the section's folder (`job.deformations`:
   `sections/<stem>/deformable/<key>`) and the section's `deformation`
-  holds its path relative to the job folder; a traced fit section reads
+  holds its path relative to the job folder; the step of a traced fit
+  records the trace it read (`trace`: the trace's artifact directory); a
+  traced fit section reads
   the trace's artifacts under the job folder (`traced_lines(root=...)`).
   `ants_syn(job, workspace, sections, restrict_to=, atlas_image=,
   stiffness=, options=)`: the one-choice fit, applied as ONE undo step:
@@ -251,8 +257,7 @@ wording; `registry.py` lists which.
   `ANTS_MISSING` (`refuse_without_ants`: antspyx must import, `ants_ready`),
   `BAD_ARGS` (no sections, more than `MAX_ANTS_SYN_SECTIONS` (4), an unknown
   atlas image or stiffness, a malformed region list), `FIT_ATLAS_UNAVAILABLE`,
-  `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. Not a registered verb
-  yet.
+  `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `ants_syn`.
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
   restrict_to=, include=, exclude=, options=, workers=)`: LangSlice's own
@@ -281,7 +286,10 @@ wording; `registry.py` lists which.
   geometry is `core.handoff.correction_fingerprint`;
   `registration_tool.start_correction` prepares the edit for *image_model*
   (resolved by the door: the toolbox's `build_tools(image_model=...)`
-  binding) and returns the record and the call to run. A call already
+  binding) and returns the record and the call to run. A packaged call
+  whose saved trace at this placement and region choice has already landed
+  (a step of the section's applied deformation records that trace) starts
+  nothing and fits nothing again (`TraceStarted.landed`). A call already
   running at that geometry is not started again (`running`); otherwise the
   call runs on the job's image executor and the section's
   `image_correction` record is written as one undo step when it changed.
@@ -341,10 +349,16 @@ wording; `registry.py` lists which.
   crop, or a lean job's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_CHANNEL`,
   `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
-  `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`). Not registered verbs yet.
+  `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`). `show_result(job, workspace, tool,
+  mode, sections, positions_mm=, zooms=)`: the picture a change tool shows
+  of what it wrote, drawn as `look` draws `overlay` (one per section, each
+  zoomed to its window) or `positioning`, saved under the change tool's
+  name (numbered, captioned, zoomable); at most four shown, the rest
+  `not_shown` with the `look` call that draws them, a failed picture
+  `failed` (the write stands).
 - `views.py` — the read verbs, one per viewing tool: `status(job)`
   (`StackStatus`: the status rows, angles, breaks; a row the user locked
-  carries `locked: true`, one the user marked damaged
+  carries `locked: true`, one the user gave a damage note
   `damage_by_user: true`), `view_slices(job,
   workspace, records, options, keep_going=)` (`SectionsView`),
   `view_atlas(job, workspace, positions, options)` (`AtlasView`, with
@@ -355,34 +369,50 @@ wording; `registry.py` lists which.
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", alternates, when, long, scripting, image_model, hidden,
-  limits)`, in
-  the order every door lists them; `enabled(spec, scripting=, image_model=,
-  hidden=)`: the verbs a run of the spec has (`when`: the task switches and
-  host switches that were `build_tools`' if-chain; `image_model` False
-  leaves out the verbs that call the image model, `trace_borders`, for a
-  door that cannot reach it: MCP with none connected). A `scripting` verb (`export_maps`, a "read":
-  it changes no state) is the agent CLI's and the library's only
-  (`build_tools(scripting=True)`), never offered to a model, so the agent
-  tools and MCP declare exactly what they did. A `hidden` verb (always a
-  scripting verb; `trace_from_atlas`) is in `enabled` only with `hidden=True`
-  (what `build_tools(scripting=True)` passes, so the CLI and the library
-  call it by name) and in no listing: `listed()` (every verb but the hidden
-  ones) is what `langslice-job ops`, `langslice-job schema` without a verb, the job
-  folder's card, the library's `verbs` and the CLI's `verbs` lists show.
-  `fit_deformable`'s alternate is `keep_linear`. `limits`: the most one
-  call takes, by what it counts (`view_slices` sections, `view_atlas`
-  positions, `view_placement` pairs, `adjust_transforms` entries: each
-  `core.sizes.MAX_IMAGES_PER_CALL`; `fit_deformable` sections, candidates
-  and fits: `core.deformation.MAX_CANDIDATES`, `MAX_FITS_PER_CALL`), the
-  values the tool door enforces; the reference card lists them
-  (`tests/test_agent_cli.py` drives each one past its limit). Every door is built from
-  it: `build_tools` makes the tools
-  `enabled(spec)` names (the ADK and MCP doors), the MCP door's
-  `readOnlyHint` is `kind == "read"`, and the agent CLI (`langslice-job ops`,
-  `schema`, `job FOLDER VERB`), the library's job methods and the job
-  folder's reference card list it (`src/langslice/doors/`). A verb is
-  never renamed once shipped. `tests/test_ops_registry.py` and
+  "Nonlinear", when, long, scripting, image_model, hidden, limits)`, in the
+  order every door lists them; `enabled(spec, scripting=, image_model=,
+  hidden=)`: the verbs a run of the spec has. The gating (`when`): `look`,
+  `zoom`, both channel tools, `grep_atlas`, `grep_atlas_view`, `status`, the
+  job-folder tools (`list_files`, `search_files`, `read_file`), `note`,
+  `undo`, `redo` and `submit` in every run; `position_sections` with the
+  `position` task or the stack's cutting angles left to the agent
+  (`transform.angles`, `positions_on`); `interactive_transform` with
+  `transform` and `transform.interactive`; `elastix_affine` with `transform`
+  and `transform.automatic`; `mark_damage` with `agent_damage`; `ants_syn`
+  with `nonlinear`; `trace_borders` with `nonlinear` and an image model.
+  `image_model` False leaves out the verbs that call the image model, for a
+  door that cannot reach it (MCP with none connected). A `scripting` verb
+  (`export_maps`, a "read": it changes no state) is the agent CLI's and the
+  library's only (`build_tools(scripting=True)`), never offered to a model.
+  A `hidden` verb (always a scripting verb; `trace_from_atlas`) is in
+  `enabled` only with `hidden=True` (what `build_tools(scripting=True)`
+  passes, so the CLI and the library call it by name) and in no listing:
+  `listed()` (every verb but the hidden ones) is what `langslice-job ops`,
+  `langslice-job schema` without a verb, the job folder's card, the
+  library's `verbs` and the CLI's `verbs` lists show. `limits`: the most one
+  call takes, by what it counts (`look`, `grep_atlas_view` and
+  `set_preprocessed_channel_properties` show at most four `pictures`;
+  `interactive_transform` and `ants_syn` take at most four `sections`); the
+  reference card lists them. Every door is built from it: `build_tools`
+  makes the tools `enabled(spec)` names (the ADK and MCP doors), the MCP
+  door's `readOnlyHint` is `kind == "read"`, and the agent CLI
+  (`langslice-job ops`, `schema`, `job FOLDER VERB`), the library's job
+  methods and the job folder's reference card list it
+  (`src/langslice/doors/`). A tool that was replaced keeps answering by its
+  old name: `RETIRED` maps each retired name to `(replacement, hint)`
+  (`view_slices`, `view_atlas`, `view_placement`, `view_stack` -> `look`;
+  `preprocess` -> `set_preprocessed_channel_properties`; `set_positions`,
+  `set_cutting_angles`, `reorder_slices` -> `position_sections`;
+  `orient_slices`, `adjust_transforms` -> `interactive_transform`;
+  `mark_damaged` -> `mark_damage`; `fit_affine` -> `elastix_affine`;
+  `fit_deformable` -> `ants_syn`; `search_position` -> none), and every door
+  answers a call by one with `retired_payload(name)` (`RETIRED_TOOL`, `use`,
+  a message naming the replacement and how to call it; nothing done), every
+  time it is called: the ADK plugin `agent.plugins.RetiredToolsPlugin`, the
+  agent CLI (`cli/job.py` `call`, `cli/catalog.py` `schema`), the MCP
+  server (`mcp/server.py` `LangSliceServer.call_tool`) and the library
+  (`JobHandle.__getattr__`'s `AttributeError`). A retired name never becomes
+  a verb again. `tests/test_ops_registry.py` and
   `tests/test_doors_declarations.py` check it.
 
 The pictures are drawn by the core (`src/langslice/core/`, its own

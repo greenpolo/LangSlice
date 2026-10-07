@@ -18,7 +18,8 @@ from PIL import Image
 from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
 from langslice.core.spec import JobSpec
 from langslice.doors.mcp.server import build_server
-from langslice.doors.tools.arguments import View, normalize_arguments
+from langslice.doors.tools.arguments import CuttingAngles, SectionPosition, normalize_arguments
+from langslice.ops.registry import RETIRED, retired_payload
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -64,12 +65,15 @@ def test_a_folder_given_at_startup_lists_the_toolbox_without_adk_context(tmp_pat
         return (await client.list_tools()).tools
 
     tools = {tool.name: tool for tool in _session(server, body)}
-    assert {"start_job", "status", "view_slices", "view_atlas", "set_positions",
+    assert {"start_job", "status", "look", "zoom", "position_sections", "elastix_affine",
             "submit"} <= set(tools)
+    # A retired name is never listed; it only answers when called.
+    assert not set(tools) & set(RETIRED)
     for tool in tools.values():
         assert "tool_context" not in tool.inputSchema.get("properties", {})
     assert tools["status"].annotations.readOnlyHint is True
-    assert tools["set_positions"].annotations.readOnlyHint is False
+    assert tools["look"].annotations.readOnlyHint is True
+    assert tools["position_sections"].annotations.readOnlyHint is False
     assert "End the run" in (tools["submit"].description or "")
 
 
@@ -109,7 +113,8 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
     async def body(client: Any) -> Any:
         return (
             await client.call_tool("status", {}),
-            await client.call_tool("view_slices", {"slices": ["s0.png", "s1.png"]}),
+            await client.call_tool("look", {"mode": "section",
+                                            "sections": ["s0.png", "s1.png"]}),
             await client.call_tool(
                 "submit", {"summary": "done", "notes": [], "interval_breaks": []}
             ),
@@ -117,7 +122,12 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
 
     status, view, submit = _session(server, body)
     assert len(_text(status)["rows"]) == 3
-    assert "images" not in _text(view)
+    looked = _text(view)
+    assert "images" not in looked
+    # Every picture is numbered, in the order the pictures are attached.
+    assert [entry["id"] for entry in looked["pictures"]] == [1, 2]
+    assert [entry["caption"].split(" ", 2)[:2] for entry in looked["pictures"]] == [
+        ["0:", "s0.png"], ["1:", "s1.png"]]
     assert sum(isinstance(block, ImageContent) for block in view.content) == 2
     # The submit gates hold: nothing is positioned yet.
     assert _text(submit)["error"] == "MISSING_POSITIONS"
@@ -128,65 +138,117 @@ def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
 
     async def body(client: Any) -> Any:
         return (
-            await client.call_tool("view_slices", {"slices": ["s0.png"], "mode": "section"}),
-            await client.call_tool("view_slices", {"slices": ["s0.png"],
-                                                   "view": {"mode": "section", "glow": 1}}),
+            await client.call_tool("position_sections", {"pitch_deg": 2.0, "yaw_deg": 0.0}),
+            await client.call_tool("position_sections", {
+                "cutting_angles": {"pitch_deg": 1.0, "yaw_deg": 0.0, "roll_deg": 2.0}}),
+            await client.call_tool("look", {"mode": "section", "sections": ["s0.png"],
+                                            "glow": 1}),
             # Claude Desktop may send a nested object as a JSON string.
-            await client.call_tool("view_slices", {"slices": ["s0.png"],
-                                                   "view": '{"mode": "channels"}'}),
+            await client.call_tool("position_sections", {
+                "cutting_angles": '{"pitch_deg": 1.5, "yaw_deg": -2.0}'}),
         )
 
-    top, nested, encoded = _session(server, body)
+    top, nested, stray, encoded = _session(server, body)
     refused = _text(top)
     assert refused["error"] == "UNKNOWN_ARGUMENTS"
-    assert refused["problems"][0]["unknown"] == ["mode"]
-    assert "`mode` belongs inside `view`." in refused["message"]
+    assert refused["problems"][0]["unknown"] == ["pitch_deg", "yaw_deg"]
+    assert "`pitch_deg` belongs inside `cutting_angles`." in refused["message"]
     assert not any(isinstance(block, ImageContent) for block in top.content)
     assert _text(nested)["problems"][0] == {
-        "argument": "view", "unknown": ["glow"],
-        "accepted": ["mode", "channels", "atlas_channels", "atlas_opacity", "regions",
-                     "outlines", "border_color", "border_thickness", "zoom", "deformation"],
+        "argument": "cutting_angles", "unknown": ["roll_deg"],
+        "accepted": ["pitch_deg", "yaw_deg"],
     }
-    assert _text(encoded)["view"]["mode"] == "channels"
-    assert sum(isinstance(block, ImageContent) for block in encoded.content) == 1
+    assert _text(stray)["problems"][0]["unknown"] == ["glow"]
+    assert not any(isinstance(block, ImageContent) for block in stray.content)
+    applied = _text(encoded)
+    assert applied["status"] == "ok"
+    assert applied["cutting_angles_deg"] == {"pitch": 1.5, "yaw": -2.0}
+    # The change shows its positioning picture.
+    assert len(applied["pictures"]) >= 1
+    assert sum(isinstance(block, ImageContent) for block in encoded.content) == len(
+        applied["pictures"])
 
 
 def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
-    """Handed-over bug 2: corrected indices as numbers in `slices` and null
-    picture options passed ADK but failed FastMCP's schema check."""
+    """Handed-over bug 2: corrected indices as numbers in a list of sections
+    and nulls inside an object argument passed ADK but failed FastMCP's
+    schema check."""
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
         return (
-            await client.call_tool("view_slices", {"slices": [0, "s2.png"]}),
-            await client.call_tool("view_slices", {"slices": ["s0.png"],
-                                                   "view": {"mode": None, "zoom": None}}),
-            await client.call_tool("view_slices", {"slices": [1], "view": None}),
-            await client.call_tool("view_slices", {"slices": ["s0.png"],
-                                                   "view": {"mode": None, "glow": None}}),
+            await client.call_tool("look", {"mode": "section", "sections": [0, "s2.png"]}),
+            await client.call_tool("interactive_transform", {"sections": [
+                {"id": 1, "flip": None, "rotation_deg": 5.0}], "view": False}),
+            await client.call_tool("position_sections", {
+                "sections": [{"id": 2, "position_mm": 9.8}], "cutting_angles": None,
+                "view": False}),
+            await client.call_tool("position_sections", {
+                "cutting_angles": {"pitch_deg": None, "glow": None}}),
         )
 
-    numbers, nulls, no_view, stray = _session(server, body)
-    assert _text(numbers)["slices"] == ["s0.png", "s2.png"]
+    numbers, nulls, no_angles, stray = _session(server, body)
+    captions = [entry["caption"] for entry in _text(numbers)["pictures"]]
+    assert [caption.split(" ", 2)[1] for caption in captions] == ["s0.png", "s2.png"]
     assert sum(isinstance(block, ImageContent) for block in numbers.content) == 2
-    assert _text(nulls)["view"]["mode"] == "section"
-    assert _text(no_view)["slices"] == ["s1.png"]
+    # A null inside an entry is "not given": the flip stays as it was.
+    written = _text(nulls)
+    assert written["status"] == "ok"
+    entry, = written["results"]
+    assert entry["id"] == "s1.png" and entry["orientation"]["flip"] is False
+    assert entry["transform"]["rotation_deg"] == 5.0
+    row, = written["changed"]
+    assert row["id"] == "s1.png" and row["flip"] is False
+    # A null object argument is its default: the angles are left as they are.
+    placed = _text(no_angles)
+    assert placed["written"] == [{"id": "s2.png", "position_mm": 9.8}]
+    assert placed["cutting_angles_deg"] == {"pitch": 0.0, "yaw": 0.0}
     # A null under an unknown key is still an unknown key.
     assert _text(stray)["error"] == "UNKNOWN_ARGUMENTS"
 
 
+def test_a_retired_tool_answers_with_the_tool_to_use_over_mcp(tmp_path: Path):
+    server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return (
+            await client.call_tool("fit_affine", {"slices": ["s0.png"]}),
+            await client.call_tool("fit_affine", {}),
+            await client.call_tool("view_slices", {"slices": ["s0.png"]}),
+            await client.call_tool("search_position", {"slice": "s0.png"}),
+            await client.call_tool("no_such_tool", {}),
+        )
+
+    first, again, view, search, unknown = _session(server, body)
+    for reply in (first, again):
+        assert not reply.isError
+        assert _text(reply) == retired_payload("fit_affine")
+        assert _text(reply)["error"] == "RETIRED_TOOL" and _text(reply)["use"] == "elastix_affine"
+    assert _text(view)["use"] == "look"
+    assert not any(isinstance(block, ImageContent) for block in view.content)
+    assert _text(search)["error"] == "RETIRED_TOOL" and "use" not in _text(search)
+    # A name that never was a tool is still FastMCP's unknown tool.
+    assert unknown.isError
+    assert "RETIRED_TOOL" not in unknown.content[0].text
+
+
 def test_normalize_arguments_only_touches_what_the_schema_would_refuse():
-    def tool(slices: list[str], id: str, section: str = "", view: View = {},  # noqa: B006
+    def tool(sections: list[str], section: str = "",
+             entries: list[SectionPosition] = [],  # noqa: B006
+             cutting_angles: CuttingAngles = {},  # noqa: B006
              positions_mm: list[float] = []) -> None:  # noqa: B006
-        del slices, id, section, view, positions_mm
+        del sections, section, entries, cutting_angles, positions_mm
 
     assert normalize_arguments(tool, {
-        "slices": [3, "a.png", True], "id": 2, "section": "b.png",
-        "view": {"mode": None, "zoom": [0, 0, 1, 1]}, "positions_mm": [1, 2],
-    }) == {"slices": ["3", "a.png", True], "id": "2", "section": "b.png",
-           "view": {"zoom": [0, 0, 1, 1]}, "positions_mm": [1, 2]}
-    assert normalize_arguments(tool, {"slices": [], "id": "x", "view": None}) == {
-        "slices": [], "id": "x"}
+        "sections": [3, "a.png", True], "section": 2,
+        "entries": [{"id": 1, "position_mm": None}],
+        "cutting_angles": {"pitch_deg": None, "yaw_deg": 2.0}, "positions_mm": [1, 2],
+    }) == {"sections": ["3", "a.png", True], "section": "2",
+           "entries": [{"id": 1}], "cutting_angles": {"yaw_deg": 2.0},
+           "positions_mm": [1, 2]}
+    assert normalize_arguments(tool, {"sections": [], "section": "x",
+                                      "cutting_angles": None}) == {
+        "sections": [], "section": "x"}
 
 
 def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Path):
@@ -272,7 +334,10 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
     assert job.notes == "Keep the supplied positions."
     assert job.spec.tasks == ["transform"]
-    assert job.state.in_order()[0].damaged
+    # The host's damage note is kept with the section; it does not mark it
+    # damaged (damaged regions do).
+    first = job.state.in_order()[0]
+    assert first.damage_note == "torn" and not first.damaged
     assert Path(job.ctx.image_folder).name != "agent_view"  # snapshots are read as they are
     assert job.spec.host_preprocessing["mode"] == "auto"
     submit = next(tool for tool in job.box.tools if tool.__name__ == "submit")
@@ -388,8 +453,8 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     first, tools, repeat = _session(server, body)
     assert not first.isError and not repeat.isError
     assert all(isinstance(block, TextContent) for block in first.content)
-    assert "set_positions" not in tools
-    assert {"adjust_transforms", "show_stack", "submit"} <= tools
+    assert "position_sections" not in tools
+    assert {"interactive_transform", "elastix_affine", "show_stack", "submit"} <= tools
 
 
 def _init(folder: Path, *flags: str) -> Any:
@@ -430,7 +495,7 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     assert "show_stack(page=1)" in refused["detail"]
     assert "0.150 mm" in briefing.content[0].text  # the saved interval, not a default
     assert "User notes:\nSection 2 is torn." in briefing.content[0].text
-    assert "set_positions" in tools and "adjust_transforms" not in tools
+    assert "position_sections" in tools and "interactive_transform" not in tools
     job_dir = folder / "langslice"
     # The sections are untouched; the job folder sits beside them.
     assert sorted(path.name for path in folder.iterdir()) == [
@@ -460,7 +525,7 @@ def test_a_fresh_server_starts_a_folder_job_over_from_its_own_flags(tmp_path: Pa
         return {tool.name for tool in (await client.list_tools()).tools}
 
     tools = _session(server, body)
-    assert "adjust_transforms" in tools and "set_positions" not in tools
+    assert "interactive_transform" in tools and "position_sections" not in tools
     saved = json.loads((folder / "langslice" / "job.json").read_text())
     assert saved["spec"]["tasks"] == ["transform"]
 
@@ -476,7 +541,7 @@ def test_a_folder_job_opened_at_startup_lists_its_tools_from_the_first_request(
     async def body(client: Any) -> Any:
         return {tool.name for tool in (await client.list_tools()).tools}
 
-    assert {"start_job", "show_stack", "reorder_slices", "set_positions", "submit"} <= _session(
+    assert {"start_job", "show_stack", "look", "position_sections", "submit"} <= _session(
         server, body
     )
 
@@ -497,13 +562,13 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
     sent: list[dict[str, Any]] = []
     assert session.channel is not None
     session.channel.event = sent.append  # type: ignore[method-assign]
-    view = next(tool for tool in session.box.tools if tool.__name__ == "view_slices")
-    asyncio.run(host_tool(session, view)(slices=["s1.png"]))
+    view = next(tool for tool in session.box.tools if tool.__name__ == "look")
+    asyncio.run(host_tool(session, view)(mode="section", sections=["s1.png"]))
     events = [payload["event"] for payload in sent if payload["kind"] == "agent_event"]
     kinds = [event["kind"] for event in events]
     assert kinds == ["tool_start", "tool_end"]
     start, end = events
-    assert start["name"] == "view_slices" and start["target_ids"] == ["s1.png"]
+    assert start["name"] == "look" and start["target_ids"] == ["s1.png"]
     assert end["execution_id"] == start["execution_id"]
     session.job.views.flush()
     assert end["views"] and all(Path(path).is_file() for path in end["views"])
@@ -633,11 +698,12 @@ def test_a_refused_argument_is_traced(tmp_path: Path, monkeypatch):
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
-        return await client.call_tool("view_slices", {"slices": ["s0.png"], "glow": 1})
+        return await client.call_tool("look", {"mode": "section", "sections": ["s0.png"],
+                                               "glow": 1})
 
     _session(server, body)
     records = [json.loads(line) for file in traces.glob("mcp_*.jsonl")
                for line in file.read_text().splitlines()]
     refused = [record for record in records if record["kind"] == "tool_result"]
-    assert refused and refused[-1]["name"] == "view_slices"
+    assert refused and refused[-1]["name"] == "look"
     assert "UNKNOWN_ARGUMENTS" in refused[-1]["content"][0]["text"]

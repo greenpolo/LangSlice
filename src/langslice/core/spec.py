@@ -257,19 +257,22 @@ class JobSpec:
     #: pages; the pages themselves stay readable as channels. None: the file
     #: is shown through ``preprocess`` as above.
     host_preprocessing: dict[str, Any] | None = None
-    #: Build the ``preprocess`` tool: the agent may set channel weights, CLAHE,
-    #: N4 and denoising for what it views and what a fit reads. Off, both stay
-    #: the default appearance above.
+    #: Whether a host exports every channel of its sections (the Fiji
+    #: connector). The agent's channel tools (``set_channel_properties``,
+    #: ``set_preprocessed_channel_properties``) exist in every run either way.
     agent_preprocessing: bool = False
     #: Size of every picture the agent sees: "low", "medium", "high" or
     #: "auto" (:data:`IMAGE_RESOLUTIONS`). Display only: fits, working frames
     #: and stored transforms are unchanged, and the image model's inputs are
     #: untouched.
     image_resolution: str = "low"
-    #: Build ``mark_damaged``: the agent may flag damaged sections. Off, only
-    #: the host's ``inputs["damaged"]`` flags exist. Either way the agent can
-    #: never clear a flag the host set.
+    #: Build ``mark_damage``: the agent may mark the atlas regions a section
+    #: has lost. Off, no section is marked; a host's ``inputs["damaged"]``
+    #: notes are shown either way.
     agent_damage: bool = True
+    #: The change tools always return their picture: their ``view`` argument
+    #: is not offered, so the agent cannot switch the picture off.
+    force_view: bool = False
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
@@ -380,6 +383,8 @@ class JobSpec:
             data.pop("output_level", None)
         if not data["nonlinear"].get("require_deformation"):  # likewise
             data["nonlinear"].pop("require_deformation", None)
+        if not data.get("force_view"):  # likewise
+            data.pop("force_view", None)
         return data
 
     @classmethod

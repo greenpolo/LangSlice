@@ -8,8 +8,9 @@ either (and from the DeepSlice fixtures, ``tests/fixtures/deepslice/``, which
 DeepSlice 1.2.8's writers produced from the same placements) must map every
 section file exactly as the source did (``registration.json``'s
 ``pixel_to_atlas_um``), and then run the image-model nonlinear step on top
-(``trace_borders`` with the golden stub model, ``fit_deformable`` on the
-traced lines, ``submit``) end to end. The atlas is the importer tests' deep
+(the packaged ``trace_borders`` with the golden stub model: its image call
+and the ANTs fit of the traced lines; ``submit`` naming a section left
+linear) end to end. The atlas is the importer tests' deep
 synthetic one; no credential is read and no model called.
 """
 
@@ -167,20 +168,22 @@ def source_job(capsys: pytest.CaptureFixture[str], images: Path, atlas: DeepAtla
 
 def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
                      ids: tuple[str, ...]) -> None:
-    """The image-model nonlinear step on the imported placement, end to end."""
-    for name in ids:
-        envelope = ok(capsys, folder, "trace_borders", "--id", name)
-        assert envelope["result"]["image_correction"]["status"] == "ok", envelope
-    ok(capsys, folder, "fit_deformable", "--slices", ids[0], "--fit-section",
-       "traced_lines", "--engine", "elastix")
-    ok(capsys, folder, "fit_deformable", *[flag for name in ids[1:]
-                                           for flag in ("--slices", name)],
-       "--keep-linear", "kept")
-    envelope = ok(capsys, folder, "submit", *SUBMIT_FLAGS)
+    """The image-model nonlinear step on the imported placement, end to end:
+    every section but the last traced (the trace and its fit, landed before
+    the CLI answers), the last left linear at submit. The fit needs antspyx."""
+    pytest.importorskip("ants", reason="the traced fit is ANTs (antspyx)")
+    for name in ids[:-1]:
+        envelope = ok(capsys, folder, "trace_borders", "--section", name)
+        result = envelope["result"]
+        assert result["image_correction"]["status"] == "ok", envelope
+        assert result["work_status"] == "done", envelope
+    envelope = ok(capsys, folder, "submit", *SUBMIT_FLAGS, "--left-linear",
+                  json.dumps([{"id": ids[-1], "reason": "kept"}]))
     document = json.loads((folder / "registration.json").read_text())
     assert document["submitted"] is True, envelope
-    first = document["sections"][0]
-    assert first["id"] == ids[0] and first["mapping"] == "linear + residual"
+    mapping = {entry["id"]: entry["mapping"] for entry in document["sections"]}
+    assert mapping == {**{name: "linear + residual" for name in ids[:-1]},
+                       ids[-1]: "linear"}, mapping
     for entry in document["sections"]:
         assert entry["maps"], entry
 
@@ -201,8 +204,8 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
                     "--registration", str(copy))
     result = envelope["result"]
     assert result["tasks"] == ["nonlinear"]
-    assert {"trace_borders", "fit_deformable"} <= set(result["verbs"])
-    assert "fit_affine" not in result["verbs"]  # the imported placement is kept
+    assert {"trace_borders", "ants_syn"} <= set(result["verbs"])
+    assert "elastix_affine" not in result["verbs"]  # the imported placement is kept
     imported = result["registration"]
     assert imported["format"] == ("quicknii-json" if export == "quicknii"
                                   else "langslice-registration")
@@ -382,6 +385,8 @@ class Stub:
 
 def test_the_library_creates_and_registers_an_imported_job(capsys, images, atlas, tmp_path):
     import langslice
+
+    pytest.importorskip("ants", reason="register_job's deformable step is ANTs (antspyx)")
 
     source = source_job(capsys, images, atlas, tmp_path)
     given = matrices(source)

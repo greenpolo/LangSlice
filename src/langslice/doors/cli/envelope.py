@@ -40,41 +40,46 @@ EXIT_INTERNAL = 4
 #: than the job refusing it (exit 3), besides every ``BAD_*``, ``UNKNOWN_*``
 #: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
-    "MISSING_ARGUMENTS", "VIEW_KEY_UNUSED", "DUPLICATE_SLICE_IDS", "ZOOM_UNSUPPORTED",
-    "INVALID_BORDER_STYLE", "RESOLUTION_FIXED", "NO_SIDES", "LABEL_MAP_ANTS_ONLY",
-    "ENGINE_FIXED", "EMPTY_RESULT", "NO_JOB", "NO_IMAGES",
+    "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "EMPTY_BOX", "NO_JOB",
+    "NO_IMAGES", "RETIRED_TOOL",
 })
 
 #: What to do about a code (the envelope's ``error.fix``); ``{job}`` is the
 #: job folder, ``{verb}`` the verb.
 FIXES: dict[str, str] = {
     "UNKNOWN_VERB": "List the verbs with `langslice-job ops`.",
+    "RETIRED_TOOL": "Call the verb named under result.use instead (see the message); "
+                    "`langslice-job ops` lists the verbs.",
     "VERB_OFF": "This job's tasks do not include this verb; `langslice-job {job} status` "
                 "lists the job's verbs under `verbs`.",
     "UNKNOWN_ARGUMENTS": "Check the argument names with `langslice-job schema {verb}`.",
     "MISSING_ARGUMENTS": "Give every required argument; see `langslice-job schema {verb}`.",
     "BAD_JSON": "Pass --args a JSON object, or @path/to/file.json.",
-    "UNKNOWN_SLICE_IDS": "Use a filename or corrected index from "
-                         "`langslice-job {job} status`.",
-    "UNKNOWN_SECTION": "Use a filename or corrected index from `langslice-job {job} status`.",
+    "UNKNOWN_SLICE_IDS": "Use a filename or index from `langslice-job {job} status`.",
+    "UNKNOWN_SECTION": "Use a filename or index from `langslice-job {job} status`.",
     "NO_JOB": "Create the job first: `langslice-job <image folder> init`.",
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
     "NOTHING_TO_REDO": "Redo follows an undo only.",
-    "NO_POSITION": "Write the section's position first (set_positions).",
-    "MISSING_POSITIONS": "Write every section's position first (set_positions).",
-    "MISSING_TRANSFORMS": "Give every section a transform (fit_affine or adjust_transforms).",
-    "MISSING_DEFORMATIONS": "Give every section a deformation (fit_deformable), or record "
-                            "that its linear placement stands (fit_deformable with "
-                            "keep_linear).",
-    "ORDER_POSITION_MISMATCH": "Make positions run one way along the order "
-                               "(reorder_slices or set_positions).",
+    "NO_POSITION": "Write the section's position first (position_sections).",
+    "MISSING_POSITIONS": "Write every section's own position first (position_sections); "
+                         "a starting position the job gave a section does not count.",
+    "MISSING_TRANSFORMS": "Give every section a transform (elastix_affine or "
+                          "interactive_transform).",
+    "MISSING_DEFORMATIONS": "Give every section a deformation (ants_syn or trace_borders), "
+                            "or name it in submit's left_linear with the reason its linear "
+                            "placement stands.",
+    "DEFORMATION_REQUIRED": "The user requires a deformation on every section: fit one "
+                            "(ants_syn or trace_borders) instead of naming it in "
+                            "left_linear.",
+    "HAS_DEFORMATION": "That section carries a deformation; leave it out of left_linear.",
+    "POSITIONS_SUPPLIED": "The user supplied the positions; leave sections out.",
+    "ANGLES_SUPPLIED": "The user supplied the cutting angles; leave cutting_angles out.",
     "LOCKED": "The user locked this section's in-plane alignment; leave it out.",
     "STALE_INPUT": "The section changed while this ran; run the verb again for it.",
     "JOB_BUSY": "Another writer held the job folder's lock; retry.",
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
-    "NOTHING_ADJUSTED": "Each section's row under result.results names its problem.",
-    "NOTHING_WRITTEN": "See result.unknown_ids and result.rejected.",
+    "NOTHING_WRITTEN": "Each section's row under result.results names its problem.",
     "UNKNOWN_RUN": "List the background runs with `langslice-job {job} runs`.",
     "STILL_RUNNING": "Wait again: `langslice-job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "
@@ -88,45 +93,39 @@ FIXES: dict[str, str] = {
                       "inputs the job was made from (job.json, spec.inputs) to continue it.",
     "IMAGE_MODEL_OFF": "Connect the job's image model to LangSlice (`langslice login` for "
                        "openai-oauth, or its API key) and call it again; without it, fit "
-                       "each section's deformation to its stain with fit_deformable.",
-    "NO_IMAGE_MODEL": "This job has no image model: use fit_section \"fit\" (the stain).",
+                       "each section's deformation to its stain with ants_syn.",
     "NOTHING_TRACED": "Each section's row under result.results names its problem; a "
-                      "section needs a position and a transform (fit_affine or "
-                      "adjust_transforms) before trace_borders.",
-    "NO_TRACE": "Run trace_borders for the section at its current placement first, or fit "
-                "with fit_section \"fit\".",
-    "TRACE_STALE": "The section moved since its trace: run trace_borders again for it.",
-    "TRACE_RUNNING": "The section's trace is still running: wait for it (fit_deformable "
-                     "with a traced fit_section waits), or run trace_borders again.",
-    "TRACE_TIMEOUT": "The trace did not land in time: call fit_deformable again later.",
-    "TRACE_FAILED": "The image model failed (see the message): run trace_borders again, or "
-                    "fit with fit_section \"fit\".",
-    "NOT_REVIEWED": "Run view_stack after the last set_positions write, then submit again.",
+                      "section needs a position and a transform (elastix_affine or "
+                      "interactive_transform) before trace_borders.",
+    "NOT_COMPARED": "Look at each section in mode overlay or positioning since its last "
+                    "write, then write its position again.",
+    "NOT_REVIEWED": "Run look in mode positioning over every section after the last "
+                    "position_sections write, then submit again.",
     "INTERVAL_BREAKS_UNSUPPORTED": "Report a break only where the written spacing exceeds "
                                    "1.5x the stack's median spacing; check the positions "
                                    "on both sides first.",
     "STRICT_INTERVAL": "Make every spacing within 10% of the nominal interval and report "
                        "no break (the user asked for a strict interval).",
-    "DAMAGED_REQUIRES_MANUAL_TRANSFORM": "Align each damaged section listed with "
-                                         "adjust_transforms (a non-identity manual "
-                                         "transform on its surviving anatomy).",
-    "DAMAGED": "fit_affine refuses a damaged section unless given include or exclude "
-               "regions; or align it with adjust_transforms.",
-    "DAMAGE_SET_BY_USER": "The user marked this section damaged; leave the flag as it is.",
     "FLIP_DISABLED": "Flipping is switched off for this job; leave flip out.",
     "KEEPS_HOST_WARP": "The user keeps this section's own deformation; leave it out of "
                        "the nonlinear verbs.",
     "NONLINEAR_SKIPPED": "The user left this section out of the nonlinear task; leave it "
                          "out.",
-    "INVALID_LINEAR_PLACEMENT": "Give the section a position and a transform (fit_affine "
-                                "or adjust_transforms) first.",
-    "NO_DEFORMATION": "start \"current\" needs an applied deformation; use start "
-                      "\"linear\".",
-    "FIT_FAILED": "See the message; try other settings, regions or engine.",
+    "INVALID_LINEAR_PLACEMENT": "Give the section a position and a transform "
+                                "(elastix_affine or interactive_transform) first.",
+    "ANTS_MISSING": "ANTs (antspyx) does not import on this host; reinstall LangSlice "
+                    "there (see the message), or name the sections in submit's "
+                    "left_linear.",
+    "FIT_FAILED": "See the message; try other settings or regions.",
     "RENDER_FAILED": "See the message; check the section file opens, then retry.",
     "UNAVAILABLE": "Not installed on this host (see the message); use what the job "
                    "statement offers instead.",
-    "FIT_ATLAS_UNAVAILABLE": "Use fit_atlas \"template\" (the reference template).",
+    "FIT_ATLAS_UNAVAILABLE": "Use atlas_image \"template\" (the reference template).",
+    "NO_PICTURE": "Look first: zoom takes a box on a picture already drawn.",
+    "UNKNOWN_PICTURE": "Use a picture number from a reply's `pictures`, or views.jsonl.",
+    "PICTURE_NOT_SAVED": "This job keeps no pictures between calls; draw it again with look "
+                         "and zoom in the same process.",
+    "EMPTY_BOX": "Give a box with area inside the picture: [x0, y0, x1, y1] in its pixels.",
     "NOTHING_EXPORTED": "Each skipped section's reason is under result.skipped; place it "
                         "first.",
 }

@@ -186,7 +186,20 @@ def test_elastix_affine_refuses_bad_arguments_and_unfittable_sections(
     with pytest.raises(Refused) as image:
         transforms.elastix_affine(job, ctx, atlas_image="colour")
     assert image.value.code == "BAD_ARGS"
-    _record(job, "s0.png").damage_marked = True
-    done = transforms.elastix_affine(job, ctx, ["s0.png"])
-    assert done.rows[0]["error"] == "DAMAGED" and done.fitted == []
+    with pytest.raises(Refused) as regions:
+        transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=[3])  # type: ignore[list-item]
+    assert regions.value.code == "BAD_ARGS"
     assert calls == [] and job.undo_stack == []
+
+
+def test_elastix_affine_refuses_a_locked_section_and_fits_a_noted_one(
+        tmp_path: Path, calls: list[dict[str, Any]]):
+    """A section the user locked is refused; a damage note alone (no marked
+    regions) is no damage, so that section is fitted whole."""
+    job, ctx = _open(tmp_path, inputs={"locked": ["s1.png"],
+                                       "damaged": {"s0.png": "torn"}})
+    assert [record.id for record in transforms.fit_targets(job)] == ["s0.png"]
+    done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
+    assert [row.get("error") for row in done.rows] == [None, "LOCKED"]
+    assert done.fitted == ["s0.png"]
+    assert calls == [{"id": "s0.png", "include": (), "exclude": (), "atlas_image": "template"}]

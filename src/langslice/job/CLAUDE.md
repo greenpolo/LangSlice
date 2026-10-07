@@ -195,7 +195,9 @@ longer exist be taken over by the images it is opened with.
   Pictures #n, #m."`. `notices()` pops the work finished since the last call
   (each handed out once), `running()` / `running_for(section, kind)` list
   what still runs, `get(id)`, `all()`, `wait_all(timeout=)` waits for every
-  piece, `close()` waits and stops the threads (`Job.close` calls it).
+  piece, `wait_any(timeout=)` until one running piece finishes (for a caller
+  without the job's lock: the agent session between turns), `close()` waits
+  and stops the threads (`Job.close` calls it).
   Giving way: `submit` waits under the job's lock while a landing needs it,
   so while a lock holder waits in `wait_all`, a work thread that would wait
   for the lock raises `LockYielded` before writing anything
@@ -256,16 +258,15 @@ longer exist be taken over by the images it is opened with.
   fit at it), or interpolated between supplied positions and continued at
   the interval beyond them, always inside the range. `commit` drops the
   mark of every section whose position the step changed
-  (`clear_default_marks`), whatever wrote it; undo restores it. The submit
+  (`clear_default_marks`), whatever wrote it (and `ops.positions` drops it
+  on every written position, the same value included); undo restores it.
+  A host's `inputs.damaged` note becomes the section's `damage_note` only
+  (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
   gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and
   only for the tasks that are on: `MISSING_POSITIONS` (no position, or
   still at the starting one: `at_default`), `STRICT_INTERVAL` or
-  `INTERVAL_BREAKS_UNSUPPORTED`; `DAMAGED_REQUIRES_MANUAL_TRANSFORM` (a
-  damaged, unlocked section needs a non-identity transform made for its
-  surviving anatomy: `interactive`, a `fit_affine` fit whose record names
-  its `regions`, or a host-supplied one; a whole-section fit, an identity
-  or an invalid transform is refused)
-  then `MISSING_TRANSFORMS`; `MISSING_DEFORMATIONS`. The sections the host
+  `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
+  `MISSING_DEFORMATIONS`. The sections the host
   kept out of Nonlinear (`keep_warp`, `nonlinear_skip`:
   `nonlinear_exempt_ids`) need no deformation and no image correction, and
   the sections `submit` leaves linear (`left_linear`) count as covered.
@@ -305,7 +306,8 @@ longer exist be taken over by the images it is opened with.
   shown. The hook every door uses is `ViewStore.shown(tool,
   atlas_of=)`: a context manager that collects what `core.layers` notes
   while the door's operation runs; the door hands it the pictures it sends
-  (`Shown.show(pictures, arguments=, call_id=)`) and the store queues each
+  (`Shown.show(pictures, arguments=, call_id=)`; after the block `Shown.names`,
+  `numbers` and `captions` say what was saved) and the store queues each
   with its note (the atlas, for a placement picture's layers, asked of
   `atlas_of` only then; a block that raises saves nothing; a failed queue is
   logged, never raised). The tool door's `toolbox._saves_views` wraps every

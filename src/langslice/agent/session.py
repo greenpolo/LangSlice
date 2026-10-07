@@ -10,6 +10,7 @@ and gets back is appended to a JSONL trace (:mod:`langslice.agent.trace`).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import aclosing
@@ -34,6 +35,7 @@ from langslice.agent.model_resolver import (
 from langslice.agent.plugins import (
     ModelCallPacingPlugin,
     RequestCapturePlugin,
+    RetiredToolsPlugin,
     StrictArgumentsPlugin,
     ToolMediaDeliveryPlugin,
     WorkingSetImages,
@@ -69,6 +71,8 @@ def build_plugins(
     capture_dir = env_value("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
+    # A retired tool's name answers with the tool to use instead.
+    plugins.append(RetiredToolsPlugin())
     # Unknown or misplaced arguments are refused, never silently dropped.
     plugins.append(StrictArgumentsPlugin())
     return plugins
@@ -210,6 +214,7 @@ async def run_agent_session(
     max_quota_percent: int | None = None,
     tool_media_delivered: Callable[[set[str]], None] | None = None,
     on_event: LiveCallback | None = None,
+    background: Callable[[], list[Any] | None] | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -218,6 +223,12 @@ async def run_agent_session(
     tokens exceed *max_input_tokens*. Cached input still occupies context.
     This optional check happens after the response, not before sending it;
     cumulative usage remains available separately for cost accounting.
+
+    *background*, when the model ends its turn without submitting: waits
+    for the job's background work still running and returns what to say
+    (texts and pictures: the notices of the work that finished), or None
+    when there is nothing; that is then the next message instead of a
+    nudge.
     """
     live = LiveEvents(on_event) if on_event is not None else None
     run_config = RunConfig(streaming_mode=StreamingMode.SSE) if live else None
@@ -345,6 +356,16 @@ async def run_agent_session(
                 "%s hit max_iterations=%d; ending pass", run_label, max_iterations
             )
             break
+        if background is not None and stopped is None:
+            # Work still running when the turn ended: wait for it, and its
+            # notice is the next message.
+            items = await asyncio.to_thread(background)
+            if items:
+                from langslice.doors.tools.media import items_to_parts
+
+                nudge = "\n".join(item for item in items if isinstance(item, str))
+                message = types.Content(role="user", parts=items_to_parts(items))
+                continue
         nudge = nudge_continue if saw_tool_call else nudge_no_tool
         message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
 

@@ -14,8 +14,8 @@ core and the job folder package (``langslice.job``) only: no agent
 framework, no message types, no provider. The doors (the ADK toolbox, the
 MCP server) sit on it; a script can drive it directly.
 
-What a Job never holds: the look-before-commit gates (``view_placement``
-before ``set_positions``, ``view_stack`` before ``submit``) and the
+What a Job never holds: the look-before-commit gates (``look`` before
+``position_sections``, a positioning look before ``submit``) and the
 model-delivery bookkeeping (which pictures a model has received). Those are
 the tool doors' (:class:`langslice.doors.tools.toolbox.ToolBox`); a library call
 is never gated.
@@ -148,7 +148,8 @@ NONLINEAR_SKIPPED = ("NONLINEAR_SKIPPED", "The user chose not to have this secti
 
 
 def host_damaged_ids(spec: JobSpec) -> set[str]:
-    """Sections the host marked damaged; the agent cannot remove these marks."""
+    """Sections the host gave a damage note (``inputs.damaged``); the note
+    stays first in the section's ``damage_note``."""
     return _named(spec, "damaged")
 
 
@@ -214,12 +215,12 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     missing key leaves that part as it is), damage as a filename -> note
     mapping, and transforms as filename -> stored transform dictionaries.
     Anything the host supplies for a task that IS on is applied too — it is
-    a starting point, not a constraint. Two exceptions are constraints:
-    ``damaged`` marks (a note, no regions:
-    :attr:`~langslice.core.state.SliceState.damage_marked`) the agent cannot
-    remove, though it may add regions to them, and ``locked`` sections (a
-    list of filenames) whose flip, rotation and transform the agent cannot
-    change; a locked section
+    a starting point, not a constraint. A ``damaged`` note becomes the
+    section's ``damage_note`` (shown in status, so the agent can mark the
+    regions it names); it does not make the section damaged, and it stays
+    first in the note whatever the agent marks. ``locked`` sections (a
+    list of filenames) are a constraint: the agent cannot change their flip,
+    rotation or transform; a locked section
     without a supplied transform carries the ``"host"`` identity
     (:func:`host_transform`), because its snapshot is already aligned.
     """
@@ -296,14 +297,12 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
 
     damaged = inputs.get("damaged") or {}
     if damaged:
-        # Damage is normally the agent's own classification; a host may
-        # assert it up front (a note, no regions): the automatic fits refuse
-        # the section until regions restrict them or are marked.
+        # A host's word on a section's damage (a note, no regions): the agent
+        # reads it in status and marks the regions it names.
         for name, note in damaged.items():
             record = _section(state, "damaged", name)
-            record.damage_marked = True
             record.damage_note = str(note or "")
-        state.notes.append(f"inputs: {len(damaged)} section(s) marked damaged by the host")
+        state.notes.append(f"inputs: {len(damaged)} damage note(s) from the host")
 
     locked = inputs.get("locked") or []
     if locked:
@@ -605,71 +604,6 @@ def missing_transforms(state: StackState) -> dict[str, Any] | None:
     }
 
 
-#: ``fit_affine``'s kinds: on a damaged section such a fit counts only when
-#: regions restricted it (its ``regions``) to the surviving anatomy.
-AUTOMATIC_FIT_KINDS = ("elastix", "silhouette")
-
-
-def _restricted(transform: dict[str, Any]) -> bool:
-    """Whether a fit's record names the regions that restricted it."""
-    regions = transform.get("regions")
-    return isinstance(regions, dict) and any(regions.get(key) for key in ("include", "exclude"))
-
-
-def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] | None:
-    """Damaged sections require a non-identity transform made for their
-    surviving anatomy: a manual one (``interactive``), a ``fit_affine`` fit
-    restricted to regions, or one the host supplied (``imported``, or any
-    other kind it gave). A whole-section automatic fit, an identity or an
-    invalid transform is refused. Locked sections are exempt: the user
-    aligned them and they cannot change here."""
-    failures = []
-    identity = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-    locked = locked_ids(spec)
-    for record in state.in_order():
-        if not record.damaged or record.id in locked:
-            continue
-        transform = record.transform or {}
-        reason = None
-        if not transform:
-            reason = "missing_transform"
-        elif transform.get("kind") in AUTOMATIC_FIT_KINDS and not _restricted(transform):
-            reason = "whole_section_fit"
-        else:
-            try:
-                params = np.asarray(transform.get("params"), dtype=float)
-                if params.shape != (6,) or not np.isfinite(params).all():
-                    reason = "invalid_transform"
-                elif np.allclose(params, identity, rtol=0, atol=1e-9):
-                    reason = "identity_transform"
-            except (TypeError, ValueError, KeyError, RuntimeError, np.linalg.LinAlgError):
-                reason = "invalid_transform"
-        if reason:
-            failures.append({"id": record.id, "reason": reason})
-    if not failures:
-        return None
-    tools = ((["adjust_transforms"] if spec.transform.interactive else [])
-             + (["fit_affine with include or exclude regions"]
-                if spec.transform.automatic else []))
-    return {
-        "status": "error",
-        "error": "DAMAGED_REQUIRES_MANUAL_TRANSFORM",
-        "failures": failures,
-        "interactive_enabled": spec.transform.interactive,
-        "message": (
-            "Damaged sections require a non-identity transform made for their surviving "
-            "anatomy. "
-            + (
-                f"Align each with {' or '.join(tools)}, inspect the returned overlays, "
-                "then submit again."
-                if tools else
-                "The transform tools are disabled for this run; the host must enable "
-                "interactive transforms to resolve these sections."
-            )
-        ),
-    }
-
-
 def missing_deformations(
     state: StackState, exempt: frozenset[str] | set[str] = frozenset(),
     left_linear: Collection[str] = (),
@@ -687,7 +621,7 @@ def missing_deformations(
             continue
         held = record.deformation or {}
         if not held:
-            missing.append({"id": record.id, "reason": "no deformation and no keep_linear reason"})
+            missing.append({"id": record.id, "reason": "no deformation, and not in left_linear"})
         elif held.get("linear_key") != deformation.linear_key(state, record):
             missing.append({"id": record.id, "reason": "made at a different linear placement"})
     if not missing:
@@ -721,7 +655,7 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("transform"):
-        refusal = damaged_transform_error(state, spec) or missing_transforms(state)
+        refusal = missing_transforms(state)
         if refusal is not None:
             return refusal
     if spec.has("nonlinear"):
@@ -803,14 +737,14 @@ class Job:
         self.lock = FolderLock(layout.folder)
         #: Sections whose flip, rotation and transform the host locked.
         self.locked = frozenset(locked_ids(spec))
-        #: Sections whose own deformation in the host stays (``fit_deformable``
+        #: Sections whose own deformation in the host stays (``ants_syn``
         #: refuses them, ``KEEPS_HOST_WARP``).
         self.keep_warp = frozenset(keep_warp_ids(spec))
-        #: Sections the user left out of Nonlinear (``fit_deformable`` and
+        #: Sections the user left out of Nonlinear (``ants_syn`` and
         #: ``trace_borders`` refuse them, ``NONLINEAR_SKIPPED``).
         self.nonlinear_skip = frozenset(nonlinear_skip_ids(spec))
-        #: Sections the host marked damaged; the agent cannot remove these
-        #: marks (it may add regions to them).
+        #: Sections the host gave a damage note (``inputs.damaged``); the note
+        #: stays first in the section's ``damage_note``.
         self.host_damaged = frozenset(host_damaged_ids(spec))
         #: Whole states, oldest first; the last one is what ``undo`` restores.
         self.undo_stack: list[dict[str, Any]] = list(undo or [])[-UNDO_DEPTH:]

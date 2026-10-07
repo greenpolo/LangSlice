@@ -24,7 +24,6 @@ from langslice.core.sections import canvas_um_per_px
 from langslice.core.spec import JobSpec
 from langslice.core.transform import calibrate
 from langslice.job.job import ingest
-from tests.linear_tool_helpers import single_adjust
 
 #: The atlas fake below is 25 um per voxel, like allen_mouse_25um.
 ATLAS_UM = 25.0
@@ -284,7 +283,7 @@ def test_no_pixel_size_anywhere_is_estimated_never_fatal(tmp_path: Path):
     assert 8.0 < um < 16.0
 
 
-def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
+def test_the_hand_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
     from langslice.doors.tools.toolbox import build_tools
 
@@ -293,16 +292,15 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     record = state.slices[0]
     record.position_mm = 0.2
     box = build_tools(state, ctx, ctx.spec)
-    preview = single_adjust(
-        next(tool for tool in box.tools if tool.__name__ == "adjust_transforms")
-    )
+    adjust = next(tool for tool in box.tools if tool.__name__ == "interactive_transform")
 
-    result = preview(record.id, 0.0, 1.0, 1.0, 0.25, 0.0)
+    result = adjust([{"id": record.id, "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
+                      "translate_x_mm": 0.25, "translate_y_mm": 0.0}])
     assert result["status"] == "ok"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1  # ONE image, not a panel strip
-    assert result["physical"]["translate_x_mm"] == 0.25
+    (row,) = result["results"]
+    assert row["written"] is True and row["transform"]["translate_x_mm"] == 0.25
     assert record.transform["calibration"]["source"] == "file"
-    assert box.transform_history[record.id][0]["rotation_deg"] == 0.0
 
 
 # --- the reasoning knob --------------------------------------------------
@@ -348,28 +346,25 @@ def _half_section(tmp_path: Path):
     record = state.slices[0]
     record.position_mm = 0.2
     box = build_tools(state, ctx, ctx.spec)
-    return {tool.__name__: tool for tool in box.tools}, state
+    return {tool.__name__: tool for tool in box.tools}, state, box
 
 
-def test_damage_is_refused_by_fit_affine(tmp_path: Path):
-    tools, state = _half_section(tmp_path)
-    state.slices[0].damage_marked = True
+def test_a_value_left_out_keeps_the_stored_fits_own(tmp_path: Path):
+    """A hand adjustment after a fit starts from the fit: the knobs it does not
+    give keep the stored fit's values (no identity fallback)."""
+    from langslice.ops import transforms
 
-    refused = tools["fit_affine"](["s.tif"], "silhouette")
-    assert refused["results"][0]["error"] == "DAMAGED"
-    assert state.slices[0].transform is None
+    tools, state, box = _half_section(tmp_path)
+    record = state.slices[0]
+    # The silhouette fit is an operation now (no tool offers it).
+    fit = transforms.fit_affine(box.job, box.job.workspace, [record], method="silhouette")
+    assert fit.rows[0]["status"] == "ok", fit.rows
+    stored = dict(record.transform["physical"])
+    assert stored["scale_x"] != pytest.approx(1.0)  # the half section is stretched
 
-
-def test_a_stored_silhouette_fit_is_the_b_side_of_an_a_b_preview(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-
-    tools, state = _half_section(tmp_path)
-    tools["fit_affine"](["s.tif"], "silhouette")
-    stored = state.slices[0].transform["physical"]
-
-    ab = single_adjust(tools["adjust_transforms"])("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")
-    assert len(ab[TOOL_MEDIA_PARTS_KEY]) == 2
-    # No identity fallback any more: the fit's own knobs are the B side.
-    assert ab["ab_reference"]["source"] == "stored"
-    assert ab["ab_reference"]["params"]["scale_x"] == pytest.approx(stored["scale_x"])
-    assert "before" in ab["description"]
+    done = tools["interactive_transform"]([{"id": "s.tif", "translate_x_mm": 0.1}])
+    (row,) = done["results"]
+    assert row["written"] is True
+    assert row["transform"]["translate_x_mm"] == pytest.approx(0.1)
+    for knob in ("rotation_deg", "scale_x", "scale_y", "translate_y_mm"):
+        assert row["transform"][knob] == pytest.approx(stored[knob]), knob

@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 IMAGE_MODEL_OFF = (
     "The image-model tool (trace_borders) is off: no image model is connected to "
     "LangSlice (no key or login for this job's image provider). Fit each "
-    "section's deformation to its stain with fit_deformable."
+    "section's deformation to its stain with ants_syn."
 )
 
 #: What the opening pictures show, said by every door that names them.
@@ -109,10 +109,10 @@ def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
         "Commands:",
         f"- Every tool is a command: `langslice-job {folder} TOOL --args '{{...}}'` (or "
         "`--name value`); `langslice-job schema TOOL` gives its arguments and description. "
-        "Pictures come back as files under `artifacts` (kind `view`, `index` matching "
-        "the reply's image_indexes); open them to see them.",
+        "Pictures come back as files under `artifacts` (kind `view`, in the order the "
+        "reply's `pictures` lists their numbers); open them to see them.",
         "- `--dry-run` runs a write without writing and reports what would change; "
-        "trace_borders and fit_deformable are only checked, not run.",
+        "the fits and trace_borders are only checked, not run.",
         f"- Long tools ({', '.join(long_verbs())}) can run with `--background`, which "
         "answers at once with a run id; `wait ID` collects the answer.",
         "- Commands may run in parallel: each write holds the job folder's lock, and a "

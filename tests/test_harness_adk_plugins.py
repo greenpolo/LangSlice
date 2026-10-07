@@ -1,26 +1,34 @@
 import asyncio
 
+from google.adk.agents import LlmAgent
 from google.adk.flows.llm_flows.functions import (
     _build_function_response_content,
     _extract_multimodal_parts,
 )
+from google.adk.models import BaseLlm
 from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
+from google.adk.tools import FunctionTool
 from google.genai import types
+from PIL import Image
 
 from langslice.agent.plugins import (
     DEFAULT_KEEP_IMAGES,
     DEFAULT_MAX_IMAGES,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
+    RetiredToolsPlugin,
+    StrictArgumentsPlugin,
     ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
-from langslice.agent.session import build_plugins
+from langslice.agent.session import build_plugins, run_agent_session
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+from langslice.ops.registry import RETIRED, retired_payload
 
 
 class _FakeTool:
-    name = "view_atlas"
+    name = "look"
     response_scheduling = None
 
 
@@ -111,18 +119,18 @@ def test_tool_media_delivery_reports_only_tagged_media_that_survived_filtering()
     plugin = ToolMediaDeliveryPlugin(delivered.append)
     kept = _media_part(1)
     assert kept.function_response is not None
-    kept.function_response.name = "view_placement"
+    kept.function_response.name = "look"
     kept.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "compare-1"
     dropped = _media_part(1)
     assert dropped.function_response is not None
-    dropped.function_response.name = "set_positions"
+    dropped.function_response.name = "position_sections"
     dropped.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "write-1"
     dropped.function_response.parts = None
     # Historical untagged media is replayed too; it must not be guessed to
     # belong to a new pending call merely because its tool name matches.
     anonymous = _media_part(1)
     assert anonymous.function_response is not None
-    anonymous.function_response.name = "view_placement"
+    anonymous.function_response.name = "look"
     request = LlmRequest(
         model="capture-model",
         contents=[types.Content(role="user", parts=[kept, dropped, anonymous])],
@@ -197,7 +205,7 @@ def _media_part(n: int) -> types.Part:
     ]
     return types.Part(
         function_response=types.FunctionResponse(
-            name="view_atlas", response={"status": "ok"}, parts=frp
+            name="look", response={"status": "ok"}, parts=frp
         )
     )
 
@@ -255,7 +263,7 @@ def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
 
 
 def test_transform_calls_do_not_cut_earlier_images():
-    """No stage-boundary cut: channel strips and preprocess
+    """No stage-boundary cut: channel strips and preprocessed-channel
     pictures seen before alignment stay in context."""
     ws = WorkingSetImages()
 
@@ -264,8 +272,8 @@ def test_transform_calls_do_not_cut_earlier_images():
         part.function_response.name = name  # type: ignore[union-attr]
         return types.Content(role="user", parts=[part])
 
-    history = [_seed(), _turn("view_slices", 4), _turn("preprocess", 6),
-               _turn("fit_affine", 3), _turn("adjust_transforms", 1)]
+    history = [_seed(), _turn("look", 4), _turn("set_preprocessed_channel_properties", 6),
+               _turn("elastix_affine", 3), _turn("interactive_transform", 1)]
     assert ws(history) is history
 
 
@@ -278,3 +286,143 @@ def test_working_set_never_touches_the_seed_strip():
     assert _kept(out) == [0, 1]
     assert out[0] is contents[0]
     assert (out[0].parts or [])[1].inline_data is not None
+
+
+# --- retired tool names --------------------------------------------------------
+
+
+class _Placeholder:
+    """What ADK hands ``before_tool_callback`` for a name it does not know:
+    a tool of that name with no function."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def _retired_answer(tool) -> dict | None:
+    return asyncio.run(RetiredToolsPlugin().before_tool_callback(
+        tool=tool, tool_args={}, tool_context=None))
+
+
+def test_a_retired_name_answers_with_the_tool_to_use():
+    answer = _retired_answer(_Placeholder("fit_affine"))
+    assert answer == retired_payload("fit_affine")
+    assert answer is not None
+    assert answer["error"] == "RETIRED_TOOL" and answer["use"] == "elastix_affine"
+    for old, (new, _hint) in RETIRED.items():
+        answer = _retired_answer(_Placeholder(old))
+        assert answer is not None and answer["error"] == "RETIRED_TOOL", old
+        assert answer.get("use") == (new or None), old
+    # Nothing replaces search_position: no tool to use is named.
+    answer = _retired_answer(_Placeholder("search_position"))
+    assert answer is not None and "use" not in answer
+
+
+def test_a_real_tool_and_an_unknown_name_are_left_to_adk():
+    def look() -> dict:
+        return {"status": "ok"}
+
+    assert _retired_answer(FunctionTool(look)) is None
+    assert _retired_answer(_Placeholder("no_such_tool")) is None
+    # A real tool runs as itself, whatever its name.
+    real = FunctionTool(look)
+    real.name = "fit_affine"
+    assert _retired_answer(real) is None
+
+
+def test_the_session_answers_retired_names_before_the_argument_check():
+    kinds = [type(plugin) for plugin in build_plugins("unit")]
+    assert RetiredToolsPlugin in kinds and StrictArgumentsPlugin in kinds
+    assert kinds.index(RetiredToolsPlugin) < kinds.index(StrictArgumentsPlugin)
+
+
+# --- a scripted model through a whole session -----------------------------------------
+
+
+class _ScriptLlm(BaseLlm):
+    """Answers request N with ``script[N]`` (a list of parts), then text."""
+
+    script: list = []
+    requests: list = []
+
+    async def generate_content_async(self, llm_request: LlmRequest, stream: bool = False):
+        del stream
+        self.requests.append(llm_request.model_copy(deep=True))
+        step = len(self.requests) - 1
+        parts = (self.script[step] if step < len(self.script)
+                 else [types.Part.from_text(text="Nothing more.")])
+        yield LlmResponse(content=types.Content(role="model", parts=parts), partial=False,
+                          turn_complete=True)
+
+
+def _session(script: list, *, background=None) -> tuple[_ScriptLlm, dict]:
+    submitted: dict = {}
+
+    def submit(summary: str) -> dict:
+        """Hand in the job."""
+        submitted["summary"] = summary
+        return {"status": "ok"}
+
+    model = _ScriptLlm(model="script", script=script, requests=[])
+    agent = LlmAgent(name="unit", model=model, tools=[submit])
+    asyncio.run(run_agent_session(
+        agent=agent, seed_message=types.Content(
+            role="user", parts=[types.Part.from_text(text="Register the stack.")]),
+        done=lambda: bool(submitted), nudge_no_tool="NUDGE: call a tool",
+        nudge_continue="NUDGE: continue", max_iterations=8, run_label="unit_session",
+        background=background))
+    return model, submitted
+
+
+def _call(name: str, **args) -> types.Part:
+    return types.Part.from_function_call(name=name, args=args)
+
+
+def _responses(request: LlmRequest) -> list[types.FunctionResponse]:
+    return [part.function_response for content in request.contents or []
+            for part in content.parts or [] if part.function_response is not None]
+
+
+def _texts(content: types.Content) -> list[str]:
+    return [part.text for part in content.parts or [] if part.text]
+
+
+def test_a_model_calling_a_retired_tool_gets_the_tool_to_use(monkeypatch):
+    monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
+    model, submitted = _session([
+        [_call("fit_affine", slices=["a.tif"])],
+        [_call("submit", summary="done")],
+    ])
+    assert submitted == {"summary": "done"}
+    answer, = _responses(model.requests[1])
+    assert answer.name == "fit_affine"
+    assert answer.response == retired_payload("fit_affine")
+    assert answer.response["use"] == "elastix_affine"
+
+
+def test_a_turn_ended_while_work_runs_gets_its_notice_as_the_next_message(monkeypatch):
+    monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
+    picture = Image.new("RGB", (16, 12), "white")
+    waits: list[int] = []
+
+    def background():
+        waits.append(1)
+        if len(waits) == 1:
+            return ["Work w1 (trace_borders, a.tif) finished: fitted.", picture]
+        return None
+
+    model, submitted = _session([
+        [types.Part.from_text(text="Waiting for the trace.")],
+        [types.Part.from_text(text="Still nothing to do.")],
+        [_call("submit", summary="done")],
+    ], background=background)
+    assert submitted == {"summary": "done"}
+    assert len(model.requests) == 3
+    notice = model.requests[1].contents[-1]
+    assert notice.role == "user"
+    assert _texts(notice) == ["Work w1 (trace_borders, a.tif) finished: fitted."]
+    images = [part for part in notice.parts or [] if part.inline_data is not None]
+    assert len(images) == 1 and images[0].inline_data.mime_type == "image/jpeg"
+    # Nothing running when the next turn ends: the nudge, as before.
+    assert _texts(model.requests[2].contents[-1]) == ["NUDGE: call a tool"]
+    assert len(waits) == 2

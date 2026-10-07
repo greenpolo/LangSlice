@@ -1,4 +1,4 @@
-"""`fit_affine`'s Elastix method: a local intensity-affine refinement of the placement."""
+"""``elastix_affine``: a local intensity-affine refinement of the placement."""
 
 from __future__ import annotations
 
@@ -74,14 +74,13 @@ def _section(atlas: SyntheticAtlas, truth: np.ndarray, *,
     return Image.fromarray(np.stack([gray] * 3, axis=-1))
 
 
-def _setup(folder: Path, atlas: SyntheticAtlas, image: Image.Image, *, damaged: bool = False):
+def _setup(folder: Path, atlas: SyntheticAtlas, image: Image.Image):
     image.save(folder / ID)
     spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
                    inputs={"pixel_size_um": UM})
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     state.slices[0].position_mm = POSITION
-    state.slices[0].damage_marked = damaged
     return state, ctx, build_tools(state, ctx, spec)
 
 
@@ -103,7 +102,7 @@ def _error_vs(truth: np.ndarray, params: list[float]) -> dict[str, float]:
 def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atlas):
     truth = _step(4.0, 1.05, 6.0, -4.0)
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
-    result = _tool(box, "fit_affine")([])  # elastix is the default method
+    result = _tool(box, "elastix_affine")()
     assert result["status"] == "ok", result
     row = result["results"][0]
     assert row["status"] == "ok"
@@ -116,7 +115,9 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
     assert row["physical"]["translate_y_mm"] == pytest.approx(-0.10, abs=0.01)
     assert row["iou"] > 0.97 and row["mirrored"] is False
     assert row["calibration"] == {"section_um_per_px": UM, "source": "host"}
-    assert row["image_indexes"] == [0] and len(result[TOOL_MEDIA_PARTS_KEY]) == 1
+    assert "params" not in row  # the six raw numbers stay host-side
+    # The section under its new transform, saved with a number.
+    assert len(result["pictures"]) == 1 and len(result[TOOL_MEDIA_PARTS_KEY]) == 1
     stored = state.slices[0].transform
     assert stored["kind"] == "elastix" and len(stored["params"]) == 6
     assert "regions" not in stored and "regions" not in row
@@ -136,7 +137,7 @@ def test_starts_from_the_current_placement(tmp_path: Path, atlas):
     near = _step(-1.0, 1.0, -2.0, 1.0)
     record.transform = {"kind": "interactive", "params": normalized_affine(near[:2], SECTION_SIZE),
                         "calibration": {"section_um_per_px": UM, "source": "host"}}
-    _tool(box, "fit_affine")([ID])
+    _tool(box, "elastix_affine")([ID], view=False)
     error = _error_vs(truth, record.transform["params"])
     assert error["rotation"] < 0.3 and error["corner_px"] < 1.5, error
     # From the true placement itself, the fit stays there.
@@ -159,11 +160,13 @@ def test_identical_inputs_give_identical_transforms(tmp_path: Path, atlas):
     assert first.engine["native_parameters"]["edge_channel"] is True
 
 
-def test_exclude_and_include_are_honoured(tmp_path: Path, atlas):
-    """Thalamus missing from the section: excluding it recovers the offset."""
+def test_marked_damage_and_restrict_to_are_honoured(tmp_path: Path, atlas):
+    """Thalamus missing from the section: marking it as damage (left out of the
+    fit on its own) recovers the offset; restrict_to fits by its regions."""
     truth = _step(3.0, 1.04, 5.0, -3.0)
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth, blank=(TH,)))
-    excluded = _tool(box, "fit_affine")([ID], exclude=["TH"])
+    assert _tool(box, "mark_damage")(ID, ["TH"])["status"] == "ok"
+    excluded = _tool(box, "elastix_affine")([ID], view=False)
     row = excluded["results"][0]
     assert row["status"] == "ok", row
     assert row["regions"]["exclude"] == ["TH"] and row["regions"]["include"] == []
@@ -171,18 +174,21 @@ def test_exclude_and_include_are_honoured(tmp_path: Path, atlas):
     assert state.slices[0].transform["regions"] == {"include": [], "exclude": ["TH"]}
     with_exclusion = _error_vs(truth, state.slices[0].transform["params"])
     assert with_exclusion["corner_px"] < 2.5, with_exclusion
-    assert "kept regions" in excluded["description"]
 
     _tool(box, "undo")()
-    included = _tool(box, "fit_affine")([ID], include=["STR"])
+    _tool(box, "undo")()  # the mark too
+    assert state.slices[0].damaged_regions == [] and state.slices[0].transform is None
+    included = _tool(box, "elastix_affine")([ID], restrict_to=["STR"], view=False)
     row = included["results"][0]
     assert row["status"] == "ok", row
     assert row["regions"]["include"] == ["STR"]
+    assert len(row["restrict_box"]) == 4  # where a picture zooms on the regions
     near_striatum = _error_vs(truth, state.slices[0].transform["params"])
     assert near_striatum["rotation"] < 1.5 and near_striatum["corner_px"] < 6.0, near_striatum
 
     _tool(box, "undo")()
-    one_side = _tool(box, "fit_affine")([ID], exclude=["TH:right"])
+    _tool(box, "mark_damage")(ID, ["TH:right"])
+    one_side = _tool(box, "elastix_affine")([ID], view=False)
     assert one_side["results"][0]["status"] == "ok", one_side
     assert one_side["results"][0]["regions"]["exclude"] == ["TH:right"]
 
@@ -190,8 +196,9 @@ def test_exclude_and_include_are_honoured(tmp_path: Path, atlas):
 def test_regions_reach_the_engine_as_the_deformable_fit_builds_them(
     tmp_path: Path, atlas, monkeypatch,
 ):
-    """Excluded regions leave the atlas mask (blanked, with a margin); included
-    ones limit both masks to their neighbourhood. Same masks as fit_deformable."""
+    """Excluded (marked) regions leave the atlas mask (blanked, with a margin);
+    restrict_to limits both masks to their neighbourhood. Same masks as the
+    deformable fits."""
     truth = _step(0.0, 1.0, 0.0, 0.0)
     _state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
     seen: list[Any] = []
@@ -202,9 +209,14 @@ def test_regions_reach_the_engine_as_the_deformable_fit_builds_them(
         return real(inputs, *args, **kwargs)
 
     monkeypatch.setattr(engines, "run_elastix_affine", capture)
-    for regions in ({}, {"exclude": ["TH"]}, {"include": ["STR"]}):
-        assert _tool(box, "fit_affine")([ID], **regions)["status"] == "ok"
-        _tool(box, "undo")()
+    fit = _tool(box, "elastix_affine")
+    assert fit([ID], view=False)["status"] == "ok"
+    _tool(box, "undo")()
+    _tool(box, "mark_damage")(ID, ["TH"])
+    assert fit([ID], view=False)["status"] == "ok"
+    _tool(box, "undo")()
+    _tool(box, "undo")()
+    assert fit([ID], restrict_to=["STR"], view=False)["status"] == "ok"
     whole, without, near = seen
     removed = whole.moving_mask & ~without.moving_mask
     assert removed.sum() > 0.05 * whole.moving_mask.sum()
@@ -216,14 +228,6 @@ def test_regions_reach_the_engine_as_the_deformable_fit_builds_them(
     assert whole.fixed_edges is not None and whole.edge_weight == 1.0
 
 
-def test_damaged_sections_need_regions(tmp_path: Path, atlas):
-    truth = _step(2.0, 1.0, 0.0, 0.0)
-    state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth), damaged=True)
-    assert _tool(box, "fit_affine")([ID])["results"][0]["error"] == "DAMAGED"
-    fitted = _tool(box, "fit_affine")([ID], exclude=["HY"])
-    assert fitted["results"][0]["status"] == "ok", fitted
-
-
 def test_an_elastix_failure_is_refused_cleanly(tmp_path: Path, atlas, monkeypatch):
     truth = _step(2.0, 1.0, 0.0, 0.0)
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
@@ -232,7 +236,7 @@ def test_an_elastix_failure_is_refused_cleanly(tmp_path: Path, atlas, monkeypatc
         raise RuntimeError("Elastix returned a non-finite or singular affine")
 
     monkeypatch.setattr(engines, "run_elastix_affine", broken)
-    result = _tool(box, "fit_affine")([ID])
+    result = _tool(box, "elastix_affine")([ID])
     assert result["status"] == "error" and result["error"] == "NOTHING_FITTED"
     row = result["results"][0]
     assert row["error"] == "FIT_FAILED" and "non-finite" in row["message"]
@@ -243,14 +247,14 @@ def test_an_elastix_failure_is_refused_cleanly(tmp_path: Path, atlas, monkeypatc
 def test_a_section_without_tissue_is_refused_cleanly(tmp_path: Path, atlas):
     blank = Image.new("RGB", SECTION_SIZE, (236, 236, 236))
     state, _ctx, box = _setup(tmp_path, atlas, blank)
-    result = _tool(box, "fit_affine")([ID])
+    result = _tool(box, "elastix_affine")([ID])
     assert result["error"] == "NOTHING_FITTED"
     assert result["results"][0]["error"] == "FIT_FAILED"
     assert state.slices[0].transform is None
 
 
 def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Path, atlas):
-    """adjust_transforms takes the shear fit_affine reports:
+    """interactive_transform takes the shear elastix_affine reports:
     the fit's knobs given back draw and store the fit's own map."""
     centre = np.array([WIDTH / 2.0, HEIGHT / 2.0])
     slant = np.eye(3)
@@ -258,15 +262,15 @@ def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Pa
     slant[:2, 2] = centre - slant[:2, :2] @ centre
     truth = _step(3.0, 1.02, 4.0, -2.0) @ slant
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
-    row = _tool(box, "fit_affine")([])["results"][0]
+    row = _tool(box, "elastix_affine")(view=False)["results"][0]
     fitted = list(state.slices[0].transform["params"])
     knobs = {key: value for key, value in row["physical"].items() if key != "pivot"}
     assert abs(knobs["shear"]) > 0.03, knobs
 
     def tweak(**entry: Any) -> list[float]:
-        result = _tool(box, "adjust_transforms")([{"id": ID, **entry}])
+        result = _tool(box, "interactive_transform")([{"id": ID, **entry}], view=False)
         assert result["status"] == "ok", result
-        assert result["results"][0]["physical"]["shear"] == entry["shear"]
+        assert result["results"][0]["transform"]["shear"] == entry["shear"]
         return list(state.slices[0].transform["params"])
 
     kept = _error_vs(_px(fitted), tweak(**knobs))
@@ -290,15 +294,17 @@ def test_a_tweak_that_leaves_shear_out_keeps_the_fits_shear(tmp_path: Path, atla
     slant[:2, 2] = centre - slant[:2, :2] @ centre
     state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, _step(3.0, 1.02, 4.0, -2.0)
                                                          @ slant))
-    fitted = _tool(box, "fit_affine")([])["results"][0]["physical"]
+    fitted = _tool(box, "elastix_affine")(view=False)["results"][0]["physical"]
     assert abs(fitted["shear"]) > 0.03
     knobs = {key: fitted[key] for key in ("rotation_deg", "scale_x", "scale_y",
                                           "translate_x_mm", "translate_y_mm")}
-    adjust = _tool(box, "adjust_transforms")
+    def adjust(entries: list[dict[str, Any]]) -> dict[str, Any]:
+        return _tool(box, "interactive_transform")(entries, view=False)
+
     reply = adjust([{"id": ID, **knobs, "rotation_deg": knobs["rotation_deg"] + 0.5}])
-    assert reply["results"][0]["physical"]["shear"] == fitted["shear"]
+    assert reply["results"][0]["transform"]["shear"] == fitted["shear"]
     assert state.slices[0].transform["physical"]["shear"] == fitted["shear"]
     assert decompose_affine(state.slices[0].transform["params"], SECTION_SIZE)["shear"] == \
         pytest.approx(fitted["shear"], abs=2e-3)
     dropped = adjust([{"id": ID, **knobs, "shear": 0.0}])
-    assert dropped["results"][0]["physical"]["shear"] == 0.0
+    assert dropped["results"][0]["transform"]["shear"] == 0.0

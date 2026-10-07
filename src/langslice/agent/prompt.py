@@ -1,11 +1,13 @@
-"""The job statement: job, run facts, one factual line per tool, constraints, method.
+"""The job statement: the job, the run facts, the tools by name, the constraints, the method.
 
-The statement reports; the model reasons. It gives no rules of thumb and no
+The statement reports; the model reasons. Each tool is described once, by
+its own description (:mod:`langslice.doors.declarations`); the statement
+names the tools and describes none. It gives no rules of thumb and no
 warnings about failure modes. The one place for strategy is the short
 "Method:" section per task that is on (look before writing, review the
 stack, inspect each fit against internal anatomy); ``position.playbook``
-replaces the positioning lines with a step-by-step method for models that do
-not find one on their own.
+replaces the positioning lines with a step-by-step method for models that
+do not find one on their own.
 
 Deliberately atlas- and plane-agnostic — it names no region, no landmark and no
 absolute position, because the same text runs against every BrainGlobe atlas,
@@ -28,219 +30,15 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
     "horizontal": "DV",
 }
 
-#: One factual line per tool. Only the tools actually built are listed.
-TOOL_LINES: dict[str, str] = {
-    "status": "the stack as it stands, one row per section in corrected order; "
-    "every write returns only the rows it changed, this returns them all.",
-    "view_slices": "up to 4 named sections at higher resolution, as corrected; "
-    "view mode channels shows each section's raw channels side by side instead, "
-    "unmodified and labelled.",
-    "view_atlas": "up to 4 atlas sections at the positions you name, rendered "
-    "at the stack's cutting angles.",
-    "note": "appends one line to the run notes.",
-    "undo": "reverses the last write; one tool call undoes as one step.",
-    "redo": "reapplies the write `undo` reversed.",
-    "mark_damaged": "records sections whose outline would break an "
-    "outline-based fit, with a note each; damaged=False clears the flag and note.",
-    "preprocess": "sets how sections look, from their raw channels: channel "
-    "weights (the counterstain that lights all tissue, e.g. DAPI or Nissl, "
-    "usually deserves the most), CLAHE clip and tiles, ANTs N4 and denoising; "
-    "for target view (what you are shown), fit (what a deformable fit reads) "
-    "or both, independently, for the stack or named sections; returns each "
-    "pictured section (up to 4) twice, labelled: BEFORE this call and AFTER it. "
-    "Undoable.",
-    "orient_slices": "sets the flip and the rotation of named sections and "
-    "returns them rendered as they now stand; a section whose orientation "
-    "changes loses its transform.",
-    "reorder_slices": "places the filenames in `slices` together, in that "
-    "order, after a named section or at start (default). A one-item list moves "
-    "one section; a complete list sets the whole order. Unlisted sections keep "
-    "their relative order. Positions and transforms are kept.",
-    "view_placement": "shows sections in their complete current registration "
-    "(position, in-plane transform and any applied deformation), or tests "
-    "candidate positions before you commit to one: name a section with several "
-    "positions (or none for its current one), up to 4 pairs per call; e.g. one "
-    "section at 4.6, 4.8 and 5.0 mm. view modes: template (default: the atlas at "
-    "that position on the section's own canvas and scale; the section itself is "
-    "in {opening}), overlay, checkerboard, outlines or section (the "
-    "section under its registration on that canvas, one image per pair), "
-    "stacked (the section as corrected above the atlas, each tissue-framed, both "
-    "at one scale) or side_by_side (separate original section plus atlas references "
-    "at one scale, one section "
-    "per distinct id and one atlas per pair, up to 8 images; full view only); "
-    "writes nothing.",
-    "view_stack": "whole-stack review, meant for after the positions are "
-    "written and before `submit`: one contact sheet of every section in the "
-    "order of its written position with the atlas at that position beneath "
-    "it at the same scale, each captioned with index, filename, position and the distance to "
-    "the next, plus a plot of position against corrected index; writes "
-    "nothing.",
-    "set_positions": "writes positions for one or more sections, clamped to "
-    "the atlas range, and returns a placement picture (any `view_placement` "
-    "mode; default stacked) unless that exact section, position, orientation "
-    "and cutting-angle combination was already seen in a full-canvas "
-    "atlas-bearing placement view.",
-    "search_position": "searches the atlas around one section's current position "
-    "(or a centre you give; the whole range for a section without one) and "
-    "reports the best it found; writes nothing.",
-    "set_cutting_angles": "tilts the atlas plane for the whole stack (pitch and yaw); "
-    "its description says which picture edge each angle moves along the position axis.",
-    "fit_affine": "fits an in-plane affine per section against its atlas "
-    "section, writes it as the section's transform, and returns the shape "
-    "overlap (which cannot tell a turned or upside-down section from a correct one), "
-    "the transform as the same five physical parameters `adjust_transforms` "
-    "takes, and a picture of the section under it at true physical scale. "
-    "The default method, elastix, refines the section's current transform by "
-    "matching the section's fit appearance against an atlas image (`fit_atlas`: "
-    "template, or nissl where offered), inner anatomy included, starting where the "
-    "section is; method silhouette fits "
-    "the tissue outline to the atlas outline from scratch. "
-    "`exclude` regions (acronyms or ids, descendants included) are removed "
-    "from the atlas side, and the tissue the fit lays on them from the "
-    "section side; `include` restricts the fit to those regions plus 300 um "
-    "(with silhouette, counting only where they reach the outline). Damaged "
-    "sections are refused unless regions are given.",
-    "adjust_transforms": "sets and shows one to four independent positioned "
-    "sections in one undoable call. Each entry supplies rotation_deg, scale_x, "
-    "scale_y, translate_x_mm and translate_y_mm, plus optional pivot and note; "
-    "one `view` draws every entry (modes overlay, side_by_side, checkerboard, "
-    "outlines, section, template or ab). ab shows new and previous transforms; "
-    "side_by_side shows section and atlas. Results map their images with "
-    "zero-based image_indexes. Each section may appear once; inspect before a "
-    "dependent correction in a later call. This replaces the complete "
-    "transform, including any shear.",
-    "trace_borders": "runs the image-model border-correction prompt on one "
-    "section's existing linear placement, with your edited copy of the prompt "
-    "for that section; include and exclude choose the regions whose borders the "
-    "model is shown (excluded regions join the background, their edge becomes an "
-    "outline), and a traced `fit_deformable` uses the same regions. The image call "
-    "runs in the background and the tool returns "
-    "at once; the result is saved for the user; `submit` waits "
-    "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
-    "it too. The first result at each placement and region choice is saved and reused. "
-    "This records an annotation; it does not fit or change the transform.",
-    "grep_atlas": "looks regions up in the atlas hierarchy by acronym, name "
-    "substring or numeric id (at most 40 rows). Each row gives acronym, id, name, "
-    "ancestry as acronyms from the root and the number of descendants. With a "
-    "section that has a position it also says whether the region, or any "
-    "descendant, appears in the atlas plane at that placement. Text only; writes nothing.",
-    "fit_deformable": "fits a deformation of the placed atlas onto one or more "
-    "positioned, transformed sections with a library engine (ANTs SyN or Elastix "
-    "B-spline), on top of the linear placement. Choose what of the section it "
-    "reads, `fit_section` {fit_sections}, what of the atlas it reads, "
-    "`fit_atlas`, the stiffness, regions to include (fit only them and a margin) and "
-    "to exclude (removed from the atlas side; \"CTX:left\" or \"CTX:right\" names "
-    "one side of the section as shown), and start (linear, or current to "
-    "compose onto the applied deformation, region by region). Several candidates "
-    "(2 to 4 setting variants, run concurrently) preview and write nothing; exactly "
-    "one setting applies it, reusing an identical earlier result; `keep_linear` "
-    "with a reason instead records, without a fit, that a section's linear "
-    "placement stands. Returns per result "
-    "the final borders drawn on the section image (included regions strong, "
-    "excluded in pink), displacement, fold fraction, plausibility flags and the "
-    "engine numbers used{trace_picture}; view modes borders (default) or ab "
-    "(then what the fit started from). A change "
-    "to a section's position, orientation, cutting angles or transform clears "
-    "its deformation or keep_linear record. Undoable.",
-    "submit": "checks requirements and ends the run if they pass; otherwise "
-    "returns the missing requirements without ending or changing the run.",
-}
-
-
-#: ``fit_deformable``'s fit sections, with and without the image model.
-_FIT_SECTIONS_TRACED = (
-    "(the fit appearance, or the section's trace_borders result at "
-    "this placement: traced_borders as named regions, traced_lines as lines; a call "
-    "waits for a trace that is still running)"
-)
-_FIT_SECTIONS_STAIN = "(the fit appearance)"
-
-
-#: Where each door's opening pictures are, as the tool lines name them
-#: (:data:`langslice.doors.declarations.DOORS`: the ADK agent's seed message,
-#: the MCP door's ``show_stack`` pages, the agent CLI's ``brief`` files).
-OPENING_PLACES: dict[str, str] = {
-    "agent": "the opening message",
-    "mcp": "the opening pictures (show_stack)",
-    "cli": "the opening pictures (brief)",
-}
-
-#: Tool lines worded for the agent CLI, which answers an image-model verb
-#: once its call has landed (``langslice-job FOLDER trace_borders``) unless
-#: it runs with ``--background``.
-_CLI_LINES: dict[str, tuple[str, str]] = {
-    "trace_borders": (
-        "The image call runs in the background and the tool returns "
-        "at once; the result is saved for the user; `submit` waits "
-        "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
-        "it too.",
-        "The command answers once the image call has landed (with --background it "
-        "answers at once and `wait` collects the answer); the result is saved for the "
-        "user, and `submit` and `fit_deformable` with a traced `fit_section` wait for "
-        "a call still running.",
-    ),
-}
-
-
-def tool_line(name: str, spec: JobSpec, door: str = "agent") -> str:
-    """The job statement's line for one tool, worded for this run's settings
-    and for the *door* that reads it (``agent``, ``mcp`` or ``cli``)."""
-    line = TOOL_LINES[name]
-    if name == "view_placement":
-        line = line.format(opening=OPENING_PLACES[door])
-    if door == "cli" and name in _CLI_LINES:
-        old, new = _CLI_LINES[name]
-        line = line.replace(old, new)
-    if name == "fit_deformable":
-        traced = spec.nonlinear.uses_image_model
-        line = line.format(
-            fit_sections=_FIT_SECTIONS_TRACED if traced else _FIT_SECTIONS_STAIN,
-            trace_picture=(", plus each traced section's trace drawn on the section"
-                           if traced else ""),
-        )
-    return line
-
-
-def deformable_engine_fact(engine: str, *, traced: bool = True) -> str:
-    """The job statement's line on the deformable-fit engine and its availability.
-
-    *traced* (the image model is on) names what a missing ANTs costs the
-    traced section images; without the image model there are none to name.
-    """
-    from langslice.core.deformation import ants_available
-
-    if engine == "either":
-        if ants_available():
-            return ("`fit_deformable` engine: ants or elastix, your choice per call "
-                    "(default ants).")
-        if not traced:
-            return "`fit_deformable` engine: elastix (ANTs is not installed on this host)."
-        return ("`fit_deformable` engine: elastix (ANTs is not installed on this host, so "
-                "traced_borders is unavailable).")
-    if engine == "ants" and not ants_available():
-        return ("`fit_deformable` engine: ants, set by the user, but ANTs is not installed on "
-                "this host, so `fit_deformable` cannot run.")
-    return f"`fit_deformable` engine: {engine}, set by the user for this run."
-
-
-#: Tools that return pictures and so take the shared ``view`` argument.
-PICTURE_TOOLS: tuple[str, ...] = (
-    "view_slices", "view_atlas", "view_placement", "view_stack", "set_positions",
-    "orient_slices", "fit_affine", "adjust_transforms", "preprocess", "fit_deformable",
-)
-
-#: One line per atlas channel, as the job statement describes it.
-ATLAS_CHANNEL_LINES: dict[str, str] = {
-    "template": "the atlas's reference image, the template its regions were drawn on",
-    "nissl": "a Nissl-stained reference aligned to the atlas",
-    "borders": "the atlas regions, drawn as lines",
-}
+#: ``SliceState.position_source`` of a starting position the job gave a
+#: section (``job.job.DEFAULT_POSITION``).
+STARTING_POSITION = "default"
 
 
 def display_facts(
     ctx: Workspace, state: StackState,
 ) -> dict[str, Any]:
-    """The job statement's display facts: raw channels and atlas channels here.
+    """The job statement's display facts: raw channels and atlas layers here.
 
     ``channels`` is one list when every section shares it, else a mapping
     filename -> names. Unreadable files contribute nothing (the seed will
@@ -259,84 +57,31 @@ def display_facts(
     return {"channels": channels or None, "atlas_channels": available_atlas_channels(ctx)}
 
 
-def display_lines(
-    tool_names: list[str],
-    *,
-    channels: list[str] | dict[str, list[str]] | None = None,
-    atlas_channels: tuple[str, ...] | None = None,
-    resolution: int | None = None,
+def channel_facts(
+    channels: list[str] | dict[str, list[str]] | None,
+    atlas_channels: tuple[str, ...] | None,
+    resolution: int | None,
 ) -> list[str]:
-    """``view``, described once, with this run's raw and atlas channels.
-
-    Tool docstrings name their own modes and point here. *resolution* (the
-    host left picture size to the agent, level "auto": the largest picture
-    the driver model takes) adds the ``resolution`` key and its range;
-    otherwise picture size is never mentioned.
-    """
-    if not any(name in PICTURE_TOOLS for name in tool_names):
-        return []
-    from langslice.core.display import DEFAULT_ATLAS_OPACITY, DEFAULT_BORDER_THICKNESS
-
-    lines = [
-        "- Picture options: every tool that returns a picture takes them in ONE "
-        "argument, `view` (an object; this call only, nothing is stored). Its keys: "
-        "`mode` (each tool lists its own; the first is its default); "
-        "`channels`, what of the section is shown: one or more raw channel names "
-        "(each stretched by percentile; one is shown in gray, several are added in "
-        "distinct colours, and the reply's `view.channel_colors` says which is "
-        "which), or one version, [\"view\"] (your viewing appearance, the default) or "
-        "[\"fit\"] (the appearance registration reads); "
-        "`atlas_channels`, what of the atlas is shown, any of the atlas channels "
-        "below: images are drawn under the section at `atlas_opacity` (0..1, "
-        f"default {DEFAULT_ATLAS_OPACITY:g}) in overlay, ab, outlines and borders modes "
-        "and as the atlas picture in the others (two images are added in two "
-        "colours); leave out borders for no lines. Defaults: [borders] in overlay, ab, "
-        "outlines and borders; [template] in template, stacked and the framed "
-        "side_by_side of view_placement/set_positions; [template, borders] in checkerboard "
-        "and the physical side_by_side; "
-        "`regions` (atlas acronyms or ids, descendants included, \"CTX:left\" / "
-        "\"CTX:right\" for one side of the section: their borders at full strength, "
-        "other lines faint); `outlines` (all or outer: which lines borders draws); "
-        f"`border_color` (named or #RRGGBB, default yellow); `border_thickness` "
-        f"(0.25..8 output pixels, default {DEFAULT_BORDER_THICKNESS:g}); `zoom` "
-        "([x0, y0, x1, y1]: a box in pixels of the picture the same call returns "
-        "without a zoom, read off that picture from its top-left corner; a later "
-        "zoom is given in that unzoomed picture's pixels too, never the zoomed "
-        "one's; in a picture of panels side by side, the box is read on the first "
-        "panel and every panel is cropped alike; the crop comes before the resize, "
-        "so it magnifies); `deformation` (view_placement and set_positions: applied, the "
-        "default, draws the section's applied deformation; none, the linear placement "
-        "alone). A key that means nothing for a tool or a mode is refused with the "
-        "reason, and so is any unknown argument.",
-    ]
-    if resolution:
-        from langslice.core.sizes import AUTO_RESOLUTION, MIN_RESOLUTION, PICTURE_EDGES
-
-        low, high = MIN_RESOLUTION, resolution
-        lines.append(
-            "- `view` also takes `resolution`: the long edge in pixels of each picture "
-            f"the call returns (of each section tile in `view_stack`), {low} to {high}; "
-            f"0 or omitted is {PICTURE_EDGES[AUTO_RESOLUTION][1]}. A picture is never "
-            "drawn larger than the image it comes from."
-        )
-    if atlas_channels:
-        lines.append(
-            "- Atlas channels on this host: "
-            + "; ".join(f"{name} ({ATLAS_CHANNEL_LINES.get(name, name)})"
-                        for name in atlas_channels) + "."
-        )
+    """The run facts on what the pictures can show: the raw channels, the
+    atlas layers offered here and, where the agent sizes pictures, the
+    largest ``look`` picture."""
+    lines: list[str] = []
     raw = ("the planes of each section's file as read; the names come from the file or "
-           "the host and may not say which is the stain, so `view_slices` with mode "
-           "channels shows each one, unmodified, side by side")
+           "the host and may not say which is the stain")
     if isinstance(channels, list) and channels:
         lines.append(f"- Raw image channels of every section ({raw}): "
                      + ", ".join(channels) + ".")
     elif isinstance(channels, dict) and channels:
-        lines.append(
-            f"- Raw image channels per section ({raw}): "
-            + "; ".join(f"{name}: {', '.join(names)}" for name, names in channels.items())
-            + "."
-        )
+        lines.append(f"- Raw image channels per section ({raw}): "
+                     + "; ".join(f"{name}: {', '.join(names)}"
+                                 for name, names in channels.items()) + ".")
+    if atlas_channels:
+        lines.append("- Atlas layers on this host: " + ", ".join(atlas_channels) + ".")
+    if resolution:
+        from langslice.core.sizes import MIN_RESOLUTION
+
+        lines.append(f"- Picture size is yours to choose: look's resolution runs from "
+                     f"{MIN_RESOLUTION} to {resolution} pixels.")
     return lines
 
 
@@ -365,6 +110,18 @@ def task_notes(spec: JobSpec) -> list[str]:
     return lines
 
 
+def ants_fact(tool_names: list[str]) -> str | None:
+    """The job statement's line when ANTs cannot run here (None when it can,
+    or when no tool of the run needs it)."""
+    from langslice.core.deformation import ants_available
+
+    needing = [name for name in ("ants_syn", "trace_borders") if name in tool_names]
+    if not needing or ants_available():
+        return None
+    return (f"- ANTs is not installed on this host, so {' and '.join(needing)} cannot run; "
+            "a section left without a deformation is named in submit's left_linear.")
+
+
 def build_job_statement(
     spec: JobSpec,
     state: StackState,
@@ -384,25 +141,25 @@ def build_job_statement(
     """The system instruction for one run, built from the spec and the state.
 
     *max_resolution* is the largest picture the driver model takes, the
-    top of ``view.resolution`` at image resolution "auto" (None: the OpenAI
-    lanes', ``opening.DEFAULT_IMAGE_LIMIT``). *door* is who reads it
-    (``agent``, ``mcp``, ``cli``: where the opening pictures are, how a long
-    call answers); *auto* whether the caller sizes each picture
-    (``view.resolution``; None: the spec's image resolution is "auto", the
-    agent CLI always does); *gates* False leaves out the look-before-commit
-    gates (``position.gated``), which a door without them (the agent CLI)
-    never applies. *axis_ends* is ``(low, high)`` from
+    top of ``look``'s ``resolution`` at image resolution "auto" (None: the
+    OpenAI lanes', ``opening.DEFAULT_IMAGE_LIMIT``). *door* is who reads it
+    (``agent``, ``mcp``, ``cli``; the doors' own paragraphs are
+    ``doors.statement``'s); *auto* whether the caller sizes each picture
+    (None: the spec's image resolution is "auto", the agent CLI always
+    does); *gates* False leaves out the look-before-commit gates
+    (``position.gated``), which a door without them (the agent CLI) never
+    applies. *axis_ends* is ``(low, high)`` from
     :func:`langslice.core.space.slice_axis_ends` — what the two ends of the slicing
     axis are anatomically in THIS atlas.
     """
+    del door  # every door reads the same statement; its own lines are added after it
+    gated = bool(spec.position.gated and gates)
     jobs: list[str] = []
-    if spec.has("reorder"):
-        jobs.append("put the stack in the order the sections were cut")
     if spec.has("position"):
         jobs.append(
             "give every section its own position in millimetres along the "
             "slicing axis, each one inspected and checked against the atlas, "
-            "damaged sections included, and report the corrected indices where "
+            "damaged sections included, and report the indices where "
             "you conclude the interval between neighbouring sections is "
             "genuinely broken"
         )
@@ -418,43 +175,37 @@ def build_job_statement(
             "placement, with the section's stain as the evidence"
             + (", or, for a section you choose to trace, the borders the image model "
                "traces on it"
-               if spec.nonlinear.uses_image_model else "")
+               if "trace_borders" in tool_names else "")
         )
     job = "; ".join(jobs) if jobs else "review the stack"
 
     facts = run_facts(spec, state, species=species, pos_lo=pos_lo, pos_hi=pos_hi,
                       axis_ends=axis_ends)
-
-    tools = [f"- `{name}`: {tool_line(name, spec, door)}" for name in tool_names
-             if name in TOOL_LINES]
     sized = spec.image_resolution == "auto" if auto is None else auto
     if sized and max_resolution is None:
         from langslice.core.opening import DEFAULT_IMAGE_LIMIT
 
         max_resolution = DEFAULT_IMAGE_LIMIT[0]
-    tools += display_lines(
-        tool_names, channels=channels, atlas_channels=atlas_channels,
-        resolution=max_resolution if sized else None,
-    )
+    facts += channel_facts(channels, atlas_channels, max_resolution if sized else None)
+
+    tools = ("Tools (each one's own description says what it does and returns): "
+             + ", ".join(f"`{name}`" for name in tool_names) + ".")
 
     constraints: list[str] = []
     if spec.has("position"):
         constraints.append(
-            "- `submit` is refused unless every section has a position, "
-            "damaged sections included."
+            "- `submit` is refused unless every section has a position of its own, "
+            "damaged sections included; a starting position the job gave a section "
+            "does not count."
         )
-        constraints.append(
-            "- `submit` is refused unless the positions run one way along the "
-            "corrected order."
-        )
-        if spec.position.gated and gates:
+        if gated:
             constraints.append(
-                "- `set_positions` is refused for a section that has not been "
-                "compared since it was last written."
+                "- `position_sections` is refused for a section that has not been looked "
+                "at with `look` in mode overlay or positioning since it was last written."
             )
             constraints.append(
-                "- `submit` is refused until `view_stack` has run after the last "
-                "`set_positions` write."
+                "- `submit` is refused until `look` in mode positioning has shown every "
+                "section after the last `position_sections` write."
             )
         if spec.position.strict_interval:
             constraints.append(
@@ -469,54 +220,42 @@ def build_job_statement(
                 "1.5x the stack's median written spacing."
             )
     if spec.has("transform"):
-        if spec.transform.automatic:
-            constraints.append(
-                "- Damaged sections are refused by `fit_affine` unless it is given "
-                "regions to include or exclude."
-            )
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
             "damaged sections included."
         )
-        constraints.append(
-            "- Every damaged section requires a non-identity transform based on its "
-            "surviving anatomy; marking damage does not exempt it from alignment. A "
-            "whole-section automatic fit or an identity transform does not satisfy "
-            "this requirement."
-        )
-        ways = ((["a manual transform with `adjust_transforms`"]
-                 if spec.transform.interactive else [])
-                + (["`fit_affine` with `exclude` naming every region the section has "
-                    "lost or that is torn, folded or displaced, so that only intact "
-                    "anatomy steers the fit"] if spec.transform.automatic else []))
+        ways = ((["by hand with `interactive_transform`"]
+                 if "interactive_transform" in tool_names else [])
+                + (["with `elastix_affine`, which leaves the marked regions out of the fit"]
+                   if "elastix_affine" in tool_names else []))
         if ways:
             constraints.append(
-                "- Align damaged sections with " + ", or ".join(ways) + ". Inspect "
-                "each overlay against the surviving internal anatomy before submitting."
+                "- A damaged section (one with marked regions) still needs a transform "
+                "made for its surviving anatomy: set it " + ", or fit it ".join(ways)
+                + ". Inspect each overlay against the surviving internal anatomy before "
+                "submitting."
+            )
+    if spec.has("nonlinear"):
+        if "trace_borders" in tool_names:
+            constraints.append(
+                "- `trace_borders` is optional: you decide which sections, if any, to "
+                "trace. A trace requires a position and a linear transform."
+            )
+        if spec.nonlinear.require_deformation:
+            constraints.append(
+                "- `submit` is refused unless every section carries a deformation applied "
+                "at its current placement, damaged sections included; the user requires "
+                "one on every section."
             )
         else:
             constraints.append(
-                "- The transform tools are disabled; unresolved damaged "
-                "sections require the host to enable them before submission."
+                "- `submit` is refused unless every section carries a deformation applied "
+                "at its current placement, or is named in its `left_linear` with the "
+                "reason its linear placement stands, damaged sections included."
             )
-    if spec.has("nonlinear"):
-        traced = spec.nonlinear.uses_image_model
-        if traced:
-            constraints.append(
-                "- `trace_borders` is optional: you decide which sections, if any, to "
-                "trace. A trace requires a position and an existing linear transform. "
-                "Edit the base image prompt below for each section you trace: its format "
-                "is good and tested, so make small changes or add a special instruction "
-                "for that particular section."
-            )
-        constraints.append(
-            "- `submit` is refused unless every section carries a deformation applied "
-            "at its current placement, or a `keep_linear` reason saying its linear "
-            "placement stands, damaged sections included."
-        )
-        if "fit_deformable" in tool_names:
-            constraints.append(
-                "- " + deformable_engine_fact(spec.nonlinear.engine, traced=traced))
+        missing = ants_fact(tool_names)
+        if missing:
+            constraints.append(missing)
     constraints.append(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."
@@ -531,30 +270,17 @@ def build_job_statement(
             "",
             "Method:",
             "- First, from the opening images alone — every section and the "
-            "atlas reference strips — form a complete hypothesis: the corrected order of "
-            "the whole stack and a position for every section. Look for the "
-            "structure of how the sections were cut (series that interleave, "
-            "missing sections) and use it.",
-            "- Then confirm the hypothesis: `view_placement` every section "
-            "at its hypothesised position, four sections per call, walking the "
-            "stack in order; where the atlas at that position does not match "
-            "the section, change the position.",
-            "- Write every position in one `set_positions`, then re-check the "
-            "sections you were unsure about with `view_placement` and "
-            "correct them.",
-            *(
-                [
-                    "- After the first write, run `search_position` on every "
-                    "section (window 3 mm, angles false) and write its best "
-                    "position where the fit disagrees with yours; confirm "
-                    "with `view_placement`."
-                ]
-                if "search_position" in tool_names
-                else []
-            ),
-            "- Mark damaged sections with a note each, set the order, run "
-            "`view_stack`, look again at anything out of sequence or "
-            "mis-spaced, then `submit`.",
+            "atlas beneath it — form a complete hypothesis: a position for every "
+            "section. Look for the structure of how the sections were cut (series "
+            "that interleave, missing sections) and use it.",
+            "- Then confirm the hypothesis: `look` in mode positioning at each "
+            "section with the atlas at its hypothesised position and its neighbours, "
+            "walking the stack in order; where the atlas at that position does not "
+            "match the section, change the position.",
+            "- Write every position in one `position_sections`, then re-check the "
+            "sections you were unsure about and correct them.",
+            "- Mark damaged sections' lost regions, run `look` in mode positioning "
+            "over the whole stack, look again at anything mis-spaced, then `submit`.",
         ]
     elif spec.has("position"):
         method = [
@@ -564,9 +290,8 @@ def build_job_statement(
             "candidate atlas positions before writing, and do not let the "
             "nominal interval stand in for a look.",
             "- After writing, review the whole stack against the atlas, watch "
-            "for a section that sits out of sequence and for spacings that "
-            "differ from their neighbours, and re-check the sections on either "
-            "side of any gap before reporting an interval break.",
+            "for spacings that differ from their neighbours, and re-check the "
+            "sections on either side of any gap before reporting an interval break.",
             "- Submit when the work is complete; address any missing requirements it returns.",
         ]
 
@@ -581,34 +306,23 @@ def build_job_statement(
             "improve the alignment."
         )
 
-    if spec.has("nonlinear") and "fit_deformable" in tool_names:
+    if spec.has("nonlinear"):
         if not method:
             method = ["", "Method:"]
+        if "mark_damage" in tool_names:
+            method.append(
+                "- Before fitting a damaged section, mark the regions it has lost with "
+                "`mark_damage`, so that every region it still has drives its fits."
+            )
         method.append(
-            "- Let every region a section still has drive its deformable fit, "
-            "damaged sections included: exclude the regions it has lost rather "
-            "than restricting the fit to a few that survive."
-        )
-        method.append(
-            "- Compare candidates before applying, and inspect each returned fit's "
+            "- Fit each section whole first, then refine regions. Inspect each fit's "
             "borders against the section's internal anatomy"
             + (" and, where traced, its traced borders"
-               if spec.nonlinear.uses_image_model else "")
-            + ". Apply the fit that matches best; keep the linear placement only "
-            "where no fit improves on it."
+               if "trace_borders" in tool_names else "")
+            + "; undo a fit that does not improve the alignment"
+            + ("." if spec.nonlinear.require_deformation else
+               ", and name in submit's `left_linear` only a section that no fit improves.")
         )
-
-    image_task: list[str] = []
-    if spec.has("nonlinear") and spec.nonlinear.uses_image_model:
-        from typing import cast
-
-        from langslice.core.nonlinear.registration_tool import correction_instructions
-        from langslice.core.space import Plane
-
-        image_task = [
-            "", "Base image-model prompt (image numbers refer to the tool's attachments):",
-            correction_instructions(cast(Plane, state.plane), spec.nonlinear.provider),
-        ]
 
     return "\n".join(
         [
@@ -622,18 +336,15 @@ def build_job_statement(
             "Run facts:",
             *facts,
             "",
-            "Tools:",
-            *tools,
+            tools,
             "",
             "Constraints:",
             *constraints,
             *method,
-            *image_task,
             "",
             "Work with the tools, then call `submit`.",
         ]
     )
-
 
 
 def stack_angles_fact(state: StackState) -> str:
@@ -642,10 +353,11 @@ def stack_angles_fact(state: StackState) -> str:
     section), that each status row carries its own."""
     if state.mixed_angles:
         return ("- Cutting angles: these differ between sections, as supplied; each "
-                "status row carries its own cutting_angles_deg. set_cutting_angles sets "
+                "status row carries its own cutting_angles_deg. position_sections sets "
                 "one angle for every section.")
     pitch, yaw = state.stack_angles
     return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
+
 
 def run_facts(
     spec: JobSpec, state: StackState, *, species: str, pos_lo: float,
@@ -653,12 +365,14 @@ def run_facts(
 ) -> list[str]:
     """Shared factual briefing, without any model-specific method advice."""
     axis = _PLANE_AXIS_LABEL.get(state.plane, "AP")
-    placed = [s for s in state.in_order() if s.position_mm is not None]
-    damaged = [s.id for s in state.in_order() if s.damaged]
+    ordered = state.in_order()
+    placed = [s for s in ordered if s.position_mm is not None]
+    starting = [s.id for s in ordered if s.position_source == STARTING_POSITION]
+    damaged = [s.id for s in ordered if s.damaged]
     inputs = spec.inputs or {}
-    host_damaged = [s.id for s in state.in_order() if s.id in (inputs.get("damaged") or {})]
+    noted = [s.id for s in ordered if s.id in (inputs.get("damaged") or {})]
     locked_ids = {str(name) for name in inputs.get("locked") or []}
-    locked = [s.id for s in state.in_order() if s.id in locked_ids]
+    locked = [s.id for s in ordered if s.id in locked_ids]
 
     facts: list[str] = [
         f"- {len(state.slices)} sections, {state.plane} plane, atlas "
@@ -675,17 +389,26 @@ def run_facts(
         f"neighbours may differ from it.",
         stack_angles_fact(state),
     ]
-    facts.append(
-        f"- {len(placed)} of {len(state.slices)} sections carry a position."
-        if placed
-        else "- No section carries a position yet."
-    )
-    if damaged:
-        facts.append(f"- Sections marked damaged: {', '.join(damaged)}.")
-    if host_damaged:
+    if starting:
         facts.append(
-            f"- The user marked these sections damaged, and that flag cannot be "
-            f"cleared: {', '.join(host_damaged)}."
+            f"- {len(starting)} of {len(state.slices)} sections are at evenly spaced "
+            "starting positions the job gave them, in file order; they are not placed "
+            "yet (status shows position_source \"default\", the opening labels their "
+            "atlas \"start\")."
+        )
+        if len(placed) > len(starting):
+            facts.append(f"- {len(placed) - len(starting)} sections carry a position "
+                         "of their own.")
+    elif placed:
+        facts.append(f"- {len(placed)} of {len(state.slices)} sections carry a position.")
+    else:
+        facts.append("- No section carries a position yet.")
+    if damaged:
+        facts.append(f"- Sections with marked damage regions: {', '.join(damaged)}.")
+    if noted:
+        facts.append(
+            "- The user noted damage on these sections (damage_note in status; no "
+            f"regions are marked from it): {', '.join(noted)}."
         )
     if locked:
         facts.append(
@@ -694,9 +417,10 @@ def run_facts(
             f"as done: {', '.join(locked)}."
             + (" Their positions can still be changed." if spec.has("position") else "")
         )
-    if not spec.has("reorder"):
-        facts.append("- The order shown is fixed for this run.")
-    if not spec.has("position"):
+    if spec.has("position"):
+        facts.append("- The stack's order follows the positions: writing positions "
+                     "renumbers the sections, so use filenames to name them.")
+    else:
         facts.append("- The positions shown are given; this run does not change them.")
     if not spec.has("transform"):
         facts.append(
@@ -708,8 +432,6 @@ def run_facts(
     else:
         if not spec.transform.flip:
             facts.append("- Flipping sections is switched off for this run.")
-        # The alignment frame, as facts: these lived in the deleted
-        # sub-session prompt and the fold-in dropped them.
         facts.append(
             "- Alignment canvas: each section is drawn at its TRUE physical size "
             "from its pixel size (read from the file, or given by the host, or "
@@ -718,8 +440,8 @@ def run_facts(
         )
         facts.append(
             "- Transform frame: rotation and scales act about the pivot (the "
-            "canvas centre unless another is chosen), x runs right and y runs "
-            "down, shifts are millimetres."
+            "canvas centre unless the section's transform holds another), x runs "
+            "right and y runs down, shifts are millimetres."
         )
         cap = spec.transform.max_parallel
         if cap < MAX_PARALLEL_TRANSFORMS:

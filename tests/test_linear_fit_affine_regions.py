@@ -1,4 +1,9 @@
-"""`fit_affine` include/exclude: the silhouette fit on the kept atlas regions only."""
+"""Fits by atlas regions.
+
+The silhouette fit on the kept atlas regions only (``ops.transforms.fit_affine``
+with include/exclude: an operation no tool offers now, kept for scripts), and
+``elastix_affine``'s ``restrict_to`` checked at the tool door.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
+from langslice.ops import transforms
 from tests.fakes import EllipseAtlas, ellipse_section
 
 LEFT, RIGHT, CORE = 2, 3, 4
@@ -76,15 +82,23 @@ def _box(folder: Path, atlas: Any, image: Image.Image, *, pixel_size_um: float |
     return state, build_tools(state, ctx, spec)
 
 
-def _fit(box: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
-    return next(t for t in box.tools if t.__name__ == "fit_affine")(*args, **kwargs)
+def _tool(box: Any, name: str) -> Any:
+    return next(t for t in box.tools if t.__name__ == name)
+
+
+def _fit(box: Any, *, include: tuple[str, ...] = (),
+         exclude: tuple[str, ...] = ()) -> dict[str, Any]:
+    """The silhouette fit of the one section (the operation): its row."""
+    job = box.job
+    done = transforms.fit_affine(job, job.workspace, [job.state.slices[0]],
+                                 method="silhouette", include=include, exclude=exclude)
+    return done.rows[0]
 
 
 def test_the_default_fit_is_unchanged(tmp_path: Path):
     """No regions: the whole-outline fit, numbers pinned from before regions existed."""
     state, box = _box(tmp_path, EllipseAtlas(), ellipse_section())
-    result = _fit(box, [], "silhouette")
-    row = result["results"][0]
+    row = _fit(box)
     assert "regions" not in row
     assert row["iou"] == PINNED_IOU
     assert row["physical"] == PINNED_PHYSICAL
@@ -95,13 +109,11 @@ def test_the_default_fit_is_unchanged(tmp_path: Path):
 def test_exclude_fits_the_kept_half_at_true_scale(tmp_path: Path):
     state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
                       position_mm=1.0)
-    whole = _fit(box, ["s0.png"], "silhouette")["results"][0]
-    _fit_undo = next(t for t in box.tools if t.__name__ == "undo")
-    _fit_undo()
+    whole = _fit(box)
+    _tool(box, "undo")()
     # Against the whole outline the half section is turned onto the long axis.
     assert abs(whole["physical"]["rotation_deg"]) > 45 and whole["iou"] < 0.9
-    kept = _fit(box, ["s0.png"], "silhouette", exclude=["R"])
-    row = kept["results"][0]
+    row = _fit(box, exclude=("R",))
     assert row["status"] == "ok", row
     physical = row["physical"]
     assert physical["scale_x"] == pytest.approx(1.0, abs=0.08)
@@ -113,26 +125,35 @@ def test_exclude_fits_the_kept_half_at_true_scale(tmp_path: Path):
     assert row["regions"]["atlas_kept_fraction"] == pytest.approx(0.5, abs=0.05)
     assert row["regions"]["tissue_used_fraction"] > 0.95
     assert state.slices[0].transform["regions"] == {"include": [], "exclude": ["R"]}
-    assert "kept regions" in kept["description"]
+
+    # The section's marked damage regions are left out the same way.
+    _tool(box, "undo")()
+    assert _tool(box, "mark_damage")("s0.png", ["R"])["status"] == "ok"
+    marked = _fit(box)
+    assert marked["status"] == "ok" and marked["regions"]["exclude"] == ["R"]
+    assert marked["physical"] == physical
 
 
 def test_include_restricts_and_says_what_it_cannot_measure(tmp_path: Path):
     state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
                       position_mm=1.0)
-    row = _fit(box, ["s0.png"], "silhouette", include=["L"])["results"][0]
+    row = _fit(box, include=("L",))
     assert row["status"] == "ok", row
     assert 0 < row["regions"]["outline_share"] < 1
     assert "Only the outline counts" in row["regions"]["note"]
     assert row["physical"]["scale_x"] == pytest.approx(1.0, abs=0.1)
-    inside = _fit(box, ["s0.png"], "silhouette", include=["C"])["results"][0]
+    inside = _fit(box, include=("C",))
     assert inside["error"] == "REGIONS_INSIDE_OUTLINE"
-    assert _fit(box, ["s0.png"], "silhouette", include=["nope"])["error"] == "UNKNOWN_REGIONS"
-    assert _fit(box, ["s0.png"], "silhouette", include=["L"],
-                exclude=["l"])["error"] == "BAD_ARGS"
-    # Regions given, a damaged section is fitted; without them it is refused.
-    state.slices[0].damage_marked = True
-    assert _fit(box, ["s0.png"], "silhouette")["results"][0]["error"] == "DAMAGED"
-    assert _fit(box, ["s0.png"], "silhouette", exclude=["R"])["status"] == "ok"
+
+
+def test_the_fit_tool_checks_its_regions_first(tmp_path: Path):
+    """elastix_affine's restrict_to is checked against the atlas before any fit."""
+    state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
+                      position_mm=1.0)
+    fit = _tool(box, "elastix_affine")
+    assert fit(["s0.png"], restrict_to=["nope"])["error"] == "UNKNOWN_REGIONS"
+    assert fit(["s0.png"], restrict_to=["L:middle"])["error"] == "BAD_ARGS"
+    assert state.slices[0].transform is None
 
 
 class WholeAtlas(HalvesAtlas):
@@ -147,7 +168,7 @@ def test_a_one_sided_exclusion_keeps_the_other_hemisphere(tmp_path: Path):
     """Excluding ``L:right`` drops only the right half of a region spanning both."""
     state, box = _box(tmp_path, WholeAtlas(), _left_half_section(), pixel_size_um=50.0,
                       position_mm=1.0)
-    row = _fit(box, ["s0.png"], "silhouette", exclude=["L:right"])["results"][0]
+    row = _fit(box, exclude=("L:right",))
     assert row["status"] == "ok", row
     assert row["regions"]["atlas_kept_fraction"] == pytest.approx(0.5, abs=0.05)
     assert abs(row["physical"]["rotation_deg"]) < 3.0
@@ -155,12 +176,9 @@ def test_a_one_sided_exclusion_keeps_the_other_hemisphere(tmp_path: Path):
     assert row["iou"] > 0.9
     assert state.slices[0].transform["regions"] == {"include": [], "exclude": ["L:right"]}
     # Excluding the side the tissue IS on leaves the wrong half to fit against.
-    undo = next(t for t in box.tools if t.__name__ == "undo")
-    undo()
-    wrong = _fit(box, ["s0.png"], "silhouette", exclude=["L:left"])["results"][0]
+    _tool(box, "undo")()
+    wrong = _fit(box, exclude=("L:left",))
     assert wrong["status"] == "ok" and wrong["regions"]["tissue_used_fraction"] < 0.2
-    assert _fit(box, ["s0.png"], "silhouette", exclude=["L:middle"])["error"] == \
-        "UNKNOWN_REGIONS"
 
 
 def _tall_section() -> Image.Image:
@@ -169,79 +187,17 @@ def _tall_section() -> Image.Image:
     return Image.fromarray(canvas, mode="RGB")
 
 
-def test_a_picture_that_cannot_be_drawn_is_a_refusal_not_an_exception(tmp_path: Path):
-    """A one-sided highlight on a placement turned past 45 degrees has no side."""
+def test_a_side_on_a_turned_placement_is_a_refusal_not_an_exception(tmp_path: Path):
+    """A one-sided region on a placement turned past 45 degrees has no side."""
     state, box = _box(tmp_path, HalvesAtlas(), _tall_section(), pixel_size_um=50.0,
                       position_mm=1.0)
-    adjust = next(t for t in box.tools if t.__name__ == "adjust_transforms")
-    assert adjust([{"id": "s0.png", "rotation_deg": 90, "scale_x": 1, "scale_y": 1,
-                    "translate_x_mm": 0, "translate_y_mm": 0}])["status"] == "ok"
+    turned = _tool(box, "interactive_transform")(
+        [{"id": "s0.png", "rotation_deg": 90, "scale_x": 1, "scale_y": 1,
+          "translate_x_mm": 0, "translate_y_mm": 0}], view=False)
+    assert turned["status"] == "ok"
     before = dict(state.slices[0].transform or {})
-    result = _fit(box, ["s0.png"], "elastix", view={"regions": ["L:left"]})
+    result = _tool(box, "elastix_affine")(["s0.png"], restrict_to=["L:left"])
     assert result["error"] == "NOTHING_FITTED"
     assert result["results"][0]["error"] == "SIDES_AMBIGUOUS"
+    assert "pictures" not in result
     assert state.slices[0].transform == before
-
-
-def test_outlines_mode_draws_a_listed_atlas_image(tmp_path: Path):
-    import io
-
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.media import package_result
-
-    _, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
-                  position_mm=1.0)
-    view_placement = next(t for t in box.tools if t.__name__ == "view_placement")
-
-    def mean(view: dict[str, Any]) -> float:
-        part = package_result(
-            view_placement([{"id": "s0.png"}], view=view))[TOOL_MEDIA_PARTS_KEY][0]
-        return float(np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("L")).mean())
-
-    lines = mean({"mode": "outlines"})
-    blended = mean({"mode": "outlines", "atlas_channels": ["template", "borders"],
-                    "atlas_opacity": 1.0})
-    assert blended > lines + 20
-
-
-def _flat_section() -> Image.Image:
-    """A wide, flat ellipse: its included half turns ~90 degrees onto the atlas's."""
-    canvas = np.full((200, 260, 3), 240, dtype=np.uint8)
-    cv2.ellipse(canvas, (130, 100), (120, 30), 0, 0, 360, (30, 30, 30), -1)
-    return Image.fromarray(canvas, mode="RGB")
-
-
-@pytest.mark.parametrize("side", ["left", "right"])
-def test_a_large_turn_keeps_the_one_sided_highlight_the_fit_used(tmp_path: Path, side: str):
-    """Sides are resolved once, by the fit, and the picture reuses them: a
-    fit that turns the midline past 45 degrees still highlights its region
-    (it used to fall back to no highlight at all)."""
-    import io
-
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.media import package_result
-
-    def picture(view: dict[str, Any]) -> tuple[float, np.ndarray]:
-        state, box = _box(tmp_path / f"{side}{len(view)}", WholeAtlas(), _flat_section(),
-                          pixel_size_um=50.0, position_mm=1.0)
-        result = _fit(box, ["s0.png"], "silhouette", include=[f"L:{side}"],
-                      view={"mode": "outlines", **view})
-        assert result["status"] == "ok", result
-        part = package_result(result)[TOOL_MEDIA_PARTS_KEY][0]
-        image = np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("RGB"))
-        return result["results"][0]["physical"]["rotation_deg"], image
-
-    for folder in ("left0", "left1", "right0", "right1"):
-        (tmp_path / folder).mkdir()
-    turned, highlighted = picture({})
-    _same, plain = picture({"regions": []})
-    assert abs(turned) > 45
-    # Full-strength yellow (the highlight) only where the region is drawn,
-    # on the half of the canvas that side names.
-    strong = (highlighted[..., 0] > 200) & (highlighted[..., 1] > 200) & (
-        highlighted[..., 2] < 80)
-    assert strong.sum() > 2 * ((plain[..., 0] > 200) & (plain[..., 1] > 200)
-                               & (plain[..., 2] < 80)).sum()
-    columns = np.nonzero(strong[60:].any(axis=0))[0]
-    middle = highlighted.shape[1] / 2
-    assert (columns.mean() < middle) == (side == "left")
