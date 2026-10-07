@@ -132,9 +132,7 @@ pixels and `nr` the corrected index + 1.
   `pixel_to_atlas_um` (any plane, any cutting angle): the image's top-left
   corner and its two corner-to-corner vectors, converted to QuickNII voxel
   space (x left to right, y posterior to anterior, z inferior to superior;
-  voxel edges) through `brainglobe_space`. The conversion is SliceBench's,
-  checked there against DeepSlice and human QUINT registrations on the Allen
-  CCFv3 25 µm atlas. QuickNII and VisuAlign ship the Allen CCFv3 at 25 µm
+  voxel edges) through `brainglobe_space`. QuickNII and VisuAlign ship the Allen CCFv3 at 25 µm
   only, so a job on `allen_mouse_10um`, `_50um` or `_100um` is exported to
   `ABA_Mouse_CCFv3_2017_25um.cutlas` with its anchoring rescaled to that
   target's voxels (voxel-edge coordinates scale with the voxel size; the

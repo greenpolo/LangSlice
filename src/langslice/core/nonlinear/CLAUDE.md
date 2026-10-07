@@ -80,8 +80,6 @@ residual alone is never exported.
   `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
 - `image_gen_helpers.py` — label-map helpers: families (`_merge_classified`),
   crisp label borders, line widths.
-- `registration_handoff.py` — re-exports `core.handoff.prepare_linear_registration`
-  for SliceBench.
 
 ## Visual review is essential
 

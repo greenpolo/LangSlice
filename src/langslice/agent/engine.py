@@ -37,11 +37,6 @@ from langslice.doors.statement import read_notes, status_and_notes, user_notes_l
 from langslice.doors.tools.media import opening_parts, packaged_tools
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
-
-# Re-exported for the sibling SliceBench adapters, which import them from here;
-# they live in the job layer (langslice.job.job).
-from langslice.job.job import apply_host_inputs as apply_host_inputs  # noqa: E402
-from langslice.job.job import ingest as ingest  # noqa: E402
 from langslice.job.layout import JobLayout, locate_job_folder
 
 logger = logging.getLogger(__name__)
