@@ -62,7 +62,7 @@
   "unknown_ids": [],
   "view": {
    "atlas_channels": [
-    "ara"
+    "template"
    ],
    "deformation": "applied",
    "mode": "template",

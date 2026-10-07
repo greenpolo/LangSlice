@@ -30,7 +30,7 @@
   "unknown_ids": [],
   "view": {
    "atlas_channels": [
-    "ara",
+    "template",
     "borders"
    ],
    "atlas_opacity": 0.5,

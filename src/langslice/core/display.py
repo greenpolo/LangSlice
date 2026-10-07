@@ -13,7 +13,7 @@ pictures below):
   colours, ABBA's multichannel display), or ONE version:
   ``view`` (the agent's own appearance, the default) or ``fit`` (what
   registration reads). Raw channels and a version cannot be mixed.
-- ``atlas_channels`` — what of the ATLAS is shown: any of ``ara`` (the
+- ``atlas_channels`` — what of the ATLAS is shown: any of ``template`` (the
   reference template), ``nissl`` (a Nissl template aligned to the Allen CCFv3,
   Allen mouse atlases only, :mod:`langslice.core.deformable.nissl`) and
   ``borders`` (the region lines).
@@ -72,9 +72,18 @@ from langslice.core.workspace import Workspace
 logger = logging.getLogger(__name__)
 
 #: Every atlas channel, in the order pictures and docs list them.
-ATLAS_CHANNELS: tuple[str, ...] = ("ara", "nissl", "borders")
+ATLAS_CHANNELS: tuple[str, ...] = ("template", "nissl", "borders")
 #: The atlas channels that are images (``borders`` is lines).
-ATLAS_IMAGES: tuple[str, ...] = ("ara", "nissl")
+ATLAS_IMAGES: tuple[str, ...] = ("template", "nissl")
+#: Names the atlas template went by earlier; still accepted on input.
+_ATLAS_NAME_ALIASES = {"ara": "template"}
+
+
+def canonical_atlas_name(name: str) -> str:
+    """The current name of an atlas channel or fit atlas image. The one place
+    the old name ``ara`` is accepted (call arguments, saved jobs and settings)."""
+    return _ATLAS_NAME_ALIASES.get(name, name)
+
 #: The preprocessed versions of a section a picture may show.
 VERSIONS: tuple[str, ...] = ("view", "fit")
 #: ``outlines``: every family boundary, or the outer contour alone.
@@ -123,7 +132,7 @@ class ModeRule:
     atlas_default: tuple[str, ...] = ()
     #: The atlas images are blended under the section (``atlas_opacity`` applies).
     opacity: bool = False
-    #: The mode cannot draw without an atlas image (ara or nissl).
+    #: The mode cannot draw without an atlas image (template or nissl).
     needs_image: bool = False
     #: The mode cannot draw without some atlas channel.
     needs_atlas: bool = False
@@ -133,13 +142,13 @@ class ModeRule:
 MODE_RULES: dict[str, ModeRule] = {
     "section": ModeRule(section=True, atlas=False),
     "channels": ModeRule(section=True, atlas=False),
-    "template": ModeRule(section=False, atlas=True, atlas_default=("ara",), needs_atlas=True),
-    "stacked": ModeRule(section=True, atlas=True, atlas_default=("ara",), needs_atlas=True),
-    "side_by_side": ModeRule(section=True, atlas=True, atlas_default=("ara", "borders"),
+    "template": ModeRule(section=False, atlas=True, atlas_default=("template",), needs_atlas=True),
+    "stacked": ModeRule(section=True, atlas=True, atlas_default=("template",), needs_atlas=True),
+    "side_by_side": ModeRule(section=True, atlas=True, atlas_default=("template", "borders"),
                              needs_atlas=True),
     "overlay": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
     "ab": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
-    "checkerboard": ModeRule(section=True, atlas=True, atlas_default=("ara", "borders"),
+    "checkerboard": ModeRule(section=True, atlas=True, atlas_default=("template", "borders"),
                              needs_image=True),
     "outlines": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
     "borders": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
@@ -206,7 +215,7 @@ class DisplayOptions:
 
     @property
     def atlas_images(self) -> tuple[str, ...]:
-        """The atlas images shown (``ara``/``nissl``), in canonical order."""
+        """The atlas images shown (``template``/``nissl``), in canonical order."""
         return tuple(kind for kind in self.atlas_channels if kind in ATLAS_IMAGES)
 
     @property
@@ -252,7 +261,7 @@ class DisplayOptions:
         images = self.atlas_images
         if not images:
             return "lines only" if self.borders else "none"
-        if images == ("ara",):
+        if images == ("template",):
             return "template"
         if len(images) == 1:
             return images[0]
@@ -295,7 +304,7 @@ class DisplayOptions:
 
 def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
     """The atlas channels this host can draw."""
-    return ATLAS_CHANNELS if ctx.nissl_atlas is not None else ("ara", "borders")
+    return ATLAS_CHANNELS if ctx.nissl_atlas is not None else ("template", "borders")
 
 
 def default_options(
@@ -337,19 +346,19 @@ def atlas_image_picture(
     ctx: Workspace, state: StackState, kinds: tuple[str, ...], position_mm: float,
     *, angles: Angles | None = None,
 ) -> Image.Image | None:
-    """The atlas images *kinds* on the native plane grid; None for ``ara`` alone.
+    """The atlas images *kinds* on the native plane grid; None for ``template`` alone.
 
     At *angles* (:func:`langslice.core.state.plane_angles`: a section's own,
     or the stack's when None).
 
-    ``ara`` alone is left to the renderers' own reference path (the pixels
+    ``template`` alone is left to the renderers' own reference path (the pixels
     every earlier picture showed). ``nissl`` is the aligned Nissl, stretched
     inside the atlas anatomy. Two images are added in their two colours
     (:func:`langslice.core.appearance.channel_colors`); no image is a black
     plane (the lines alone).
     """
     images = tuple(kind for kind in kinds if kind in ATLAS_IMAGES)
-    if images == ("ara",):
+    if images == ("template",):
         return None
     plane = cast(Plane, state.plane)
     pitch, yaw = plane_angles(state, angles)
@@ -469,7 +478,7 @@ def framed_atlas(
     past the plane's own voxels, unless *um_per_px*: then drawn at exactly
     that many micrometres per pixel, lines included, for a picture that puts
     the atlas beside a section drawn at the same scale
-    (:mod:`langslice.core.scale`). With ``ara`` alone (no lines, no regions,
+    (:mod:`langslice.core.scale`). With ``template`` alone (no lines, no regions,
     no zoom) and no *um_per_px* this is the picture ``view_atlas`` always sent.
     """
     from langslice.core.atlas.render import atlas_um_per_px
@@ -484,7 +493,7 @@ def framed_atlas(
         return atlas_sized(picture, edge)
 
     pitch, yaw = plane_angles(state, angles)
-    if options.atlas_images == ("ara",) and not options.lines and options.full_view:
+    if options.atlas_images == ("template",) and not options.lines and options.full_view:
         return sized(atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw)))
     plane = cast(Plane, state.plane)
     labels = np.asarray(annotation_slice(
@@ -556,7 +565,7 @@ def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions
 
 
 __all__ = [
-    "ATLAS_CHANNELS", "DisplayOptions", "MODE_RULES",
+    "ATLAS_CHANNELS", "DisplayOptions", "canonical_atlas_name", "MODE_RULES",
     "atlas_caption", "atlas_image_picture", "available_atlas_channels", "channel_strip",
     "default_options", "framed_atlas", "framed_section", "regions_in_plane",
 ]

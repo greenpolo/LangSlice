@@ -472,7 +472,7 @@ def _fit_payload(
 
 #: The atlas image the Elastix affine fits the section to: the ARA
 #: template's pial outline lies on a fluorescent section's bright rim.
-ELASTIX_ATLAS_IMAGE = "ara"
+ELASTIX_ATLAS_IMAGE = "template"
 #: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um).
 ELASTIX_DETAIL = "standard"
 
@@ -483,7 +483,7 @@ def elastix_settings(
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
-    The section's ``fit`` appearance against *atlas_image* (``ara``, the
+    The section's ``fit`` appearance against *atlas_image* (``template``, the
     default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` on an Allen mouse atlas:
     ``fit_affine``'s ``fit_atlas``),
     mutual information plus the edge channel (the Elastix stain fit's own

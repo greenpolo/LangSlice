@@ -199,7 +199,7 @@ def test_outlines_mode_draws_a_listed_atlas_image(tmp_path: Path):
         return float(np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("L")).mean())
 
     lines = mean({"mode": "outlines"})
-    blended = mean({"mode": "outlines", "atlas_channels": ["ara", "borders"],
+    blended = mean({"mode": "outlines", "atlas_channels": ["template", "borders"],
                     "atlas_opacity": 1.0})
     assert blended > lines + 20
 

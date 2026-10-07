@@ -112,7 +112,7 @@ def view_atlas(
         positions_mm: Positions along the slicing axis, in millimetres.
         view: Picture options (described once in the job statement).
             Mode "template" only: the atlas alone, framed to its anatomy;
-            atlas_channels default ["ara"], add "borders" for the region
+            atlas_channels default ["template"], add "borders" for the region
             lines. No section is drawn, so channels does not apply.
 
     Returns:
@@ -308,7 +308,7 @@ def view_stack(
 
     Args:
         view: Picture options (described once in the job statement).
-            Mode "stacked" only; atlas_channels default ["ara"]; no zoom.
+            Mode "stacked" only; atlas_channels default ["template"]; no zoom.
 
     Returns:
         The rows in that order and the two images.
@@ -392,7 +392,7 @@ def fit_affine(
         slices: Filenames or corrected indices; empty means every
             positioned, undamaged section.
         method: "elastix" (default) or "silhouette".
-        fit_atlas: The atlas image the elastix method matches: "ara" (the
+        fit_atlas: The atlas image the elastix method matches: "template" (the
             reference template; default) or "nissl" (a Nissl-stained
             reference, Allen mouse atlases). Not for "silhouette".
         include: Regions (acronyms or ids, descendants included) to fit
@@ -610,7 +610,7 @@ def fit_deformable(
             and the reply adds the trace drawn on the section. With a
             completed trace, traced_borders with the ANTs engine at medium
             stiffness is the recommended pairing.
-        fit_atlas: What of the atlas the fit reads. For "fit": "ara" (the
+        fit_atlas: What of the atlas the fit reads. For "fit": "template" (the
             atlas's reference template; default) or "nissl" (a
             Nissl-stained reference, Allen mouse atlases). For traced
             fit sections: "borders" (default).
@@ -626,7 +626,7 @@ def fit_deformable(
         view: Picture options (described once in the job statement).
             Modes: "borders" (default: the fitted borders on the image the
             fit read) or "ab" (that, then what the fit started from).
-            atlas_channels default ["borders"]; add "ara" or "nissl" to
+            atlas_channels default ["borders"]; add "template" or "nissl" to
             see that atlas image, warped, under the lines at
             atlas_opacity. view.regions is drawn at full strength (empty:
             the include list); excluded regions are drawn in pink. The
@@ -804,11 +804,11 @@ _STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
         _FIT_LOOK_DOC + ").\n",
     ),
     (
-        '            fit_atlas: What of the atlas the fit reads. For "fit": "ara" (the\n'
+        '            fit_atlas: What of the atlas the fit reads. For "fit": "template" (the\n'
         "                atlas's reference template; default) or \"nissl\" (a\n"
         "                Nissl-stained reference, Allen mouse atlases). For traced\n"
         '                fit sections: "borders" (default).\n',
-        '            fit_atlas: What of the atlas the fit reads: "ara" (the atlas\'s\n'
+        '            fit_atlas: What of the atlas the fit reads: "template" (the atlas\'s\n'
         '                reference template; default) or "nissl" (a Nissl-stained\n'
         "                reference, Allen mouse atlases).\n",
     ),

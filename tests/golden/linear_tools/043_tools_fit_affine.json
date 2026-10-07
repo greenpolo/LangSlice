@@ -46,7 +46,7 @@
   "unknown_ids": [],
   "view": {
    "atlas_channels": [
-    "ara",
+    "template",
     "borders"
    ],
    "border_color": "#ffff00",

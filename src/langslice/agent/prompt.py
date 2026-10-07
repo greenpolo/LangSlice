@@ -92,7 +92,7 @@ TOOL_LINES: dict[str, str] = {
     "takes, and a picture of the section under it at true physical scale. "
     "The default method, elastix, refines the section's current transform by "
     "matching the section's fit appearance against an atlas image (`fit_atlas`: "
-    "ara, or nissl where offered), inner anatomy included, starting where the "
+    "template, or nissl where offered), inner anatomy included, starting where the "
     "section is; method silhouette fits "
     "the tissue outline to the atlas outline from scratch. "
     "`exclude` regions (acronyms or ids, descendants included) are removed "
@@ -231,7 +231,7 @@ PICTURE_TOOLS: tuple[str, ...] = (
 
 #: One line per atlas channel, as the job statement describes it.
 ATLAS_CHANNEL_LINES: dict[str, str] = {
-    "ara": "the atlas's reference image, the template its regions were drawn on",
+    "template": "the atlas's reference image, the template its regions were drawn on",
     "nissl": "a Nissl-stained reference aligned to the atlas",
     "borders": "the atlas regions, drawn as lines",
 }
@@ -291,8 +291,8 @@ def display_lines(
         f"default {DEFAULT_ATLAS_OPACITY:g}) in overlay, ab, outlines and borders modes "
         "and as the atlas picture in the others (two images are added in two "
         "colours); leave out borders for no lines. Defaults: [borders] in overlay, ab, "
-        "outlines and borders; [ara] in template, stacked and the framed "
-        "side_by_side of view_placement/set_positions; [ara, borders] in checkerboard "
+        "outlines and borders; [template] in template, stacked and the framed "
+        "side_by_side of view_placement/set_positions; [template, borders] in checkerboard "
         "and the physical side_by_side; "
         "`regions` (atlas acronyms or ids, descendants included, \"CTX:left\" / "
         "\"CTX:right\" for one side of the section: their borders at full strength, "

@@ -168,7 +168,7 @@ def test_side_by_side_draws_both_references_at_one_scale(
 ):
     state, ctx = _job(tmp_path)
     record = state.by_id(name)
-    options = default_options("side_by_side", atlas_channels=("ara",), long_edge=512)
+    options = default_options("side_by_side", atlas_channels=("template",), long_edge=512)
     working: placement.Working = {}
     first = placement.placement_pictures(ctx, state, record, 0.1, options, working)
     section, atlas = first.images
@@ -184,7 +184,7 @@ def test_side_by_side_draws_both_references_at_one_scale(
 def test_side_by_side_with_lines_keeps_the_scale(tmp_path: Path, no_captions: None):
     state, ctx = _job(tmp_path)
     record = state.by_id("damaged.png")
-    options = default_options("side_by_side", long_edge=512)  # ara + borders
+    options = default_options("side_by_side", long_edge=512)  # template + borders
     section, atlas = placement.placement_pictures(ctx, state, record, 0.1, options, {}).images
     _assert_true_size(section, atlas, kept=KEPT)
 

@@ -248,7 +248,7 @@ def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
     assert pair["view"]["mode"] == "side_by_side"
 
     zoomed = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [60, 60, 200, 200], 0.5,
-                     atlas_channels=["ara", "borders"])
+                     atlas_channels=["template", "borders"])
     assert len(zoomed[TOOL_MEDIA_PARTS_KEY]) == 1
     assert zoomed["view"]["zoom"] == [60, 60, 200, 200]
 
@@ -295,7 +295,7 @@ def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path)
 
     stepped = compare(
         [{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}],
-        view={"mode": "overlay", "atlas_channels": ["ara", "borders"], "atlas_opacity": 0.3},
+        view={"mode": "overlay", "atlas_channels": ["template", "borders"], "atlas_opacity": 0.3},
     )
     assert [row["position_mm"] for row in stepped["compared"]] == [0.1, 0.2, 0.3]
     assert len(stepped[TOOL_MEDIA_PARTS_KEY]) == 3

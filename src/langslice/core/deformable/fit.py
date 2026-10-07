@@ -1,7 +1,7 @@
 """One deformable fit of a placed atlas plane onto a section: prepare, run, record.
 
 Route A (no image model): the section's stain image against an atlas image
-(``ara`` or ``nissl``; in practice mostly an outline fit), optionally in
+(``template`` or ``nissl``; in practice mostly an outline fit), optionally in
 sequential steps each restricted to the neighbourhood of chosen structures,
 optionally with the automatic tissue/ventricle label channels. Route B (image
 model): the model's extracted lines against atlas borders rendered from the

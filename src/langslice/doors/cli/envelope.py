@@ -126,7 +126,7 @@ FIXES: dict[str, str] = {
     "RENDER_FAILED": "See the message; check the section file opens, then retry.",
     "UNAVAILABLE": "Not installed on this host (see the message); use what the job "
                    "statement offers instead.",
-    "FIT_ATLAS_UNAVAILABLE": "Use fit_atlas \"ara\" (the reference template).",
+    "FIT_ATLAS_UNAVAILABLE": "Use fit_atlas \"template\" (the reference template).",
     "NOTHING_EXPORTED": "Each skipped section's reason is under result.skipped; place it "
                         "first.",
 }

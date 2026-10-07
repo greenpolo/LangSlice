@@ -89,7 +89,8 @@ CACHE_SIZE = 8
 #: The atlas a fit can read (``fit_atlas``), as the agent names it, and the
 #: engine's name for each. ``borders`` is the colour-family boundaries the
 #: pictures draw (and the image model is shown).
-FIT_ATLASES: dict[str, str] = {"borders": "borders_merged", "ara": "ara", "nissl": "nissl"}
+FIT_ATLASES: dict[str, str] = {
+    "borders": "borders_merged", "template": "template", "nissl": "nissl"}
 #: What of the section a fit can read (``fit_section``).
 FIT_LOOK = "fit"
 TRACED_BORDERS = "traced_borders"
@@ -566,7 +567,7 @@ def picture(
 
     The crop (the zoom, or the whole fit image) is shown at ``style.long_edge``
     on its long side, or at its own pixels when it has fewer: the fit image
-    (:data:`FIT_LONG_EDGE`) is never upsampled. *atlas_images* (``ara``,
+    (:data:`FIT_LONG_EDGE`) is never upsampled. *atlas_images* (``template``,
     ``nissl``; the call's ``view.atlas_channels``) are pulled through the
     record's map and blended under the lines at ``style.atlas_opacity``.
     With *note* (:func:`langslice.core.layers.note` fields: sections, mode)
@@ -589,7 +590,7 @@ def picture(
         shown = zoom_box(list(zoom), full)
     small = resampled_record(record, full, shown)
     base = image.convert("RGB").resize(full, Image.Resampling.LANCZOS).crop(shown)
-    kinds = tuple(kind for kind in atlas_images if kind in ("ara", "nissl"))
+    kinds = tuple(kind for kind in atlas_images if kind in ("template", "nissl"))
     if style.atlas_opacity > 0 and kinds:
         base = _blend_atlas(ctx, base, small if warped else _unwarped(small), kinds,
                             style.atlas_opacity)

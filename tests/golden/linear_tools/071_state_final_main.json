@@ -44,7 +44,7 @@
       {
        "engine": "ants",
        "exclude": [],
-       "fit_atlas": "ara",
+       "fit_atlas": "template",
        "fit_section": "fit",
        "include": [],
        "start": "linear",
@@ -140,7 +140,7 @@
        "exclude": [
         "HY"
        ],
-       "fit_atlas": "ara",
+       "fit_atlas": "template",
        "fit_section": "fit",
        "include": [
         "STR",
@@ -152,7 +152,7 @@
       {
        "engine": "elastix",
        "exclude": [],
-       "fit_atlas": "ara",
+       "fit_atlas": "template",
        "fit_section": "fit",
        "include": [],
        "start": "current",

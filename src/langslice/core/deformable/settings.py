@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
+from langslice.core.display import canonical_atlas_name
+
 Engine = Literal["ants", "elastix"]
 #: There is no ``stiff``: it never gave the best-looking fit and left
 #: enlarged ventricles unfilled.
@@ -21,13 +23,13 @@ Stiffness = Literal["soft", "medium", "firm"]
 #: at a fraction of the time, for quick previews and tests; a 10 um level
 #: was 4-5x slower with no visible gain.
 Detail = Literal["coarse", "standard"]
-#: ``ara``: the atlas's own BrainGlobe reference (for Allen, the ARA average
+#: ``template``: the atlas's own BrainGlobe reference (for Allen, the ARA average
 #: template). ``nissl``: a Nissl template aligned to the Allen CCFv3 (``nissl.py``).
 #: ``borders``: every region boundary from the annotation. ``borders_merged``:
 #: the color-family set the image model is shown (``trace_borders``). The
 #: grayscale images pair with the stain, the border images with model lines
 #: (:func:`metric_for`).
-AtlasImage = Literal["ara", "nissl", "borders", "borders_merged"]
+AtlasImage = Literal["template", "nissl", "borders", "borders_merged"]
 #: ``stain``: the preprocessed section photograph. ``lines``: the image
 #: model's extracted boundary lines on that photograph's grid.
 SectionImage = Literal["stain", "lines"]
@@ -155,7 +157,7 @@ class FitSettings:
     engine: Engine = "ants"
     stiffness: Stiffness = "medium"
     detail: Detail = "standard"
-    atlas_image: AtlasImage = "ara"
+    atlas_image: AtlasImage = "template"
     section_image: SectionImage = "stain"
     exclude: tuple[str | int, ...] = field(default_factory=tuple)
     labels: Labels = "none"
@@ -216,6 +218,7 @@ class FitSettings:
         # A record without these fields was fitted with mutual information
         # and no edge channel; the softening it may carry is fixed now.
         data.pop("line_softening_um", None)
+        data["atlas_image"] = canonical_atlas_name(data.get("atlas_image", "template"))
         data.setdefault("stain_metric", "mutual_information")
         data.setdefault("stain_edges", False)
         for name in ("exclude", "structures", "preprocess"):
@@ -249,7 +252,7 @@ def metric_for(
         return "mean_squares"
     if atlas_image in BORDER_IMAGES:
         raise ValueError("Atlas borders are fitted against traced lines only; fit a stain "
-                         "against a grayscale atlas image (ara or nissl)")
+                         "against a grayscale atlas image (template or nissl)")
     if stain_metric == "mutual_information":
         return "mutual_information"
     return "local_correlation" if engine == "ants" else ELASTIX_STAIN_METRIC

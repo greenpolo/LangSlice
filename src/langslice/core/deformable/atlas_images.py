@@ -177,8 +177,8 @@ def native_labels(atlas: Any, placement: Placement) -> np.ndarray:
 def native_intensity(
     atlas: Any, placement: Placement, kind: str, *, nissl: NisslAtlas | None = None,
 ) -> np.ndarray:
-    """The grayscale atlas plane (``ara`` or ``nissl``) on the native grid, float32."""
-    if kind == "ara":
+    """The grayscale atlas plane (``template`` or ``nissl``) on the native grid, float32."""
+    if kind == "template":
         if placement.pitch_deg or placement.yaw_deg:
             from langslice.core.oblique import sample_oblique_plane
 

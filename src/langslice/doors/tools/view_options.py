@@ -37,6 +37,7 @@ from langslice.core.display import (
     VERSIONS,
     DisplayOptions,
     available_atlas_channels,
+    canonical_atlas_name,
 )
 from langslice.core.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS
 from langslice.core.sizes import AUTO_RESOLUTION, MIN_RESOLUTION, picture_edge, resolution_level
@@ -248,11 +249,12 @@ def parse_view(
         picked = _names(view.get("atlas_channels"), "atlas_channels")
         if isinstance(picked, dict):
             return picked
-        wrong = [name for name in picked if name.lower() not in ATLAS_CHANNELS]
+        picked = [canonical_atlas_name(name.lower()) for name in picked]
+        wrong = [name for name in picked if name not in ATLAS_CHANNELS]
         if wrong:
             return _error("BAD_ATLAS_CHANNELS", f"Unknown atlas channel(s): {', '.join(wrong)}.",
                           atlas_channels=list(available))
-        lowered = {name.lower() for name in picked}
+        lowered = set(picked)
         absent = [name for name in ATLAS_CHANNELS if name in lowered and name not in available]
         if absent:
             return _error("ATLAS_CHANNEL_UNAVAILABLE",
@@ -267,7 +269,7 @@ def parse_view(
                           atlas_channels=list(available))
         if rule.needs_image and not images:
             return _error("BAD_ATLAS_CHANNELS", f"Mode {mode} needs an atlas image "
-                          "(ara or nissl) in atlas_channels.", atlas_channels=list(available))
+                          "(template or nissl) in atlas_channels.", atlas_channels=list(available))
 
     opacity = DEFAULT_ATLAS_OPACITY if (rule.opacity and images) else 0.0
     if "atlas_opacity" in given and rule.atlas and profile.atlas:
@@ -275,7 +277,7 @@ def parse_view(
             refuse("atlas_opacity", f"mode {mode} draws the atlas image beside or instead of "
                    "the section, not under it")
         elif not images:
-            refuse("atlas_opacity", "no atlas image (ara or nissl) is in atlas_channels")
+            refuse("atlas_opacity", "no atlas image (template or nissl) is in atlas_channels")
         else:
             try:
                 opacity = float(cast(Any, view.get("atlas_opacity")))
