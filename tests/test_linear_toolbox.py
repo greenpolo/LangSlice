@@ -82,15 +82,15 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
     schemas = [FunctionTool(tool)._get_declaration().model_dump() for tool in plain.tools]
-    assert len(schemas) == 15
+    assert len(schemas) == 16  # grep_atlas comes with Linear
     assert "landmark" not in str(schemas).lower()
 
     _, _, refinement = _box(
         tmp_path, tasks=["transform"],
         transform=TransformSpec(interactive=True, automatic=False),
     )
-    assert len(refinement.tools) == 11
-    assert "orient_slices" in refinement.names
+    assert len(refinement.tools) == 12
+    assert {"orient_slices", "grep_atlas"} <= set(refinement.names)
     # The read-only view of the complete registration exists without positioning.
     assert "view_placement" in refinement.names and "set_positions" not in refinement.names
 
@@ -985,3 +985,24 @@ def test_adjust_transforms_one_view_draws_every_entry(tmp_path: Path):
     assert len(box.job.undo_stack) == 1
     _tool(box, "undo")()
     assert all(record.transform is None for record in state.slices)
+
+
+def test_view_slices_names_the_sections_it_did_not_show(tmp_path: Path):
+    _, _, box = _box(tmp_path, n=6)
+    names = ["s0.png", "s1.png", "s0.png", "s2.png", "s3.png", "s4.png", "s5.png"]
+    result = _tool(box, "view_slices")(names)
+    assert result["slices"] == ["s0.png", "s1.png", "s2.png", "s3.png"]  # a repeat takes no slot
+    assert result["truncated"] is True
+    assert result["not_shown"] == ["s4.png", "s5.png"]
+    assert "NOT shown to you: s4.png, s5.png" in result["description"]
+
+
+def test_a_fit_that_turns_a_section_far_reports_the_turn():
+    from langslice.ops.transforms import LARGE_TURN_DEG, _turn_deg
+
+    def fitted(rotation: float) -> dict:
+        return {"physical": {"rotation_deg": rotation}}
+
+    assert _turn_deg(None, fitted(-179.9)) > LARGE_TURN_DEG
+    assert _turn_deg(fitted(170.0), fitted(-175.0)) == pytest.approx(15.0)
+    assert _turn_deg(fitted(10.0), fitted(-20.0)) < LARGE_TURN_DEG

@@ -279,10 +279,11 @@ def view_placement(
             image in alternating tiles), "outlines" (atlas lines and the
             section's silhouette on black), "section" (the registered
             section alone), "stacked" (one picture: the section as
-            corrected over the atlas, each tissue-framed; no placement
-            drawn) or "side_by_side" (separate original section and
-            atlas images, tissue-framed, full view only, up to 8
-            images). zoom and deformation apply to the physical modes.
+            corrected above the atlas, each tissue-framed, both at one
+            scale; no placement drawn) or "side_by_side" (separate
+            original section and atlas images, tissue-framed, the
+            section and every atlas at one scale, full view only, up to
+            8 images). zoom and deformation apply to the physical modes.
 
     Returns:
         The section-position pairs shown, in order, each with its
@@ -295,12 +296,12 @@ def view_placement(
 def view_stack(
     view: View = {},
 ) -> dict[str, Any]:
-    """The whole stack ordered by written position, each over its atlas match.
+    """The whole stack ordered by written position, each above its atlas match.
 
     One contact sheet: every section as a labelled thumbnail, in the
     order of the positions written so far (unplaced sections last), a
     placed section with the atlas section at its position pasted
-    directly beneath it. The label carries the corrected index,
+    directly beneath it, both at one scale. The label carries the corrected index,
     filename, position and the signed distance to the next placed
     section. Then one plot of position against corrected index (damaged
     sections in red). Two images; `view_slices` shows any section large.
@@ -411,8 +412,11 @@ def fit_affine(
 
     Returns:
         Per-section overlap (iou; with regions, of the kept atlas and the
-        tissue that corresponds), the transform as the five physical
-        knobs about the canvas centre, the calibration the image was
+        tissue that corresponds; it compares shapes, not the anatomy
+        inside, so a turned or upside-down section can score as high as a
+        correct one, and a fit that turns a section more than 45 degrees
+        says so), the transform as the five physical knobs about the
+        canvas centre, the calibration the image was
         drawn with, a `regions` report when regions were given, and an
         image of each fitted section under its new transform. The
         generic changed row is omitted because it repeats the same fit
@@ -464,16 +468,36 @@ def adjust_transforms(
 
 
 def set_cutting_angles(pitch_deg: float, yaw_deg: float) -> dict[str, Any]:
-    """Set the stack-wide cutting angles.
+    """Set the stack-wide cutting angles: tilt the atlas plane every section is cut at.
 
-    Subsequent atlas fetches and previews are rendered at these angles.
+    Pitch 0 and yaw 0 is the atlas's flat plane. Every section gets these
+    angles, replacing any it had of its own, and every later atlas picture
+    is drawn at them. A tilt moves each edge of the atlas plane along the
+    position axis: an edge D mm from the picture's centre moves about
+    D x tan(angle) mm (10 degrees moves an edge 4 mm from the centre about
+    0.7 mm). Which edge moves which way, for positive angles, by the plane
+    the stack is cut in (edges as the pictures show them):
+
+    - coronal: pitch puts the top edge at a larger position (mm) than the
+      bottom edge; yaw puts the right edge at a larger position than the
+      left edge.
+    - sagittal: pitch puts the left edge at a larger position than the
+      right edge; yaw puts the bottom edge at a larger position than the
+      top edge.
+    - horizontal: pitch puts the right edge at a larger position than the
+      left edge; yaw puts the top edge at a larger position than the
+      bottom edge.
+
+    Negative angles move the edges the opposite way. Positions and
+    transforms are kept; an applied deformation is cleared (the reply
+    lists it).
 
     Args:
-        pitch_deg: Rotation about the plane's column axis, in degrees.
-        yaw_deg: Rotation about the plane's row axis, in degrees.
+        pitch_deg: Pitch in degrees.
+        yaw_deg: Yaw in degrees.
 
     Returns:
-        The rows this call changed.
+        The angles now set.
     """
     ...
 
@@ -666,7 +690,7 @@ STUBS: dict[str, Callable[..., Any]] = {
         status, view_slices, view_atlas, note, undo, redo, mark_damaged, preprocess,
         reorder_slices, set_positions, view_placement, view_stack,
         search_position, orient_slices, fit_affine, adjust_transforms, set_cutting_angles,
-        trace_borders, trace_from_atlas, grep_atlas, fit_deformable, submit, export_maps,
+        grep_atlas, trace_borders, trace_from_atlas, fit_deformable, submit, export_maps,
     )
 }
 

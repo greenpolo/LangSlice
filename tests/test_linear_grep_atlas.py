@@ -52,9 +52,11 @@ def _grep(tmp_path: Path):
     return state, _tool(build_tools(state, ctx, spec), "grep_atlas")
 
 
-def test_tool_is_absent_unless_nonlinear_is_on(tmp_path: Path):
+def test_tool_is_present_with_linear_or_nonlinear(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, ["position"])
     assert "grep_atlas" not in build_tools(state, ctx, spec).names
+    spec.tasks = ["transform"]
+    assert "grep_atlas" in build_tools(state, ctx, spec).names
     spec.tasks = ["nonlinear"]
     assert "grep_atlas" in build_tools(state, ctx, spec).names
 

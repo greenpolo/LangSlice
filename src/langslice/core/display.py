@@ -44,7 +44,6 @@ from typing import Any, cast
 import numpy as np
 from PIL import Image
 
-from langslice.core.affine import resize_long_edge
 from langslice.core.appearance import (
     Look,
     channel_colors,
@@ -458,7 +457,8 @@ def channel_strip(
 
 def framed_atlas(
     ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
-    *, long_edge: int | None = None, fill: bool = False, angles: Angles | None = None,
+    *, long_edge: int | None = None, um_per_px: float | None = None,
+    angles: Angles | None = None,
 ) -> Image.Image:
     """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
 
@@ -466,17 +466,22 @@ def framed_atlas(
     stack's view angles for ``view_atlas``; None, the stack's one angle.
 
     At most *long_edge* (None: ``options.long_edge``) and never upsampled
-    past the plane's own voxels, unless *fill*: then drawn at exactly
-    *long_edge*, lines included, for a picture that puts the atlas beside a
-    section of that size. With ``ara`` alone (no lines, no regions, no zoom)
-    and no *fill* this is the picture ``view_atlas`` always sent.
+    past the plane's own voxels, unless *um_per_px*: then drawn at exactly
+    that many micrometres per pixel, lines included, for a picture that puts
+    the atlas beside a section drawn at the same scale
+    (:mod:`langslice.core.scale`). With ``ara`` alone (no lines, no regions,
+    no zoom) and no *um_per_px* this is the picture ``view_atlas`` always sent.
     """
+    from langslice.core.atlas.render import atlas_um_per_px
     from langslice.core.atlas_fetch import atlas_mask, atlas_section, atlas_sized
+    from langslice.core.scale import resized
 
     edge = int(long_edge or options.long_edge)
 
     def sized(picture: Image.Image) -> Image.Image:
-        return resize_long_edge(picture, edge) if fill else atlas_sized(picture, edge)
+        if um_per_px is not None:
+            return resized(picture, atlas_um_per_px(ctx.atlas) / float(um_per_px))
+        return atlas_sized(picture, edge)
 
     pitch, yaw = plane_angles(state, angles)
     if options.atlas_images == ("ara",) and not options.lines and options.full_view:

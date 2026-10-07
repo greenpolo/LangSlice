@@ -141,6 +141,10 @@ VERBS: dict[str, Verb] = _verbs(
          when=lambda spec: spec.has("transform") and spec.transform.interactive),
     Verb("set_cutting_angles", positions.set_cutting_angles, "write", "Linear",
          when=lambda spec: spec.has("transform") and spec.transform.angles),
+    # Wherever a tool takes atlas regions (fit_affine's and fit_deformable's
+    # include/exclude), so the agent can look their names up.
+    Verb("grep_atlas", atlas.grep_atlas, "read", "Linear",
+         when=lambda spec: spec.has("transform") or spec.has("nonlinear")),
     Verb("trace_borders", traces.trace_borders, "write", "Nonlinear", long=True,
          image_model=True,
          when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
@@ -149,8 +153,6 @@ VERBS: dict[str, Verb] = _verbs(
     Verb("trace_from_atlas", traces.trace_from_atlas, "write", "Nonlinear", long=True,
          image_model=True, scripting=True, hidden=True,
          when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
-    Verb("grep_atlas", atlas.grep_atlas, "read", "Nonlinear",
-         when=lambda spec: spec.has("nonlinear")),
     Verb("fit_deformable", deformable.fit_deformable, "write", "Nonlinear", long=True,
          alternates={"keep_linear": deformable.keep_linear},
          limits={"sections": _PICTURED, "candidates": MAX_CANDIDATES,

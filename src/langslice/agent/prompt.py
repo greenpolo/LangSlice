@@ -64,14 +64,15 @@ TOOL_LINES: dict[str, str] = {
     "that position on the section's own canvas and scale; the section itself is "
     "in {opening}), overlay, checkerboard, outlines or section (the "
     "section under its registration on that canvas, one image per pair), "
-    "stacked (the section as corrected over the atlas, each tissue-framed) or "
-    "side_by_side (separate original section plus atlas references, one section "
+    "stacked (the section as corrected above the atlas, each tissue-framed, both "
+    "at one scale) or side_by_side (separate original section plus atlas references "
+    "at one scale, one section "
     "per distinct id and one atlas per pair, up to 8 images; full view only); "
     "writes nothing.",
     "view_stack": "whole-stack review, meant for after the positions are "
     "written and before `submit`: one contact sheet of every section in the "
     "order of its written position with the atlas at that position beneath "
-    "it, each captioned with index, filename, position and the distance to "
+    "it at the same scale, each captioned with index, filename, position and the distance to "
     "the next, plus a plot of position against corrected index; writes "
     "nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
@@ -82,9 +83,11 @@ TOOL_LINES: dict[str, str] = {
     "search_position": "searches the atlas around one section's current position "
     "(or a centre you give; the whole range for a section without one) and "
     "reports the best it found; writes nothing.",
-    "set_cutting_angles": "sets the stack-wide cutting angles.",
+    "set_cutting_angles": "tilts the atlas plane for the whole stack (pitch and yaw); "
+    "its description says which picture edge each angle moves along the position axis.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
-    "section, writes it as the section's transform, and returns the overlap, "
+    "section, writes it as the section's transform, and returns the shape "
+    "overlap (which cannot tell a turned or upside-down section from a correct one), "
     "the transform as the same five physical parameters `adjust_transforms` "
     "takes, and a picture of the section under it at true physical scale. "
     "The default method, elastix, refines the section's current transform by "
@@ -476,20 +479,24 @@ def build_job_statement(
             "damaged sections included."
         )
         constraints.append(
-            "- Every damaged section requires a non-identity manual (interactive) "
-            "transform based on surviving anatomy; marking damage does not exempt "
-            "it from alignment. An automatic fit or an identity transform does "
-            "not satisfy this requirement."
+            "- Every damaged section requires a non-identity transform based on its "
+            "surviving anatomy; marking damage does not exempt it from alignment. A "
+            "whole-section automatic fit or an identity transform does not satisfy "
+            "this requirement."
         )
-        if spec.transform.interactive:
+        ways = ((["a manual transform with `adjust_transforms`"]
+                 if spec.transform.interactive else [])
+                + (["`fit_affine` with `exclude` naming every region the section has "
+                    "lost or that is torn, folded or displaced, so that only intact "
+                    "anatomy steers the fit"] if spec.transform.automatic else []))
+        if ways:
             constraints.append(
-                "- Align damaged sections with "
-                "`adjust_transforms`; "
-                "inspect the overlays before submitting."
+                "- Align damaged sections with " + ", or ".join(ways) + ". Inspect "
+                "each overlay against the surviving internal anatomy before submitting."
             )
         else:
             constraints.append(
-                "- Interactive transforms are disabled; unresolved damaged "
+                "- The transform tools are disabled; unresolved damaged "
                 "sections require the host to enable them before submission."
             )
     if spec.has("nonlinear"):

@@ -26,6 +26,7 @@ import functools
 import importlib.util
 import inspect
 import logging
+import math
 import threading
 import uuid
 from collections.abc import Callable, Iterator
@@ -275,13 +276,13 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
     for entry in args.get("entries") or []:
         if isinstance(entry, dict) and "id" in entry:
             refs.append(entry["id"])
-    if name == "view_slices":
-        refs = refs[:MAX_VIEW_SLICES]
     targets: list[str] = []
     for ref in refs:
         record = state.resolve(ref)
         if record is not None and record.id not in targets:
             targets.append(record.id)
+    if name == "view_slices":
+        targets = targets[:MAX_VIEW_SLICES]
     return targets
 
 
@@ -764,7 +765,9 @@ def build_tools(
         if not slices:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "slices must name one or more sections"}
-        known, unknown = resolve_many(list(slices)[:MAX_VIEW_SLICES])
+        named, unknown = resolve_many(list(slices))
+        named = list({record.id: record for record in named}.values())
+        known, not_shown = named[:MAX_VIEW_SLICES], named[MAX_VIEW_SLICES:]
         if not known:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
         options = display(VIEW_SLICES_VIEW, view, sections=known)
@@ -790,6 +793,12 @@ def build_tools(
         }
         if options.mode == "channels":
             result["channels"] = shown.channels
+        if not_shown:
+            result["truncated"] = True
+            result["not_shown"] = [record.id for record in not_shown]
+            result["description"] += (
+                f" One call shows at most {MAX_VIEW_SLICES} sections. NOT shown to you: "
+                + ", ".join(record.id for record in not_shown) + ".")
         return result
 
     def note(text: str) -> dict[str, Any]:
@@ -1216,8 +1225,9 @@ def build_tools(
                 + ", ".join(f"{row['id']} at {row['position_mm']:.2f} mm" for row in compared)
                 + ("; separate reference images mapped by zero-based image_indexes. "
                    "Section captions retain their original display index/flags; "
-                   "filenames identify sections. Independently tissue-framed, not "
-                   "a shared physical canvas."
+                   "filenames identify sections. Each is tissue-framed on its own, the "
+                   "section and every atlas at one scale (the same um per pixel), not "
+                   "on a shared canvas."
                    if separate else "; the images of each pair in that order, each "
                    "captioned with the section and the position it is shown at.")
             ),
@@ -1226,6 +1236,9 @@ def build_tools(
         if dropped > 0:
             result["truncated"] = True
             result["dropped_pairs"] = dropped
+            result["description"] += (
+                f" One call shows at most {MAX_VIEW_SLICES} pairs; the last {dropped} "
+                "you asked for were NOT shown to you.")
         if delivery_id is not None:
             result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
         return result
@@ -1243,7 +1256,7 @@ def build_tools(
         parts = [
             f"The {len(state.slices)} sections in the order of their "
             "written positions (unplaced last), each captioned "
-            "'<index>: <filename>  <position>', over its atlas match:",
+            "'<index>: <filename>  <position>', above its atlas match at the same scale:",
             sheet,
             "Position against corrected index:",
             plot,
@@ -1269,8 +1282,12 @@ def build_tools(
             pitch, yaw = float(pitch_deg), float(yaw_deg)
         except (TypeError, ValueError):
             return {"status": "error", "error": "BAD_ARGS"}
+        if not (math.isfinite(pitch) and math.isfinite(yaw)):
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "pitch_deg and yaw_deg must be finite numbers."}
         ops_positions.set_cutting_angles(job, ctx, pitch, yaw)
-        return answered()  # stack-wide: no section row changes
+        # Stack-wide: no section row changes; the reply names the plane now set.
+        return {**answered(), "cutting_angles_deg": dict(state.cutting_angles_deg)}
 
     def fit_affine(
         slices: list[str],
@@ -1356,6 +1373,12 @@ def build_tools(
             payload[TOOL_MEDIA_PARTS_KEY] = parts
         for row in fits:
             row.pop("params")  # the six raw numbers stay host-side
+            turn = row.pop("turn_deg", None)
+            if turn is not None:
+                row["warning"] = (
+                    f"This fit turns the section {turn:.0f} degrees from its previous "
+                    "transform. The overlap compares shapes, not the anatomy inside, "
+                    "so a turned or upside-down section can score as high as a correct one.")
         return payload
 
     # --- the interactive transform --------------------------------------

@@ -64,7 +64,7 @@
   }
  },
  "media_texts": [
-  "The 3 sections in the order of their written positions (unplaced last), each captioned '<index>: <filename>  <position>', over its atlas match:",
+  "The 3 sections in the order of their written positions (unplaced last), each captioned '<index>: <filename>  <position>', above its atlas match at the same scale:",
   "Position against corrected index:"
  ],
  "tool": "view_stack"

@@ -151,9 +151,23 @@ for the flat plane).
   `PanelFrame`, `physical_views` (the alignment picture in every view mode),
   `physical_overlay` and `estimate_um_per_px`.
 - `sheets.py` — the stack sheets: `stack_pictures` (captioned per section,
-  optionally in written-position order over its atlas match),
-  `reference_slice_picture`, `stack_sheet` (one contact sheet, shrunk under
+  optionally in written-position order over its atlas match, the pair at
+  one scale, `scale.pair_scale`), `reference_slice_picture` (with `scale=`,
+  at that scale), `stack_sheet` (one contact sheet, shrunk under
   `SHEET_MAX_LONG_EDGE`), `grid`, `beside`, `stacked`, `spacing_plot`.
+- `scale.py` — one micrometres per pixel for a section and its atlas drawn
+  as separate panels (`stacked`, `side_by_side`, `view_stack`'s sheet, the
+  opening strips): the section at the scale its overlay draws it
+  (`section_um_per_px`: `transform.calibrate` times `stored_scale`, the
+  stored transform's `sqrt(|ad - bc|)`), the atlas plane at its voxels, the
+  larger framed panel at the picture's long edge and never finer than the
+  section's working copy (`pair_um_per_px`, `finest_um_per_px`).
+  `pair_scale` sizes a pair at one position; `reference_scale` sizes
+  `side_by_side` by `brain_extent_um` (the anatomy's bounding box along the
+  plane's in-plane directions plus the frame margin, an outer bound of every
+  framed plane at those angles), so one section picture serves every
+  position of a call. `section_at` / `atlas_at` (and
+  `display.framed_atlas(um_per_px=)`) draw at exactly that scale.
 - `status.py` — the status table, data for the doors rather than a
   picture: `status_rows`, `compact_rows` (a model's: null and empty fields
   left out), `uniform_rows` / `with_uniform_rows` (a script's: every

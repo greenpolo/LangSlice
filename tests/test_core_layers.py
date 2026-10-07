@@ -73,3 +73,32 @@ def test_notes_are_collected_per_call_and_found_by_identity():
         layers.note(image, sections=("s0.png",), mode="section")
     assert layers.note_for(image, notes).sections == ("s0.png",)
     assert layers.note_for(twin, notes) is None
+
+
+#: Which picture edge a positive angle puts at the larger position, per plane:
+#: what `set_cutting_angles`' description tells the model.
+ANGLE_EDGES = {
+    "coronal": {"pitch": "top", "yaw": "right"},
+    "sagittal": {"pitch": "left", "yaw": "bottom"},
+    "horizontal": {"pitch": "right", "yaw": "top"},
+}
+
+
+def test_the_cutting_angle_directions_are_the_described_ones():
+    from langslice.core.oblique import plane_axes
+
+    atlas = SyntheticAtlas()
+    for plane, edges in ANGLE_EDGES.items():
+        normal = plane_axes(atlas, plane)[0]
+        flat = plane_index_coordinates(atlas, 0.1, plane)
+        h, w = flat.shape[1:]
+        # The sign that turns the normal index into position (mm).
+        step = plane_index_coordinates(atlas, 0.15, plane)[normal, h // 2, w // 2]
+        sign = 1.0 if step > flat[normal, h // 2, w // 2] else -1.0
+        for angle, edge in edges.items():
+            tilted = sign * plane_index_coordinates(
+                atlas, 0.1, plane, **{f"{angle}_deg": 10.0})[normal]
+            at = {"top": tilted[0, w // 2], "bottom": tilted[h - 1, w // 2],
+                  "left": tilted[h // 2, 0], "right": tilted[h // 2, w - 1]}
+            facing = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
+            assert at[edge] > at[facing[edge]], (plane, angle, edge)
