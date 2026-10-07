@@ -6,13 +6,12 @@ agent and MCP tools are built from, so the list and the schemas are what
 ``langslice-job FOLDER VERB`` accepts. ``ops`` lists every verb (name, kind,
 group, one line, ``long`` where it computes outside the job lock and may
 take minutes). ``schema`` gives per verb what a model reads of it: the
-whole declared description, the one-line summary, the argument schema, the
-picture options described once (``picture_options``, the job statement's
-text, with the ``view.resolution`` range) and ``long``; declared as the
-job's settings declare it with ``--job FOLDER``, or the job of the folder it
-runs in, otherwise every argument (``hint`` says how to narrow it).
-``schema`` is versioned (:data:`SCHEMA_VERSION`); a verb is never renamed
-once shipped. A hidden verb (``registry.Verb.hidden``) is in neither list;
+whole declared description, the one-line summary, the argument schema and
+``long``; declared as the job's settings declare it with ``--job FOLDER``,
+or the job of the folder it runs in, otherwise every argument (``hint``
+says how to narrow it). ``schema`` is versioned (:data:`SCHEMA_VERSION`);
+a retired verb's name (``registry.RETIRED``) answers ``RETIRED_TOOL`` with
+the verb to use instead. A hidden verb (``registry.Verb.hidden``) is in neither list;
 ``schema VERB`` still answers for it by name. ``schema`` of a job command
 (``init``, ``brief``, ``runs``, ``wait``: :data:`JOB_COMMANDS`) gives its
 summary, usage and flags (``init``'s are its parser's,
@@ -33,9 +32,10 @@ from langslice.doors.cli.envelope import EXIT_INTERNAL, EXIT_REFUSED, Envelope
 logger = logging.getLogger(__name__)
 
 #: The version of what ``langslice-job schema`` prints (bumped when a verb's
-#: arguments change incompatibly). 2: each verb an object with its
-#: description, summary, arguments, picture options and ``long``.
-SCHEMA_VERSION = 2
+#: arguments change incompatibly). 3: the redesigned toolbox (look, zoom,
+#: one tool per registration method); each verb an object with its
+#: description, summary, arguments and ``long``.
+SCHEMA_VERSION = 3
 
 #: The agent CLI's own commands besides the verbs (``langslice-job FOLDER ...``).
 JOB_COMMANDS: dict[str, str] = {
@@ -122,19 +122,15 @@ class Declared:
     open job: its settings, channels and viewer) or every argument."""
 
     def __init__(self, job: str | None) -> None:
-        from langslice.doors.declarations import Variant
+        from langslice.doors.declarations import FULL, Variant
 
         self.folder: str | None = None
-        self.variant = Variant(auto=True, door="cli")
-        self.channels: Any = None
-        self.atlas_channels: tuple[str, ...] | None = None
-        self.max_edge: int | None = None
+        self.variant = Variant(auto=True, door="cli", prompt=FULL.prompt)
         found = job or _job_here()
         if found:
             self._open(found)
 
     def _open(self, folder: str) -> None:
-        from langslice.agent.prompt import display_facts
         from langslice.doors.declarations import Variant
         from langslice.doors.jobs import open_folder
 
@@ -143,40 +139,28 @@ class Declared:
             self.folder = str(opened.job.folder)
             self.variant = Variant.of(opened.spec, auto=True, door="cli",
                                       image_model=opened.image_model_connected)
-            facts = display_facts(opened.ctx, opened.job.state)
-            self.channels, self.atlas_channels = facts["channels"], facts["atlas_channels"]
-            self.max_edge = opened.max_view_edge
         finally:
             opened.close()
 
     def entry(self, name: str) -> dict[str, Any]:
         """One verb as this call declares it."""
-        from langslice.agent.prompt import PICTURE_TOOLS, display_lines
-        from langslice.core.opening import DEFAULT_VIEWER, VIEWER_LIMITS
         from langslice.doors.declarations import arguments_schema, declaration
         from langslice.ops.registry import VERBS
 
         declared = declaration(name, self.variant)
         verb = VERBS[name]
-        entry: dict[str, Any] = {
+        return {
             "summary": declared.summary, "description": declared.doc,
             "kind": verb.kind, "group": verb.group, "long": verb.long,
             "arguments": arguments_schema(name, self.variant),
         }
-        if name in PICTURE_TOOLS:
-            edge = self.max_edge or VIEWER_LIMITS[DEFAULT_VIEWER][1]
-            entry["picture_options"] = "\n".join(display_lines(
-                [name], channels=self.channels, atlas_channels=self.atlas_channels,
-                resolution=edge))
-        return entry
 
     def facts(self) -> dict[str, Any]:
         """Which job the verbs are declared for, or how to declare them for one."""
         if self.folder:
             return {"job": self.folder}
-        return {"job": None, "hint": "Declared without a job: every argument and option, "
-                "pictures up to the default viewer's size. Add --job FOLDER (or run it in "
-                "a job folder) for a job's own declarations, channels and picture sizes."}
+        return {"job": None, "hint": "Declared without a job: every argument. Add --job "
+                "FOLDER (or run it in a job folder) for a job's own declarations."}
 
 
 def _job_here() -> str | None:
@@ -214,7 +198,7 @@ def ops(_args: argparse.Namespace) -> Envelope:
 def schema(args: argparse.Namespace) -> Envelope:
     """``langslice-job schema [VERB] [--job FOLDER]``."""
     from langslice.doors.jobs import NoJob
-    from langslice.ops.registry import VERBS, listed
+    from langslice.ops.registry import VERBS, listed, retired_payload
 
     if args.verb is not None and canonical_verb(args.verb) in command_names():
         name = canonical_verb(args.verb)  # init, brief, runs, wait: no job needed
@@ -229,6 +213,11 @@ def schema(args: argparse.Namespace) -> Envelope:
             nexts: list[str] = []
         else:
             name = canonical_verb(args.verb)
+            retired = retired_payload(name)
+            if retired is not None:
+                return Envelope.failure(
+                    "RETIRED_TOOL", retired["message"], verb=name,
+                    result={key: retired[key] for key in ("tool", "use") if key in retired})
             if name not in VERBS:
                 return Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}.")
             result = {"schema_version": SCHEMA_VERSION, "verb": name, **declared.facts(),

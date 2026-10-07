@@ -91,13 +91,20 @@ def test_orientation_clears_a_stale_transform_and_honours_the_spec(tmp_path: Pat
     assert _record(job, "s1.png").flip is False
 
 
-def test_damage_flags_and_host_flags(tmp_path: Path):
-    job, _ = _open(tmp_path, inputs={"damaged": {"s1.png": "host note"}})
-    done = damage.mark_damaged(job, [{"id": "s0.png", "note": " torn "},
-                                     {"id": "s1.png", "damaged": False}])
-    assert done.marked == ["s0.png"] and done.unmarked == []
-    assert done.rejected == [{"id": "s1.png", "error": "DAMAGE_SET_BY_USER"}]
-    assert _record(job, "s0.png").damage_note == "torn"
+def test_a_host_damage_note_is_a_note_alone(tmp_path: Path):
+    """``inputs.damaged`` is the section's ``damage_note``, not a damage mark:
+    the section is damaged only once it has marked regions."""
+    job, ctx = _open(tmp_path, inputs={"damaged": {"s1.png": "host note"}})
+    record = _record(job, "s1.png")
+    assert record.damage_note == "host note" and not record.damaged
+    assert record.damaged_regions == []
+    # Clearing marks the section does not have writes nothing; the note stays.
+    done = damage.mark_damage(job, ctx, "s1.png", [], "ignored")
+    assert not done.written and done.by_user and not done.damaged
+    assert done.note == "host note" and job.undo_stack == []
+    with pytest.raises(Refused) as unknown:
+        damage.mark_damage(job, ctx, "x.png", [])
+    assert unknown.value.code == "UNKNOWN_SLICE_IDS"
 
 
 def test_notes_append_and_refuse_empty(tmp_path: Path):

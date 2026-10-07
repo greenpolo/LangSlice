@@ -1,9 +1,9 @@
 """The shapes of the toolbox's arguments, and the one check that refuses strays.
 
-Every picture tool takes its picture options in ONE argument, ``view``
-(:class:`View`; :class:`ViewAuto` adds ``resolution`` where the user left
-picture size to the agent). Per-entry arguments (``entries``, ``candidates``)
-are typed dicts too. Typed dicts, not ``dict[str, Any]``: ADK and FastMCP
+An argument whose value is an object or a list of objects (``sections`` of
+``position_sections`` and ``interactive_transform``, ``cutting_angles``,
+``submit``'s ``left_linear``) is a typed dict. Typed dicts, not ``dict[str,
+Any]``: ADK and FastMCP
 both turn them into a JSON schema that names every key and its type, so the
 model sees the shape in the tool list, and the keys this module checks are
 the keys that schema shows.
@@ -33,12 +33,13 @@ from typing import Any
 from pydantic import ConfigDict, with_config
 from typing_extensions import TypedDict, is_typeddict
 
-# --- picture options --------------------------------------------------------
+# --- the older picture options ---------------------------------------------------
 
 
 @with_config(ConfigDict(extra="forbid"))
 class View(TypedDict, total=False):
-    """Picture options: what this call's pictures show (this call only)."""
+    """The older picture options (:mod:`langslice.doors.tools.view_options`);
+    no tool declares them."""
 
     mode: str
     channels: list[str]
@@ -54,7 +55,7 @@ class View(TypedDict, total=False):
 
 @with_config(ConfigDict(extra="forbid"))
 class ViewAuto(View, total=False):
-    """Picture options, with the picture size (image resolution "auto")."""
+    """The older picture options, with the picture size."""
 
     resolution: int
 
@@ -63,71 +64,43 @@ class ViewAuto(View, total=False):
 
 
 @with_config(ConfigDict(extra="forbid"))
-class DamageEntry(TypedDict, total=False):
-    """One ``mark_damaged`` entry."""
-
-    id: str | int
-    damaged: bool
-    note: str
-
-
-@with_config(ConfigDict(extra="forbid"))
-class OrientEntry(TypedDict, total=False):
-    """One ``orient_slices`` entry."""
-
-    id: str | int
-    flip: bool
-    rotate_deg: int
-
-
-@with_config(ConfigDict(extra="forbid"))
-class PositionEntry(TypedDict, total=False):
-    """One ``set_positions`` entry."""
+class SectionPosition(TypedDict, total=False):
+    """One ``position_sections`` section: where it sits along the slicing axis."""
 
     id: str | int
     position_mm: float
 
 
 @with_config(ConfigDict(extra="forbid"))
-class PlacementEntry(TypedDict, total=False):
-    """One ``view_placement`` entry."""
+class CuttingAngles(TypedDict, total=False):
+    """``position_sections``' cutting angles, for the whole stack."""
 
-    id: str | int
-    positions_mm: list[float]
+    pitch_deg: float
+    yaw_deg: float
 
 
 @with_config(ConfigDict(extra="forbid"))
-class TransformEntry(TypedDict, total=False):
-    """One ``adjust_transforms`` entry; a shear left out keeps the current shear."""
+class SectionTransform(TypedDict, total=False):
+    """One ``interactive_transform`` section: absolute values, each optional."""
 
     id: str | int
+    flip: bool
+    rotate_quarter: int
     rotation_deg: float
     scale_x: float
     scale_y: float
+    shear: float
     translate_x_mm: float
     translate_y_mm: float
-    shear: float
-    pivot: str | list[float]
-    note: str
 
 
 @with_config(ConfigDict(extra="forbid"))
-class Candidate(TypedDict, total=False):
-    """One ``fit_deformable`` candidate: the settings it overrides."""
+class LeftLinear(TypedDict, total=False):
+    """One ``submit`` ``left_linear`` entry: a section left without a
+    deformation, and why."""
 
-    stiffness: str
-    fit_section: str
-    fit_atlas: str
-    engine: str
-
-
-@with_config(ConfigDict(extra="forbid"))
-class FixedCandidate(TypedDict, total=False):
-    """A candidate where the user fixed the engine (no ``engine`` key)."""
-
-    stiffness: str
-    fit_section: str
-    fit_atlas: str
+    id: str | int
+    reason: str
 
 
 #: Why a key a typed dict does not have is refused, where the plain "unknown"
@@ -136,9 +109,6 @@ KEY_NOTES: dict[Any, dict[str, str]] = {
     View: {
         "resolution": "The user fixed the picture size for this run, so resolution "
         "cannot be set.",
-    },
-    FixedCandidate: {
-        "engine": "The user fixed the engine for this run.",
     },
 }
 
@@ -232,8 +202,8 @@ def normalize_arguments(func: Callable[..., Any], args: Mapping[str, Any]) -> di
     schema says text. So a whole number in a text argument (``id``,
     ``section``) or in a list of text (``slices``) becomes its text; the
     tools resolve ``"2"`` and ``2`` alike. A null inside a typed-dict
-    argument (``view``, each ``entries`` / ``candidates`` dict) means "not
-    given", as the tools read it, and is dropped; a null ``view`` is the
+    argument (``cutting_angles``, each ``sections`` dict) means "not given",
+    as the tools read it, and is dropped; a null object argument is its
     default. Nothing else changes: unknown keys are :func:`argument_refusal`'s.
     """
     params = parameters(func)
@@ -262,8 +232,8 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[
     """The refusal for unknown or misplaced arguments, or None when all are known.
 
     Checks the top-level names against *func*'s signature, and every key of
-    an argument typed as a typed dict (``view``) or a list of them
-    (``entries``, ``candidates``) against that dict's keys. A value of the
+    an argument typed as a typed dict (``cutting_angles``) or a list of them
+    (``sections``, ``left_linear``) against that dict's keys. A value of the
     wrong kind (a string where an object belongs) is left to the tool.
     """
     params = parameters(func)

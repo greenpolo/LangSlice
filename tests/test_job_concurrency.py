@@ -4,8 +4,9 @@ Every write holds the job folder's lock (``job.lock``) and reloads what
 others saved first (``Job.writing``); a long fit computes outside the lock
 and, when it applies, refuses a section whose inputs changed meanwhile
 (``STALE_INPUT``) while the others apply. Here an "agent" (a second job on
-the folder, through the library) writes while a CLI fit computes, and
-several CLI processes write at once.
+the folder, through the library) writes while a CLI fit computes
+(``ants_syn``, ``elastix_affine``: long verbs), and several CLI processes
+write at once.
 """
 
 from __future__ import annotations
@@ -66,11 +67,13 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                          "position,transform,nonlinear", "--image-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM))
     assert code == 0, envelope
-    code, envelope = cli(capsys, str(folder), "set_positions", "--entries", json.dumps(
-        [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}]))
+    code, envelope = cli(capsys, str(folder), "position_sections", "--sections", json.dumps(
+        [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}]),
+        "--view", "false")
     assert code == 0, envelope
-    code, envelope = cli(capsys, str(folder), "adjust_transforms", "--entries",
-                         json.dumps([{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}]))
+    code, envelope = cli(capsys, str(folder), "interactive_transform", "--sections",
+                         json.dumps([{"id": ID0, **IDENTITY}, {"id": ID1, **IDENTITY}]),
+                         "--view", "false")
     assert code == 0, envelope
     return folder
 
@@ -95,11 +98,21 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
     monkeypatch.setattr(module, name, wrapped)
 
 
+def _needs_ants() -> None:
+    from langslice.ops.deformable import ants_ready
+
+    if not ants_ready():
+        pytest.skip("ants_syn needs antspyx")
+
+
 def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatch):
+    _needs_ants()
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
-           lambda: agent.set_positions(entries=[{"id": ID2, "position_mm": 0.2}]))
-    code, envelope = cli(capsys, str(images), "fit_deformable", "--slices", ID0)
+           lambda: agent.position_sections(sections=[{"id": ID2, "position_mm": 0.2}],
+                                           view=False))
+    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", ID0,
+                         "--view", "false")
     assert code == 0, envelope
     assert envelope["result"]["results"][0]["written"] is True
     held = saved(images)
@@ -113,11 +126,13 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
 
 def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
         capsys, images, monkeypatch):
+    _needs_ants()
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
-           lambda: agent.set_positions(entries=[{"id": ID0, "position_mm": 0.11}]))
-    code, envelope = cli(capsys, str(images), "fit_deformable", "--slices",
-                         json.dumps([ID0, ID1]))
+           lambda: agent.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
+                                           view=False))
+    code, envelope = cli(capsys, str(images), "ants_syn", "--sections",
+                         json.dumps([ID0, ID1]), "--view", "false")
     assert code == 0, envelope
     rows = {row["id"]: row for row in envelope["result"]["results"]}
     assert rows[ID0]["error"] == "STALE_INPUT" and "again" in rows[ID0]["message"]
@@ -133,16 +148,16 @@ def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, 
     from langslice.core import transform
 
     agent = langslice.open_job(images)
-    during(monkeypatch, transform, "fit_silhouette",
-           lambda: agent.adjust_transforms(entries=[{"id": ID1, **IDENTITY,
-                                                     "rotation_deg": 3.0}]))
-    code, envelope = cli(capsys, str(images), "fit_affine", "--slices",
-                         json.dumps([ID0, ID1]), "--method", "silhouette")
+    during(monkeypatch, transform, "fit_elastix",
+           lambda: agent.interactive_transform(sections=[{"id": ID1, **IDENTITY,
+                                                          "rotation_deg": 3.0}], view=False))
+    code, envelope = cli(capsys, str(images), "elastix_affine", "--sections",
+                         json.dumps([ID0, ID1]), "--view", "false")
     assert code == 0, envelope
     rows = {row["id"]: row for row in envelope["result"]["results"]}
     assert rows[ID0]["status"] == "ok" and rows[ID1]["error"] == "STALE_INPUT"
     held = saved(images)
-    assert held[ID0]["transform"]["kind"] == "silhouette"
+    assert held[ID0]["transform"]["kind"] == "elastix"
     assert held[ID1]["transform"]["physical"]["rotation_deg"] == pytest.approx(3.0)
     agent.close()
 
@@ -159,10 +174,10 @@ def test_cli_processes_writing_at_once_all_land(images):
                                  *argv], cwd=REPO, env=env, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True)
 
-    started = [start("set_positions", "--entries", json.dumps([{"id": ID2,
-                                                                "position_mm": 0.2}])),
-               start("set_positions", "--entries", json.dumps([{"id": ID0,
-                                                                "position_mm": 0.12}]))]
+    started = [start("position_sections", "--sections",
+                     json.dumps([{"id": ID2, "position_mm": 0.2}]), "--view", "false"),
+               start("position_sections", "--sections",
+                     json.dumps([{"id": ID0, "position_mm": 0.12}]), "--view", "false")]
     started += [start("note", "--text", f"note {number}") for number in range(4)]
     for process in started:
         out, err = process.communicate(timeout=300)
@@ -199,9 +214,9 @@ def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(views.ViewStore, "_write_call", held)
     first, second = views.ViewStore(layout), views.ViewStore(layout)
     picture = Image.new("RGB", (8, 8), "red")
-    names = (first.save(tool="view_slices", pictures=[(picture, None)])
-             + second.save(tool="view_slices", pictures=[(picture, None), (picture, None)])
-             + first.save(tool="view_atlas", pictures=[(picture, None)]))
+    names = (first.save(tool="look", pictures=[(picture, None)])
+             + second.save(tool="look", pictures=[(picture, None), (picture, None)])
+             + first.save(tool="zoom", pictures=[(picture, None)]))
     release.set()
     first.flush()
     second.flush()

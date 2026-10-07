@@ -74,7 +74,6 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     state.slices[0].position_mm = 1.0
     state.slices[1].position_mm = 1.5
     state.slices[1].flip = True
-    state.slices[2].damage_marked = True
     state.slices[2].damage_note = "half the section is gone"
     state.slices[0].transform = {
         "kind": "silhouette",
@@ -95,8 +94,17 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     assert rows[0]["transform_mirrored"] is True
     assert rows[1]["transform_mirrored"] is None
 
+    # A note alone (a host's ``inputs.damaged``) does not make a section damaged.
+    assert rows[2]["damaged"] is False and rows[2]["damaged_regions"] == []
+    noted = status_text(state)
+    assert "damaged" not in noted and "damage note: half the section is gone" in noted
+
+    state.slices[2].damaged_regions = ["CTX", "OB"]
+    rows = status_rows(state)
+    assert rows[2]["damaged"] is True and rows[2]["damaged_regions"] == ["CTX", "OB"]
     text = status_text(state)
-    assert "s2.png" in text and "unplaced" in text and "damaged" in text
+    assert "s2.png" in text and "unplaced" in text
+    assert "damaged [CTX, OB]: half the section is gone" in text
     assert "delta_to_next_mm" in text
     assert "iou=0.900" in text and "mirrored=True" in text
 

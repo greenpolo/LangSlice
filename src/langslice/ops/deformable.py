@@ -297,6 +297,12 @@ def _apply(
                     choice=fit.choice, include=include, exclude=exclude, start=start,
                     previous=held, numbers=numbers,
                 )
+                traced = (fit.image_identity or {}).get("trace") if isinstance(
+                    fit.image_identity, dict) else None
+                if traced:
+                    # The trace this step fitted (its artifact directory):
+                    # a packaged trace called again on it reuses this step.
+                    record.deformation["steps"][-1]["trace"] = traced
                 row["written"] = True
                 written.append(record.id)
             row["steps"] = len((record.deformation or {}).get("steps") or [])

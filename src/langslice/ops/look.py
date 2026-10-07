@@ -56,6 +56,9 @@ class Looked:
     #: Pictures drawn but left out of this reply: ``{"mode", "sections",
     #: "positions_mm", "caption", "how"}`` each; "how" says how to get it.
     not_shown: list[dict[str, Any]] = field(default_factory=list)
+    #: :func:`show_result` only: ``{"id", "error", "message"}`` per section
+    #: whose picture could not be drawn (the write stands).
+    failed: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -107,9 +110,11 @@ def save_pictures(
             for name, picture in zip(names, drawn, strict=True)]
 
 
-def not_shown(pictures: Sequence[Any], mode: str) -> list[dict[str, Any]]:
+def not_shown(pictures: Sequence[Any], mode: str, *, verb: str = "") -> list[dict[str, Any]]:
     """The pictures left out of a reply, each with the arguments that get it
-    (from its recipe: the sections and positions it shows)."""
+    (from its recipe: the sections and positions it shows): of this call
+    again, or with *verb* of that verb (``look``, for a change tool's
+    picture)."""
     out: list[dict[str, Any]] = []
     for picture in pictures:
         args = (picture.recipe or {}).get("args") or {}
@@ -119,7 +124,8 @@ def not_shown(pictures: Sequence[Any], mode: str) -> list[dict[str, Any]]:
                **({"positions_mm": positions} if positions else {})}
         out.append({"mode": mode, "sections": sections, "positions_mm": positions,
                     "caption": picture.caption,
-                    "how": f"call again with {_words(ask)} (the other arguments as before)"})
+                    "how": (f"{verb} with {_words(ask)}" if verb else
+                            f"call again with {_words(ask)} (the other arguments as before)")})
     return out
 
 
@@ -208,6 +214,56 @@ def _reply(
     entries = save_pictures(job, workspace, tool, shown, notes, arguments)
     return Looked(pictures=[picture.image for picture in shown], entries=entries,
                   not_shown=not_shown(rest, mode))
+
+
+# --- a change tool's picture --------------------------------------------------------------
+
+
+def show_result(
+    job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
+    positions_mm: Sequence[float] = (), zooms: dict[str, Sequence[float]] | None = None,
+) -> Looked:
+    """The picture a change tool shows of what it wrote, drawn as ``look``
+    draws *mode* and saved under *tool* (so it has a number, a caption and a
+    recipe, and can be zoomed).
+
+    ``overlay``: one picture per section of *sections* (ids), each zoomed to
+    its *zooms* window (``[x0, y0, x1, y1]`` fractions of the unzoomed
+    picture) when given. ``positioning``: *sections* and the atlas at
+    *positions_mm* along the slicing axis. At most :data:`MAX_LOOK_PICTURES`
+    are shown; the rest are ``not_shown`` (with the ``look`` call that
+    draws them), and a section whose picture fails is ``failed``.
+    """
+    state = job.state
+    drawn: list[looks.LookPicture] = []
+    failed: list[dict[str, Any]] = []
+    windows = zooms or {}
+    with collecting() as notes:
+        if mode == "positioning":
+            request = looks.LookRequest(mode=mode, sections=tuple(sections),
+                                        positions_mm=tuple(float(v) for v in positions_mm))
+            try:
+                drawn = looks.look(workspace, state, request, store=job.deformations)
+            except Exception as exc:  # noqa: BLE001 - the write stands; say why
+                failed.append({"error": getattr(exc, "code", "RENDER_FAILED"),
+                               "message": str(exc)})
+        else:
+            for section in sections:
+                window = tuple(float(v) for v in windows.get(section) or ())
+                request = looks.LookRequest(mode=mode, sections=(section,), zoom=window)
+                try:
+                    drawn += looks.look(workspace, state, request, store=job.deformations)
+                except Exception as exc:  # noqa: BLE001 - the write stands; say why
+                    failed.append({"id": section, "error": getattr(exc, "code",
+                                                                   "RENDER_FAILED"),
+                                   "message": str(exc)})
+    shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
+    entries = save_pictures(job, workspace, tool, shown, notes,
+                            {"mode": mode, "sections": list(sections),
+                             **({"positions_mm": [float(v) for v in positions_mm]}
+                                if positions_mm else {})})
+    return Looked(pictures=[picture.image for picture in shown], entries=entries,
+                  not_shown=not_shown(rest, mode, verb=LOOK_TOOL), failed=failed)
 
 
 # --- zoom --------------------------------------------------------------------------------
@@ -309,5 +365,5 @@ def zoom(
 
 __all__ = [
     "LOOK_TOOL", "MAX_LOOK_PICTURES", "ZOOM_TOOL", "Looked", "Zoomed", "look", "not_shown",
-    "save_pictures", "zoom",
+    "save_pictures", "show_result", "zoom",
 ]

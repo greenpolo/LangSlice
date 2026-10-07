@@ -12,7 +12,7 @@ was shown: number, tool, sections, caption, step), ``state.json`` (the whole
 state, its run ``notes`` included), ``job.json`` (the settings and the user's
 notes), ``registration.json``, ``history/``, ``exports/`` and ``logs/``.
 A picture file is not returned as pixels: it is answered with its index record
-and the way to see it again (``zoom`` or ``look`` by its number).
+and the way to see it again (``zoom`` by its number).
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
     The reply says which lines it shows, the file's line count and, when lines
     remain, the offset to continue from. A picture file is not returned as
     pixels: its reply is its picture-index record (number, tool, sections,
-    caption, step) and says to see it again with ``zoom`` or ``look`` by that
+    caption, step) and says to see it again with ``zoom`` by that
     number. A binary file is described by its size.
     """
     real = _resolved(job, path)
@@ -192,7 +192,8 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
                             "the picture index. Pixels are not returned by this tool.")
         body = [f"{shown} is a picture file ({facts}); pixels are not returned here.",
                 *_record_text(record),
-                f"To see it again, call zoom or look with picture number {record.seq}."]
+                f"To see it again, call zoom with picture {record.seq} and a box over the "
+                "part to see (a box as large as the picture shows all of it)."]
         return FileText(shown, kind, "\n".join(body), picture=record.seq)
     if kind == "binary":
         return FileText(shown, kind, f"{shown} is a binary file ({_size(real.stat().st_size)}); "

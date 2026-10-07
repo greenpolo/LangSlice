@@ -45,8 +45,11 @@ class TraceStarted:
     #: was already running (nothing started, nothing written).
     running: bool = False
     #: The packaged trace's background work id (:func:`trace_borders`); None
-    #: for the trace alone.
+    #: for the trace alone, and when the trace had already landed.
     work: str | None = None
+    #: The packaged trace at this placement and region choice had already
+    #: landed: the section's deformation holds its fit (nothing started).
+    landed: bool = False
 
 
 #: Prepares one section's edit: ``(state, workspace, section id, calls_dir)``
@@ -108,10 +111,16 @@ def _apply(job: Job, workspace: Workspace, prepared: _Prepared, workers: int,
     if prepared.call is not None:
         job.start_image_job(prepared.id, fingerprint, prepared.call, workers=workers)
     portable = job.portable(prepared.result)
-    changed = portable != now.image_correction
+    # A saved reply reused as it stands differs only by its ``cached`` flag:
+    # nothing to write, so no undo step.
+    changed = _without_cached(portable) != _without_cached(now.image_correction)
     if changed:
         now.image_correction = portable
     return portable, changed
+
+
+def _without_cached(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    return None if record is None else {k: v for k, v in record.items() if k != "cached"}
 
 
 def _start_trace(
@@ -205,7 +214,10 @@ def trace_borders(
     the trace are drawn and saved with the work.
 
     A section whose packaged trace is still running is not started again
-    (``running``, that work's id). Refused before any image call:
+    (``running``, that work's id). A call whose trace is the saved reply at
+    this placement and region choice, and whose fit the section's applied
+    deformation already holds, fits nothing again (``landed``, no work).
+    Refused before any image call:
     ``ANTS_MISSING``, ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES`` (a
     bad *restrict_to*), ``UNKNOWN_SLICE_IDS``, ``KEEPS_HOST_WARP`` /
     ``NONLINEAR_SKIPPED`` (the host kept the section out of Nonlinear),
@@ -234,6 +246,8 @@ def trace_borders(
     started = _start_trace(job, workspace, record.id, image_model=image_model, prompt=prompt,
                            chosen=regions, exclude=(), workers=workers)
     now = job.state.by_id(record.id) or record
+    if not started.started and _landed(job, now):
+        return replace(started, landed=True)
     expected = section_inputs(job.state, now, deformation=True)
     section_id = record.id
 
@@ -307,6 +321,21 @@ def land_trace(
                 "step: undo removes it while it is the latest step. " + facts)
     return Landed(status=DONE, text=text, pictures=list(done.pictures),
                   result={"row": row, "trace": trace})
+
+
+def _landed(job: Job, record: Any) -> bool:
+    """Whether *record*'s saved trace has landed: its image correction is a
+    completed reply and a step of its applied deformation, at its current
+    linear placement, fitted that very trace (``fit_deformable`` records the
+    trace a traced step read)."""
+    held = record.image_correction or {}
+    applied = record.deformation or {}
+    if held.get("status") != "ok" or not applied.get("steps"):
+        return False
+    if applied.get("linear_key") != deformation.linear_key(job.state, record):
+        return False
+    trace = str(held.get("artifact_dir") or "")
+    return bool(trace) and any(step.get("trace") == trace for step in applied["steps"])
 
 
 def _stale(trace: dict[str, Any]) -> Landed:

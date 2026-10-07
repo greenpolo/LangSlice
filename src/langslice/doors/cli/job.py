@@ -13,8 +13,8 @@ object with ``--args '{...}'`` or ``--args @file.json``, and/or one flag per
 argument, ``--name value`` (kebab or snake case; a JSON value, or plain text
 for a text argument; a list argument takes the flag again for each item).
 Options: ``--dry-run`` (a write verb runs on the job without writing
-anything and reports what would change; ``fit_deformable`` and
-``trace_borders`` are only checked, not run; not with ``--background``),
+anything and reports what would change; ``elastix_affine``, ``ants_syn``
+and ``trace_borders`` are only checked, not run; not with ``--background``),
 ``--background`` (answer at
 once with a run id), ``--verbose`` (the whole reply: whole-stack rows, the
 descriptions written for a model), ``--timeout SECONDS`` (``wait``).
@@ -56,9 +56,8 @@ from langslice.job.lock import JobBusy
 
 logger = logging.getLogger(__name__)
 
-#: Verbs a dry run checks without running (a model call, a long fit that
-#: saves records).
-CHECKED_ONLY = frozenset({"trace_borders", "trace_from_atlas", "fit_deformable"})
+#: Verbs a dry run checks without running (a model call, a long fit).
+CHECKED_ONLY = frozenset({"trace_borders", "trace_from_atlas", "elastix_affine", "ants_syn"})
 #: Reply keys worth a warning when present and not empty.
 WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")
@@ -66,7 +65,7 @@ WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
 #: as ``langslice-job schema NAME`` does, and runs nothing.
 HELP_FLAGS = frozenset({"--help", "-h"})
 #: Verbs whose whole-stack ``rows`` are their answer (kept when concise).
-ROW_VERBS = frozenset({"status", "view_stack"})
+ROW_VERBS = frozenset({"status"})
 
 
 def progress(message: str) -> None:
@@ -354,8 +353,13 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.ops.registry import VERBS
+    from langslice.ops.registry import VERBS, retired_payload
 
+    retired = retired_payload(verb)
+    if retired is not None:
+        raise _Refusal(Envelope.failure(
+            "RETIRED_TOOL", retired["message"], verb=verb,
+            result={key: retired[key] for key in ("tool", "use") if key in retired}))
     if verb not in VERBS:
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
     dry_run = bool(options.get("dry_run"))
@@ -415,8 +419,10 @@ def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
 
 def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
     """A dry run of a verb that is not simulated: its sections resolved."""
-    refs = list(arguments.get("slices") or []) + (
-        [arguments["id"]] if arguments.get("id") not in (None, "") else [])
+    refs = [entry.get("id", "") if isinstance(entry, dict) else entry
+            for key in ("sections", "slices") for entry in (arguments.get(key) or [])]
+    refs += [arguments[key] for key in ("section", "id")
+             if arguments.get(key) not in (None, "")]
     known = [opened.job.state.resolve(ref) for ref in refs]
     unknown = [str(ref) for ref, record in zip(refs, known, strict=True) if record is None]
     if unknown:
@@ -440,8 +446,13 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     before = job.snapshot() if dry_run else None
     with captured() as saved:
         reply = tool(**arguments)
-    if VERBS[verb].image_model:
-        job.settle_image_corrections()  # this process ends: the calls land now
+        if VERBS[verb].image_model:
+            job.settle_image_corrections()  # this process ends: the calls land now
+            job.background.wait_all()  # and the work they start (their pictures saved)
+    if VERBS[verb].image_model and isinstance(reply, dict):
+        from langslice.doors.tools.toolbox import with_notices
+
+        reply = with_notices(job, reply)
     artifacts: list[dict[str, Any]] = []
     warnings: list[str] = []
     ok = not (isinstance(reply, dict) and reply.get("status") in ("error", "refused"))
@@ -458,9 +469,14 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     pictures, unsaved = picture_artifacts(saved, verb)
     artifacts += pictures
     warnings += unsaved
+    artifacts += _work_pictures(job, reply, start=len(pictures))
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
         result["image_correction"] = _landed(job, result.get("id"))
+        work = job.background.get(str(result.get("work") or ""))
+        if work is not None:  # the packaged trace, landed in this process
+            result["work_status"] = work.status
+            result["work_result"] = work.result
     if verb == "trace_from_atlas" and isinstance(result, dict):
         for row in result.get("results") or []:  # each landed call's outcome
             if isinstance(row, dict) and row.get("error") is None:
@@ -505,6 +521,26 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     nexts = ([_command(job_folder, verb, arguments)] if dry_run
              and VERBS[verb].kind == "write" else [])
     return Envelope(result=result, artifacts=artifacts, warnings=warnings, next=nexts)
+
+
+def _work_pictures(job: Any, reply: Any, *, start: int) -> list[dict[str, Any]]:
+    """The saved pictures of background work the reply announces (its
+    ``pictures`` entries with a ``work``), as artifacts after the call's own."""
+    from langslice.job.views import PICTURE_FILE
+
+    out: list[dict[str, Any]] = []
+    entries = reply.get("pictures") if isinstance(reply, dict) else None
+    for entry in entries or []:
+        if not isinstance(entry, dict) or not entry.get("work"):
+            continue
+        record = job.views.lookup(int(entry["id"]))
+        if record is None or not record.path:
+            continue
+        path = Path(job.layout.resolve(record.path)) / PICTURE_FILE
+        if path.exists():
+            out.append({"path": str(path), "kind": "view", "index": start + len(out),
+                        "label": f"{entry['work']} ({record.mode or record.tool})"})
+    return out
 
 
 def _landed(job: Any, section: Any) -> dict[str, Any]:

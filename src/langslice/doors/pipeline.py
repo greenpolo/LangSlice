@@ -12,12 +12,15 @@ folder (no second pipeline):
   a folder of its own (the section image linked, copied or, for an array,
   written there), then :func:`register_job`.
 
-The sequence, per section: ``fit_affine`` (the automatic linear alignment the
-agent's linear tool runs, here run with no agent) when the section has no
-in-plane transform yet; ``trace_borders`` with the job's image model (when it
-has one); ``fit_deformable`` applied once, on the traced lines (on the stain
-alone without an image model); then ``submit``. Each step is the verb every
-door calls, so the job folder holds what an agent's run would.
+The sequence, per section: ``elastix_affine`` (the automatic linear
+alignment the agent's tool runs, here run with no agent) when the section
+has no in-plane transform yet; ``trace_borders`` with the job's image model
+(when it has one: the image model's trace, then ANTs' fit of it, applied in
+the background and waited for), else ``ants_syn`` on the section's
+preprocessed channel; then ``submit``, a section whose deformation failed
+named in its ``left_linear`` with the reason. Each step is the verb every
+door calls, so the job folder holds what an agent's run would. Both
+deformable steps need ANTs (antspyx).
 """
 
 from __future__ import annotations
@@ -32,18 +35,10 @@ from typing import Any
 
 from langslice.doors.library import JobHandle, create_job
 
-#: The fit ``register_job`` applies, over a trace and without one. Over a
-#: trace: the traced lines against the atlas borders with Elastix at medium
-#: stiffness, the default of the fit after the image model
-#: (``core/nonlinear/border_fit.py``): Elastix is a core dependency, so a
-#: script's result does not depend on the optional ANTs install, and it
-#: follows the traced lines closest when the placement is far off. The
-#: agent's ``fit_deformable`` recommends ANTs with ``traced_borders`` instead,
-#: for a small correction of a placement it has already made good.
-TRACED_FIT: dict[str, Any] = {"fit_section": "traced_lines", "engine": "elastix",
-                              "stiffness": "medium"}
-STAIN_FIT: dict[str, Any] = {"fit_section": "fit", "engine": "elastix", "stiffness": "medium"}
-#: Most sections one ``fit_deformable`` call takes.
+#: The ``ants_syn`` arguments ``register_job`` fits with when the job has no
+#: image model (``fit=`` replaces any of them).
+STAIN_FIT: dict[str, Any] = {"stiffness": "medium", "atlas_image": "template"}
+#: Most sections one ``ants_syn`` call takes.
 FIT_BATCH = 4
 #: The section image an array is written as (a lossless TIFF, its dtype kept).
 ARRAY_NAME = "section.tif"
@@ -151,7 +146,6 @@ def register_job(
     job: JobHandle,
     *,
     sections: Sequence[str] | None = None,
-    affine_method: str = "elastix",
     fit: Mapping[str, Any] | None = None,
     full_resolution: bool = False,
     arrays: bool = False,
@@ -160,17 +154,18 @@ def register_job(
     """Run the scripted registration on *job*'s sections (*sections*: their
     filenames; None: every section) and submit.
 
-    Per section: ``fit_affine`` (*affine_method* "elastix" or "silhouette")
-    when it has no in-plane transform; ``trace_borders`` when the job has an
-    image model; ``fit_deformable`` applied with *fit* (default
-    :data:`TRACED_FIT`, without an image model :data:`STAIN_FIT`; any of its
-    arguments: ``fit_section``, ``engine``, ``stiffness``, ``include``,
-    ``exclude``...). Then ``submit``, which writes every section's maps and
-    the exports; *full_resolution* rewrites the maps on the image files' own
-    pixels instead of their working copies. A section that fails a step is
-    reported in the result's ``problems`` and the job is not submitted (the
-    maps of the placed sections are still written, ``export_maps``).
-    *arrays* loads each section's maps into ``SectionOutput.arrays``.
+    Per section: ``elastix_affine`` when it has no in-plane transform;
+    ``trace_borders`` when the job has an image model (its fit lands in the
+    background; this waits for it), else ``ants_syn`` with *fit* (default
+    :data:`STAIN_FIT`; any of its arguments: ``stiffness``, ``atlas_image``,
+    ``restrict_to``). Then ``submit``, which writes every section's maps and
+    the exports, a section whose deformation failed named in its
+    ``left_linear`` with the reason; *full_resolution* rewrites the maps on
+    the image files' own pixels instead of their working copies. A section
+    that fails a step is reported in the result's ``problems``; one with no
+    position or transform keeps the job from being submitted (the maps of
+    the placed sections are still written, ``export_maps``). *arrays* loads
+    each section's maps into ``SectionOutput.arrays``.
     """
     state = job.state
     wanted = [state.resolve(name) for name in sections] if sections else state.in_order()
@@ -188,42 +183,52 @@ def register_job(
     to_align = [name for name in ids if name not in problems
                 and job.state.by_id(name).transform is None]  # type: ignore[union-attr]
     if to_align:
-        if "fit_affine" not in job.verbs:
+        if "elastix_affine" not in job.verbs:
             raise ValueError(f"Sections {to_align} have no in-plane transform and this job "
-                             "has no fit_affine (task 'transform'); supply transforms= or "
-                             "create the job with the 'transform' task")
-        rows = _rows(job.fit_affine(slices=to_align, method=affine_method))
+                             "has no elastix_affine (task 'transform'); supply transforms= "
+                             "or create the job with the 'transform' task")
+        rows = _rows(job.elastix_affine(sections=to_align))
         for name in to_align:
             if job.state.by_id(name).transform is None:  # type: ignore[union-attr]
-                problems[name] = "fit_affine: " + _message(rows.get(name) or {})
+                problems[name] = "elastix_affine: " + _message(rows.get(name) or {})
+    placed = [name for name in ids if name not in problems]
 
-    # 2. The image model's trace, started in the background for every section.
-    traced = "trace_borders" in job.verbs
-    ready = [name for name in ids if name not in problems]
-    if traced:
-        for name in ready:
-            reply = job.trace_borders(id=name)
-            if reply.get("status") not in ("running", "ok"):
-                problems[name] = "trace_borders: " + _message(reply)
-
-    # 3. The deformation, applied (the fit waits for a running trace).
-    settings = dict(fit or (TRACED_FIT if traced else STAIN_FIT))
-    ready = [name for name in ids if name not in problems]
-    for start in range(0, len(ready), FIT_BATCH):
-        batch = ready[start:start + FIT_BATCH]
-        reply = job.fit_deformable(slices=batch, **settings)
-        rows = _rows(reply)
-        for name in batch:
-            held = job.state.by_id(name).deformation or {}  # type: ignore[union-attr]
-            if not held or "keep_linear" in held:
-                problems[name] = "fit_deformable: " + _message(rows.get(name) or reply)
-    if traced:
+    # 2. The deformation: the image model's trace and its fit, in the
+    # background for every section, or ANTs on the stain.
+    failed: dict[str, str] = {}
+    if "trace_borders" in job.verbs:
+        for name in placed:
+            reply = job.trace_borders(section=name)
+            if reply.get("status") not in ("started", "running", "ok"):
+                failed[name] = "trace_borders: " + _message(reply)
         job.job.settle_image_corrections()
+        for work in job.job.background.wait_all():
+            for name in work.sections:
+                if work.status != "done" and name in placed:
+                    failed.setdefault(name, "trace_borders: " + work.notice)
+    else:
+        settings = {**STAIN_FIT, **dict(fit or {})}
+        for start in range(0, len(placed), FIT_BATCH):
+            batch = placed[start:start + FIT_BATCH]
+            reply = job.ants_syn(sections=batch, **settings)
+            rows = _rows(reply)
+            for name in batch:
+                if (rows.get(name) or {}).get("status") != "ok":
+                    failed[name] = "ants_syn: " + _message(rows.get(name) or reply)
+    for name in placed:
+        held = job.state.by_id(name).deformation or {}  # type: ignore[union-attr]
+        if not held and name not in failed:
+            failed[name] = "no deformation was applied"
+    problems.update(failed)
 
-    # 4. Submit (maps and exports), or, with problems, the maps of what is placed.
+    # 3. Submit (maps and exports), a failed deformation left linear with its
+    # reason; with a section unplaced, the maps of what is placed.
     submitted = False
-    if not problems and len(ids) == len(job.state.slices):
-        reply = job.submit(summary=summary, notes=[], interval_breaks=[])
+    unplaced_or_unaligned = [name for name in ids if name not in placed]
+    if not unplaced_or_unaligned and len(ids) == len(job.state.slices):
+        left = [{"id": name, "reason": reason} for name, reason in failed.items()]
+        reply = job.submit(summary=summary, notes=[], interval_breaks=[],
+                           **({"left_linear": left} if left else {}))
         submitted = reply.get("status") == "ok"
         if not submitted:
             for name in ids:
@@ -335,7 +340,6 @@ def register_section(
     job_dir: str | os.PathLike[str] | None = None,
     output: str = "full",
     name: str | None = None,
-    affine_method: str = "elastix",
     fit: Mapping[str, Any] | None = None,
     full_resolution: bool = False,
     arrays: bool = False,
@@ -355,11 +359,11 @@ def register_section(
     *rotation_deg* counter-clockwise quarter turns, applied before the
     transform) and *pixel_size_um* (None: read from the file, else assumed).
 
-    With a *transform*: ``trace_borders``, ``fit_deformable``, ``submit``.
-    With a position only: first ``fit_affine`` (*affine_method*), the
-    automatic linear alignment, then the same. *image_model* is the model
-    or profile (:func:`langslice.image_model`; None: the stain-only fit, no
-    trace).
+    With a *transform*: ``trace_borders`` (its fit waited for), ``submit``.
+    With a position only: first ``elastix_affine``, the automatic linear
+    alignment, then the same. *image_model* is the model or profile
+    (:func:`langslice.image_model`; None: ``ants_syn`` on the stain, with
+    *fit*, no trace).
 
     *folder* is the section's own folder (default: a new temporary folder;
     it must hold no other section images); the job folder is *job_dir*, else
@@ -397,7 +401,7 @@ def register_section(
         transforms=None if transform is None else {filename: transform},
         angles=angles, orientation={filename: orientation} if orientation else None,
         pixel_size_um=pixel_size_um, fresh=True, atlas_loader=atlas_loader, emit=emit)
-    result = register_job(job, affine_method=affine_method, fit=fit,
+    result = register_job(job, fit=fit,
                           full_resolution=full_resolution, arrays=arrays,
                           summary="Scripted registration (langslice.register_section).")
     if result.problems:

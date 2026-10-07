@@ -165,7 +165,7 @@ def test_picture_files_answer_with_their_index_record(tmp_path: Path):
     reply = files.read_file(job, f"{record.path}/view.jpg")
     assert reply.kind == "picture" and reply.picture == record.seq
     assert "Picture 1" in reply.text and "A red test picture" in reply.text
-    assert "zoom or look with picture number 1" in reply.text
+    assert "call zoom with picture 1" in reply.text
     assert "20 x 10 pixels" in reply.text
     assert "JFIF" not in reply.text  # no pixels, no bytes
 

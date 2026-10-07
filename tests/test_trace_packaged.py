@@ -129,6 +129,55 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     assert len(stub.calls) == 1
 
 
+def _landed_job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any, StubModel]:
+    """A job whose section's packaged trace has landed (its fit applied)."""
+    job, ctx, stub = _job(folder, atlas)
+    traces.trace_borders(job, ctx, ID, image_model=stub.model)
+    job.background.wait_all()
+    (work,) = job.background.notices()
+    assert work.status == "done", work.notice
+    record = job.state.by_id(ID)
+    assert record is not None and record.deformation is not None
+    # The traced step records the trace it fitted.
+    assert [step.get("trace") for step in record.deformation["steps"]] == [
+        record.image_correction["artifact_dir"]]
+    return job, ctx, stub
+
+
+def test_a_trace_asked_again_after_its_fit_landed_fits_nothing(tmp_path, atlas):
+    """The saved trace at this placement and region choice, whose fit is a step
+    of the applied deformation: ``landed``, no image call, no new work."""
+    job, ctx, stub = _landed_job(tmp_path, atlas)
+    held = job.state.slices[0].deformation
+    works = len(job.background.all())
+    again = traces.trace_borders(job, ctx, ID, image_model=stub.model,
+                                 prompt="A different prompt.")
+    assert again.landed and again.work is None and not again.started and not again.running
+    assert len(stub.calls) == 1  # the saved reply, no second image call
+    assert len(job.background.all()) == works
+    job.background.wait_all()
+    assert job.background.notices() == []
+    assert job.state.slices[0].deformation == held
+
+
+def test_a_landed_trace_asked_again_takes_no_undo_step(tmp_path, atlas):
+    """Nothing is fitted again, so nothing is written: undo still removes the fit.
+
+    Fails on src as it stands: the re-call rewrites the section's
+    ``image_correction`` (``cached`` False -> True) as an undo step before
+    ``_landed`` is checked (``ops/traces.py`` ``trace_borders`` ->
+    ``_start_trace`` commits), so the depth grows by one and the next undo
+    reverts that flag instead of the fit.
+    """
+    job, ctx, stub = _landed_job(tmp_path, atlas)
+    depth = len(job.undo_stack)
+    again = traces.trace_borders(job, ctx, ID, image_model=stub.model)
+    assert again.landed
+    assert len(job.undo_stack) == depth
+    assert job.undo()
+    assert job.state.slices[0].deformation is None
+
+
 def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_path, atlas):
     from langslice.core.display import default_options
 

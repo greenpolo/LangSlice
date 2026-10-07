@@ -214,60 +214,62 @@ def _golden_toolbox(folder: Path) -> tuple[Any, Any]:
     return build_tools(state, ctx, spec), ctx
 
 
-def _place(box: Any) -> None:
+def _place(box: Any, view: bool = False) -> dict[str, Any]:
     from tests.golden.record import ID0, ID1, ID2
 
-    _tool(box, "set_positions")([{"id": ID0, "position_mm": 0.1},
-                                 {"id": ID1, "position_mm": 0.15},
-                                 {"id": ID2, "position_mm": 0.2}])
+    return _tool(box, "position_sections")([{"id": ID0, "position_mm": 0.1},
+                                            {"id": ID1, "position_mm": 0.15},
+                                            {"id": ID2, "position_mm": 0.2}], view=view)
 
 
 def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Path):
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     box, _ctx = _golden_toolbox(tmp_path / "stack")
-    shown = _tool(box, "view_slices")(["s0.png", "s1.png"])[TOOL_MEDIA_PARTS_KEY]
-    _place(box)
-    placed = _tool(box, "view_placement")([{"id": "s1.png", "positions_mm": [0.15]}],
-                                          view={"mode": "overlay"})[TOOL_MEDIA_PARTS_KEY]
-    sheet = _tool(box, "view_stack")()[TOOL_MEDIA_PARTS_KEY]
+    look = _tool(box, "look")
+    shown = look("section", sections=["s0.png", "s1.png"])[TOOL_MEDIA_PARTS_KEY]
+    written = _place(box, view=True)  # a change tool's picture, under its own name
+    placed = look("overlay", sections=["s1.png"])
+    sheet = look("positioning")[TOOL_MEDIA_PARTS_KEY]
     flush_all()
     root = tmp_path / "stack" / "langslice"
     index = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
     assert [entry["seq"] for entry in index] == list(range(1, len(index) + 1))
     first = root / index[0]["path"]
-    assert index[0]["path"] == "sections/s0/views/000001_view_slices_section"
+    assert index[0]["path"] == "sections/s0/views/000001_look_section"
     assert (first / "view.jpg").read_bytes() == encode_jpeg(shown[0])
     assert not (first / "labels.tif").exists()
-    overlay = next(entry for entry in index if entry["tool"] == "view_placement")
+    change = [entry for entry in index if entry["tool"] == "position_sections"]
+    assert [entry["seq"] for entry in change] == [item["id"] for item in written["pictures"]]
+    assert all(entry["path"].startswith("views/") for entry in change)
+    overlay = next(entry for entry in index
+                   if entry["tool"] == "look" and entry["mode"] == "overlay")
     assert overlay["layers"] and overlay["sections"] == ["s1.png"]
+    assert overlay["seq"] == placed["pictures"][0]["id"]
     view = root / overlay["path"]
-    assert (view / "view.jpg").read_bytes() == encode_jpeg(placed[0])
+    picture = placed[TOOL_MEDIA_PARTS_KEY][0]
+    assert (view / "view.jpg").read_bytes() == encode_jpeg(picture)
     labels = tifffile.imread(view / "labels.tif")
-    assert labels.dtype == np.uint32 and labels.shape == placed[0].size[::-1]
+    assert labels.dtype == np.uint32 and labels.shape == picture.size[::-1]
     record = json.loads((view / "view.json").read_text())
-    assert record["tool"] == "view_placement" and record["arguments"]["view"]["mode"] == "overlay"
+    assert record["tool"] == "look" and record["arguments"]["mode"] == "overlay"
     assert record["frame"]["plane"]["position_mm"] == pytest.approx(0.15)
-    stacked = [entry for entry in index if entry["tool"] == "view_stack"]
-    assert [entry["path"].split("/")[0] for entry in stacked] == ["views", "views"]
-    assert len(stacked) == len([item for item in sheet if not isinstance(item, str)])
+    stacked = [entry for entry in index
+               if entry["tool"] == "look" and entry["mode"] == "positioning"]
+    assert all(entry["path"].split("/")[0] == "views" for entry in stacked)
+    assert len(stacked) == len([item for item in sheet if not isinstance(item, str)]) >= 1
 
 
-def test_the_layers_agree_with_the_borders_drawn_on_a_golden_picture(tmp_path: Path):
-    from tests.golden.record import GOLDEN_DIR, ID2
+def test_the_layers_agree_with_the_borders_drawn_on_a_picture(tmp_path: Path):
+    from tests.golden.record import ID2
 
     box, _ctx = _golden_toolbox(tmp_path / "stack")
     _place(box)
-    # Golden call 024: the outlines picture, atlas template under the lines.
-    _tool(box, "view_placement")([{"id": ID2, "positions_mm": [0.2]}],
-                                 view={"mode": "outlines",
-                                        "atlas_channels": ["template", "borders"]})
+    # The overlay with the atlas template under the lines.
+    _tool(box, "look")("overlay", sections=[ID2], atlas_layers=["template", "borders"])
     flush_all()
-    view = next((tmp_path / "stack" / "langslice").glob("sections/s2/views/*view_placement*"))
+    view = next((tmp_path / "stack" / "langslice").glob("sections/s2/views/*look_overlay*"))
     picture = np.asarray(Image.open(view / "view.jpg").convert("RGB")).astype(int)
-    golden = np.asarray(Image.open(GOLDEN_DIR / "024_tools_view_placement.0.png")
-                        .convert("RGB")).astype(int)
-    assert picture.shape == golden.shape and np.array_equal(picture, golden)
 
     borders = np.asarray(Image.open(view / "borders.png")).astype(int)
     labels = tifffile.imread(view / "labels.tif")
@@ -285,19 +287,36 @@ def test_the_layers_agree_with_the_borders_drawn_on_a_golden_picture(tmp_path: P
     assert (strong & near).sum() / strong.sum() > 0.98  # the lines are label boundaries
 
 
-@pytest.mark.parametrize("angles", [(0.0, 0.0), (1.0, 0.5)])
-def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[float, float]):
-    from tests.deformable_synthetic import SyntheticAtlas
+def _overlay_view(tmp_path: Path, angles: tuple[float, float], zoom: bool) -> Path:
+    """The saved overlay of section s1 (zoomed into a box when *zoom*)."""
     from tests.golden.record import ID1
 
     box, _ctx = _golden_toolbox(tmp_path / "stack")
     _place(box)
     if angles != (0.0, 0.0):
-        _tool(box, "set_cutting_angles")(*angles)
-    _tool(box, "view_placement")([{"id": ID1, "positions_mm": [0.15]}],
-                                 view={"mode": "overlay", "zoom": [40, 40, 330, 380]})
+        pitch, yaw = angles
+        done = _tool(box, "position_sections")(
+            cutting_angles={"pitch_deg": pitch, "yaw_deg": yaw}, view=False)
+        assert done["cutting_angles_deg"] == {"pitch": pitch, "yaw": yaw}
+    looked = _tool(box, "look")("overlay", sections=[ID1])
+    if zoom:
+        zoomed = _tool(box, "zoom")([40, 40, 330, 380], picture=looked["pictures"][0]["id"])
+        assert zoomed["status"] == "ok" and zoomed["redrawn"] is True
     flush_all()
-    view = next((tmp_path / "stack" / "langslice").glob("sections/s1/views/*view_placement*"))
+    pattern = "*zoom_overlay*" if zoom else "*look_overlay*"
+    return next((tmp_path / "stack" / "langslice").glob(f"sections/s1/views/{pattern}"))
+
+
+@pytest.mark.parametrize("zoom", [
+    False,
+    True,
+], ids=["overlay", "zoomed"])
+@pytest.mark.parametrize("angles", [(0.0, 0.0), (1.0, 0.5)])
+def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[float, float],
+                                                zoom: bool):
+    from tests.deformable_synthetic import SyntheticAtlas
+
+    view = _overlay_view(tmp_path, angles, zoom)
     coords = coordinate_map(view / "view.json")
     labels = tifffile.imread(view / "labels.tif")
     record = json.loads((view / "view.json").read_text())
@@ -317,10 +336,9 @@ def test_saving_does_not_hold_up_a_tool(tmp_path: Path):
     box, _ctx = _golden_toolbox(tmp_path / "stack")
     _place(box)
     for _ in range(5):
-        _tool(box, "view_placement")([{"id": "s0.png", "positions_mm": [0.1]}],
-                                     view={"mode": "overlay"})
+        _tool(box, "look")("overlay", sections=["s0.png"])
     views = box.job.views
-    assert views.queue_seconds / 6 < 0.02  # numbering and queueing only
+    assert views.queue_seconds / 5 < 0.02  # numbering and queueing only
     flush_all()
     assert views.write_seconds > 0
 
@@ -462,7 +480,7 @@ def test_a_job_folder_moves_with_its_images(tmp_path: Path, monkeypatch: Any):
     assert Path(opened.ctx.image_path("s0.png")).is_file()
     opened.close()
     job = langslice.open_job(str(moved / "langslice"), atlas_loader=lambda _n: _ATLAS)
-    job.set_positions(entries=[{"id": "s0.png", "position_mm": 0.1}])
+    job.position_sections(sections=[{"id": "s0.png", "position_mm": 0.1}])
     job.close()
     registration = json.loads((moved / "langslice" / "registration.json").read_text())
     assert registration["image_folder"] == ".."

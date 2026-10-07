@@ -201,8 +201,8 @@ for the flat plane).
   absent, for `ROW_KEYS` `rows` and `changed`; the agent CLI and the
   library), `status_text`, `slice_flags`.
 - `damage.py` — damage by atlas region (`SliceState.damaged_regions`;
-  `SliceState.damaged` is read-only: regions, or `damage_marked`, a mark
-  naming none). `exclusions(record, restrict_to, exclude)`: the
+  `SliceState.damaged` is read-only: the section has marked regions;
+  `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the
   `(restrict_to, exclude)` every fit and the image model's trace run with,
   the marked regions added to *exclude* except an entry *restrict_to* names
   exactly; `normalized_entries`, `entry_key`. `damage_picture(ws, state,
@@ -214,17 +214,21 @@ for the flat plane).
   faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
-  atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=), store=)` returns
-  one `LookPicture` per section (`section`: `display.framed_section`;
-  `overlay`: `placement.placement_pictures` mode `overlay`, the applied
-  deformation unless `warp` is `none`), per position (`atlas`:
-  `display.framed_atlas` at the stack's view angles) or one in all
-  (`positioning`). Defaults never read the job's state: every section,
+  atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=), store=)`
+  returns one `LookPicture` per section (`section`:
+  `display.framed_section`; `overlay`: `placement.placement_pictures` mode
+  `overlay`, the applied deformation unless `warp` is `none`), per position
+  (`atlas`: `display.framed_atlas` at the stack's view angles) or per run
+  of positions (`positioning`: one picture for up to `PER_PICTURE`
+  sections, several for a longer stack; `part` (0-based) draws only that
+  one, `UNKNOWN_PART` past the last). Defaults never read the job's state: every section,
   every raw channel with its display properties (`channels` may instead
   name raw channels, or `["preprocessed"]`), `ATLAS_LAYER_DEFAULTS` per
   mode. Each picture has an index caption (position, angles, um/px, the
   channel settings in force) and a JSON recipe `{"renderer": "look",
-  "args", "state", "base", "shown", "um_per_px"}`: the request, the
+  "args", "state", "base", "shown", "um_per_px"}`: the request (a
+  positioning picture's: the whole call's sections and positions and its
+  `part`, so a zoom redraws that picture at the call's scale), the
   `snapshot` of the stack facts it was drawn from (`SECTION_FIELDS`, the
   display properties and preprocessed recipe, the view angles for atlas
   and positioning), the unzoomed and shown content sizes. Both go on the
@@ -233,22 +237,30 @@ for the flat plane).
   from `restored(state, snapshot)` and `stale` when `changed_since`.
   `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_CHANNEL`,
   `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
-  `NO_POSITION`, `BAD_WARP`. No picture number is burned into the pixels.
+  `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`. No picture number is burned into the pixels.
 - `positioning.py` — the positioning picture, ABBA's layout: a millimetre
-  ruler across `Workspace.position_range`, atlas thumbnails above it in
-  position order, the sections below in stack order (`index_original`),
-  each joined by a line to its position; the row runs right to left when
-  most pairs run down the ruler (`stack_direction`), so two lines cross
-  exactly when their order and positions disagree (`crossing_pairs`), and
-  those lines and labels are drawn in `CROSSING_COLOR`. One um/px for every
-  thumbnail (`scale.pair_um_per_px`, never finer than a section's working
-  copy); the tile is the picture size while the row fits
-  `POSITIONING_MAX_WIDTH`, smaller for a longer row (down to `MIN_TILE`).
-  `plan` is the pure geometry (`Layout`, `Slot`), `paint` draws a layout at
-  a magnification and crop (every length scales together),
-  `positioning_picture` does both for a stack; a zoom is drawn up to the
-  sections' working-copy detail, then enlarged at most `ATLAS_UPSAMPLE`
-  times, said in the caption.
+  ruler, atlas thumbnails above it, each over its own millimetre (moved
+  aside only as far as its neighbours need), the sections below in
+  POSITION order (`position_order`: ties in stack order, `index_original`;
+  no position last, without a line), evenly spaced, each joined by a thin
+  line to its position, so no two lines cross; each label keeps the
+  original index and filename, so a filename order that disagrees with the
+  positions shows there. A stack is split, never shrunk: at most
+  `PER_PICTURE` (6) sections and as many atlas thumbnails per picture
+  (`split`: the fewest even consecutive runs; each atlas position goes to
+  the run around it), each picture with its own ruler segment over the
+  positions it holds plus a margin (`ruler_range`, at least
+  `RULER_MIN_SPAN_MM`) and a caption `part i of n: sections k-m of N ...,
+  x-y mm`. One um/px for every thumbnail of every picture of a call
+  (`scale.pair_um_per_px`, never finer than a section's working copy): the
+  tile is the picture size while the fullest picture's row fits
+  `POSITIONING_MAX_WIDTH` (1568 px; six tiles of about 240 px), so one
+  section beside three atlas positions is drawn large. `plan` is the pure
+  geometry (one `Layout` per picture, `Slot`), `paint` draws a layout at a
+  magnification and crop (every length scales together),
+  `positioning_pictures` does both for a stack (every picture, or one
+  `part`); a zoom is drawn up to the sections' working-copy detail, then
+  enlarged at most `ATLAS_UPSAMPLE` times, said in the caption.
 - `zoom.py` — `redraw(recipe, box, ws, state=, store=, picture=,
   long_edge=)`: a box (`[x0, y0, x1, y1]` pixels of the picture's content)
   drawn again from the source through the recipe's renderer (`RENDERERS`),

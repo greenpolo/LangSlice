@@ -114,10 +114,9 @@ class SliceState:
     #: Every fit and the image model's trace leave them out
     #: (:func:`langslice.core.damage.exclusions`).
     damaged_regions: list[str] = field(default_factory=list)
-    #: A damage mark that names no regions: the host's ``inputs.damaged``
-    #: (``{filename: note}``, which the agent cannot remove) or a
-    #: ``mark_damaged`` flag. Regions may be added beside it.
-    damage_marked: bool = False
+    #: What is wrong with the tissue, in words: the agent's ``mark_damage``
+    #: note, after the host's ``inputs.damaged`` note (``{filename: note}``)
+    #: when it gave one. A note alone does not make the section damaged.
     damage_note: str = ""
     position_mm: float | None = None
     #: ``"default"`` while the position is the evenly spaced starting one
@@ -144,9 +143,9 @@ class SliceState:
 
     @property
     def damaged(self) -> bool:
-        """Whether the section is marked damaged: it has marked regions, or a
-        mark that names none (:attr:`damage_marked`). Read-only."""
-        return bool(self.damaged_regions) or bool(self.damage_marked)
+        """Whether the section is marked damaged: it has marked regions.
+        Read-only."""
+        return bool(self.damaged_regions)
 
     @property
     def angles(self) -> Angles:
@@ -306,17 +305,15 @@ class StackState:
 
         A section row without its own angles carries the stack's
         (``cutting_angles_deg`` on the stack, flat without), which is how a
-        single-angle state and every state before format 3 read. A row
-        saved with the older ``damaged`` flag and no ``damage_marked``
-        reads as a mark that names no regions (its note kept).
+        single-angle state and every state before format 3 read. An older
+        row's whole-section ``damaged`` flag (or ``damage_marked``) is read as
+        its note alone: the section is damaged only with marked regions.
         """
         slice_fields = SliceState.__dataclass_fields__
         stack = data.get(ANGLES_KEY)
         slices = []
         for row in data.get("slices", []):
             kwargs = {k: v for k, v in row.items() if k in slice_fields}
-            if "damage_marked" not in row and row.get("damaged"):
-                kwargs["damage_marked"] = True
             kwargs["damaged_regions"] = [str(name) for name in
                                          kwargs.get("damaged_regions") or ()]
             own = kwargs.get(ANGLES_KEY)

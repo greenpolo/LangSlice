@@ -48,7 +48,7 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "--tasks",
         default=None,
         help="Comma-separated subset of reorder,position,transform,nonlinear; "
-        "nonlinear gives every linearly aligned slice a deformation (fit_deformable), "
+        "nonlinear gives every linearly aligned slice a deformation (ants_syn), "
         "with image-model border tracing unless --image-provider none. Default: "
         f"{DEFAULT_TASKS}; with --registration, {REGISTRATION_TASKS} (the imported "
         "linear registration kept as it is)",
@@ -109,7 +109,7 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "--engine",
         default="either",
         choices=["ants", "elastix", "either"],
-        help="Deformable-fit engine for fit_deformable; either lets the agent choose",
+        help="Accepted and ignored: ANTs SyN (ants_syn) is the one deformable fit",
     )
     p.add_argument(
         "--no-flip",
@@ -132,7 +132,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help="Sections must sit exactly one interval apart",
     )
     p.add_argument(
-        "--bayesian", action="store_true", help="Offer the search_position tool"
+        "--bayesian", action="store_true", help="Accepted and ignored: no tool searches "
+        "for positions"
     )
     p.add_argument(
         "--angles", action="store_true", help="Let the agent set the cutting angles"
@@ -231,8 +232,9 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--gates",
         action="store_true",
-        help="Refuse set_positions for a section not compared since its last "
-        "write, and submit until view_stack has run after the last write",
+        help="Refuse position_sections for a section not looked at since its last "
+        "write, and submit until look in mode positioning has shown every section "
+        "after the last write",
     )
     p.add_argument(
         "--playbook",

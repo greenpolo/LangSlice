@@ -56,7 +56,9 @@ def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
     reason, a section named twice, or any entry in a run without Nonlinear),
     ``UNKNOWN_SLICE_IDS``, ``DEFORMATION_REQUIRED`` (the host requires a
     deformation on every section), ``HAS_DEFORMATION`` (a listed section
-    carries one at its current placement: undo it first)."""
+    carries one at its current placement: undo it first),
+    ``INVALID_LINEAR_PLACEMENT`` (a listed section has no position or no
+    transform, so it has no linear placement to stand)."""
     if entries is None or (isinstance(entries, (list, tuple)) and not entries):
         return {}
     if not isinstance(entries, (list, tuple)) or not all(
@@ -88,6 +90,14 @@ def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
             fitted.append(record.id)
     if unknown:
         raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+    unplaced = [name for name in left if (held := job.state.by_id(name)) is not None
+                and (held.position_mm is None or held.transform is None)]
+    if unplaced:
+        from langslice.core.handoff import NO_TRANSFORM_LINEAR_OFF
+
+        raise Refused("INVALID_LINEAR_PLACEMENT", ids=unplaced,
+                      message="A section left linear needs a position and a transform."
+                      + ("" if job.spec.has("transform") else " " + NO_TRANSFORM_LINEAR_OFF))
     if fitted:
         raise Refused("HAS_DEFORMATION", ids=fitted,
                       message="These sections carry a deformation at their current "

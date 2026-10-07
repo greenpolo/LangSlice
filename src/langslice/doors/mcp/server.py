@@ -63,7 +63,7 @@ from langslice.doors.tools.reply import (
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.doors.trace import TRACE_DIR_ENV, HostTrace
 from langslice.job.job import Job
-from langslice.ops.registry import VERBS
+from langslice.ops.registry import VERBS, retired_payload
 
 logger = logging.getLogger(__name__)
 
@@ -455,6 +455,27 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
 # --- the server ------------------------------------------------------------
 
 
+class LangSliceServer(FastMCP):
+    """FastMCP, answering a retired tool's name (``ops.registry.RETIRED``)
+    with ``RETIRED_TOOL`` and the tool to use instead, every time it is
+    called, where FastMCP would raise "Unknown tool" (traced like any tool
+    result in the open job's trace, *traced*: the server's sessions)."""
+
+    traced: dict[str, Any] = {}
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        if self._tool_manager.get_tool(name) is None:  # noqa: SLF001 — FastMCP has no hook
+            retired = retired_payload(name)
+            if retired is not None:
+                blocks = result_blocks(retired)
+                session = self.traced.get("job")
+                if session is not None and session.trace is not None:
+                    session.trace.write("tool_result", name=name, args=arguments,
+                                        content=describe_blocks(blocks))
+                return blocks
+        return await super().call_tool(name, arguments)
+
+
 def build_server(
     spec_for: Callable[[str], JobSpec],
     folder: str | None = None,
@@ -463,7 +484,7 @@ def build_server(
     atlas_loader: Callable[[str], Any] | None = None,
     sessions: dict[str, Session] | None = None,
     fresh: bool = False,
-) -> FastMCP:
+) -> LangSliceServer:
     """The server. *spec_for* turns a folder into this server's job spec,
     for a folder without a job, or for every folder when *fresh*
     (:func:`open_folder`).
@@ -476,8 +497,9 @@ def build_server(
     *sessions* holds the open job under ``"job"`` (the caller closes it when
     the server stops: :func:`serve`).
     """
-    server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
+    server = LangSliceServer(SERVER_NAME, instructions=INSTRUCTIONS)
     current: dict[str, Session] = {} if sessions is None else sessions
+    server.traced = current
 
     def install(session: Session) -> None:
         """List the session's tools: the verbs the registry gives its spec

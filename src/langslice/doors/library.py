@@ -8,7 +8,7 @@ verbs the agent tools and the CLI offer, by the same names and arguments
 
     job = langslice.open_job("/data/brain1")       # the job folder or its images
     job.status()["rows"]
-    reply = job.set_positions(entries=[{"id": "s01.tif", "position_mm": 5.2}])
+    reply = job.position_sections(sections=[{"id": "s01.tif", "position_mm": 5.2}])
     reply["artifacts"]                              # the pictures' files
     reply.images                                    # the pictures, as PIL images
 
@@ -20,8 +20,9 @@ their layers as every door saves them, as the CLI lists them (``path``,
 ``kind``, ``index``, ``label``). A method returns once its pictures are on
 disk; the pictures themselves, as PIL images, are on the reply's
 ``images`` attribute (not a key). The look-before-commit gates do not apply
-(gates are tool-only) and ``view.resolution`` takes any size from 128 px to
-the source's own pixels. Writes go through the job: one undo step each,
+(gates are tool-only) and ``look``'s ``resolution`` takes any size from
+128 px to the source's own pixels. A retired verb's name raises an
+``AttributeError`` naming the verb to use instead. Writes go through the job: one undo step each,
 checkpointed, and picked up by an agent working on the same folder
 (``Job.sync``), whose writes this handle picks up before each call.
 
@@ -193,11 +194,14 @@ class JobHandle:
         tools = self.__dict__.get("_tools") or {}
         if name in tools:
             return tools[name]
-        from langslice.ops.registry import VERBS
+        from langslice.ops.registry import VERBS, retired_payload
 
         if name in VERBS:
             raise AttributeError(f"This job's settings have no {name!r} (tasks "
                                  f"{self._opened.spec.tasks}); see .verbs")
+        retired = retired_payload(name)
+        if retired is not None:  # a retired verb says what replaced it
+            raise AttributeError(retired["message"])
         raise AttributeError(name)
 
     def __dir__(self) -> list[str]:
@@ -350,7 +354,7 @@ def _angles(value: Mapping[str, Any]) -> dict[str, Any]:
 
 def pipeline_tasks(images: str | os.PathLike[str], transforms: Mapping[str, Any]) -> list[str]:
     """The tasks a scripted registration needs: ``nonlinear``, plus
-    ``transform`` (the automatic linear alignment, ``fit_affine``) unless
+    ``transform`` (the automatic linear alignment, ``elastix_affine``) unless
     every section in *images* has a supplied transform."""
     from langslice.core.discovery import discover_slices
 
@@ -398,7 +402,7 @@ def create_job(
     section the per-section form does not name is flat:
     :func:`langslice.core.spec.supplied_angles`) and *pixel_size_um*; *inputs*
     takes any other key of ``JobSpec.inputs``. *tasks* None: ``nonlinear``,
-    plus ``transform`` (``fit_affine``) unless every section has a supplied
+    plus ``transform`` (``elastix_affine``) unless every section has a supplied
     transform.
 
     Or *registration*: a linear registration made elsewhere (a QuickNII or

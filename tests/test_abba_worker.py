@@ -356,14 +356,15 @@ def warped(tmp_path_factory):
     events: list = []
     tracker = checkpoint_callback(prepared, events.append)
     tracker.attach(job.job, job.workspace)
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.1},
-                               {"id": ID1, "position_mm": 0.15}])
-    job.orient_slices(entries=[{"id": ID1, "flip": True, "rotate_deg": 90}])
-    job.adjust_transforms(entries=[
+    assert job.position_sections(sections=[{"id": ID0, "position_mm": 0.1},
+                                           {"id": ID1, "position_mm": 0.15}],
+                                 view=False)["status"] == "ok"
+    assert job.interactive_transform(sections=[
         {"id": ID0, "rotation_deg": 3.0, "scale_x": 1.05, "scale_y": 0.97,
          "translate_x_mm": 0.1, "translate_y_mm": -0.05, "shear": 0.04},
-        {"id": ID1, "rotation_deg": -4.0, "scale_x": 1.0, "scale_y": 1.0,
-         "translate_x_mm": 0.0, "translate_y_mm": 0.02}])
+        {"id": ID1, "flip": True, "rotate_quarter": 90, "rotation_deg": -4.0,
+         "scale_x": 1.0, "scale_y": 1.0, "translate_x_mm": 0.0, "translate_y_mm": 0.02}],
+        view=False)["status"] == "ok"
     tracker(job.state)
     yield job, tracker, events, prepared
     job.close()
@@ -381,7 +382,11 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     from tests.golden.record import ID0, ID1
 
     job, tracker, events, prepared = warped
-    assert job.fit_deformable(slices=[ID0], engine="elastix")["status"] == "ok"
+    # The conversion's exactness is checked on a smooth (Elastix B-spline)
+    # field through the ops-level fit: the tool door's deformable fit is ANTs
+    # SyN alone, whose field the 33x33 landmark cap does not reach within
+    # abba_warp.TOLERANCE_MM (test_an_ants_syn_deformation_is_sent_with_its_error).
+    _elastix_fit(job, ID0)
     tracker(job.state)
     row = _row(events[-1], ID0)
     warp = row["warp"]
@@ -413,20 +418,54 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     assert np.linalg.norm(pullback.forward(after) - before, axis=1).max() <= 0.005
 
 
+def _elastix_fit(job, name):
+    """An Elastix B-spline deformation of *name*, applied (ops level)."""
+    from langslice.core import deformation
+    from langslice.ops.deformable import START_LATEST, fit_deformable
+
+    choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
+                                engine="elastix", stiffness="medium")
+    done = fit_deformable(job.job, job.workspace, [job.state.by_id(name)], [choice],
+                          start=START_LATEST)
+    assert done.rows[0]["status"] == "ok", done.rows
+
+
+def test_an_ants_syn_deformation_is_sent_with_its_error(warped):
+    """The deformation the tool door fits (ants_syn) reaches ABBA as warp
+    pairs, with the error of the landmark approximation measured and logged."""
+    from tests.golden.record import ID1
+
+    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    job, tracker, events, _prepared = warped
+    assert job.ants_syn(sections=[ID1], view=False)["status"] == "ok"
+    tracker(job.state)
+    warp = _row(events[-1], ID1)["warp"]
+    assert warp is not None and warp["points"] > 0
+    assert 0 < warp["p99_error_mm"] <= warp["max_error_mm"]
+    logged = [e["message"] for e in events if e.get("kind") == "log" and ID1 in e["message"]]
+    assert any("deformation sent to ABBA" in m for m in logged)
+
+
 def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
+    """The "linear placement stands" record (``ops.deformable.keep_linear``,
+    what submit's ``left_linear`` writes) and a moved placement each send
+    ABBA no warp for the section."""
+    from langslice.ops.deformable import keep_linear
     from tests.golden.record import ID0
 
+    pytest.importorskip("ants", reason="ants_syn needs antspyx")
     job, tracker, events, _prepared = warped
     if job.state.by_id(ID0).deformation is None:
-        assert job.fit_deformable(slices=[ID0], engine="elastix")["status"] == "ok"
+        assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
         tracker(job.state)
-    job.fit_deformable(slices=[ID0], keep_linear="kept for the test")
+    keep_linear(job.job, [job.state.by_id(ID0)], "kept for the test")
     tracker(job.state)
     assert _row(events[-1], ID0)["warp"] is None
-    assert job.fit_deformable(slices=[ID0], engine="elastix")["status"] == "ok"
+    assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     assert _row(events[-1], ID0)["warp"] is not None
-    job.set_positions(entries=[{"id": ID0, "position_mm": 0.11}])
+    assert job.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
+                                 view=False)["status"] == "ok"
     tracker(job.state)
     moved = _row(events[-1], ID0)
     assert moved["position_mm"] == pytest.approx(0.11) and moved["warp"] is None
@@ -434,7 +473,7 @@ def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
     assert _row({"host_updates": events[-1]["updates_since_start"]}, ID0)["warp"] is None
 
 
-def test_a_section_keeping_the_users_warp_is_refused_by_fit_deformable(tmp_path, monkeypatch):
+def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monkeypatch):
     import dataclasses
 
     import langslice
@@ -449,6 +488,7 @@ def test_a_section_keeping_the_users_warp_is_refused_by_fit_deformable(tmp_path,
         write_sections,
     )
 
+    pytest.importorskip("ants", reason="ants_syn needs antspyx")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     apply_patches()
     folder = tmp_path / "stack"
@@ -459,8 +499,9 @@ def test_a_section_keeping_the_users_warp_is_refused_by_fit_deformable(tmp_path,
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     try:
-        job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
-        result = job.fit_deformable(slices=[ID0], engine="elastix")
+        job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
+        job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
+        result = job.ants_syn(sections=[ID0], view=False)
         assert "KEEPS_HOST_WARP" in json.dumps(result)
         assert job.state.by_id(ID0).deformation is None
     finally:
@@ -511,6 +552,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
         prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
                         "positions_mm": {"a.tif": 4.0}, "nonlinear_skip": ["b.tif"]})
 
+    pytest.importorskip("ants", reason="ants_syn needs antspyx")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     apply_patches()
     folder = tmp_path / "stack"
@@ -521,9 +563,9 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     try:
-        job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
-        assert "NONLINEAR_SKIPPED" in json.dumps(job.fit_deformable(slices=[ID0],
-                                                                    engine="elastix"))
+        job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
+        job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
+        assert "NONLINEAR_SKIPPED" in json.dumps(job.ants_syn(sections=[ID0], view=False))
         assert job.job.nonlinear_refusal(ID0)[0] == "NONLINEAR_SKIPPED"
     finally:
         job.close()

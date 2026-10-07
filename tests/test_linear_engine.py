@@ -19,9 +19,49 @@ from langslice.core.spec import JobSpec, PositionSpec
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import apply_host_inputs, ingest
-from tests.fakes import SlabAtlas, install_fake_adk_model_stack
+from tests import fakes
+from tests.fakes import SlabAtlas
+from tests.fakes import install_fake_adk_model_stack as _install_fake_stack
 
 _ATLAS = SlabAtlas()
+
+
+def install_fake_adk_model_stack(monkeypatch, **kwargs) -> None:
+    """The shared fake model stack (tests/fakes.py), writing its positions
+    with ``position_sections``: the tool that writes positions now."""
+    from google.adk.models.llm_response import LlmResponse
+    from google.genai import types
+
+    _install_fake_stack(monkeypatch, **kwargs)
+
+    async def generate(self, llm_request, stream=False):
+        del stream
+        available = set(llm_request.tools_dict or {})
+        if fakes._has_function_response(llm_request, "submit"):
+            part = types.Part.from_text(text="Debrief: nothing was missing.")
+        elif (self.positions and "position_sections" in available
+              and fakes._count_function_responses(llm_request) == 0):
+            part = types.Part.from_function_call(name="position_sections", args={
+                "sections": [{"id": slice_id, "position_mm": position}
+                             for slice_id, position in self.positions.items()]})
+        elif "submit" in available:
+            part = types.Part.from_function_call(name="submit", args={
+                "summary": "Placed the stack.", "notes": [], "interval_breaks": []})
+        else:
+            part = types.Part.from_text(text="Nothing to submit.")
+        fakes._QUOTA_CALLS[0] += 1
+        quota = ({"quota": {"primary_used_percent": str(
+            40 + fakes._QUOTA_CALLS[0] * self.quota_percent_per_call)}}
+            if self.quota_percent_per_call else None)
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[part]), partial=False,
+            turn_complete=True,
+            usage_metadata=types.GenerateContentResponseUsageMetadata(
+                prompt_token_count=self.input_tokens_per_call, candidates_token_count=1),
+            custom_metadata=quota)
+
+    monkeypatch.setattr(fakes._StackLlm, "generate_content_async", generate)
+
 
 def _make_stack(folder: Path, n: int = 4) -> list[str]:
     """Tiny generated PNGs with non-lexicographic numbering."""
@@ -136,8 +176,11 @@ def test_the_job_statement_lists_only_the_tools_that_exist(tmp_path: Path):
         pos_hi=pos_hi,
         axis_ends=ctx.axis_ends,
     )
-    assert "`set_positions`" in text and "`submit`" in text
-    assert "`reorder_slices`" not in text and "`fit_affine`" not in text
+    assert "`position_sections`" in text and "`look`" in text and "`submit`" in text
+    # Positioning only: no transform, fit or retired tool is named.
+    for absent in ("`interactive_transform`", "`elastix_affine`", "`ants_syn`",
+                   "`set_positions`", "`reorder_slices`", "`fit_affine`"):
+        assert absent not in text
     assert "the block was cut back to front" in text
     assert "0.00-19.00 mm" in text
     # the one direction fact, derived from the atlas orientation
@@ -165,11 +208,11 @@ def test_mirroring_is_part_of_linear_never_of_positioning(tmp_path: Path):
     _make_stack(tmp_path, n=3)
     cue = TransformSpec(hemisphere_cue="ink on the right")
     positioning = _statement(_spec(tmp_path, tasks=["reorder", "position"], transform=cue))
-    for word in ("mirror", "flip", "hemisphere", "orient_slices"):
+    for word in ("mirror", "flip", "hemisphere", "interactive_transform"):
         assert word not in positioning.lower()
 
     linear = _statement(_spec(tmp_path, tasks=["transform"], transform=cue))
-    assert "`orient_slices`" in linear
+    assert "`interactive_transform`" in linear
     assert "orientation of any section that is mirrored or turned" in linear
     assert "ink on the right" in linear
 
@@ -209,8 +252,6 @@ def test_a_tools_plain_pictures_reach_the_model_as_message_images(
     """The tools return plain pictures; the ADK door packages them, so the
     model's next request carries the write's picture as an image in the
     function response."""
-    from tests import fakes
-
     names = _make_stack(tmp_path, n=2)
     install_fake_adk_model_stack(monkeypatch, positions={names[0]: 2.0, names[1]: 3.0})
     requests: list = []
@@ -230,13 +271,14 @@ def test_a_tools_plain_pictures_reach_the_model_as_message_images(
         for content in request.contents or []:
             for part in content.parts or []:
                 response = part.function_response
-                if response is not None and response.name == "set_positions":
+                if response is not None and response.name == "position_sections":
                     found += [item.inline_data.data for item in response.parts or []
                               if item.inline_data is not None]
         return found
 
+    # position_sections shows its positioning picture of the written sections.
     pictures = images(requests[1])
-    assert len(pictures) == 2 and all(data[:2] == b"\xff\xd8" for data in pictures)
+    assert len(pictures) >= 1 and all(data[:2] == b"\xff\xd8" for data in pictures)
 
 
 def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
@@ -423,3 +465,77 @@ def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp
         assert ("TRUE physical size" in text) is expected
         assert "landmark" not in text.lower()
         assert "regularized spline" not in text.lower()
+
+
+# --- background work between turns ------------------------------------------
+
+
+def _job(tmp_path: Path):
+    from langslice.job.job import Job
+
+    _make_stack(tmp_path, n=2)
+    spec = _spec(tmp_path, tasks=["position"])
+    ctx = _ctx(spec)
+    return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+
+
+def test_background_message_is_none_when_no_work_ran(tmp_path: Path):
+    from langslice.agent.engine import background_message
+
+    assert background_message(_job(tmp_path)) is None
+
+
+def test_background_message_waits_for_running_work_and_hands_it_out_once(tmp_path: Path):
+    import threading
+
+    from langslice.agent.engine import background_message
+    from langslice.job.background import DONE, Landed
+
+    job = _job(tmp_path)
+    release = threading.Event()
+    picture = Image.new("RGB", (32, 24), (200, 30, 30))
+
+    def land() -> Landed:
+        release.wait(5)
+        return Landed(status=DONE, text="fitted.", pictures=[picture])
+
+    work = job.background.start("trace_borders", ["slice_1.png"], land,
+                                wait_for_images=False)
+    threading.Timer(0.2, release.set).start()
+    assert job.background.running()  # still running when the turn ends
+
+    items = background_message(job)
+    assert items is not None and not job.background.running()
+    assert items[0] == ("Background work finished:\n"
+                        f"{work.id} trace_borders of slice_1.png finished: fitted. "
+                        f"Pictures #{work.pictures[0]}.")
+    assert items[1] == f"picture {work.pictures[0]} ({work.id})"
+    assert isinstance(items[2], Image.Image) and items[2].size == picture.size
+    assert len(items) == 3
+    # Each finished piece is handed out once.
+    assert background_message(job) is None
+    job.background.close()
+
+
+def test_the_session_is_given_the_background_message_of_its_job(
+    tmp_path: Path, monkeypatch
+):
+    from langslice.agent import engine
+
+    names = _make_stack(tmp_path, n=2)
+    seen: dict = {}
+
+    async def fake_session(**kwargs):
+        seen.update(kwargs)
+        return 0, 0
+
+    monkeypatch.setattr(engine, "run_agent_session", fake_session)
+    opened: list = []
+    state = asyncio.run(run(_spec(tmp_path, tasks=["position"]), emit=lambda _m: None,
+                            atlas_loader=lambda _n: _ATLAS,
+                            on_open=lambda job, _ctx: opened.append(job)))
+    assert state.submitted is False and [s.id for s in state.in_order()] == names
+    background = seen["background"]
+    assert background.func is engine.background_message
+    assert background.args == (opened[0],)
+    assert background() is None  # no work ran

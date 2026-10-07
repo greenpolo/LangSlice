@@ -2,15 +2,15 @@
 
 from langslice.agent.plugins import ToolMediaDeliveryPlugin, WorkingSetImages
 from langslice.agent.session import build_plugins
-from tests.linear_tool_helpers import single_adjust
+from tests.linear_tool_helpers import box as _box
+from tests.linear_tool_helpers import single_transform
 from tests.linear_tool_helpers import tool_named as _tool
-from tests.test_linear_toolbox import _box
 
 
 def test_baseline_has_no_acceptance_tool_or_inspection_gate(tmp_path):
     state, _, box = _box(tmp_path, n=1, placed=True, tasks=["transform"])
     assert "accept_views" not in box.names
-    single_adjust(_tool(box, "adjust_transforms"))("s0.png", 0.0, 1.0, 1.0, 0.0, 0.0)
+    single_transform(_tool(box, "interactive_transform"))("s0.png", 0.5, 1.0, 1.0, 0.0, 0.0)
     # No model-delivery boundary has been announced: baseline submit needs a
     # transform, not a separate acceptance or final-image inspection action.
     assert _tool(box, "submit")("done", [], [])["status"] == "ok"

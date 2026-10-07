@@ -3,7 +3,7 @@
 A job keeps each section's own cutting angles, so a registration made
 elsewhere (QuickNII, VisuAlign, DeepSlice) keeps every section's plane as it
 was given. Everything LangSlice angles itself stays one plane for the whole
-stack: ``set_cutting_angles`` sets every section, and a single-angle job
+stack: ``position_sections``' ``cutting_angles`` set every section, and a single-angle job
 reads, draws and writes exactly as before (the goldens are unchanged). The
 end-to-end tests run on the golden recorder's synthetic stack through the
 library and the CLI, with the stub image model (``tests/test_combinations.py``).
@@ -224,6 +224,10 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
             assert abs(float(np.dot(normals[i], normals[j]))) < 1 - 1e-6
 
 
+def _left_linear(*names: str) -> list[dict[str, str]]:
+    return [{"id": name, "reason": "kept"} for name in names]
+
+
 def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images):
     import langslice
     from langslice.core.handoff import prepare_linear_registration
@@ -240,13 +244,14 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         for name in IDS:
             handoff = prepare_linear_registration(state, job.workspace, name)
             assert (handoff.pitch_deg, handoff.yaw_deg) == state.by_id(name).angles
-            assert job.trace_borders(id=name)["status"] in ("running", "ok")
-        traced = job.fit_deformable(slices=[ID1], fit_section="traced_lines", engine="elastix")
-        assert traced["status"] == "ok" and traced["results"][0]["written"] is True, traced
-        fit = job.fit_deformable(slices=[ID0], engine="elastix")
+        # The packaged trace (image call, then its ANTs fit, in the background).
+        assert job.trace_borders(section=ID1)["status"] == "started"
+        fit = job.ants_syn(sections=[ID0])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
-        assert job.fit_deformable(slices=[ID2], keep_linear="kept")["status"] == "ok"
-        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
+        submitted = job.submit(summary="done", notes=[], interval_breaks=[],
+                               left_linear=_left_linear(ID2))
+        assert submitted["status"] == "ok", submitted
+        assert job.state.by_id(ID1).image_correction["status"] == "ok"
         assert {name: job.state.by_id(name).cutting_angles_deg for name in IDS} == (
             SECTION_ANGLES)
         folder = Path(job.folder)
@@ -270,8 +275,8 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
 
     create(spec_for(images, ["nonlinear"], **_external()))
     with langslice.open_job(images) as job:
-        assert job.fit_deformable(slices=list(IDS), keep_linear="kept")["status"] == "ok"
-        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
+        assert job.submit(summary="done", notes=[], interval_breaks=[],
+                          left_linear=_left_linear(*IDS))["status"] == "ok"
         folder = Path(job.folder)
         flat_differs = 0
         for name, stem in zip(IDS, STEMS, strict=True):
@@ -313,7 +318,7 @@ def test_the_cli_refuses_section_angles_with_pitch(capsys, images):
     assert "--pitch/--yaw" in envelope["error"]["message"]
 
 
-# --- set_cutting_angles: one plane for the whole stack -------------------------------------
+# --- position_sections' cutting angles: one plane for the whole stack ----------------------
 
 
 def _linear_spec(images: Path, **inputs: Any) -> JobSpec:
@@ -323,14 +328,18 @@ def _linear_spec(images: Path, **inputs: Any) -> JobSpec:
                    inputs={"pixel_size_um": PIXEL_SIZE_UM, **inputs})
 
 
-def test_set_cutting_angles_flattens_a_mixed_stack_and_undo_restores_it(images):
+def test_cutting_angles_flatten_a_mixed_stack_and_undo_restores_it(images):
     import langslice
 
     create(_linear_spec(images, **_external()))
     with langslice.open_job(images) as job:
         assert job.state.mixed_angles
-        reply = job.set_cutting_angles(pitch_deg=2.0, yaw_deg=-0.5)
-        assert reply["status"] == "ok"
+        # Positions are supplied (no Positioning task): the angles alone are written.
+        reply = job.position_sections(cutting_angles={"pitch_deg": 2.0, "yaw_deg": -0.5})
+        assert reply["status"] == "ok" and reply["written"] == []
+        # Without the Positioning task the call takes no sections at all.
+        refused = job.position_sections(sections=[{"id": ID0, "position_mm": 0.12}])
+        assert refused["error"] == "UNKNOWN_ARGUMENTS" and "sections" in refused["message"]
         assert reply["cutting_angles_deg"] == {"pitch": 2.0, "yaw": -0.5}
         assert [job.state.by_id(name).angles for name in IDS] == [(2.0, -0.5)] * 3
         document = json.loads((Path(job.folder) / "registration.json").read_text())
@@ -354,25 +363,25 @@ def test_a_mixed_stack_is_drawn_per_section_and_said_plainly(images):
         state = job.state
         assert "differ between sections" in stack_angles_fact(state)
         assert "angles=pitch 2.50 yaw 1.00" in status_text(state)
-        shown = job.view_placement(entries=[{"id": ID1, "positions_mm": [POSITIONS[ID1]]}])
+        shown = job.look(mode="overlay", sections=[ID1])
         assert shown["status"] == "ok", shown
+        assert "at 0.15 mm pitch 2.5 yaw 1.0" in shown["pictures"][0]["caption"]
         job.job.views.flush()
         frames = [json.loads(path.read_text())["frame"] for path in
                   (Path(job.folder) / "sections" / "s1" / "views").glob("*/view.json")]
         planes = {(f["plane"]["pitch_deg"], f["plane"]["yaw_deg"]) for f in frames if f}
         assert planes == {(2.5, 1.0)}  # drawn at the section's own plane
-        atlas = job.view_atlas(positions_mm=[0.15])
+        # The atlas alone is drawn at the stack's view angles: the medians.
+        atlas = job.look(mode="atlas", positions_mm=[0.15])
         assert atlas["status"] == "ok"
-        assert atlas["cutting_angles_deg"] == {"pitch": 1.0, "yaw": 0.5}  # the medians
-        assert "median" in atlas["description"]
+        assert "at 0.15 mm pitch 1.0 yaw 0.5" in atlas["pictures"][0]["caption"]
         # A single-angle stack says exactly what it always said.
-        job.set_cutting_angles(pitch_deg=1.0, yaw_deg=0.0)
+        job.position_sections(cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0})
         assert stack_angles_fact(job.state) == (
             "- Stack-wide cutting angles: pitch 1.00 deg, yaw 0.00 deg.")
         assert "angles=" not in status_text(job.state)
-        atlas = job.view_atlas(positions_mm=[0.15])
-        assert atlas["cutting_angles_deg"] == {"pitch": 1.0, "yaw": 0.0}
-        assert "median" not in atlas["description"]
+        atlas = job.look(mode="atlas", positions_mm=[0.15])
+        assert "at 0.15 mm pitch 1.0 yaw 0.0" in atlas["pictures"][0]["caption"]
 
 
 @pytest.mark.parametrize("mode", ["overlay", "side_by_side", "stacked", "template"])

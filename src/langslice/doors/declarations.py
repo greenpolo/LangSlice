@@ -13,17 +13,21 @@ Every door is generated from these declarations:
 - the job folder's reference card and the library's job methods.
 
 The description is the stub's docstring, which a model reads verbatim (ADK
-and FastMCP send a function's ``__doc__`` as it is). Every continuation line
-a model reads is indented eight spaces; :func:`model_doc` adds the four this
-module level lacks (the goldens pin the bytes).
+and FastMCP send a function's ``__doc__`` as it is), and it is the ONLY
+description of the tool: the job statement names the tools and describes
+none. Every continuation line a model reads is indented eight spaces;
+:func:`model_doc` adds the four this module level lacks (the goldens pin the
+bytes).
 
-A run varies a declaration in four ways, all decided here from a
-:class:`Variant`: ``view`` is typed :class:`~langslice.doors.tools.arguments.ViewAuto`
-(with ``resolution``) where the agent chooses the picture size (image
-resolution "auto"; the CLI always); ``fit_deformable`` without the image
-model has no traced fit sections in its description; with the agent's
-``preprocess`` it points there; and with the engine fixed by the user it has
-no ``engine`` argument (candidates :class:`~langslice.doors.tools.arguments.FixedCandidate`).
+A run varies a declaration in the ways a :class:`Variant` names: ``look``'s
+``resolution`` exists only where the agent chooses the picture size (image
+resolution "auto"; the CLI always); the change tools' ``view`` is not
+offered where the host forces their pictures on (``JobSpec.force_view``);
+``position_sections`` takes ``sections`` only with the Positioning task;
+``submit`` takes ``left_linear`` only with Nonlinear on and no deformation
+required on every section; ``trace_borders`` carries the run's base image
+prompt; and each door words where its answers come from (``_DOOR_DOCS``).
+An argument a run drops leaves the description with its entry.
 
 Door-only parameters (ADK's ``tool_context``) are the tool body's, never
 declared. Nothing here imports ``google.*``, ``litellm`` or ``openai``.
@@ -38,87 +42,521 @@ from dataclasses import dataclass
 from typing import Any
 
 from langslice.core import appearance as looks
-from langslice.core.deformation import TRACE_WAIT_S
 from langslice.doors.tools.arguments import (
-    Candidate,
-    DamageEntry,
-    FixedCandidate,
-    OrientEntry,
-    PlacementEntry,
-    PositionEntry,
-    TransformEntry,
-    View,
-    ViewAuto,
+    CuttingAngles,
+    LeftLinear,
+    SectionPosition,
+    SectionTransform,
 )
 
-# Defaults of picture tools are read, never mutated (ADK wants a value).
+# Defaults of list and object arguments are read, never mutated (ADK wants a value).
 # ruff: noqa: B006
 
-# --- the declarations -------------------------------------------------------------
+# --- looking ---------------------------------------------------------------------
+
+
+def look(
+    mode: str,
+    sections: list[str] = [],
+    positions_mm: list[float] = [],
+    channels: list[str] = [],
+    atlas_layers: list[str] = [],
+    atlas_opacity: float = 0.5,
+    warp: str = "applied",
+    resolution: int = 0,
+) -> dict[str, Any]:
+    """Draw pictures of sections and the atlas. Writes nothing.
+
+    The same request draws the same kind of picture at every stage of the
+    run: no default depends on the stack's state. Each picture gets a number
+    and a caption stating the positions, cutting angles, scale and channel
+    settings it was drawn with; zoom takes the number.
+
+    Args:
+        mode: "section": each section alone, as oriented, framed to its
+            tissue. "atlas": the atlas plane alone at each of positions_mm,
+            at the stack's cutting angles. "overlay": each section under its
+            current registration, with the atlas borders and any other
+            atlas_layers on it. "positioning": the sections and the atlas
+            along the slicing axis as ABBA lays them out: the atlas at
+            positions_mm above a millimetre ruler, the sections below it in
+            order of position, each joined by a line to its position; a long
+            stack is split into several pictures, none shrunk.
+        sections: Filenames or indices; empty is every section.
+        positions_mm: Atlas positions in millimetres along the slicing axis:
+            the planes "atlas" draws (at least one), and the atlas pictures
+            above the ruler in "positioning" (none when empty).
+        channels: The raw channels of each section to draw, by name (several
+            are blended in distinct colours, at most 6), or ["preprocessed"]
+            for the channel the fits and the image model read. Empty is every
+            raw channel, each with its display settings.
+        atlas_layers: Any of "template", "nissl" (Allen mouse atlases only)
+            and "borders". Empty is the mode's default: borders in "overlay",
+            template in "atlas" and "positioning". "section" draws no atlas.
+        atlas_opacity: 0 to 1: how strongly an atlas image (template or
+            nissl) shows under the section in "overlay".
+        warp: "applied" draws each section with its deformation, "none" with
+            its linear placement only.
+        resolution: The long edge of each picture in pixels; 0 is the
+            default size. A picture is never drawn larger than its source.
+
+    Returns:
+        Up to 4 pictures, attached in the order `pictures` lists them, each
+        with its number and caption. Pictures past 4 are listed under
+        `not_shown` with the call that draws them.
+    """
+    ...
+
+
+def zoom(box: list[float], picture: int = 0) -> dict[str, Any]:
+    """Draw a box of an earlier picture again, in more detail. Writes nothing.
+
+    The box is redrawn from the full-resolution image, as the picture was
+    drawn even if the stack has changed since (the reply then says `stale`).
+    The new picture has its own number, so it can be zoomed again.
+
+    Args:
+        box: [x0, y0, x1, y1] in pixels of that picture as it was shown,
+            from its top-left corner.
+        picture: The picture's number; 0 is the newest picture that is not
+            itself a zoom.
+
+    Returns:
+        One picture with its number and caption, and `redrawn`: false when
+        the picture could not be drawn again, so the box was cut from the
+        saved picture and enlarged, with no more detail than it had.
+    """
+    ...
+
+
+def set_channel_properties(
+    channel: str,
+    contrast_limits: list[float] = [],
+    gamma: float = 0.0,
+    colormap: str = "",
+    reset: bool = False,
+) -> dict[str, Any]:
+    """Set how a raw channel is displayed, in every section that has it.
+
+    Display only: it changes how look draws the channel and nothing a fit
+    or the image model reads; the image files are never edited. The setting
+    stays until it is changed, and every caption states it. Undoable.
+
+    Args:
+        channel: The raw channel's name.
+        contrast_limits: [low, high] in the file's own intensities: low is
+            drawn black, high at full brightness. Empty keeps the current
+            limits.
+        gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma.
+        colormap: "gray", "red", "green", "blue", "magenta", "cyan" or
+            "yellow"; empty keeps the current one.
+        reset: True returns the channel to its default display; the other
+            arguments are then ignored.
+
+    Returns:
+        The settings now in force, the sections that have the channel, and
+        its file intensities over them: the sample type and its range, and
+        the 1st and 99.5th percentiles.
+    """
+    ...
+
+
+def set_preprocessed_channel_properties(
+    sections: list[str] = [],
+    channel_weights: list[float] = [],
+    clahe_clip: float = looks.DEFAULT_CLAHE_CLIP,
+    clahe_tiles: int = looks.DEFAULT_CLAHE_TILES,
+    n4: bool = False,
+    denoise: bool = False,
+    reset: bool = False,
+) -> dict[str, Any]:
+    """Set the recipe of the preprocessed channel that the fits and the image model read.
+
+    Every section has one preprocessed channel, made from its raw channels
+    by a recipe, LangSlice's default until this is called: each raw channel
+    with a weight above zero is optionally N4-corrected and denoised (ANTs)
+    and contrast-enhanced by CLAHE, then the channels are blended by their
+    weights. The fits match it against an atlas image. The raw channels are
+    never changed; look draws this channel with channels ["preprocessed"].
+    Undoable; another call replaces the recipe.
+
+    Args:
+        sections: Filenames or indices that get a recipe of their own; empty
+            sets the whole stack's recipe.
+        channel_weights: One weight per raw channel, in the order the reply's
+            `channels` lists them; 0 leaves a channel out. Empty: automatic
+            weights by tissue coverage.
+        clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
+        clahe_tiles: CLAHE tiles per side, 1 to 32.
+        n4: ANTs N4 correction of uneven illumination.
+        denoise: ANTs denoising.
+        reset: True returns the stack to the default recipe, or the named
+            sections to the stack's recipe; the other arguments are then
+            ignored.
+
+    Returns:
+        The recipe in force, the raw channels, and for up to 4 of the
+        sections (spread over the stack when none are named) two pictures
+        each: the preprocessed channel before this call, then after it.
+    """
+    ...
+
+
+def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
+    """Look regions up in the atlas hierarchy by acronym, name or id. Text only.
+
+    To see a region's borders on the atlas, use grep_atlas_view.
+
+    Args:
+        query: Text matched case-insensitively against region acronyms and
+            names (substring), or an exact acronym or numeric id.
+        section: Optional filename or index of a section with a position;
+            each row then says whether the region (or any descendant)
+            appears in the atlas plane at that section's placement.
+
+    Returns:
+        Rows of acronym, id, name, ancestry (root to parent, as acronyms)
+        and descendant count, at most 40, with the number left over.
+    """
+    ...
+
+
+def grep_atlas_view(regions: list[str], positions_mm: list[float]) -> dict[str, Any]:
+    """Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.
+
+    The named regions' borders are drawn strong and the other borders
+    faint, at the stack's cutting angles. Look highlights no regions; this
+    tool does.
+
+    Args:
+        regions: Acronyms, names or ids, descendants included; "CTX:left" or
+            "CTX:right" names one side, as the pictures show it.
+        positions_mm: Atlas positions in millimetres along the slicing axis;
+            a position outside the atlas is clamped into its range.
+
+    Returns:
+        Up to 4 pictures with their numbers and captions, and per position
+        the named regions that have no pixel in that plane.
+    """
+    ...
 
 
 def status() -> dict[str, Any]:
-    """The stack as it stands: one row per section in corrected order.
+    """The stack as it stands, and what this run lets you change. Writes nothing.
 
     Returns:
-        ``rows`` (index, id, position_mm, delta_to_next_mm, flip,
-        rotation_deg, damaged, damage_note, transform kind, transform_iou,
-        transform_mirrored, caveats), plus the stack's cutting angles and
-        interval breaks. Writes return only the rows they changed; this is
-        the whole table.
+        One row per section in stack order: index, filename, position
+        (position_source "default": a starting position the job gave the
+        section, not yet placed), distance to the next placed section, flip
+        and quarter turn, transform, damaged regions and damage note,
+        deformation steps. Also the cutting angles, the interval breaks, the
+        raw channels' display settings, the preprocessed channel's recipe,
+        the background work still running, and what this run lets you
+        change.
     """
     ...
 
 
-def view_slices(
-    slices: list[str],
-    view: View = {},
-) -> dict[str, Any]:
-    """Look at up to 4 named sections at higher resolution.
+def list_files(path: str = ".", pattern: str = "") -> dict[str, Any]:
+    """List the files and folders of the job folder. Writes nothing.
 
-    Sections are rendered as corrected: any rotation and flip already
-    applied, framed to their tissue the same way atlas sections are.
-    Each image carries its corrected index and filename burned into its
-    top-left corner.
+    The job folder keeps every picture you were shown, indexed in
+    views.jsonl (number, tool, history step, sections, caption), with the
+    run notes (state.json), the settings (job.json) and the results.
 
     Args:
-        slices: Filenames or corrected indices (max 4 per call).
-        view: Picture options (described once in the job statement).
-            Modes: "section" (default: the section in view.channels) or
-            "channels" (one small tile per raw channel, unmodified, each
-            labelled with its name). No atlas is drawn.
+        path: A folder inside the job folder, relative to it; "." is the job
+            folder itself.
+        pattern: A glob (e.g. "*.json", "views/*"): every file below path
+            whose name or path matches. Empty lists path itself.
 
     Returns:
-        status/slices/description plus the images, in the order asked.
+        The entries, folders first, each with its kind and size, at most 200,
+        with the number left out.
     """
     ...
 
 
-def view_atlas(
-    positions_mm: list[float],
-    view: View = {},
-) -> dict[str, Any]:
-    """Look at atlas sections at the positions you name, at most 4 per call.
-
-    Sections are rendered at the stack's current cutting angles, each
-    labelled with its position (and the angles, when the stack is oblique)
-    in its top-left corner. Ask for more than 4 and only the first 4 are
-    shown; the rest come back under ``dropped_positions_mm`` with
-    ``truncated: true``. Positions outside the atlas range are clamped,
-    and positions within 0.02 mm of one already in the same call are
-    coalesced.
+def search_files(query: str, path: str = ".", glob: str = "") -> dict[str, Any]:
+    """Search the job folder's text files for lines that match. Writes nothing.
 
     Args:
-        positions_mm: Positions along the slicing axis, in millimetres.
-        view: Picture options (described once in the job statement).
-            Mode "template" only: the atlas alone, framed to its anatomy;
-            atlas_channels default ["template"], add "borders" for the region
-            lines. No section is drawn, so channels does not apply.
+        query: A regular expression, or plain text when it is not one; upper
+            and lower case alike.
+        path: A folder or file inside the job folder, relative to it.
+        glob: Only files whose name or path matches this glob.
 
     Returns:
-        status/positions plus the atlas images, in the order requested.
+        Matches as "file:line: text", at most 60, with the number left out.
+        Pictures and binary files are not searched.
     """
     ...
+
+
+def read_file(path: str, offset: int = 0, limit: int = 400) -> dict[str, Any]:
+    """Read a text file of the job folder, with line numbers. Writes nothing.
+
+    A picture file is answered with its entry in the picture index (its
+    number, tool, sections and caption), never its pixels: zoom shows it
+    again by that number.
+
+    Args:
+        path: The file, relative to the job folder.
+        offset: Lines to skip from the start.
+        limit: Lines to show, at most 2000.
+
+    Returns:
+        The lines shown, the file's line count and, when lines remain, the
+        offset to continue from.
+    """
+    ...
+
+
+# --- changing ---------------------------------------------------------------------
+
+
+def position_sections(
+    sections: list[SectionPosition] = [],
+    cutting_angles: CuttingAngles = {},
+    view: bool = True,
+) -> dict[str, Any]:
+    """Set where sections sit along the slicing axis, and the stack's cutting angles.
+
+    Positions are atlas millimetres along the slicing axis; a value outside
+    the atlas range is clamped into it and reported. The stack's order
+    follows the positions: after every call the sections are numbered by
+    position, so indices can change; filenames never do. A changed position
+    or angle clears the deformation of each section it moves (the reply
+    lists them). One undoable write.
+
+    Cutting angles tilt the atlas plane every section is cut at; every
+    section gets the same angles, and every later atlas picture is drawn at
+    them. Pitch 0 and yaw 0 is the atlas's flat plane. A tilt moves each
+    edge of the plane along the slicing axis: an edge D mm from the
+    picture's centre moves about D x tan(angle) mm (10 degrees moves an edge
+    4 mm from the centre about 0.7 mm). Which edge moves which way, for
+    positive angles, by the plane the stack is cut in (edges as the pictures
+    show them):
+
+    - coronal: pitch puts the top edge at a larger position (mm) than the
+      bottom edge; yaw puts the right edge at a larger position than the
+      left edge.
+    - sagittal: pitch puts the left edge at a larger position than the
+      right edge; yaw puts the bottom edge at a larger position than the
+      top edge.
+    - horizontal: pitch puts the right edge at a larger position than the
+      left edge; yaw puts the top edge at a larger position than the
+      bottom edge.
+
+    Negative angles move the edges the opposite way.
+
+    Args:
+        sections: [{"id": "<filename or index>", "position_mm": <number>}].
+        cutting_angles: {"pitch_deg": <number>, "yaw_deg": <number>} for the
+            whole stack; empty leaves the angles as they are.
+        view: True returns the picture described below; false returns none.
+
+    Returns:
+        What was written and what was clamped, the stack's order after the
+        call, the rows that changed, and a positioning picture of the
+        written sections: the atlas at their new positions above a
+        millimetre ruler, the sections below it, each joined by a line to
+        its position.
+    """
+    ...
+
+
+def interactive_transform(
+    sections: list[SectionTransform],
+    view: bool = True,
+) -> dict[str, Any]:
+    """Set sections' orientation and in-plane transform by hand, and show the result.
+
+    For a few sections at a time, in a look-and-adjust loop. Values are
+    absolute: a value given replaces the section's current one, and a value
+    left out keeps it (a section without a transform starts from the
+    identity). The quarter turn is applied first, then the flip. A changed
+    orientation keeps the other values: the transform is rebuilt on the new
+    orientation, and the reply says so. One undoable write; the image files
+    are never modified.
+
+    Whether a section is mirrored can only be decided from a visible notch,
+    or from a cutting angle oblique enough that the two hemispheres'
+    anatomy differs.
+
+    Args:
+        sections: One to four objects: "id" (filename or index) and any of
+            "flip" (true mirrors the section left-right), "rotate_quarter"
+            (0, 90, 180 or 270 degrees counter-clockwise), "rotation_deg"
+            (degrees counter-clockwise about the pivot, the canvas centre),
+            "scale_x" and "scale_y" (multipliers about the pivot; 1.0 keeps
+            the size), "shear" (a slant applied before the rotation: each
+            point moves sideways by shear times its distance below the pivot,
+            in units of scale_x), "translate_x_mm" (right) and
+            "translate_y_mm" (down). A section appears once per call.
+        view: True returns the picture described below; false returns none.
+
+    Returns:
+        Per section its orientation, its transform as the values above,
+        and whether anything was written; and a picture of each section
+        under its new transform with the atlas borders on it.
+    """
+    ...
+
+
+def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, Any]:
+    """Mark the atlas regions a section has lost, so that every fit leaves them out.
+
+    Damage is tissue that is missing from the section, or so badly
+    displaced that it would wreck a fit, such as a whole hemisphere, the
+    olfactory bulb or the cortex. Small tears, bubbles, stains, low contrast
+    and folds within an intact outline are not damage and are not marked.
+    A section is damaged exactly when it has marked regions. The marked
+    regions are left out of elastix_affine, ants_syn and the image model's
+    trace automatically, and they move with the registration because they
+    are named by atlas region. One undoable write.
+
+    Args:
+        section: Filename or index.
+        regions: Acronyms, names or ids, descendants included; "CTX:left" or
+            "CTX:right" names one side, as the pictures show the section.
+            They replace the section's marked regions; empty clears them.
+        note: What is wrong with the tissue. A note the user gave stays
+            first.
+
+    Returns:
+        The section's marked regions and note, and a picture of the marked
+        regions shaded on the section under its current registration beside
+        the same regions on the atlas, to check both at once.
+    """
+    ...
+
+
+# --- fitting ----------------------------------------------------------------------
+
+
+def elastix_affine(
+    sections: list[str] = [],
+    restrict_to: list[str] = [],
+    atlas_image: str = "template",
+    view: bool = True,
+) -> dict[str, Any]:
+    """Fit sections' in-plane affine transforms automatically with elastix.
+
+    Elastix refines each section's current placement (from the identity
+    when it has no transform) by matching its preprocessed channel against
+    an atlas image, inner anatomy included. It adjusts from where the
+    section is and does not search from scratch: it moves a section by
+    small amounts and does not turn it over. The section's marked damage
+    regions are left out automatically. Each fit is written as the
+    section's transform, one undoable write for the call.
+
+    Args:
+        sections: Filenames or indices; empty is every placed section the
+            user has not locked.
+        restrict_to: Regions to fit by (acronyms, names or ids, descendants
+            included; "CTX:left" or "CTX:right" for one side): only the
+            atlas within 300 um of them, against the tissue the fit lays
+            there. Empty fits by every region.
+        atlas_image: "template" (the atlas's reference template) or "nissl"
+            (a Nissl-stained reference, Allen mouse atlases only).
+        view: True returns the picture described below; false returns none.
+
+    Returns:
+        Per section the overlap of the fitted shapes (iou; it compares
+        outlines, not the anatomy inside, so a turned section can score as
+        high as a correct one) and the transform (rotation_deg, scale_x,
+        scale_y, shear, translate_x_mm, translate_y_mm about the canvas
+        centre); and a picture of each fitted section
+        under its new transform with the atlas borders on it, zoomed to the
+        restrict_to regions when they are given.
+    """
+    ...
+
+
+def ants_syn(
+    sections: list[str],
+    restrict_to: list[str] = [],
+    atlas_image: str = "template",
+    stiffness: str = "medium",
+    view: bool = True,
+) -> dict[str, Any]:
+    """Fit a deformation of the atlas onto sections with ANTs SyN, on their current registration.
+
+    SyN bends the atlas onto each section's preprocessed channel, starting
+    from the section's current registration (its linear placement, and its
+    deformation when it has one), so each fit builds on the one before;
+    undo goes back. Fit the whole section first, then refine regions with
+    restrict_to. The section's marked damage regions are left out
+    automatically. Needs a position and a transform. Applied as the
+    section's deformation, one undoable write; a later change to the
+    section's position, orientation, cutting angles or transform clears it.
+
+    Args:
+        sections: One to four filenames or indices.
+        restrict_to: Regions to fit by (acronyms, names or ids, descendants
+            included; "CTX:left" or "CTX:right" for one side). Empty fits by
+            every region.
+        atlas_image: "template" (the atlas's reference template) or "nissl"
+            (a Nissl-stained reference, Allen mouse atlases only).
+        stiffness: "soft", "medium" or "firm".
+        view: True returns the picture described below; false returns none.
+
+    Returns:
+        Per section the displacement (median and max, mm, over the tissue),
+        the fold fraction and plausibility flags (regions compressed,
+        expanded, vanished or folded beyond limits; displacement outsized
+        for the section); and a picture of each section under its new
+        registration with the atlas borders on it, zoomed to the
+        restrict_to regions when they are given.
+    """
+    ...
+
+
+def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -> dict[str, Any]:
+    """Trace the atlas borders onto a section with the image model, then fit what it drew with ANTs.
+
+    LangSlice's own nonlinear method, packaged: the image model is shown the
+    section with its placed atlas borders and draws them on the section's
+    anatomy; when it answers, ANTs fits the traced borders (medium
+    stiffness) on top of the section's current registration and the
+    deformation is applied as its own undoable step. The section needs a
+    position and a transform; its marked damage regions are left out of
+    what the model is shown. With restrict_to, the model is shown only those
+    regions' borders and only they are fitted. The first answer at a
+    placement and region choice is saved and reused, whatever the prompt;
+    when its fit is already applied, nothing is fitted again. Every prompt
+    sent is saved in the job folder.
+
+    Starts the work in the background and returns at once with its id, so
+    you can carry on with other sections. When the work finishes, the next
+    tool reply starts with its notice: the fit's numbers and the numbers of
+    its pictures (the trace on the section, and the fitted borders). status
+    lists the work still running; submit waits for it.
+
+    Args:
+        section: Filename or index.
+        prompt: The full image prompt for this section: the base prompt
+            below, edited for this section; empty sends the base prompt.
+            Rules for any edit: the atlas borders shown to the model are the
+            only source of which lines exist, so its answer holds each of
+            them and no other line, except where tissue is physically missing
+            from the section; a faint or indistinct boundary is still drawn,
+            where the atlas places it. Never add a sentence that makes a
+            line depend on whether its edge is visible.
+        restrict_to: Regions to trace and fit alone (acronyms, names or ids,
+            descendants included; "CTX:left" or "CTX:right" for one side).
+            Empty: every region.
+
+    The base prompt (its image numbers are the images the image model
+    receives):
+
+    BASE_PROMPT
+    """
+    ...
+
+
+# --- bookkeeping --------------------------------------------------------------------
 
 
 def note(text: str) -> dict[str, Any]:
@@ -131,7 +569,7 @@ def note(text: str) -> dict[str, Any]:
 
 
 def undo() -> dict[str, Any]:
-    """Undo the last write. One tool call undoes as one step."""
+    """Undo the last write. A tool call, or a finished piece of background work, is one step."""
     ...
 
 
@@ -140,390 +578,30 @@ def redo() -> dict[str, Any]:
     ...
 
 
-def mark_damaged(entries: list[DamageEntry]) -> dict[str, Any]:
-    """Set or clear damage flags for sections with unreliable outlines.
-
-    Damage here means the section outline massively deviates from the
-    atlas: large missing chunks, a missing hemisphere or olfactory bulb,
-    split or independently rotated hemispheres, displaced fragments.
-    Bubbles, stains, low contrast and small tears with an intact outline
-    are NOT damage.
-
-    Args:
-        entries: Objects with id (filename or corrected index), damaged
-            (boolean, default True) and note. Set damaged=False to clear
-            the flag and its note.
-
-    Returns:
-        The rows this call changed.
-    """
-    ...
-
-
-def preprocess(
-    target: str = "both",
-    slices: list[str] = [],
-    channel_weights: list[float] = [],
-    clahe_clip: float = looks.DEFAULT_CLAHE_CLIP,
-    clahe_tiles: int = looks.DEFAULT_CLAHE_TILES,
-    n4: bool = False,
-    denoise: bool = False,
-    reset: bool = False,
-    view: View = {},
+def submit(
+    summary: str,
+    notes: list[str],
+    interval_breaks: list[int],
+    left_linear: list[LeftLinear] = [],
 ) -> dict[str, Any]:
-    """Set how sections look: for what you view, for what a fit reads, or both.
+    """End the run. Call this exactly once, last.
 
-    Sets the appearance of the whole stack (no slices) or of named
-    sections (overriding the stack's), for target "view" (every picture
-    you are shown from now on), "fit" (the image a deformable fit reads)
-    or "both"; each target keeps its own setting. The image is built from
-    the section's raw channels: each channel with weight above zero is
-    optionally N4 bias-field corrected and denoised (ANTs), contrast-
-    enhanced by CLAHE, then the channels are blended by their weights.
-    Until this is called both targets use the default appearance.
-    Writes, checkpoints and can be undone; another call replaces the
-    setting. Picture options never change it.
+    Waits for the background work still running. Refused, with the reason
+    and nothing changed, while something the run needs is missing.
 
     Args:
-        target: "view", "fit" or "both".
-        slices: Filenames or corrected indices; empty sets the stack.
-        channel_weights: One weight per raw channel, in the order the
-            result's `channels` lists them; 0 leaves a channel out. Give
-            the counterstain that lights all the tissue (DAPI, Nissl) the
-            most weight and sparse labels (tracers, reporters) little or
-            none. Empty: automatic weights by tissue coverage.
-        clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40; the default
-            appearance uses 4.
-        clahe_tiles: CLAHE tiles per side, 1 to 32; the default uses 8.
-        n4: ANTs N4 bias-field correction of uneven illumination.
-        denoise: ANTs denoising.
-        reset: True returns the target to the default appearance (named
-            sections: back to the stack's setting); other settings are
-            ignored.
-        view: Picture options (described once in the job statement).
-            Mode "section" only; zoom applies. The pictures show the
-            target's appearance, so channels and the atlas keys do not
-            apply.
-
-    Returns:
-        The settings in force per target, the raw channels, and for each
-        affected section (up to 4) two labelled pictures: BEFORE (the
-        target's appearance before this call) then AFTER (as it is now).
+        summary: One or two sentences on what you did.
+        notes: Short observations worth carrying forward.
+        interval_breaks: Indices of the sections AFTER a gap you conclude is
+            real. Empty if there are none.
+        left_linear: Sections left without a deformation, each with the
+            reason its linear placement stands: [{"id": "<filename or
+            index>", "reason": "..."}].
     """
     ...
 
 
-def reorder_slices(slices: list[str], after: str = "start") -> dict[str, Any]:
-    """Place one or more sections together in the requested order.
-
-    Args:
-        slices: Nonempty list of unique section filenames. These sections
-            move as one block in the listed order; all unlisted sections
-            keep their relative order. List the whole stack to set its order.
-            Use filenames, never corrected indices: this call changes indices.
-        after: Filename the block should follow, or "start" (default) to
-            put it first. The anchor must not be in slices.
-
-    Returns:
-        Changed rows and moved ids. Only corrected indices change; positions
-        and transforms are kept. The whole call is one undoable write.
-    """
-    ...
-
-
-def set_positions(
-    entries: list[PositionEntry],
-    view: View = {},
-) -> dict[str, Any]:
-    """Write positions for one or more sections, and show each placement.
-
-    Positions are in atlas-native millimetres along the slicing axis. A
-    value outside the atlas range is clamped and reported back.
-
-    Args:
-        entries: ``[{"id": "<filename>", "position_mm": <number>}]``.
-        view: Picture options (described once in the job statement).
-            Modes as in `view_placement`; default "stacked".
-
-    Returns:
-        What was written, what was clamped, the rows it changed, and one
-        picture per placement not already seen in a full-canvas,
-        atlas-bearing view with this orientation and these cutting
-        angles, labelled in the top-left corner.
-    """
-    ...
-
-
-def view_placement(
-    entries: list[PlacementEntry],
-    view: View = {},
-) -> dict[str, Any]:
-    """Show sections in their complete current registration, or at candidate positions.
-
-    Writes nothing. At most 4 section-position pairs per call. The
-    physical modes draw the section on a millimetre-true canvas under its
-    complete current registration: its in-plane transform (identity when
-    it has none) and, at its own position, its applied deformation (a
-    warped section; view.deformation "none" shows the linear placement
-    alone). One image per pair.
-
-    Args:
-        entries: ``[{"id": "<filename or corrected index>",
-            "positions_mm": [<mm>, ...]}]``. An empty or missing
-            ``positions_mm`` means that section's current position.
-        view: Picture options (described once in the job statement).
-            Modes: "template" (default: the atlas alone on the section's
-            own canvas, at its scale; the section is in the opening
-            message), "overlay" (the section under its registration with
-            the atlas lines on it), "checkerboard" (section and atlas
-            image in alternating tiles), "outlines" (atlas lines and the
-            section's silhouette on black), "section" (the registered
-            section alone), "stacked" (one picture: the section as
-            corrected above the atlas, each tissue-framed, both at one
-            scale; no placement drawn) or "side_by_side" (separate
-            original section and atlas images, tissue-framed, the
-            section and every atlas at one scale, full view only, up to
-            8 images). zoom and deformation apply to the physical modes.
-
-    Returns:
-        The section-position pairs shown, in order, each with its
-        calibration, the transform drawn and whether a deformation was
-        drawn, and the images per pair in that order.
-    """
-    ...
-
-
-def view_stack(
-    view: View = {},
-) -> dict[str, Any]:
-    """The whole stack ordered by written position, each above its atlas match.
-
-    One contact sheet: every section as a labelled thumbnail, in the
-    order of the positions written so far (unplaced sections last), a
-    placed section with the atlas section at its position pasted
-    directly beneath it, both at one scale. The label carries the corrected index,
-    filename, position and the signed distance to the next placed
-    section. Then one plot of position against corrected index (damaged
-    sections in red). Two images; `view_slices` shows any section large.
-
-    Args:
-        view: Picture options (described once in the job statement).
-            Mode "stacked" only; atlas_channels default ["template"]; no zoom.
-
-    Returns:
-        The rows in that order and the two images.
-    """
-    ...
-
-
-def search_position(
-    id: str, window_mm: float, angles: bool, around_mm: float = -1.0,
-) -> dict[str, Any]:
-    """Search the atlas for a section's position. Writes nothing.
-
-    Scores the section against resampled atlas planes and returns the best
-    one it found. A section without a position, and no around_mm, is
-    searched over the atlas's whole valid range.
-
-    Args:
-        id: Filename or corrected index.
-        window_mm: Half-width of the position search, in millimetres,
-            centred on around_mm, else on the section's current position.
-        angles: True also searches the cutting angles; False holds them at
-            the stack's current ones.
-        around_mm: Centre of the search, in atlas millimetres; leave it out
-            (or negative) for the section's current position.
-
-    Returns:
-        The best position (and angles) with its score, and the range searched.
-    """
-    ...
-
-
-def orient_slices(
-    entries: list[OrientEntry],
-    view: View = {},
-) -> dict[str, Any]:
-    """Set the flip and rotation of one or more sections, and show them.
-
-    Orientation is part of in-plane alignment: a flip is the sign of the
-    section's affine. Corrections are recorded as data; the user's image
-    files are never modified. Rotation is applied first, then the flip. A
-    section whose orientation changes loses its transform. Determining
-    hemisphere orientation (whether a section is mirrored) is only
-    possible when there is a visible notch or a noticeable oblique cutting
-    angle that produces differences between the hemispheres' anatomy.
-
-    Args:
-        entries: ``[{"id": "<filename>", "flip": true|false,
-            "rotate_deg": 0|90|180|270}]``. Either key may be omitted to
-            leave that correction as it is.
-        view: Picture options (described once in the job statement).
-            Mode "section" only: each section as it now stands, in
-            view.channels. No atlas is drawn.
-
-    Returns:
-        The rows this call changed, and each changed section rendered as
-        it now stands (up to 4), its corrected index and filename burned
-        into its top-left corner.
-    """
-    ...
-
-
-def fit_affine(
-    slices: list[str],
-    method: str = "elastix",
-    fit_atlas: str = "",
-    include: list[str] = [],
-    exclude: list[str] = [],
-    view: View = {},
-) -> dict[str, Any]:
-    """Fit an in-plane affine per section against its atlas section.
-
-    "elastix" (default) refines the section's current transform (none
-    yet: from no transform) by matching the section's fit appearance
-    against an atlas image, inner anatomy included; it adjusts from there
-    and does not search from scratch. "silhouette" fits the tissue
-    outline to the atlas outline from scratch (outlines only). Without
-    regions a damaged section is refused. Each fit is written as the
-    section's transform (undoable, and `adjust_transforms` overwrites it).
-
-    Args:
-        slices: Filenames or corrected indices; empty means every
-            positioned, undamaged section.
-        method: "elastix" (default) or "silhouette".
-        fit_atlas: The atlas image the elastix method matches: "template" (the
-            reference template; default) or "nissl" (a Nissl-stained
-            reference, Allen mouse atlases). Not for "silhouette".
-        include: Regions (acronyms or ids, descendants included) to fit
-            by: only the atlas within 300 um of them, against the tissue
-            the fit lays there. With "silhouette" they count only where
-            they reach the outline.
-        exclude: Regions removed from the atlas side (e.g. tissue missing
-            from the section), descendants included; the tissue the fit
-            lays on them is left out too. With regions given, damaged
-            sections are fitted. An include or exclude entry may name one
-            side only, "CTX:left" or "CTX:right": left and right of the
-            section as view_slices shows it.
-        view: Picture options (described once in the job statement).
-            Modes as in `adjust_transforms` without "ab"; default
-            "overlay". Included regions are highlighted unless
-            view.regions names others.
-
-    Returns:
-        Per-section overlap (iou; with regions, of the kept atlas and the
-        tissue that corresponds; it compares shapes, not the anatomy
-        inside, so a turned or upside-down section can score as high as a
-        correct one, and a fit that turns a section more than 45 degrees
-        says so), the transform as the five physical knobs about the
-        canvas centre, the calibration the image was
-        drawn with, a `regions` report when regions were given, and an
-        image of each fitted section under its new transform. The
-        generic changed row is omitted because it repeats the same fit
-        identifiers and overlap.
-    """
-    ...
-
-
-def adjust_transforms(
-    entries: list[TransformEntry],
-    view: View = {},
-) -> dict[str, Any]:
-    """Set and show one to four independent sections in one undoable call.
-
-    Each entry replaces the complete transform; a shear left out is kept from
-    the current transform. A section may appear once per call; inspect its
-    result before making a dependent correction in a later call. Call it as
-    often as you need, on any section that has a position; the last call is
-    what stays.
-
-    Args:
-        entries: One to four objects with id, rotation_deg (counter-clockwise
-            about the pivot, degrees), scale_x, scale_y (multipliers about
-            the pivot; 1.0 leaves the size alone), translate_x_mm (right),
-            translate_y_mm (down). Optional per entry: shear (a unitless
-            slant applied before the rotation: each point moves sideways
-            by shear times its distance below the pivot, in units of
-            scale_x; the number fit_affine reports; left out, the
-            section's current shear is kept, 0 sets none), pivot
-            ("canvas", "tissue" or [fx, fy] fractions of the canvas) and
-            note.
-        view: Picture options (described once in the job statement), one
-            for every entry's picture. Modes: "overlay" (default: the section
-            with the atlas lines on it), "side_by_side" (two images: the
-            section, then the atlas image, same scale and crop),
-            "checkerboard", "outlines" (the atlas lines and the section's
-            own silhouette on black), "section", "template" (the atlas
-            alone) or "ab" (two overlays at the same crop: these
-            parameters, then the section's stored transform, or identity
-            when it has none).
-
-    Returns:
-        Per-section results with zero-based image_indexes into the attached
-        labelled images, in entry order, and the `view` they were drawn
-        with. All writes form one undo step. Repeating unchanged
-        parameters only redraws, without an undo step.
-    """
-    ...
-
-
-def set_cutting_angles(pitch_deg: float, yaw_deg: float) -> dict[str, Any]:
-    """Set the stack-wide cutting angles: tilt the atlas plane every section is cut at.
-
-    Pitch 0 and yaw 0 is the atlas's flat plane. Every section gets these
-    angles, replacing any it had of its own, and every later atlas picture
-    is drawn at them. A tilt moves each edge of the atlas plane along the
-    position axis: an edge D mm from the picture's centre moves about
-    D x tan(angle) mm (10 degrees moves an edge 4 mm from the centre about
-    0.7 mm). Which edge moves which way, for positive angles, by the plane
-    the stack is cut in (edges as the pictures show them):
-
-    - coronal: pitch puts the top edge at a larger position (mm) than the
-      bottom edge; yaw puts the right edge at a larger position than the
-      left edge.
-    - sagittal: pitch puts the left edge at a larger position than the
-      right edge; yaw puts the bottom edge at a larger position than the
-      top edge.
-    - horizontal: pitch puts the right edge at a larger position than the
-      left edge; yaw puts the top edge at a larger position than the
-      bottom edge.
-
-    Negative angles move the edges the opposite way. Positions and
-    transforms are kept; an applied deformation is cleared (the reply
-    lists it).
-
-    Args:
-        pitch_deg: Pitch in degrees.
-        yaw_deg: Yaw in degrees.
-
-    Returns:
-        The angles now set.
-    """
-    ...
-
-
-def trace_borders(
-    id: str, prompt: str = "", include: list[str] = [], exclude: list[str] = [],
-) -> dict[str, Any]:
-    """Trace one slice's atlas borders onto its anatomy with the image model.
-
-    Args:
-        id: Section filename or corrected index, with a position and linear transform.
-        prompt: The full image prompt for this section, edited from the base prompt.
-        include: Regions (acronyms or ids, descendants included) whose
-            borders the image model is shown. Empty shows every region.
-        exclude: Regions left out of the borders the image model is shown
-            (e.g. tissue that is missing from the section), descendants
-            included; their edge with the shown regions becomes an outline.
-            An include or exclude entry may name one side only, "CTX:left"
-            or "CTX:right": left and right of the section as the pictures
-            show it. A traced fit_deformable uses the same regions.
-
-    Starts the image call in the background and returns at once; the result is
-    saved, and submit waits for it. The first result at a placement and region
-    choice is reused. Does not fit a deformation.
-    """
-    ...
+# --- for scripts only -----------------------------------------------------------------
 
 
 def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
@@ -531,8 +609,9 @@ def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
 
     The model sees each clean section and the outlined atlas plane at its
     position and cutting angles; passes=2 adds a corrective second call. The
-    reply is recorded as trace_borders records its own, so fit_deformable's
-    traced fit sections start it from the section's linear transform.
+    reply is recorded as trace_borders records its own; a script fits it
+    with langslice.ops.deformable.fit_deformable (fit_section
+    "traced_borders"), from the section's linear transform.
 
     Args:
         slices: Filenames or corrected indices, each with a position and
@@ -541,122 +620,6 @@ def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
 
     Starts the image calls in the background and returns at once; the
     results are saved, and submit waits for them. Does not fit a deformation.
-    """
-    ...
-
-
-def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
-    """Look regions up in the atlas hierarchy, like grepping the ontology.
-
-    Args:
-        query: Text matched case-insensitively against region acronyms and
-            names (substring), or an exact acronym or numeric id.
-        section: Optional filename or corrected index of a section with a
-            position; each row then says whether the region (or any
-            descendant) appears in the atlas plane at that placement.
-
-    Returns:
-        Rows of acronym, id, name, ancestry (root to parent, as acronyms)
-        and descendant count, capped at 40 with the number left over.
-    """
-    ...
-
-
-def fit_deformable(
-    slices: list[str],
-    include: list[str] = [],
-    exclude: list[str] = [],
-    start: str = "linear",
-    fit_section: str = "fit",
-    fit_atlas: str = "",
-    engine: str = "",
-    stiffness: str = "medium",
-    candidates: list[Candidate] = [],
-    keep_linear: str = "",
-    view: View = {},
-) -> dict[str, Any]:
-    """Fit a deformation of the placed atlas onto sections, on top of their linear placement.
-
-    A library engine bends the atlas, as linearly placed, onto the
-    section image. A call with several candidates previews them all
-    (run concurrently) and writes nothing. A call with exactly one
-    setting (no candidates, or one) APPLIES it as each section's
-    deformation, reusing the result of an identical earlier fit instead
-    of recomputing; that write is undoable and checkpointed. Any later
-    change to a section's position, orientation, cutting angles or
-    transform clears its deformation. Needs a position and a transform.
-    With keep_linear, no fit runs: each named section records that its
-    linear placement stands, with that reason.
-
-    Args:
-        slices: Filenames or corrected indices (up to 4; at most 8 fits
-            per call, slices times candidates).
-        include: Regions (acronyms or ids, descendants included) to focus
-            on: only they and a 300 um margin are fitted. Empty fits the
-            whole section.
-        exclude: Regions removed from the atlas side (e.g. tissue that is
-            missing from the section), descendants included. An include
-            or exclude entry may name one side only, "CTX:left" or
-            "CTX:right": left and right of the section as this tool's
-            pictures show it.
-        start: "linear" (from the linear placement) or "current" (compose
-            onto the section's applied deformation: region-by-region steps).
-        fit_section: What of the section the fit reads: "fit" (the
-            section's fit appearance; default), "traced_borders" (the
-            section's trace_borders result at this placement, its lines
-            turned into named regions; ANTs) or "traced_lines" (those
-            lines as lines, against atlas borders). A traced fit section
-            waits for a trace still running (up to TRACE_WAIT minutes)
-            and the reply adds the trace drawn on the section. With a
-            completed trace, traced_borders with the ANTs engine at medium
-            stiffness is the recommended pairing.
-        fit_atlas: What of the atlas the fit reads. For "fit": "template" (the
-            atlas's reference template; default) or "nissl" (a
-            Nissl-stained reference, Allen mouse atlases). For traced
-            fit sections: "borders" (default).
-        engine: "ants" or "elastix"; empty is ANTs when installed.
-        stiffness: "soft", "medium" (default) or "firm".
-        candidates: 2 to 4 objects, each overriding any of stiffness,
-            fit_section, fit_atlas and engine for one variant.
-        keep_linear: A reason the named sections' linear placement stands
-            without a deformation. Given, nothing is fitted and nothing is
-            drawn: each section records it at its current placement (one
-            undo step; submit accepts it like an applied fit; a placement
-            change clears it).
-        view: Picture options (described once in the job statement).
-            Modes: "borders" (default: the fitted borders on the image the
-            fit read) or "ab" (that, then what the fit started from).
-            atlas_channels default ["borders"]; add "template" or "nissl" to
-            see that atlas image, warped, under the lines at
-            atlas_opacity. view.regions is drawn at full strength (empty:
-            the include list); excluded regions are drawn in pink. The
-            pictures are the image the fit read, so channels does not
-            apply.
-
-    Returns:
-        Per section and candidate: the settings and engine numbers used,
-        displacement (max and median, mm, over the tissue), fold fraction,
-        plausibility flags (regions compressed, expanded, vanished or
-        folded beyond limits; displacement outsized for the section) and
-        image_indexes into the pictures: the final borders drawn on the
-        section image the fit read. Traced sections add `traces`: each
-        one's trace drawn on the section.
-    """
-    ...
-
-
-def submit(
-    summary: str,
-    notes: list[str],
-    interval_breaks: list[int],
-) -> dict[str, Any]:
-    """End the run. Call this exactly once, last.
-
-    Args:
-        summary: One or two sentences on what you did.
-        interval_breaks: Corrected indices of the sections AFTER a gap you
-            conclude is real. Empty if there are none.
-        notes: Short observations worth carrying forward.
     """
     ...
 
@@ -687,41 +650,67 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
 #: Every declared verb, in :data:`langslice.ops.registry.VERBS` order.
 STUBS: dict[str, Callable[..., Any]] = {
     stub.__name__: stub for stub in (
-        status, view_slices, view_atlas, note, undo, redo, mark_damaged, preprocess,
-        reorder_slices, set_positions, view_placement, view_stack,
-        search_position, orient_slices, fit_affine, adjust_transforms, set_cutting_angles,
-        grep_atlas, trace_borders, trace_from_atlas, fit_deformable, submit, export_maps,
+        look, zoom, set_channel_properties, set_preprocessed_channel_properties,
+        grep_atlas, grep_atlas_view, status, list_files, search_files, read_file,
+        position_sections, interactive_transform, mark_damage,
+        elastix_affine, ants_syn, trace_borders, trace_from_atlas,
+        note, undo, redo, submit, export_maps,
     )
 }
 
+#: The change tools: each returns its picture unless ``view`` is false.
+VIEW_TOOLS: tuple[str, ...] = (
+    "position_sections", "interactive_transform", "elastix_affine", "ants_syn",
+)
+
 # --- the run's variant ------------------------------------------------------------
+
+
+def base_prompt(plane: str = "coronal", provider: str | None = None) -> str:
+    """The base image prompt ``trace_borders`` describes for *plane* and the
+    image *provider* (``core.nonlinear.prompts``)."""
+    from typing import cast
+
+    from langslice.core.nonlinear.prompts import border_correction_tool_prompt
+    from langslice.core.space import Plane
+
+    return border_correction_tool_prompt(cast(Plane, plane), provider=provider)
 
 
 @dataclass(frozen=True)
 class Variant:
     """What of a run changes its declarations (see the module text)."""
 
-    #: The image model is in the run (``trace_borders``, traced fit sections).
-    traces: bool = True
-    #: The agent may set appearances (``preprocess``).
-    preprocessing: bool = False
-    #: The deformable engine: "either" (the agent chooses) or the user's fixed one.
-    engine: str = "either"
-    #: The caller chooses each picture's size (``view.resolution``).
+    #: The caller chooses each picture's size (``look``'s ``resolution``).
     auto: bool = False
-    #: Who reads the declaration (:data:`DOORS`): where the opening pictures
-    #: are, and how an image-model verb answers.
+    #: Who reads the declaration (:data:`DOORS`): how a background verb answers.
     door: str = "agent"
+    #: The host forces the change tools' pictures on: no ``view`` argument.
+    forced_view: bool = False
+    #: ``position_sections`` takes ``sections`` (the Positioning task is on).
+    positions: bool = True
+    #: ``submit`` takes ``left_linear`` (Nonlinear on, no deformation required).
+    left_linear: bool = True
+    #: The base image prompt ``trace_borders`` carries.
+    prompt: str = ""
 
     @classmethod
-    def of(cls, spec: Any, *, auto: bool, image_model: bool = True,
-           door: str = "agent") -> Variant:
+    def of(cls, spec: Any, *, auto: bool, image_model: bool = True, door: str = "agent",
+           prompt: str | None = None) -> Variant:
         """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
-        *image_model* False: the door cannot reach its image model, so the
-        run is declared as one without it."""
-        return cls(traces=bool(spec.nonlinear.uses_image_model and image_model),
-                   preprocessing=bool(spec.agent_preprocessing),
-                   engine=str(spec.nonlinear.engine), auto=bool(auto), door=door)
+        *image_model* False: the door cannot reach its image model, so no
+        prompt is described. *prompt* is the image model's own base prompt
+        (None: LangSlice's for the run's plane and provider)."""
+        traced = bool(spec.has("nonlinear") and spec.nonlinear.uses_image_model and image_model)
+        text = ""
+        if traced:
+            text = prompt if prompt is not None else base_prompt(
+                str(spec.plane), spec.nonlinear.provider)
+        return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
+                   positions=bool(spec.has("position")),
+                   left_linear=bool(spec.has("nonlinear")
+                                    and not spec.nonlinear.require_deformation),
+                   prompt=text)
 
 
 #: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and
@@ -729,22 +718,15 @@ class Variant:
 DOORS = ("agent", "mcp", "cli")
 
 #: Passages each door words its own way, as ``(agent text, {door: text})``
-#: per verb: where the opening pictures are (the ADK agent's seed message,
-#: the MCP door's ``show_stack`` pages, the CLI's ``brief`` files), and how
-#: an image-model verb answers (the CLI waits for the call to land unless
-#: run with ``--background``).
+#: per verb: how a background verb answers (the CLI waits for its work to
+#: land unless run with ``--background``).
 _DOOR_DOCS: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
-    "view_placement": ((
-        "the section is in the opening\n                message)",
-        {"mcp": "the section is in the opening\n                pictures, show_stack)",
-         "cli": "the section is in the opening\n                pictures, brief)"},
-    ),),
     "trace_borders": ((
-        "Starts the image call in the background and returns at once; the result is\n"
-        "        saved, and submit waits for it.",
-        {"cli": "Runs the image call and answers once it has landed (with --background\n"
-                "        at once; `wait` collects the answer); the result is saved, and\n"
-                "        submit waits for it."},
+        "Starts the work in the background and returns at once with its id, so\n"
+        "        you can carry on with other sections. When the work finishes, the next\n"
+        "        tool reply starts with its notice:",
+        {"cli": "The command answers once the work has finished (with --background\n"
+                "        at once, and `wait` collects the answer), with its notice:"},
     ),),
     "trace_from_atlas": ((
         "Starts the image calls in the background and returns at once; the\n"
@@ -766,76 +748,44 @@ def _door_doc(name: str, doc: str, door: str) -> str:
     return doc
 
 
-#: The variant a caller without a job sees: every argument, every option.
-#: The CLI's ``langslice-job schema`` uses it with ``auto`` (the CLI's pictures
-#: are sized by the caller).
-FULL = Variant()
+#: The variant a caller without a job sees: every argument, LangSlice's base
+#: prompt for coronal sections and the OpenAI image models. The CLI's
+#: ``langslice-job schema`` uses it with ``auto`` (the CLI's pictures are
+#: sized by the caller).
+FULL = Variant(prompt=base_prompt("coronal", "openai-oauth"))
 
-# --- fit_deformable's description per run ------------------------------------------
-
-#: The ``fit_deformable`` description's recommendation for traced fit sections
-#: (a small correction of a good placement); dropped where it cannot apply (no
-#: image model, or the user fixed the engine to Elastix).
-_RECOMMENDED_TRACED = (
-    " With a\n"
-    "                completed trace, traced_borders with the ANTs engine at medium\n"
-    "                stiffness is the recommended pairing."
-)
-#: The ``fit_deformable`` description's line on the fit appearance, and the
-#: pointer to ``preprocess`` added when the agent may set appearances.
-_FIT_LOOK_DOC = (
-    '            fit_section: What of the section the fit reads: "fit" (the\n'
-    "                section's fit appearance; default"
-)
-_PREPROCESS_DOC = (
-    ";\n                the preprocess tool, target \"fit\", sets it, e.g. to one raw channel"
-)
-#: ``fit_deformable`` passages about traced fit sections and their wording for
-#: a run without the image model (``nonlinear.provider`` "none").
-_STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
-    (
-        _FIT_LOOK_DOC + '), "traced_borders" (the\n'
-        "                section's trace_borders result at this placement, its lines\n"
-        '                turned into named regions; ANTs) or "traced_lines" (those\n'
-        "                lines as lines, against atlas borders). A traced fit section\n"
-        "                waits for a trace still running (up to TRACE_WAIT minutes)\n"
-        "                and the reply adds the trace drawn on the section."
-        + _RECOMMENDED_TRACED + "\n",
-        _FIT_LOOK_DOC + ").\n",
-    ),
-    (
-        '            fit_atlas: What of the atlas the fit reads. For "fit": "template" (the\n'
-        "                atlas's reference template; default) or \"nissl\" (a\n"
-        "                Nissl-stained reference, Allen mouse atlases). For traced\n"
-        '                fit sections: "borders" (default).\n',
-        '            fit_atlas: What of the atlas the fit reads: "template" (the atlas\'s\n'
-        '                reference template; default) or "nissl" (a Nissl-stained\n'
-        "                reference, Allen mouse atlases).\n",
-    ),
-    (" Traced sections add `traces`: each\n            one's trace drawn on the section.", ""),
-)
+#: Where the base prompt goes in ``trace_borders``' description.
+_PROMPT_MARK = "BASE_PROMPT"
 
 
-def _fit_deformable_doc(doc: str, variant: Variant) -> str:
-    wait = f"{TRACE_WAIT_S / 60:g} minutes"
-    doc = doc.replace("TRACE_WAIT minutes", wait)
-    if not variant.traces:
-        for traced_text, stain_text in _STAIN_ONLY_DOC:
-            doc = doc.replace(traced_text.replace("TRACE_WAIT minutes", wait), stain_text)
-    if variant.preprocessing:
-        doc = doc.replace(_FIT_LOOK_DOC, _FIT_LOOK_DOC + _PREPROCESS_DOC)
-    if variant.engine == "either":
-        return doc
-    # The user fixed the engine: the same tool without the engine argument.
-    doc = doc.replace(
-        '            engine: "ants" or "elastix"; empty is ANTs when installed.\n', "",
-    ).replace("A library engine", f"The {variant.engine} engine").replace(
-        "fit_section, fit_atlas and engine for one variant", "fit_section and fit_atlas for one "
-        "variant")
-    if variant.engine != "ants":
-        # traced_borders is ANTs-only, so its recommendation does not apply.
-        doc = doc.replace(_RECOMMENDED_TRACED, "")
-    return doc
+def _without_argument(doc: str, name: str) -> str:
+    """*doc* without the ``Args`` entry of argument *name* (its first line
+    and every more deeply indented line after it)."""
+    lines = doc.split("\n")
+    head = " " * 12 + f"{name}:"
+    out: list[str] = []
+    skipping = False
+    for line in lines:
+        if line.startswith(head):
+            skipping = True
+            continue
+        if skipping and line.startswith(" " * 16):
+            continue
+        skipping = False
+        out.append(line)
+    return "\n".join(out)
+
+
+def _with_prompt(doc: str, prompt: str) -> str:
+    """``trace_borders``' description with the base prompt in place of its
+    mark, each line indented as the description is (none without a prompt)."""
+    indent = " " * 8
+    if not prompt:
+        cut = doc.index("\n\n" + indent + "The base prompt")
+        end = doc.index(_PROMPT_MARK) + len(_PROMPT_MARK)
+        return doc[:cut] + doc[end:]
+    body = "\n".join((indent + line) if line else "" for line in prompt.split("\n"))
+    return doc.replace(indent + _PROMPT_MARK, body)
 
 
 # --- declarations -------------------------------------------------------------------
@@ -863,27 +813,34 @@ class Declaration:
         return self.doc.split("\n", 1)[0].strip()
 
 
+def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
+    """The arguments of verb *name* a run of *variant* does not offer."""
+    dropped: list[str] = []
+    if name == "look" and not variant.auto:
+        dropped.append("resolution")
+    if name in VIEW_TOOLS and variant.forced_view:
+        dropped.append("view")
+    if name == "position_sections" and not variant.positions:
+        dropped.append("sections")
+    if name == "submit" and not variant.left_linear:
+        dropped.append("left_linear")
+    return tuple(dropped)
+
+
 @functools.cache
 def declaration(name: str, variant: Variant = FULL) -> Declaration:
     """The declaration of verb *name* in a run of *variant*."""
     stub = STUBS[name]
     signature = inspect.signature(stub, eval_str=True)
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
-    parameters = list(signature.parameters.values())
     doc = _door_doc(name, model_doc(stub), variant.door)
-    if name == "fit_deformable":
-        doc = _fit_deformable_doc(doc, variant)
-        if variant.engine != "either":
-            parameters = [
-                p.replace(annotation=list[FixedCandidate]) if p.name == "candidates" else p
-                for p in parameters if p.name != "engine"
-            ]
-            annotations.pop("engine", None)
-            annotations["candidates"] = list[FixedCandidate]
-    if variant.auto and "view" in annotations:
-        parameters = [p.replace(annotation=ViewAuto) if p.name == "view" else p
-                      for p in parameters]
-        annotations["view"] = ViewAuto
+    if name == "trace_borders":
+        doc = _with_prompt(doc, variant.prompt)
+    dropped = dropped_arguments(name, variant)
+    for argument in dropped:
+        doc = _without_argument(doc, argument)
+        annotations.pop(argument, None)
+    parameters = [p for p in signature.parameters.values() if p.name not in dropped]
     return Declaration(name, doc, signature.replace(parameters=parameters), annotations)
 
 
@@ -900,8 +857,9 @@ def declare(name: str, body: Callable[..., Any], variant: Variant = FULL) -> Cal
     signature, fills the declared defaults and hands every argument to
     *body* by name. *body* takes every declared argument (a missing one is a
     ``TypeError`` here, when the tools are built); a parameter of *body* that
-    is not declared is door-only and keeps *body*'s default, except ADK's
-    ``tool_context``, which is added to the signature so ADK passes it.
+    is not declared (a door-only one, or one this run drops) keeps *body*'s
+    default, except ADK's ``tool_context``, which is added to the signature
+    so ADK passes it.
     """
     declared = declaration(name, variant)
     taken = inspect.signature(body).parameters

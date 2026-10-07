@@ -31,7 +31,7 @@ from PIL import Image
 
 from langslice.core import look as looks
 from langslice.core.captions import caption
-from langslice.core.layers import note
+from langslice.core.layers import annotate, note
 from langslice.core.sizes import picture_edge
 from langslice.core.state import StackState
 from langslice.core.workspace import Workspace
@@ -167,7 +167,12 @@ def redraw(
             text = f"{text}; {STALE_NOTE}"
         kept = {key: value for key, value in recipe.items() if key not in drawn.recipe}
         out_recipe = {**kept, **drawn.recipe}
-        note(image, sections=drawn.sections, mode=drawn.mode, recipe=out_recipe, caption=text)
+        if image is drawn.image:
+            # The renderer's own note (an overlay's frame, for its layers) is kept.
+            annotate(image, recipe=out_recipe, caption=text)
+        else:
+            note(image, sections=drawn.sections, mode=drawn.mode, recipe=out_recipe,
+                 caption=text)
         return Zoomed(image=image, caption=text, recipe=out_recipe, redrawn=True,
                       stale=drawn.stale, sections=drawn.sections, mode=drawn.mode,
                       um_per_px=drawn.um_per_px)

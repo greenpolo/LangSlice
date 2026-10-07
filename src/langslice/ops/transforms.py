@@ -151,13 +151,10 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
 
 def fit_targets(job: Job) -> list[SliceState]:
     """The sections ``fit_affine`` fits when none are named: every positioned
-    section the host did not lock, in corrected order, except a damaged one
-    whose mark names no regions (nothing to leave out, so it is refused)."""
+    section the host did not lock, in corrected order."""
     return [
         record for record in job.state.in_order()
-        if record.position_mm is not None
-        and not (record.damaged and not record.damaged_regions)
-        and record.id not in job.locked
+        if record.position_mm is not None and record.id not in job.locked
     ]
 
 
@@ -169,7 +166,7 @@ class AffineFit:
     ``status: ok``, ``iou``, ``physical``, ``params`` (the six stored
     numbers), ``calibration``, ``mirrored``, ``regions`` when restricted;
     with pictures, ``image_indexes`` into ``pictures``) or ``{"id", "status":
-    "error", "error", ...}`` (``LOCKED``, ``DAMAGED``, the fitter's code,
+    "error", "error", ...}`` (``LOCKED``, the fitter's code,
     ``RENDER_FAILED``). ``fitted``: the sections written.
     """
 
@@ -200,9 +197,7 @@ def fit_affine(
     every region); *include* is its older name, used when *restrict_to* is
     empty. Each section's marked regions are left out on their own
     (:func:`langslice.core.damage.exclusions`), with the call's *exclude*.
-    The job's rules, per section: a locked section is refused (``LOCKED``),
-    a damaged one whose mark names no regions too unless the call gives
-    regions (``DAMAGED``).
+    The job's rule, per section: a locked section is refused (``LOCKED``).
 
     With *options*, each fit is drawn under its new transform
     (:func:`langslice.core.placement.fit_picture`) BEFORE anything is
@@ -234,9 +229,6 @@ def fit_affine(
             rows.append({"id": record.id, "status": "error", "error": "LOCKED"})
             continue
         kept, dropped = exclusions(record, chosen, exclude)
-        if record.damaged and not (kept or dropped):
-            rows.append({"id": record.id, "status": "error", "error": "DAMAGED"})
-            continue
         try:
             outcome = fitter(state, workspace, record, include=kept, exclude=dropped)
             frame = outcome.pop(FIT_FRAME_KEY, None)
@@ -658,8 +650,7 @@ def elastix_affine(
     corrected indices); empty, every section :func:`fit_targets` names.
     *restrict_to* fits by those atlas regions only (sides allowed; empty:
     every region). Each section's marked damage regions are left out
-    automatically (:func:`langslice.core.damage.exclusions`); a section whose
-    mark names none is refused (``DAMAGED``) as in :func:`fit_affine`.
+    automatically (:func:`langslice.core.damage.exclusions`).
 
     Every ok row of a call with *restrict_to* carries ``restrict_box``: the
     regions' bounding box on that section's canvas as ``[x0, y0, x1, y1]``

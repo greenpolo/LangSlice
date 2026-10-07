@@ -236,6 +236,22 @@ class BackgroundWork:
                 self._draining.clear()
         return self.all()
 
+    def wait_any(self, timeout: float | None = None, poll: float = 0.25) -> bool:
+        """Wait until a piece of work running now has finished (at once when
+        none runs); False when *timeout* passed first. For a caller that does
+        not hold the job's write lock (the agent session between turns)."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            with self._lock:
+                pending = [entry for entry in self._entries.values()
+                           if not entry.finished.is_set()]
+            if not pending:
+                return True
+            if any(entry.finished.wait(poll / len(pending)) for entry in pending):
+                return True
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+
     def gives_way(self) -> bool:
         """Whether a work thread waiting for the job's lock should give up now."""
         return self._draining.is_set()

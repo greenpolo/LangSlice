@@ -8,18 +8,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-#: Tools whose targets the viewer shows: the transform tools, the viewing
-#: and positioning tools, and marking damage and changing a section's
-#: appearance (both about which sections).
+#: Tools whose targets the viewer shows: the change and fit tools, look,
+#: and marking damage and setting a section's preprocessed channel (both
+#: about which sections).
 _FOLLOWED = {
-    "adjust_transforms", "fit_affine", "fit_deformable", "trace_borders",
-    "view_slices", "view_placement", "view_stack", "set_positions", "search_position",
-    "orient_slices", "reorder_slices", "set_cutting_angles",
-    "undo", "redo", "mark_damaged", "preprocess",
+    "interactive_transform", "elastix_affine", "ants_syn", "trace_borders",
+    "look", "position_sections", "undo", "redo", "mark_damage",
+    "set_preprocessed_channel_properties",
 }
 #: Tools after whose end the viewer refreshes its targets (ABBA has applied
 #: the checkpoint's rows by then): everything that changes a placement.
-_WRITES = _FOLLOWED - {"view_slices", "view_placement", "view_stack", "preprocess"}
+_WRITES = _FOLLOWED - {"look", "set_preprocessed_channel_properties"}
 
 
 def _on_edt(callback: Callable[[], None]) -> None:

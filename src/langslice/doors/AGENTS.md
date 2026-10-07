@@ -23,9 +23,18 @@ scripting doors and called by name (`langslice-job FOLDER trace_from_atlas`,
 name), the card, the library's `verbs`, the CLI's `verbs` lists, the job
 statement, nor the public docs (`registry.listed()`).
 
-A verb is never renamed once shipped (scripts and agents call it by name).
-The goldens (`tests/golden/linear_tools/*_declarations_*`) pin what the ADK
-and MCP doors declare, byte for byte.
+A replaced verb's old name keeps answering on every door
+(`ops.registry.RETIRED`, `retired_payload`): a call by a retired name gets
+`RETIRED_TOOL` with the verb to use instead (`use`) and how to call it, and
+nothing is done, every time. The ADK agent through
+`agent.plugins.RetiredToolsPlugin` (a `before_tool_callback`, which ADK
+runs for an unknown name before its "tool not found" answer), MCP through
+`mcp/server.py` `LangSliceServer.call_tool`, the agent CLI through
+`cli/job.py` `call` and `cli/catalog.py` `schema` (exit 2), and the library
+through `JobHandle.__getattr__` (an `AttributeError` naming the
+replacement). A retired name never becomes a verb again. The goldens
+(`tests/golden/linear_tools/*_declarations_*`) pin what the ADK and MCP
+doors declare, byte for byte.
 
 ## The layer rule
 
@@ -58,23 +67,28 @@ the CLI is a process per call.
 
 - `declarations.py` — each verb's declaration: a stub function per verb
   (signature = the arguments, docstring = the description a model reads,
-  re-indented by `model_doc`). `Variant` (`traces`, `preprocessing`,
-  `engine`, `auto`, `door`; `Variant.of(spec, auto=, door=, image_model=)`)
-  is what of a run changes a declaration: the door that reads it (`DOORS`:
-  `agent`, `mcp`, `cli`; `_DOOR_DOCS`: where `view_placement` says the
-  section is, and the CLI's trace verbs, which answer once their calls have
-  landed); `view` typed `ViewAuto` (with `resolution`) where the caller
-  sizes pictures; `fit_deformable`'s description without the image model
-  (`_STAIN_ONLY_DOC`), with `preprocess` (`_PREPROCESS_DOC`), and with the
-  engine fixed (no `engine` argument, candidates `FixedCandidate`,
-  `_RECOMMENDED_TRACED` dropped unless ANTs). `declaration(name, variant)`
+  re-indented by `model_doc`). The description is the tool's only
+  description: the job statement names the tools and describes none.
+  `Variant` (`auto`, `door`, `forced_view`, `positions`, `left_linear`,
+  `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=)`) is
+  what of a run changes a declaration (`dropped_arguments`, each dropped
+  argument's `Args` entry cut from the description): `look`'s `resolution`
+  only where the caller sizes pictures; the change tools' `view`
+  (`VIEW_TOOLS`) not offered where the host forces their pictures on
+  (`JobSpec.force_view`); `position_sections`' `sections` only with the
+  Positioning task; `submit`'s `left_linear` only with Nonlinear on and no
+  deformation required; `trace_borders` carries the run's base image prompt
+  (`base_prompt`, or the image model's profile prompt; none without an
+  image model) in place of `BASE_PROMPT`; and the door that reads it
+  (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: the CLI's background
+  verbs answer once their work has landed). `declaration(name, variant)`
   (cached), `summary(name)`, `declare(name, body, variant)` (a function with
   the declared name, doc and signature that binds the call, fills the
   declared defaults and hands every argument to the body by name; ADK's
   `tool_context` is added when the body takes it; a body lacking a declared
   argument is a `TypeError`), `arguments_schema(name, variant)` (pydantic
   JSON schema, unknown keys refused). `FULL` is the variant of a caller
-  without a job.
+  without a job (LangSlice's coronal base prompt for the OpenAI models).
 - `statement.py` — the job statement every door gives a registration agent:
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
   max_resolution=, image_model_off=, auto=, gates=)` (`agent.prompt.build_job_statement`
@@ -142,13 +156,15 @@ the CLI is a process per call.
   `register_section`, `register_job`, `RegistrationError`, `coordinate_map`
   and `load_atlas`, each imported on first use.
 - `pipeline.py` — the scripted nonlinear registration (`docs/library.md`).
-  `register_job(job, sections=, affine_method=, fit=, full_resolution=,
-  arrays=)`: per section `fit_affine` where no transform, `trace_borders`
-  when the job has the verb, `fit_deformable` applied (`TRACED_FIT`: traced
-  lines, Elastix, medium, which does not depend on the optional ANTs
-  install; `STAIN_FIT` without an image model; `FIT_BATCH` 4 per call), then
-  `submit` (with a problem, `export_maps`); a failure kept per section in
-  `problems`. `register_section(image, position_mm=, ...)`: the section
+  `register_job(job, sections=, fit=, full_resolution=, arrays=)`: per
+  section `elastix_affine` where no transform, then `trace_borders` when the
+  job has the verb (the packaged trace and its ANTs fit, waited for:
+  `Job.background.wait_all`), else `ants_syn` (`STAIN_FIT`, any of its
+  arguments replaced by *fit*; `FIT_BATCH` 4 per call); then `submit`, a
+  section whose deformation failed named in its `left_linear` with the
+  reason (with a section unplaced or unaligned, `export_maps` instead); a
+  failure kept per section in `problems`. Both deformable steps need
+  antspyx. `register_section(image, position_mm=, ...)`: the section
   linked, copied or (an array) written as a TIFF into a folder of its own
   (the folder checked first: other section images there, or a different
   file under the section's name, are refused and nothing is written), then
@@ -170,14 +186,32 @@ the CLI is a process per call.
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
   file per job folder) and `log_call` (`logs/calls.jsonl`).
-- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`: the tool
-  bodies, each wrapped by `_serialized`, `_strict`, `_saves_views` and
-  `_clears_stale_deformations`; see `agent/CLAUDE.md`), `arguments.py` (the
-  argument shapes, typed dicts with `extra="forbid"`; `argument_refusal`, the
-  one strictness rule every door applies; `normalize_arguments` for a door
-  that validates first), `view_options.py` (`parse_view` against each
-  tool's `Profile`, `image_limit` / `view_edge_limit` of the model lane,
-  `clamp_resolution`), `media.py` (the ADK message parts: `packaged`,
+- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`: the
+  look-before-commit gates `compared` / `reviewed`; every tool wrapped,
+  innermost first, by the opening gate (writes), `_strict`,
+  `_clears_stale_deformations`, `_saves_views` (the pictures a body returns
+  saved and numbered, their numbers and captions under `pictures`; a reply
+  that already lists `pictures`, saved by its operation, is left as it is),
+  `_announces_work` (`with_notices`: the notices of background work
+  finished since the last reply first, under `background`, and its pictures
+  after the reply's own) and `_serialized`; `_tool_target_ids`), `door.py`
+  (`Door`, what every tool body of a run shares: the job, the workspace,
+  the gates, the picture level, the image model, `rows`, `changed`,
+  `answered`, `resolve_many`, `forget_looks`; `pictured`, `as_list`), the
+  tool bodies (`looking.py`: `look`, `zoom`, the two channel tools,
+  `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
+  `changing.py`: `position_sections`, `interactive_transform`,
+  `mark_damage`, `note`, `undo`, `redo`, `submit`; `fitting.py`:
+  `elastix_affine`, `ants_syn`, `trace_borders`, `trace_from_atlas`,
+  `export_maps`; a change tool's picture is drawn after its write by
+  `ops.look.show_result` unless its `view` is false and the host does not
+  force it), `arguments.py` (the argument shapes, typed dicts with
+  `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`,
+  `LeftLinear`, and the older `View` / `ViewAuto` that `view_options` still
+  reads; `argument_refusal`, the one strictness rule every door applies;
+  `normalize_arguments` for a door that validates first), `view_options.py`
+  (`parse_view` against a `Profile`, `image_limit` / `view_edge_limit` of
+  the model lane, `clamp_resolution`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys
@@ -195,7 +229,8 @@ the CLI is a process per call.
   (a saved ABBA job by id), `open_folder` (the job of a named image or job
   folder as saved: `doors.jobs.find` / `read_spec`, its notes; a folder
   without one gets a new job from the server's job flags), `build_server`,
-  `serve`. `EventRelay` forwards a saved ABBA job's
+  `serve`. `LangSliceServer` (FastMCP) answers a retired tool's name with
+  `RETIRED_TOOL` where FastMCP would raise "Unknown tool". `EventRelay` forwards a saved ABBA job's
   tool events (and one `seed` per `show_stack` page) over its host channel
   (`host_channel.py`) as `agent_event`s; `tool_end` events carry `views`,
   the saved pictures' paths.
@@ -253,9 +288,9 @@ the CLI is a process per call.
     all written to `BRIEF.md`.
   - `catalog.py` — `ops` (the listed verbs: name, kind, group, summary,
     `long`; `JOB_COMMANDS`) and `schema [VERB] [--job FOLDER]`
-    (`SCHEMA_VERSION` 2; `canonical_verb` accepts kebab-case; per verb
+    (`SCHEMA_VERSION` 3; `canonical_verb` accepts kebab-case; per verb
     `Declared.entry`: `summary`, `description`, `kind`, `group`, `long`,
-    `arguments`, and for a picture verb `picture_options`; declared for the
+    `arguments`; a retired verb's name answers `RETIRED_TOOL`; declared for the
     job given or of the current folder, else `FULL` with a `hint`; a job
     that cannot be read answers `JOB_UNREADABLE`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
@@ -273,16 +308,20 @@ the CLI is a process per call.
     start, dry run, run), `_run` (the tool inside `job.views.captured()`; an
     image-model verb's calls settled before answering, each landed outcome
     shown; `submit` writes the results; pictures listed as artifacts with
-    `index` and `label`, `job.views.artifacts`; `would_change` on a dry
-    run), `shape` (status rows uniform, `core.status.with_uniform_rows`;
+    `index` and `label`, `job.views.artifacts`; an image-model verb waits
+    for the background work it started and answers with its notices, the
+    work's pictures listed after the call's own, `_work_pictures`;
+    `would_change` on a dry run), `shape` (status rows uniform,
+    `core.status.with_uniform_rows`;
     concise: a reply with pictures keeps its description as `picture_note`,
     a write's whole-stack `rows` as `n_rows`), `changes`, `init` (its
     parser `init_parser`: the job flags of `linear run`, `--notes`,
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`). `CHECKED_ONLY`:
-    `trace_borders`, `trace_from_atlas` and `fit_deformable` are checked,
-    not run, by `--dry-run`.
+    `trace_borders`, `trace_from_atlas`, `elastix_affine` and `ants_syn`
+    are checked, not run, by `--dry-run`. A retired verb's name answers
+    `RETIRED_TOOL` (`registry.retired_payload`).
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
     --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish` (in the
@@ -299,7 +338,7 @@ one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job
 folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
-`fit_affine`, `fit_deformable`, `trace_borders`, `trace_from_atlas`,
+`elastix_affine`, `ants_syn`, `trace_borders`, `trace_from_atlas`,
 `export_maps`), which compute outside it and take it to apply, refusing a
 section whose inputs changed (`ops.inputs`, `STALE_INPUT`); the lock timing
 out is `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write

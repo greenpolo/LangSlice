@@ -113,7 +113,7 @@ def test_tall_paired_strips_stay_inside_the_patch_budget(tmp_path: Path, level: 
     state, ctx = _stack(tmp_path / level, 10, size=(1200, 1800), level=level)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 1.0 + 0.2 * index
-        record.damage_marked = True  # a longer label
+        record.damaged_regions = ["CTX"]  # a longer label
     for limit in (None, CLAUDE_IMAGE_LIMIT):
         edge, budget = limit or (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
         for _text, image in _strips(opening_parts(state, ctx, limit=limit)):
@@ -143,6 +143,39 @@ def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
     assert sum(p.inline_data is not None for p in placed) == 1
 
 
+def test_a_starting_position_is_labelled_start_and_said_not_placed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from langslice.core import opening
+
+    state, ctx = _stack(tmp_path / "s", 3)
+    labels: list[str] = []
+    cell = opening._cell
+
+    def spy(image, label, width):
+        labels.append(label)
+        return cell(image, label, width)
+
+    monkeypatch.setattr(opening, "_cell", spy)
+    first, second, third = state.in_order()
+    first.position_mm, first.position_source = 1.0, "default"
+    second.position_mm, second.position_source = 2.0, "default"
+    third.position_mm = 3.5  # a position of its own
+    parts = opening_parts(state, ctx)
+    text = " ".join((parts[0].text or "").split())
+    assert ("A label ending 'start' marks an evenly spaced starting position the job "
+            "gave the section: it is not yet placed.") in text
+    assert "atlas 1.00 mm start" in labels and "atlas 2.00 mm start" in labels
+    assert "atlas 3.50 mm" in labels and "atlas 3.50 mm start" not in labels
+
+    # Without any starting position, no label says "start" and the sentence is gone.
+    first.position_source = second.position_source = ""
+    labels.clear()
+    parts = opening_parts(state, ctx)
+    assert "'start'" not in (parts[0].text or "")
+    assert not any(label.endswith(" start") for label in labels)
+
+
 def test_the_reference_is_atlas_strips_at_the_tile_size(tmp_path: Path):
     state, ctx = _stack(tmp_path / "s", 2)
     parts = opening_parts(state, ctx)
@@ -158,8 +191,11 @@ def test_tile_labels_name_index_file_and_short_flags(tmp_path: Path):
     state, _ctx = _stack(tmp_path / "s", 2)
     record = state.in_order()[1]
     assert tile_label(record) == "1: s01.png"
-    record.rotation_deg, record.flip, record.damage_marked = 90, True, True
+    record.rotation_deg, record.flip = 90, True
     record.damage_note = "a long note about the tear that belongs in the status table"
+    # A note alone does not make a section damaged.
+    assert tile_label(record) == "1: s01.png [rot 90, flipped]"
+    record.damaged_regions = ["CTX"]
     assert tile_label(record) == "1: s01.png [rot 90, flipped, damaged]"
 
 

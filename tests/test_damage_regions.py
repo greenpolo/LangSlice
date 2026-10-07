@@ -1,5 +1,5 @@
 """Damage by atlas region: the mark, its automatic exclusion from every fit
-path, saved states with the older flag, and the user's protected marks."""
+path, saved states with the older flag, and the host's damage notes."""
 
 from __future__ import annotations
 
@@ -70,32 +70,33 @@ def test_damaged_is_read_only_and_follows_the_marks():
     record.damaged_regions = ["R"]
     assert record.damaged
     record.damaged_regions = []
-    record.damage_marked = True
-    assert record.damaged
+    # A note alone does not make a section damaged.
+    record.damage_note = "left hemisphere torn"
+    assert not record.damaged
 
 
-def test_a_saved_state_with_the_older_flag_loads_as_a_note_only_mark():
+@pytest.mark.parametrize("flag", ["damaged", "damage_marked"])
+def test_a_saved_state_with_the_older_flag_loads_as_its_note_alone(flag: str):
     old = {"slices": [
-        {"id": "a.png", "index_original": 0, "index_corrected": 0, "damaged": True,
+        {"id": "a.png", "index_original": 0, "index_corrected": 0, flag: True,
          "damage_note": "left hemisphere torn"},
-        {"id": "b.png", "index_original": 1, "index_corrected": 1, "damaged": False,
+        {"id": "b.png", "index_original": 1, "index_corrected": 1, flag: False,
          "damage_note": ""},
     ]}
     state = StackState.from_dict(old)
     first, second = state.slices
-    assert first.damaged and first.damage_marked and first.damaged_regions == []
+    assert not first.damaged and first.damaged_regions == []
     assert first.damage_note == "left hemisphere torn"
-    assert not second.damaged and not second.damage_marked
-    # Written back, the mark is the new fields and survives another load.
+    assert not second.damaged and second.damage_note == ""
+    # Written back, neither flag is kept; the note and the regions are.
     rows = state.to_dict()["slices"]
-    assert "damaged" not in rows[0]
-    assert rows[0]["damage_marked"] is True and rows[0]["damaged_regions"] == []
-    again = StackState.from_dict(json.loads(json.dumps(state.to_dict())))
-    assert again.slices[0].damaged and not again.slices[1].damaged
-    # A new state whose mark is regions only does not gain a flag on load.
+    assert "damaged" not in rows[0] and "damage_marked" not in rows[0]
+    assert rows[0]["damaged_regions"] == [] and rows[0]["damage_note"] == "left hemisphere torn"
+    # Regions make the section damaged, and survive another load.
     state.slices[1].damaged_regions = ["R"]
-    reread = StackState.from_dict(state.to_dict()).slices[1]
-    assert reread.damaged_regions == ["R"] and not reread.damage_marked
+    again = StackState.from_dict(json.loads(json.dumps(state.to_dict())))
+    assert not again.slices[0].damaged
+    assert again.slices[1].damaged and again.slices[1].damaged_regions == ["R"]
 
 
 # --- mark_damage ----------------------------------------------------------------------
@@ -116,12 +117,7 @@ def test_mark_damage_is_one_undo_step_and_empty_regions_clear(tmp_path: Path):
     assert cleared.written and not cleared.damaged and record.damage_note == ""
     assert job.undo()
     record = state.by_id(ID)  # undo refills the state with new records
-    assert record.damaged_regions == ["R"]
-    # An older mark_damaged flag is the agent's too: regions replace it, empty clears it.
-    damage.mark_damaged(job, [{"id": ID, "note": "flagged"}])
-    assert record.damage_marked
-    damage.mark_damage(job, ctx, ID, [])
-    assert not record.damaged
+    assert record.damaged_regions == ["R"] and record.damaged
 
 
 def test_mark_damage_refuses_bad_regions(tmp_path: Path):
@@ -137,22 +133,43 @@ def test_mark_damage_refuses_bad_regions(tmp_path: Path):
     assert box.job.undo_stack == []
 
 
-def test_a_users_note_only_mark_takes_regions_but_cannot_be_removed(tmp_path: Path):
+def test_a_users_damage_note_is_a_note_alone_and_stays_first(tmp_path: Path):
+    """The host's ``inputs.damaged`` note does not make the section damaged:
+    the agent marks the regions, its note after the user's."""
     state, ctx, box = _box(tmp_path, inputs={"damaged": {ID: "torn by the user"}})
     job = box.job
     record = state.by_id(ID)
-    assert record.damage_marked and record.damaged and record.damaged_regions == []
-    added = damage.mark_damage(job, ctx, ID, ["R"], "right half gone")
-    assert added.by_user and added.regions == ["R"]
-    assert record.damage_note == "torn by the user; right half gone"
-    # Clearing removes the agent's regions and note; the user's mark stays.
-    cleared = damage.mark_damage(job, ctx, ID, [])
-    assert cleared.damaged and record.damage_marked and record.damaged_regions == []
+    assert not record.damaged and record.damaged_regions == []
     assert record.damage_note == "torn by the user"
-    # The older tool cannot clear it either.
-    refused = damage.mark_damaged(job, [{"id": ID, "damaged": False}])
-    assert refused.rejected == [{"id": ID, "error": "DAMAGE_SET_BY_USER"}]
-    assert record.damaged
+    # Not damaged: a default fit target, with nothing to leave out.
+    assert [r.id for r in transforms.fit_targets(job)] == [ID]
+    assert exclusions(record) == ((), ())
+    added = damage.mark_damage(job, ctx, ID, ["R"], "right half gone")
+    assert added.by_user and added.regions == ["R"] and added.damaged
+    assert record.damage_note == "torn by the user; right half gone"
+    # Clearing removes the agent's regions and note; the user's note stays.
+    cleared = damage.mark_damage(job, ctx, ID, [])
+    assert not cleared.damaged and record.damaged_regions == []
+    assert record.damage_note == "torn by the user"
+    row = next(t for t in box.tools if t.__name__ == "status")()["rows"][0]
+    assert row["damage_note"] == "torn by the user" and not row.get("damaged")
+
+
+def test_the_mark_damage_tool_answers_with_the_marks_and_their_picture(tmp_path: Path):
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+
+    state, _ctx, box = _box(tmp_path)
+    mark = next(t for t in box.tools if t.__name__ == "mark_damage")
+    result = mark(ID, ["R"], "right half missing")
+    assert result["status"] == "ok", result
+    assert result["regions"] == ["R"] and result["damaged"] is True
+    assert result["note"] == "right half missing" and result["written"] is True
+    assert [row["id"] for row in result["changed"]] == [ID]
+    assert len(result["pictures"]) == 1 and len(result[TOOL_MEDIA_PARTS_KEY]) == 1
+    assert state.by_id(ID).damaged_regions == ["R"]
+    assert mark(ID, ["nope"])["error"] == "UNKNOWN_REGIONS"
+    cleared = mark(ID, [])
+    assert cleared["damaged"] is False and "pictures" not in cleared
 
 
 def test_status_and_registration_carry_the_regions(tmp_path: Path):
@@ -202,14 +219,13 @@ def test_fit_affine_leaves_the_marked_regions_out(tmp_path: Path):
     assert record.transform["regions"] == {"include": [], "exclude": ["R"]}
     assert record.transform["params"] == pytest.approx(by_hand["params"], abs=1e-12)
     assert explicit.rows[0]["physical"] == auto.rows[0]["physical"]
-    # A note-only mark has nothing to leave out: refused unless the call gives regions.
+    # A note alone has nothing to leave out: the fit is the whole section's.
     damage.mark_damage(job, ctx, ID, [])
-    record.damage_marked = True
-    assert transforms.fit_targets(job) == []
-    refused = transforms.fit_affine(job, ctx, [record], method="silhouette")
-    assert refused.rows[0]["error"] == "DAMAGED"
-    assert transforms.fit_affine(job, ctx, [record], method="silhouette",
-                                 restrict_to=("L",)).rows[0]["status"] == "ok"
+    record = state.by_id(ID)
+    record.damage_note = "torn"
+    assert [r.id for r in transforms.fit_targets(job)] == [ID]
+    whole = transforms.fit_affine(job, ctx, [record], method="silhouette")
+    assert whole.rows[0]["status"] == "ok" and "regions" not in whole.rows[0]
 
 
 def test_the_elastix_fit_gets_the_marks_and_restrict_to(tmp_path: Path, monkeypatch):
