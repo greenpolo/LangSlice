@@ -295,7 +295,7 @@ def _digest(image: Image.Image) -> str:
 
 def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tmp_path: Path):
     from langslice.core import deformation
-    from langslice.core.nonlinear.registration_handoff import prepare_linear_registration
+    from langslice.core.handoff import prepare_linear_registration
 
     seen: dict[str, tuple[str, str, Any]] = {}
     for level in ("low", "high", "auto"):

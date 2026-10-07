@@ -2,9 +2,8 @@
 
 The contracts are in ``pyproject.toml`` (``[tool.importlinter]``): hosts >
 doors : agent > ops > job > core; core, job and ops import no provider,
-agent framework or model client; providers import nothing above them; and
-LangSlice imports none of the compatibility shims kept for the sibling
-repos. No contract lists ``ignore_imports``: a violation is fixed by moving
+agent framework or model client; and providers import nothing above them.
+No contract lists ``ignore_imports``: a violation is fixed by moving
 code, never listed. ``tests/test_core_imports.py`` checks
 the same rule at run time (what a fresh interpreter actually loads).
 """

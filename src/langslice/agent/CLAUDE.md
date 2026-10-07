@@ -66,8 +66,7 @@ Positioning); `trace_borders` and `fit_deformable` to `nonlinear`;
   (image corrections settled, pictures written) even without a submit,
   `Job.emit_results`. *on_write* is called with the opened state and after
   every checkpoint or reload (`Job.observe`); *on_open* gets the job and
-  context first. `ingest` and `apply_host_inputs` are re-exported from
-  `job.job` for SliceBench. No post pass: the session is the whole run.
+  context first. No post pass: the session is the whole run.
 - `session.py` — `build_agent` (the ADK `LlmAgent`; `reasoning` set on any
   resolved model exposing `reasoning_effort`), `build_plugins`,
   `run_agent_session` (the loop: nudges when the model answers without a

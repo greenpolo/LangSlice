@@ -9,7 +9,7 @@ from PIL import Image
 from langslice.agent.engine import EngineContext
 from langslice.core import canvas
 from langslice.core.affine import normalized_affine
-from langslice.core.nonlinear.registration_handoff import prepare_linear_registration
+from langslice.core.handoff import prepare_linear_registration
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
 

@@ -248,8 +248,7 @@ for the flat plane).
   (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller to
   supply the transforms (`inputs.transforms`, `--transforms`) or switch
   Linear on and run `fit_affine` first (the maps still read a missing
-  transform as the identity). No provider import:
-  `core/nonlinear/registration_handoff.py` re-exports the first for SliceBench.
+  transform as the identity). No provider import.
 
 ## The frame of a picture and its layers
 
@@ -325,9 +324,3 @@ nothing collecting, a note costs nothing. The job saves the pictures
 `jpeg.py` — `encode_jpeg` (`JPEG_QUALITY` 85): the one encoding every
 picture a model receives goes through; `doors.tools.media` re-exports it, the MCP
 door and the job's view store call it, so the saved bytes are the sent ones.
-
-## `linear/render.py`
-
-`linear/render.py` is a re-export shim of four names, `PREVIEW_LONG_EDGE`,
-`canvas_geometry`, `canvas_um_per_px` and `render_slice`, because the sibling
-repo SliceBench imports them; LangSlice itself imports the core modules.
