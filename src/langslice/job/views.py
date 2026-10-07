@@ -630,7 +630,8 @@ class DiscardedViews(ViewStore):
         with self._lock:
             call = max((r.call for r in self._memory), default=0) + 1
             first = max((r.seq for r in self._memory), default=0) + 1
-            for item in _items(first, tool, pictures, step, recipes, captions):
+            items = _items(first, tool, pictures, step, recipes, captions)
+            for item in items:
                 held = item.note
                 self._memory.append(PictureRecord(
                     seq=item.seq, name=item.name, tool=tool, call=call, path="",
@@ -641,7 +642,7 @@ class DiscardedViews(ViewStore):
                 old = self._memory[at]
                 if old.image is not None:
                     self._memory[at] = replace(old, image=None)
-        return []
+        return [item.name for item in items]
 
     def records(self) -> list[PictureRecord]:
         with self._lock:

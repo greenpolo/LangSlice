@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from langslice.core import deformation
 from langslice.core.state import normalize_to_atlas_order
 from langslice.ops.exports import Exported
 from langslice.ops.refusal import Refused
@@ -31,6 +32,8 @@ class Submitted:
     interval_breaks: list[int] = field(default_factory=list)
     #: Whether the corrected order was reversed to run the atlas way.
     reversed: bool = False
+    #: The sections left without a deformation, ``{id: reason}`` (``left_linear``).
+    left_linear: dict[str, str] = field(default_factory=dict)
     #: The maps and exports written after the step (``ops.exports``), when
     #: the call had the workspace; None otherwise or when writing failed.
     exported: Exported | None = None
@@ -47,20 +50,74 @@ def clean_breaks(values: Any) -> list[int]:
     return breaks
 
 
+def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
+    """``{id: reason}`` from ``[{id, reason}]`` (a list from a model: a trust
+    boundary). Refused: ``BAD_ARGS`` (not a list of ``{id, reason}`` with a
+    reason, a section named twice, or any entry in a run without Nonlinear),
+    ``UNKNOWN_SLICE_IDS``, ``DEFORMATION_REQUIRED`` (the host requires a
+    deformation on every section), ``HAS_DEFORMATION`` (a listed section
+    carries one at its current placement: undo it first)."""
+    if entries is None or (isinstance(entries, (list, tuple)) and not entries):
+        return {}
+    if not isinstance(entries, (list, tuple)) or not all(
+            isinstance(entry, dict) and set(entry) <= {"id", "reason"} for entry in entries):
+        raise Refused("BAD_ARGS", message="left_linear is a list of {id, reason}.")
+    if not job.spec.has("nonlinear"):
+        raise Refused("BAD_ARGS", message="left_linear is for runs with the Nonlinear task "
+                      "on; this run fits no deformation.")
+    if job.spec.nonlinear.require_deformation:
+        raise Refused("DEFORMATION_REQUIRED", message="The user requires a deformation on "
+                      "every section, so no section can be left linear.")
+    left: dict[str, str] = {}
+    unknown: list[str] = []
+    fitted: list[str] = []
+    for entry in entries:
+        record = job.state.resolve(entry.get("id"))
+        reason = str(entry.get("reason") or "").strip()
+        if record is None:
+            unknown.append(str(entry.get("id")))
+            continue
+        if not reason:
+            raise Refused("BAD_ARGS", id=record.id,
+                          message="Each left_linear entry needs the reason its linear "
+                          "placement stands.")
+        if record.id in left:
+            raise Refused("BAD_ARGS", id=record.id, message="A section is named twice.")
+        left[record.id] = reason
+        if job.deformations.current(job.state, record) is not None:
+            fitted.append(record.id)
+    if unknown:
+        raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+    if fitted:
+        raise Refused("HAS_DEFORMATION", ids=fitted,
+                      message="These sections carry a deformation at their current "
+                      "placement; undo it to leave them linear, or leave them off the list.")
+    return left
+
+
 def submit(
     job: Job,
     *,
     summary: str = "",
     notes: Sequence[Any] = (),
     interval_breaks: Sequence[Any] = (),
+    left_linear: Any = (),
     traces: bool = False,
     workspace: Workspace | None = None,
     gate: Callable[[], Mapping[str, Any] | None] | None = None,
 ) -> Submitted:
     """Check the job's submit gates, then end the run: ONE undo step.
 
+    First every piece of the job's background work is waited for
+    (:meth:`langslice.job.background.BackgroundWork.wait_all`: a packaged
+    trace lands and its fit applies, each its own undo step). *left_linear*
+    (``[{id, reason}]``, runs with Nonlinear on) names the sections left
+    without a deformation, each with the reason its linear placement stands
+    (:func:`clean_left_linear`; refused when the host requires a deformation
+    on every section, ``NonlinearSpec.require_deformation``).
     The gates, in order: the job's (:meth:`~langslice.job.job.Job.submit_errors`:
-    positions, order, interval breaks, transforms, deformations), then
+    positions, interval breaks, transforms, deformations, *left_linear*
+    counted as covered), then
     *gate*, when given, before anything is written: a door's own check (the
     tool door's "view_stack first"); a payload it returns refuses the call.
     A refusal is :class:`Refused` with the gate's payload, nothing written.
@@ -68,7 +125,9 @@ def submit(
     still running are waited for and recorded first; tracing is the agent's
     choice, so no section needs one.
 
-    The write: the interval breaks (sorted, unique), the corrected order
+    The write: each *left_linear* section's record that its linear placement
+    stands (the record ``keep_linear`` writes, its reason), the interval
+    breaks (sorted, unique), the corrected order
     reversed when it runs against the atlas (a convention, not an inference:
     noted, never asked of the agent), the cleaned *notes* and a
     ``submit: <summary>`` note, ``submitted``. Then every queued picture is
@@ -78,9 +137,11 @@ def submit(
     the submit stands).
     """
     breaks = clean_breaks(interval_breaks)
+    job.background.wait_all()
     if traces:
         job.settle_image_corrections()
-    refusal = job.submit_errors(breaks)
+    left = clean_left_linear(job, left_linear)
+    refusal = job.submit_errors(breaks, left)
     if refusal is not None:
         raise Refused.of(refusal)
     if gate is not None:
@@ -90,6 +151,11 @@ def submit(
 
     state = job.state
     before = job.snapshot()
+    for section, reason in left.items():
+        record = state.by_id(section)
+        if record is not None:
+            record.deformation = {"keep_linear": reason,
+                                  "linear_key": deformation.linear_key(state, record)}
     state.interval_breaks = sorted(set(breaks))
     # Direction is a convention, not an inference: a posterior-first stack
     # is emitted in atlas order without the agent being told about it.
@@ -120,4 +186,4 @@ def submit(
             logger.warning("Could not write the maps and exports at submit", exc_info=True)
     return Submitted(summary=summary_text, notes=clean_notes,
                      interval_breaks=list(state.interval_breaks), reversed=reversed_order,
-                     exported=exported)
+                     exported=exported, left_linear=left)

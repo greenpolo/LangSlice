@@ -56,7 +56,7 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     assert job.state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
     assert len(job.undo_stack) == 1
     assert job.undo()
-    assert _position(job, "s0.png") is None
+    assert job.state.by_id("s0.png").position_source == "default"  # type: ignore[union-attr]
     assert job.state.cutting_angles_deg == before_angles
 
 
@@ -81,6 +81,9 @@ def test_angles_alone_and_nothing_to_write(tmp_path: Path):
 def test_order_follows_position(tmp_path: Path):
     job, ctx = _open(tmp_path)
     low, high = ctx.position_range
+    unplaced = job.state.by_id("s2.png")  # as a section without a starting position
+    assert unplaced is not None
+    unplaced.position_mm, unplaced.position_source = None, ""
     step = (high - low) / 10
     done = positions.position_sections(job, ctx, [
         {"id": "s0.png", "position_mm": low + 3 * step},

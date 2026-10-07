@@ -138,15 +138,24 @@ wording; `registry.py` lists which.
   sections whose position the step changed, which the tool door's gates
   forget, `depth`); `moved_positions(before, state)`.
 - `submit.py` — `submit(job, summary=, notes=, interval_breaks=,
-  traces=, workspace=, gate=)`: with *traces* (the image model is in the
-  run) the running traces are waited for and recorded first (tracing is the
-  agent's choice: no section needs a trace); then the job's gates
-  (`Job.submit_errors`), then the door's *gate*; then ONE undo step: the interval
+  left_linear=, traces=, workspace=, gate=)`: first every piece of the job's
+  background work is waited for (`Job.background.wait_all`: under the door's
+  lock, a landing that needs it runs on this thread); with *traces* (the
+  image model is in the run) the running traces are waited for and recorded
+  (tracing is the agent's choice: no section needs a trace); *left_linear*
+  (`[{id, reason}]`, `clean_left_linear`: `BAD_ARGS` for a malformed list, a
+  section named twice or a run without Nonlinear, `UNKNOWN_SLICE_IDS`,
+  `DEFORMATION_REQUIRED` when the host set
+  `NonlinearSpec.require_deformation`, `HAS_DEFORMATION` for a section
+  carrying one at its placement); then the job's gates
+  (`Job.submit_errors`, *left_linear* counted as covered), then the door's
+  *gate*; then ONE undo step: each *left_linear* section's "linear placement
+  stands" record (`keep_linear`'s, its reason), the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
   `submit: <summary>` note, `submitted`; then every queued picture written
   (`job.views.flush`) and, with the workspace, every placed section's maps
   and the exports (`exports.export_maps`; a failure is logged, the submit
-  stands). Returns `Submitted` (`exported`). Not a long verb: the door
+  stands). Returns `Submitted` (`exported`, `left_linear`). Not a long verb: the door
   holds the job lock for the whole call, the maps included.
 - `exports.py` — `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
@@ -205,7 +214,8 @@ wording; `registry.py` lists which.
   (`region_box`; `core.canvas.zoom_box`'s zoom). Returns `AffineFit`.
 - `deformable.py` — `fit_deformable(job, workspace, records,
   choices, restrict_to=, include=, exclude=, start=)`: the deformation on top of each
-  section's linear placement, each section's marked regions excluded
+  section's linear placement (*start* `linear`), its applied deformation
+  (`current`), or per section whichever it holds (`START_LATEST` "latest"), each section's marked regions excluded
   (`core.damage.exclusions`). The door validates the arguments and resolves
   each candidate into a `deformation.Choice`; this runs every fit (the fit
   grid, the image each fit reads, a traced fit section waiting for its
@@ -232,11 +242,42 @@ wording; `registry.py` lists which.
   `sections/<stem>/deformable/<key>`) and the section's `deformation`
   holds its path relative to the job folder; a traced fit section reads
   the trace's artifacts under the job folder (`traced_lines(root=...)`).
+  `ants_syn(job, workspace, sections, restrict_to=, atlas_image=,
+  stiffness=, options=)`: the one-choice fit, applied as ONE undo step:
+  ANTs SyN on the preprocessed channel (`fit`) against `template` or
+  `nissl` (`ara` read as `template`), `soft`/`medium`/`firm`, from
+  `START_LATEST` (undo is how to start over), no candidates; *restrict_to*
+  checked against the atlas (`region_entries`); refused, nothing done:
+  `ANTS_MISSING` (`refuse_without_ants`: antspyx must import, `ants_ready`),
+  `BAD_ARGS` (no sections, more than `MAX_ANTS_SYN_SECTIONS` (4), an unknown
+  atlas image or stiffness, a malformed region list), `FIT_ATLAS_UNAVAILABLE`,
+  `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. Not a registered verb
+  yet.
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
-  restrict_to=, include=, exclude=, workers=)`: one section's image correction, showing
+  restrict_to=, include=, exclude=, options=, workers=)`: LangSlice's own
+  nonlinear method packaged. It starts the section's image correction (below)
+  and a piece of background work (`Job.background`, kind `TRACE_WORK`
+  "trace_borders") and returns at once (`TraceStarted.work`, the work id; a
+  section whose packaged trace still runs gets that work, `running`). When
+  the reply lands, `land_trace` (the work's callable) fits the traced
+  borders (`TRACE_FIT`: traced borders against the atlas borders, ANTs,
+  medium; from `START_LATEST`; by *restrict_to*'s regions only) with
+  `fit_deformable` and applies it as its own undo step, its notice saying so
+  and that undo removes it while it is the latest step, with the
+  displacement, fold fraction and flags; with *options* the fit and the
+  trace are drawn and saved with the work. A section whose
+  `inputs.section_inputs` (with the deformation) moved since the call, or
+  whose trace was undone or made at another placement, gets nothing: a
+  failed work whose notice starts `STALE_INPUT`; a failed image call is a
+  failed work too. Refused before any image call: `ANTS_MISSING`,
+  `BAD_ARGS` / `UNKNOWN_REGIONS` / `NO_SIDES` (*restrict_to*), then the
+  trace's own refusals. Given *include* or *exclude* (the older form, today's
+  tool door), only the trace is started (no ANTs check, no work, no fit).
+  The trace itself: one section's image correction, showing
   the model only the chosen regions' borders, its marked regions excluded
-  (`core.damage.exclusions`; recorded on the result). The section's current
+  (`core.damage.exclusions`; recorded on the result); the prompt sent is
+  saved with each attempt. The section's current
   geometry is `core.handoff.correction_fingerprint`;
   `registration_tool.start_correction` prepares the edit for *image_model*
   (resolved by the door: the toolbox's `build_tools(image_model=...)`

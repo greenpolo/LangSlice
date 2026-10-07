@@ -289,9 +289,8 @@ def test_1_positioning_only_through_the_cli(capsys, images):
     ok(capsys, images, "reorder-slices", "--slices", ID2, "--after", "start")
     ok(capsys, images, "set_positions", "--entries", json.dumps(
         [{"id": name, "position_mm": mm} for name, mm in POSITIONS.items()]))
-    code, envelope = cli(capsys, str(images), "submit", *SUBMIT_FLAGS)
-    # s2 was moved first: positions now run against the order.
-    assert code == 3 and envelope["error"]["code"] == "ORDER_POSITION_MISMATCH"
+    # s2 was moved first: positions run against the order, which is no
+    # longer refused (order follows position).
     ok(capsys, images, "reorder-slices", "--slices", ID0, "--slices", ID1, "--slices", ID2)
     envelope = ok(capsys, images, "submit", *SUBMIT_FLAGS)
     assert {"registration", "quicknii", "visualign"} <= {a["kind"] for a in envelope["artifacts"]}

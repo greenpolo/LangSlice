@@ -92,10 +92,11 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
     assert not any(isinstance(block, ImageContent) for block in result.content)
     images = [block for block in pages if isinstance(block, ImageContent)]
     texts = [block.text for block in pages if isinstance(block, TextContent)]
-    # One strip of the three sections, then the atlas reference strip(s).
+    # One strip of the three sections, each over the atlas at its starting
+    # position (every section has one), so no atlas reference strip.
     assert "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png" in texts
-    assert any(text.startswith("Atlas reference strip") for text in texts)
-    assert len(images) >= 2
+    assert not any(text.startswith("Atlas reference strip") for text in texts)
+    assert len(images) >= 1
     assert all(image.mimeType.startswith("image/") and image.data for image in images)
     for image in images:
         with Image.open(BytesIO(base64.b64decode(image.data))) as picture:
@@ -238,8 +239,8 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
             with Image.open(BytesIO(base64.b64decode(picture.data))) as image:
                 assert max(image.size) <= CLAUDE_MAX_IMAGE_EDGE
                 assert patches(image.size) <= CLAUDE_MAX_IMAGE_PATCHES
-    assert any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
-               for block in job.pages[-1])
+    assert not any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
+                   for page in job.pages for block in page)
 
 
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):

@@ -35,7 +35,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     corrected order that carries a position, and null when this section has
     none or no placed section follows it. ``transform_iou`` and
     ``transform_mirrored`` come off the recorded transform. Data only: no
-    comparison against the nominal interval, no verdict. ``damaged_regions``
+    comparison against the nominal interval, no verdict. ``position_source``
+    ``"default"``: the section still holds the starting position the job gave
+    it (``job.job.default_positions``). ``damaged_regions``
     are the section's marked regions (``damaged`` is also true for a mark
     that names none). When the sections'
     cutting angles differ (a registration supplied per section), each row
@@ -65,6 +67,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "index": record.index_corrected,
                 "id": record.id,
                 "position_mm": round(here, 3) if here is not None else None,
+                **({"position_source": record.position_source}
+                   if record.position_source else {}),
                 "delta_to_next_mm": delta,
                 "flip": record.flip,
                 "rotation_deg": record.rotation_deg,
@@ -89,7 +93,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 #: their null and empty fields (:func:`compact_rows`); a script or a coding
 #: agent gets every row with all of them (:func:`uniform_rows`).
 ROW_FIELDS: tuple[str, ...] = (
-    "index", "id", "position_mm", "delta_to_next_mm", "flip", "rotation_deg",
+    "index", "id", "position_mm", "position_source", "delta_to_next_mm", "flip",
+    "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
     "transform_iou",
     "transform_mirrored", "keep_linear", "deformation_steps", "caveats",
@@ -163,6 +168,7 @@ def status_text(state: StackState) -> str:
         flags.extend(row["caveats"])
         position = (
             "unplaced" if row["position_mm"] is None else f"{row['position_mm']:.3f} mm"
+            + (" (starting position)" if row.get("position_source") == "default" else "")
         )
         delta = (
             "-" if row["delta_to_next_mm"] is None else f"{row['delta_to_next_mm']:.3f}"

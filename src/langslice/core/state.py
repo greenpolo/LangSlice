@@ -120,6 +120,10 @@ class SliceState:
     damage_marked: bool = False
     damage_note: str = ""
     position_mm: float | None = None
+    #: ``"default"`` while the position is the evenly spaced starting one
+    #: the job gave the section at ingest (``job.job.default_positions``);
+    #: empty once anything wrote it, or when it was supplied.
+    position_source: str = ""
     transform: dict[str, Any] | None = None
     #: Raw image-model correction and artifacts; does not replace the transform.
     image_correction: dict[str, Any] | None = None

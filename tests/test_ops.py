@@ -47,7 +47,7 @@ def test_set_positions_clamps_writes_and_takes_one_undo_step(tmp_path: Path):
     assert done.clamped == [("s1.png", high + 5.0, high)]
     assert done.unknown == ["nope.png"] and done.touched == ["s0.png", "s1.png"]
     assert len(job.undo_stack) == 1
-    assert job.undo() and _record(job, "s1.png").position_mm is None
+    assert job.undo() and _record(job, "s1.png").position_source == "default"
     # Nothing to write: no undo step.
     assert positions.set_positions(job, ctx, [("nope.png", 0.0)]).written == []
     assert job.undo_stack == []
@@ -58,7 +58,9 @@ def test_cutting_angles_drop_the_render_cache(tmp_path: Path):
     ctx.render_cache["stale"] = object()
     positions.set_cutting_angles(job, ctx, 2.0, -1.0)
     assert job.state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
-    assert ctx.render_cache == {} and len(job.undo_stack) == 1
+    # Dropped (the checkpoint's registration.json may render the placed
+    # sections again at the new angles).
+    assert "stale" not in ctx.render_cache and len(job.undo_stack) == 1
 
 
 def test_reorder_moves_a_block_and_refuses_bad_names(tmp_path: Path):

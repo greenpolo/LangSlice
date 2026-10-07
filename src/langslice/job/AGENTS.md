@@ -173,8 +173,34 @@ longer exist be taken over by the images it is opened with.
 
 ## Files
 
-- `lock.py` — `FolderLock(folder)` (`held()`, `LOCK_FILE` `job.lock`,
-  `LOCK_TIMEOUT_S`, `JobBusy`): above.
+- `lock.py` — `FolderLock(folder)` (`held(abort=)`, `held_here()`,
+  `LOCK_FILE` `job.lock`, `LOCK_TIMEOUT_S`, `JobBusy`): above. A thread
+  lock is taken before the file lock, so threads of one process exclude
+  each other even where the file lock cannot be used; a waiter given
+  `abort` asks it every `ABORT_POLL_S` and raises `LockYielded` when it says
+  so (background work giving way, below).
+- `background.py` — `BackgroundWork` (`Job.background`, made on first
+  use): long work that runs while the agent carries on. `start(kind,
+  sections, land, wait_for_images=)` returns a `Work` at once (`id` `w1`,
+  `w2`, ...; `kind`, `sections`, `status` `running`/`done`/`failed`,
+  `started`/`finished` wall-clock seconds, `notice`, `pictures`, `images`,
+  `result`); on a work thread it waits for the sections' running image calls
+  (`Job.wait_image_job`, which records each reply), then runs *land*, the
+  caller's callable (an operation's fit; this module imports no operation
+  and no provider), which writes its own undo step and returns a `Landed`
+  (`status`, `text`, `pictures`, `result`); an exception is a `failed`
+  work. The pictures *land* draws are saved among the job's pictures with
+  their notes (`Job.views.save`), their numbers on the work. The notice is
+  `notice_text`: `"<id> <kind> of <sections> finished|failed: <text>
+  Pictures #n, #m."`. `notices()` pops the work finished since the last call
+  (each handed out once), `running()` / `running_for(section, kind)` list
+  what still runs, `get(id)`, `all()`, `wait_all(timeout=)` waits for every
+  piece, `close()` waits and stops the threads (`Job.close` calls it).
+  Giving way: `submit` waits under the job's lock while a landing needs it,
+  so while a lock holder waits in `wait_all`, a work thread that would wait
+  for the lock raises `LockYielded` before writing anything
+  (`Job.writing` passes `gives_way` as the abort check on work threads) and
+  the waiting thread runs that landing itself.
 - `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
   `JobLayout` (the folder, every name, `section_dir`,
   `deformable_dir`, `image_correction_dir`, `section_views_dir`,
@@ -216,12 +242,24 @@ longer exist be taken over by the images it is opened with.
   observers: `observe(fn)` calls *fn* with the state after every
   checkpoint and reload, the hosts' live views; one that raises is logged),
   the image-correction jobs (`start_image_job`, `settle_image_corrections`,
-  `wait_image_job`), `nonlinear_refusal`
+  `wait_image_job`: timeout None waits as long as it takes; the call is
+  forgotten only once its reply is recorded), `background` (above), `close`
+  (the background work, then the pictures), `wire_views` (a saved
+  picture's `step` is the undo history's depth), `nonlinear_refusal`
   (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
-  checked), `changed_inputs` (above). The submit
-  gates, `submit_errors`, in order and only for the tasks that are on:
-  `MISSING_POSITIONS`, `ORDER_POSITION_MISMATCH`, `STRICT_INTERVAL` or
+  checked), `changed_inputs` (above). With `position` on, `Job.open` gives a
+  new job's sections without a supplied position a starting one
+  (`default_positions`, `SliceState.position_source` `DEFAULT_POSITION`
+  "default"): in `index_original` order, at the stack's interval centred in
+  the atlas's range (evenly over the whole range when the stack does not
+  fit at it), or interpolated between supplied positions and continued at
+  the interval beyond them, always inside the range. `commit` drops the
+  mark of every section whose position the step changed
+  (`clear_default_marks`), whatever wrote it; undo restores it. The submit
+  gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and
+  only for the tasks that are on: `MISSING_POSITIONS` (no position, or
+  still at the starting one: `at_default`), `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `DAMAGED_REQUIRES_MANUAL_TRANSFORM` (a
   damaged, unlocked section needs a non-identity transform made for its
   surviving anatomy: `interactive`, a `fit_affine` fit whose record names
@@ -229,7 +267,8 @@ longer exist be taken over by the images it is opened with.
   or an invalid transform is refused)
   then `MISSING_TRANSFORMS`; `MISSING_DEFORMATIONS`. The sections the host
   kept out of Nonlinear (`keep_warp`, `nonlinear_skip`:
-  `nonlinear_exempt_ids`) need no deformation and no image correction.
+  `nonlinear_exempt_ids`) need no deformation and no image correction, and
+  the sections `submit` leaves linear (`left_linear`) count as covered.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
   `applied_deformation`, `maps_status`, `write_registration`,
@@ -300,7 +339,8 @@ longer exist be taken over by the images it is opened with.
   (`flush_all` runs once more from `atexit`, for a picture a still-running
   thread queued after the first flush). A failed write is logged and skipped; only the numbering and
   queueing run on the tool's thread. `DiscardedViews` writes nothing (a
-  dry run, a lean job) but keeps the same index in memory, with the newest
+  dry run, a lean job) but keeps the same index in memory (its `save`
+  returns the names a saved picture would have), with the newest
   pictures' images, for `lookup` / `latest`. `captured()` collects every
   picture any store queues inside the block (`Saved`: its folder,
   whether it gets layers and a residual, its note's sections and mode, its

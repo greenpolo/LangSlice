@@ -62,8 +62,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
   so would ignore stiffness); the edge channel is the first extra.
 - Engines (`engines.py`): ANTs `SyNOnly` with an identity initial transform
-  (antspyx, optional `registration` extra, imported lazily with an install
-  hint), or Elastix B-spline with a bending-energy penalty (itk-elastix,
+  (antspyx, a core dependency below Python 3.14, imported lazily with an
+  install hint), or Elastix B-spline with a bending-energy penalty (itk-elastix,
   core dependency). Both see the same working-grid images, masks, spacing and
   origin and return millimetre fields. ANTs supplies its own inverse; Elastix
   has none, so its inverse is a fixed-point approximation, said so in

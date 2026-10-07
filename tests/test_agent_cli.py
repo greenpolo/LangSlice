@@ -190,16 +190,18 @@ def test_search_position_needs_no_position(capsys, images):
     assert code == 0, envelope
     found = envelope["result"]
     low, high = get_position_range_mm(atlas_loader()("synthetic"), plane="coronal")
-    assert found["current_position_mm"] is None
-    assert found["searched_range_mm"] == [round(low, 3), round(high, 3)]  # the whole range
+    start = found["current_position_mm"]  # the starting position the job gave it
+    assert start is not None and low <= start <= high
+    assert found["searched_range_mm"] == [round(max(low, start - 0.05), 3),
+                                          round(min(high, start + 0.05), 3)]
     assert low <= found["position_mm"] <= high
     code, around = cli(capsys, str(images), "search_position", "--id", ID1,
                        "--window-mm", "0.05", "--angles", "false", "--around-mm", "0.15")
     assert code == 0, around
     assert around["result"]["searched_range_mm"] == [0.1, 0.2]
     assert 0.1 <= around["result"]["position_mm"] <= 0.2
-    assert all(row["position_mm"] is None for row in
-               json.loads((job / "state.json").read_text())["slices"])  # nothing written
+    rows = json.loads((job / "state.json").read_text())["slices"]
+    assert all(row["position_source"] == "default" for row in rows)  # nothing written
 
 
 def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
@@ -303,7 +305,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
         expected = native.replace("in the opening message)", "in the opening pictures (brief))")
         assert expected != native and statement.startswith(expected + "\n\n")
         tail = statement[len(expected):]
-        assert "Opening pictures: `brief` saved 2 picture files" in tail
+        assert "Opening pictures: `brief` saved 1 picture files" in tail
         assert "User notes:\nSection 2 is torn." in tail
         assert "trace_from_atlas" not in statement  # a hidden verb is listed nowhere
         from langslice.doors.statement import status_and_notes
@@ -510,8 +512,8 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
                          json.dumps([{"id": ID1, "position_mm": 0.15}]), "--dry-run")
     assert code == 0, envelope
     assert envelope["result"]["dry_run"] is True
-    assert envelope["result"]["would_change"] == {"sections": {ID1: ["position_mm"]},
-                                                  "stack": []}
+    assert envelope["result"]["would_change"] == {
+        "sections": {ID1: ["position_mm", "position_source"]}, "stack": []}
     assert envelope["artifacts"] == []
     assert envelope["next"] and "--dry-run" not in envelope["next"][0]
     assert (job / "state.json").read_bytes() == state_before
@@ -543,10 +545,6 @@ def test_the_cli_never_applies_the_look_before_commit_gates(capsys, images):
 
 def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
     job = init(capsys, images)
-    code, envelope = cli(capsys, str(images), "export_maps")
-    # Nothing placed yet: every section skipped, with its reason.
-    assert code == 3 and envelope["error"]["code"] == "NOTHING_EXPORTED"
-    assert {row["reason"] for row in envelope["result"]["skipped"]} == {"no position"}
     cli(capsys, str(images), "set_positions", "--entries", json.dumps(
         [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
          {"id": ID2, "position_mm": 0.2}]))
@@ -609,6 +607,8 @@ def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images
     from langslice.job.job import Job
 
     job_folder = init(capsys, images)
+    code, envelope = cli(capsys, str(images), "status")
+    start = {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]}
     # The agent's side: the job folder opened as a run opens it, its tools.
     spec = JobSpec(image_folder=str(images), preprocess="none", resume=True,
                    tasks=["reorder", "position", "transform", "nonlinear"],
@@ -626,21 +626,21 @@ def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images
     assert code == 0
     code, envelope = cli(capsys, str(images), "status")
     positions = {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]}
-    assert positions == {ID0: 0.1, ID1: 0.15, ID2: None}
+    assert positions == {ID0: 0.1, ID1: 0.15, ID2: start[ID2]}
 
     # The agent's next call picks up the CLI's write, history included.
     rows = tools["status"]()["rows"]
     assert {row["id"]: row.get("position_mm") for row in rows} == positions
     assert tools["undo"]()["status"] == "ok"  # undoes the CLI's write
-    assert agent.state.resolve(ID1).position_mm is None
+    assert agent.state.resolve(ID1).position_mm == start[ID1]
     assert agent.state.resolve(ID0).position_mm == 0.1
 
     # And the CLI sees the agent's undo; its own undo takes the agent's write back.
     code, envelope = cli(capsys, str(images), "undo")
     assert code == 0
     code, envelope = cli(capsys, str(images), "status")
-    assert all(row.get("position_mm") is None for row in envelope["result"]["rows"])
-    assert tools["status"]()["rows"][0].get("position_mm") is None
+    assert {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]} == start
+    assert tools["status"]()["rows"][0].get("position_mm") == start[ID0]
     agent.close()
 
 

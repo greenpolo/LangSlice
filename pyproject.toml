@@ -22,6 +22,12 @@ dependencies = [
     "tifffile",
     "python-dotenv",
     "itk-elastix",
+    # The ANTs engine (langslice.core.deformable): ants_syn and the packaged
+    # trace_borders fit with it. antspyx 0.6.x pins scipy<1.16 (and 0.6.2+
+    # numpy<2.4), so installing it downgrades those two. 0.6.3 is the floor:
+    # the engine seeds fits through `ants.config`, which 0.6.1 lacks. It has
+    # no wheels for Python 3.14 yet; there the ANTs tools refuse (ANTS_MISSING).
+    "antspyx>=0.6.3,<0.7; python_version < '3.14'",
     # The job folder's cross-process write lock (langslice.job.lock).
     "filelock>=3.12",
 ]
@@ -31,12 +37,8 @@ langslice = "langslice.cli:main"
 langslice-job = "langslice.doors.cli.jobcli:main"
 
 [project.optional-dependencies]
-# Deformable fit extras (langslice.core.deformable): the ANTs engine and the reader
-# for ABBA's cached Allen Nissl volume. antspyx 0.6.x pins scipy<1.16 (and
-# 0.6.2+ numpy<2.4), so installing it downgrades those two. 0.6.3 is the floor:
-# the engine seeds fits through `ants.config`, which 0.6.1 lacks.
+# HDF5 reading (h5py). The ANTs engine is a core dependency (above).
 registration = [
-    "antspyx>=0.6.3,<0.7; python_version < '3.14'",
     "h5py>=3.10",
 ]
 abba = [
