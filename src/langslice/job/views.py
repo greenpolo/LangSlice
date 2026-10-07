@@ -15,12 +15,21 @@ number per picture across the job's life):
   placement, ``pixel_to_atlas_um`` (BrainGlobe µm, atlas axis order) and
   the applied deformation's folder (relative to the job folder).
   :func:`langslice.core.layers.coordinate_map` turns it into a per-pixel
-  atlas coordinate map on demand.
+  atlas coordinate map on demand. It also holds the picture's ``caption``,
+  its ``step`` (the history depth when it was saved) and its ``recipe``
+  (``{"renderer": name, "args": {...}}``, enough to redraw it; None when the
+  caller gave none).
 
 A picture of one section goes under ``sections/<name>/views/``, one of
 several (or none: an atlas section) under ``views/``. ``views.jsonl`` at the
 top of the job folder lists every saved picture, one line each, appended in
-order.
+order, with the same ``caption``, ``step`` and ``recipe`` (each left out of
+a line while None).
+
+Every picture can be looked up by its ``seq``: :meth:`ViewStore.lookup` and
+:meth:`ViewStore.latest` read the index (:class:`PictureRecord`);
+:class:`DiscardedViews` (a lean job) keeps the same index in memory, with the
+newest pictures themselves, for the life of the process.
 
 Saving never touches what the doors send and never slows a tool: the tool
 thread only numbers the pictures and queues them; one background thread per
@@ -46,7 +55,7 @@ import threading
 import time
 import weakref
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +113,8 @@ class Saved:
     #: Its place among the call's pictures (zero-based, the order a reply's
     #: ``image_indexes`` count in).
     index: int = 0
+    #: The picture's number (``view.json``'s ``seq``): what :meth:`ViewStore.lookup` takes.
+    seq: int = 0
 
     def files(self) -> list[tuple[Path, str]]:
         """``(path, kind)`` of every file the picture's folder will hold:
@@ -117,6 +128,45 @@ class Saved:
         if self.residual:
             listed.append((self.folder / RESIDUAL_FILE, "residual"))
         return listed
+
+
+@dataclass(frozen=True)
+class PictureRecord:
+    """One indexed picture (a ``views.jsonl`` line, or a lean job's memory)."""
+
+    seq: int
+    name: str
+    tool: str
+    call: int
+    #: The picture's folder relative to the job folder ("" in a lean job).
+    path: str
+    sections: tuple[str, ...] = ()
+    mode: str | None = None
+    layers: bool = False
+    caption: str | None = None
+    step: int | None = None
+    recipe: dict[str, Any] | None = None
+    #: The picture itself, kept only by :class:`DiscardedViews`.
+    image: Image.Image | bytes | None = field(default=None, compare=False, repr=False)
+
+    @classmethod
+    def from_entry(cls, entry: dict[str, Any]) -> PictureRecord:
+        step = entry.get("step")
+        return cls(seq=int(entry["seq"]), name=str(entry.get("name", "")),
+                   tool=str(entry.get("tool", "")), call=int(entry.get("call", 0)),
+                   path=str(entry.get("path", "")),
+                   sections=tuple(entry.get("sections") or ()), mode=entry.get("mode"),
+                   layers=bool(entry.get("layers")), caption=entry.get("caption"),
+                   step=int(step) if step is not None else None,
+                   recipe=entry.get("recipe"))
+
+
+def _newest(records: Iterable[PictureRecord], exclude_tool: str | None) -> PictureRecord | None:
+    found: PictureRecord | None = None
+    for record in records:
+        if record.tool != exclude_tool and (found is None or record.seq > found.seq):
+            found = record
+    return found
 
 
 def artifacts(saved: Iterable[Saved], tool: str) -> tuple[list[dict[str, Any]], list[str]]:
@@ -192,6 +242,28 @@ at_exit(flush_all)
 atexit.register(flush_all)
 
 
+def _items(
+    seq: int, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
+    step: int | None, recipes: list[dict[str, Any] | None] | None,
+    captions: list[str | None] | None,
+) -> list[_Picture]:
+    """The numbered pictures of one call, the first numbered *seq*. A recipe
+    or caption comes from the picture's note, else from *recipes* /
+    *captions* (one per picture)."""
+    items: list[_Picture] = []
+    for index, (image, held) in enumerate(pictures):
+        mode = held.mode if held is not None else None
+        recipe = held.recipe if held is not None else None
+        caption = held.caption if held is not None else None
+        if recipe is None and recipes is not None and index < len(recipes):
+            recipe = recipes[index]
+        if caption is None and captions is not None and index < len(captions):
+            caption = captions[index]
+        items.append(_Picture(seq + index, view_name(seq + index, tool, mode), index, image,
+                              held, step, recipe, caption))
+    return items
+
+
 def view_name(seq: int, tool: str, mode: str | None) -> str:
     """``<seq>_<tool>[_<mode>]``: six-digit sequence, then what drew it."""
     parts = [f"{seq:06d}", _NAME_PART.sub("-", tool).strip("-") or "picture"]
@@ -207,6 +279,9 @@ class _Picture:
     index: int
     image: Image.Image | bytes
     note: PictureNote | None
+    step: int | None = None
+    recipe: dict[str, Any] | None = None
+    caption: str | None = None
 
 
 @dataclass
@@ -246,6 +321,9 @@ class ViewStore:
         self._running = False
         self._seq: int | None = None
         self._call = 0
+        #: Asked for the history depth when a picture is saved (the job sets
+        #: it); None: ``step`` stays unrecorded unless :meth:`save` is given one.
+        self.step_source: Callable[[], int] | None = None
         #: Bytes of the views index already read for the numbering.
         self._index_read = 0
         #: Seconds the calling threads spent in :meth:`save` (numbering and
@@ -318,6 +396,8 @@ class ViewStore:
     def save(
         self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
         arguments: Any = None, call_id: str | None = None, atlas: Any = None,
+        step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
+        captions: list[str | None] | None = None,
     ) -> list[str]:
         """Queue one call's pictures (in the order the model received them).
 
@@ -325,17 +405,19 @@ class ViewStore:
         JPEG bytes a door sent, with its note (None: nothing known but the
         tool). *atlas* draws placement pictures' layers. Returns the
         pictures' names, at once; the files follow in the background.
+
+        A picture's ``recipe`` and ``caption`` come from its note, else from
+        *recipes* / *captions* (one per picture); *step* is the history depth
+        (default: ``step_source()``).
         """
         if not pictures:
             return []
         started = time.perf_counter()
+        step = self._step(step)
         with self._lock, self._numbering() as (seq, call):
             call += 1
-            items: list[_Picture] = []
-            for index, (image, held) in enumerate(pictures):
-                mode = held.mode if held is not None else None
-                items.append(_Picture(seq, view_name(seq, tool, mode), index, image, held))
-                seq += 1
+            items = _items(seq, tool, pictures, step, recipes, captions)
+            seq += len(items)
             for capture in _CAPTURES.get():
                 capture.extend(
                     Saved(self._folder(item.note, item.name), item.name,
@@ -343,7 +425,8 @@ class ViewStore:
                           item.note is not None and item.note.warp is not None
                           and item.note.warp.warped and atlas is not None,
                           sections=tuple(item.note.sections) if item.note else (),
-                          mode=item.note.mode if item.note else None, index=item.index)
+                          mode=item.note.mode if item.note else None, index=item.index,
+                          seq=item.seq)
                     for item in items)
             self._seq, self._call = seq, call
             self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))
@@ -354,6 +437,40 @@ class ViewStore:
                                  daemon=True).start()
         self.queue_seconds += time.perf_counter() - started
         return [item.name for item in items]
+
+    def _step(self, step: int | None) -> int | None:
+        if step is None and self.step_source is not None:
+            with contextlib.suppress(Exception):
+                return int(self.step_source())
+        return step
+
+    # --- the index ----------------------------------------------------------------
+
+    def records(self) -> list[PictureRecord]:
+        """Every indexed picture, in order (queued pictures are written first)."""
+        self.flush()
+        found: list[PictureRecord] = []
+        try:
+            with self.layout.views_index.open("rb") as handle:
+                for line in handle:
+                    try:
+                        found.append(PictureRecord.from_entry(json.loads(line)))
+                    except (ValueError, KeyError, TypeError):
+                        continue
+        except OSError:
+            pass
+        return found
+
+    def lookup(self, seq: int) -> PictureRecord | None:
+        """The picture numbered *seq*, or None."""
+        for record in self.records():
+            if record.seq == seq:
+                return record
+        return None
+
+    def latest(self, exclude_tool: str | None = "zoom") -> PictureRecord | None:
+        """The newest picture not drawn by *exclude_tool*, or None."""
+        return _newest(self.records(), exclude_tool)
 
     @contextlib.contextmanager
     def shown(
@@ -448,6 +565,7 @@ class ViewStore:
             "call": call.call, "call_id": call.call_id,
             "index": picture.index, "of": len(call.pictures),
             "arguments": call.arguments,
+            "caption": picture.caption, "step": picture.step, "recipe": picture.recipe,
             "sections": list(note.sections) if note is not None else [],
             "mode": note.mode if note is not None else None,
             "picture": {"file": PICTURE_FILE, "size": size, "bytes": len(data)},
@@ -480,15 +598,51 @@ class ViewStore:
                  "path": self.layout.relative(folder), "tool": call.tool, "call": call.call,
                  "sections": record["sections"], "mode": record["mode"],
                  "layers": bool(record["layers"])}
+        # Left out of the index line when absent (view.json always has them).
+        entry.update({key: record[key] for key in ("caption", "step", "recipe")
+                      if record[key] is not None})
         return json.dumps(entry) + "\n"
 
 
 class DiscardedViews(ViewStore):
-    """A store that saves nothing: a job that writes nothing (``Job.persist``
-    False: the CLI's dry run) or keeps the results only (``Job.lean``)."""
+    """A store that saves nothing to disk: a job that writes nothing
+    (``Job.persist`` False: the CLI's dry run) or keeps the results only
+    (``Job.lean``). It indexes the pictures in memory, so :meth:`lookup` and
+    :meth:`latest` work within the process; the newest :data:`KEPT_PICTURES`
+    keep the picture itself (``PictureRecord.image``)."""
+
+    #: How many of the newest pictures keep their image in memory.
+    KEPT_PICTURES = 24
+
+    def __init__(self, layout: JobLayout) -> None:
+        super().__init__(layout)
+        self._memory: list[PictureRecord] = []
 
     def save(
         self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
         arguments: Any = None, call_id: str | None = None, atlas: Any = None,
+        step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
+        captions: list[str | None] | None = None,
     ) -> list[str]:
+        if not pictures:
+            return []
+        step = self._step(step)
+        with self._lock:
+            call = max((r.call for r in self._memory), default=0) + 1
+            first = max((r.seq for r in self._memory), default=0) + 1
+            for item in _items(first, tool, pictures, step, recipes, captions):
+                held = item.note
+                self._memory.append(PictureRecord(
+                    seq=item.seq, name=item.name, tool=tool, call=call, path="",
+                    sections=tuple(held.sections) if held else (),
+                    mode=held.mode if held else None, caption=item.caption,
+                    step=item.step, recipe=item.recipe, image=item.image))
+            for at in range(max(0, len(self._memory) - self.KEPT_PICTURES)):
+                old = self._memory[at]
+                if old.image is not None:
+                    self._memory[at] = replace(old, image=None)
         return []
+
+    def records(self) -> list[PictureRecord]:
+        with self._lock:
+            return list(self._memory)
