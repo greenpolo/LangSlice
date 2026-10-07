@@ -16,7 +16,7 @@
   "status": "ok",
   "view": {
    "atlas_channels": [
-    "ara",
+    "template",
     "borders"
    ],
    "border_color": "#00ffff",

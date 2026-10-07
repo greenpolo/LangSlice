@@ -252,20 +252,20 @@ def test_view_keys_that_mean_nothing_are_refused_with_the_reason(tmp_path: Path)
         assert result["error"] == "VIEW_KEY_UNUSED", result
         return [item["key"] for item in result["unused"]]
 
-    assert unused(_tool(box, "view_slices")(["s0.png"], view={"atlas_channels": ["ara"]})) \
+    assert unused(_tool(box, "view_slices")(["s0.png"], view={"atlas_channels": ["template"]})) \
         == ["atlas_channels"]
     assert unused(_tool(box, "view_atlas")([5.0], view={"channels": ["red"]})) == ["channels"]
     assert unused(show([{"id": "s0.png"}], view={"mode": "template", "channels": ["red"]})) \
         == ["channels"]
     assert unused(show([{"id": "s0.png"}], view={"mode": "overlay", "outlines": "outer",
-                                                  "atlas_channels": ["ara"]})) == ["outlines"]
+                                                  "atlas_channels": ["template"]})) == ["outlines"]
     assert unused(show([{"id": "s0.png"}], view={"mode": "overlay", "atlas_opacity": 0.5})) \
         == ["atlas_opacity"]
     assert unused(show([{"id": "s0.png"}], view={"mode": "stacked", "deformation": "none"})) \
         == ["deformation"]
     assert unused(_tool(box, "fit_affine")(["s0.png"], view={"deformation": "none"})) \
         == ["deformation"]
-    assert show([{"id": "s0.png"}], view={"mode": "overlay", "atlas_channels": ["ara"],
+    assert show([{"id": "s0.png"}], view={"mode": "overlay", "atlas_channels": ["template"],
                                           "outlines": "none"})["error"] == "VIEW_KEY_UNUSED"
     assert show([{"id": "s0.png"}], view={"mode": "checkerboard",
                                           "atlas_channels": ["borders"]})[
@@ -339,21 +339,21 @@ def test_preprocess_returns_before_and_after(tmp_path: Path):
 def test_atlas_channels_overlay_and_the_host_without_nissl(tmp_path: Path):
     _, ctx, _, box = _setup(tmp_path)
     show = _tool(box, "view_placement")
-    ara = show([{"id": "s0.png"}], view={"mode": "template"})
-    assert ara["view"]["atlas_channels"] == ["ara"]
+    template = show([{"id": "s0.png"}], view={"mode": "template"})
+    assert template["view"]["atlas_channels"] == ["template"]
     lined = show([{"id": "s0.png"}], view={"mode": "template",
-                                           "atlas_channels": ["ara", "borders"]})
+                                           "atlas_channels": ["template", "borders"]})
     lines_only = show([{"id": "s0.png"}], view={"mode": "template",
                                                 "atlas_channels": ["borders"]})
-    assert len({_bytes(ara)[0], _bytes(lined)[0], _bytes(lines_only)[0]}) == 3
+    assert len({_bytes(template)[0], _bytes(lined)[0], _bytes(lines_only)[0]}) == 3
     under = show([{"id": "s0.png"}], view={"mode": "overlay",
-                                           "atlas_channels": ["ara", "borders"],
+                                           "atlas_channels": ["template", "borders"],
                                            "atlas_opacity": 0.6})
     assert under["view"]["atlas_opacity"] == 0.6
     ctx._nissl, ctx._nissl_checked = None, True
     refused = show([{"id": "s0.png"}], view={"mode": "template", "atlas_channels": ["nissl"]})
     assert refused["error"] == "ATLAS_CHANNEL_UNAVAILABLE"
-    assert refused["available"] == ["ara", "borders"]
+    assert refused["available"] == ["template", "borders"]
 
     class _Nissl:
         def sample_plane(self, atlas, position_mm, plane, pitch, yaw):
@@ -361,10 +361,10 @@ def test_atlas_channels_overlay_and_the_host_without_nissl(tmp_path: Path):
 
     ctx._nissl = _Nissl()
     both = show([{"id": "s0.png"}], view={"mode": "template",
-                                          "atlas_channels": ["ara", "nissl"]})
+                                          "atlas_channels": ["template", "nissl"]})
     assert both["status"] == "ok", both
-    assert both["view"]["atlas_colors"] == {"ara": "green", "nissl": "magenta"}
-    assert _bytes(both) != _bytes(ara)
+    assert both["view"]["atlas_colors"] == {"template": "green", "nissl": "magenta"}
+    assert _bytes(both) != _bytes(template)
 
 
 def test_regions_highlight_only_their_borders(tmp_path: Path):
@@ -382,7 +382,7 @@ def test_regions_highlight_only_their_borders(tmp_path: Path):
     assert later["compared"][0]["regions_not_in_plane"] == ["HPF"]
     assert show([{"id": "s0.png"}], view={"regions": ["XYZ"]})["error"] == "UNKNOWN_REGIONS"
     atlas_view = _tool(box, "view_atlas")([5.0], view={"regions": ["CA1"],
-                                                       "atlas_channels": ["ara", "borders"]})
+                                                       "atlas_channels": ["template", "borders"]})
     assert atlas_view["status"] == "ok" and atlas_view[TOOL_MEDIA_PARTS_KEY]
 
 
@@ -419,7 +419,7 @@ def test_the_job_statement_describes_view_once_with_the_channels():
 
     assert "fit_deformable" in PROMPT_PICTURE_TOOLS
     lines = display_lines(["view_slices"], channels=["red", "green", "blue"],
-                          atlas_channels=("ara", "nissl", "borders"))
+                          atlas_channels=("template", "nissl", "borders"))
     text = "\n".join(lines)
     assert text.count("ONE argument, `view`") == 1
     for key in ("`channels`", "`atlas_channels`", "`atlas_opacity`", "`regions`",
@@ -460,3 +460,21 @@ def test_the_view_echo_names_channels_only_where_they_choose_the_picture(tmp_pat
     assert picked["view"]["channels"] == ["fit"]
     preprocessed = _tool(box, "preprocess")(target="fit", clahe_clip=2.0)
     assert preprocessed["status"] == "ok" and "channels" not in preprocessed["view"]
+
+
+
+def test_old_ara_name_is_still_accepted(tmp_path: Path):
+    """The atlas template was once called ``ara``: call arguments and saved
+    settings that use it load as ``template``."""
+    from dataclasses import asdict
+
+    from langslice.core.deformable.settings import FitSettings
+
+    _, ctx, _, box = _setup(tmp_path)
+    shown = _tool(box, "view_placement")([{"id": "s0.png"}], view={
+        "mode": "template", "atlas_channels": ["ara", "borders"]})
+    assert shown["view"]["atlas_channels"] == ["template", "borders"]
+
+    saved = asdict(FitSettings(section_image="stain", atlas_image="template"))
+    saved["atlas_image"] = "ara"  # as an older job folder recorded it
+    assert FitSettings.from_dict(saved).atlas_image == "template"

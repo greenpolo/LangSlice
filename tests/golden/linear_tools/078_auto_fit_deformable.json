@@ -33,7 +33,7 @@
     "runtime_s": "<seconds>",
     "settings": {
      "engine": "elastix",
-     "fit_atlas": "ara",
+     "fit_atlas": "template",
      "fit_section": "fit",
      "stiffness": "medium"
     },
@@ -62,7 +62,7 @@
    "mode": "RGB",
    "size": [
     272,
-    245
+    246
    ]
   }
  ],

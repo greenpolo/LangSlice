@@ -83,14 +83,14 @@ def atlas_view_picture(
 ) -> Image.Image:
     """The atlas alone at *position_mm*, tissue-framed and captioned.
 
-    The default picture (``ara``, no lines, no zoom) is the cached reference;
+    The default picture (``template``, no lines, no zoom) is the cached reference;
     any other options draw it afresh with the call's lines and regions. No
     section is drawn, so the plane is the stack's view angles
     (``StackState.view_angles``: its one angle, or the median of its
     sections' when they differ), named in the caption when oblique.
     """
     angles = state.view_angles
-    if options.atlas_images == ("ara",) and not options.lines and options.full_view:
+    if options.atlas_images == ("template",) and not options.lines and options.full_view:
         picture = reference_atlas_picture(ws, state, position_mm, long_edge=options.long_edge,
                                           angles=angles)
     else:

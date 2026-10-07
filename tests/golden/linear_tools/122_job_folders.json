@@ -74,7 +74,7 @@
      "labels_dtype": "uint32",
      "size": [
       272,
-      245
+      246
      ],
      "view_json": "<hex>"
     },
@@ -1719,7 +1719,7 @@
      "labels_dtype": "uint32",
      "size": [
       272,
-      245
+      246
      ],
      "view_json": "<hex>"
     },
@@ -1732,7 +1732,7 @@
      "labels_dtype": "uint32",
      "size": [
       272,
-      245
+      246
      ],
      "view_json": "<hex>"
     },
@@ -1891,7 +1891,7 @@
      "labels_dtype": "uint32",
      "size": [
       272,
-      261
+      263
      ],
      "view_json": "<hex>"
     },
@@ -1911,7 +1911,7 @@
      "labels_dtype": "uint32",
      "size": [
       272,
-      245
+      246
      ],
      "view_json": "<hex>"
     },

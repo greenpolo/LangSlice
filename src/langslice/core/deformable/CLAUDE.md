@@ -20,7 +20,7 @@ atlas-plane pixel centres to section pixel centres, section mm/px) and one
 and returns a `record.DeformableRecord`. No custom solver.
 
 - Route A (no image model): the stain image (`section_image="stain"`) against
-  an atlas image — `ara` (BrainGlobe reference), or `nissl` (the Nissl
+  an atlas image — `template` (BrainGlobe reference), or `nissl` (the Nissl
   template aligned to the CCFv3, `nissl.py`; Allen mouse atlases). Metric
   (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
   cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
@@ -49,7 +49,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   setting in one call: ANTs with the lines as named regions too
   (`labels="model"`), or Elastix lines against borders; `engine=None` picks
   ANTs when installed. The crossed pairings are refused (`metric_for`): lines
-  against `ara`/`nissl`, and the stain against borders (the pairing that
+  against `template`/`nissl`, and the stain against borders (the pairing that
   stays at the linear placement).
 - Label-map channels (`labels=`, ANTs only): `model` names each area the
   model's lines enclose after the placed merged region it overlaps most
@@ -116,7 +116,7 @@ levels are its capture range); `atlas_image`, `section_image`, `exclude`,
 `stain_metric` (`local_correlation` | `mutual_information`) and
 `stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
 from pairing, engine and stain metric (`metric_for`); lines against
-`ara`/`nissl` and the stain against `borders`/`borders_merged` are refused.
+`template`/`nissl` and the stain against `borders`/`borders_merged` are refused.
 The step size is fixed.
 
 Stain defaults, and why: local correlation at 80 µm radius followed visible
@@ -128,7 +128,7 @@ lateral-ventricle pieces pulled into a dorsal third-ventricle hole, since the
 ventricle channel pairs all ventricles with all holes). There is no `stiff`
 setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
 slower, worse outlines) and the linear tool always runs `standard`; line
-softening is the constant `LINE_SOFTENING_UM` = 60. `ara` is the default
+softening is the constant `LINE_SOFTENING_UM` = 60. `template` is the default
 stain atlas image; the aligned `nissl` is untested on real sections (the
 misaligned Allen Nissl it replaced sat 40-80 µm inside fluorescent tissue).
 On synthetic sections (flat regions, no texture) local correlation recovers a

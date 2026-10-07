@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.affine import normalized_physical_affine
+from langslice.core.display import canonical_atlas_name
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
@@ -81,7 +82,7 @@ def fit_transform(
     *,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
-    fit_atlas: str = "ara",
+    fit_atlas: str = "template",
 ) -> dict[str, Any]:
     """The stored record of one ``fit_affine`` result.
 
@@ -90,6 +91,7 @@ def fit_transform(
     ``kind``. Regions and a non-default atlas image are recorded only when
     they were used.
     """
+    fit_atlas = canonical_atlas_name(fit_atlas)
     return {
         "kind": method,
         "params": list(fit["params"]),
@@ -99,7 +101,7 @@ def fit_transform(
         "mirrored": fit["mirrored"],
         **({"regions": {"include": list(include), "exclude": list(exclude)}}
            if include or exclude else {}),
-        **({"fit_atlas": fit_atlas} if method == "elastix" and fit_atlas != "ara" else {}),
+        **({"fit_atlas": fit_atlas} if method == "elastix" and fit_atlas != "template" else {}),
     }
 
 
@@ -177,7 +179,7 @@ def fit_affine(
     records: Sequence[SliceState],
     *,
     method: str = "elastix",
-    fit_atlas: str = "ara",
+    fit_atlas: str = "template",
     include: tuple[str, ...] = (),
     exclude: tuple[str, ...] = (),
     options: DisplayOptions | None = None,
@@ -185,7 +187,7 @@ def fit_affine(
     """Fit an in-plane affine per section and write each fit as its transform.
 
     *method* ``elastix`` refines the section's current placement against the
-    atlas image *fit_atlas* (``ara`` or ``nissl``,
+    atlas image *fit_atlas* (``template`` or ``nissl``,
     :func:`langslice.core.transform.fit_elastix`); ``silhouette`` fits the
     tissue outline from scratch (:func:`~langslice.core.transform.fit_silhouette`).
     *include* / *exclude* restrict the fit to atlas regions (sides allowed).
@@ -207,6 +209,7 @@ def fit_affine(
     from langslice.core.placement import fit_picture
     from langslice.core.transform import FIT_FRAME_KEY, fit_elastix, fit_silhouette
 
+    fit_atlas = canonical_atlas_name(fit_atlas)
     state = job.state
     fitter = (functools.partial(fit_elastix, atlas_image=fit_atlas) if method == "elastix"
               else fit_silhouette)

@@ -45,6 +45,7 @@ from langslice.core.display import (
     MODE_RULES,
     DisplayOptions,
     available_atlas_channels,
+    canonical_atlas_name,
 )
 from langslice.core.opening import DEFAULT_IMAGE_LIMIT
 from langslice.core.placement import (
@@ -129,7 +130,7 @@ PREPROCESS_VIEW = Profile(
 PLACEMENT_VIEW = Profile(
     PLACEMENT_MODES, deformation=True,
     zoom_modes=tuple(mode for mode in PLACEMENT_MODES if mode not in FRAMED_PLACEMENT_MODES),
-    atlas_defaults={"side_by_side": ("ara",)},
+    atlas_defaults={"side_by_side": ("template",)},
     deformation_modes=WARPED_PLACEMENT_MODES,
 )
 #: ``set_positions`` draws the same pictures, ``stacked`` by default.
@@ -1304,14 +1305,14 @@ def build_tools(
                 "error": "BAD_ARGS",
                 "message": "method must be 'elastix' or 'silhouette'.",
             }
-        atlas_kind = str(fit_atlas or "").strip().lower()
+        atlas_kind = canonical_atlas_name(str(fit_atlas or "").strip().lower())
         if atlas_kind and chosen == "silhouette":
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "fit_atlas is the image the elastix method matches; the "
                     "silhouette method fits outlines only. Leave fit_atlas out."}
-        atlas_kind = atlas_kind or "ara"
+        atlas_kind = atlas_kind or "template"
         offered = [kind for kind in available_atlas_channels(ctx) if kind != "borders"]
-        if atlas_kind not in ("ara", "nissl"):
+        if atlas_kind not in ("template", "nissl"):
             return {"status": "error", "error": "BAD_FIT_ATLAS", "fit_atlas": offered}
         if atlas_kind not in offered:
             return {"status": "error", "error": "FIT_ATLAS_UNAVAILABLE",
@@ -1617,8 +1618,8 @@ def build_tools(
                     + (". To fit one raw channel, set the fit appearance with preprocess "
                        "(target 'fit')." if spec.agent_preprocessing else ".")}
         available = available_atlas_channels(ctx)
-        atlas_kind = str(values.get("fit_atlas") or "").strip().lower() or (
-            "borders" if traced else "ara")
+        atlas_kind = canonical_atlas_name(str(values.get("fit_atlas") or "").strip().lower()) or (
+            "borders" if traced else "template")
         if atlas_kind not in deformation.FIT_ATLASES:
             return {"status": "error", "error": "BAD_FIT_ATLAS",
                     "fit_atlases": list(available)}
@@ -1634,7 +1635,7 @@ def build_tools(
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "Atlas borders are for traced fit sections (the image model's "
                     "lines against the atlas's lines); the fit appearance is fitted against "
-                    "a grayscale atlas image, 'ara' or 'nissl'."}
+                    "a grayscale atlas image, 'template' or 'nissl'."}
         if picked == deformation.TRACED_BORDERS and chosen != "ants":
             return {"status": "error", "error": "LABEL_MAP_ANTS_ONLY",
                     "message": "traced_borders (the traced lines as named regions) needs the "

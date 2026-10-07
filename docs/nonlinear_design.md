@@ -19,7 +19,7 @@ stands.
 |---|---|
 | `preprocess` | sets the section's appearance for what the agent views, for what a fit reads (`target` `view`, `fit` or `both`), stack-wide or per section: channel weights, CLAHE, N4 bias correction, denoising; returns before and after pictures |
 | `grep_atlas` | looks regions up in the atlas hierarchy by acronym, name or id: ancestry, descendants, and whether the region appears in the atlas plane at a section's placement |
-| `view_placement` | shows a section in its current registration; the shared picture options highlight chosen `regions` and draw atlas images (`ara`, `nissl`, `borders`) under the section |
+| `view_placement` | shows a section in its current registration; the shared picture options highlight chosen `regions` and draw atlas images (`template`, `nissl`, `borders`) under the section |
 | `fit_deformable` | fits a deformation of the placed atlas onto sections (below) |
 | `trace_borders` | optional: an image model draws the atlas borders onto the tissue, for a fit to read (below) |
 
@@ -33,7 +33,7 @@ is called. Main arguments (`langslice-job schema fit_deformable`):
 | Argument | Choice |
 |---|---|
 | `fit_section` | `fit`: the section's fit appearance (stain); `traced_borders`: a trace's lines turned into named regions (ANTs); `traced_lines`: a trace's lines against the atlas borders |
-| `fit_atlas` | for `fit`: `ara` (the atlas's reference template, default) or `nissl` (a Nissl template aligned to the CCFv3, Allen mouse atlases, below); for a traced fit section: `borders` |
+| `fit_atlas` | for `fit`: `template` (the atlas's reference template, default) or `nissl` (a Nissl template aligned to the CCFv3, Allen mouse atlases, below); for a traced fit section: `borders` |
 | `include`, `exclude` | regions (acronyms or ids, descendants included, optionally one side: `"CTX:left"`); only included regions plus a 300 µm margin are fitted; excluded regions (for example tissue missing from the section) are removed from the atlas side |
 | `start` | `linear`, or `current` to compose onto the applied deformation (region-by-region steps) |
 | `stiffness`, `engine` | `soft`, `medium`, `firm`; `ants` or `elastix` |
@@ -119,7 +119,7 @@ plus a preserve list, the Gemini wording positive framing only.
 `langslice.register_job` (scripted, [library.md](library.md)) runs the same
 verbs in a fixed order: `trace_borders` on every section when the job has an
 image model, then `fit_deformable` with the traced lines against the atlas
-borders (Elastix, medium); without an image model, the stain against `ara`
+borders (Elastix, medium); without an image model, the stain against `template`
 (Elastix, medium). A `fit=` argument replaces those settings.
 
 ## What the deformation becomes

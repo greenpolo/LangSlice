@@ -33,7 +33,7 @@
     "runtime_s": "<seconds>",
     "settings": {
      "engine": "elastix",
-     "fit_atlas": "ara",
+     "fit_atlas": "template",
      "fit_section": "fit",
      "stiffness": "firm"
     },
@@ -49,7 +49,7 @@
   "status": "ok",
   "view": {
    "atlas_channels": [
-    "ara",
+    "template",
     "borders"
    ],
    "atlas_opacity": 0.4,
@@ -67,7 +67,7 @@
    "mode": "RGB",
    "size": [
     272,
-    245
+    246
    ]
   }
  ],

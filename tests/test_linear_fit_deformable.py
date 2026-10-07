@@ -232,7 +232,7 @@ def test_include_and_exclude_reach_the_engine(tmp_path: Path, atlas, monkeypatch
     assert result["status"] == "ok", result
     assert [s.structures for s in seen] == [("STR",), ("STR",)]
     assert [s.exclude for s in seen] == [("HY:left",), ("HY:left",)]
-    assert [s.atlas_image for s in seen] == ["ara", "ara"]
+    assert [s.atlas_image for s in seen] == ["template", "template"]
     assert all(s.detail == "coarse" for s in seen)
     fit = _tool(box, "fit_deformable")
     assert fit([ID], include=["NOPE"])["error"] == "UNKNOWN_REGIONS"
@@ -363,10 +363,10 @@ def test_the_job_statement_names_the_engine_and_the_tool(tmp_path: Path, atlas, 
     monkeypatch.setattr(deformation, "ants_available", lambda: True)
     text = build_job_statement(spec, state, tool_names=box.names, species="mouse",
                                pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"),
-                               atlas_channels=("ara", "borders"))
+                               atlas_channels=("template", "borders"))
     assert "`fit_deformable`:" in text
     assert "engine: ants or elastix, your choice per call" in text
-    assert "Atlas channels on this host: ara (" in text and "; borders (" in text
+    assert "Atlas channels on this host: template (" in text and "; borders (" in text
     spec.nonlinear.engine = "elastix"
     text = build_job_statement(spec, state, tool_names=box.names, species="mouse",
                                pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"))
@@ -419,7 +419,7 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     assert row["settings"]["fit_atlas"] == "borders"  # traced lines fit against borders
     assert row["engine_settings"]["metric"] == "mean_squares"
     assert fit([ID], **FAST, fit_section="traced_borders")["error"] == "LABEL_MAP_ANTS_ONLY"
-    assert fit([ID], fit_section="traced_lines", fit_atlas="ara")["error"] == "BAD_ARGS"
+    assert fit([ID], fit_section="traced_lines", fit_atlas="template")["error"] == "BAD_ARGS"
     # The stain against atlas borders is refused: borders are for traced lines.
     stain_borders = fit([ID], **FAST, fit_atlas="borders")
     assert stain_borders["error"] == "BAD_ARGS" and "traced" in stain_borders["message"]

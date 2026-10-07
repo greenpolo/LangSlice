@@ -314,7 +314,7 @@ def placement_pictures(
         working[record.id] = (section, *calibrate(state, ws, record, section))
     section, um_per_px, source = working[record.id]
     row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
-    default_atlas = options.atlas_images == ("ara",) and not options.lines
+    default_atlas = options.atlas_images == ("template",) and not options.lines
     if options.mode == "side_by_side":
         # Both at one scale, the same for every position, so the one section
         # picture of a call reads true against each of its atlases.

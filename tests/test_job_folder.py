@@ -259,7 +259,8 @@ def test_the_layers_agree_with_the_borders_drawn_on_a_golden_picture(tmp_path: P
     _place(box)
     # Golden call 024: the outlines picture, atlas template under the lines.
     _tool(box, "view_placement")([{"id": ID2, "positions_mm": [0.2]}],
-                                 view={"mode": "outlines", "atlas_channels": ["ara", "borders"]})
+                                 view={"mode": "outlines",
+                                        "atlas_channels": ["template", "borders"]})
     flush_all()
     view = next((tmp_path / "stack" / "langslice").glob("sections/s2/views/*view_placement*"))
     picture = np.asarray(Image.open(view / "view.jpg").convert("RGB")).astype(int)

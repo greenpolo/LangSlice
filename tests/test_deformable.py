@@ -261,7 +261,7 @@ def test_label_channels_are_ants_only():
     with pytest.raises(ValueError, match="ANTs-only"):
         FitSettings(engine="elastix", labels="auto")
     with pytest.raises(ValueError, match="borders"):
-        _settings(section_image="lines", atlas_image="ara")
+        _settings(section_image="lines", atlas_image="template")
 
 
 def test_trimmed_settings_refuse_what_the_ceiling_test_dropped():
