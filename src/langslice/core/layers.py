@@ -135,6 +135,23 @@ def note(image: Image.Image, **fields: Any) -> Image.Image:
     return image
 
 
+def annotate(image: Image.Image, **fields: Any) -> Image.Image:
+    """Set :class:`PictureNote` fields (``recipe=``, ``caption=``) on the
+    latest note made for this very image, keeping its frame and panel; a
+    picture nothing noted yet gets a new note. Returns *image*."""
+    notes = _NOTES.get()
+    if notes is None:
+        return image
+    held = note_for(image, notes)
+    if held is None:
+        return note(image, **fields)
+    for key, value in fields.items():
+        if key == "sections":
+            value = tuple(str(s) for s in value)
+        setattr(held, key, value)
+    return image
+
+
 def note_for(
     image: Image.Image, notes: list[tuple[Image.Image, PictureNote]],
 ) -> PictureNote | None:
