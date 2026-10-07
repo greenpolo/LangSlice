@@ -16,7 +16,9 @@ One entry point, :func:`look`, takes a :class:`LookRequest` and returns one
   (:func:`langslice.core.placement.placement_pictures`, mode ``overlay``),
   the applied deformation drawn unless ``warp`` is ``none``;
 - ``positioning`` — the stack along its slicing axis, ABBA's layout
-  (:mod:`langslice.core.positioning`).
+  (:mod:`langslice.core.positioning`): one picture, or for a stack longer
+  than :data:`langslice.core.positioning.PER_PICTURE` several, each a
+  consecutive run of positions with its own ruler segment.
 
 Defaults never read the job's state: no ``sections`` is every section; no
 ``channels`` is every raw channel, each with its display properties (as
@@ -27,7 +29,8 @@ picture at every stage of a run.
 Each picture carries a caption for the picture index (position, angles,
 scale, the channel settings in force) and a recipe, ``{"renderer": "look",
 "args": ..., "state": ..., "base": [w, h], "shown": [w, h], "um_per_px": x}``:
-the request (one picture's sections or position), the facts of the stack
+the request (one picture's sections or position; a positioning picture's
+the whole call's sections and positions and its ``part``), the facts of the stack
 the picture was drawn from (:func:`snapshot`), the unzoomed and shown
 content sizes and the micrometres per pixel shown. :func:`redraw` draws a
 recipe again at a zoom window (:mod:`langslice.core.zoom`), from the stack
@@ -65,7 +68,11 @@ from langslice.core.display import (
 )
 from langslice.core.layers import annotate, note
 from langslice.core.placement import placement_pictures
-from langslice.core.positioning import ATLAS_UPSAMPLE, POSITIONING_MAX_WIDTH, positioning_picture
+from langslice.core.positioning import (
+    ATLAS_UPSAMPLE,
+    POSITIONING_MAX_WIDTH,
+    positioning_pictures,
+)
 from langslice.core.scale import framed_um_per_px
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.sizes import picture_edge
@@ -107,7 +114,8 @@ class LookError(ValueError):
     ``UNKNOWN_SECTION``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS`` (atlas mode
     without ``positions_mm``), ``NO_POSITION`` (a section without one, in
-    overlay mode) or ``BAD_WARP``."""
+    overlay mode), ``BAD_WARP`` or ``UNKNOWN_PART`` (a positioning part past
+    the call's last picture)."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -136,6 +144,9 @@ class LookRequest:
     #: A zoom window, ``[x0, y0, x1, y1]`` fractions of the unzoomed picture's
     #: content (:mod:`langslice.core.zoom`); empty: the whole picture.
     zoom: tuple[float, ...] = ()
+    #: Positioning: which picture of a split call (0-based); None: every one
+    #: (with ``zoom``: the first).
+    part: int | None = None
 
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
@@ -146,6 +157,7 @@ class LookRequest:
             "atlas_layers": None if self.atlas_layers is None else list(self.atlas_layers),
             "atlas_opacity": self.atlas_opacity, "warp": self.warp,
             "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
+            "part": self.part,
         }
 
     @classmethod
@@ -159,6 +171,7 @@ class LookRequest:
             atlas_opacity=args.get("atlas_opacity"), warp=str(args.get("warp") or "applied"),
             long_edge=args.get("long_edge"),
             zoom=tuple(float(v) for v in args.get("zoom") or ()),
+            part=None if args.get("part") is None else int(args["part"]),
         )
 
 
@@ -506,7 +519,7 @@ def _atlas_picture(
 def _positioning(
     ws: Workspace, state: StackState, request: LookRequest, long_edge: int, angles: Angles,
     zoom_edge: int | None,
-) -> LookPicture:
+) -> list[LookPicture]:
     records = _records(state, request.sections)
     layers = _atlas_layers(ws, request)
     atlas_options = _options(request, names=(), version="", layers=layers, long_edge=long_edge)
@@ -521,31 +534,36 @@ def _positioning(
     for record in records:  # refuse a bad channel before drawing anything
         look_of(record)
     words = sorted(set(shown_words.values()))
-    drawn = positioning_picture(
-        ws, state, records, [float(v) for v in request.positions_mm], look_of=look_of,
-        atlas_options=atlas_options, angles=angles, tile_edge=long_edge,
-        max_width=POSITIONING_MAX_WIDTH, window=request.zoom, zoom_edge=zoom_edge,
-        shown=words[0] if len(words) == 1 else "",
-    )
-    layout = drawn.layout
-    content = drawn.content
-    ids = tuple(slot.key for slot in layout.sections)
-    rows = ", ".join(f"{slot.label[0]} {slot.position_mm:.2f} mm" if slot.position_mm is not None
-                     else f"{slot.label[0]} no position" for slot in layout.sections)
-    text = drawn.caption + (f". Sections: {rows}" if rows else "")
-    if layout.crossings:
-        text += ". Crossing: " + ", ".join(f"{a} / {b}" for a, b in layout.crossings)
+    try:
+        drawn = positioning_pictures(
+            ws, state, records, [float(v) for v in request.positions_mm], look_of=look_of,
+            atlas_options=atlas_options, angles=angles, tile_edge=long_edge,
+            max_width=POSITIONING_MAX_WIDTH, part=request.part, window=request.zoom,
+            zoom_edge=zoom_edge, shown=words[0] if len(words) == 1 else "",
+        )
+    except IndexError as exc:
+        raise LookError("UNKNOWN_PART", str(exc)) from None
     held = snapshot(state, [record.id for record in records], view_angles=True)
-    recipe = _recipe(replace(request, sections=tuple(r.id for r in records)), held,
-                     base=(layout.width, layout.height), shown=content,
-                     um_per_px=drawn.um_per_px)
-    note(drawn.image, sections=ids, mode="positioning", recipe=recipe, caption=text,
-         extra={"positions_mm": [float(v) for v in request.positions_mm],
-                "crossings": [list(pair) for pair in layout.crossings]})
-    return LookPicture(image=drawn.image, caption=text, recipe=recipe, sections=ids,
-                       mode="positioning", um_per_px=drawn.um_per_px,
-                       extra={"crossings": [list(pair) for pair in layout.crossings],
-                              "direction": layout.direction})
+    whole = replace(request, sections=tuple(r.id for r in records))
+    out: list[LookPicture] = []
+    for one in drawn:
+        layout = one.layout
+        ids = tuple(slot.key for slot in layout.sections)
+        rows = ", ".join(f"{slot.label[0]} {slot.position_mm:.2f} mm"
+                         if slot.position_mm is not None else f"{slot.label[0]} no position"
+                         for slot in layout.sections)
+        text = one.caption + (f". Sections: {rows}" if rows else "")
+        recipe = _recipe(replace(whole, part=layout.part), held,
+                         base=(layout.width, layout.height), shown=one.content,
+                         um_per_px=one.um_per_px)
+        extra = {"part": layout.part, "parts": layout.parts,
+                 "positions_mm": [float(slot.position_mm or 0.0) for slot in layout.atlas],
+                 "range_mm": [float(v) for v in layout.range_mm]}
+        note(one.image, sections=ids, mode="positioning", recipe=recipe, caption=text,
+             extra=extra)
+        out.append(LookPicture(image=one.image, caption=text, recipe=recipe, sections=ids,
+                               mode="positioning", um_per_px=one.um_per_px, extra=extra))
+    return out
 
 
 def look(
@@ -554,8 +572,8 @@ def look(
     base_um: float | None = None, zoom_edge: int | None = None,
 ) -> list[LookPicture]:
     """The pictures of *request*: one per section (``section``,
-    ``overlay``), one per position (``atlas``), one in all
-    (``positioning``).
+    ``overlay``), one per position (``atlas``), one per run of positions
+    (``positioning``: one for a short stack; with ``part``, that one).
 
     *store* (a :class:`~langslice.core.deformation.RecordStore`) gives an
     overlay its applied deformation. *angles* is the plane an atlas picture
@@ -572,7 +590,7 @@ def look(
     long_edge = int(request.long_edge or picture_edge(ws))
     plane = angles if angles is not None else state.view_angles
     if request.mode == "positioning":
-        return [_positioning(ws, state, request, long_edge, plane, zoom_edge)]
+        return _positioning(ws, state, request, long_edge, plane, zoom_edge)
     if request.mode == "atlas":
         if not request.positions_mm:
             raise LookError("NO_POSITIONS", "atlas mode needs positions_mm")

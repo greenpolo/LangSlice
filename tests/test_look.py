@@ -167,3 +167,6 @@ def test_request_round_trips_through_recipe_args():
                           atlas_layers=("borders",), atlas_opacity=0.3, warp="none",
                           long_edge=640, zoom=(0.1, 0.2, 0.5, 0.6))
     assert LookRequest.from_args(json.loads(json.dumps(request.args()))) == request
+    part = LookRequest("positioning", positions_mm=(2.0,), part=3)
+    assert LookRequest.from_args(json.loads(json.dumps(part.args()))) == part
+    assert LookRequest.from_args({"mode": "positioning"}).part is None  # an older recipe

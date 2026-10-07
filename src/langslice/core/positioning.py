@@ -1,29 +1,32 @@
 """The positioning picture: the stack laid out along its slicing axis, as in ABBA.
 
-A horizontal millimetre ruler spans the atlas range (``Workspace.position_range``).
-Above it, atlas thumbnails at the requested positions, in position order,
-each joined by a short line to its millimetre on the ruler. Below it, the
-requested sections in stack order (``SliceState.index_original``), evenly
-spaced, each joined by a line to its current position. Two lines cross
-exactly when the stack order and the positions of their sections disagree
-(:func:`crossing_pairs`); those lines and their labels are drawn in
-:data:`CROSSING_COLOR`. The row of sections runs left to right in stack
-order, or right to left when most pairs of the stack run against the ruler
-(a stack numbered from posterior to anterior), so only disagreeing pairs
-cross (:func:`stack_direction`).
+A horizontal millimetre ruler; above it, atlas thumbnails at the requested
+positions, each over its own millimetre (moved aside only as far as its
+neighbours need) and joined by a short line to it; below it, the sections
+in POSITION order (their current ``position_mm``, ties in stack order,
+``index_original``; sections without a position last), evenly spaced,
+each joined by a thin line to its position. Both rows are sorted along
+the ruler, so no two lines cross; each section's label keeps
+its original index and filename, so a filename order that disagrees with
+the positions shows in the labels.
 
-Every thumbnail is drawn at ONE micrometres per pixel, sections and atlas
-alike (:func:`langslice.core.scale.pair_um_per_px`): the largest fills a
-tile, and the tile grows as the item count falls (:func:`plan`), from a
-thumbnail per section of a long stack to tiles as large as the picture size
-allows for one section beside two or three atlas positions.
+A stack is never drawn smaller to fit: at most :data:`PER_PICTURE` sections
+(and as many atlas thumbnails) go in one picture, and a longer stack is
+split into several pictures, each a consecutive run of positions
+(:func:`split`) with its own ruler segment over the positions it holds
+(:func:`ruler_range`). Every thumbnail of every picture is drawn at ONE
+micrometres per pixel (:func:`langslice.core.scale.pair_um_per_px`): the
+largest item of the whole call fills a tile; the tile is the width shared
+by the fullest picture's row, so it grows as the item count falls (one
+section beside three atlas positions is drawn large), and is never smaller
+than :data:`POSITIONING_MAX_WIDTH` divided among :data:`PER_PICTURE` tiles.
 
-:func:`plan` is the pure geometry (sizes in micrometres in, a
-:class:`Layout` out); :func:`paint` draws a layout at a magnification and
-crop, which is how :mod:`langslice.core.zoom` redraws a box of it at more
-detail (the furniture scales with the tiles, so a box of the picture is the
-same box at any magnification); :func:`positioning_picture` does both for a
-stack.
+:func:`plan` is the pure geometry (sizes in micrometres in, one
+:class:`Layout` per picture out); :func:`paint` draws a layout at a
+magnification and crop, which is how :mod:`langslice.core.zoom` redraws a
+box of it at more detail (the furniture scales with the tiles, so a box of
+the picture is the same box at any magnification);
+:func:`positioning_pictures` does both for a stack.
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ from langslice.core.atlas_fetch import atlas_section
 from langslice.core.canvas import zoom_box
 from langslice.core.captions import _font, angles_label, caption
 from langslice.core.display import DisplayOptions, framed_atlas
-from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, tile_label
+from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE
 from langslice.core.scale import (
     finest_um_per_px,
     framed_um_per_px,
@@ -55,13 +58,15 @@ from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.state import Angles, SliceState, StackState
 from langslice.core.workspace import Workspace
 
-#: Widest positioning picture before a long stack shrinks its tiles: the
-#: largest image every model lane takes in without shrinking it.
+#: Widest positioning picture: the largest image every model lane takes in
+#: without shrinking it.
 POSITIONING_MAX_WIDTH = CLAUDE_MAX_IMAGE_EDGE
+#: Most sections, and most atlas thumbnails, in one picture. Six tiles share
+#: :data:`POSITIONING_MAX_WIDTH` at about 240 px each, a coronal mouse
+#: section about 190 px wide; a longer stack is split, never shrunk.
+PER_PICTURE = 6
 #: Narrowest picture: the ruler stays readable with one or two tiles.
 MIN_WIDTH = 720
-#: Smallest tile: past this a long stack makes the picture wider instead.
-MIN_TILE = 28
 #: Space at the left and right ends, and between two tiles of a row.
 MARGIN = 28
 GAP = 10
@@ -69,9 +74,15 @@ PAD = 14
 #: Height of the band between the atlas row and the ruler.
 ATLAS_LINK_PX = 30
 #: Height of the band between the ruler and the section row: the share of
-#: the picture's width, between these bounds (steeper lines read better).
-SECTION_LINK_SHARE = 0.075
-SECTION_LINK_PX = (56, 120)
+#: the picture's width, between these bounds.
+SECTION_LINK_SHARE = 0.06
+SECTION_LINK_PX = (56, 96)
+#: A picture's ruler spans the positions it holds plus this share of their
+#: span at each end (at least :data:`RULER_MIN_MARGIN_MM`), and at least
+#: :data:`RULER_MIN_SPAN_MM` in all.
+RULER_MARGIN_SHARE = 0.08
+RULER_MIN_MARGIN_MM = 0.15
+RULER_MIN_SPAN_MM = 1.0
 #: How far a zoom may draw the atlas past its voxels (it holds no finer detail,
 #: but its lines stay sharp and its pixels legible).
 ATLAS_UPSAMPLE = 4.0
@@ -86,47 +97,9 @@ SECTION_DOT_COLOR = (240, 240, 240)
 #: An atlas thumbnail's line to its position, and its marker (the atlas
 #: borders' yellow, dimmed).
 ATLAS_LINE_COLOR = (200, 185, 70)
-#: Lines that cross, and their sections' labels: order and position disagree.
-CROSSING_COLOR = (255, 80, 80)
-CROSSING_TEXT_COLOR = (255, 110, 110)
 
 
-# --- order and crossings ----------------------------------------------------------
-
-
-def stack_direction(positions: Sequence[float | None]) -> int:
-    """+1 when most pairs of sections (in stack order) run up the ruler, -1
-    when most run down it; +1 on a tie. Pairs at one position, or with a
-    section without one, do not count."""
-    up = down = 0
-    for i, first in enumerate(positions):
-        for second in positions[i + 1:]:
-            if first is None or second is None or second == first:
-                continue
-            if second > first:
-                up += 1
-            else:
-                down += 1
-    return -1 if down > up else 1
-
-
-def crossing_pairs(
-    positions: Sequence[float | None], direction: int | None = None,
-) -> list[tuple[int, int]]:
-    """Index pairs ``(i, j)``, ``i < j`` in stack order, whose positions run
-    against *direction* (None: :func:`stack_direction`): exactly the lines
-    of the positioning picture that cross."""
-    sign = direction if direction is not None else stack_direction(positions)
-    out: list[tuple[int, int]] = []
-    for i, first in enumerate(positions):
-        for j in range(i + 1, len(positions)):
-            second = positions[j]
-            if first is not None and second is not None and sign * (second - first) < 0:
-                out.append((i, j))
-    return out
-
-
-# --- the geometry ------------------------------------------------------------------
+# --- order and parts ----------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -142,6 +115,81 @@ class SectionEntry:
     extent_um: tuple[float, float]
 
 
+def position_order(entries: Sequence[SectionEntry]) -> list[SectionEntry]:
+    """*entries* (given in stack order) sorted by position; ties keep the
+    given order, sections without a position go last."""
+    return sorted(entries, key=lambda entry: (entry.position_mm is None,
+                                              entry.position_mm or 0.0))
+
+
+def _even(count: int, parts: int) -> list[int]:
+    """*count* split into *parts* sizes differing by at most one, larger first."""
+    base, extra = divmod(count, parts)
+    return [base + (1 if k < extra else 0) for k in range(parts)]
+
+
+def split(
+    positions: Sequence[float | None], atlas_mm: Sequence[float], per_picture: int = PER_PICTURE,
+) -> list[tuple[list[int], list[int]]]:
+    """The pictures of a call: ``(section indices, atlas indices)`` each.
+
+    *positions* are the sections' in position order (None last),
+    *atlas_mm* sorted. The sections are cut into the fewest consecutive runs
+    of at most *per_picture*, their sizes as even as possible; each atlas
+    position goes to the run whose positions surround it (the boundary
+    between two runs is halfway between them). A run given more than
+    *per_picture* atlas positions is split again, both rows evenly.
+    """
+    per = max(1, int(per_picture))
+    count = len(positions)
+    runs: list[list[int]] = []
+    start = 0
+    for size in _even(count, max(1, math.ceil(count / per))):
+        runs.append(list(range(start, start + size)))
+        start += size
+    bounds: list[float] = []
+    for left, right in zip(runs, runs[1:], strict=False):
+        a, b = positions[left[-1]], positions[right[0]]
+        bounds.append(math.inf if a is None or b is None else (a + b) / 2.0)
+    held: list[list[int]] = [[] for _ in runs]
+    for index, mm in enumerate(atlas_mm):
+        held[sum(1 for bound in bounds if mm > bound)].append(index)
+    out: list[tuple[list[int], list[int]]] = []
+    for sections, atlas in zip(runs, held, strict=True):
+        pieces = max(1, math.ceil(len(atlas) / per))
+        s_sizes, a_sizes = _even(len(sections), pieces), _even(len(atlas), pieces)
+        s0 = a0 = 0
+        for s_size, a_size in zip(s_sizes, a_sizes, strict=True):
+            out.append((sections[s0:s0 + s_size], atlas[a0:a0 + a_size]))
+            s0, a0 = s0 + s_size, a0 + a_size
+    return out
+
+
+def ruler_range(values: Sequence[float], bounds: tuple[float, float]) -> tuple[float, float]:
+    """The ruler segment for the positions *values*: their span plus a
+    margin (:data:`RULER_MARGIN_SHARE`, at least :data:`RULER_MIN_MARGIN_MM`),
+    at least :data:`RULER_MIN_SPAN_MM` long, kept inside the atlas's
+    *bounds* where the positions allow. No values: *bounds*."""
+    b0, b1 = float(bounds[0]), float(bounds[1])
+    if not values:
+        return b0, b1
+    vmin, vmax = float(min(values)), float(max(values))
+    margin = max((vmax - vmin) * RULER_MARGIN_SHARE, RULER_MIN_MARGIN_MM)
+    lo, hi = vmin - margin, vmax + margin
+    if hi - lo < RULER_MIN_SPAN_MM:
+        centre = (vmin + vmax) / 2.0
+        lo, hi = centre - RULER_MIN_SPAN_MM / 2.0, centre + RULER_MIN_SPAN_MM / 2.0
+    floor, ceiling = min(b0, vmin - 0.02), max(b1, vmax + 0.02)
+    if lo < floor:
+        lo, hi = floor, hi + (floor - lo)
+    if hi > ceiling:
+        lo, hi = lo - (hi - ceiling), ceiling
+    return max(lo, floor), min(hi, ceiling)
+
+
+# --- the geometry ------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class Slot:
     """One thumbnail's place in a :class:`Layout` (picture pixels at
@@ -154,7 +202,6 @@ class Slot:
     height: float
     position_mm: float | None
     label: tuple[str, ...]
-    crossing: bool = False
 
     @property
     def bottom(self) -> float:
@@ -172,25 +219,31 @@ class Layout:
 
     width: int
     height: int
-    #: Micrometres per pixel of every thumbnail.
+    #: Micrometres per pixel of every thumbnail (of every picture of the call).
     um_per_px: float
     tile: int
     font_px: int
     small_px: int
     ruler: tuple[float, float, float]
+    #: The millimetres the ruler spans, left to right.
     range_mm: tuple[float, float]
     atlas: tuple[Slot, ...]
+    #: In position order, left to right.
     sections: tuple[Slot, ...]
-    #: +1: the section row runs left to right in stack order; -1: right to left.
-    direction: int
-    #: ``(id, id)`` per crossing pair, in stack order.
-    crossings: tuple[tuple[str, str], ...]
     label_step_mm: float
     tick_step_mm: float
     #: Top of the atlas labels' line and of the section labels' first line:
     #: one line per row, whatever each thumbnail's height.
     atlas_label_y: float = 0.0
     section_label_y: float = 0.0
+    #: This picture's number among the call's (0-based) and their count.
+    part: int = 0
+    parts: int = 1
+    #: The 1-based ranks, in position order, of this picture's first and last
+    #: section among the call's ``total`` (0, 0 without sections).
+    first: int = 0
+    last: int = 0
+    total: int = 0
 
     def x_at(self, position_mm: float) -> float:
         """The ruler's x at *position_mm* (clamped to the ruler)."""
@@ -216,12 +269,27 @@ _LABEL_STEPS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
 
 
 def _steps(px_per_mm: float, small_px: int) -> tuple[float, float]:
-    """``(label step, tick step)`` in mm: labels at least four digits apart,
+    """``(label step, tick step)`` in mm: labels at least seven digits apart,
     ticks halfway between labels when there is room."""
-    label = next((step for step in _LABEL_STEPS if step * px_per_mm >= 5 * small_px),
+    label = next((step for step in _LABEL_STEPS if step * px_per_mm >= 7 * small_px),
                  _LABEL_STEPS[-1])
     tick = label / 2.0 if label / 2.0 * px_per_mm >= 10 else label
     return label, tick
+
+
+def _spread(wanted: Sequence[float], widths: Sequence[float], lo: float, hi: float
+            ) -> list[float]:
+    """Centres as near *wanted* (ascending) as boxes of *widths*, *GAP*
+    apart and inside ``[lo, hi]``, allow, order kept."""
+    xs = [float(x) for x in wanted]
+    for k, width in enumerate(widths):  # pushed right, off the left end and each other
+        floor = lo + width / 2.0 if k == 0 else xs[k - 1] + (widths[k - 1] + width) / 2.0 + GAP
+        xs[k] = max(xs[k], floor)
+    for k in range(len(xs) - 1, -1, -1):  # then left, off the right end
+        ceiling = (hi - widths[k] / 2.0 if k == len(xs) - 1
+                   else xs[k + 1] - (widths[k + 1] + widths[k]) / 2.0 - GAP)
+        xs[k] = min(xs[k], ceiling)
+    return xs
 
 
 def plan(
@@ -232,21 +300,44 @@ def plan(
     tile_edge: int,
     max_width: int = POSITIONING_MAX_WIDTH,
     finest_um: float = 0.0,
-) -> Layout:
-    """The layout of *sections* (in stack order) and *atlas* (``(mm,
-    (width, height) um)`` per thumbnail, any order: drawn in position order).
+    per_picture: int = PER_PICTURE,
+) -> list[Layout]:
+    """The layouts of *sections* (given in stack order; drawn in position
+    order) and *atlas* (``(mm, (width, height) um)`` per thumbnail, any
+    order), one per picture (:func:`split`); *range_mm* is the atlas's
+    extent along the axis (a ruler's bounds, :func:`ruler_range`).
 
-    The tile is *tile_edge* while every row fits *max_width*, smaller for a
-    longer row (never below :data:`MIN_TILE`); one micrometres per pixel puts
-    the largest item's long edge at the tile, never finer than *finest_um*
-    (a section's own pixels).
+    The tile is *tile_edge* while the fullest picture's row fits
+    *max_width*, else that row's share of it; one micrometres per pixel
+    puts the largest item's long edge at the tile, never finer than
+    *finest_um* (a section's own pixels).
     """
-    count = max(len(sections), len(atlas), 1)
+    ordered = position_order(sections)
+    marks = sorted(atlas, key=lambda item: item[0])
+    pieces = split([entry.position_mm for entry in ordered], [mm for mm, _e in marks],
+                   per_picture)
+    count = max([max(len(s), len(a), 1) for s, a in pieces] or [1])
     room = max_width - 2 * MARGIN - (count - 1) * GAP
-    tile = int(max(MIN_TILE, min(int(tile_edge), room // count)))
-    extents = [max(entry.extent_um) for entry in sections] + [max(e) for _mm, e in atlas]
+    tile = int(max(1, min(int(tile_edge), room // count)))
+    extents = [max(entry.extent_um) for entry in ordered] + [max(e) for _mm, e in marks]
     um_per_px = pair_um_per_px(extents or [tile], tile, finest=finest_um)
     inner = max(count * tile + (count - 1) * GAP, MIN_WIDTH - 2 * MARGIN)
+    out: list[Layout] = []
+    for part, (indices, atlas_indices) in enumerate(pieces):
+        out.append(_layout(
+            [ordered[k] for k in indices], [marks[k] for k in atlas_indices],
+            bounds=range_mm, tile=tile, inner=inner, um_per_px=um_per_px, part=part,
+            parts=len(pieces), first=indices[0] + 1 if indices else 0,
+            last=indices[-1] + 1 if indices else 0, total=len(ordered)))
+    return out
+
+
+def _layout(
+    sections: Sequence[SectionEntry], atlas: Sequence[tuple[float, tuple[float, float]]], *,
+    bounds: tuple[float, float], tile: int, inner: int, um_per_px: float, part: int, parts: int,
+    first: int, last: int, total: int,
+) -> Layout:
+    """One picture: *sections* in position order, *atlas* sorted."""
     width = inner + 2 * MARGIN
     font_px = 14 if tile >= 110 else 12 if tile >= 56 else 11
     small_px = 12 if tile >= 56 else 11
@@ -256,60 +347,61 @@ def plan(
         pitch = inner / max(n, 1)
         return [MARGIN + pitch * (k + 0.5) for k in range(n)]
 
-    def pitch_of(n: int) -> float:
+    def room(n: int) -> float:
         return inner / max(n, 1) - 4
+
+    values = [float(e.position_mm) for e in sections if e.position_mm is not None]
+    lo, hi = ruler_range(values + [float(mm) for mm, _e in atlas], bounds)
+    x0, x1 = float(MARGIN), float(width - MARGIN)
+
+    def x_at(mm: float) -> float:
+        return x0 + (x1 - x0) * min(max((mm - lo) / max(hi - lo, 1e-9), 0.0), 1.0)
 
     y = float(PAD)
     atlas_label_y = y
     atlas_slots: list[Slot] = []
     if atlas:
-        ordered = sorted(atlas, key=lambda item: item[0])
-        sizes = [(e[0] / um_per_px, e[1] / um_per_px) for _mm, e in ordered]
-        tallest = max(h for _w, h in sizes)
-        bottom = y + label_h + tallest
-        for (mm, _e), (w, h), x in zip(ordered, sizes, centres(len(ordered)), strict=True):
-            text = _first_fitting((f"atlas {mm:.2f} mm", f"{mm:.2f} mm", f"{mm:.1f}"),
-                                  font_px, pitch_of(len(ordered)))
+        # Each atlas thumbnail above its own millimetre, moved aside only as
+        # far as its neighbours need.
+        sizes = [(e[0] / um_per_px, e[1] / um_per_px) for _mm, e in atlas]
+        texts = [_first_fitting((f"atlas {mm:.2f} mm", f"{mm:.2f} mm", f"{mm:.1f}"),
+                                font_px, max(float(tile), w)) for (mm, _e), (w, _h)
+                 in zip(atlas, sizes, strict=True)]
+        boxes = [max(w, float(_font(font_px).getlength(t))) for (w, _h), t
+                 in zip(sizes, texts, strict=True)]
+        xs = _spread([x_at(mm) for mm, _e in atlas], boxes, x0, x1)
+        bottom = y + label_h + max(h for _w, h in sizes)
+        for (mm, _e), (w, h), x, text in zip(atlas, sizes, xs, texts, strict=True):
             atlas_slots.append(Slot(key=f"{mm:g}", centre_x=x, top=bottom - h, width=w,
                                     height=h, position_mm=float(mm), label=(text,)))
         y = bottom + ATLAS_LINK_PX
     else:
         y += 6
     ruler_y = y + 4
-    lo, hi = (float(range_mm[0]), float(range_mm[1]))
-    label_step, tick_step = _steps((width - 2 * MARGIN) / max(hi - lo, 1e-9), small_px)
+    label_step, tick_step = _steps((x1 - x0) / max(hi - lo, 1e-9), small_px)
     link = min(max(round(width * SECTION_LINK_SHARE), SECTION_LINK_PX[0]), SECTION_LINK_PX[1])
     top = ruler_y + 8 + small_px + 4 + link
 
-    positions = [entry.position_mm for entry in sections]
-    direction = stack_direction(positions)
-    pairs = crossing_pairs(positions, direction)
-    crossing = {index for pair in pairs for index in pair}
-    xs = centres(len(sections))
-    if direction < 0:
-        xs = xs[::-1]
     section_slots: list[Slot] = []
-    room_each = pitch_of(len(sections))
-    for index, (entry, x) in enumerate(zip(sections, xs, strict=True)):
+    for entry, x in zip(sections, centres(len(sections)), strict=True):
         w, h = entry.extent_um[0] / um_per_px, entry.extent_um[1] / um_per_px
         where = ((f"{entry.position_mm:.2f} mm", f"{entry.position_mm:.2f}")
                  if entry.position_mm is not None else ("no position", "none"))
-        label = (_first_fitting(entry.labels, font_px, room_each),
-                 _first_fitting(where, font_px, room_each))
+        label = (_first_fitting(entry.labels, font_px, room(len(sections))),
+                 _first_fitting(where, font_px, room(len(sections))))
         section_slots.append(Slot(key=entry.id, centre_x=x, top=top, width=w, height=h,
-                                  position_mm=entry.position_mm, label=label,
-                                  crossing=index in crossing))
+                                  position_mm=entry.position_mm, label=label))
     tallest = max((slot.height for slot in section_slots), default=0.0)
     section_label_y = top + tallest + 4
     height = section_label_y + (2 * (font_px + 4) if section_slots else 0) + PAD
     return Layout(
         width=int(width), height=int(math.ceil(height)), um_per_px=float(um_per_px),
         tile=tile, font_px=font_px, small_px=small_px,
-        ruler=(float(MARGIN), float(width - MARGIN), float(ruler_y)), range_mm=(lo, hi),
-        atlas=tuple(atlas_slots), sections=tuple(section_slots), direction=direction,
-        crossings=tuple((sections[i].id, sections[j].id) for i, j in pairs),
+        ruler=(x0, x1, float(ruler_y)), range_mm=(lo, hi),
+        atlas=tuple(atlas_slots), sections=tuple(section_slots),
         label_step_mm=label_step, tick_step_mm=tick_step,
         atlas_label_y=atlas_label_y, section_label_y=section_label_y,
+        part=part, parts=parts, first=first, last=last, total=total,
     )
 
 
@@ -403,21 +495,14 @@ def paint(
         triangle = np.array([_pt(x - size, Y(ry) - 1.6 * size), _pt(x + size, Y(ry) - 1.6 * size),
                              _pt(x, Y(ry) - 1)], dtype=np.int32)
         cv2.fillPoly(canvas, [triangle], ATLAS_LINE_COLOR, cv2.LINE_AA, _SHIFT)
-    # Crossing lines last, so they lie on top; a long stack's small tiles
-    # get thin lines and small dots, so the ruler stays readable.
-    small_tiles = layout.tile < 80
-    bold = thin if small_tiles else max(thin, round(1.5 * s))
-    radius = 2.2 if small_tiles else 3.2
-    for slot in sorted(layout.sections, key=lambda item: item.crossing):
+    for slot in layout.sections:
         if slot.position_mm is None:
             continue
-        color = CROSSING_COLOR if slot.crossing else SECTION_LINE_COLOR
-        dot = CROSSING_COLOR if slot.crossing else SECTION_DOT_COLOR
         x = X(layout.x_at(slot.position_mm))
-        cv2.line(canvas, _pt(X(slot.centre_x), Y(slot.top) - 3 * s), _pt(x, Y(ry)), color,
-                 bold if slot.crossing else thin, cv2.LINE_AA, _SHIFT)
-        cv2.circle(canvas, _pt(x, Y(ry)), round(radius * s * (1 << _SHIFT)), dot, -1,
-                   cv2.LINE_AA, _SHIFT)
+        cv2.line(canvas, _pt(X(slot.centre_x), Y(slot.top) - 3 * s), _pt(x, Y(ry)),
+                 SECTION_LINE_COLOR, thin, cv2.LINE_AA, _SHIFT)
+        cv2.circle(canvas, _pt(x, Y(ry)), round(3.0 * s * (1 << _SHIFT)), SECTION_DOT_COLOR,
+                   -1, cv2.LINE_AA, _SHIFT)
     out = Image.fromarray(canvas, mode="RGB")
 
     draw = ImageDraw.Draw(out)
@@ -426,9 +511,11 @@ def paint(
     majors = [mm for mm, major in ticks if major]
     for mm in majors:
         number = f"{mm:g}"
-        # The number is centred on its tick; the last one is followed by the unit.
+        # The number is centred on its tick; the last one is followed by the
+        # unit, kept inside the picture.
         text = number + (" mm" if mm == majors[-1] else "")
-        left = X(layout.x_at(mm)) - float(small.getlength(number)) / 2.0
+        left = min(X(layout.x_at(mm)) - float(small.getlength(number)) / 2.0,
+                   X(layout.width - 6) - float(small.getlength(text)))
         draw.text((left, Y(ry) + 8 * s), text, fill=TICK_TEXT_COLOR, font=small,
                   stroke_width=max(1, round(2 * s)), stroke_fill=BACKGROUND)
     for slot in layout.atlas:
@@ -436,10 +523,9 @@ def paint(
                  TEXT_COLOR)
     line_h = (layout.font_px + 4) * s
     for slot in layout.sections:
-        color = CROSSING_TEXT_COLOR if slot.crossing else TEXT_COLOR
         for row, text in enumerate(slot.label):
             _centred(draw, text, X(slot.centre_x), Y(layout.section_label_y) + row * line_h,
-                     font, color)
+                     font, TEXT_COLOR)
     return out
 
 
@@ -448,7 +534,7 @@ def _centred(draw: ImageDraw.ImageDraw, text: str, x: float, y: float, font: Any
     draw.text((x - float(font.getlength(text)) / 2.0, y), text, fill=color, font=font)
 
 
-# --- a stack's picture ----------------------------------------------------------------
+# --- a stack's pictures ---------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -490,14 +576,22 @@ def atlas_extent(
 
 
 def label_candidates(record: SliceState) -> tuple[str, ...]:
-    """A section's first-line labels, longest first: :func:`tile_label`,
-    then without the file extension, then the index alone."""
-    full = tile_label(record)
+    """A section's first-line labels, longest first: its original index
+    (``index_original``, the filename order) and filename with short
+    correction flags, then without the file extension, then the index alone."""
+    flags = []
+    if record.rotation_deg:
+        flags.append(f"rot {record.rotation_deg}")
+    if record.flip:
+        flags.append("flipped")
+    if record.damaged:
+        flags.append("damaged")
+    full = f"{record.index_original}: {record.id}" + (f" [{', '.join(flags)}]" if flags else "")
     stem = record.id.rsplit(".", 1)[0] if "." in record.id else record.id
-    return (full, f"{record.index_corrected}: {stem}", str(record.index_corrected))
+    return (full, f"{record.index_original}: {stem}", str(record.index_original))
 
 
-def positioning_picture(
+def positioning_pictures(
     ws: Workspace,
     state: StackState,
     records: Sequence[SliceState],
@@ -508,72 +602,85 @@ def positioning_picture(
     angles: Angles,
     tile_edge: int,
     max_width: int = POSITIONING_MAX_WIDTH,
+    per_picture: int | None = None,
+    part: int | None = None,
     window: Sequence[float] = (),
     zoom_edge: int | None = None,
     shown: str = "",
-) -> Positioned:
-    """The positioning picture of *records* (drawn in stack order,
-    ``index_original``) and the atlas at *positions_mm*, captioned.
+) -> list[Positioned]:
+    """The positioning pictures of *records* and the atlas at
+    *positions_mm*, captioned: every picture of the call, or with *part*
+    only that one (0-based; :class:`IndexError` past the last), at most
+    *per_picture* (None: :data:`PER_PICTURE`) sections in a picture.
 
     Sections are drawn in *look_of*'s look (*shown* words it for the
     caption), the atlas in *atlas_options*' layers at *angles*. With
-    *window* (fractions of the unzoomed picture), the box is redrawn at the
-    magnification that brings its long side to *zoom_edge* (None: the
-    unzoomed picture's long side). Past the detail of the sections in it
-    (their working copies; the atlas: its voxels) the thumbnails are
-    enlarged, at most :data:`ATLAS_UPSAMPLE` times, and the caption says so.
+    *window* (fractions of the unzoomed picture; *part* None: the first),
+    the box is redrawn at the magnification that brings its long side to
+    *zoom_edge* (None: the unzoomed picture's long side). Past the detail of
+    the sections in it (their working copies; the atlas: its voxels) the
+    thumbnails are enlarged, at most :data:`ATLAS_UPSAMPLE` times, and the
+    caption says so.
     """
     ordered = sorted(records, key=lambda record: record.index_original)
     by_id = {record.id: record for record in ordered}
-    entries: list[SectionEntry] = []
+    entries: dict[str, SectionEntry] = {}
     working: dict[str, float] = {}
     finest: dict[str, float] = {}
     for record in ordered:
         extent, working[record.id], finest[record.id] = section_extent(ws, state, record)
-        entries.append(SectionEntry(
+        entries[record.id] = SectionEntry(
             id=record.id, labels=label_candidates(record),
             position_mm=None if record.position_mm is None else float(record.position_mm),
-            extent_um=extent))
+            extent_um=extent)
     atlas = [(float(mm), atlas_extent(ws, state, float(mm), angles)) for mm in positions_mm]
-    layout = plan(entries, atlas, range_mm=ws.position_range, tile_edge=tile_edge,
-                  max_width=max_width, finest_um=max(finest.values(), default=0.0))
-
-    scale = 1.0
-    enlarged = 1.0
+    layouts = plan(list(entries.values()), atlas, range_mm=ws.position_range,
+                   tile_edge=tile_edge, max_width=max_width,
+                   finest_um=max(finest.values(), default=0.0),
+                   per_picture=per_picture or PER_PICTURE)
     frame = tuple(float(v) for v in window) if window else ()
-    if frame:
-        box_w = (frame[2] - frame[0]) * layout.width
-        box_h = (frame[3] - frame[1]) * layout.height
-        target = float(zoom_edge or max(layout.width, layout.height))
-        wanted = target / max(box_w, box_h, 1.0)
-        seen, _atlas_seen = visible(layout, frame)
-        detail = (layout.um_per_px / max(finest[slot.key] for slot in seen) if seen
-                  else layout.um_per_px / atlas_um_per_px(ws.atlas))
-        scale = max(1.0, min(wanted, max(detail, 1.0) * ATLAS_UPSAMPLE))
-        enlarged = scale / max(detail, 1.0)
+    if part is not None:
+        if not 0 <= int(part) < len(layouts):
+            raise IndexError(f"part {part} of a call with {len(layouts)} pictures")
+        chosen = [layouts[int(part)]]
+    else:
+        chosen = layouts[:1] if frame else layouts
 
     def draw_section(section_id: str, um_per_px: float) -> Image.Image:
         record = by_id[section_id]
-        look = look_of(record)
         # Rendered at least as large as it is shown (render_slice stops at
         # the working copy), then brought to the exact scale.
-        extent = max(next(e.extent_um for e in entries if e.id == section_id))
-        edge = max(64, math.ceil(extent / um_per_px) + 2)
+        edge = max(64, math.ceil(max(entries[section_id].extent_um) / um_per_px) + 2)
         return section_at(ws, record, um_per_px, working_um=working[section_id],
-                          long_edge=edge, look=look)
+                          long_edge=edge, look=look_of(record))
 
     def draw_atlas(position_mm: float, um_per_px: float) -> Image.Image:
         return framed_atlas(ws, state, position_mm, atlas_options, um_per_px=um_per_px,
                             angles=angles)
 
-    picture = paint(layout, draw_section=draw_section, draw_atlas=draw_atlas, scale=scale,
-                    window=frame)
-    text = positioning_caption(ws, layout, angles=angles, shown=shown,
-                               atlas_name=atlas_options.atlas_name(),
-                               um_per_px=layout.um_per_px / scale, zoom=scale if frame else None,
-                               enlarged=enlarged)
-    return Positioned(image=caption(picture, text), caption=text, layout=layout, scale=scale,
-                      window=frame, um_per_px=layout.um_per_px / scale, content=picture.size)
+    out: list[Positioned] = []
+    for layout in chosen:
+        scale = enlarged = 1.0
+        if frame:
+            box_w = (frame[2] - frame[0]) * layout.width
+            box_h = (frame[3] - frame[1]) * layout.height
+            target = float(zoom_edge or max(layout.width, layout.height))
+            wanted = target / max(box_w, box_h, 1.0)
+            seen, _atlas_seen = visible(layout, frame)
+            detail = (layout.um_per_px / max(finest[slot.key] for slot in seen) if seen
+                      else layout.um_per_px / atlas_um_per_px(ws.atlas))
+            scale = max(1.0, min(wanted, max(detail, 1.0) * ATLAS_UPSAMPLE))
+            enlarged = scale / max(detail, 1.0)
+        picture = paint(layout, draw_section=draw_section, draw_atlas=draw_atlas, scale=scale,
+                        window=frame)
+        text = positioning_caption(ws, layout, angles=angles, shown=shown,
+                                   atlas_name=atlas_options.atlas_name(),
+                                   um_per_px=layout.um_per_px / scale,
+                                   zoom=scale if frame else None, enlarged=enlarged)
+        out.append(Positioned(image=caption(picture, text), caption=text, layout=layout,
+                              scale=scale, window=frame, um_per_px=layout.um_per_px / scale,
+                              content=picture.size))
+    return out
 
 
 def positioning_caption(
@@ -584,31 +691,44 @@ def positioning_caption(
     a zoom shows its thumbnails past their source pixels."""
     low, high = ws.axis_ends
     parts: list[str] = []
-    head = "positioning" + (f" zoomed x{zoom:.1f}" if zoom else "")
-    if zoom and enlarged > 1.05:
-        head += f" (source pixels enlarged x{enlarged:.1f})"
-    if layout.sections:
-        order = "left to right" if layout.direction > 0 else "right to left"
-        parts.append(f"{head}: {len(layout.sections)} section"
-                     f"{'s' if len(layout.sections) != 1 else ''} below in stack order "
-                     f"({order}){f', {shown}' if shown else ''}")
+    head = "positioning"
+    if layout.parts > 1:
+        head += f" part {layout.part + 1} of {layout.parts}"
+    if zoom:
+        head += f" zoomed x{zoom:.1f}"
+        if enlarged > 1.05:
+            head += f" (source pixels enlarged x{enlarged:.1f})"
+    count = len(layout.sections)
+    if count:
+        if layout.parts > 1:
+            which = (f"section {layout.first} of {layout.total}" if count == 1 else
+                     f"sections {layout.first}-{layout.last} of {layout.total}")
+        else:
+            which = f"{count} section{'s' if count != 1 else ''}"
+        placed = [slot.position_mm for slot in layout.sections if slot.position_mm is not None]
+        span = ""
+        if placed:
+            span = (f" at {placed[0]:.2f} mm" if min(placed) == max(placed) else
+                    f", {min(placed):.2f}-{max(placed):.2f} mm")
+        unplaced = count - len(placed)
+        if unplaced:
+            span += f", {unplaced} without a position at the right"
+        parts.append(f"{head}: {which} below in position order{span}"
+                     f"{f', {shown}' if shown else ''}")
     else:
-        parts.append(head)
+        parts.append(f"{head}: no sections")
     if layout.atlas:
         name = "" if atlas_name == "template" else f" ({atlas_name})"
         parts.append(f"atlas{name} above at {len(layout.atlas)} position"
                      f"{'s' if len(layout.atlas) != 1 else ''}")
-    parts.append(f"ruler mm from {low} (left) to {high}{angles_label(angles)}")
+    lo, hi = layout.range_mm
+    parts.append(f"ruler {lo:.1f}-{hi:.1f} mm from {low} (left) to {high}{angles_label(angles)}")
     parts.append(f"all at {um_per_px:.1f} um/px")
-    if layout.crossings:
-        count = len(layout.crossings)
-        parts.append(f"red: {count} pair{'s' if count != 1 else ''} whose order and "
-                     "positions disagree")
     return "; ".join(parts)
 
 
 __all__ = [
-    "ATLAS_UPSAMPLE", "CROSSING_COLOR", "Layout", "POSITIONING_MAX_WIDTH", "Positioned",
-    "SectionEntry", "Slot", "crossing_pairs", "paint", "plan", "positioning_caption",
-    "positioning_picture", "stack_direction", "visible",
+    "ATLAS_UPSAMPLE", "Layout", "PER_PICTURE", "POSITIONING_MAX_WIDTH", "Positioned",
+    "SectionEntry", "Slot", "paint", "plan", "position_order", "positioning_caption",
+    "positioning_pictures", "ruler_range", "split", "visible",
 ]
