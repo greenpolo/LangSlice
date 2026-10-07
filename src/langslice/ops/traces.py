@@ -1,6 +1,9 @@
-"""The image model's border trace of a section: started in the background, recorded.
+"""The image model's border trace of a section, and the fit that follows it.
 
-:func:`trace_borders` takes the image model as an argument
+:func:`trace_borders` is LangSlice's own nonlinear method packaged: the
+image call runs in the background, and when it lands a fit of the traced
+borders is applied as background work (:mod:`langslice.job.background`,
+:func:`land_trace`). It takes the image model as an argument
 (:class:`langslice.providers.registry.ImageModel`, resolved by the door), so
 this module never chooses or imports a provider. The section's current
 geometry is the core's (:func:`langslice.core.handoff.correction_fingerprint`)
@@ -10,16 +13,18 @@ and the edit is prepared by ``registration_tool.start_correction``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from langslice.core import handoff
+from langslice.core import deformation, handoff
 from langslice.core.damage import exclusions
 from langslice.core.nonlinear import registration_tool
-from langslice.ops.inputs import STALE_INPUT
+from langslice.job.background import DONE, FAILED, Landed
+from langslice.ops.inputs import STALE_INPUT, section_inputs
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
+    from langslice.core.display import DisplayOptions
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
     from langslice.providers.registry import ImageModel
@@ -36,9 +41,12 @@ class TraceStarted:
     record: dict[str, Any]
     #: True when an image call was started in the background now.
     started: bool = False
-    #: True when this section's call at this geometry was already running
-    #: (nothing started, nothing written).
+    #: True when this section's call at this geometry (or its packaged trace)
+    #: was already running (nothing started, nothing written).
     running: bool = False
+    #: The packaged trace's background work id (:func:`trace_borders`); None
+    #: for the trace alone.
+    work: str | None = None
 
 
 #: Prepares one section's edit: ``(state, workspace, section id, calls_dir)``
@@ -106,43 +114,19 @@ def _apply(job: Job, workspace: Workspace, prepared: _Prepared, workers: int,
     return portable, changed
 
 
-def trace_borders(
+def _start_trace(
     job: Job,
     workspace: Workspace,
     ref: object,
     *,
     image_model: ImageModel,
-    prompt: str = "",
-    restrict_to: tuple[str, ...] = (),
-    include: tuple[str, ...] = (),
-    exclude: tuple[str, ...] = (),
-    workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
+    prompt: str,
+    chosen: tuple[str, ...],
+    exclude: tuple[str, ...],
+    workers: int,
 ) -> TraceStarted:
-    """Start one section's image correction in the background, or reuse it.
-
-    The section needs a position and a linear transform. A call already
-    running at the section's current geometry is not started again
-    (``running``). Otherwise ``registration_tool.start_correction`` prepares
-    the edit for *image_model* (the first result at a placement is reused,
-    ``cached``) and the call, if any, runs on the job's image executor
-    (*workers* at most at once; :meth:`~langslice.job.job.Job.start_image_job`).
-    The section's ``image_correction`` record is written as ONE undo step
-    when it changed; the call's result lands on it later (submit waits for
-    it). *restrict_to* (*include*, its older name, when it is empty) and
-    *exclude* choose the regions whose borders the model is shown
-    (``registration_tool.shown_labels``); the section's marked regions are
-    excluded on their own (:func:`langslice.core.damage.exclusions`). A
-    traced ``fit_deformable`` reads them from the record. The edit is
-    prepared outside the job's write lock; the start and the write happen
-    under it (:meth:`~langslice.job.job.Job.writing`),
-    refused ``STALE_INPUT`` when the section's geometry changed meanwhile;
-    the result lands only at the geometry it was made for. Refused:
-    ``UNKNOWN_SLICE_IDS``, ``KEEPS_HOST_WARP`` / ``NONLINEAR_SKIPPED`` (the
-    host kept the section out of Nonlinear, ``Job.nonlinear_refusal``),
-    ``INVALID_LINEAR_PLACEMENT`` (the placement cannot be prepared),
-    ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``.
-    """
-    chosen = tuple(restrict_to) or tuple(include)
+    """Start one section's image correction in the background, or reuse it
+    (the trace alone: no fit; see :func:`trace_borders`)."""
 
     def prepare(state: Any, ctx: Any, section_id: str, calls_dir: Any,
                 ) -> tuple[dict[str, Any], Any]:
@@ -169,6 +153,167 @@ def trace_borders(
         if changed:
             job.commit(before)
     return TraceStarted(id=prepared.id, record=result, started=prepared.call is not None)
+
+
+#: The background work's kind (:mod:`langslice.job.background`).
+TRACE_WORK = "trace_borders"
+#: The fit a landed trace gets: the traced lines as named regions against the
+#: atlas borders, ANTs at medium stiffness.
+TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
+                               engine="ants", stiffness="medium")
+#: Fit rows that mean the section or its trace changed before the fit applied.
+_STALE_CODES = (STALE_INPUT, "TRACE_STALE", "TRACE_RUNNING", "NO_TRACE")
+
+
+def trace_borders(
+    job: Job,
+    workspace: Workspace,
+    ref: object,
+    *,
+    image_model: ImageModel,
+    prompt: str = "",
+    restrict_to: Any = (),
+    include: tuple[str, ...] | None = None,
+    exclude: tuple[str, ...] | None = None,
+    options: DisplayOptions | None = None,
+    workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
+) -> TraceStarted:
+    """LangSlice's own nonlinear method on one section, packaged: the image
+    model traces the atlas borders onto the section, then ANTs fits what it
+    drew and the deformation is applied. Returns at once (``work``: the id
+    of the background work, :mod:`langslice.job.background`).
+
+    Now: the section's image correction is started in the background, or a
+    saved reply at its geometry reused (``cached``), the section's
+    ``image_correction`` record written as ONE undo step when it changed,
+    and a piece of background work started. The model is shown the
+    section's preprocessed channel and the same picture with the placed
+    atlas borders (``registration_tool.start_correction``): with
+    *restrict_to*, only those regions' borders (descendants included,
+    ``"CTX:left"`` for one side), and the section's marked regions left out
+    (:func:`langslice.core.damage.exclusions`). *prompt* replaces the base
+    prompt (blank sends it unchanged); the prompt sent is saved with each
+    attempt in the job folder (``sections/<name>/image_correction/``).
+
+    When the reply lands (:func:`land_trace`): the trace is recorded on the
+    section, then a fit of the traced borders runs (:data:`TRACE_FIT`, on
+    top of the section's applied deformation where it holds one, else its
+    linear placement; with *restrict_to*, by those regions only) and is
+    applied as its own undo step. A section whose inputs (placement,
+    preprocessed channel, damage, deformation) changed since this call gets
+    nothing, its notice saying ``STALE_INPUT``. With *options*, the fit and
+    the trace are drawn and saved with the work.
+
+    A section whose packaged trace is still running is not started again
+    (``running``, that work's id). Refused before any image call:
+    ``ANTS_MISSING``, ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES`` (a
+    bad *restrict_to*), ``UNKNOWN_SLICE_IDS``, ``KEEPS_HOST_WARP`` /
+    ``NONLINEAR_SKIPPED`` (the host kept the section out of Nonlinear),
+    ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
+    ``STALE_INPUT`` (the geometry changed while the call was prepared).
+
+    Given *include* or *exclude* (the older form), only the trace is
+    started, as before the packaging: no ANTs check, no background work, no
+    fit; a traced ``fit_deformable`` reads it.
+    """
+    from langslice.ops.deformable import START_LATEST, refuse_without_ants, region_entries
+
+    if include is not None or exclude is not None:
+        return _start_trace(job, workspace, ref, image_model=image_model, prompt=prompt,
+                            chosen=tuple(restrict_to) or tuple(include or ()),
+                            exclude=tuple(exclude or ()), workers=workers)
+    refuse_without_ants()
+    regions = region_entries(workspace, job.state, restrict_to)
+    record = job.state.resolve(ref)
+    if record is None:
+        raise Refused("UNKNOWN_SLICE_IDS", unknown=[str(ref)])
+    held = job.background.running_for(record.id, TRACE_WORK)
+    if held is not None:
+        return TraceStarted(id=record.id, running=True, work=held.id,
+                            record=dict(record.image_correction or {}))
+    started = _start_trace(job, workspace, record.id, image_model=image_model, prompt=prompt,
+                           chosen=regions, exclude=(), workers=workers)
+    now = job.state.by_id(record.id) or record
+    expected = section_inputs(job.state, now, deformation=True)
+    section_id = record.id
+
+    def land() -> Landed:
+        return land_trace(job, workspace, section_id, expected, regions=regions,
+                          start=START_LATEST, options=options)
+
+    work = job.background.start(TRACE_WORK, (section_id,), land)
+    return replace(started, work=work.id)
+
+
+def land_trace(
+    job: Job,
+    workspace: Workspace,
+    section_id: str,
+    expected: str,
+    *,
+    regions: tuple[str, ...] = (),
+    start: str = "linear",
+    options: DisplayOptions | None = None,
+) -> Landed:
+    """A packaged trace's landing (background work, after the image call):
+    the fit of the traced borders, applied as its own undo step, or why not.
+
+    *expected* is :func:`~langslice.ops.inputs.section_inputs` (with the
+    deformation) when the trace was asked for: a section whose inputs moved
+    since gets nothing (``STALE_INPUT``), as does one whose trace was undone
+    or made at another placement. A failed image call is a failed work.
+    """
+    from langslice.ops.deformable import fit_deformable
+
+    state = job.state
+    record = state.by_id(section_id)
+    if record is None:
+        return Landed(status=FAILED, text=f"{section_id} is no longer in the stack; nothing "
+                      "was applied.", result={"error": "UNKNOWN_SLICE_IDS"})
+    held = record.image_correction or {}
+    trace = {key: held[key] for key in ("status", "attempt", "cached", "prompt_edited",
+                                        "include", "exclude", "error", "message")
+             if key in held}
+    if held.get("status") == "error":
+        reason = str(held.get("message") or held.get("error") or "no image")
+        return Landed(status=FAILED, text=f"the image model's call failed ({reason}); "
+                      "nothing was applied.", result={"error": "TRACE_FAILED", "trace": trace})
+    if section_inputs(state, record, deformation=True) != expected or held.get("status") != "ok":
+        return _stale(trace)
+    done = fit_deformable(job, workspace, [record], [TRACE_FIT], restrict_to=regions,
+                          start=start, options=options)
+    row: dict[str, Any] = (done.rows[0] if done.rows
+                           else {"status": "error", "error": "FIT_FAILED"})
+    if row.get("status") == "error":
+        if row.get("error") in _STALE_CODES:
+            return _stale(trace)
+        return Landed(status=FAILED, text=f"the fit of the traced borders failed "
+                      f"({row.get('error')}: {row.get('message', '')}); nothing was applied.",
+                      result={"error": row.get("error"), "row": row, "trace": trace})
+    numbers = row.get("displacement_mm") or {}
+    flags = [flag.get("code") for flag in row.get("flags") or []]
+    built_on = ("its previous deformation" if row.get("steps", 0) > 1
+                else "its linear placement")
+    facts = (f"Displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
+             f"fold fraction {row.get('fold_fraction')}"
+             + (f"; flags {', '.join(str(code) for code in flags)}" if flags else "") + ".")
+    if not row.get("written"):
+        text = ("the trace landed; its fit equals the deformation the section already holds, "
+                "so nothing changed. " + facts)
+    else:
+        text = ("the trace landed and ANTs fitted the traced borders (medium stiffness"
+                + (f", restricted to {', '.join(regions)}" if regions else "")
+                + f") on top of {built_on}. The deformation is applied as its own undo "
+                "step: undo removes it while it is the latest step. " + facts)
+    return Landed(status=DONE, text=text, pictures=list(done.pictures),
+                  result={"row": row, "trace": trace})
+
+
+def _stale(trace: dict[str, Any]) -> Landed:
+    return Landed(status=FAILED, text=f"{STALE_INPUT}: the section's placement, preprocessed "
+                  "channel, damage, deformation or trace changed before the trace landed; "
+                  "nothing was applied. Run trace_borders again.",
+                  result={"error": STALE_INPUT, "trace": trace})
 
 
 @dataclass(frozen=True)

@@ -203,8 +203,8 @@ def set_preprocessed(
                               channels=mismatched)
         if (n4 or denoise) and importlib.util.find_spec("ants") is None:
             raise Refused("UNAVAILABLE", message=(
-                "N4 and denoising need antspyx: install LangSlice's 'registration' "
-                "extra (pip install 'langslice[registration]')."))
+                "N4 and denoising need antspyx, one of LangSlice's dependencies on "
+                "Python 3.13 and below (pip install 'antspyx>=0.6.3,<0.7')."))
     return preprocess(job, workspace, [looks.PREPROCESSED], ids, settings,
                       shown=shown, options=options)
 

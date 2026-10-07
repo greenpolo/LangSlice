@@ -80,7 +80,8 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
     registration = json.loads((root / "registration.json").read_text())
     assert registration["format_version"] == 1
     assert [entry["id"] for entry in registration["sections"]] == ["s0.png", "s1.png", "s2.png"]
-    assert all(entry["pixel_to_atlas_um"] is None and entry["problem"] == "no position"
+    # Every section holds the starting position the job gave it.
+    assert all(entry["parameters"]["plane"]["position_mm"] is not None
                for entry in registration["sections"])
 
 

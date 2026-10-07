@@ -190,6 +190,9 @@ class NonlinearSpec:
     engine: str = "either"
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
+    #: The host requires a deformation on every section: ``submit`` refuses
+    #: ``left_linear`` (sections left without one, each with its reason).
+    require_deformation: bool = False
 
     def __post_init__(self) -> None:
         from langslice.core.provider_names import (
@@ -375,6 +378,8 @@ class JobSpec:
             data.pop("job_dir", None)
         if data.get("output_level") == "full":  # likewise
             data.pop("output_level", None)
+        if not data["nonlinear"].get("require_deformation"):  # likewise
+            data["nonlinear"].pop("require_deformation", None)
         return data
 
     @classmethod

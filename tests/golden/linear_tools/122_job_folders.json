@@ -98,6 +98,7 @@
       "s0.png"
      ],
      "seq": 1,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -110,6 +111,7 @@
       "s0.png"
      ],
      "seq": 2,
+     "step": 1,
      "tool": "set_positions"
     },
     {
@@ -122,6 +124,7 @@
       "s0.png"
      ],
      "seq": 3,
+     "step": 1,
      "tool": "view_placement"
     },
     {
@@ -136,6 +139,7 @@
       "s2.png"
      ],
      "seq": 4,
+     "step": 1,
      "tool": "view_stack"
     },
     {
@@ -150,6 +154,7 @@
       "s2.png"
      ],
      "seq": 5,
+     "step": 1,
      "tool": "view_stack"
     },
     {
@@ -162,6 +167,7 @@
       "s0.png"
      ],
      "seq": 6,
+     "step": 2,
      "tool": "adjust_transforms"
     },
     {
@@ -174,6 +180,7 @@
       "s0.png"
      ],
      "seq": 7,
+     "step": 3,
      "tool": "fit_deformable"
     }
    ]
@@ -194,9 +201,7 @@
     "views.seq",
     "views.seq.lock",
     "views/000001_opening/view.jpg",
-    "views/000001_opening/view.json",
-    "views/000002_opening/view.jpg",
-    "views/000002_opening/view.json"
+    "views/000001_opening/view.json"
    ],
    "job_file": {
     "format_version": 1,
@@ -256,12 +261,9 @@
    "layers": {
     "views/000001_opening": {
      "view_json": "<hex>"
-    },
-    "views/000002_opening": {
-     "view_json": "<hex>"
     }
    },
-   "pictures_sent": 2,
+   "pictures_sent": 1,
    "saved_jpegs_equal_sent": true,
    "views_index": [
     {
@@ -272,16 +274,7 @@
      "path": "views/000001_opening",
      "sections": [],
      "seq": 1,
-     "tool": "opening"
-    },
-    {
-     "call": 1,
-     "layers": false,
-     "mode": null,
-     "name": "000002_opening",
-     "path": "views/000002_opening",
-     "sections": [],
-     "seq": 2,
+     "step": 0,
      "tool": "opening"
     }
    ]
@@ -542,6 +535,7 @@
       "s0.png"
      ],
      "seq": 1,
+     "step": 0,
      "tool": "view_placement"
     },
     {
@@ -554,6 +548,7 @@
       "s0.png"
      ],
      "seq": 2,
+     "step": 1,
      "tool": "set_positions"
     },
     {
@@ -566,6 +561,7 @@
       "s0.png"
      ],
      "seq": 3,
+     "step": 1,
      "tool": "view_placement"
     },
     {
@@ -578,6 +574,7 @@
       "s1.png"
      ],
      "seq": 4,
+     "step": 1,
      "tool": "view_placement"
     },
     {
@@ -590,6 +587,7 @@
       "s2.png"
      ],
      "seq": 5,
+     "step": 1,
      "tool": "view_placement"
     },
     {
@@ -602,6 +600,7 @@
       "s1.png"
      ],
      "seq": 6,
+     "step": 2,
      "tool": "set_positions"
     },
     {
@@ -614,6 +613,7 @@
       "s2.png"
      ],
      "seq": 7,
+     "step": 2,
      "tool": "view_placement"
     },
     {
@@ -628,6 +628,7 @@
       "s2.png"
      ],
      "seq": 8,
+     "step": 3,
      "tool": "view_stack"
     },
     {
@@ -642,6 +643,7 @@
       "s2.png"
      ],
      "seq": 9,
+     "step": 3,
      "tool": "view_stack"
     },
     {
@@ -654,6 +656,7 @@
       "s1.png"
      ],
      "seq": 10,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -666,6 +669,7 @@
       "s1.png"
      ],
      "seq": 11,
+     "step": 4,
      "tool": "set_positions"
     },
     {
@@ -680,6 +684,7 @@
       "s2.png"
      ],
      "seq": 12,
+     "step": 4,
      "tool": "view_stack"
     },
     {
@@ -694,6 +699,7 @@
       "s2.png"
      ],
      "seq": 13,
+     "step": 4,
      "tool": "view_stack"
     }
    ]
@@ -839,6 +845,7 @@
      "path": "views/000001_show_stack",
      "sections": [],
      "seq": 1,
+     "step": 0,
      "tool": "show_stack"
     },
     {
@@ -851,6 +858,7 @@
       "s0.png"
      ],
      "seq": 2,
+     "step": 0,
      "tool": "view_placement"
     },
     {
@@ -863,6 +871,7 @@
       "s1.png"
      ],
      "seq": 3,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -875,6 +884,7 @@
       "s1.png"
      ],
      "seq": 4,
+     "step": 1,
      "tool": "fit_affine"
     },
     {
@@ -887,6 +897,7 @@
       "s0.png"
      ],
      "seq": 5,
+     "step": 2,
      "tool": "adjust_transforms"
     }
    ]
@@ -1136,6 +1147,7 @@
       "s0.png"
      ],
      "seq": 1,
+     "step": 1,
      "tool": "adjust_transforms"
     },
     {
@@ -1148,6 +1160,7 @@
       "s1.png"
      ],
      "seq": 2,
+     "step": 2,
      "tool": "fit_affine"
     },
     {
@@ -1158,6 +1171,7 @@
      "path": "views/000003_show_stack",
      "sections": [],
      "seq": 3,
+     "step": 3,
      "tool": "show_stack"
     },
     {
@@ -1170,6 +1184,7 @@
       "s2.png"
      ],
      "seq": 4,
+     "step": 4,
      "tool": "adjust_transforms"
     }
    ]
@@ -2008,6 +2023,7 @@
       "s0.png"
      ],
      "seq": 1,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -2020,6 +2036,7 @@
       "s1.png"
      ],
      "seq": 2,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -2032,6 +2049,7 @@
       "s2.png"
      ],
      "seq": 3,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -2044,6 +2062,7 @@
       "s1.png"
      ],
      "seq": 4,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -2056,6 +2075,7 @@
       "s1.png"
      ],
      "seq": 5,
+     "step": 0,
      "tool": "view_slices"
     },
     {
@@ -2066,6 +2086,7 @@
      "path": "views/000006_view_atlas_atlas",
      "sections": [],
      "seq": 6,
+     "step": 0,
      "tool": "view_atlas"
     },
     {
@@ -2076,6 +2097,7 @@
      "path": "views/000007_view_atlas_atlas",
      "sections": [],
      "seq": 7,
+     "step": 0,
      "tool": "view_atlas"
     },
     {
@@ -2086,6 +2108,7 @@
      "path": "views/000008_view_atlas_atlas",
      "sections": [],
      "seq": 8,
+     "step": 0,
      "tool": "view_atlas"
     },
     {
@@ -2096,6 +2119,7 @@
      "path": "views/000009_view_atlas_atlas",
      "sections": [],
      "seq": 9,
+     "step": 0,
      "tool": "view_atlas"
     },
     {
@@ -2108,6 +2132,7 @@
       "s0.png"
      ],
      "seq": 10,
+     "step": 2,
      "tool": "set_positions"
     },
     {
@@ -2120,6 +2145,7 @@
       "s1.png"
      ],
      "seq": 11,
+     "step": 2,
      "tool": "set_positions"
     },
     {
@@ -2132,6 +2158,7 @@
       "s2.png"
      ],
      "seq": 12,
+     "step": 2,
      "tool": "set_positions"
     },
     {
@@ -2144,6 +2171,7 @@
       "s1.png"
      ],
      "seq": 13,
+     "step": 3,
      "tool": "set_positions"
     },
     {
@@ -2156,6 +2184,7 @@
       "s0.png"
      ],
      "seq": 14,
+     "step": 4,
      "tool": "set_positions"
     },
     {
@@ -2168,6 +2197,7 @@
       "s0.png"
      ],
      "seq": 15,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2180,6 +2210,7 @@
       "s0.png"
      ],
      "seq": 16,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2192,6 +2223,7 @@
       "s0.png"
      ],
      "seq": 17,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2204,6 +2236,7 @@
       "s0.png"
      ],
      "seq": 18,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2216,6 +2249,7 @@
       "s0.png"
      ],
      "seq": 19,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2228,6 +2262,7 @@
       "s1.png"
      ],
      "seq": 20,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2240,6 +2275,7 @@
       "s1.png"
      ],
      "seq": 21,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2252,6 +2288,7 @@
       "s1.png"
      ],
      "seq": 22,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2264,6 +2301,7 @@
       "s0.png"
      ],
      "seq": 23,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2276,6 +2314,7 @@
       "s2.png"
      ],
      "seq": 24,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2288,6 +2327,7 @@
       "s1.png"
      ],
      "seq": 25,
+     "step": 3,
      "tool": "view_placement"
     },
     {
@@ -2302,6 +2342,7 @@
       "s2.png"
      ],
      "seq": 26,
+     "step": 3,
      "tool": "view_stack"
     },
     {
@@ -2316,6 +2357,7 @@
       "s2.png"
      ],
      "seq": 27,
+     "step": 3,
      "tool": "view_stack"
     },
     {
@@ -2328,6 +2370,7 @@
       "s1.png"
      ],
      "seq": 28,
+     "step": 9,
      "tool": "orient_slices"
     },
     {
@@ -2340,6 +2383,7 @@
       "s1.png"
      ],
      "seq": 29,
+     "step": 9,
      "tool": "preprocess"
     },
     {
@@ -2352,6 +2396,7 @@
       "s1.png"
      ],
      "seq": 30,
+     "step": 9,
      "tool": "preprocess"
     },
     {
@@ -2364,6 +2409,7 @@
       "s0.png"
      ],
      "seq": 31,
+     "step": 10,
      "tool": "preprocess"
     },
     {
@@ -2376,6 +2422,7 @@
       "s0.png"
      ],
      "seq": 32,
+     "step": 10,
      "tool": "preprocess"
     },
     {
@@ -2388,6 +2435,7 @@
       "s1.png"
      ],
      "seq": 33,
+     "step": 10,
      "tool": "preprocess"
     },
     {
@@ -2400,6 +2448,7 @@
       "s1.png"
      ],
      "seq": 34,
+     "step": 10,
      "tool": "preprocess"
     },
     {
@@ -2412,6 +2461,7 @@
       "s2.png"
      ],
      "seq": 35,
+     "step": 10,
      "tool": "preprocess"
     },
     {
@@ -2424,6 +2474,7 @@
       "s2.png"
      ],
      "seq": 36,
+     "step": 10,
      "tool": "preprocess"
     },
     {
@@ -2436,6 +2487,7 @@
       "s1.png"
      ],
      "seq": 37,
+     "step": 11,
      "tool": "preprocess"
     },
     {
@@ -2448,6 +2500,7 @@
       "s1.png"
      ],
      "seq": 38,
+     "step": 11,
      "tool": "preprocess"
     },
     {
@@ -2458,6 +2511,7 @@
      "path": "views/000039_view_atlas_atlas",
      "sections": [],
      "seq": 39,
+     "step": 12,
      "tool": "view_atlas"
     },
     {
@@ -2470,6 +2524,7 @@
       "s0.png"
      ],
      "seq": 40,
+     "step": 12,
      "tool": "fit_affine"
     },
     {
@@ -2482,6 +2537,7 @@
       "s1.png"
      ],
      "seq": 41,
+     "step": 12,
      "tool": "fit_affine"
     },
     {
@@ -2494,6 +2550,7 @@
       "s0.png"
      ],
      "seq": 42,
+     "step": 13,
      "tool": "fit_affine"
     },
     {
@@ -2506,6 +2563,7 @@
       "s1.png"
      ],
      "seq": 43,
+     "step": 14,
      "tool": "fit_affine"
     },
     {
@@ -2518,6 +2576,7 @@
       "s1.png"
      ],
      "seq": 44,
+     "step": 14,
      "tool": "fit_affine"
     },
     {
@@ -2530,6 +2589,7 @@
       "s0.png"
      ],
      "seq": 45,
+     "step": 15,
      "tool": "fit_affine"
     },
     {
@@ -2542,6 +2602,7 @@
       "s2.png"
      ],
      "seq": 46,
+     "step": 16,
      "tool": "adjust_transforms"
     },
     {
@@ -2554,6 +2615,7 @@
       "s0.png"
      ],
      "seq": 47,
+     "step": 17,
      "tool": "adjust_transforms"
     },
     {
@@ -2566,6 +2628,7 @@
       "s0.png"
      ],
      "seq": 48,
+     "step": 17,
      "tool": "adjust_transforms"
     },
     {
@@ -2578,6 +2641,7 @@
       "s1.png"
      ],
      "seq": 49,
+     "step": 18,
      "tool": "adjust_transforms"
     },
     {
@@ -2590,6 +2654,7 @@
       "s0.png"
      ],
      "seq": 50,
+     "step": 18,
      "tool": "adjust_transforms"
     },
     {
@@ -2602,6 +2667,7 @@
       "s2.png"
      ],
      "seq": 51,
+     "step": 19,
      "tool": "adjust_transforms"
     },
     {
@@ -2614,6 +2680,7 @@
       "s2.png"
      ],
      "seq": 52,
+     "step": 19,
      "tool": "adjust_transforms"
     },
     {
@@ -2626,6 +2693,7 @@
       "s1.png"
      ],
      "seq": 53,
+     "step": 19,
      "tool": "adjust_transforms"
     },
     {
@@ -2638,6 +2706,7 @@
       "s1.png"
      ],
      "seq": 54,
+     "step": 19,
      "tool": "adjust_transforms"
     },
     {
@@ -2650,6 +2719,7 @@
       "s0.png"
      ],
      "seq": 55,
+     "step": 21,
      "tool": "fit_deformable"
     },
     {
@@ -2662,6 +2732,7 @@
       "s0.png"
      ],
      "seq": 56,
+     "step": 21,
      "tool": "fit_deformable"
     },
     {
@@ -2674,6 +2745,7 @@
       "s0.png"
      ],
      "seq": 57,
+     "step": 21,
      "tool": "fit_deformable"
     },
     {
@@ -2686,6 +2758,7 @@
       "s0.png"
      ],
      "seq": 58,
+     "step": 21,
      "tool": "fit_deformable"
     },
     {
@@ -2698,6 +2771,7 @@
       "s0.png"
      ],
      "seq": 59,
+     "step": 21,
      "tool": "fit_deformable"
     },
     {
@@ -2710,6 +2784,7 @@
       "s0.png"
      ],
      "seq": 60,
+     "step": 22,
      "tool": "fit_deformable"
     },
     {
@@ -2722,6 +2797,7 @@
       "s1.png"
      ],
      "seq": 61,
+     "step": 23,
      "tool": "fit_deformable"
     },
     {
@@ -2734,6 +2810,7 @@
       "s1.png"
      ],
      "seq": 62,
+     "step": 23,
      "tool": "fit_deformable"
     },
     {
@@ -2746,6 +2823,7 @@
       "s1.png"
      ],
      "seq": 63,
+     "step": 24,
      "tool": "fit_deformable"
     },
     {
@@ -2758,6 +2836,7 @@
       "s0.png"
      ],
      "seq": 64,
+     "step": 25,
      "tool": "view_placement"
     },
     {
@@ -2770,6 +2849,7 @@
       "s0.png"
      ],
      "seq": 65,
+     "step": 25,
      "tool": "view_placement"
     },
     {
@@ -2784,6 +2864,7 @@
       "s2.png"
      ],
      "seq": 66,
+     "step": 25,
      "tool": "view_stack"
     },
     {
@@ -2798,6 +2879,7 @@
       "s2.png"
      ],
      "seq": 67,
+     "step": 25,
      "tool": "view_stack"
     }
    ]

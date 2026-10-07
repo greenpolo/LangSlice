@@ -7,6 +7,8 @@ setting, APPLIES each section's result as its deformation: one undo step
 for the call. Several settings (candidates) are a preview: every fit runs
 and is cached, nothing is written. :func:`keep_linear` records instead that
 a section's linear placement stands without a deformation.
+:func:`ants_syn` is the one-choice deformable fit: ANTs SyN on the
+preprocessed channel, building on whatever deformation each section holds.
 
 The arguments arrive checked (the door validates them and resolves each
 candidate into a :class:`~langslice.core.deformation.Choice`); what can go
@@ -41,6 +43,10 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
+
+#: ``fit_deformable``'s *start* that builds on each section's applied
+#: deformation where it has one, else on its linear placement.
+START_LATEST = "latest"
 
 
 @dataclass(frozen=True)
@@ -121,10 +127,12 @@ def fit_deformable(
     *restrict_to*'s older name, used when it is empty). Each section's
     marked regions are excluded on their own
     (:func:`langslice.core.damage.exclusions`). *start* is ``linear`` (from the linear
-    placement) or ``current`` (composed onto the section's applied
-    deformation). A traced choice waits for the section's trace still running
-    (one :data:`~langslice.core.deformation.TRACE_WAIT_S` deadline for the
-    call; a trace that lands is checkpointed without an undo step) and adds the
+    placement), ``current`` (composed onto the section's applied
+    deformation) or :data:`START_LATEST` (``current`` for a section that
+    holds an applied deformation, else ``linear``). A traced choice waits
+    for the section's trace still running (one
+    :data:`~langslice.core.deformation.TRACE_WAIT_S` deadline for the call;
+    a trace that lands is checkpointed without an undo step) and adds the
     trace's own regions (:func:`traced_regions`; the row's ``trace_regions``).
     Identical inputs reuse a cached or saved result; applying a section's own
     current key again writes nothing (``written: false``). With *options*,
@@ -149,6 +157,7 @@ def fit_deformable(
     traced_choice = any(choice.fit_section in deformation.TRACED for choice in choices)
     chosen = tuple(restrict_to) or tuple(include)
     expected: dict[str, str] = {}
+    starts: dict[str, str] = {}
     for record in records:
         refusal = job.nonlinear_refusal(record.id)
         if refusal is not None:
@@ -161,7 +170,11 @@ def fit_deformable(
             # result lands under the job's lock, which may reload the state.
             running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
             record = state.by_id(record.id) or record
-        expected[record.id] = section_inputs(state, record, deformation=start == "current",
+        own_start = start
+        if start == START_LATEST:
+            own_start = "current" if store.current(state, record) is not None else "linear"
+        starts[record.id] = own_start
+        expected[record.id] = section_inputs(state, record, deformation=own_start == "current",
                                              trace=traced_choice)
         try:
             grid = deformation.fit_grid(state, workspace, record)
@@ -171,7 +184,7 @@ def fit_deformable(
             continue
         previous = None
         previous_key: str | None = None
-        if start == "current":
+        if own_start == "current":
             previous = store.current(state, record)
             if previous is None:
                 rows.append({"id": record.id, "status": "error", "error": "NO_DEFORMATION",
@@ -219,18 +232,18 @@ def fit_deformable(
 
     with job.writing() if applying else contextlib.nullcontext():
         before = job.snapshot()
-        done = _apply(job, rows, jobs, applying=applying, expected=expected, start=start)
+        done = _apply(job, rows, jobs, applying=applying, expected=expected, starts=starts)
         if done.written:
             job.commit(before)
     done = replace(done, traced=traced)
     if options is None:
         return done
-    return pictures(workspace, done, options, candidates=len(choices), start=start)
+    return pictures(workspace, done, options, candidates=len(choices))
 
 
 def _apply(
     job: Job, rows: list[dict[str, Any]], jobs: list[deformation.Job], *, applying: bool,
-    expected: dict[str, str], start: str,
+    expected: dict[str, str], starts: dict[str, str],
 ) -> DeformableFit:
     """Every fit's row; with *applying* (under the job's lock), each section's
     result as its deformation when its inputs are unchanged."""
@@ -252,6 +265,7 @@ def _apply(
         store.put(fit.key, outcome)
         numbers = deformation.summary(outcome, fit.previous)
         record = fit.grid.record
+        start = starts[record.id]
         if applying:
             # The state may have been reloaded: the section as it is now.
             now = state.by_id(record.id)
@@ -296,7 +310,6 @@ def pictures(
     options: DisplayOptions,
     *,
     candidates: int,
-    start: str = "linear",
 ) -> DeformableFit:
     """*done* with its pictures: per drawn row, the final atlas borders on the
     image the fit read (:func:`langslice.core.deformation.picture`), titled
@@ -328,6 +341,7 @@ def pictures(
         heading = (f"{record.id}  " + ("applied" if done.applied else
                    f"candidate {row['candidate']}/{candidates}")
                    + f": {fit.choice.engine} {fit.choice.stiffness}")
+        start = "current" if fit.previous is not None else "linear"
         detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
                        + (f", include {','.join(include)}" if include else "")
                        + (f", exclude {','.join(exclude)}" if exclude else ""))
@@ -375,6 +389,127 @@ def pictures(
         traces.append({"id": section_id, "image_indexes": [len(parts)]})
         parts.append(layers.note(picture, sections=(section_id,), mode="trace"))
     return replace(done, pictures=parts, traces=traces, render_failed=failed)
+
+
+#: The atlas images :func:`ants_syn` reads (``atlas_image``).
+ANTS_SYN_ATLASES = ("template", "nissl")
+#: Stiffness levels (``core.deformable.settings.Stiffness``).
+STIFFNESSES = ("soft", "medium", "firm")
+#: Sections one :func:`ants_syn` call takes.
+MAX_ANTS_SYN_SECTIONS = 4
+
+
+def ants_ready() -> bool:
+    """Whether antspyx imports here (the ANTs engine, ``ANTS_MISSING`` when not)."""
+    if not deformation.ants_available():
+        return False
+    from langslice.core.deformable.engines import import_ants
+
+    try:
+        import_ants()
+    except Exception:  # an install that does not load is as missing as none
+        logger.warning("antspyx is installed but does not import", exc_info=True)
+        return False
+    return True
+
+
+def refuse_without_ants() -> None:
+    """Refuse ``ANTS_MISSING`` (nothing done) when antspyx does not import."""
+    if not ants_ready():
+        raise Refused("ANTS_MISSING", message=deformation.ANTS_MISSING + ".")
+
+
+def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str, ...]:
+    """*entries* (region acronyms, names or ids, ``"CTX:left"`` for one side)
+    checked against the atlas and normalized. Refused: ``BAD_ARGS`` (not a
+    list of names, or a side that does not exist), ``UNKNOWN_REGIONS``,
+    ``NO_SIDES`` (a side on a sagittal stack)."""
+    from langslice.core.atlas.sides import has_sides
+    from langslice.core.damage import normalized_entries
+    from langslice.core.deformable.atlas_images import resolve_entries
+
+    if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
+        raise Refused("BAD_ARGS", message="restrict_to is a list of atlas regions.")
+    try:
+        names = normalized_entries(str(entry) for entry in entries)
+    except ValueError as exc:
+        raise Refused("BAD_ARGS", message=str(exc)) from exc
+    if names:
+        try:
+            resolve_entries(workspace.atlas, names)
+        except ValueError as exc:
+            raise Refused("UNKNOWN_REGIONS", message=str(exc)) from exc
+        if state.plane == "sagittal" and has_sides(names):
+            raise Refused("NO_SIDES", message="A sagittal section lies within one "
+                          "hemisphere, so a region cannot be limited to one side.")
+    return tuple(names)
+
+
+def ants_syn(
+    job: Job,
+    workspace: Workspace,
+    sections: list[Any],
+    *,
+    restrict_to: Any = (),
+    atlas_image: str = "template",
+    stiffness: str = "medium",
+    options: DisplayOptions | None = None,
+) -> DeformableFit:
+    """A deformable fit with ANTs SyN on each section, applied: ONE undo step.
+
+    One choice, no candidates: the section's preprocessed channel
+    (:mod:`langslice.core.appearance`) against *atlas_image* (``template``,
+    or ``nissl`` where the atlas covers the CCFv3), at *stiffness*
+    (``soft`` / ``medium`` / ``firm``), on top of each section's applied
+    deformation where it holds one, else its linear placement
+    (:data:`START_LATEST`; undo is how to start over). *restrict_to*: warp by
+    these regions only (descendants included, ``"CTX:left"`` for one side;
+    empty: every region); each section's marked regions are left out on
+    their own (:func:`langslice.core.damage.exclusions`). The fit runs as
+    :func:`fit_deformable` runs one setting: computed outside the job's
+    write lock, applied under it, a section whose inputs changed meanwhile
+    its row ``STALE_INPUT``; per-section problems are rows.
+
+    Refused (nothing done): ``ANTS_MISSING``; ``BAD_ARGS`` (no sections,
+    more than :data:`MAX_ANTS_SYN_SECTIONS`, an unknown atlas image or
+    stiffness, a bad region entry); ``FIT_ATLAS_UNAVAILABLE`` (``nissl`` on
+    an atlas that does not cover the CCFv3); ``UNKNOWN_SLICE_IDS``;
+    ``UNKNOWN_REGIONS``; ``NO_SIDES``.
+    """
+    from langslice.core.display import available_atlas_channels, canonical_atlas_name
+
+    refs = list(sections or [])
+    if not refs:
+        raise Refused("BAD_ARGS", message="Name the sections to fit.")
+    if len(refs) > MAX_ANTS_SYN_SECTIONS:
+        raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_ANTS_SYN_SECTIONS} "
+                      "sections.", max_sections=MAX_ANTS_SYN_SECTIONS)
+    kind = canonical_atlas_name(str(atlas_image or "template").strip().lower())
+    if kind not in ANTS_SYN_ATLASES:
+        raise Refused("BAD_ARGS", message=f"atlas_image is one of {list(ANTS_SYN_ATLASES)}.")
+    level = str(stiffness or "medium").strip().lower()
+    if level not in STIFFNESSES:
+        raise Refused("BAD_ARGS", message=f"stiffness is one of {list(STIFFNESSES)}.")
+    refuse_without_ants()
+    if kind not in available_atlas_channels(workspace):
+        raise Refused("FIT_ATLAS_UNAVAILABLE", message=f"The {kind} atlas image is offered "
+                      f"on Allen mouse atlases only; {job.state.atlas} does not cover the "
+                      "CCFv3 grid.")
+    regions = region_entries(workspace, job.state, restrict_to)
+    records: list[SliceState] = []
+    unknown: list[str] = []
+    for ref in refs:
+        record = job.state.resolve(ref)
+        if record is None:
+            unknown.append(str(ref))
+        elif all(held.id != record.id for held in records):
+            records.append(record)
+    if unknown:
+        raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+    choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas=kind,
+                                engine="ants", stiffness=level)
+    return fit_deformable(job, workspace, records, [choice], restrict_to=regions,
+                          start=START_LATEST, options=options)
 
 
 @dataclass(frozen=True)

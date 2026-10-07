@@ -129,9 +129,9 @@ whose inputs changed meanwhile is refused as `STALE_INPUT`.
 
 `submit` refuses, with the numbers that refused it, and writes nothing:
 
-- `position` on: a section without a position (`MISSING_POSITIONS`); positions
-  not monotone along the corrected order (`ORDER_POSITION_MISMATCH`, naming the
-  pairs); with `strict_interval`, a spacing more than 10% off the interval
+- `position` on: a section without a position of its own (`MISSING_POSITIONS`;
+  `at_default` names the sections still at the starting position the job gave
+  them, below); with `strict_interval`, a spacing more than 10% off the interval
   (`STRICT_INTERVAL`); a reported interval break where the written interval is
   not above 1.5 times the stack's median spacing (`INTERVAL_BREAKS_UNSUPPORTED`).
 - `transform` on: a section without a transform (`MISSING_TRANSFORMS`); a
@@ -141,9 +141,22 @@ whose inputs changed meanwhile is refused as `STALE_INPUT`.
   section's marked regions are left out of every fit on their own).
   Locked sections are exempt.
 - `nonlinear` on: a section with neither a deformation at its current
-  placement nor a `keep_linear` reason (`MISSING_DEFORMATIONS`). No section
-  needs an image-model trace; submit waits for traces still running. Sections
-  the host kept out of Nonlinear need neither.
+  placement nor a `keep_linear` reason (`MISSING_DEFORMATIONS`). The
+  operation `ops.submit.submit` also takes `left_linear` (`[{id, reason}]`):
+  the sections left without a deformation, each with the reason its linear
+  placement stands, counted as covered; a host that requires a deformation
+  on every section (`NonlinearSpec.require_deformation`) refuses it
+  (`DEFORMATION_REQUIRED`). No section needs an image-model trace; submit
+  waits for traces and background work still running. Sections the host kept
+  out of Nonlinear need neither.
+
+With `position` on, a new job gives every section without a supplied
+position a starting one (`SliceState.position_source` `"default"`): evenly
+spaced in the order the images were found, at the stack's interval and
+centred in the atlas's range (evenly over the whole range when the stack
+does not fit), or between and beyond the supplied positions. Status rows say
+`position_source: "default"` while a section is there; any write of its
+position makes the position its own.
 
 `--gates` additionally refuses `set_positions` for a section not compared since
 its last write, and `submit` until `view_stack` has run after the last write.

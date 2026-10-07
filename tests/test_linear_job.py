@@ -71,10 +71,10 @@ def test_undo_history_survives_a_reopen(tmp_path: Path):
     again, _ = _open(folder)  # resume is the default
     assert again.state.by_id("s0.png").position_mm == 1.5
     assert again.undo() and "second step" not in again.state.notes
-    assert again.undo() and again.state.by_id("s0.png").position_mm is None
+    assert again.undo() and again.state.by_id("s0.png").position_source == "default"
     assert not again.undo()
     third, _ = _open(folder)
-    assert third.state.by_id("s0.png").position_mm is None
+    assert third.state.by_id("s0.png").position_source == "default"
     assert third.redo() and third.state.by_id("s0.png").position_mm == 1.5
 
 
@@ -103,7 +103,7 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     box = build_tools(again.state, ctx, again.spec, job=again)
     undone = _tool(box, "undo")()
     assert undone["status"] == "ok" and undone["undo_depth"] == 0
-    assert again.state.by_id("s1.png").position_mm is None
+    assert again.state.by_id("s1.png").position_source == "default"
 
 
 # --- versioned files ---------------------------------------------------------------
@@ -162,9 +162,9 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
     assert _tool(box, "undo")()["status"] == "ok"
     assert job.state.notes[-1] == "script: placed s1"
     assert _tool(box, "undo")()["status"] == "ok"
-    assert job.state.by_id("s1.png").position_mm is None
+    assert job.state.by_id("s1.png").position_source == "default"
     assert job.state.by_id("s0.png").position_mm == 1.0
-    assert load_checkpoint(ctx.checkpoint_path).by_id("s1.png").position_mm is None
+    assert load_checkpoint(ctx.checkpoint_path).by_id("s1.png").position_source == "default"
 
 
 def test_an_unchanged_or_half_written_file_is_not_a_step(tmp_path: Path):
@@ -192,7 +192,7 @@ def test_another_job_writing_both_files_hands_over_its_history(tmp_path: Path):
     assert first.sync() is not None
     assert first.state.by_id("s2.png").position_mm == 6.0
     assert len(first.undo_stack) == 1  # second's step, not an extra one
-    assert first.undo() and first.state.by_id("s2.png").position_mm is None
+    assert first.undo() and first.state.by_id("s2.png").position_source == "default"
 
 
 def test_a_job_made_around_a_state_takes_the_files_as_they_stand(tmp_path: Path):

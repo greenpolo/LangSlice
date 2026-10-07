@@ -141,8 +141,8 @@ def import_ants(purpose: str = "The ANTs engine") -> Any:
                 _ANTS_THREADS = FIT_THREADS  # a pool worker (ants_worker)
         except ImportError as exc:  # pragma: no cover - depends on the environment
             raise RuntimeError(
-                f"{purpose} needs antspyx: install LangSlice's 'registration' extra "
-                "(pip install 'langslice[registration]')"
+                f"{purpose} needs antspyx, one of LangSlice's dependencies on Python "
+                "3.13 and below (pip install 'antspyx>=0.6.3,<0.7')"
             ) from exc
         finally:
             if first:

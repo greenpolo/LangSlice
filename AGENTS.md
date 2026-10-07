@@ -83,7 +83,7 @@ and `environment.yml` hold the worker's source installation.
 
 Linux + bash. The project environment is a uv venv at `.venv` (Python 3.11):
 `uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`; the ANTs engine
-needs `.[registration]`.
+(antspyx) is a core dependency below Python 3.14.
 
 ```bash
 source .venv/bin/activate

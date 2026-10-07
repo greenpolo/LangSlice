@@ -74,7 +74,8 @@ def test_a_lean_job_indexes_pictures_in_memory(tmp_path: Path):
     store = _store(tmp_path, DiscardedViews)
     store.step_source = lambda: 7
     assert store.save(tool="view", pictures=[
-        (_picture(), PictureNote(sections=("s0.png",), recipe=RECIPE, caption="x"))]) == []
+        (_picture(), PictureNote(sections=("s0.png",), recipe=RECIPE, caption="x"))]) == [
+            "000001_view"]  # named as a saved picture would be, written nowhere
     store.save(tool="zoom", pictures=[(_picture(), None)])
     found = store.lookup(1)
     assert found is not None and found.recipe == RECIPE and found.step == 7

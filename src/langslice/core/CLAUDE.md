@@ -194,8 +194,9 @@ for the flat plane).
   position of a call. `section_at` / `atlas_at` (and
   `display.framed_atlas(um_per_px=)`) draw at exactly that scale.
 - `status.py` — the status table, data for the doors rather than a
-  picture: `status_rows`, `compact_rows` (a model's: null and empty fields
-  left out), `uniform_rows` / `with_uniform_rows` (a script's: every
+  picture: `status_rows` (`position_source` "default" on a section still
+  at the starting position the job gave it), `compact_rows` (a model's:
+  null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`; the agent CLI and the
   library), `status_text`, `slice_flags`.
@@ -211,6 +212,54 @@ for the flat plane).
   from *store*) and on the atlas template (mode `template`), on one canvas
   and crop, side by side (`sheets.beside`), their outlines strong over the
   faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
+- `look.py` — `look`'s four pictures through the renderers above:
+  `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
+  atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=), store=)` returns
+  one `LookPicture` per section (`section`: `display.framed_section`;
+  `overlay`: `placement.placement_pictures` mode `overlay`, the applied
+  deformation unless `warp` is `none`), per position (`atlas`:
+  `display.framed_atlas` at the stack's view angles) or one in all
+  (`positioning`). Defaults never read the job's state: every section,
+  every raw channel with its display properties (`channels` may instead
+  name raw channels, or `["preprocessed"]`), `ATLAS_LAYER_DEFAULTS` per
+  mode. Each picture has an index caption (position, angles, um/px, the
+  channel settings in force) and a JSON recipe `{"renderer": "look",
+  "args", "state", "base", "shown", "um_per_px"}`: the request, the
+  `snapshot` of the stack facts it was drawn from (`SECTION_FIELDS`, the
+  display properties and preprocessed recipe, the view angles for atlas
+  and positioning), the unzoomed and shown content sizes. Both go on the
+  picture's note (`layers.annotate` keeps an overlay's frame for its
+  layers). `redraw(recipe, window, ws, state)` draws a recipe at a window,
+  from `restored(state, snapshot)` and `stale` when `changed_since`.
+  `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_CHANNEL`,
+  `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  `NO_POSITION`, `BAD_WARP`. No picture number is burned into the pixels.
+- `positioning.py` — the positioning picture, ABBA's layout: a millimetre
+  ruler across `Workspace.position_range`, atlas thumbnails above it in
+  position order, the sections below in stack order (`index_original`),
+  each joined by a line to its position; the row runs right to left when
+  most pairs run down the ruler (`stack_direction`), so two lines cross
+  exactly when their order and positions disagree (`crossing_pairs`), and
+  those lines and labels are drawn in `CROSSING_COLOR`. One um/px for every
+  thumbnail (`scale.pair_um_per_px`, never finer than a section's working
+  copy); the tile is the picture size while the row fits
+  `POSITIONING_MAX_WIDTH`, smaller for a longer row (down to `MIN_TILE`).
+  `plan` is the pure geometry (`Layout`, `Slot`), `paint` draws a layout at
+  a magnification and crop (every length scales together),
+  `positioning_picture` does both for a stack; a zoom is drawn up to the
+  sections' working-copy detail, then enlarged at most `ATLAS_UPSAMPLE`
+  times, said in the caption.
+- `zoom.py` — `redraw(recipe, box, ws, state=, store=, picture=,
+  long_edge=)`: a box (`[x0, y0, x1, y1]` pixels of the picture's content)
+  drawn again from the source through the recipe's renderer (`RENDERERS`),
+  its window composed onto the unzoomed picture's (`box_fractions`,
+  `compose`), so a zoom of a zoom maps back; section zooms past the
+  working copy are enlarged at most 4 times and say so. A changed stack is
+  drawn as it was and flagged `stale` (a second caption band says so). A
+  picture without a recipe, or whose sections are gone, is cropped from
+  *picture* (the saved image) and enlarged towards the picture size,
+  `redrawn` False, with a `crop` recipe (the box on that source). Returns
+  `Zoomed`; `ZoomError` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
 - `sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
   `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.
@@ -352,7 +401,9 @@ Which pictures a call returned, and of what, is noted while it runs:
 `layers.collecting()` (the job's saving hook, `Job.views.shown`, runs every
 tool call inside it) and
 `layers.note(image, sections=, mode=, frame=, panel=, deformation=,
-extra=)`; `note_for` finds a picture's note by identity. `draw_canvas`,
+extra=, recipe=, caption=)`; `note_for` finds a picture's note by
+identity; `annotate(image, recipe=, caption=)` sets fields on the note a
+renderer already made for that image (its frame and panel kept). `draw_canvas`,
 `placement_pictures` (stacked, side_by_side references), `section_picture`,
 `atlas_view_picture` and `stack_review` note theirs;
 `ops.deformable.pictures` notes `fit_deformable`'s fits (through

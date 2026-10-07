@@ -245,10 +245,11 @@ def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
     names = _make_stack(tmp_path, n=3)
     positions = {name: 2.0 + index for index, name in enumerate(names)}
     install_fake_adk_model_stack(monkeypatch, positions=positions)
-    seen: list[bool] = []  # snapshot of "has any position yet" per call
+    seen: list[bool] = []  # snapshot of "has any position of its own yet" per call
 
     def on_write(state):
-        seen.append(any(s.position_mm is not None for s in state.slices))
+        seen.append(any(s.position_mm is not None and s.position_source != "default"
+                        for s in state.slices))
 
     spec = _spec(tmp_path, tasks=["position"])
     state = asyncio.run(

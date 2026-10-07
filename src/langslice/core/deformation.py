@@ -29,6 +29,7 @@ import importlib.util
 import json
 import logging
 import re
+import threading
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -113,6 +114,10 @@ TRACE_WAIT_S = 300.0
 #: Run several fits in a process pool; a single fit runs in this process.
 #: Tests switch the pool off.
 USE_PROCESS_POOL = True
+#: Fits that run in this process run one at a time (a job's background work
+#: beside the agent's own calls): the engines' seed and thread settings are
+#: process-wide.
+_ENGINE_LOCK = threading.Lock()
 
 
 class FitRefusal(Exception):
@@ -128,8 +133,9 @@ def ants_available() -> bool:
 
 
 ANTS_MISSING = (
-    "ANTs (antspyx) is not installed on this host: install LangSlice's "
-    "'registration' extra (pip install 'langslice[registration]')"
+    "ANTs (antspyx) cannot be imported on this host. It is one of LangSlice's "
+    "dependencies on Python 3.13 and below: reinstall LangSlice there "
+    "(pip install 'antspyx>=0.6.3,<0.7')"
 )
 
 
@@ -524,7 +530,9 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
         results = []
         for item in prepared:
             try:
-                results.append(finish_fit(item, run_engine(item.inputs, item.settings)))
+                with _ENGINE_LOCK:
+                    result = run_engine(item.inputs, item.settings)
+                results.append(finish_fit(item, result))
             except Exception as exc:  # noqa: BLE001
                 results.append(CandidateFailure(item.settings, f"{type(exc).__name__}: {exc}"))
     for job, result in zip(waiting, results, strict=True):

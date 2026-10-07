@@ -7,7 +7,8 @@ host's locked and damaged sections, undo/redo (persisted in the job folder),
 the checkpoint and its observers (:meth:`Job.observe`), the submit gates,
 the stale-deformation rule, the deformation record store, the store of the
 pictures the model was shown (:class:`langslice.job.views.ViewStore`), the
-transform-count cap and the background image-correction jobs. ``ingest``,
+transform-count cap, the background image-correction jobs and the background
+work built on them (:class:`langslice.job.background.BackgroundWork`). ``ingest``,
 ``apply_host_inputs`` and ``emit_results`` open and close it. It imports the
 core and the job folder package (``langslice.job``) only: no agent
 framework, no message types, no provider. The doors (the ADK toolbox, the
@@ -53,7 +54,7 @@ import copy
 import json
 import logging
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -65,6 +66,7 @@ from langslice.core.discovery import discover_slices
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
 from langslice.job import formats
+from langslice.job.background import BackgroundWork, in_worker
 from langslice.job.checkpoint import (
     read_checkpoint,
     relative_to,
@@ -327,6 +329,84 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         state.notes.append(f"inputs: {len(names)} section(s) {note}")
 
 
+#: ``SliceState.position_source`` of a starting position LangSlice gave a
+#: section at ingest (:func:`default_positions`): the submit gate
+#: ``MISSING_POSITIONS`` refuses a section still there.
+DEFAULT_POSITION = "default"
+
+
+def default_positions(state: StackState, workspace: Workspace) -> list[str]:
+    """Give every section without a position a starting one, marked
+    :data:`DEFAULT_POSITION`; return their ids.
+
+    Stack order is the order the images were found (``index_original``).
+    With no position supplied, the sections are spread across the atlas's
+    range in that order: at the stack's interval, centred, when the stack
+    fits in the range at it, else evenly over the whole range. Between
+    supplied positions a section gets the linear interpolation by stack
+    order; beyond them, the nearest supplied one continued at the stack's
+    interval (the median supplied step when no interval is set) in the
+    direction the supplied ones run. Every starting position lies in the
+    atlas's range.
+    """
+    ordered = sorted(state.slices, key=lambda record: record.index_original)
+    missing = [index for index, record in enumerate(ordered) if record.position_mm is None]
+    if not missing:
+        return []
+    low, high = (float(value) for value in workspace.position_range)
+    count = len(ordered)
+    interval = float(state.interval_mm)
+    known = [(index, float(record.position_mm)) for index, record in enumerate(ordered)
+             if record.position_mm is not None]
+    values: dict[int, float] = {}
+    if not known:
+        if interval > 0 and interval * (count - 1) <= high - low:
+            first = (low + high) / 2 - interval * (count - 1) / 2
+            values = {index: first + interval * index for index in range(count)}
+        else:
+            values = {index: low + (high - low) * (index + 0.5) / count for index in range(count)}
+    else:
+        steps = [(b - a) / (j - i) for (i, a), (j, b) in zip(known, known[1:], strict=False)]
+        trend = float(np.median(steps)) if steps else 0.0
+        step = interval if interval > 0 else abs(trend)
+        step = step if trend >= 0 else -step
+        for index in missing:
+            before = [(i, v) for i, v in known if i < index]
+            after = [(i, v) for i, v in known if i > index]
+            if before and after:
+                (i, a), (j, b) = before[-1], after[0]
+                values[index] = a + (b - a) * (index - i) / (j - i)
+            elif before:
+                i, a = before[-1]
+                values[index] = a + step * (index - i)
+            else:
+                j, b = after[0]
+                values[index] = b - step * (j - index)
+    placed: list[str] = []
+    for index in missing:
+        record = ordered[index]
+        record.position_mm = round(min(high, max(low, values[index])), 4)
+        record.position_source = DEFAULT_POSITION
+        placed.append(record.id)
+    state.notes.append(f"ingest: {len(placed)} section(s) given evenly spaced starting "
+                       "positions")
+    return placed
+
+
+def clear_default_marks(before: dict[str, Any], state: StackState) -> list[str]:
+    """Drop the :data:`DEFAULT_POSITION` mark of every section whose position
+    differs from *before* (a state's dict); return their ids. A written
+    position is the writer's own, whatever wrote it."""
+    held = {row.get("id"): row.get("position_mm") for row in before.get("slices", [])}
+    cleared: list[str] = []
+    for record in state.slices:
+        if record.position_source == DEFAULT_POSITION and (
+                record.id not in held or held[record.id] != record.position_mm):
+            record.position_source = ""
+            cleared.append(record.id)
+    return cleared
+
+
 class InputsChanged(ValueError):
     """A job folder's checkpoint was made from other supplied inputs
     (``JobSpec.inputs``) than the spec opening it: resuming would keep the
@@ -375,52 +455,26 @@ def emit_results(
 
 
 def missing_positions(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section has a position, else the rejection."""
-    missing = [record.id for record in state.in_order() if record.position_mm is None]
+    """``None`` when every section has a position of its own, else the
+    rejection: a section without one, or still at the starting position
+    LangSlice gave it (:data:`DEFAULT_POSITION`, listed in ``at_default``)."""
+    ordered = state.in_order()
+    missing = [record.id for record in ordered if record.position_mm is None
+               or record.position_source == DEFAULT_POSITION]
     if not missing:
         return None
+    at_default = [record.id for record in ordered if record.position_mm is not None
+                  and record.position_source == DEFAULT_POSITION]
     return {
         "status": "error",
         "error": "MISSING_POSITIONS",
         "missing_ids": missing,
+        **({"at_default": at_default} if at_default else {}),
         "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) have no "
-            "position; every section needs one, damaged ones included."
-        ),
-    }
-
-
-def order_position_mismatch(state: StackState) -> dict[str, Any] | None:
-    """Positions must run one way along the corrected order (either way)."""
-    placed = [s for s in state.in_order() if s.position_mm is not None]
-    if len(placed) < 2:
-        return None
-    first = float(placed[0].position_mm)  # type: ignore[arg-type]
-    last = float(placed[-1].position_mm)  # type: ignore[arg-type]
-    direction = 1.0 if last >= first else -1.0
-    pairs: list[dict[str, Any]] = []
-    for before, after in zip(placed, placed[1:], strict=False):
-        delta = float(after.position_mm) - float(before.position_mm)  # type: ignore[arg-type]
-        if delta * direction < 0:
-            pairs.append(
-                {
-                    "before": before.id,
-                    "after": after.id,
-                    "before_position_mm": round(float(before.position_mm), 3),  # type: ignore[arg-type]
-                    "after_position_mm": round(float(after.position_mm), 3),  # type: ignore[arg-type]
-                }
-            )
-    if not pairs:
-        return None
-    trend = "increase" if direction > 0 else "decrease"
-    return {
-        "status": "error",
-        "error": "ORDER_POSITION_MISMATCH",
-        "pairs": pairs,
-        "message": (
-            f"Positions {trend} from {first:.3f} mm to {last:.3f} mm along the "
-            f"corrected order, but {len(pairs)} neighbour pair(s) run the other "
-            "way."
+            f"{len(missing)} of {len(state.slices)} section(s) have no position of their "
+            "own" + (f" ({len(at_default)} still at the evenly spaced starting position "
+                     "they were given)" if at_default else "")
+            + "; every section needs one, damaged ones included."
         ),
     }
 
@@ -618,14 +672,18 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
 
 def missing_deformations(
     state: StackState, exempt: frozenset[str] | set[str] = frozenset(),
+    left_linear: Collection[str] = (),
 ) -> dict[str, Any] | None:
     """``None`` when every section carries a deformation, or a keep_linear
     reason, at its current linear placement; else the rejection. The
     sections in *exempt* (kept out of Nonlinear by the host,
-    :func:`nonlinear_exempt_ids`) need neither."""
+    :func:`nonlinear_exempt_ids`) need neither, and the sections in
+    *left_linear* (``submit``'s ``left_linear``: left without a deformation,
+    each with its reason) count as covered."""
     missing: list[dict[str, str]] = []
+    covered = set(exempt) | {str(name) for name in left_linear}
     for record in state.in_order():
-        if record.id in exempt:
+        if record.id in covered:
             continue
         held = record.deformation or {}
         if not held:
@@ -640,20 +698,20 @@ def missing_deformations(
         "sections": missing,
         "message": (
             f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
-            "current placement. Apply one fit_deformable result per section, or give "
-            "fit_deformable keep_linear with a reason where the linear placement stands."
+            "current placement. Fit a deformation on each, or list it in submit's "
+            "left_linear with the reason its linear placement stands."
         ),
     }
 
 
 def submit_errors(
-    state: StackState, spec: JobSpec, breaks: list[int]
+    state: StackState, spec: JobSpec, breaks: list[int], left_linear: Collection[str] = (),
 ) -> dict[str, Any] | None:
-    """Every gate that applies to this run, in order."""
+    """Every gate that applies to this run, in order. *left_linear*: the
+    sections ``submit`` leaves without a deformation (:func:`missing_deformations`)."""
     if spec.has("position"):
         refusal = (
             missing_positions(state)
-            or order_position_mismatch(state)
             or (
                 strict_interval_error(state, breaks)
                 if spec.position.strict_interval
@@ -667,7 +725,7 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("nonlinear"):
-        return missing_deformations(state, nonlinear_exempt_ids(spec))
+        return missing_deformations(state, nonlinear_exempt_ids(spec), left_linear)
     return None
 
 
@@ -765,6 +823,7 @@ class Job:
         #: fit that reads a trace (``wait_image_job``).
         self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
         self.image_executor: ThreadPoolExecutor | None = None
+        self._background: BackgroundWork | None = None
         self._deformations: deformation.RecordStore | None = None
         #: False: nothing this job holds is written (the state, the history,
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
@@ -776,6 +835,12 @@ class Job:
         self.workspace: Workspace | None = None
         self._state_stamp = _stamp(self.checkpoint_path)
         self._undo_stamp = _stamp(self.undo_path)
+        self.wire_views()
+
+    def wire_views(self) -> None:
+        """Number each saved picture's ``step`` with the undo history's depth
+        (call again after replacing :attr:`views`)."""
+        self.views.step_source = lambda: len(self.undo_stack)
 
     # --- opening ---------------------------------------------------------------
 
@@ -833,6 +898,8 @@ class Job:
             else:
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
+                if spec.has("position"):
+                    default_positions(state, workspace)
                 if history.exists():
                     history.load()  # read before it is emptied: never delete unread steps
             if history.problem is not None:
@@ -877,6 +944,7 @@ class Job:
         job.workspace = workspace
         if not persist:
             job.views = DiscardedViews(layout)
+            job.wire_views()
         return job
 
     @property
@@ -927,9 +995,11 @@ class Job:
         sync it checks that each section's inputs are unchanged
         (``ops.inputs``) and refuses a section whose inputs moved
         (``STALE_INPUT``). The section records are new objects after a
-        reload: resolve them by id inside the block.
+        reload: resolve them by id inside the block. A thread running the
+        job's background work gives way to a lock holder that waits for that
+        work (:mod:`langslice.job.background`: ``LockYielded``).
         """
-        with self.lock.held():
+        with self.lock.held(self.background.gives_way if in_worker() else None):
             yield self.sync()
 
     def _notify(self) -> None:
@@ -956,8 +1026,11 @@ class Job:
 
     def commit(self, before: dict[str, Any]) -> None:
         """Record one undo step (*before*), clear the redo side, checkpoint.
-        Call it inside :meth:`writing` (with *before* taken there)."""
+        Call it inside :meth:`writing` (with *before* taken there). A section
+        whose position the step changed loses its :data:`DEFAULT_POSITION`
+        mark (:func:`clear_default_marks`)."""
         with self.lock.held():
+            clear_default_marks(before, self.state)
             self._push(before)
             self._save_history()
             self.checkpoint()
@@ -1059,9 +1132,11 @@ class Job:
             "requested": requested,
         }
 
-    def submit_errors(self, breaks: list[int]) -> dict[str, Any] | None:
+    def submit_errors(
+        self, breaks: list[int], left_linear: Collection[str] = (),
+    ) -> dict[str, Any] | None:
         """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
-        return submit_errors(self.state, self.spec, breaks)
+        return submit_errors(self.state, self.spec, breaks, left_linear)
 
     def nonlinear_refusal(self, section_id: str) -> tuple[str, str] | None:
         """``(code, message)`` when the host kept *section_id* out of the
@@ -1095,6 +1170,13 @@ class Job:
             self._deformations = deformation.RecordStore(
                 root=self.layout.sections_dir, folder_of=self.layout.deformable_dir)
         return self._deformations
+
+    @property
+    def background(self) -> BackgroundWork:
+        """The job's background work (:mod:`langslice.job.background`; made on first use)."""
+        if self._background is None:
+            self._background = BackgroundWork(self)
+        return self._background
 
     # --- image corrections ----------------------------------------------------------
 
@@ -1139,26 +1221,31 @@ class Job:
                 self.checkpoint()
         return changed
 
-    def wait_image_job(self, section_id: str, timeout: float) -> bool:
-        """Wait up to *timeout* seconds for one section's running correction.
+    def wait_image_job(self, section_id: str, timeout: float | None) -> bool:
+        """Wait up to *timeout* seconds (None: as long as it takes) for one
+        section's running correction.
 
         Records its result the way :meth:`settle_image_corrections` does
         (under the write lock, checkpointed, no undo step) and returns True
         once nothing is running for the section; False when the call is
-        still running at the timeout.
+        still running at the timeout. The call is forgotten only once its
+        result is recorded, so a waiter that gives way under the lock
+        (background work) leaves it for the next.
         """
         running = self.image_jobs.get(section_id)
         if running is None:
             return True
         fingerprint, future = running
         try:
-            result = _job_result(section_id, fingerprint, future, max(0.0, timeout))
+            result = _job_result(section_id, fingerprint, future,
+                                 None if timeout is None else max(0.0, timeout))
         except TimeoutError:
             return False
-        del self.image_jobs[section_id]
         with self.writing():
             if _land(self.state, section_id, fingerprint, self.portable(result)):
                 self.checkpoint()
+            if self.image_jobs.get(section_id) is running:
+                del self.image_jobs[section_id]
         return True
 
     # --- results ----------------------------------------------------------------------
@@ -1169,5 +1256,8 @@ class Job:
         return emit_results(self.state, self.results_path, progress)
 
     def close(self) -> None:
-        """Finish the job's background writes (the pictures); the job stays usable."""
+        """Finish the job's background work (:attr:`background`), then its
+        background writes (the pictures); the job stays usable."""
+        if self._background is not None:
+            self._background.close()
         self.views.flush()

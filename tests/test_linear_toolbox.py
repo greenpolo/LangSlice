@@ -519,20 +519,12 @@ def test_submit_refuses_an_unplaced_stack(tmp_path: Path):
     assert state.submitted is False
 
 
-def test_submit_refuses_positions_that_run_against_the_order(tmp_path: Path):
+def test_submit_takes_positions_that_run_against_the_order(tmp_path: Path):
+    """Order follows position: a dip in an increasing stack is not refused."""
     state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     state.by_id("s2.png").position_mm = 0.5  # a dip in an increasing stack
-    result = _submit(box)
-    assert result["error"] == "ORDER_POSITION_MISMATCH"
-    assert result["pairs"] == [
-        {
-            "before": "s1.png",
-            "after": "s2.png",
-            "before_position_mm": 2.5,
-            "after_position_mm": 0.5,
-        }
-    ]
-    assert state.submitted is False
+    assert _submit(box)["status"] == "ok"
+    assert state.submitted is True
 
 
 def test_submit_accepts_a_stack_that_runs_backwards_and_emits_atlas_order(tmp_path: Path):
@@ -599,9 +591,6 @@ def test_refused_submit_runs_the_gates_without_writing(tmp_path: Path):
 
     state.by_id("s2.png").position_mm = None
     assert _submit(box)["error"] == "MISSING_POSITIONS"
-
-    state.by_id("s2.png").position_mm = 0.5  # placed, but against the order
-    assert _submit(box)["error"] == "ORDER_POSITION_MISMATCH"
 
     state.by_id("s2.png").position_mm = 3.0
     assert _submit(box, interval_breaks=[3])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
