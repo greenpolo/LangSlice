@@ -78,14 +78,3 @@ def test_rotate_sign_constants_reproduce_abba_exported_plane(section):
     # and the set direction is the exact inverse of the read-back
     assert angles_to_rotate(pitch, yaw) == pytest.approx((rx, ry))
 
-
-def test_backward_compatible_module_path_reexports_the_signs():
-    """SliceBench reads the two constants from the old module path."""
-    from langslice.core import abba_angles
-    from langslice.integrations.abba_linear import (
-        PITCH_TO_ROTATE_X_SIGN,
-        YAW_TO_ROTATE_Y_SIGN,
-    )
-
-    assert PITCH_TO_ROTATE_X_SIGN == abba_angles.PITCH_TO_ROTATE_X_SIGN == -1.0
-    assert YAW_TO_ROTATE_Y_SIGN == abba_angles.YAW_TO_ROTATE_Y_SIGN == -1.0

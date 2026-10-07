@@ -36,9 +36,7 @@ whose imports are core-only:
   over accuracy; the largest grid whose TPS does not fold is sent, and only
   a TPS folding at every grid is refused). `abba_angles.py`: ABBA's
   `ReslicedAtlas` rotations <-> pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`,
-  `YAW_TO_ROTATE_Y_SIGN`, both -1; `angles_to_rotate`, `rotate_to_angles`;
-  SliceBench reads the constants through the `langslice.integrations.abba_linear`
-  shim).
+  `YAW_TO_ROTATE_Y_SIGN`, both -1; `angles_to_rotate`, `rotate_to_angles`).
 
 ## The layer rule
 

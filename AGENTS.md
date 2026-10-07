@@ -27,11 +27,9 @@ and CI) with no exceptions: a violation is fixed by moving code.
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth`, `none`; no task logic | |
 | `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `serve` commands, the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
 
-The top-level `linear/`, `atlas/`, `nonlinear/`, `integrations/`, `adk/` and the
-modules `space.py`, `oblique.py`, `affine.py`, `image_prep.py`,
-`registration_handoff.py` are compatibility shims for the sibling repositories
-`../SliceBench` (the position benchmark) and `../LangSlice-Training`; LangSlice
-imports none of them. Both siblings depend on this package as an editable checkout.
+The sibling repositories `../SliceBench` (the position benchmark) and
+`../LangSlice-Training` depend on this package as an editable checkout and
+import it by the layered paths above; there are no compatibility shims.
 
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.24, which starts `langslice serve
