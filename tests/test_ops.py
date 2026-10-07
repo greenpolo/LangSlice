@@ -121,7 +121,7 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     job, _ = _open(tmp_path, inputs={"locked": ["s2.png"]})
     knobs = {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
              "translate_x_mm": 0.0, "translate_y_mm": 0.0}
-    record = transforms.interactive_transform(
+    record = transforms.transform_record(
         size=(40, 30), um_per_px=10.0, calibration={"section_um_per_px": 10.0, "source": "host"},
         pivot=None, pivot_frac=[0.5, 0.5], knobs=knobs, note=" why ")
     assert record["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]

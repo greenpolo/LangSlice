@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -39,6 +39,58 @@ class PositionsWritten:
         return [section_id for section_id, _value in self.written]
 
 
+def _write_positions(
+    job: Job, workspace: Workspace, positions: Iterable[tuple[object, float]],
+) -> tuple[list[tuple[str, float]], list[tuple[str, float, float]], list[str]]:
+    """Write each pair into the state, clamped; ``(written, clamped, unknown)``.
+    No undo step: :func:`set_positions` and :func:`position_sections` take it."""
+    low, high = workspace.position_range
+    written: list[tuple[str, float]] = []
+    clamped: list[tuple[str, float, float]] = []
+    unknown: list[str] = []
+    for ref, requested in positions:
+        record = job.state.resolve(ref)
+        if record is None:
+            unknown.append(str(ref))
+            continue
+        value = min(high, max(low, requested))
+        if value != requested:
+            clamped.append((record.id, requested, value))
+        record.position_mm = value
+        written.append((record.id, value))
+    return written, clamped, unknown
+
+
+def _write_angles(job: Job, workspace: Workspace, pitch_deg: float, yaw_deg: float) -> None:
+    """Give the stack one plane and drop every render cached at the old angles.
+    No undo step."""
+    job.state.cutting_angles_deg = {"pitch": float(pitch_deg), "yaw": float(yaw_deg)}
+    workspace.render_cache.clear()
+
+
+def _picture_written(
+    job: Job, workspace: Workspace, written: list[tuple[str, float]],
+    options: DisplayOptions | None,
+    show: Callable[[SliceState, float], bool] | None,
+) -> tuple[PlacementView | None, list[str]]:
+    """The written placements pictured (those *show* keeps), and the ids it left out."""
+    if options is None or not written:
+        return None, []
+    from langslice.ops.views import placement_view
+
+    pairs: list[tuple[SliceState, float]] = []
+    not_shown: list[str] = []
+    for name, value in written:
+        record = job.state.by_id(name)
+        if record is None:
+            continue
+        if show is None or show(record, value):
+            pairs.append((record, value))
+        else:
+            not_shown.append(name)
+    return placement_view(job, workspace, pairs, options, regions_report=False), not_shown
+
+
 def set_positions(
     job: Job, workspace: Workspace, positions: Iterable[tuple[object, float]], *,
     options: DisplayOptions | None = None,
@@ -56,38 +108,12 @@ def set_positions(
     leaves out what the model has already seen at the same geometry). A
     picture that fails leaves the write standing.
     """
-    low, high = workspace.position_range
     before = job.snapshot()
-    written: list[tuple[str, float]] = []
-    clamped: list[tuple[str, float, float]] = []
-    unknown: list[str] = []
-    for ref, requested in positions:
-        record = job.state.resolve(ref)
-        if record is None:
-            unknown.append(str(ref))
-            continue
-        value = min(high, max(low, requested))
-        if value != requested:
-            clamped.append((record.id, requested, value))
-        record.position_mm = value
-        written.append((record.id, value))
+    low, high = workspace.position_range
+    written, clamped, unknown = _write_positions(job, workspace, positions)
     if written:
         job.commit(before)
-    view: PlacementView | None = None
-    not_shown: list[str] = []
-    if options is not None and written:
-        from langslice.ops.views import placement_view
-
-        pairs: list[tuple[SliceState, float]] = []
-        for name, value in written:
-            record = job.state.by_id(name)
-            if record is None:
-                continue
-            if show is None or show(record, value):
-                pairs.append((record, value))
-            else:
-                not_shown.append(name)
-        view = placement_view(job, workspace, pairs, options, regions_report=False)
+    view, not_shown = _picture_written(job, workspace, written, options, show)
     return PositionsWritten(written=written, clamped=clamped, unknown=unknown,
                             position_range=(low, high), view=view, not_shown=not_shown)
 
@@ -101,9 +127,129 @@ def set_cutting_angles(job: Job, workspace: Workspace, pitch_deg: float, yaw_deg
     at the old angles is dropped.
     """
     before = job.snapshot()
-    job.state.cutting_angles_deg = {"pitch": float(pitch_deg), "yaw": float(yaw_deg)}
-    workspace.render_cache.clear()
+    _write_angles(job, workspace, pitch_deg, yaw_deg)
     job.commit(before)
+
+
+# --- position_sections ----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SectionsPositioned:
+    """What :func:`position_sections` wrote."""
+
+    #: ``(section id, position mm)`` as written (clamped), in the order asked.
+    written: list[tuple[str, float]] = field(default_factory=list)
+    #: ``(section id, requested mm, written mm)`` for each value moved into range.
+    clamped: list[tuple[str, float, float]] = field(default_factory=list)
+    #: References that name no section.
+    unknown: list[str] = field(default_factory=list)
+    position_range: tuple[float, float] = (0.0, 0.0)
+    #: The stack-wide angles written (``{"pitch", "yaw"}``), None when not asked.
+    cutting_angles: dict[str, float] | None = None
+    #: The stack's order after the write: ids, anterior first.
+    order: list[str] = field(default_factory=list)
+    #: The ids whose place in that order changed.
+    reordered: list[str] = field(default_factory=list)
+    #: With display options: the written placements pictured, and the ids of
+    #: those *show* left out (as :class:`PositionsWritten`).
+    view: PlacementView | None = None
+    not_shown: list[str] = field(default_factory=list)
+
+    @property
+    def touched(self) -> list[str]:
+        return [section_id for section_id, _value in self.written]
+
+
+def order_by_position(job: Job) -> list[str]:
+    """Number the stack in the order of the sections' positions; the ids moved.
+
+    Placed sections run by increasing position (ties keep their order) and
+    take the places the placed sections held; a section without a position
+    keeps its own place. No undo step.
+    """
+    from langslice.ops.order import renumber
+
+    ordered = job.state.in_order()
+    placed = sorted((record for record in ordered if record.position_mm is not None),
+                    key=lambda record: float(record.position_mm or 0.0))
+    queue = iter(placed)
+    result = [next(queue) if record.position_mm is not None else record for record in ordered]
+    return renumber(result)
+
+
+def position_sections(
+    job: Job, workspace: Workspace, sections: Iterable[Any],
+    cutting_angles: Any = None, *,
+    options: DisplayOptions | None = None,
+    show: Callable[[SliceState, float], bool] | None = None,
+) -> SectionsPositioned:
+    """Set where sections sit and the stack's cutting angles; ONE undo step.
+
+    *sections* is a list of ``{"id", "position_mm"}`` (an id is a filename or
+    a corrected index; values are clamped into the atlas range, as
+    :func:`set_positions` does) and *cutting_angles* ``{"pitch_deg",
+    "yaw_deg"}`` for the whole stack, or None. Afterwards the stack runs in
+    the order of the positions (:func:`order_by_position`); the answer lists
+    that order. Either part may be left out; nothing written commits nothing.
+
+    Refused, nothing written: ``BAD_ARGS`` (an entry that is not an id with a
+    finite number, angles that are not two finite numbers, nothing asked),
+    ``POSITIONS_SUPPLIED`` (the host supplies the positions: the spec has no
+    ``position`` task) and ``ANGLES_SUPPLIED`` (angles asked while neither the
+    ``position`` task nor ``transform.angles`` is on). A supplied position
+    does not stop the angles when ``transform.angles`` is on. Unknown ids are
+    reported (``unknown``), the rest written.
+
+    With *options*, the written placements (those *show* keeps) are pictured
+    after the write, as :func:`set_positions` does.
+    """
+    import math
+
+    spec = job.spec
+    pairs: list[tuple[object, float]] = []
+    entries = list(sections) if sections is not None else []
+    for entry in entries:
+        if not isinstance(entry, Mapping) or "id" not in entry:
+            raise Refused("BAD_ARGS", message="each section is {id, position_mm}")
+        try:
+            value = float(entry.get("position_mm"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise Refused("BAD_ARGS", message="position_mm must be a number") from None
+        if not math.isfinite(value):
+            raise Refused("BAD_ARGS", message="position_mm must be finite")
+        pairs.append((entry["id"], value))
+    angles: tuple[float, float] | None = None
+    if cutting_angles is not None:
+        try:
+            angles = (float(cutting_angles["pitch_deg"]), float(cutting_angles["yaw_deg"]))
+        except (TypeError, ValueError, KeyError):
+            raise Refused("BAD_ARGS", message="cutting_angles is {pitch_deg, yaw_deg}") from None
+        if not all(math.isfinite(value) for value in angles):
+            raise Refused("BAD_ARGS", message="cutting angles must be finite")
+    if not pairs and angles is None:
+        raise Refused("BAD_ARGS", message="give sections or cutting_angles")
+    if pairs and not spec.has("position"):
+        raise Refused("POSITIONS_SUPPLIED", message="The positions were supplied by the "
+                      "host; they cannot be changed here.")
+    if angles is not None and not (spec.has("position") or spec.transform.angles):
+        raise Refused("ANGLES_SUPPLIED", message="The cutting angles were supplied by the "
+                      "host; they cannot be changed here.")
+
+    low, high = workspace.position_range
+    before = job.snapshot()
+    written, clamped, unknown = _write_positions(job, workspace, pairs)
+    if angles is not None:
+        _write_angles(job, workspace, *angles)
+    reordered = order_by_position(job) if written else []
+    if written or angles is not None:
+        job.commit(before)
+    view, not_shown = _picture_written(job, workspace, written, options, show)
+    return SectionsPositioned(
+        written=written, clamped=clamped, unknown=unknown, position_range=(low, high),
+        cutting_angles=dict(job.state.cutting_angles_deg) if angles is not None else None,
+        order=[record.id for record in job.state.in_order()], reordered=reordered,
+        view=view, not_shown=not_shown)
 
 
 # --- searches: read, never written ----------------------------------------------------

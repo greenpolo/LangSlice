@@ -5,7 +5,7 @@ Every stored transform has one shape (``SliceState.transform``): ``kind``
 (the six normalized numbers on the section's working frame, the exact map,
 :mod:`langslice.core.affine`), ``physical`` (the same map as the knobs about a
 pivot in canvas fractions), the ``calibration`` it was drawn with, and
-``mirrored``. :func:`interactive_transform` and :func:`fit_transform` build
+``mirrored``. :func:`transform_record` and :func:`fit_transform` build
 it; :func:`set_transforms` writes any number of them as one undo step.
 """
 
@@ -17,6 +17,8 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from langslice.core.affine import normalized_physical_affine
 from langslice.core.damage import exclusions
@@ -36,7 +38,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-def interactive_transform(
+def transform_record(
     *,
     size: tuple[int, int],
     um_per_px: float,
@@ -293,11 +295,26 @@ class Adjustment:
     staged: Staged | None = None
     #: The section's transform before the call.
     previous: dict[str, Any] | None = None
-    #: The stored record these knobs make (:func:`interactive_transform`).
+    #: The stored record these knobs make (:func:`transform_record`).
     transform: dict[str, Any] | None = None
     #: Whether it differs from *previous* (the same numbers again only redraw).
     written: bool = False
     pictures: list[Image.Image] = field(default_factory=list)
+    #: :func:`interactive_transform` only: the section's id; its flip and
+    #: quarter turn after the call (``{"flip", "rotate_quarter", "changed"}``);
+    #: and, when the call changed them under a stored transform, the knob
+    #: values the rebuilt transform kept.
+    id: str = ""
+    orientation: dict[str, Any] | None = None
+    kept: dict[str, float] | None = None
+
+    @property
+    def message(self) -> str:
+        """The reply's line when the orientation changed under a stored transform."""
+        if not self.kept:
+            return ""
+        return ("The orientation changed. The knob values were kept as they were; the "
+                "transform was rebuilt on the new orientation, so the picture moved.")
 
 
 @dataclass(frozen=True)
@@ -393,7 +410,7 @@ def adjust_transforms(
                                           "message": str(failure)}))
             continue
         previous = record.transform
-        transform = interactive_transform(
+        transform = transform_record(
             size=staged.section.size, um_per_px=staged.um_per_px,
             calibration=staged.calibration, pivot=staged.pivot_in_section,
             pivot_frac=staged.pivot_frac, knobs=staged.params,
@@ -414,3 +431,264 @@ def adjust_transforms(
         done.append(Adjustment(staged=staged, previous=previous, transform=transform,
                                written=wrote, pictures=pictures))
     return Adjusted(entries=done, written=set_transforms(job, writes))
+
+
+# --- interactive_transform -------------------------------------------------------------
+
+#: The knobs ``interactive_transform`` takes, with the value of no change.
+KNOB_DEFAULTS: dict[str, float] = {
+    "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
+    "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
+}
+
+
+def held_knobs(record: SliceState) -> dict[str, float]:
+    """The six knob values the section's stored transform has (identity without one)."""
+    physical = (record.transform or {}).get("physical") or {}
+    held: dict[str, float] = {}
+    for name, default in KNOB_DEFAULTS.items():
+        value = physical.get(name)
+        held[name] = default if value is None else float(value)
+    return held
+
+
+def interactive_transform(
+    job: Job,
+    workspace: Workspace,
+    sections: Sequence[Any],
+    *,
+    options: DisplayOptions | None = None,
+) -> Adjusted:
+    """Set each section's orientation and in-plane knobs; ONE undo step.
+
+    A section is ``{"id", "flip"?, "rotate_quarter"? (0, 90, 180 or 270),
+    "rotation_deg"?, "scale_x"?, "scale_y"?, "shear"?, "translate_x_mm"?,
+    "translate_y_mm"?, "pivot"?, "note"?}``. Values are absolute and a value
+    left out keeps what the section has now (identity without a transform;
+    the pivot a stored transform used stays). The quarter turn is applied
+    first, then the flip (:func:`langslice.ops.orientation.orient_sections`).
+    A changed orientation keeps the section's knob values: its transform is
+    rebuilt on the new orientation with the same numbers, not dropped, and
+    the entry says so (:attr:`Adjustment.kept`, :attr:`Adjustment.message`).
+    A changed orientation of a section with no transform, and no knob given,
+    sets the orientation alone.
+
+    Per entry, refused (nothing written for it): ``LOCKED``,
+    ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (not a mapping, a knob that is not a
+    finite number, a flip that is not true/false), ``BAD_ROTATION``,
+    ``FLIP_DISABLED`` (the spec turns flipping off and the call changes the
+    flip), ``NO_POSITION`` (a transform to build on a section without a
+    position), the stager's codes (:func:`langslice.core.placement.stage`)
+    and ``RENDER_FAILED``. With *options* each entry is drawn first, under the
+    new orientation, as :func:`adjust_transforms` draws. All the changed
+    sections are written together, under the job's lock.
+    """
+    from dataclasses import replace
+
+    from langslice.core.placement import StageFailure, stage, transform_views
+    from langslice.core.state import ROTATIONS
+
+    state = job.state
+    done: list[Adjustment] = []
+    pending: dict[str, tuple[bool, int, dict[str, Any] | None]] = {}
+    for entry in sections:
+        if not isinstance(entry, Mapping):
+            done.append(Adjustment(error={"status": "error", "error": "BAD_ARGS"}, early=True))
+            continue
+        record = state.resolve(entry.get("id", ""))
+        if record is None:
+            done.append(Adjustment(error={"status": "error", "error": "UNKNOWN_SLICE_IDS",
+                                          "unknown": [str(entry.get("id", ""))]}))
+            continue
+        name = record.id
+        if name in job.locked:
+            done.append(Adjustment(error={"status": "error", "error": "LOCKED", "id": name},
+                                   early=True, id=name))
+            continue
+
+        def refuse(error: str, name: str = name, **facts: Any) -> None:
+            done.append(Adjustment(error={"status": "error", "error": error, "id": name,
+                                          **facts}, id=name))
+
+        flip = record.flip
+        if entry.get("flip") is not None:
+            if not isinstance(entry["flip"], bool):
+                refuse("BAD_ARGS", message="flip is true or false")
+                continue
+            if entry["flip"] != flip and not job.spec.transform.flip:
+                refuse("FLIP_DISABLED")
+                continue
+            flip = entry["flip"]
+        rotation = record.rotation_deg
+        if entry.get("rotate_quarter") is not None:
+            try:
+                value = float(entry["rotate_quarter"])
+                rotation = int(value) % 360 if value == int(value) else -1
+            except (TypeError, ValueError):
+                rotation = -1
+            if rotation not in ROTATIONS:
+                refuse("BAD_ROTATION", allowed=list(ROTATIONS))
+                continue
+        knobs = held_knobs(record)
+        given = {key: entry[key] for key in KNOB_DEFAULTS if entry.get(key) is not None}
+        try:
+            knobs.update({key: float(value) for key, value in given.items()})
+        except (TypeError, ValueError):
+            refuse("BAD_ARGS", message="every transform number must be a number")
+            continue
+        if not all(math.isfinite(value) for value in knobs.values()):
+            refuse("BAD_ARGS", message="every transform number must be finite")
+            continue
+        changed = (flip, rotation) != (record.flip, record.rotation_deg)
+        orientation = {"flip": flip, "rotate_quarter": rotation, "changed": changed}
+        held = record.transform
+        if held is None and not given:
+            # No transform and none asked for: the orientation alone.
+            if changed:
+                pending[name] = (flip, rotation, None)
+            done.append(Adjustment(id=name, orientation=orientation, written=changed))
+            continue
+        if record.position_mm is None:
+            refuse("NO_POSITION")
+            continue
+        pivot = ((held or {}).get("physical") or {}).get("pivot")
+        twin = replace(record, flip=flip, rotation_deg=rotation)
+        try:
+            staged = stage(workspace, state, twin, knobs,
+                           entry.get("pivot", pivot if pivot else "canvas"))
+        except StageFailure as failure:
+            refuse(failure.code, message=str(failure))
+            continue
+        transform = transform_record(
+            size=staged.section.size, um_per_px=staged.um_per_px,
+            calibration=staged.calibration, pivot=staged.pivot_in_section,
+            pivot_frac=staged.pivot_frac, knobs=staged.params,
+            note=str(entry.get("note", "")),
+        )
+        wrote = changed or not same_transform(held, transform)
+        pictures: list[Image.Image] = []
+        if options is not None:
+            try:
+                pictures = transform_views(workspace, state, staged, options, held)
+            except Exception as exc:
+                logger.warning("interactive_transform failed for %s: %s", name, exc)
+                refuse("RENDER_FAILED", message=str(exc))
+                continue
+        if wrote:
+            pending[name] = (flip, rotation, transform)
+        done.append(Adjustment(
+            staged=staged, previous=held, transform=transform, written=wrote,
+            pictures=pictures, id=name, orientation=orientation,
+            kept=(held_knobs(record) if changed and held is not None else None)))
+    written: list[str] = []
+    if pending:
+        with job.writing():
+            before = job.snapshot()
+            for name, (flip, rotation, transform) in pending.items():
+                target = job.state.by_id(name)
+                if target is None:
+                    continue
+                target.flip, target.rotation_deg, target.transform = flip, rotation, transform
+                written.append(name)
+            if written:
+                job.commit(before)
+    return Adjusted(entries=done, written=written)
+
+
+# --- elastix_affine --------------------------------------------------------------------
+
+#: The atlas images an Elastix affine fit reads.
+ELASTIX_ATLAS_IMAGES: tuple[str, ...] = ("template", "nissl")
+#: Margin added round the regions' bounding box, as a fraction of the canvas.
+BOX_MARGIN = 0.05
+
+
+def region_box(
+    workspace: Workspace, state: Any, record: SliceState, regions: Sequence[str],
+) -> list[float] | None:
+    """The atlas regions' bounding box on the section's canvas.
+
+    ``[x0, y0, x1, y1]`` as fractions of the canvas, with a small margin: the
+    zoom :func:`langslice.core.canvas.zoom_box` takes. None when the regions
+    are not in the plane there. A side (``CTX:left``) is read as the region
+    on both sides.
+    """
+    from langslice.core.atlas.sides import split_side
+    from langslice.core.deformable.atlas_images import regions_mask
+    from langslice.core.placement import stage
+
+    if not regions:
+        return None
+    try:
+        names = [split_side(name)[0] for name in regions]
+        geometry = stage(workspace, state, record, dict(KNOB_DEFAULTS), "canvas").geometry
+        mask = regions_mask(workspace.atlas, geometry.annotation, names)
+    except Exception as exc:
+        logger.warning("region box failed for %s: %s", record.id, exc)
+        return None
+    rows = np.flatnonzero(mask.any(axis=1))
+    cols = np.flatnonzero(mask.any(axis=0))
+    if rows.size == 0 or cols.size == 0:
+        return None
+    width, height = geometry.size
+    scale = geometry.atlas_scale
+    left, top = geometry.atlas_offset
+    x0, x1 = left + cols[0] * scale, left + (cols[-1] + 1) * scale
+    y0, y1 = top + rows[0] * scale, top + (rows[-1] + 1) * scale
+    return [round(max(0.0, x0 / width - BOX_MARGIN), 4),
+            round(max(0.0, y0 / height - BOX_MARGIN), 4),
+            round(min(1.0, x1 / width + BOX_MARGIN), 4),
+            round(min(1.0, y1 / height + BOX_MARGIN), 4)]
+
+
+def elastix_affine(
+    job: Job,
+    workspace: Workspace,
+    sections: Sequence[str] = (),
+    restrict_to: Sequence[str] = (),
+    atlas_image: str = "template",
+    *,
+    options: DisplayOptions | None = None,
+) -> AffineFit:
+    """Fit an in-plane affine with Elastix, per section; ONE undo step for the fits.
+
+    :func:`fit_affine` with ``method="elastix"``: each section's current
+    placement is refined against *atlas_image* (``template`` or ``nissl``;
+    ``ara`` is still read as ``template``). *sections* are ids (filenames or
+    corrected indices); empty, every section :func:`fit_targets` names.
+    *restrict_to* fits by those atlas regions only (sides allowed; empty:
+    every region). Each section's marked damage regions are left out
+    automatically (:func:`langslice.core.damage.exclusions`); a section whose
+    mark names none is refused (``DAMAGED``) as in :func:`fit_affine`.
+
+    Every ok row of a call with *restrict_to* carries ``restrict_box``: the
+    regions' bounding box on that section's canvas as ``[x0, y0, x1, y1]``
+    fractions (``core.canvas.zoom_box``'s zoom), so a later picture can zoom
+    on them; absent when the regions are not in that plane. Refused (nothing
+    fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not one of
+    :data:`ELASTIX_ATLAS_IMAGES`, a region that is not text).
+    """
+    image = canonical_atlas_name(str(atlas_image))
+    if image not in ELASTIX_ATLAS_IMAGES:
+        raise Refused("BAD_ARGS", message=f"atlas_image is one of {list(ELASTIX_ATLAS_IMAGES)}")
+    if any(not isinstance(name, str) for name in restrict_to):
+        raise Refused("BAD_ARGS", message="restrict_to lists atlas regions")
+    if sections:
+        records = []
+        for ref in sections:
+            record = job.state.resolve(ref)
+            if record is None:
+                raise Refused("UNKNOWN_SLICE_IDS", unknown=[str(ref)])
+            records.append(record)
+    else:
+        records = fit_targets(job)
+    result = fit_affine(job, workspace, records, method="elastix", fit_atlas=image,
+                        restrict_to=tuple(restrict_to), options=options)
+    if restrict_to:
+        for row in result.rows:
+            record = job.state.by_id(str(row.get("id")))
+            if row.get("status") == "ok" and record is not None:
+                box = region_box(workspace, job.state, record, restrict_to)
+                if box is not None:
+                    row["restrict_box"] = box
+    return result
