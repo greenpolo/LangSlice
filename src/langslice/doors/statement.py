@@ -42,7 +42,8 @@ IMAGE_MODEL_OFF = (
 #: What the opening pictures show, said by every door that names them.
 OPENING_SHOWS = (
     "They show every section in strips, in the stack's current order, each labelled, "
-    "with the atlas at its current position beneath it when the stack has positions; "
+    "with the atlas at its current position beneath it at the same scale when the "
+    "stack has positions; "
     "when a section has none, atlas reference strips at evenly spaced positions follow."
 )
 

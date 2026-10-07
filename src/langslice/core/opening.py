@@ -25,13 +25,13 @@ from collections.abc import Sequence
 
 from PIL import Image, ImageDraw
 
-from langslice.core.affine import resize_long_edge
 from langslice.core.appearance import view_look
-from langslice.core.atlas_fetch import atlas_section, reference_atlas
+from langslice.core.atlas_fetch import reference_atlas
 from langslice.core.captions import angles_label, caption
+from langslice.core.scale import atlas_at, pair_scale, section_at
 from langslice.core.sections import render_slice
 from langslice.core.sizes import opening_edge
-from langslice.core.state import Angles, SliceState, StackState
+from langslice.core.state import SliceState, StackState
 from langslice.core.workspace import Workspace
 
 #: Longest image edge, in pixels, the OpenAI lanes take in without shrinking
@@ -129,15 +129,18 @@ def section_tile(ctx: Workspace, state: StackState, record: SliceState, tile: in
     return render_slice(ctx, record, long_edge=tile, frame=True, look=view_look(state, record))
 
 
-def atlas_tile(ctx: Workspace, state: StackState, position_mm: float, long_edge: int,
-               *, angles: Angles | None = None) -> Image.Image:
-    """The atlas at *position_mm* and *angles* (the section's own above it;
-    None the stack's one angle), tissue-framed, drawn to *long_edge* (the
-    section's above it), as ``view_stack`` draws it: the two read at the
-    same size, so an olfactory-bulb plane (~200 px at 25 um) is not a
-    thumbnail under a 500 px section at high."""
-    return resize_long_edge(atlas_section(ctx, state, position_mm, frame=True, angles=angles),
-                            int(long_edge))
+def pair_tiles(ctx: Workspace, state: StackState, record: SliceState, position_mm: float,
+               tile: int) -> tuple[Image.Image, Image.Image]:
+    """``(section, atlas)``: *record* and the atlas at *position_mm* at its
+    own angles, each tissue-framed, at ONE micrometres per pixel, the larger
+    of the two at most *tile*, as ``view_stack`` draws them
+    (:func:`langslice.core.scale.pair_scale`): the section reads at its true
+    size against the atlas, and a small plane (an olfactory bulb) is drawn
+    large when its section is small too."""
+    shown, working = pair_scale(ctx, state, record, position_mm, tile)
+    return (section_at(ctx, record, shown, working_um=working, long_edge=tile,
+                       look=view_look(state, record)),
+            atlas_at(ctx, state, position_mm, shown, angles=record.angles))
 
 
 def _cell(image: Image.Image | None, label: str, width: int) -> Image.Image:
@@ -240,16 +243,15 @@ def opening_items(
 
     columns: list[list[Image.Image]] = []
     for record in ordered:
-        section = section_tile(ctx, state, record, tile)
-        column = [_cell(section, tile_label(record), tile)]
-        if placed:
-            position = record.position_mm
-            column.append(
-                _cell(atlas_tile(ctx, state, position, max(section.size),
-                                 angles=record.angles),
-                      f"atlas {position:.2f} mm", tile)
-                if position is not None else _cell(None, "no position", tile)
-            )
+        position = record.position_mm
+        if placed and position is not None:
+            section, atlas = pair_tiles(ctx, state, record, position, tile)
+            column = [_cell(section, tile_label(record), tile),
+                      _cell(atlas, f"atlas {position:.2f} mm", tile)]
+        else:
+            column = [_cell(section_tile(ctx, state, record, tile), tile_label(record), tile)]
+            if placed:
+                column.append(_cell(None, "no position", tile))
         columns.append(column)
     strips = pack_strips(columns, tile, count, budget, max_bytes)
 

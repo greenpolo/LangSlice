@@ -604,8 +604,11 @@ def test_opening_strips_are_composed_within_the_page_budget(tmp_path: Path):
     for path in folder.glob("*.png"):
         Image.fromarray(rng.integers(0, 256, (900, 1200, 3), dtype=np.uint8)).save(path)
     positions = {f"s{index}.png": 0.1 + 0.05 * index for index in range(12)}
+    # 13.2 mm of noise at 11 um/px: about the atlas plane's size, so each
+    # section and its atlas (drawn at one scale) both nearly fill a tile.
     session = open_job(JobSpec(image_folder=str(folder), preprocess="none",
-                               image_resolution="high", inputs={"positions": positions}),
+                               image_resolution="high",
+                               inputs={"positions": positions, "pixel_size_um": 11.0}),
                        atlas_loader=lambda _n: _ATLAS)
     pages = opening_pages(session)
     sent = [base64.b64decode(block.data) for page in pages

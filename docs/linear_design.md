@@ -72,9 +72,15 @@ becomes one undo step.
 In-plane alignment renders are in physical space: the section's micrometres
 per pixel come from the file's TIFF or OME metadata or `--pixel-size-um`
 (else estimated from the tissue width, recorded as `calibration.source =
-"estimated"`); the atlas is drawn at true scale. Sections and atlas sections
-are framed alike (foreground plus a margin) so apparent scale is not a cue,
-and every picture carries its label in its pixels. The opening message shows
+"estimated"`); the atlas is drawn at true scale. Where a section and the
+atlas are separate panels (`stacked`, `side_by_side`, `view_stack`'s sheet,
+the opening strips), each is framed to its own anatomy (foreground plus a
+margin) and both are drawn at one micrometres per pixel (`core/scale.py`):
+the section at the scale its overlay draws it (calibration times its stored
+transform's scale), the larger panel at the picture's long edge, so a
+section reads at its true size against the atlas. `side_by_side` sizes by
+the largest atlas plane, so one section picture serves every position of a
+call. Every picture carries its label in its pixels. The opening message shows
 the stack as strips (`core/opening.py`): labelled sections in corrected order
 with the atlas at each section's current position beneath, then the status
 table. `image_resolution` sets the long edge of each strip tile and of every
@@ -97,9 +103,16 @@ arguments:
   `set_cutting_angles` (with `angles`). `fit_affine` is by default an Elastix
   intensity affine refining the current placement, or `method="silhouette"`
   (outline moments); `include` / `exclude` regions fit only the kept regions.
+  Its overlap compares shapes, not inner anatomy, so a fit that turns a
+  section more than 45 degrees from its previous transform carries a
+  `warning` in its row. `set_cutting_angles` tilts the plane every section is
+  cut at; its description gives, per plane, which picture edge a positive
+  pitch or yaw moves to a larger position (`tests/test_core_layers.py`).
   `adjust_transforms` sets rotation, scales, shear and shifts by hand.
+  `grep_atlas` looks region names up for the `include` / `exclude`
+  arguments (also with Nonlinear alone).
 - Nonlinear: `trace_borders` (image model; not built when the provider is
-  `none`), `grep_atlas`, `fit_deformable` ([nonlinear_design.md](nonlinear_design.md)).
+  `none`), `fit_deformable` ([nonlinear_design.md](nonlinear_design.md)).
 - Scripting only (CLI and library, never a model's tool): `export_maps`.
 
 Every write returns the picture of what it did; there is no preview-then-apply,

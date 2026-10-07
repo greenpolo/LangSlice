@@ -58,7 +58,7 @@
     "position_mm": 0.15
    }
   ],
-  "description": "Shown, in order: s0.png at 0.05 mm, s0.png at 0.10 mm, s1.png at 0.15 mm; separate reference images mapped by zero-based image_indexes. Section captions retain their original display index/flags; filenames identify sections. Independently tissue-framed, not a shared physical canvas.",
+  "description": "Shown, in order: s0.png at 0.05 mm, s0.png at 0.10 mm, s1.png at 0.15 mm; separate reference images mapped by zero-based image_indexes. Section captions retain their original display index/flags; filenames identify sections. Each is tissue-framed on its own, the section and every atlas at one scale (the same um per pixel), not on a shared canvas.",
   "media_delivery_id": "__direct__",
   "no_position": [],
   "render_failed": [],
@@ -90,16 +90,16 @@
    "file": "021_tools_view_placement.1.png",
    "mode": "RGB",
    "size": [
-    158,
-    136
+    253,
+    207
    ]
   },
   {
    "file": "021_tools_view_placement.2.png",
    "mode": "RGB",
    "size": [
-    158,
-    136
+    253,
+    207
    ]
   },
   {
@@ -114,8 +114,8 @@
    "file": "021_tools_view_placement.4.png",
    "mode": "RGB",
    "size": [
-    158,
-    136
+    253,
+    207
    ]
   }
  ],

@@ -81,10 +81,10 @@ def _spec(**fields: Any) -> JobSpec:
 @pytest.mark.parametrize(("spec", "names"), [
     (_spec(), ["status", "view_slices", "view_atlas", "note", "undo", "redo", "mark_damaged",
                "reorder_slices", "set_positions", "view_placement", "view_stack",
-               "orient_slices", "fit_affine", "adjust_transforms", "submit"]),
+               "orient_slices", "fit_affine", "adjust_transforms", "grep_atlas", "submit"]),
     (_spec(tasks=["transform"], transform=TransformSpec(automatic=False), agent_damage=False),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "view_placement",
-      "orient_slices", "adjust_transforms", "submit"]),
+      "orient_slices", "adjust_transforms", "grep_atlas", "submit"]),
     (_spec(tasks=["position"], position=PositionSpec(bayesian=True),
            agent_preprocessing=True),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "mark_damaged",
@@ -96,7 +96,7 @@ def _spec(**fields: Any) -> JobSpec:
     (_spec(tasks=["nonlinear", "transform"], transform=TransformSpec(angles=True)),
      ["status", "view_slices", "view_atlas", "note", "undo", "redo", "mark_damaged",
       "view_placement", "orient_slices", "fit_affine", "adjust_transforms",
-      "set_cutting_angles", "trace_borders", "grep_atlas", "fit_deformable", "submit"]),
+      "set_cutting_angles", "grep_atlas", "trace_borders", "fit_deformable", "submit"]),
 ])
 def test_the_registry_switches_verbs_on_per_spec(spec: JobSpec, names: list[str]):
     assert enabled(spec) == names

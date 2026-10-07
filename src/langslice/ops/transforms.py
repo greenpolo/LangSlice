@@ -103,6 +103,19 @@ def fit_transform(
     }
 
 
+#: A fit that turns a section further than this from its previous transform
+#: reports the turn in its row (``turn_deg``): the overlap it reports cannot
+#: tell such a turn from a correct one.
+LARGE_TURN_DEG = 45.0
+
+
+def _turn_deg(previous: Mapping[str, Any] | None, outcome: Mapping[str, Any]) -> float:
+    """How far a fit turns the section from its previous transform, in degrees (0-180)."""
+    before = float(((previous or {}).get("physical") or {}).get("rotation_deg") or 0.0)
+    after = float((outcome.get("physical") or {}).get("rotation_deg") or 0.0)
+    return abs((after - before + 180.0) % 360.0 - 180.0)
+
+
 def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> list[str]:
     """Write each ``{section id: transform record}`` as ONE undo step.
 
@@ -224,6 +237,9 @@ def fit_affine(
         rows.append(outcome)
         if outcome["status"] != "ok":
             continue
+        turn = _turn_deg(record.transform, outcome)
+        if turn > LARGE_TURN_DEG:
+            outcome["turn_deg"] = round(turn, 1)
         fits.append((record, outcome))
         if options is not None:
             # Every fit returns its picture, however many sections the call fits.

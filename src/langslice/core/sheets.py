@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from PIL import Image, ImageDraw
 
-from langslice.core.affine import resize_long_edge
 from langslice.core.appearance import Look, view_look
 from langslice.core.captions import _font, caption
+from langslice.core.scale import pair_scale, section_at
 from langslice.core.sections import render_slice
 from langslice.core.sizes import opening_edge
 from langslice.core.state import SliceState, StackState
 from langslice.core.status import slice_flags
 from langslice.core.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 #: Largest long edge of the ``view_stack`` contact sheet. Each section tile is
 #: drawn at the level's opening size, then shrunk until the whole sheet fits:
@@ -29,18 +32,20 @@ def stack_pictures(
     *,
     long_edge: int | None = None,
     by_position: bool = False,
-    under: Callable[[SliceState], Image.Image | None] | None = None,
+    under: Callable[[SliceState, float], Image.Image | None] | None = None,
     look: Callable[[SliceState], Look] | None = None,
 ) -> list[tuple[str, Image.Image]]:
     """``(label, captioned picture)`` per section, in corrected order.
 
     *by_position* orders by written position instead (unplaced last) and puts
     each section's position and the signed distance to the next placed one in
-    its label. *under* returns a second image to paste beneath a section's
-    own in the same picture (None for none), so a section and its atlas match
-    travel as ONE captioned image, the atlas drawn to the section's long edge.
-    The label is burned into the picture (:func:`caption`), so it survives
-    any transport that drops the text next to an attachment. *long_edge*
+    its label. *under* returns the atlas at a placed section's position drawn
+    at the micrometres per pixel it is given (None for none), pasted beneath
+    the section in the same picture, so a section and its atlas match travel
+    as ONE captioned image at ONE scale (:func:`langslice.core.scale.pair_scale`:
+    the larger of the two at *long_edge*). The label is burned into the
+    picture (:func:`caption`), so it survives any transport that drops the
+    text next to an attachment. *long_edge*
     None is the run's opening size (:func:`opening_edge`). *look* gives each
     section's look (None: its view appearance).
     """
@@ -64,20 +69,37 @@ def stack_pictures(
                     label += f" ({following.position_mm - record.position_mm:+.2f} to next)"
         if flags:
             label += f"  [{'; '.join(flags)}]"
-        picture = render_slice(
-            ctx, record, long_edge=long_edge, frame=True,
-            look=look(record) if look is not None else view_look(state, record),
-        )
-        below = under(record) if under is not None else None
-        if below is not None:
-            picture = stacked(picture, resize_long_edge(below, max(picture.size)))
+        drawn = look(record) if look is not None else view_look(state, record)
+        picture = _over_atlas(state, ctx, record, long_edge, under, drawn)
+        if picture is None:
+            picture = render_slice(ctx, record, long_edge=long_edge, frame=True, look=drawn)
         out.append((label, caption(picture, label)))
     return out
 
 
+def _over_atlas(
+    state: StackState, ctx: Workspace, record: SliceState, long_edge: int,
+    under: Callable[[SliceState, float], Image.Image | None] | None, look: Look,
+) -> Image.Image | None:
+    """*record* over its atlas match at one scale, or None (no *under*, no
+    position, or no atlas drawn there)."""
+    if under is None or record.position_mm is None:
+        return None
+    try:
+        shown, working = pair_scale(ctx, state, record, float(record.position_mm), long_edge)
+    except Exception as exc:  # an atlas plane that cannot be drawn: the section alone
+        logger.warning("stack sheet: no atlas scale for %s: %s", record.id, exc)
+        return None
+    below = under(record, shown)
+    if below is None:
+        return None
+    return stacked(section_at(ctx, record, shown, working_um=working, long_edge=long_edge,
+                              look=look), below)
+
+
 def reference_slice_picture(
     ctx: Workspace, record: SliceState, *, long_edge: int | None = None,
-    look: Look = None,
+    look: Look = None, scale: tuple[float, float] | None = None,
 ) -> Image.Image:
     """One captioned, tissue-framed section picture for the comparison tools.
 
@@ -86,20 +108,28 @@ def reference_slice_picture(
     copy keeps its first caption,
     :func:`langslice.core.pictures.reference_section_picture`). Filename
     remains the stable identity. *long_edge* None is the run's opening size.
+    *scale* ``(picture um/px, working um/px)`` draws the section at exactly
+    that scale (:func:`langslice.core.scale.reference_scale`, so the atlas
+    beside it reads at the same one) instead of filling *long_edge*.
     """
     long_edge = long_edge or opening_edge(ctx)
     label = f"{record.index_corrected}: {record.id}"
     flags = slice_flags(record)
     if flags:
         label += f"  [{'; '.join(flags)}]"
-    return caption(render_slice(ctx, record, long_edge=long_edge, frame=True, look=look), label)
+    if scale is not None:
+        picture = section_at(ctx, record, scale[0], working_um=scale[1], long_edge=long_edge,
+                             look=look)
+    else:
+        picture = render_slice(ctx, record, long_edge=long_edge, frame=True, look=look)
+    return caption(picture, label)
 
 
 def stack_sheet(
     state: StackState,
     ctx: Workspace,
     *,
-    under: Callable[[SliceState], Image.Image | None] | None = None,
+    under: Callable[[SliceState, float], Image.Image | None] | None = None,
     columns: int = 8,
     look: Callable[[SliceState], Look] | None = None,
     tile_edge: int | None = None,

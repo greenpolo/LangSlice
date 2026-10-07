@@ -2,6 +2,7 @@
 
 from langslice.core.jpeg import encode_jpeg
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
+from langslice.core.scale import reference_scale
 from langslice.core.sizes import picture_edge
 from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
@@ -23,10 +24,16 @@ def test_separate_comparison_reuses_cached_pictures_and_maps_each_pair(tmp_path)
     images = _images(pictures)
     assert len(images) == 5
     edge = picture_edge(ctx)
-    assert pictures[0] is reference_section_picture(ctx, state.by_id("s0.png"), long_edge=edge)
-    assert pictures[3] is reference_section_picture(ctx, state.by_id("s1.png"), long_edge=edge)
+    # Each section at the one scale it shares with every atlas beside it.
+    records = [record for record in state.in_order() if record.id in ("s0.png", "s1.png")]
+    scales = {record.id: reference_scale(ctx, state, record, edge) for record in records}
+    shown = {record.id: reference_section_picture(ctx, record, long_edge=edge,
+                                                  scale=scales[record.id]) for record in records}
+    assert pictures[0] is shown["s0.png"]
+    assert pictures[3] is shown["s1.png"]
+    assert scales["s0.png"] == scales["s1.png"]
     assert pictures[1] is pictures[2] is pictures[4] is reference_atlas_picture(
-        ctx, state, position, long_edge=edge)
+        ctx, state, position, long_edge=edge, um_per_px=scales["s0.png"][0])
     assert images[1] == images[2] == images[4]
     assert [row["image_indexes"] for row in result["compared"]] == [
         {"section": 0, "atlas": 1}, {"section": 0, "atlas": 2},

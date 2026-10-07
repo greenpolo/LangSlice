@@ -49,10 +49,10 @@ from langslice.core.display import (
     atlas_caption,
     atlas_image_picture,
     framed_atlas,
-    framed_section,
 )
 from langslice.core.layers import note
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
+from langslice.core.scale import pair_scale, reference_scale, section_at
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
     render_slice,
@@ -68,7 +68,8 @@ from langslice.core.workspace import Workspace
 logger = logging.getLogger(__name__)
 
 #: Placement pictures (``view_placement``, ``set_positions``): the physical
-#: views plus ``stacked`` — the section over the atlas, each tissue-framed.
+#: views plus ``stacked`` — the section over the atlas, each tissue-framed,
+#: both at one micrometres per pixel.
 PLACEMENT_MODES = ("template", "stacked", *[m for m in VIEW_MODES if m != "template"])
 #: Placement modes whose pictures are tissue-framed rather than drawn on the
 #: physical canvas (no zoom, no stored placement drawn).
@@ -299,8 +300,10 @@ def placement_pictures(
     """One section-position pair's pictures.
 
     ``side_by_side``: separate tissue-framed references, the section and the
-    atlas (the doors map them by index). ``stacked``: one image, the framed
-    section over the framed atlas. Every other mode: the physical canvas, the
+    atlas (the doors map them by index), at one scale for every position
+    (:func:`langslice.core.scale.reference_scale`). ``stacked``: one image,
+    the framed section over the framed atlas at one scale
+    (:func:`langslice.core.scale.pair_scale`). Every other mode: the physical canvas, the
     section under its complete current registration — the stored in-plane
     transform (identity when it has none) and, at the position it was fitted
     at, the applied deformation from *store* (unless ``view.deformation`` is
@@ -313,16 +316,21 @@ def placement_pictures(
     row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
     default_atlas = options.atlas_images == ("ara",) and not options.lines
     if options.mode == "side_by_side":
+        # Both at one scale, the same for every position, so the one section
+        # picture of a call reads true against each of its atlases.
+        scale = reference_scale(ws, state, record, options.long_edge, um_per_px=um_per_px)
         atlas_image = (
             reference_atlas_picture(ws, state, position, long_edge=options.long_edge,
-                                    angles=record.angles)
+                                    angles=record.angles, um_per_px=scale[0])
             if default_atlas else caption(
-                framed_atlas(ws, state, position, options, angles=record.angles),
+                framed_atlas(ws, state, position, options, um_per_px=scale[0],
+                             angles=record.angles),
                 atlas_caption(state, position, options, angles=record.angles),
             )
         )
         tissue_image = reference_section_picture(
             ws, record, long_edge=options.long_edge, look=options.look(state, record),
+            scale=scale,
         )
         note(tissue_image, sections=(record.id,), mode="side_by_side",
              extra={"panel": "section"})
@@ -330,16 +338,18 @@ def placement_pictures(
              extra={"panel": "atlas", "position_mm": float(position)})
         return Placed(images=[tissue_image, atlas_image], row=row, separate=True)
     if options.mode == "stacked":
-        # One picture: the atlas is drawn to the section's long edge so
-        # the two read at the same size, as in `view_stack`.
-        top = framed_section(ws, state, record, options)
+        # One picture, the section over the atlas at one scale (the larger
+        # of the two at the call's size), as in `view_stack`.
+        shown, working_um = pair_scale(ws, state, record, position, options.long_edge,
+                                       um_per_px=um_per_px)
         picture = stacked(
-            top, framed_atlas(ws, state, position, options, long_edge=max(top.size), fill=True,
-                              angles=record.angles),
+            section_at(ws, record, shown, working_um=working_um, long_edge=options.long_edge,
+                       look=options.look(state, record)),
+            framed_atlas(ws, state, position, options, um_per_px=shown, angles=record.angles),
         )
         name = options.atlas_name()
         return Placed(images=[note(caption(
-            picture, f"{record.id}{options.section_tag()} over atlas {position:.2f} mm"
+            picture, f"{record.id}{options.section_tag()} above atlas {position:.2f} mm"
             + ("" if name == "template" else f" ({name})"),
         ), sections=(record.id,), mode="stacked", extra={"position_mm": float(position)})],
             row=row)

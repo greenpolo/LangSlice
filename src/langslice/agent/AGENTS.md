@@ -46,8 +46,9 @@ no tools and takes its answer from `spec.inputs`. Users see Positioning
 `ops.registry.enabled(spec)`: `orient_slices`, `fit_affine`,
 `adjust_transforms` and `set_cutting_angles` belong to `transform` (a mirror
 is the sign of the in-plane affine, so flipping is Linear, never
-Positioning); `trace_borders`, `grep_atlas` and `fit_deformable` to
-`nonlinear`; `mark_damaged` and `preprocess` are host switches
+Positioning); `trace_borders` and `fit_deformable` to `nonlinear`;
+`grep_atlas` to either (the region lookup for every `include` /
+`exclude`); `mark_damaged` and `preprocess` are host switches
 (`agent_damage`, `agent_preprocessing`); `search_position` is opt-in
 (`--bayesian`).
 

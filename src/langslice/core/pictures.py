@@ -29,6 +29,7 @@ from langslice.core.display import (
     framed_section,
 )
 from langslice.core.layers import note
+from langslice.core.scale import atlas_at
 from langslice.core.sections import render_cache_key
 from langslice.core.sheets import reference_slice_picture, spacing_plot, stack_sheet
 from langslice.core.sizes import opening_edge, picture_edge
@@ -40,32 +41,40 @@ logger = logging.getLogger(__name__)
 
 def reference_section_picture(
     ws: Workspace, record: SliceState, *, long_edge: int | None = None, look: Look = None,
+    scale: tuple[float, float] | None = None,
 ) -> Image.Image:
     """:func:`langslice.core.sheets.reference_slice_picture`, cached per
-    display state (orientation, look, size). The cached caption keeps the
-    index and flags of its first display; *long_edge* None is the run's
-    opening size, another size its own entry. Shared: read only."""
+    display state (orientation, look, size, and *scale*, the
+    ``(picture um/px, working um/px)`` it is drawn at). The cached caption
+    keeps the index and flags of its first display; *long_edge* None is the
+    run's opening size, another size its own entry. Shared: read only."""
     long_edge = long_edge or opening_edge(ws)
-    key = ("section", *render_cache_key(ws, record, long_edge=long_edge, frame=True, look=look))
+    key = ("section", *render_cache_key(ws, record, long_edge=long_edge, frame=True, look=look),
+           None if scale is None else tuple(round(float(v), 9) for v in scale))
     if key not in ws.picture_cache:
         ws.picture_cache[key] = reference_slice_picture(ws, record, long_edge=long_edge,
-                                                        look=look)
+                                                        look=look, scale=scale)
     return ws.picture_cache[key]
 
 
 def reference_atlas_picture(
     ws: Workspace, state: StackState, position_mm: float, *, long_edge: int | None = None,
-    angles: Angles | None = None,
+    angles: Angles | None = None, um_per_px: float | None = None,
 ) -> Image.Image:
     """:func:`langslice.core.atlas_fetch.atlas_picture`, cached by position,
     plane, cutting angles (*angles*: a section's own, or the stack's when
-    None) and size. Shared: read only."""
+    None) and size; with *um_per_px*, drawn at exactly that scale (beside a
+    section drawn at it, :mod:`langslice.core.scale`). Shared: read only."""
     long_edge = long_edge or picture_edge(ws)
     pitch, yaw = plane_angles(state, angles)
-    key = ("atlas", state.plane, float(position_mm), pitch, yaw, int(long_edge))
+    key = ("atlas", state.plane, float(position_mm), pitch, yaw, int(long_edge),
+           None if um_per_px is None else round(float(um_per_px), 9))
     if key not in ws.picture_cache:
-        ws.picture_cache[key] = atlas_picture(ws, state, position_mm, long_edge=long_edge,
-                                              angles=(pitch, yaw))
+        ws.picture_cache[key] = atlas_picture(
+            ws, state, position_mm, long_edge=long_edge, angles=(pitch, yaw),
+            prepared=(None if um_per_px is None else
+                      atlas_at(ws, state, position_mm, um_per_px, angles=(pitch, yaw))),
+        )
     return ws.picture_cache[key]
 
 
@@ -123,15 +132,15 @@ def stack_review(
     ws: Workspace, state: StackState, options: DisplayOptions,
 ) -> tuple[Image.Image, Image.Image]:
     """``(sheet, plot)``: every section in written-position order, a placed
-    one over the atlas at its position, captioned; then position against
-    corrected index (:func:`langslice.core.sheets.spacing_plot`)."""
+    one over the atlas at its position at one scale, captioned; then position
+    against corrected index (:func:`langslice.core.sheets.spacing_plot`)."""
 
-    def atlas_under(record: SliceState) -> Any:
+    def atlas_under(record: SliceState, um_per_px: float) -> Any:
         if record.position_mm is None:
             return None
         try:
             return framed_atlas(ws, state, float(record.position_mm), options,
-                                angles=record.angles)
+                                um_per_px=um_per_px, angles=record.angles)
         except Exception as exc:
             logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
             return None
