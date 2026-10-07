@@ -13,8 +13,7 @@ half more posterior; LangSlice's coronal display has the BrainGlobe ML index
 running rightward, so that is yaw < 0. ABBA's ML coordinate channel
 DECREASES with screen x, and the left-right symmetric Allen labels cannot
 reveal a mirror, so an ML sign is never settled by label agreement. The
-Fiji connector applies the same mapping (``SlicingAnglesAction``); SliceBench
-reads the constants through ``langslice.integrations.abba_linear``.
+Fiji connector applies the same mapping (``SlicingAnglesAction``).
 """
 
 from __future__ import annotations

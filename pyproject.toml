@@ -94,20 +94,6 @@ forbidden_modules = [
     "langslice.job", "langslice.ops", "langslice.doors", "langslice.agent", "langslice.hosts",
 ]
 
-[[tool.importlinter.contracts]]
-id = "no-shims-inside"
-name = "LangSlice imports none of the compatibility shims (they are for sibling repos)"
-type = "forbidden"
-source_modules = [
-    "langslice.core", "langslice.job", "langslice.ops", "langslice.doors",
-    "langslice.agent", "langslice.providers", "langslice.hosts",
-]
-forbidden_modules = [
-    "langslice.linear", "langslice.atlas", "langslice.nonlinear", "langslice.integrations",
-    "langslice.adk", "langslice.space", "langslice.oblique", "langslice.affine",
-    "langslice.image_prep", "langslice.registration_handoff",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]

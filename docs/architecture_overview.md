@@ -16,10 +16,7 @@ and a violation is fixed by moving code, never by an exception.
 
 Core, job and ops import no provider, agent framework or model client
 (`google`, `litellm`, `openai`, `mcp`); an image model is passed in as an
-argument. The top-level `linear/`, `atlas/`, `nonlinear/`, `integrations/`,
-`adk/` packages and a few modules (`space.py`, `oblique.py`, `affine.py`,
-`image_prep.py`, `registration_handoff.py`) are compatibility shims for the
-sibling repositories; LangSlice imports none of them. Each package has a
+argument. Each package has a
 `CLAUDE.md` code map (`AGENTS.md` is its identical twin).
 
 ## One job, many doors

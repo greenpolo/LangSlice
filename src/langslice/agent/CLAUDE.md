@@ -18,10 +18,6 @@ The method spans the layers; each package has its own guide:
 | `doors/` | the declarations, the toolbox (`doors/tools/`), MCP, the agent CLI, the library | `doors/CLAUDE.md` |
 | `agent/` | this driver: engine, session, job statement, plugins, model resolver, trace, cost | here |
 
-`linear/` holds only re-export shims for sibling repos (`from langslice.linear
-import JobSpec, run`, `engine`, `toolbox`, `trace`, ...); LangSlice never
-imports them (import-linter's `no-shims-inside` contract).
-
 ## One environment, not a pipeline
 
 `langslice linear run FOLDER` is ONE agent environment over a stack of

@@ -24,7 +24,7 @@ the ways to use it.
 
 ## Repository
 
-- `src/langslice/`: the package (`core`, `job`, `ops`, `doors`, `agent`, `providers`, `hosts`, plus compatibility shims).
+- `src/langslice/`: the package (`core`, `job`, `ops`, `doors`, `agent`, `providers`, `hosts`).
 - `connectors/`: the Fiji connector, the Claude Desktop MCP configuration, the Claude Code and Codex setups.
 - `packaging/`, `environment.yml`: the worker's source installation.
 - `tests/`: pytest.
