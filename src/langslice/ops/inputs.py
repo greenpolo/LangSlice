@@ -28,12 +28,14 @@ def section_inputs(
 ) -> str:
     """A digest of what a fit of *record* reads: its linear placement
     (position, plane, cutting angles, flip, rotation, transform), its fit
-    appearance, its damage flag, and with *deformation* its applied
+    appearance, its damage (the marked regions, which every fit leaves out,
+    and a mark naming none), and with *deformation* its applied
     deformation (``start="current"``), with *trace* its image correction."""
     held: dict[str, Any] = {
         "linear": linear_key(state, record),
         "fit_look": looks.section_settings(state, "fit", record.id),
-        "damaged": bool(record.damaged),
+        "damage": {"regions": list(record.damaged_regions),
+                   "marked": bool(record.damage_marked)},
     }
     if deformation:
         held["deformation"] = (record.deformation or {}).get("key")

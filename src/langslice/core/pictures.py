@@ -21,6 +21,7 @@ from PIL import Image
 from langslice.core.appearance import Look
 from langslice.core.atlas_fetch import atlas_picture
 from langslice.core.captions import caption
+from langslice.core.channels import describe_shown
 from langslice.core.display import (
     DisplayOptions,
     atlas_caption,
@@ -99,9 +100,12 @@ def atlas_view_picture(
     return note(picture, mode="atlas", extra={"position_mm": float(position_mm)})
 
 
-def section_label(record: SliceState, options: DisplayOptions) -> str:
-    """``"<corrected index>: <filename>"`` plus what of the section is shown."""
-    return f"{record.index_corrected}: {record.id}" + options.section_tag()
+def section_label(
+    record: SliceState, options: DisplayOptions, state: StackState | None = None,
+) -> str:
+    """``"<corrected index>: <filename>"`` plus what of the section is shown
+    (with *state*, the raw channels' display properties)."""
+    return f"{record.index_corrected}: {record.id}" + options.section_tag(state)
 
 
 def channel_tile_edge(ws: Workspace, record: SliceState, options: DisplayOptions) -> int:
@@ -116,15 +120,18 @@ def section_picture(
     """One section as corrected, tissue-framed, its index and id burned in.
 
     Mode ``channels``: the section's raw channels side by side instead, each
-    unmodified and labelled with its name.
+    labelled with its name: as read, or with its display properties
+    (:mod:`langslice.core.channels`).
     """
     if options.mode == "channels":
-        strip, _names = channel_strip(ws, state, record, options,
-                                      tile_edge=channel_tile_edge(ws, record, options))
+        strip, names = channel_strip(ws, state, record, options,
+                                     tile_edge=channel_tile_edge(ws, record, options))
+        shown = describe_shown(state, names)
         return note(caption(strip, f"{record.index_corrected}: {record.id}  raw channels, "
-                            "unmodified"), sections=(record.id,), mode="channels")
+                            + (f"displayed {shown}" if shown else "unmodified")),
+                    sections=(record.id,), mode="channels")
     return note(caption(framed_section(ws, state, record, options),
-                        section_label(record, options)),
+                        section_label(record, options, state)),
                 sections=(record.id,), mode=options.mode)
 
 

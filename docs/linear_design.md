@@ -29,7 +29,8 @@ A host (CLI, Fiji connector, MCP, library) fills one `JobSpec`
 `inputs` keys (`core.spec.INPUT_KEYS`; any other key is refused): `order`,
 `positions`, `angles` (`{pitch, yaw}` for the stack, or per section),
 `transforms`, `orientation` (`{id: {flip, rotation_deg}}`), `pixel_size_um`,
-`damaged` (`{id: note}`; the agent cannot clear these flags), `locked` (ids
+`damaged` (`{id: note}`: a mark that names no regions, which the agent may add
+regions to but cannot remove), `locked` (ids
 whose flip, rotation and transform the agent cannot change), `keep_warp`
 (ids carrying the user's own deformation; `fit_deformable` refuses them),
 `nonlinear_skip` (ids left out of Nonlinear) and `channel_names`. A
@@ -49,7 +50,11 @@ JSON shape; `state.json` in the job folder, format version 3):
 - stack: atlas, plane, interval and thickness, the spec, `interval_breaks`
   (indices after a real gap), run `notes`, `submitted`;
 - per section: original and corrected index; `flip` and `rotation_deg`
-  (rotate first, then flip left-right); `damaged` and note; `position_mm`;
+  (rotate first, then flip left-right); damage: `damaged_regions` (the atlas
+  regions the section is missing or has badly displaced, acronyms or ids,
+  `"CTX:left"` for one side), `damage_marked` (a mark that names no regions)
+  and `damage_note`, the section being damaged when it has either (a state
+  saved with the older `damaged` flag reads as `damage_marked`); `position_mm`;
   `transform` (`kind`: `silhouette`, `elastix`, `interactive`, `host`,
   `imported`; six normalized numbers `params`; `physical`: rotation, scales,
   shear, translations in mm; `calibration`); `cutting_angles_deg` (pitch and
@@ -132,7 +137,8 @@ whose inputs changed meanwhile is refused as `STALE_INPUT`.
 - `transform` on: a section without a transform (`MISSING_TRANSFORMS`); a
   damaged section whose transform is missing, identity, invalid or a
   whole-section automatic fit (`DAMAGED_REQUIRES_MANUAL_TRANSFORM`; a manual
-  adjustment or `fit_affine` with `include` / `exclude` regions satisfies it).
+  adjustment or a `fit_affine` fit that left regions out satisfies it; a
+  section's marked regions are left out of every fit on their own).
   Locked sections are exempt.
 - `nonlinear` on: a section with neither a deformation at its current
   placement nor a `keep_linear` reason (`MISSING_DEFORMATIONS`). No section

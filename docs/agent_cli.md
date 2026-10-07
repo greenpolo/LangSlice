@@ -156,7 +156,7 @@ always parses.
 (`status`, `view_stack`, a write's `changed`) carry every field on every row,
 null where a section has none (the last placed section's `delta_to_next_mm`,
 an untransformed section's `transform`), `false` for `locked` and
-`damage_by_user` when unset, `[]` for no `caveats`. Pictures are
+`damage_by_user` when unset, `[]` for no `caveats` or `damaged_regions`. Pictures are
 never inlined: each is saved in the job folder and listed under `artifacts` by
 absolute path and `kind` with its `index` (the number the reply's
 `image_indexes` give): `view` (the JPEG), `view_json` (its frame:

@@ -81,7 +81,7 @@ def _setup(folder: Path, atlas: SyntheticAtlas, image: Image.Image, *, damaged: 
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     state.slices[0].position_mm = POSITION
-    state.slices[0].damaged = damaged
+    state.slices[0].damage_marked = damaged
     return state, ctx, build_tools(state, ctx, spec)
 
 

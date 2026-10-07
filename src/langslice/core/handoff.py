@@ -23,6 +23,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.affine import denormalized_affine
+from langslice.core.appearance import preprocessed_settings
 from langslice.core.canvas import CanvasGeometry, canvas_geometry
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
@@ -122,6 +123,7 @@ def prepare_linear_registration(
     *,
     long_edge: int = 2048,
     transform: dict[str, Any] | None = None,
+    preprocessed: bool = False,
 ) -> LinearRegistrationInput:
     """Prepare a supplied affine placement, preserving shear and physical scale.
 
@@ -138,6 +140,12 @@ def prepare_linear_registration(
     for a fit that starts from a placement it has not written:
     ``fit_affine``'s Elastix method on a section with no transform yet
     starts from the identity.
+
+    *preprocessed* renders the section as its preprocessed channel
+    (:func:`langslice.core.appearance.preprocessed_image`, what the image
+    model reads) instead of the default render; the frame, size, scale and
+    placement are the same either way, and with the default recipe so is
+    the image.
     """
     if isinstance(long_edge, bool) or not isinstance(long_edge, int) or long_edge <= 0:
         raise ValueError("long_edge must be a positive integer")
@@ -172,7 +180,8 @@ def prepare_linear_registration(
     if params.shape != (6,) or not np.isfinite(params).all():
         raise ValueError("The written affine must contain six finite parameters")
 
-    image = render_slice(ctx, record, long_edge=long_edge, frame=False)
+    look = preprocessed_settings(state, record.id) if preprocessed else None
+    image = render_slice(ctx, record, long_edge=long_edge, frame=False, look=look)
     with Image.open(ctx.image_path(record.id)) as source_image:
         original_size = list(source_image.size)
 
@@ -200,7 +209,9 @@ def prepare_linear_registration(
             "source": "linear_state", "section_id": record.id,
             "orientation": {"rotation_deg": record.rotation_deg, "flip": record.flip},
             "orientation_snapshot_checked": orientation is not None,
-            "preprocess": ctx.spec.preprocess, "image_size": list(image.size),
+            "preprocess": ctx.spec.preprocess,
+            **({"preprocessed": look} if look is not None else {}),
+            "image_size": list(image.size),
             "image_frame": "oriented rendered section; not acquisition image pixels",
             "source_image_size": original_size,
             "section_um_per_px": float(um_per_px), "calibration_source": source,

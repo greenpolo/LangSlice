@@ -45,8 +45,10 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.appearance import (
+    PREPROCESSED,
     Look,
     channel_colors,
+    preprocessed_settings,
     section_settings,
 )
 from langslice.core.atlas.core import get_reference_slice
@@ -62,6 +64,7 @@ from langslice.core.canvas import (
     region_polys,
     regions_left,
 )
+from langslice.core.channels import all_properties, describe, describe_shown, with_properties
 from langslice.core.image_prep import mask_box
 from langslice.core.sections import render_slice
 from langslice.core.sizes import PICTURE_EDGES
@@ -229,32 +232,44 @@ class DisplayOptions:
         return self.borders or bool(self.regions)
 
     def look(self, state: StackState, record: SliceState) -> Look:
-        """The look a picture of *record* is drawn in."""
-        if self.version == "fit":
-            return section_settings(state, "fit", record.id)
+        """The look a picture of *record* is drawn in: the version ``fit``
+        (or ``preprocessed``) is the preprocessed channel, ``view`` the view
+        look; raw channels carry their display properties."""
+        if self.version in ("fit", PREPROCESSED):
+            return preprocessed_settings(state, record.id)
         if self.version or not self.channels:
             return section_settings(state, "view", record.id)
         # One channel is stretched too, in gray (the `channels` strip is the
         # unmodified picture).
-        return {"overlay": list(self.channels)}
+        return with_properties(state, {"overlay": list(self.channels)})
 
-    def channel_colors(self) -> dict[str, str]:
-        """Colour of each raw channel in an overlay (empty for one channel or a version)."""
+    def channel_colors(self, state: StackState | None = None) -> dict[str, str]:
+        """Colour of each raw channel in an overlay (empty for one channel or a
+        version); with *state*, a channel's own colormap wins."""
         if len(self.channels) < 2:
             return {}
-        return {name: word for name, word, _rgb in channel_colors(self.channels)}
+        held = all_properties(state) if state is not None else {}
+        out: dict[str, str] = {}
+        for name, word, _rgb in channel_colors(self.channels):
+            own = held[name].colormap if name in held else None
+            out[name] = own or word
+        return out
 
-    def section_tag(self) -> str:
-        """Caption fragment naming what of the section is shown ("" for the view version)."""
-        if self.version == "fit":
+    def section_tag(self, state: StackState | None = None) -> str:
+        """Caption fragment naming what of the section is shown ("" for the
+        view version); with *state*, the display properties of the raw
+        channels shown (:func:`langslice.core.channels.describe`)."""
+        if self.version in ("fit", PREPROCESSED):
             return "  [fit appearance]"
         if self.version or not self.channels:
             return ""
+        shown = describe_shown(state, self.channels) if state is not None else ""
+        extra = f"; {shown}" if shown else ""
         if len(self.channels) == 1:
-            return f"  [raw {self.channels[0]}, stretched]"
+            return f"  [raw {self.channels[0]}, stretched{extra}]"
         return "  [raw " + " + ".join(
             name if name.lower() == word else f"{name} {word}"
-            for name, word in self.channel_colors().items()) + "]"
+            for name, word in self.channel_colors(state).items()) + extra + "]"
 
     def atlas_name(self) -> str:
         """How captions name the atlas picture."""
@@ -442,22 +457,25 @@ def channel_strip(
     ctx: Workspace, state: StackState, record: SliceState, options: DisplayOptions,
     *, tile_edge: int,
 ) -> tuple[Image.Image, list[str]]:
-    """One section's raw channels side by side, each unmodified and labelled.
+    """One section's raw channels side by side, each labelled.
 
     Every tile is the same tissue frame as the section's other pictures, one
     raw plane in grayscale exactly as read (no stretch, no enhancement), at
-    *tile_edge* at most. Returns the strip and the channel names in order.
+    *tile_edge* at most; a channel with display properties is drawn and
+    labelled with them (:mod:`langslice.core.channels`). Returns the strip
+    and the channel names in order.
     """
     from langslice.core.captions import caption
     from langslice.core.sheets import beside
 
     names, _planes = ctx.section_channels(record.id)
+    held = all_properties(state)
     strip: Image.Image | None = None
     for name in names:
         tile = caption(
             framed_section(ctx, state, record, options, long_edge=tile_edge,
-                           look={"channel": name}),
-            name,
+                           look=with_properties(state, {"channel": name})),
+            describe(name, held.get(name)),
         )
         strip = tile if strip is None else beside(strip, tile)
     assert strip is not None

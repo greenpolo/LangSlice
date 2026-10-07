@@ -3,7 +3,7 @@
  "images": [],
  "state": {
   "appearance": {
-   "fit": {
+   "preprocessed": {
     "sections": {},
     "stack": {
      "channel_weights": null,
@@ -33,8 +33,9 @@
   "slices": [
    {
     "caveats": [],
+    "damage_marked": false,
     "damage_note": "",
-    "damaged": false,
+    "damaged_regions": [],
     "deformation": {
      "inverse_source": "engine",
      "key": "<hex>",
@@ -79,7 +80,7 @@
      "geometry_fingerprint": "<hex>",
      "id": "s0.png",
      "model": "gpt-image-2",
-     "model_border_pixels": 7405,
+     "model_border_pixels": 7374,
      "output_kind": "border_annotation",
      "prompt_edited": false,
      "provider": "openai-oauth",
@@ -127,8 +128,9 @@
    },
    {
     "caveats": [],
+    "damage_marked": false,
     "damage_note": "",
-    "damaged": false,
+    "damaged_regions": [],
     "deformation": {
      "inverse_source": "composed: numerical_fixed_point then numerical_fixed_point",
      "key": "<hex>",
@@ -191,7 +193,7 @@
      "geometry_fingerprint": "<hex>",
      "id": "s1.png",
      "model": "gpt-image-2",
-     "model_border_pixels": 14615,
+     "model_border_pixels": 7494,
      "output_kind": "border_annotation",
      "prompt_edited": false,
      "provider": "openai-oauth",
@@ -239,8 +241,9 @@
    },
    {
     "caveats": [],
+    "damage_marked": true,
     "damage_note": "right third missing",
-    "damaged": true,
+    "damaged_regions": [],
     "deformation": {
      "keep_linear": "Too little tissue survives for a warp.",
      "linear_key": "<hex>"
@@ -264,7 +267,7 @@
      "geometry_fingerprint": "<hex>",
      "id": "s2.png",
      "model": "gpt-image-2",
-     "model_border_pixels": 7271,
+     "model_border_pixels": 7128,
      "output_kind": "border_annotation",
      "prompt_edited": true,
      "provider": "openai-oauth",

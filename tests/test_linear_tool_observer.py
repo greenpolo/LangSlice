@@ -85,7 +85,7 @@ def test_callback_failures_never_change_tool_results_or_exceptions():
 
 def test_target_resolution_matches_batch_and_default_tool_scope():
     state = StackState(slices=[SliceState("a", 0, 0, position_mm=2),
-                              SliceState("b", 1, 1, damaged=True, position_mm=3),
+                              SliceState("b", 1, 1, damage_marked=True, position_mm=3),
                               SliceState("c", 2, 2)])
     assert _tool_target_ids(state, "fit_affine", {"slice_ids": []}) == ["a"]
     assert _tool_target_ids(state, "view_stack", {}) == ["a", "b", "c"]

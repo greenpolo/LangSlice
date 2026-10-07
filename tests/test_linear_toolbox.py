@@ -630,7 +630,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     state = ingest(spec, ctx)
     for record in state.slices:
         record.position_mm = 10.0
-    state.by_id("s1.png").damaged = True
+    state.by_id("s1.png").damage_marked = True
     box = build_tools(state, ctx, spec)
 
     result = _tool(box, "fit_affine")([], "silhouette")
@@ -670,7 +670,7 @@ def test_one_entry_adjustment_writes_shows_and_undoes(tmp_path: Path):
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
     state.by_id("s0.png").position_mm = 10.0
-    state.by_id("s0.png").damaged = True  # the hand path is for exactly these
+    state.by_id("s0.png").damage_marked = True  # the hand path is for exactly these
     box = build_tools(state, ctx, spec)
 
     adjust = single_adjust(_tool(box, "adjust_transforms"))
@@ -946,7 +946,7 @@ def test_the_playbook_puts_astras_method_in_the_job_statement(tmp_path: Path):
 
 def test_damage_flags_can_be_set_and_cleared_together_with_undo(tmp_path: Path):
     state, ctx, box = _box(tmp_path)
-    state.by_id("s0.png").damaged = True
+    state.by_id("s0.png").damage_marked = True
     state.by_id("s0.png").damage_note = "previous damage"
     before = state.to_dict()
     result = _tool(box, "mark_damaged")([

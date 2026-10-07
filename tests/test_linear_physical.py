@@ -353,7 +353,7 @@ def _half_section(tmp_path: Path):
 
 def test_damage_is_refused_by_fit_affine(tmp_path: Path):
     tools, state = _half_section(tmp_path)
-    state.slices[0].damaged = True
+    state.slices[0].damage_marked = True
 
     refused = tools["fit_affine"](["s.tif"], "silhouette")
     assert refused["results"][0]["error"] == "DAMAGED"

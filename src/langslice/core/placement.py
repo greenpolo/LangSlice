@@ -124,13 +124,16 @@ class Canvas:
     panels: list[PanelFrame] = field(default_factory=list)
 
 
-def canvas_label(label: str, options: DisplayOptions) -> str:
-    """A physical picture's caption head: what of the section, and any atlas under it."""
+def canvas_label(
+    label: str, options: DisplayOptions, state: StackState | None = None,
+) -> str:
+    """A physical picture's caption head: what of the section (with *state*,
+    the raw channels' display properties), and any atlas under it."""
     under = ""
     if (options.atlas_images and options.atlas_opacity > 0
             and MODE_RULES[options.mode].opacity):
         under = f"  atlas {options.atlas_name()} under at {options.atlas_opacity:g}"
-    return label + options.section_tag() + under
+    return label + options.section_tag(state) + under
 
 
 def draw_canvas(
@@ -222,7 +225,7 @@ def draw_canvas(
         atlas_opacity=options.atlas_opacity, outlines=options.layer,
         border_color=options.border_color, border_thickness=options.border_thickness,
         pivot=frame.pivot, pivot_in_section=in_section,
-        label=canvas_label(label or record.id, options), long_edge=edge,
+        label=canvas_label(label or record.id, options, state), long_edge=edge,
         atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position,
                                           angles=record.angles),
         atlas_name=options.atlas_name(), regions=options.regions,
@@ -349,7 +352,7 @@ def placement_pictures(
         )
         name = options.atlas_name()
         return Placed(images=[note(caption(
-            picture, f"{record.id}{options.section_tag()} above atlas {position:.2f} mm"
+            picture, f"{record.id}{options.section_tag(state)} above atlas {position:.2f} mm"
             + ("" if name == "template" else f" ({name})"),
         ), sections=(record.id,), mode="stacked", extra={"position_mm": float(position)})],
             row=row)

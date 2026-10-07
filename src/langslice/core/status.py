@@ -35,7 +35,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     corrected order that carries a position, and null when this section has
     none or no placed section follows it. ``transform_iou`` and
     ``transform_mirrored`` come off the recorded transform. Data only: no
-    comparison against the nominal interval, no verdict. When the sections'
+    comparison against the nominal interval, no verdict. ``damaged_regions``
+    are the section's marked regions (``damaged`` is also true for a mark
+    that names none). When the sections'
     cutting angles differ (a registration supplied per section), each row
     also carries its own ``cutting_angles_deg``; a single-angle stack's rows
     do not (the stack's angle is reported once, beside them).
@@ -68,6 +70,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "rotation_deg": record.rotation_deg,
                 **({"cutting_angles_deg": angles_dict(record)} if mixed else {}),
                 "damaged": record.damaged,
+                "damaged_regions": list(record.damaged_regions),
                 "damage_note": record.damage_note,
                 "transform": transform.get("kind"),
                 "transform_iou": transform.get("iou"),
@@ -87,14 +90,16 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 #: agent gets every row with all of them (:func:`uniform_rows`).
 ROW_FIELDS: tuple[str, ...] = (
     "index", "id", "position_mm", "delta_to_next_mm", "flip", "rotation_deg",
-    "cutting_angles_deg", "damaged", "damage_note", "transform", "transform_iou",
+    "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
+    "transform_iou",
     "transform_mirrored", "keep_linear", "deformation_steps", "caveats",
     "locked", "damage_by_user",
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):
 #: ``locked`` and ``damage_by_user`` (``ops.views.status``) are set only
 #: when true.
-ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "locked": False, "damage_by_user": False}
+ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "locked": False,
+                                "damage_by_user": False}
 #: The reply keys that hold status rows (``status``, ``view_stack``: the
 #: whole table; a write: the rows it changed).
 ROW_KEYS: tuple[str, ...] = ("rows", "changed")
@@ -154,8 +159,7 @@ def status_text(state: StackState) -> str:
         if row["rotation_deg"]:
             flags.append(f"rotated {row['rotation_deg']}")
         if row["damaged"]:
-            note = row["damage_note"]
-            flags.append(f"damaged: {note}" if note else "damaged")
+            flags.append(_damage_flag(row["damaged_regions"], row["damage_note"]))
         flags.extend(row["caveats"])
         position = (
             "unplaced" if row["position_mm"] is None else f"{row['position_mm']:.3f} mm"
@@ -191,7 +195,12 @@ def slice_flags(record: SliceState) -> list[str]:
     if record.flip:
         flags.append("flipped")
     if record.damaged:
-        flags.append(
-            f"damaged: {record.damage_note}" if record.damage_note else "damaged"
-        )
+        flags.append(_damage_flag(record.damaged_regions, record.damage_note))
     return flags
+
+
+def _damage_flag(regions: list[str], note: str) -> str:
+    """``damaged``, its regions in brackets, then its note: ``damaged
+    [CTX:left, OB]: torn``."""
+    head = "damaged" + (f" [{', '.join(regions)}]" if regions else "")
+    return f"{head}: {note}" if note else head

@@ -74,7 +74,7 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     state.slices[0].position_mm = 1.0
     state.slices[1].position_mm = 1.5
     state.slices[1].flip = True
-    state.slices[2].damaged = True
+    state.slices[2].damage_marked = True
     state.slices[2].damage_note = "half the section is gone"
     state.slices[0].transform = {
         "kind": "silhouette",

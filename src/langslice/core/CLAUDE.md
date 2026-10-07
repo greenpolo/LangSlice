@@ -121,11 +121,38 @@ for the flat plane).
 - `sections.py` — the section renders and their cache: `render_slice`
   (ROTATE first, then FLIP, then the display-only `--preprocess auto`
   enhancement; a non-default look drawn from the raw channels over the same
-  frame, `_look_image`, each overlay channel dimmed by `fine_detail`),
+  frame, `_look_image`, raw channels through `channels.composite`),
   `render_cache_key`, `canvas_um_per_px`, `shown_section` (the larger render
   a picture is drawn from), `rescale_section_matrix`, `PREVIEW_LONG_EDGE`
   (512, the working frame every fit is computed on). Cached on the
   workspace (`render_cache`, `render_scale`): read, never mutate.
+- `appearance.py` and `channels.py` — the channel model, as in napari. The
+  raw channels are never edited. Each section has ONE preprocessed channel
+  (`StackState.appearance["preprocessed"]`: a stack-wide recipe and
+  per-section overrides of channel weights, CLAHE, N4, denoising;
+  `validate_settings`, `set_settings`, `preprocessed_settings`,
+  `preprocessed_image`), the default recipe (None) being the default render
+  exactly; the Elastix affine and every deformable fit
+  (`deformation.stain_image`) and the image-model routes
+  (`handoff.prepare_linear_registration(preprocessed=True)`; a recipe joins
+  the call key) read it. Geometry (calibration, the silhouette, the tissue
+  pivot, the maps) is measured on the default render. `"view"` is the
+  `preprocess` tool's view look, kept in memory and undo only; `migrated`
+  (called by `job.checkpoint.current_state`) drops it from a saved state and
+  reads an older saved `"fit"` as `"preprocessed"`. `channels.py`: each raw
+  channel name's display properties (`appearance["channels"]`,
+  `ChannelProperties`: `contrast_limits` in FILE intensities, `gamma`,
+  `colormap` from `COLORMAPS`; `validate_properties`, `set_properties`,
+  `with_properties` adds them to a raw look so the render cache keys them),
+  applied where raw channels are drawn (`composite`: the `channels` strip
+  and the raw overlay; a channel with contrast limits is not dimmed by
+  `fine_detail`) and restated in captions (`describe`, `describe_shown`);
+  nothing a fit or the image model reads uses them. `intensity_ranges`
+  (cached on `Workspace.intensity_cache`, from
+  `image_prep.working_intensity_ranges`: the linear stretch each page's
+  working plane was read with) maps file intensities to plane values;
+  `channel_summary` gives a channel's sample type, its range and its 1st and
+  99.5th percentiles.
 - `captions.py` — `caption` (a COPY with the text in a band below the
   picture, so a picture pixel is the content's own, the coordinates a
   `view.zoom` is given in; never caption an image a fit measures),
@@ -172,6 +199,18 @@ for the flat plane).
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`; the agent CLI and the
   library), `status_text`, `slice_flags`.
+- `damage.py` — damage by atlas region (`SliceState.damaged_regions`;
+  `SliceState.damaged` is read-only: regions, or `damage_marked`, a mark
+  naming none). `exclusions(record, restrict_to, exclude)`: the
+  `(restrict_to, exclude)` every fit and the image model's trace run with,
+  the marked regions added to *exclude* except an entry *restrict_to* names
+  exactly; `normalized_entries`, `entry_key`. `damage_picture(ws, state,
+  record, store=)`: the marked regions hatched (`HATCH_COLOR`, the
+  deformable pictures' excluded-region ink) on the section under its
+  current registration (`placement.draw_canvas`, mode `overlay`, the warp
+  from *store*) and on the atlas template (mode `template`), on one canvas
+  and crop, side by side (`sheets.beside`), their outlines strong over the
+  faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
 - `sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
   `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.
@@ -236,7 +275,9 @@ for the flat plane).
 - `jpeg.py` — the doors' one JPEG encoding (below).
 - `handoff.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
-  long_edge=, transform=)` (the oriented, unframed section render and the
+  long_edge=, transform=, preprocessed=)` (the oriented, unframed section
+  render, or with `preprocessed` the section's preprocessed channel in the
+  same frame, and the
   3x3 from native atlas-plane pixel centres onto it, calibration checked,
   `LinearRegistrationInput`; the trace's canvas and every deformable fit's
   grid; its matrix is `linear_placement_matrix`, the one path from the six

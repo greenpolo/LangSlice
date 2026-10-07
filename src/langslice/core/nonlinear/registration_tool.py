@@ -292,16 +292,23 @@ def start_correction(
     and their edge with kept tissue becomes an outline (:func:`shown_labels`).
     Both are part of the call key and are recorded on the result, where a
     traced ``fit_deformable`` reads them.
+
+    The model is shown the section's preprocessed channel
+    (:mod:`langslice.core.appearance`); a recipe other than the default is
+    part of the call key, so a changed recipe makes a new call.
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
         raise ValueError("prompt must be text")
     # Validate prerequisites before spending a call or marking an attempt.
-    prepared = prepare_linear_registration(state, ctx, section_id)
+    prepared = prepare_linear_registration(state, ctx, section_id, preprocessed=True)
     fingerprint = correction_fingerprint(state, ctx, section_id)
     key: dict[str, Any] = {
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     }
+    recipe = prepared.metadata.get("preprocessed")
+    if recipe is not None:  # the section the model is shown is not the default render
+        key["preprocessed"] = recipe
     regions = {name: list(entries) for name, entries in
                (("include", include), ("exclude", exclude)) if entries}
     if regions:
@@ -494,12 +501,16 @@ def start_atlas_correction(
     if passes not in (1, 2):
         raise ValueError("passes must be 1 or 2")
     provider, model = image_model.provider, image_model.model
-    prepared = prepare_linear_registration(state, ctx, section_id)
+    prepared = prepare_linear_registration(state, ctx, section_id, preprocessed=True)
     fingerprint = correction_fingerprint(state, ctx, section_id)
-    call_key = digest({
+    keyed: dict[str, Any] = {
         "geometry": fingerprint, "provider": provider, "model": model,
         "inputs": ATLAS_INPUT_VERSION, "route": "atlas", "passes": passes,
-    })
+    }
+    recipe = prepared.metadata.get("preprocessed")
+    if recipe is not None:  # the section the model is shown is not the default render
+        keyed["preprocessed"] = recipe
+    call_key = digest(keyed)
     call_directory = Path(calls_dir).resolve() / call_key[:24]
     result_path = call_directory / "result.json"
     previous = _saved_result(result_path)

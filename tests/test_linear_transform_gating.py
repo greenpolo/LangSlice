@@ -60,7 +60,7 @@ def test_damaged_submission_requires_applied_manual_transform(tmp_path, transfor
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
     damaged = state.by_id("s0.png")
     assert damaged is not None
-    damaged.damaged = True
+    damaged.damage_marked = True
     damaged.transform = transform
     validation = _submit(box)
     assert validation["error"] == "DAMAGED_REQUIRES_MANUAL_TRANSFORM"
@@ -79,7 +79,7 @@ def test_real_manual_adjustment_resolves_damage_gate_and_undo_restores_it(tmp_pa
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
     damaged = state.by_id("s0.png")
     assert damaged is not None
-    damaged.damaged = True
+    damaged.damage_marked = True
     result = single_adjust(_tool(box, "adjust_transforms"))("s0.png", 5, 1.1, 1, .25, 0)
     assert result["status"] == "ok"
     from langslice.job.job import submit_errors
@@ -107,7 +107,7 @@ def test_a_region_restricted_fit_or_a_supplied_transform_resolves_damage(tmp_pat
     state, _, spec = _stack(tmp_path, tasks=["transform"], placed=True)
     for record in state.slices:
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
-    state.slices[0].damaged = True
+    state.slices[0].damage_marked = True
     state.slices[0].transform = transform
     assert submit_errors(state, spec, []) is None
 
@@ -122,7 +122,7 @@ def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_
     )
     damaged = state.by_id("s0.png")
     assert damaged is not None
-    damaged.damaged = True
+    damaged.damage_marked = True
     refusal = submit_errors(state, spec, [])
     assert refusal is not None
     assert refusal["interactive_enabled"] is False
