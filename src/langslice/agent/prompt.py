@@ -263,24 +263,25 @@ def build_job_statement(
 
     method: list[str] = []
     if spec.has("position") and spec.position.playbook:
-        # A complete hypothesis first, then one confirmation sweep, one
-        # write, targeted re-checks, a review: coaching, only for the models
-        # that do not find this method on their own.
+        # Optional coaching: use the current viewing tools and revisit
+        # uncertain placements without prescribing a single batch write.
         method = [
             "",
             "Method:",
-            "- First, from the opening images alone — every section and the "
-            "atlas beneath it — form a complete hypothesis: a position for every "
-            "section. Look for the structure of how the sections were cut (series "
-            "that interleave, missing sections) and use it.",
-            "- Then confirm the hypothesis: `look` in mode positioning at each "
-            "section with the atlas at its hypothesised position and its neighbours, "
-            "walking the stack in order; where the atlas at that position does not "
-            "match the section, change the position.",
-            "- Write every position in one `position_sections`, then re-check the "
-            "sections you were unsure about and correct them.",
-            "- Mark damaged sections' lost regions, run `look` in mode positioning "
-            "over the whole stack, look again at anything mis-spaced, then `submit`.",
+            "- Start from the opening stack and identify anatomical progression, "
+            "possible interleaved series, missing sections and uncertain orientations. "
+            "Treat the initial positions as hypotheses, not registrations.",
+            "- Use `look` in mode positioning to compare sections with candidate "
+            "atlas positions and their neighbours. Use `grep_atlas` and "
+            "`grep_atlas_view` to locate distinguishing anatomy; use section or "
+            "atlas views and `zoom` when you need more detail.",
+            "- Write supported placements with `position_sections`, in groups "
+            "that you can assess together. Revisit uncertain sections as their "
+            "neighbours become clearer; the nominal interval informs the search "
+            "but does not replace anatomical evidence.",
+            "- Review the whole stack in positioning mode after changes. Check "
+            "both sides of an apparent gap before reporting an interval break. "
+            "Complete the enabled alignment and deformation tasks before submitting.",
         ]
     elif spec.has("position"):
         method = [

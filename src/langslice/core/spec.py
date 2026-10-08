@@ -113,10 +113,9 @@ class PositionSpec:
     #: shown every section after the last write. The refusals name what is
     #: missing.
     gated: bool = False
-    #: A suggested method written into the job statement: hypothesise order
-    #: and every position from the opening images, confirm each section at that
-    #: position four per call, write, re-check the doubtful, review, submit.
-    #: Coaching text, off by default.
+    #: Optional positioning coaching: compare candidate planes and regions,
+    #: write supported placements, revisit uncertainty and review the stack.
+    #: Guidance only, off by default.
     playbook: bool = False
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""

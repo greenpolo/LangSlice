@@ -166,7 +166,8 @@ Custom models and prompts are described in the [library guide](library.md#image-
 
 Writes checkpoint the job and form undo steps; `undo` and `redo` persist
 across sessions. Change tools return review pictures unless `view=False`;
-a host's `force_view` setting removes that choice. Long fits compute outside
+a host's `force_view=True` forces `view=True`. It defaults to false, so
+the agent may suppress a picture. Long fits compute outside
 the write lock and recheck inputs before applying. A conflicting edit
 produces `STALE_INPUT` for that section; unaffected results still apply.
 
@@ -188,3 +189,8 @@ These viewing gates apply to native agent and MCP tools; CLI and Python
 calls still enforce the registration requirements above.
 
 Results are [coordinate maps, labels and registration exports](file_formats.md).
+
+`--playbook` adds optional positioning guidance using candidate planes,
+region lookup, incremental placement and stack review. It defaults off and
+adds no gates. Thickness and nominal interval are always supplied as protocol
+facts; spacing is enforced only when `strict_interval` is enabled.

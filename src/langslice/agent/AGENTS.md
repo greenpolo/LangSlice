@@ -320,9 +320,10 @@ looked at (`look` in mode overlay or positioning) since its last write
 (one look is enough), and `submit` refuses until a `look` in mode
 positioning has covered every section after the last write.
 `--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
-method in the statement: a complete hypothesis from the opening, one
-confirmation sweep, one write, targeted re-checks, a review. Both are
-tool-door only: a script, the library or the agent CLI is never gated.
+method in the statement: compare candidate planes and distinguishing regions,
+write supported placements, revisit uncertain sections and review the stack.
+This is guidance, not enforcement. Viewing gates are tool-door only: a
+script, the library or the agent CLI is never gated.
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
 caused it; a failed `submit` neither writes nor ends the run. `submit`
