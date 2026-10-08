@@ -7,7 +7,7 @@
  "data": {
   "pictures": [
    {
-    "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
     "id": 43
    }
   ],
@@ -57,8 +57,8 @@
    "file": "052_tools_elastix_affine.0.png",
    "mode": "RGB",
    "size": [
-    100,
-    427
+    512,
+    521
    ]
   }
  ],

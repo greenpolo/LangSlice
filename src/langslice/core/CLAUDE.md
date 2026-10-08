@@ -139,7 +139,8 @@ the angles in a caption (empty for the flat plane).
   99.5th percentiles.
 - `captions.py` — `caption` (a COPY with the text in a band below the
   picture, so a picture pixel is the content's own, the coordinates a zoom
-  is given in; never caption an image a fit measures), `wrap_caption`, the
+  is given in; `min_width` lays the band out at least that wide; never
+  caption an image a fit measures), `wrap_caption`, the
   fonts, `scale_bar_px` and the 1 mm bar `_draw_scale_bar`; `angles_label`
   and `view_angles_label` (the angles of a picture without a section, said
   to be the median when the sections' differ).
@@ -150,8 +151,14 @@ the angles in a caption (empty for the flat plane).
   (`framed_section`, `framed_atlas`, `placement.draw_canvas`, which draws
   the unzoomed canvas first for its size, `deformation.picture` and
   `trace_picture` through `deformation.unzoomed_size`); below that the
-  renderers crop by fractions (`canvas.zoom_box`). The `zoom` tool's redraw
-  is `zoom.py`.
+  renderers crop by fractions (`canvas.zoom_box`). A zoomed placement
+  picture (`canvas.physical_views` with a crop: `look`'s overlay zoomed, a
+  change tool's picture zoomed to its `restrict_to` regions) is drawn at the
+  call's long edge whatever the crop's size, enlarged past the canvas's
+  pixels when the crop has fewer (its caption says `canvas pixels enlarged
+  xN`), and its caption band is laid out at least that wide
+  (`captions.caption(min_width=)`; the picture at the top left, its pixels
+  the content's own). The `zoom` tool's redraw is `zoom.py`.
 - `canvas.py` — the physical canvas: `CanvasGeometry` / `canvas_geometry`
   (the atlas section at true scale on the section's frame, anatomy centred,
   canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES` (`overlay`,
