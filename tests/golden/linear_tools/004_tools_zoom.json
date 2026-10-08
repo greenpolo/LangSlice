@@ -11,7 +11,7 @@
   "picture": 4,
   "pictures": [
    {
-    "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast",
+    "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast; from the image file",
     "id": 5
    }
   ],
@@ -25,7 +25,7 @@
    "mode": "RGB",
    "size": [
     512,
-    405
+    421
    ]
   }
  ],

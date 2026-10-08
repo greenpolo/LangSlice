@@ -11,7 +11,7 @@
   "picture": 1,
   "pictures": [
    {
-    "caption": "s0.png section, at 0.04 mm; 7.8 um/px; raw gray; percentile contrast",
+    "caption": "s0.png section, at 0.04 mm; 7.3 um/px; raw gray; percentile contrast; from the image file",
     "id": 7
    }
   ],
@@ -24,8 +24,8 @@
    "file": "006_tools_zoom.0.png",
    "mode": "RGB",
    "size": [
-    480,
-    381
+    512,
+    405
    ]
   }
  ],

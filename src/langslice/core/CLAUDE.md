@@ -158,7 +158,15 @@ the angles in a caption (empty for the flat plane).
   pixels when the crop has fewer (its caption says `canvas pixels enlarged
   xN`), and its caption band is laid out at least that wide
   (`captions.caption(min_width=)`; the picture at the top left, its pixels
-  the content's own). The `zoom` tool's redraw is `zoom.py`.
+  the content's own). A zoomed `section` or `overlay` picture reads its
+  section from the image file (`native.py`, below): `look._section_picture`
+  through `native.framed_window`, `placement.draw_canvas` by handing
+  `physical_views` a `detail` (`canvas.SectionDetail`) whose pixels replace
+  the render's inside the section, the atlas image blended and the lines
+  drawn over them as usual; the captions say `from the image file` (and
+  `file pixels enlarged xN` where the file has fewer pixels than the
+  picture); a file that cannot be read leaves the working copy's pixels (a
+  warning logged). The `zoom` tool's redraw is `zoom.py`.
 - `canvas.py` — the physical canvas: `CanvasGeometry` / `canvas_geometry`
   (the atlas section at true scale on the section's frame, anatomy centred,
   canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES` (`overlay`,
@@ -252,13 +260,36 @@ the angles in a caption (empty for the flat plane).
   long_edge=)`: a box (`[x0, y0, x1, y1]` pixels of the picture's content)
   drawn again from the source through the recipe's renderer (`RENDERERS`),
   its window composed onto the unzoomed picture's (`box_fractions`,
-  `compose`), so a zoom of a zoom maps back; section zooms past the
-  working copy are enlarged at most 4 times and say so. A changed stack is
+  `compose`), so a zoom of a zoom maps back; a section or overlay zoom
+  reads its section from the image file (`native.py`), a positioning zoom
+  draws its sections from their working copies, enlarged at most
+  `ATLAS_UPSAMPLE` times past them. A changed stack is
   drawn as it was and flagged `stale` (a second caption band says so). A
   picture without a recipe, or whose sections are gone, is cropped from
   *picture* (the saved image) and enlarged towards the picture size,
   `redrawn` False, with a `crop` recipe (the box on that source). Returns
   `Zoomed`; `ZoomError` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
+- `native.py` — sections at their image file's own resolution, for
+  zooms. `section_pixels(ws, record, look, x, y)` -> `NativePixels` (`rgb`,
+  `inside`, `enlarged`: picture pixels per file pixel): the section at
+  working-copy points (before its quarter turn and flip), read around them
+  only (`read_region`: a TIFF, plain, tiled, pyramidal or one page per
+  channel, through tifffile's zarr store at the coarsest pyramid level
+  still fine enough, only the touched tiles decoded, at most
+  `MAX_READ_PIXELS` read before a stride; any other file decoded whole and
+  cut), its raw channels mapped as the working planes are
+  (`window_planes`, each page's `IntensityRange`), averaged down to about
+  one read pixel per picture pixel. The colours: the look is drawn on the
+  whole working copy as an unzoomed picture draws it (`working_look`) and
+  carried to the file's channels by a local linear fit (`fit_look`, a
+  colour guided filter, radius `FIT_RADIUS`, regularized by `FIT_EPS`
+  towards the gain fitted over the whole region), so a plain channel
+  display is carried exactly and CLAHE's local contrast at the working
+  copy's scale. `framed_window(ws, record, look, window, long_edge)`: a
+  window of the tissue-framed, turned picture read so. `unoriented_points`
+  / `unoriented_fractions` / `unorient` undo a render's quarter turn and
+  flip. `deformable.warp_source_points` carries a warped picture's points
+  back to the section's.
 - `sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
   `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.

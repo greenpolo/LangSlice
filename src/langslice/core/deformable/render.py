@@ -324,9 +324,38 @@ def warp_section_image(image: Image.Image, record: DeformableRecord) -> Image.Im
     atlas lines then fall where the warp put them on the tissue. Without a
     stored inverse one is approximated (fixed point) at picture size.
     """
+    width, height = image.size
+    inverse, mm = _inverse_pixels(record, (width, height))
+    yy, xx = np.indices((height, width), dtype=np.float32)
+    pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    out = cv2.remap(pixels, xx + inverse[..., 0] / mm, yy + inverse[..., 1] / mm,
+                    cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return Image.fromarray(out)
+
+
+def warp_source_points(
+    record: DeformableRecord, size: tuple[int, int], x: np.ndarray, y: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """The section points that :func:`warp_section_image` shows at points
+    ``(x, y)`` of its result for a render of *size*: ``q + inverse_field(q)``
+    (pixels of that render, centres at integers), the field read between its
+    samples as the image's warp reads it."""
+    inverse, mm = _inverse_pixels(record, size)
+    mx = np.asarray(x, dtype=np.float32)
+    my = np.asarray(y, dtype=np.float32)
+    shift = [cv2.remap(np.ascontiguousarray(inverse[..., k]), mx, my, cv2.INTER_LINEAR,
+                       borderMode=cv2.BORDER_REPLICATE) for k in range(2)]
+    return (np.asarray(x, dtype=np.float64) + shift[0] / mm,
+            np.asarray(y, dtype=np.float64) + shift[1] / mm)
+
+
+def _inverse_pixels(record: DeformableRecord, size: tuple[int, int]
+                    ) -> tuple[np.ndarray, float]:
+    """``(inverse field resized to *size*, mm per pixel of that size)``;
+    without a stored inverse one is approximated (fixed point) at that size."""
     from langslice.core.deformable.engines import invert_field
 
-    width, height = image.size
+    width, height = size
     mm = record.mm_per_px * record.section_size[0] / float(width)
 
     def resized(field: np.ndarray) -> np.ndarray:
@@ -336,11 +365,6 @@ def warp_section_image(image: Image.Image, record: DeformableRecord) -> Image.Im
         ], axis=-1)
 
     if record.inverse_field_mm is not None:
-        inverse = resized(record.inverse_field_mm)
-    else:
-        inverse, _ = invert_field(resized(record.field_mm), (mm, mm))
-    yy, xx = np.indices((height, width), dtype=np.float32)
-    pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
-    out = cv2.remap(pixels, xx + inverse[..., 0] / mm, yy + inverse[..., 1] / mm,
-                    cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-    return Image.fromarray(out)
+        return resized(record.inverse_field_mm), mm
+    inverse, _ = invert_field(resized(record.field_mm), (mm, mm))
+    return inverse, mm

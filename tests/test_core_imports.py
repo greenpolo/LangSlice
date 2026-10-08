@@ -49,6 +49,7 @@ CORE_MODULES = (
     "langslice.core.look",
     "langslice.core.positioning",
     "langslice.core.zoom",
+    "langslice.core.native",
     "langslice.core.canvas",
     "langslice.core.maps",
     "langslice.core.import_geometry",

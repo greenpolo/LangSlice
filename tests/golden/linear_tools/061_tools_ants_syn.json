@@ -21,7 +21,7 @@
   ],
   "pictures": [
    {
-    "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders; from the image file",
     "id": 47
    }
   ],
@@ -75,7 +75,7 @@
    "mode": "RGB",
    "size": [
     512,
-    521
+    523
    ]
   }
  ],
