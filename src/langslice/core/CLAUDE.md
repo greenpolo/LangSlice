@@ -38,6 +38,11 @@ whose imports are core-only:
   `ReslicedAtlas` rotations <-> pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`,
   `YAW_TO_ROTATE_Y_SIGN`, both -1; `angles_to_rotate`, `rotate_to_angles`).
 
+Protocol metadata: `PositionSpec.thickness_um` and `interval_um`, and the
+state's millimetre equivalents, are optional (`None` when not supplied).
+Known values are positive integers in micrometres; strict spacing requires
+an interval. Atlas reference sampling uses atlas extent when none is given.
+
 ## The layer rule
 
 - A core module takes plain inputs: the `core.workspace.Workspace` (atlas,

@@ -96,11 +96,10 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
     assert not any(isinstance(block, ImageContent) for block in result.content)
     images = [block for block in pages if isinstance(block, ImageContent)]
     texts = [block.text for block in pages if isinstance(block, TextContent)]
-    # One strip of the three sections, each over the atlas at its starting
-    # position (every section has one), so no atlas reference strip.
+    # Unplaced sections and an independent atlas reference.
     assert "Strip 1 of 1: s0.png, s1.png, s2.png" in texts
-    assert not any(text.startswith("Atlas reference strip") for text in texts)
-    assert len(images) == 1
+    assert any(text.startswith("Atlas reference strip") for text in texts)
+    assert len(images) > 1
     assert all(image.mimeType.startswith("image/") and image.data for image in images)
     for image in images:
         with Image.open(BytesIO(base64.b64decode(image.data))) as picture:
@@ -177,6 +176,8 @@ def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
+        await client.call_tool("position_sections", {
+            "sections": [{"id": "s1.png", "position_mm": 2.0}], "view": False})
         return (
             await client.call_tool("look", {"mode": "section", "sections": [0, "s2.png"]}),
             await client.call_tool("interactive_transform", {"sections": [
@@ -304,7 +305,7 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
             with Image.open(BytesIO(base64.b64decode(picture.data))) as image:
                 assert max(image.size) <= CLAUDE_MAX_IMAGE_EDGE
                 assert patches(image.size) <= CLAUDE_MAX_IMAGE_PATCHES
-    assert not any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
+    assert any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
                    for page in job.pages for block in page)
 
 

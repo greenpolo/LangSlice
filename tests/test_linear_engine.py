@@ -55,7 +55,7 @@ def test_ingest_discovers_the_folder_in_natural_order(tmp_path: Path):
     assert [s.id for s in state.slices] == names
     assert [s.index_corrected for s in state.slices] == [0, 1, 2, 3, 4]
     assert all(s.position_mm is None and not s.flip for s in state.slices)
-    assert state.interval_mm == 0.2 and state.thickness_mm == 0.05
+    assert state.interval_mm is None and state.thickness_mm is None
     assert state.spec["atlas"] == "allen_mouse_25um"
     assert "0.00-19.00 mm" in state.notes[0]
 

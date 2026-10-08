@@ -37,7 +37,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     ``transform_mirrored`` come off the recorded transform. Data only: no
     comparison against the nominal interval, no verdict. ``position_source``
     ``"default"``: the section still holds the starting position the job gave
-    it (``job.job.default_positions``). ``damaged_regions``
+    it in a legacy checkpoint. ``damaged_regions``
     are the section's marked regions (``damaged``: it has some); a
     ``damage_note`` may stand alone (a host's note). When the sections'
     cutting angles differ (a registration supplied per section), each row

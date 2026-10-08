@@ -160,6 +160,11 @@ flag reference. The main choices are:
 | Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
 | Storage | `--job-dir`, `--out`, `--trace-dir`, `--fresh` |
 
+`--thickness` and `--interval` are optional, in micrometres. Omit unknown
+values: the agent infers positions and spacing from anatomy and records
+estimates or uncertainty. Supplied values are advisory unless
+`--strict-interval` is enabled; that option requires `--interval`.
+
 Structured placement inputs take inline JSON or a JSON file. `--angles`
 lets the agent adjust cutting angles. A disabled task keeps the supplied
 answer and removes its tools; the [registration guide](registration.md)

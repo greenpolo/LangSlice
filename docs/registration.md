@@ -59,9 +59,16 @@ one acronym or numeric id, including descendants, optionally `:left` or
 settings. The region must occur in that plane; `region` and `box` are
 mutually exclusive.
 
+New jobs leave sections without supplied positions unplaced. The opening
+shows those sections alongside a separate overview of the atlas. No positions
+are inferred from filename order or the nominal interval. In positioning
+mode, unplaced sections appear at the right, labelled "no position", with
+no line to the ruler; `positions_mm` selects candidate atlas planes above it.
+Supplied positions and saved registrations are preserved.
+
 Section scale comes from supplied calibration or TIFF/OME metadata, else an
-estimate from tissue width (reported as `estimated`). Positioning and
-opening pictures use the same micrometres per pixel for section and atlas
+estimate from tissue width (reported as `estimated`). Positioning pictures and paired
+opening tiles use the same micrometres per pixel for section and atlas
 panels. Tissue can therefore appear smaller than the atlas. The stored
 affine contributes its isotropic scale, `sqrt(abs(det))`; each thumbnail
 is framed around its anatomy without being stretched to fill the tile.
@@ -90,10 +97,10 @@ tool with `agent_damage=False`.
 
 ## Positioning and linear alignment
 
-`position_sections` writes positions and cutting angles. New jobs with
-Positioning enabled give unsupplied sections provisional positions based on
-the interval and atlas range. Status marks them `position_source="default"`;
-the agent must write its own positions before submitting.
+`position_sections` writes positions and cutting angles. Sections without
+supplied positions stay unplaced until the agent writes them. The agent can
+revisit placement after inspecting linear or nonlinear fits; changing a
+section's position clears its deformation.
 
 `interactive_transform` sets flip, quarter turn, rotation, scales, shear and
 shifts for up to four sections. Values are absolute; omitted values keep
@@ -183,7 +190,8 @@ produces `STALE_INPUT` for that section; unaffected results still apply.
   Host-excluded sections are exempt. An image-model trace is never required.
 
 Optional `position.gated` (`--gates`) requires agents to inspect a section
-in overlay or positioning mode before changing its position, and review
+in overlay or positioning mode before changing its position (positioning
+mode also accepts unplaced sections), and review
 every section in positioning mode after the last write before submitting.
 These viewing gates apply to native agent and MCP tools; CLI and Python
 calls still enforce the registration requirements above.
@@ -192,5 +200,10 @@ Results are [coordinate maps, labels and registration exports](file_formats.md).
 
 `--playbook` adds optional positioning guidance using candidate planes,
 region lookup, incremental placement and stack review. It defaults off and
-adds no gates. Thickness and nominal interval are always supplied as protocol
-facts; spacing is enforced only when `strict_interval` is enabled.
+adds no gates. Thickness and nominal interval are optional protocol facts,
+with no lab-specific defaults. When either is omitted, the prompt marks it
+as not supplied and asks the agent to infer positions and spacing from
+anatomy, estimate missing protocol values where evidence supports them,
+and record estimates or uncertainty in its notes. Omission does not block
+a run or require a question to the user. Spacing is enforced only when
+`strict_interval` is enabled, which requires a supplied interval.

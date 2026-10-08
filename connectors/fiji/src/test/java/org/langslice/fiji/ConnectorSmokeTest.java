@@ -233,6 +233,15 @@ public final class ConnectorSmokeTest {
     /** Dialog choices become the contract's spec, preprocessing and exported channel order, and persist. */
     static void settingsChecks() throws Exception {
         RegistrationSettings s = new RegistrationSettings();
+        JsonObject unknownProtocol = s.spec().getAsJsonObject("position");
+        require(!unknownProtocol.has("thickness_um") && !unknownProtocol.has("interval_um"),
+                "Unspecified protocol has no lab-specific defaults");
+        s.thickness = 50; s.interval = 200;
+        JsonObject knownProtocol = s.spec().getAsJsonObject("position");
+        require(knownProtocol.get("thickness_um").getAsInt() == 50
+                && knownProtocol.get("interval_um").getAsInt() == 200, "Supplied lab protocol survives");
+        s.thickness = 0; s.interval = 0;
+
         s.model = RegistrationSettings.modelId("gpt-6-luna"); s.reasoning = "high"; s.resolution = "medium";
         s.positioning = true; s.linear = true; s.affine = false; s.maxParallel = 2; s.agentDamage = false;
         s.positionNotes = " thick sections "; s.linearNotes = "tears ventral"; s.cue = "ink right";

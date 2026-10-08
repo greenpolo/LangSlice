@@ -195,8 +195,9 @@ def build_job_statement(
     if spec.has("position"):
         constraints.append(
             "- `submit` is refused unless every section has a position of its own, "
-            "damaged sections included; a starting position the job gave a section "
-            "does not count."
+            "damaged sections included."
+            + (" An unconfirmed starting position from a saved job does not count."
+               if any(s.position_source == STARTING_POSITION for s in state.slices) else "")
         )
         if gated:
             constraints.append(
@@ -270,7 +271,7 @@ def build_job_statement(
             "Method:",
             "- Start from the opening stack and identify anatomical progression, "
             "possible interleaved series, missing sections and uncertain orientations. "
-            "Treat the initial positions as hypotheses, not registrations.",
+            "Form initial position hypotheses from the anatomy.",
             "- Use `look` in mode positioning to compare sections with candidate "
             "atlas positions and their neighbours. Use `grep_atlas` and "
             "`grep_atlas_view` to locate distinguishing anatomy; use section or "
@@ -295,6 +296,13 @@ def build_job_statement(
             "sections on either side of any gap before reporting an interval break.",
             "- Submit when the work is complete; address any missing requirements it returns.",
         ]
+
+    if spec.has("position"):
+        method.append(
+            "- Positions can be revisited throughout registration. If zooms or repeated "
+            "looks suggest that a section's placement is wrong, return to atlas comparisons "
+            "and re-place it, even after beginning linear or nonlinear alignment."
+        )
 
     if spec.has("transform") and spec.transform.interactive:
         if not method:
@@ -360,6 +368,23 @@ def stack_angles_fact(state: StackState) -> str:
     return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
 
 
+def cutting_protocol_fact(state: StackState) -> str:
+    """Supplied protocol values, with unknowns explicit (legacy zero also means unknown)."""
+    interval = state.interval_mm
+    thickness = state.thickness_mm
+    known_interval = interval is not None and interval > 0
+    known_thickness = thickness is not None and thickness > 0
+    interval_text = f"{interval:.3f} mm center-to-center" if known_interval else "not supplied"
+    thickness_text = f"{thickness:.3f} mm" if known_thickness else "not supplied"
+    text = (f"- Cutting protocol: nominal section interval {interval_text}, "
+            f"section thickness {thickness_text}. ")
+    if known_interval and known_thickness:
+        return text + "These are protocol values; spacing may vary where sections are missing."
+    return (text + "Infer positions and spacing from anatomy. Estimate missing protocol "
+            "values where the evidence supports them, and record estimates or unresolved "
+            "uncertainty in your notes. Spacing may vary where sections are missing.")
+
+
 def run_facts(
     spec: JobSpec, state: StackState, *, species: str, pos_lo: float,
     pos_hi: float, axis_ends: tuple[str, str],
@@ -383,11 +408,7 @@ def run_facts(
         f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last).",
         f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
         f"positions increase toward {axis_ends[1]}.",
-        f"- Cutting protocol: nominal section interval {state.interval_mm:.3f} "
-        f"mm center-to-center, section thickness {state.thickness_mm:.3f} mm. "
-        f"The nominal interval is a protocol value, not a measurement: sections "
-        f"can be missing anywhere in the stack, so the spacing between "
-        f"neighbours may differ from it.",
+        cutting_protocol_fact(state),
         stack_angles_fact(state),
     ]
     if starting:

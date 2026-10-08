@@ -291,7 +291,7 @@ def test_host_switches_add_and_remove_their_tools(images, tasks, fields, absent,
 def _statement(images: Path, tasks: list[str], provider: str = "none",
                **inputs: Any) -> tuple[str, list[str]]:
     """The ADK job statement of a run of this combination, whitespace-normalized,
-    on the job as opened (its starting positions included), and its tools."""
+    on the job as opened (including supplied positions), and its tools."""
     from langslice.agent.engine import build_context
     from langslice.agent.prompt import build_job_statement
     from langslice.doors.tools.toolbox import build_tools
@@ -314,11 +314,8 @@ def _said(text: str, *sentences: str) -> list[str]:
 
 #: Sentences of the statement, verbatim from ``agent/prompt.py``.
 POSITION_SUBMIT = ("- `submit` is refused unless every section has a position of its own, "
-                   "damaged sections included; a starting position the job gave a section "
-                   "does not count.")
-STARTING = ("- 3 of 3 sections are at evenly spaced starting positions the job gave them, in "
-            "file order; they are not placed yet (status shows position_source \"default\", "
-            "the opening labels their atlas \"start\").")
+                   "damaged sections included.")
+UNPLACED = "- No section carries a position yet."
 ORDER = ("- The stack's order follows the positions: writing positions renumbers the "
          "sections, so use filenames to name them.")
 GIVEN = "- The positions shown are given; this run does not change them."
@@ -352,13 +349,13 @@ FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this ru
 
 @pytest.mark.parametrize(("tasks", "provider", "inputs", "said", "unsaid"), [
     (["reorder", "position"], "none", {},
-     (POSITION_SUBMIT, STARTING, ORDER, POSITION_METHOD),
+     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD),
      (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, LEFT_LINEAR, GIVEN, MARK_FIRST)),
     (["transform"], "none", {"positions": dict(POSITIONS)},
      (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, TRANSFORM_METHOD, GIVEN),
-     (POSITION_SUBMIT, STARTING, ORDER, POSITION_METHOD, LEFT_LINEAR)),
+     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD, LEFT_LINEAR)),
     (["reorder", "position", "transform"], "none", {},
-     (POSITION_SUBMIT, STARTING, ORDER, TRANSFORM_SUBMIT, DAMAGED_TRANSFORM,
+     (POSITION_SUBMIT, UNPLACED, ORDER, TRANSFORM_SUBMIT, DAMAGED_TRANSFORM,
       POSITION_METHOD, TRANSFORM_METHOD),
      (LEFT_LINEAR, GIVEN)),
     (["reorder", "position", "transform", "nonlinear"], "openai-oauth", {},
@@ -368,7 +365,7 @@ FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this ru
     (["nonlinear"], "none", "external",
      (LEFT_LINEAR, MARK_FIRST, FIT_METHOD, FIXED_LINEAR, GIVEN,
       "Inspect each fit's borders against the section's internal anatomy" + FIT_ENDING),
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, STARTING, "where traced")),
+     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, UNPLACED, "where traced")),
     (["nonlinear"], "openai-oauth", "external",
      (LEFT_LINEAR, TRACE_OPTIONAL, MARK_FIRST, FIXED_LINEAR, GIVEN),
      (POSITION_SUBMIT, TRANSFORM_SUBMIT)),
@@ -455,20 +452,19 @@ def test_1_positioning_only_through_the_library(images):
             for entry in document["sections"]] == [False] * 3
 
 
-def test_1_a_starting_position_is_not_a_position_until_it_is_written(images):
+def test_1_sections_stay_unplaced_until_positions_are_written(images):
     import langslice
 
     create(spec_for(images, ["reorder", "position"]))
     with langslice.open_job(images) as job:
         refused = job.submit(summary="placed", notes=[], interval_breaks=[])
         assert refused["error"] == "MISSING_POSITIONS", refused
-        start = {name: job.state.by_id(name).position_mm for name in IDS}
-        assert all(job.state.by_id(name).position_source == "default" for name in IDS)
+        assert all(job.state.by_id(name).position_mm is None for name in IDS)
+        assert all(job.state.by_id(name).position_source == "" for name in IDS)
         document = json.loads((images / "langslice" / "registration.json").read_text())
         assert [entry["parameters"]["plane"]["starting_position"]
-                for entry in document["sections"]] == [True] * 3
-        # The same value written again is a position of the section's own.
-        assert job.position_sections(sections=_sections(start))["status"] == "ok"
+                for entry in document["sections"]] == [False] * 3
+        assert job.position_sections(sections=_sections(POSITIONS))["status"] == "ok"
         assert all(job.state.by_id(name).position_source != "default" for name in IDS)
         assert job.submit(summary="placed", notes=[], interval_breaks=[])["status"] == "ok"
 

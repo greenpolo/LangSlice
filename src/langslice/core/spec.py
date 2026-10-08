@@ -103,8 +103,9 @@ def supplied_angles(
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""
 
-    thickness_um: int = 50
-    interval_um: int = 200
+    #: None means not supplied; the agent infers what the anatomy supports.
+    thickness_um: int | None = None
+    interval_um: int | None = None
     #: Sections must sit exactly one interval apart (gated at submit).
     strict_interval: bool = False
     #: Look-before-you-write gates: ``position_sections`` is refused for a
@@ -119,6 +120,15 @@ class PositionSpec:
     playbook: bool = False
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("thickness_um", "interval_um"):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                      or value <= 0):
+                raise ValueError(f"{name} must be a positive integer in micrometres or null")
+        if self.strict_interval and self.interval_um is None:
+            raise ValueError("strict_interval requires a supplied interval_um")
 
 
 @dataclass
@@ -334,12 +344,14 @@ class JobSpec:
         return task in self.tasks
 
     @property
-    def thickness_mm(self) -> float:
-        return self.position.thickness_um / 1000.0
+    def thickness_mm(self) -> float | None:
+        value = self.position.thickness_um
+        return value / 1000.0 if value is not None else None
 
     @property
-    def interval_mm(self) -> float:
-        return self.position.interval_um / 1000.0
+    def interval_mm(self) -> float | None:
+        value = self.position.interval_um
+        return value / 1000.0 if value is not None else None
 
     # --- (de)serialization ----------------------------------------------
 

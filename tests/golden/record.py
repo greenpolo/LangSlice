@@ -384,7 +384,7 @@ def tool_map(box: Any) -> dict[str, Any]:
 
 def open_toolbox(spec: Any, image_model: Any = None) -> Any:
     """The toolbox of *spec*'s job, opened as the engine opens it
-    (``Job.open``: the job folder, the starting positions)."""
+    (``Job.open``: the job folder, initially unplaced sections)."""
     from langslice.agent.engine import build_context
     from langslice.doors.tools.toolbox import build_tools
     from langslice.job.job import Job
@@ -414,7 +414,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
         """Wait for the background work, so its notice opens the next reply."""
         box.job.background.wait_all()
 
-    # Looking at the starting positions (evenly spaced, not yet placed).
+    # Exploring before any positions have been written.
     call("status")
     call("look", "section")
     call("look", "section", sections=[ID1], channels=["red", "green"])
@@ -582,10 +582,10 @@ def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
 
     every = [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
              {"id": ID2, "position_mm": 0.2}]
-    # Not looked at yet: refused. One overlay look lets that section's write
-    # through; a positioning look of the stack compares every section.
+    # Not looked at yet: refused. Compare an unplaced section with candidate
+    # atlas planes, then compare the whole stack.
     call("position_sections", every)
-    call("look", "overlay", sections=[ID0])
+    call("look", "positioning", sections=[ID0], positions_mm=[0.05, 0.1])
     call("position_sections", every, view=False)  # ID0 written, the others rejected
     call("look", "positioning")
     call("position_sections", every)  # every section compared by that look
@@ -1071,6 +1071,7 @@ def record(out: Path) -> dict[str, Any]:
         region_folder = root / "region_zoom"
         write_sections(region_folder)
         region_spec = full_spec(region_folder)
+        region_spec.inputs["positions"] = {ID1: 0.125}
         region_box = open_toolbox(region_spec, stub_image_model(region_spec))
         region_tools = tool_map(region_box)
         rec.tool("regions", region_tools, "look", "overlay", sections=[ID1])

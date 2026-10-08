@@ -2,7 +2,7 @@
  "args": [],
  "data": {
   "status": "ok",
-  "text": ".:\nexports/\nhistory/\nlogs/\nsections/\nviews/\njob.json  text, 1158 B\njob.lock  text, 0 B\nregistration.json  text, 9878 B\nstate.json  text, 11 kB\nviews.jsonl  text, 53 kB\nviews.seq  text, 29 B\nviews.seq.lock  text, 0 B"
+  "text": ".:\nexports/\nhistory/\nlogs/\nsections/\nviews/\njob.json  text, 1161 B\njob.lock  text, 0 B\nregistration.json  text, 9878 B\nstate.json  text, 11 kB\nviews.jsonl  text, 54 kB\nviews.seq  text, 29 B\nviews.seq.lock  text, 0 B"
  },
  "door": "tools",
  "images": [],

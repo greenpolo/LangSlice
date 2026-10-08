@@ -32,7 +32,7 @@ def test_spec_round_trips_through_dict():
     again = JobSpec.from_dict(spec.to_dict())
     assert again == spec
     assert again.interval_mm == 0.3
-    assert again.thickness_mm == 0.05
+    assert again.thickness_mm is None
     assert again.has("position") and not again.has("reorder")
 
 
@@ -91,3 +91,27 @@ def test_cutting_angles_report_obliqueness():
     state.cutting_angles_deg = {"pitch": 3.0, "yaw": -1.0}
     assert state.is_oblique
     assert (state.pitch_deg, state.yaw_deg) == (3.0, -1.0)
+
+
+@pytest.mark.parametrize("protocol", [{}, {"interval_um": 200}, {"thickness_um": 50},
+                                      {"interval_um": 200, "thickness_um": 50}])
+def test_optional_protocol_round_trips_without_inventing_values(protocol):
+    spec = JobSpec.from_dict({"image_folder": ".", "position": protocol})
+    saved = spec.to_dict()
+    assert JobSpec.from_dict(saved) == spec
+    for name in ("interval_um", "thickness_um"):
+        assert saved["position"][name] == protocol.get(name)
+    state = StackState(interval_mm=spec.interval_mm, thickness_mm=spec.thickness_mm)
+    assert StackState.from_dict(state.to_dict()) == state
+
+
+def test_strict_spacing_requires_a_supplied_interval():
+    with pytest.raises(ValueError, match="requires a supplied interval"):
+        PositionSpec(strict_interval=True)
+    assert PositionSpec(interval_um=200, strict_interval=True).thickness_um is None
+
+
+@pytest.mark.parametrize("value", [0, -50, True, "50"])
+def test_protocol_values_are_positive_micrometres_or_unknown(value):
+    with pytest.raises(ValueError, match="positive integer"):
+        JobSpec.from_dict({"image_folder": ".", "position": {"thickness_um": value}})

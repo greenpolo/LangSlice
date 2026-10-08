@@ -14,7 +14,7 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
 from langslice.job.background import DONE, FAILED, Landed
-from langslice.job.job import DEFAULT_POSITION, Job
+from langslice.job.job import Job
 from langslice.ops import submit as ops_submit
 from langslice.ops.inputs import STALE_INPUT, section_inputs
 from langslice.ops.traces import land_trace
@@ -119,7 +119,7 @@ def test_submit_waits_and_the_work_gives_way_under_the_lock(tmp_path: Path):
     background work, whose landing needs that lock: the work thread gives
     way and the landing runs on the waiting thread."""
     job, _ = _open(tmp_path, tasks=["position"])
-    assert all(record.position_source == DEFAULT_POSITION for record in job.state.slices)
+    assert all(record.position_mm is None for record in job.state.slices)
     release = threading.Event()
     landed_on: list[str] = []
 
