@@ -84,12 +84,12 @@ Register menu). The dialog has three tabs:
   section thickness and interval, which are filled in from ABBA), **Linear** (in-plane
   alignment, hemisphere flips with an optional hemisphere cue, and, if you tick
   **Enable slice angle estimation**, the atlas cutting angles) and **Nonlinear** (a
-  deformation per slice on top of its linear placement; choose the fitting engine).
+  deformation per slice on top of its linear placement).
   Each has a box for notes to the agent. Nonlinear builds on a linear registration:
   if some slices have none and Linear is off, LangSlice asks whether the agent should
   align them first; answering No leaves those slices out of Nonlinear.
 - **Slices:** the slices that will be sent, with their number of ABBA
-  registrations. Tick **Damaged** for torn or folded slices. By default, slices that
+  registrations. Write a note for a slice with torn or folded tissue; the agent reads it and decides which atlas regions to mark damaged. By default, slices that
   already have ABBA registrations keep their in-plane alignment; their positions
   can still move. Tick **Allow the agent to overwrite existing transforms** to let
   the agent realign them too.

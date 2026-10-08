@@ -44,7 +44,7 @@ public final class DialogPreview {
         RegistrationDialog[] dialog = new RegistrationDialog[1];
         SwingUtilities.invokeAndWait(() -> {
             dialog[0] = new RegistrationDialog(status, rows, "12 slices selected in ABBA.", channels, settings, host);
-            dialog[0].table.setValueAt(true, 3, 2); dialog[0].table.setValueAt("torn ventral cortex", 3, 3);
+            dialog[0].table.setValueAt("torn ventral cortex", 3, 2);
             dialog[0].custom.doClick(); dialog[0].weights[1].setValue(0.5); dialog[0].weights[2].setValue(0.0);
             dialog[0].setVisible(true);
         });

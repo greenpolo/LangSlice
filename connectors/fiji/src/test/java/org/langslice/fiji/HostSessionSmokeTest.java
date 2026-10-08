@@ -154,7 +154,7 @@ public final class HostSessionSmokeTest {
         // 3. A tilted session is accepted: its angles travel as the job's stack-wide angles.
         mp.getReslicedAtlas().setRotateX(-Math.toRadians(3)); mp.getReslicedAtlas().setRotateY(Math.toRadians(2));
         AbbaHostSession host = new AbbaHostSession(mp, output.resolve("snapshots"));
-        JsonObject spec = JsonParser.parseString("{\"tasks\":[\"reorder\",\"position\",\"transform\",\"nonlinear\"]}").getAsJsonObject();
+        JsonObject spec = JsonParser.parseString("{\"tasks\":[\"position\",\"transform\",\"nonlinear\"]}").getAsJsonObject();
         Map<SliceSources, String> damaged = new HashMap<>(); damaged.put(one, "torn");
         JsonObject request = host.prepare(spec, sections, Arrays.asList(0), Arrays.asList("ramp"), 25.0, damaged, true);
         System.out.println("PREPARE " + request.get("angles_deg") + " z_offset_mm=" + request.get("z_offset_mm")

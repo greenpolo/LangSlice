@@ -13,8 +13,6 @@ final class RegistrationSettings {
     static final String[] REASONING = {"default", "low", "medium", "high", "xhigh", "max"};
     static final String[] LEVELS = {"low", "medium", "high"};
     static final String[] RESOLUTIONS = {"low", "medium", "high", "auto"};
-    /** nonlinear.engine values (core/spec.py DEFORMABLE_ENGINES), in the dialog's order. */
-    static final String[] ENGINES = {"either", "ants", "elastix"};
     static final Preferences PREFS = Preferences.userNodeForPackage(RegistrationSettings.class).node("registration");
 
     boolean claude = false;
@@ -27,7 +25,7 @@ final class RegistrationSettings {
     boolean agentPreprocessing = false;
     /** Where full agent traces go when saving is on. */
     String traceDir = java.nio.file.Paths.get(System.getProperty("user.home"), "LangSlice", "traces").toString();
-    String cue = "", positionNotes = "", linearNotes = "", nonlinearNotes = "", strength = "medium", engine = "either";
+    String cue = "", positionNotes = "", linearNotes = "", nonlinearNotes = "", strength = "medium";
     int thickness = 50, interval = 200, maxParallel = 4;
     double pixelSize = 25;
     double[] weights = {};
@@ -53,8 +51,6 @@ final class RegistrationSettings {
         s.cue = p.get("cue", s.cue); s.positionNotes = p.get("positionNotes", s.positionNotes);
         s.linearNotes = p.get("linearNotes", s.linearNotes); s.nonlinearNotes = p.get("nonlinearNotes", s.nonlinearNotes);
         s.strength = p.get("strength", s.strength);
-        s.engine = p.get("engine", s.engine);
-        if (!Arrays.asList(ENGINES).contains(s.engine)) s.engine = "either";
         s.saveTraces = p.getBoolean("saveTraces", s.saveTraces); s.traceDir = p.get("traceDir", s.traceDir);
         s.thickness = p.getInt("thickness", s.thickness); s.interval = p.getInt("interval", s.interval);
         s.maxParallel = Math.max(1, Math.min(4, p.getInt("maxParallel", s.maxParallel)));
@@ -75,7 +71,7 @@ final class RegistrationSettings {
         p.putBoolean("agentDamage", agentDamage); p.putBoolean("custom", custom); p.putBoolean("clahe", clahe);
         p.putBoolean("agentPreprocessing", agentPreprocessing);
         p.put("cue", cue); p.put("positionNotes", positionNotes); p.put("linearNotes", linearNotes);
-        p.put("nonlinearNotes", nonlinearNotes); p.put("strength", strength); p.put("engine", engine);
+        p.put("nonlinearNotes", nonlinearNotes); p.put("strength", strength);
         p.putBoolean("saveTraces", saveTraces); p.put("traceDir", traceDir);
         p.putInt("thickness", thickness); p.putInt("interval", interval); p.putInt("maxParallel", maxParallel);
         p.putDouble("pixelSize", pixelSize);
@@ -138,7 +134,7 @@ final class RegistrationSettings {
     JsonObject spec() {
         JsonObject spec = new JsonObject();
         JsonArray tasks = new JsonArray();
-        if (positioning) { tasks.add("reorder"); tasks.add("position"); }
+        if (positioning) { tasks.add("position"); }
         if (linear) tasks.add("transform");
         if (nonlinear) tasks.add("nonlinear");
         spec.add("tasks", tasks);
@@ -161,7 +157,6 @@ final class RegistrationSettings {
         deform.addProperty("provider", imageProvider);
         if (NO_IMAGE_MODEL.equals(imageProvider) || imageModel == null || imageModel.isEmpty()) deform.add("image_model", JsonNull.INSTANCE);
         else deform.addProperty("image_model", imageModel);
-        deform.addProperty("engine", engine);
         deform.addProperty("notes", nonlinearNotes.trim());
         spec.add("nonlinear", deform);
         return spec;
