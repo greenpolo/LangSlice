@@ -1,0 +1,30 @@
+{
+ "args": [],
+ "data": {
+  "picture": 1,
+  "pictures": [
+   {
+    "caption": "s1.png overlay, at 0.12 mm; identity transform, no deformation; 4.8 um/px; raw red, green, blue auto; atlas borders; regions STR only; from the image file",
+    "id": 2
+   }
+  ],
+  "redrawn": true,
+  "status": "ok"
+ },
+ "door": "regions",
+ "images": [
+  {
+   "file": "145_regions_zoom.0.png",
+   "mode": "RGB",
+   "size": [
+    512,
+    469
+   ]
+  }
+ ],
+ "kwargs": {
+  "region": "STR"
+ },
+ "media_texts": [],
+ "tool": "zoom"
+}

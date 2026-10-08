@@ -6,7 +6,7 @@ here; nothing else is user-facing. ``tasks`` switches whole capabilities on and
 off — a task that is OFF takes its answer from ``inputs`` instead of from the
 agent, and its tools are not built at all.
 
-See ``docs/linear_design.md`` for the design this mirrors.
+See ``docs/registration.md`` for the design this mirrors.
 """
 
 from __future__ import annotations
@@ -273,7 +273,7 @@ class JobSpec:
     #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
     #: ``channel_names`` (one name per page of a host's multi-page snapshot)
     #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
-    #: ``damaged`` flags cannot be cleared by the agent. ``locked`` sections
+    #: ``damaged`` supplies notes, not region exclusions. ``locked`` sections
     #: were aligned in-plane by the user: the agent cannot change their flip,
     #: rotation or transform (a ``"host"`` identity transform unless
     #: ``transforms`` supplies one), but their positions still move.

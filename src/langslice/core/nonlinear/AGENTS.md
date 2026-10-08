@@ -3,8 +3,8 @@
 Package guide for `src/langslice/core/nonlinear/`; `AGENTS.md` is a verbatim
 twin of this file. The image transport it calls is
 `src/langslice/providers/images.py`. Every way of using LangSlice goes through
-the job folder and its verbs. See `docs/nonlinear_design.md` for the design
-and coordinate contracts.
+the job folder and its verbs. See `docs/registration.md` for tool behavior and `docs/file_formats.md`
+for coordinate contracts.
 
 ## Supported design
 
@@ -14,8 +14,7 @@ placed-border correction with the agent's edited copy of the base prompt
 (blank = base), one retained reply per geometry, raw and extracted images
 returned separately, no atlas search or rejection. The fit of the extracted
 lines is the traced ANTs fit (`ops.traces.land_trace`), in `core/deformation.py` and the
-`core/deformable/` package. The prompt sentence review is below; `docs/nonlinear_design.md` has the
-contract.
+`core/deformable/` package. The prompt sentence review is below.
 
 Exactly two border-based routes, chosen by whether a placement is supplied.
 No model is ever shown a colored region map: the model-facing atlas is a

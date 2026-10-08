@@ -214,7 +214,7 @@ the angles in a caption (empty for the flat plane).
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
-  highlight=), store=)`
+  highlight=, region_only=), store=)`
   returns one `LookPicture` per section (`section`:
   `display.framed_section`; `overlay`: `placement.placement_pictures` mode
   `overlay`, the applied deformation unless `warp` is `none`), per position
@@ -242,13 +242,15 @@ the angles in a caption (empty for the flat plane).
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
   `atlas.render.HIGHLIGHT_WIDTH` times as thick, the other borders faint,
-  and its caption says so; an overlay's caption gives the stored transform's
+  and its caption says so; `region_only` omits the context borders for a
+  region zoom. `overlay_region_window` bounds the saved placement's
+  side-aware selected contours with a small margin. An overlay's caption gives the stored transform's
   numbers (`placement.transform_words`). No picture number is burned into the pixels.
 - `positioning.py` — the positioning picture, ABBA's layout: a millimetre
   ruler, atlas thumbnails above it, each over its own millimetre (moved
   aside only as far as its neighbours need), the sections below in
   POSITION order (`position_order`: ties in stack order, `index_original`;
-  no position last, without a line), evenly spaced, each joined by a thin
+  no position last, without a line), evenly spaced, each joined by a
   line to its position, so no two lines cross; each label is the
   section's filename, so a filename order that disagrees with the
   positions shows there. A stack is split, never shrunk: at most
@@ -270,7 +272,7 @@ the angles in a caption (empty for the flat plane).
   `part`); a zoom is drawn up to the sections' working-copy detail, then
   enlarged at most `ATLAS_UPSAMPLE` times, said in the caption.
 - `zoom.py` — `redraw(recipe, box, ws, state=, store=, picture=,
-  long_edge=)`: a box (`[x0, y0, x1, y1]` pixels of the picture's content)
+  long_edge=, region="")`: a box (`[x0, y0, x1, y1]` pixels of the picture's content)
   drawn again from the source through the recipe's renderer (`RENDERERS`),
   its window composed onto the unzoomed picture's (`box_fractions`,
   `compose`), so a zoom of a zoom maps back; a section or overlay zoom
@@ -282,6 +284,9 @@ the angles in a caption (empty for the flat plane).
   *picture* (the saved image) and enlarged towards the picture size,
   `redrawn` False, with a `crop` recipe (the box on that source). Returns
   `Zoomed`; `ZoomError` `BAD_BOX` / `EMPTY_BOX` / `NO_PICTURE`.
+  With `region`, exactly one region replaces the box, on an overlay only
+  (`BAD_REGION_PICTURE` otherwise); absent anatomy is `REGION_NOT_IN_PLANE`.
+  The bounds and borders come from the saved overlay, never today's state.
 - `native.py` — sections at their image file's own resolution, for
   zooms. `section_pixels(ws, record, look, x, y)` -> `NativePixels` (`rgb`,
   `inside`, `enlarged`: picture pixels per file pixel): the section at

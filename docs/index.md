@@ -1,30 +1,38 @@
 # LangSlice
 
-LangSlice registers histological brain sections to BrainGlobe atlases. An agent
-looks at the sections and the atlas, places each section at its atlas position
-(with the stack's cutting angles) and aligns it in-plane; optionally it then
-deforms the atlas onto each section with ANTs, choosing the regions and
-settings itself and, where it chooses, reading borders an image model has
-traced on the tissue. The README has the install and the ways to use it.
+LangSlice registers histological brain sections to BrainGlobe atlases.
+An agent inspects the stack, sets atlas positions and cutting angles,
+aligns sections in-plane, and optionally fits deformations. It chooses
+regions and settings, reviews the results, and can use an image model to
+trace borders where useful.
 
-## Using LangSlice
+Every interface works through a job folder. Source images stay unchanged;
+writes are checkpointed and undoable. Results include coordinate and label
+maps, a readable registration file, and QuickNII / VisuAlign exports.
+Coronal sections of the Allen mouse atlas are the most tested case.
 
-- [Install in ABBA](abba_installation.md): the Fiji connector and the Python environment.
-- [CLI usage](cli.md): `langslice linear run`, the other commands, traces.
-- [Agent CLI](agent_cli.md): `langslice-job FOLDER VERB` for Claude Code, Codex and scripts.
-- [Python library](library.md): `open_job`, `create_job`, the verbs as methods.
-- [File formats](file_formats.md): `registration.json`, the coordinate and label maps, the QuickNII / VisuAlign exports, importing a registration.
+## Start here
 
-## How it works
+| Guide | What it covers |
+|---|---|
+| [Agents, CLI and MCP](agents.md) | Coding agents, Claude Desktop and LangSlice's built-in agent; setup, settings and replies |
+| [ABBA](abba.md) | Install the Fiji connector and register sections inside ABBA |
+| [Registration tools](registration.md) | Tasks, calibration, viewing, affine fits, ANTs and optional image-model traces |
+| [Python library](library.md) | Write agent workflows using the same job and tools |
+| [File formats](file_formats.md) | Job files, coordinate conventions, maps and registration imports/exports |
+| [Architecture](architecture.md) | Package layers, shared operations and the Fiji worker protocol |
 
-- [Architecture](architecture_overview.md): the layers and how the doors share one job.
-- [The job](linear_design.md): job spec, tasks, state, the toolbox, submit gates.
-- [Nonlinear](nonlinear_design.md): the agent's deformation toolbox, with the optional image model.
-- [Fiji connector and worker](abba_plugin_design.md): the worker protocol and the dialog-to-spec mapping.
+## Install from source
 
-## Repository
+Download and extract the source, then run in the folder containing
+`environment.yml`:
 
-- `src/langslice/`: the package (`core`, `job`, `ops`, `doors`, `agent`, `providers`, `hosts`).
-- `connectors/`: the Fiji connector, the Claude Desktop MCP configuration, the Claude Code and Codex setups.
-- `packaging/`, `environment.yml`: the worker's source installation.
-- `tests/`: pytest.
+```bash
+conda env create -f environment.yml
+conda activate langslice
+```
+
+The environment includes registration engines, MCP and the Python ABBA
+launcher. On Windows, use Miniforge Prompt or PowerShell with conda
+initialized. Atlases download on first use. Continue with the setup for
+your chosen interface above.

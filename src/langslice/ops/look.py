@@ -314,12 +314,16 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
 
 
 def zoom(
-    job: Job, workspace: Workspace, box: Sequence[float], picture: int | None = None,
+    job: Job, workspace: Workspace, box: Sequence[float] = (), picture: int | None = None,
+    region: str = "",
 ) -> Zoomed:
     """*box* (``[x0, y0, x1, y1]``, pixels of picture *picture* above its
     caption band) drawn again at more detail, saved as a picture of its own
     (tool ``zoom``).
 
+    *region* replaces *box* with one atlas region on an overlay: its whole
+    bounds with a small margin and only that region's border. Other modes
+    are ``BAD_REGION_PICTURE``, absent anatomy ``REGION_NOT_IN_PLANE``.
     *picture* defaults to the newest picture that is not itself a zoom. The
     box is redrawn from the picture's recipe, from the stack as it was then
     (``stale`` when it has changed since). A box on a zoom is read in the
@@ -355,7 +359,7 @@ def zoom(
     try:
         with collecting() as notes:
             made = zooms.redraw(recipe, box, workspace, state=job.state, store=job.deformations,
-                                picture=saved)
+                                picture=saved, region=region)
     except zooms.ZoomError as exc:
         raise Refused(exc.code, message=str(exc)) from exc
     except looks.LookError as exc:
@@ -363,7 +367,8 @@ def zoom(
     if not made.redrawn:
         made.recipe["source"] = source_number
     entries = save_pictures(job, workspace, ZOOM_TOOL, [made], notes,
-                            {"box": [float(v) for v in box], "picture": target.seq})
+                            {"box": [float(v) for v in box], "picture": target.seq,
+                             **({"region": region} if region else {})})
     return Zoomed(pictures=[made.image], entries=entries, picture=target.seq,
                   redrawn=made.redrawn, stale=made.stale)
 

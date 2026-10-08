@@ -1,0 +1,15 @@
+{
+ "args": [],
+ "data": {
+  "error": "REGION_NOT_IN_PLANE",
+  "message": "Region 'TH:left' is absent from this overlay.",
+  "status": "error"
+ },
+ "door": "regions",
+ "images": [],
+ "kwargs": {
+  "region": "TH:left"
+ },
+ "media_texts": [],
+ "tool": "zoom"
+}

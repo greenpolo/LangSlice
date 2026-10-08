@@ -116,8 +116,8 @@ def look(
     ...
 
 
-def zoom(box: list[float], picture: int = 0) -> dict[str, Any]:
-    """Draw a box of an earlier picture again, in more detail. Writes nothing.
+def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str, Any]:
+    """Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 
     The new picture is as large as the earlier one. In a picture of a
     section or of a section with the atlas on it, the section is read again
@@ -132,9 +132,15 @@ def zoom(box: list[float], picture: int = 0) -> dict[str, Any]:
 
     Args:
         box: [x0, y0, x1, y1] in pixels of that picture as it was shown,
-            from its top-left corner.
+            from its top-left corner. Give either box or region, not both.
         picture: The picture's number; 0 is the newest picture that is not
             itself a zoom.
+        region: One atlas acronym or numeric id, descendants included;
+            "CTX:left" or "CTX:right" selects one displayed side. Overlay
+            pictures only. Crops to the entire region with a small margin
+            and draws only its border, preserving the saved registration
+            and display settings. An absent region is reported. Leave box
+            empty when using region.
 
     Returns:
         One picture with its number and caption, and `redrawn`: false when
@@ -243,9 +249,8 @@ def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
 def grep_atlas_view(regions: list[str], positions_mm: list[float]) -> dict[str, Any]:
     """Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.
 
-    The named regions' borders are drawn strong and the other borders
-    faint, at the stack's cutting angles. Look highlights no regions; this
-    tool does.
+    Only the named regions' borders are drawn, at the stack's cutting
+    angles. Look highlights no regions; this tool does.
 
     Args:
         regions: Acronyms, names or ids, descendants included; "CTX:left" or
@@ -470,6 +475,9 @@ def elastix_affine(
     small amounts and does not turn it over. The section's marked damage
     regions are left out automatically. Each fit is written as the
     section's transform, one undoable write for the call.
+
+    A region too small for elastix is skipped with REGION_TOO_SMALL; use
+    a larger region or interactive_transform. No fit is written for it.
 
     Args:
         sections: Filenames (the extension may be left off); empty is every

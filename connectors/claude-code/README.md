@@ -4,9 +4,9 @@ Registers histology sections to a BrainGlobe atlas from Claude Code, on the
 user's own Claude subscription (LangSlice never handles Claude credentials).
 The plugin is skills for the normal Claude Code session plus registration
 subagents that each register exactly one brain. It uses the `langslice-job`
-command line ([`docs/agent_cli.md`](../../docs/agent_cli.md)); it bundles no
-MCP server. MCP is for desktop apps without a shell (Claude Desktop:
-[`connectors/claude-desktop/`](../claude-desktop/README.md)).
+command line ([`docs/agents.md`](../../docs/agents.md)); it bundles no
+MCP server. The MCP configuration for Claude Desktop is in
+[`connectors/claude-desktop/`](../claude-desktop/README.md).
 
 ## Install
 
@@ -42,7 +42,7 @@ subagents (`skills` is empty and `Skill` is not in their `tools`).
 The subagents start with `langslice-job <folder> brief`: LangSlice's job
 statement for the job (the one its own agent gets), the user's notes, the
 status table and the opening pictures saved as files, also written to
-`BRIEF.md` in the job folder ([`docs/agent_cli.md`](../../docs/agent_cli.md)).
+`BRIEF.md` in the job folder ([`docs/agents.md`](../../docs/agents.md)).
 
 ## Sandboxing
 
@@ -77,8 +77,3 @@ included:
 run. Replace the path with your job folder (`//` starts an absolute path).
 The scripting variant also needs `Edit(//data/brains/M04/**)`, and the main
 session needs whatever else it should be allowed to do.
-
-## Status
-
-`claude plugin validate` passes; the plugin has not yet been used for a full
-registration.

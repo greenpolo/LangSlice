@@ -142,6 +142,34 @@ ELASTIX_ATLAS_IMAGE = "template"
 ELASTIX_DETAIL = "standard"
 
 
+#: A restricted region must have support in both atlas-plane dimensions.
+#: Three-voxel regions have crashed Elastix; this is a conservative preflight,
+#: not a registration-quality score. Check before adding the fit's halo.
+ELASTIX_MIN_REGION_SPAN = 4
+
+
+class RegionTooSmall(ValueError):
+    """An Elastix fit whose selected anatomy is too small to fit safely."""
+
+
+def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> None:
+    if not include:
+        return
+    from langslice.core.deformable.atlas_images import placement_left, regions_mask
+
+    left = placement_left(atlas, prepared.placement, include)
+    mask = regions_mask(atlas, prepared.native, include, left)
+    if prepared.excluded_mask is not None:
+        mask &= ~prepared.excluded_mask
+    ys, xs = np.nonzero(mask)
+    span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
+    if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN ** 2:
+        raise RegionTooSmall(
+            "Region is too small for elastix. Select a larger region or use "
+            "interactive_transform; no fit was run. "
+            f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.")
+
+
 def elastix_settings(
     include: Sequence[str] = (), exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
@@ -267,6 +295,7 @@ def elastix_affine(
     prepared = prepare_fit(image, ctx.atlas, grid.placement,
                            elastix_settings(include, exclude, atlas_image), torn_band=torn,
                            nissl=ctx.nissl_atlas if atlas_image == "nissl" else None)
+    _check_elastix_region(prepared, ctx.atlas, include)
     result = run_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.
@@ -338,6 +367,9 @@ def fit_elastix(
         )
         fit = elastix_affine(state, ctx, record, start,
                              include=include, exclude=exclude, atlas_image=atlas_image)
+    except RegionTooSmall as error:
+        return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
+                "message": str(error)}
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
     except Exception as exc:

@@ -4,7 +4,7 @@ Package guide for `src/langslice/agent/`: the ADK driver that runs the
 linear agent environment, and the rules that environment follows. The
 repo-level `CLAUDE.md` holds the project-wide rules. `AGENTS.md` here is a
 verbatim copy — edit one, mirror to the other. The design this implements is
-`docs/linear_design.md`; this file is the map of the code, not a second spec.
+`docs/registration.md`; this file is the map of the code, not a second spec.
 
 ## Where the linear method lives
 
@@ -123,8 +123,7 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
   -> `providers.openai_oauth.OpenAIOAuthLlm`; `gemini-api/<model>` and bare
   Gemini ids -> ADK's own; `gemma-*` -> ADK's `Gemma`; `litellm-proxy:`,
   `openrouter:`, `ollama:` (and a bare `name:tag`) and `gpt-*`/`o*` ids ->
-  ADK's `LiteLlm` (the litellm extra; a missing install is a `RuntimeError`
-  naming it). `LANGSLICE_ENDPOINT` sends every model string to that
+  ADK's `LiteLlm` (litellm is a core dependency). `LANGSLICE_ENDPOINT` sends every model string to that
   OpenAI-compatible server. `default_http_options`: timeout and retries for
   every model call. `env_value` / `env_float` read the environment.
 - `trace.py` — `SessionTrace`, the full-content JSONL trace (what the agent

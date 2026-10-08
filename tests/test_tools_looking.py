@@ -439,3 +439,11 @@ def test_the_channel_tools_are_in_every_run(tmp_path: Path):
     assert {"set_channel_properties", "set_preprocessed_channel_properties"} <= set(box.names)
     with pytest.raises(ValueError, match="agent_preprocessing"):
         JobSpec(image_folder=str(tmp_path), agent_preprocessing="yes")  # type: ignore[arg-type]
+
+
+def test_zoom_accepts_a_single_region_on_the_latest_overlay(tmp_path: Path, atlas):
+    _state, _ctx, box = _synthetic(tmp_path, atlas)
+    _tool(box, "look")("overlay", sections=["s0.png"])
+    result = _tool(box, "zoom")(region="STR")
+    assert result["status"] == "ok" and result["redrawn"]
+    assert "regions STR only" in result["pictures"][0]["caption"]

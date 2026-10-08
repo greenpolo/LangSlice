@@ -190,6 +190,7 @@ wording; `registry.py` lists which.
   `fit_targets(job)` (every positioned section the host did not lock);
   `LOCKED` per section; every successful fit written as ONE undo step (fits
   computed outside the lock, `STALE_INPUT` for a section that changed);
+  a tiny restricted region is `REGION_TOO_SMALL` before the engine runs;
   a fit that turns a section more than `LARGE_TURN_DEG` from its previous
   transform carries `turn_deg`. With `restrict_to`, each ok row carries
   `restrict_box`: the regions' bounding box on that section's canvas as
@@ -298,7 +299,7 @@ wording; `registry.py` lists which.
   per row for a placed section. `grep_atlas_view(job, workspace, regions,
   positions_mm)`: the atlas template at each position (clamped into the
   range) at the stack's view angles with the named regions' borders
-  highlighted (`"CTX:left"` allowed; the other lines faint), saved like a
+  highlighted (`"CTX:left"` allowed; no other borders), saved like a
   `look` picture (so it can be zoomed: it registers its recipe renderer
   `grep_atlas_view` with `core.zoom.RENDERERS`); returns `RegionsView`
   (`pictures`, `entries`, `not_shown`, `regions`, `regions_not_in_plane`,
@@ -306,7 +307,7 @@ wording; `registry.py` lists which.
   `NO_SIDES`.
 - `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
   channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=)` and
-  `zoom(job, workspace, box, picture=None)`. Unlike the older read verbs they
+  `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
   save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
   (`Looked`, `Zoomed`) carries `pictures` (PIL) and `entries`
@@ -315,7 +316,10 @@ wording; `registry.py` lists which.
   are `not_shown`, each with the arguments that get it. `zoom` redraws a box
   of picture `picture` (default: `views.latest(exclude_tool="zoom")`) through
   `core.zoom.redraw` and saves it as tool `zoom`; `stale` when the stack has
-  changed since; a picture with no recipe or whose sections are gone is cropped
+  changed since. Instead of a box, `region` selects exactly one atlas region
+  on a saved overlay, cropped to its bounds with only its border drawn;
+  `BAD_REGION_PICTURE` on other modes and `REGION_NOT_IN_PLANE` when absent.
+  A picture with no recipe or whose sections are gone is cropped
   from its saved image (`redrawn` False) and its crop recipe names its
   `source` picture, so a crop of a crop is cut from the original. Refused:
   `NO_PICTURE`, `UNKNOWN_PICTURE`, `PICTURE_NOT_SAVED` (no saved image to

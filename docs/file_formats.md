@@ -1,14 +1,9 @@
 # Job folder file formats
 
-The public files a LangSlice job folder (`<images>/langslice/`) holds for
-scripts and other programs. `state.json` is the job's one working source and
-the truth; every file below is DERIVED from it and never read back as input.
-Change a registration through the verbs (`langslice-job FOLDER VERB`, or
-`langslice.open_job(...)` in Python), never by editing these files.
-
-Code: `src/langslice/core/maps.py` (the geometry), `src/langslice/job/formats.py`
-(the files), `src/langslice/ops/exports.py` (the `export_maps` verb),
-`src/langslice/job/quint.py` (QuickNII / VisuAlign JSON).
+A job stores settings in `job.json` and its working state in `state.json`.
+`registration.json`, maps and pictures are derived outputs. Change the job
+through its tools; editing an output does not change the registration.
+A registration file can also be explicitly imported when creating a job.
 
 ## The job folder
 
@@ -30,18 +25,19 @@ Code: `src/langslice/core/maps.py` (the geometry), `src/langslice/job/formats.py
 ```
 
 The job folder is `<images>/langslice/` unless `--job-dir` says otherwise (a
-read-only image folder falls back to `~/.langslice/jobs/<id>/`). Every path a
-job file stores is relative to it, so it moves with its images.
+read-only image folder falls back to `~/.langslice/jobs/<id>/`). Output artifact
+paths are relative to the job folder. The default image folder reference is
+`..`; a separately located job records an absolute image path.
 
 ## Conventions
 
 - **Atlas coordinates** are BrainGlobe micrometres in the atlas's own axis
-  order, given by its orientation string (`atlas.orientation`; every packaged
-  BrainGlobe atlas is `asr`: axis 0 anterior to posterior, axis 1 superior to
-  inferior, axis 2 right to left). Voxel `i`'s CENTRE is at
+  order, given by its orientation string (`atlas.orientation`). For `asr`,
+  axis 0 runs anterior to posterior, axis 1 superior to inferior, and axis 2
+  right to left. Voxel `i`'s centre is at
   `i * resolution_um`, so an atlas id is read at
   `annotation[round(x0 / r0), round(x1 / r1), round(x2 / r2)]`.
-- **Image pixels** are `[row, col]` of the image FILE as stored (no rotation or
+- **Image pixels** are `[row, col]` of the image file as stored (no rotation or
   flip applied: those are part of the mapping), pixel centres at integers,
   row 0 at the top.
 - A **flat plane** (cutting angles 0/0) lies on the atlas slab nearest its
@@ -76,26 +72,43 @@ Each section:
 | `id` | the image filename |
 | `order` | its index in the stack's order |
 | `folder` | its folder, relative to the job folder (`sections/<name>`) |
-| `parameters` | THE REGISTRATION, in public units: `atlas` (`name`, `version`); `plane` (`name`, `position_mm`, `position_um`, and the section's own `pitch_deg`, `yaw_deg`); `orientation` (`rotation_deg`: counter-clockwise quarter turns, applied first; `flip`: left-right, applied after); `affine` (null without a transform; else `kind`, `params`: the six normalized numbers `[a, b, tx, c, d, ty]` on the oriented section render, x as a fraction of its width and y of its height; `physical`: rotation, scales, shear, translations in mm, pivot; `mirrored`); `deformation` (null; `{"kind": "none", "reason"}` when the linear placement was kept; or `{"kind": "residual", "record", "key", "steps", "inverse_source"}`, `record` being the deformation record's folder relative to the job folder); `damaged` (true exactly when `damaged_regions` is not empty); `damaged_regions` (the atlas regions marked lost or badly displaced with `mark_damage`, which every fit leaves out; `"CTX:left"` names one side) |
+| `parameters` | Registration settings in public units (below) |
 | `image` | `file`, `size` (`[width, height]` of the file), `pixel_size_um` (of the file), `pixel_size_source` (`host`, `file`, or `estimated`: neither gives one, so the scale is the one every placement picture draws the section at, estimated from its tissue width at its current position) |
-| `pixel_to_atlas_um` | 3x3: a file pixel `[row, col, 1]` -> atlas micrometres (3 rows, the atlas axes), the LINEAR placement; null without a placement |
+| `pixel_to_atlas_um` | 3x3: a file pixel `[row, col, 1]` -> atlas micrometres (3 rows, the atlas axes), the linear placement; null without a placement |
 | `mapping` | `linear`, `linear (identity in-plane: no transform written)`, `linear + residual` (the maps hold the complete mapping), or null |
 | `problem` | why there is no matrix (`no position`, an unreadable file, ...), or, with a matrix, that the pixel size is unknown (the scale `estimated`, as the pictures draw it); else null |
 | `parameters_digest` | SHA-256 of the parameters, the matrix and the image facts |
 | `maps` | null before any maps were written; else `files` (kind -> relative path), `grid_size`, `full_resolution`, the grid's `pixel_to_atlas_um`, and `current` (false once the section changed after the maps were written) |
 
+### Section parameters
+
+| Key under `parameters` | Content |
+|---|---|
+| `atlas` | `name`, `version` |
+| `plane` | `name`, `position_mm`, `position_um`, `pitch_deg`, `yaw_deg` |
+| `orientation` | Counter-clockwise quarter turn `rotation_deg`, followed by left-right `flip` |
+| `affine` | Null without a transform; otherwise `kind`, `params`, `physical` and `mirrored` |
+| `deformation` | Null, `{"kind":"none","reason":"..."}` for a section left linear, or a residual record with `kind`, `record`, `key`, `steps`, `inverse_source` |
+| `damaged_regions` | Atlas regions excluded from fits, optionally with a side (`"CTX:left"`) |
+| `damaged` | True exactly when `damaged_regions` is nonempty |
+
+Affine `params` are `[a,b,tx,c,d,ty]` on the oriented section render:
+`x' = a*x + b*y + tx`, `y' = c*x + d*y + ty`, with x normalized by width
+and y by height. `physical` records rotation, scales, shear, translations
+in millimetres and pivot. A residual's `record` is its folder relative to
+the job folder; coordinate maps include that deformation as well as the affine.
+
 ## Per-section maps (`sections/<name>/`)
 
 Written at `submit` and by the `export_maps` verb (CLI and library only), for
 every section with a position. Not on every write (they are large). The grid
-is the section's WORKING COPY (the image every picture is drawn from: a
-whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
+is the section's working copy (a whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
 file downsampled to at most 3072 px), or with `full_resolution` the file's
 own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
 (`langslice.core.affine.pixel_center_map`); `maps.json` gives the grid's own
 `pixel_to_atlas_um`.
 
-The maps cover the section's FOOTPRINT, its filled outline: the deformable
+The maps cover the section's footprint, its filled outline: the deformable
 fit's foreground rule (`core.deformable.masks.tissue_masks`, against the slide
 background) on the working copy, closed over gaps up to 0.3 mm wide
 (`core.maps.FOOTPRINT_CLOSING_MM` 0.15 mm, a radius) and with every hole
@@ -118,12 +131,6 @@ Float maps are deflate-compressed without TIFF's floating-point predictor,
 which ImageJ 1.x cannot decode. At working size a section's `coords.tif` is
 tens of MB; at full resolution of a whole-slide scan, hundreds.
 
-Consistency (`tests/test_job_formats.py`, synthetic atlas): `labels.tif` equals
-the atlas read at `coords.tif` on over 99% of the footprint's pixels (the rest
-are ties at half voxels); `coords = matrix @ (p + residual)` to 0.01 um; a
-placement picture's coordinate map and `registration.json`'s matrix agree to
-0.05 um.
-
 ## Pictures
 
 Each picture a door showed is saved as a folder `<number>_<tool>[_<mode>]/`
@@ -140,13 +147,6 @@ micrometres. An `ants_syn` picture showing its deformation adds
 pixels, zero in the caption band); its frame's `residual` names it, and
 `coordinate_map` applies it.
 
-## A coding agent's own files
-
-The reference card (`AGENTS.md`, `CLAUDE.md`) asks a coding agent to keep the
-files it makes in the job folder rather than in `/tmp`: its scripts in
-`scripts/`, anything else (montages, tables) in `scratch/`. LangSlice neither
-writes, reads nor removes either folder.
-
 ## Exports (`exports/`)
 
 Written with the maps. Both are QuickNII-format JSON (`name`, `target`,
@@ -159,8 +159,7 @@ pixels and `nr` that index + 1.
   `pixel_to_atlas_um` (any plane, any cutting angle): the image's top-left
   corner and its two corner-to-corner vectors, converted to QuickNII voxel
   space (x left to right, y posterior to anterior, z inferior to superior;
-  voxel edges) through `brainglobe_space`. QuickNII and VisuAlign ship the Allen CCFv3 at 25 µm
-  only, so a job on `allen_mouse_10um`, `_50um` or `_100um` is exported to
+  voxel edges). Allen mouse jobs at any supported resolution export to
   `ABA_Mouse_CCFv3_2017_25um.cutlas` with its anchoring rescaled to that
   target's voxels (voxel-edge coordinates scale with the voxel size; the
   volumes span the same millimetres). The rat target is DeepSlice's name
@@ -174,81 +173,36 @@ pixels and `nr` that index + 1.
   linearly anchored plane: the direction of VisuAlign's triangulation as the
   QUINT team's reference code reads it (`triangulate` on `(nx, ny)`, mapped to
   `(x, y)`). Each marker reproduces the section's maps exactly at its own
-  point (tests).
+  point.
 
-## Importing a registration made elsewhere
+## Importing a registration
 
-`langslice.job.imports` reads a linear registration made by another program
-(or an earlier job) and returns each section's placement in LangSlice's own
-terms. A job is made from one with `langslice-job FOLDER init --registration
-FILE` (`docs/agent_cli.md`) or `langslice.create_job(FOLDER,
-registration=FILE)` (`docs/library.md`, "Starting from an existing
-registration"): the placements become the job's supplied inputs
-(`job.json`, `spec.inputs`):
+Use `langslice-job FOLDER init --registration FILE`, `langslice linear run
+FOLDER --registration FILE`, or `langslice.create_job(FOLDER,
+registration=FILE)`. The file's linear placement becomes supplied positions,
+cutting angles, orientation and affine transforms. Tasks default to
+`nonlinear`; explicitly enable linear tasks to revise that placement.
 
-| Input | From the import |
+| Format | What is read |
 |---|---|
-| `positions` | each placed section's `position_mm` |
-| `angles` | `{"pitch", "yaw"}` for the whole stack when every placed section's agree to within 1e-6 degrees (a written file's rounding; the median), else `{filename: {"pitch", "yaw"}}` per section |
-| `orientation` | each section's `flip` and `rotation_deg` |
-| `transforms` | each section's six numbers as a stored transform, `kind` `imported`, with `physical` (the knobs, about the render's centre), `in_plane`, `calibration` and a `note` naming the entry |
-| `pixel_size_um` | only when neither the caller nor the files give one: the median size the imported maps imply (every section is then placed against that one size, so the maps hold exactly) |
+| QuickNII / VisuAlign JSON or XML | Target atlas and each section's anchoring, dimensions and filename |
+| DeepSlice CSV, JSON or XML | Section anchorings and dimensions; CSV assumes the mouse target |
+| LangSlice `registration.json` | Each section's `pixel_to_atlas_um` and source image size |
 
-The new job's `registration.json` maps every section file as the imported
-registration does (tests: from a job's `quicknii.json` to 1e-3 µm, from its
-`registration.json` to 1e-6 µm, from DeepSlice's own files to 1e-3 µm). Its
-tasks default to `nonlinear` only, the imported placement kept as it is.
-Combining a registration file with supplied positions, transforms, angles or
-an orientation is refused. Entries matching no section image (`unmatched`),
-sections no entry names (`missing`: no placement, so they block `submit`
-until placed), sections that could not be placed (`refused`, with the
-reason) and each section's problems are reported as warnings. VisuAlign
-markers are never imported: the warning says
-the file's nonlinear markers were not imported and LangSlice's nonlinear
-step replaces them; the raw markers stay available on the `ImportResult`.
+Matching tries the basename first, then the stem ignoring case, then a
+unique QuickNII `_sNNN` section number. Ambiguous matches are refused.
+The import report names placed sections, unmatched entries, missing sections,
+refused placements and warnings. Missing placements must be resolved before
+submission. A file that places no section is refused.
 
-Formats (`read_registration`, by extension and content):
+A registration on resized copies transfers by image fractions. Calibration
+comes from the caller, then file metadata; otherwise the imported mapping
+supplies an estimated pixel size. Per-section cutting angles are preserved.
+An incompatible atlas target or a plane tilted more than 45 degrees from
+the job's slicing plane is refused. Flat planes render at the nearest atlas
+slab, up to half a voxel from the stored continuous position.
 
-| Format | Written by | What is read |
-|---|---|---|
-| `quicknii-json`, `visualign-json` | QuickNII, VisuAlign, DeepSlice (`write_QUINT_JSON`), this job's `exports/` | `target`, `aligner`, per slice `filename`, `anchoring`, `width`, `height`, `nr`, `markers` (VisuAlign when any slice has markers) |
-| `quicknii-xml` | QuickNII, DeepSlice (`write_QuickNII_XML`; 1.2.8 writes the series attributes as `xmlns:aligner=...`; earlier releases bare `&`, `width`/`height` `-999`, `nr` as `4.0`) | `<slice filename nr width height anchoring="ox=...&oy=...">` |
-| `deepslice-csv` | DeepSlice `save_predictions` | `Filenames`, `ox` ... `vz`, `width`, `height`, `nr` when present; no target (DeepSlice's mouse target assumed) |
-| `langslice-registration` | a job's `registration.json` | per section `pixel_to_atlas_um` and `image.size` |
-
-Checked against DeepSlice 1.2.8's own source and writers (the current PyPI
-release); `tests/fixtures/deepslice/` holds files its writers produced.
-
-Matching entries to the job's section files, first rule that finds anything:
-the entry's file name (last path component) equals a section's file name
-(`exact`); the names without extensions are equal ignoring case (`stem`);
-both carry exactly one QuickNII section number `_sNNN` and the numbers are
-equal (`section number`). An entry matching two sections, or two entries
-matching one section, is refused.
-
-Each matched section gives: `position_mm`, `pitch_deg`, `yaw_deg` (per
-section: a QuickNII file can carry a different plane per section),
-`rotation_deg` and `flip` (chosen so the six numbers are unmirrored and turn
-at most 45 degrees, unless fixed by the caller), the six normalized numbers
-`params`, the pixel size they are relative to (the job's own; without one,
-the median the imported maps imply, which the job must then be given), the
-imported `pixel_to_atlas_um` on the job's file, and VisuAlign `markers`
-rescaled to the file's continuous pixels (raw too). Markers are not turned
-into a deformation: that needs VisuAlign's interpolation between them.
-
-Exact inverse of the job's own geometry (`core.import_geometry`): through
-`registration.json` the round trip is exact to machine precision; through a
-QuickNII file (anchorings rounded to 1e-6 voxels) to under 2e-7 degrees,
-0.1 nm of position and 1e-8 in the six numbers. A QuickNII anchoring is by
-fractions of the image, so a registration made on a resized copy carries
-over (another aspect ratio is said). What does not carry over: a flat plane
-(both angles 0) is drawn at the nearest voxel of the normal axis, so a
-position between voxels is kept but drawn up to half a voxel away
-(`out_of_plane_um`); angles under 1e-6 degrees are read as 0; a plane
-tilted more than 45 degrees from the job's section plane, and a target that
-is not the job atlas's, are refused.
-
-## Edited maps and labels
-
-An edited `coords.tif`, `labels.tif` or painted label image changes no
-registration: nothing reads them back.
+`registration` cannot be combined with separately supplied positions,
+transforms, angles or orientation. Only the linear placement is imported:
+VisuAlign markers and saved LangSlice residual deformations are not applied
+as a new job's deformation. VisuAlign markers produce a warning.

@@ -38,17 +38,12 @@ theme:
 
 nav:
   - Overview: index.md
-  - Using LangSlice:
-      - Install in ABBA: abba_installation.md
-      - CLI usage: cli.md
-      - Agent CLI: agent_cli.md
-      - Python library: library.md
-      - File formats: file_formats.md
-  - How it works:
-      - Architecture: architecture_overview.md
-      - The linear job: linear_design.md
-      - Nonlinear: nonlinear_design.md
-      - Fiji connector and worker: abba_plugin_design.md
+  - Agents, CLI and MCP: agents.md
+  - ABBA: abba.md
+  - Registration tools: registration.md
+  - Python library: library.md
+  - File formats: file_formats.md
+  - Architecture: architecture.md
 
 markdown_extensions:
   - admonition

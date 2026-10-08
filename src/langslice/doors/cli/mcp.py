@@ -17,7 +17,7 @@ from langslice.doors.cli.linear import (
 def add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "mcp",
-        help="Serve the linear tools over MCP (stdio) to a host that brings its "
+        help="Serve the registration tools over MCP (stdio) to a host that brings its "
         "own model, such as Claude Desktop",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )

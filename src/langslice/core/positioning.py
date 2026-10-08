@@ -5,7 +5,7 @@ positions, each over its own millimetre (moved aside only as far as its
 neighbours need) and joined by a short line to it; below it, the sections
 in POSITION order (their current ``position_mm``, ties in stack order,
 ``index_original``; sections without a position last), evenly spaced,
-each joined by a thin line to its position. Both rows are sorted along
+each joined by a line to its position. Both rows are sorted along
 the ruler, so no two lines cross; each section is labelled by its
 filename, so a filename order that disagrees with the positions shows in
 the labels.
@@ -340,7 +340,7 @@ def _layout(
     """One picture: *sections* in position order, *atlas* sorted."""
     width = inner + 2 * MARGIN
     font_px = 14 if tile >= 110 else 12 if tile >= 56 else 11
-    small_px = 12 if tile >= 56 else 11
+    small_px = 14 if tile >= 56 else 12
     label_h = font_px + 5
 
     def centres(n: int) -> list[float]:
@@ -468,7 +468,7 @@ def paint(
         out.paste(tile, (round(X(slot.centre_x) - tile.width / 2.0), round(Y(slot.top))))
 
     canvas = np.asarray(out, dtype=np.uint8).copy()
-    thin = max(1, round(s))
+    thin = max(1, round(2 * s))
     x0, x1, ry = layout.ruler
     lo, hi = layout.range_mm
     cv2.line(canvas, _pt(X(x0), Y(ry)), _pt(X(x1), Y(ry)), RULER_COLOR, thin, cv2.LINE_AA,

@@ -1,20 +1,22 @@
 # LangSlice for Codex
 
-The closest Codex equivalent of the Claude Code plugin
-(`connectors/claude-code/`): skills for the main session and one custom agent
+Skills for the main session and one custom agent
 per access level that registers one brain. It uses the `langslice-job` command
-line ([`docs/agent_cli.md`](../../docs/agent_cli.md)) and bundles no MCP
-server (MCP is for desktop apps without a shell). Codex documents no way to
-package custom agents in a plugin, so these are files you copy into place;
-nothing here is a Codex plugin.
+line ([`docs/agents.md`](../../docs/agents.md)) and bundles no MCP
+server. Install the supplied skill, agent and rule files directly; this
+folder contains no plugin package.
 
 LangSlice must be installed (conda env of `environment.yml`) with `langslice`
 and `langslice-job` on PATH.
 
 ## Install
 
+From the repository root:
+
 ```bash
+cd connectors/codex
 # skills (Codex scans .agents/skills in the repo, then ~/.agents/skills)
+mkdir -p ~/.agents/skills
 cp -r skills/* ~/.agents/skills/
 # custom agents (personal: ~/.codex/agents/, project: .codex/agents/)
 mkdir -p ~/.codex/agents && cp agents/*.toml ~/.codex/agents/
@@ -41,7 +43,7 @@ for example "have register_cli register the job in /data/M04".
 The agents start with `langslice-job <folder> brief`: LangSlice's job
 statement for the job (the one its own agent gets), the user's notes, the
 status table and the opening pictures saved as files, also written to
-`BRIEF.md` in the job folder ([`docs/agent_cli.md`](../../docs/agent_cli.md)).
+`BRIEF.md` in the job folder ([`docs/agents.md`](../../docs/agents.md)).
 Create the job with `init --viewer codex`, so the pictures are sized for
 Codex's `view_image` (2048 px).
 
@@ -60,9 +62,3 @@ Codex's `view_image` (2048 px).
 - No equivalent of `omitClaudeMd` was found, so a project `AGENTS.md` still
   reaches the agents. `[[skills.config]]` with `enabled = false` can disable
   a skill per agent file.
-
-## Status
-
-The TOML files parse and `codex execpolicy check` matches the rules; the
-agents have not yet been used for a full registration. No Codex plugin
-package is shipped.

@@ -254,7 +254,7 @@ the CLI is a process per call.
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
   with a message), `mcp.py` (`mcp`), and the agent CLI
-  (`docs/agent_cli.md`), a command of its own so that allowing it allows
+  (`docs/agents.md`), a command of its own so that allowing it allows
   no agent, server, host or login:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,
     also `python -m langslice.doors.cli.jobcli`): `ops` and `schema` first

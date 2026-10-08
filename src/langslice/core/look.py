@@ -159,6 +159,8 @@ class LookRequest:
     #: side) whose borders are drawn thick, the other borders faint (a
     #: restricted fit's picture of its ``restrict_to``).
     highlight: tuple[str, ...] = ()
+    #: Region zoom: omit every border except the highlighted region.
+    region_only: bool = False
 
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
@@ -170,6 +172,7 @@ class LookRequest:
             "atlas_opacity": self.atlas_opacity, "warp": self.warp,
             "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
             "part": self.part, "highlight": list(self.highlight),
+            **({"region_only": True} if self.region_only else {}),
         }
 
     @classmethod
@@ -185,6 +188,7 @@ class LookRequest:
             zoom=tuple(float(v) for v in args.get("zoom") or ()),
             part=None if args.get("part") is None else int(args["part"]),
             highlight=tuple(str(v) for v in args.get("highlight") or ()),
+            region_only=bool(args.get("region_only", False)),
         )
 
 
@@ -337,7 +341,8 @@ def _options(
                else DEFAULT_ATLAS_OPACITY if images else 0.0)
     return DisplayOptions(
         mode=_DISPLAY_MODE[request.mode], zoom=zoom_px, channels=names, version=version,
-        atlas_channels=layers, atlas_opacity=float(opacity), regions=regions, outlines="all",
+        atlas_channels=layers, atlas_opacity=float(opacity), regions=regions,
+        outlines="none" if request.region_only else "all",
         border_color=_BORDER_COLOR, border_thickness=DEFAULT_BORDER_THICKNESS,
         deformation=request.warp, long_edge=int(long_edge),
     )
@@ -499,8 +504,8 @@ def _overlay_picture(
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
     if options.regions:
-        atlas_words += (f"; regions {', '.join(name for name, _ids in options.regions)} "
-                        "drawn thick, the other borders faint")
+        emphasis = "only" if request.region_only else "drawn thick, the other borders faint"
+        atlas_words += f"; regions {', '.join(name for name, _ids in options.regions)} {emphasis}"
     read = (placed.canvas.panels[0].from_file
             if placed.canvas is not None and placed.canvas.panels else None)
     text = (f"{record.id} overlay{_orientation(record)}, "
@@ -514,6 +519,50 @@ def _overlay_picture(
     annotate(image, recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
                        mode="overlay", um_per_px=um, extra=dict(placed.row))
+
+
+def overlay_region_window(
+    ws: Workspace, state: StackState, recipe: dict[str, Any], region: str, *, store: Any = None,
+) -> tuple[dict[str, Any], tuple[float, ...]]:
+    """A single region's bounds on the saved overlay's full canvas.
+
+    Use its snapshot and the renderer's side-aware contours, including the
+    registration's mirror, rather than a box measured on today's placement.
+    The margin is 5% of the region's extent on each axis.
+    """
+    request = LookRequest.from_args(recipe["args"])
+    request = replace(request, zoom=(), highlight=(region,), region_only=True)
+    held = recipe.get("state") or {}
+    drawn = restored(state, held) if held else state
+    records = _records(drawn, request.sections)
+    if len(records) != 1:
+        raise LookError("BAD_REGION_PICTURE", "Region zoom needs a single-section overlay.")
+    record = records[0]
+    names, version = _channels_for(ws, record, request.channels)
+    options = _options(request, names=names, version=version,
+                       layers=_atlas_layers(ws, request),
+                       long_edge=int(request.long_edge or picture_edge(ws)),
+                       regions=_highlighted(ws, request))
+    from langslice.core.atlas.sides import SideError
+
+    try:
+        placed = placement_pictures(ws, drawn, record, float(record.position_mm or 0),
+                                    options, {}, store=store)
+    except SideError as exc:
+        raise LookError(exc.code, str(exc)) from exc
+    assert placed.canvas is not None
+    panel = placed.canvas.panels[0]
+    if not panel.highlighted:
+        raise LookError("REGION_NOT_IN_PLANE", f"Region {region!r} is absent from this overlay.")
+    points = np.concatenate(panel.highlighted)
+    geometry = panel.geometry
+    points = points * geometry.atlas_scale + np.asarray(geometry.atlas_offset)
+    lower, upper = points.min(axis=0), points.max(axis=0)
+    margin = np.maximum((upper - lower) * 0.05, 2 * geometry.atlas_scale)
+    lower = np.maximum(0, (lower - margin) / np.asarray(geometry.size))
+    upper = np.minimum(1, (upper + margin) / np.asarray(geometry.size))
+    window = (float(lower[0]), float(lower[1]), float(upper[0]), float(upper[1]))
+    return {**recipe, "args": request.args()}, window
 
 
 def _atlas_picture(

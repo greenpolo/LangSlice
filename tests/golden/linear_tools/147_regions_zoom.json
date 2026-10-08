@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "data": {
+  "error": "BAD_ARGS",
+  "message": "Give either box or region, not both.",
+  "status": "error"
+ },
+ "door": "regions",
+ "images": [],
+ "kwargs": {
+  "box": [
+   0,
+   0,
+   50,
+   50
+  ],
+  "region": "STR"
+ },
+ "media_texts": [],
+ "tool": "zoom"
+}

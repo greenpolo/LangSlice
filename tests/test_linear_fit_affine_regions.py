@@ -8,6 +8,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
@@ -116,3 +117,26 @@ def test_a_restricted_fit_highlights_its_regions_and_zooms_only_when_it_gains(tm
     assert ("from the image file" in picture["caption"]) == zoomed  # a zoom reads the file
     assert zoom_window([0.0, 0.1, 0.9, 0.8]) is None  # a 1.1x zoom: drawn whole
     assert zoom_window([0.2, 0.2, 0.2 + 1 / MIN_ZOOM_GAIN, 0.5]) is not None
+
+
+def test_tiny_region_is_refused_before_elastix_and_does_not_write(tmp_path: Path, monkeypatch):
+    from langslice.core.deformable import engines
+
+    atlas = HalvesAtlas()
+    # Three atlas pixels across: the case that can crash the native engine.
+    atlas.annotation[atlas.annotation == CORE] = LEFT
+    atlas.annotation[:, 47:50, 39:42] = CORE
+    state, box = _box(tmp_path, atlas, _left_half_section(),
+                      pixel_size_um=50.0, position_mm=0.5)
+    before = box.job.snapshot()
+
+    def must_not_run(*args, **kwargs):
+        pytest.fail("Tiny region reached the native Elastix engine")
+
+    monkeypatch.setattr(engines, "run_elastix_affine", must_not_run)
+    result = _tool(box, "elastix_affine")(["s0.png"], restrict_to=["C"], view=False)
+    row = result["results"][0]
+    assert row["error"] == "REGION_TOO_SMALL"
+    assert "Region is too small for elastix" in row["message"]
+    assert box.job.snapshot() == before
+    assert state.slices[0].transform is None

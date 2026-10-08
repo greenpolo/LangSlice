@@ -77,11 +77,12 @@
    }
   },
   {
-   "description": "Draw a box of an earlier picture again, in more detail. Writes nothing.\n\nThe new picture is as large as the earlier one. In a picture of a\nsection or of a section with the atlas on it, the section is read again\nfrom its original image file at the file's own resolution, only inside\nthe box, and drawn with the same channels, display settings and atlas\nborders; the caption says when the file holds fewer pixels than the\npicture. A positioning picture's sections are drawn again from their\nworking copies (the file reduced to at most 3072 pixels), and the atlas\nfrom its voxels. The box is drawn as the picture was, even if the stack\nhas changed since (the reply then says `stale`). The new picture has its\nown number, so it can be zoomed again.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n\nReturns:\n    One picture with its number and caption, and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
+   "description": "Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.\n\nThe new picture is as large as the earlier one. In a picture of a\nsection or of a section with the atlas on it, the section is read again\nfrom its original image file at the file's own resolution, only inside\nthe box, and drawn with the same channels, display settings and atlas\nborders; the caption says when the file holds fewer pixels than the\npicture. A positioning picture's sections are drawn again from their\nworking copies (the file reduced to at most 3072 pixels), and the atlas\nfrom its voxels. The box is drawn as the picture was, even if the stack\nhas changed since (the reply then says `stale`). The new picture has its\nown number, so it can be zoomed again.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner. Give either box or region, not both.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n    region: One atlas acronym or numeric id, descendants included;\n        \"CTX:left\" or \"CTX:right\" selects one displayed side. Overlay\n        pictures only. Crops to the entire region with a small margin\n        and draws only its border, preserving the saved registration\n        and display settings. An absent region is reported. Leave box\n        empty when using region.\n\nReturns:\n    One picture with its number and caption, and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
    "name": "zoom",
    "parameters_json_schema": {
     "properties": {
      "box": {
+      "default": [],
       "items": {
        "type": "number"
       },
@@ -92,11 +93,13 @@
       "default": 0,
       "title": "Picture",
       "type": "integer"
+     },
+     "region": {
+      "default": "",
+      "title": "Region",
+      "type": "string"
      }
     },
-    "required": [
-     "box"
-    ],
     "title": "zoomParams",
     "type": "object"
    }
@@ -215,7 +218,7 @@
    }
   },
   {
-   "description": "Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.\n\nThe named regions' borders are drawn strong and the other borders\nfaint, at the stack's cutting angles. Look highlights no regions; this\ntool does.\n\nArgs:\n    regions: Acronyms, names or ids, descendants included; \"CTX:left\" or\n        \"CTX:right\" names one side, as the pictures show it.\n    positions_mm: Atlas positions in millimetres along the slicing axis;\n        a position outside the atlas is clamped into its range.\n\nReturns:\n    Up to 4 pictures with their numbers and captions, and per position\n    the named regions that have no pixel in that plane.",
+   "description": "Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.\n\nOnly the named regions' borders are drawn, at the stack's cutting\nangles. Look highlights no regions; this tool does.\n\nArgs:\n    regions: Acronyms, names or ids, descendants included; \"CTX:left\" or\n        \"CTX:right\" names one side, as the pictures show it.\n    positions_mm: Atlas positions in millimetres along the slicing axis;\n        a position outside the atlas is clamped into its range.\n\nReturns:\n    Up to 4 pictures with their numbers and captions, and per position\n    the named regions that have no pixel in that plane.",
    "name": "grep_atlas_view",
    "parameters_json_schema": {
     "properties": {
@@ -387,7 +390,7 @@
    }
   },
   {
-   "description": "Fit sections' in-plane affine transforms automatically with elastix.\n\nElastix refines each section's current placement (from the identity\nwhen it has no transform) by matching its preprocessed channel against\nan atlas image, inner anatomy included. It adjusts from where the\nsection is and does not search from scratch: it moves a section by\nsmall amounts and does not turn it over. The section's marked damage\nregions are left out automatically. Each fit is written as the\nsection's transform, one undoable write for the call.\n\nArgs:\n    sections: Filenames (the extension may be left off); empty is every\n        placed section the user has not locked.\n    restrict_to: Regions to fit by (acronyms, names or ids, descendants\n        included; \"CTX:left\" or \"CTX:right\" for one side): only the\n        atlas within 300 um of them, against the tissue the fit lays\n        there. Empty fits by every region.\n    atlas_image: \"template\" (the atlas's reference template) or \"nissl\"\n        (a Nissl-stained reference, Allen mouse atlases only).\n\nReturns:\n    Per section the overlap of the fitted shapes (iou; it compares\n    outlines, not the anatomy inside, so a turned section can score as\n    high as a correct one) and the transform (rotation_deg, scale_x,\n    scale_y, shear, translate_x_mm, translate_y_mm about the canvas\n    centre); and a picture of each fitted section\n    under its new transform with the atlas borders on it. With\n    restrict_to, those regions' borders are drawn thick and the others\n    faint, and the picture is zoomed to them when they cover a small\n    part of the section.",
+   "description": "Fit sections' in-plane affine transforms automatically with elastix.\n\nElastix refines each section's current placement (from the identity\nwhen it has no transform) by matching its preprocessed channel against\nan atlas image, inner anatomy included. It adjusts from where the\nsection is and does not search from scratch: it moves a section by\nsmall amounts and does not turn it over. The section's marked damage\nregions are left out automatically. Each fit is written as the\nsection's transform, one undoable write for the call.\n\nA region too small for elastix is skipped with REGION_TOO_SMALL; use\na larger region or interactive_transform. No fit is written for it.\n\nArgs:\n    sections: Filenames (the extension may be left off); empty is every\n        placed section the user has not locked.\n    restrict_to: Regions to fit by (acronyms, names or ids, descendants\n        included; \"CTX:left\" or \"CTX:right\" for one side): only the\n        atlas within 300 um of them, against the tissue the fit lays\n        there. Empty fits by every region.\n    atlas_image: \"template\" (the atlas's reference template) or \"nissl\"\n        (a Nissl-stained reference, Allen mouse atlases only).\n\nReturns:\n    Per section the overlap of the fitted shapes (iou; it compares\n    outlines, not the anatomy inside, so a turned section can score as\n    high as a correct one) and the transform (rotation_deg, scale_x,\n    scale_y, shear, translate_x_mm, translate_y_mm about the canvas\n    centre); and a picture of each fitted section\n    under its new transform with the atlas borders on it. With\n    restrict_to, those regions' borders are drawn thick and the others\n    faint, and the picture is zoomed to them when they cover a small\n    part of the section.",
    "name": "elastix_affine",
    "parameters_json_schema": {
     "properties": {

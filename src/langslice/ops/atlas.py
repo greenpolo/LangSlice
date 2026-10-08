@@ -134,9 +134,9 @@ def _region_picture(
     base: tuple[int, int] | None = None, base_um: float | None = None,
 ) -> looks.LookPicture:
     """The atlas template at *position_mm* and the stack's view *angles*, the
-    region lines faint, *regions* highlighted; at *window* (fractions of the
+    only *regions* outlined; at *window* (fractions of the
     unzoomed picture) when given."""
-    options = replace(default_options("template", atlas_channels=("template", "borders"),
+    options = replace(default_options("template", atlas_channels=("template",),
                                       long_edge=long_edge), regions=tuple(regions))
     voxel = atlas_um_per_px(workspace.atlas)
     if base is None or base_um is None:
@@ -211,7 +211,7 @@ def grep_atlas_view(
 ) -> RegionsView:
     """The atlas template at each of *positions_mm* (clamped into the atlas
     range), at the stack's cutting angles (``StackState.view_angles``), with
-    the borders of *regions* highlighted and the other region lines faint.
+    only the borders of *regions* drawn.
     A region may name a side (``"CTX:left"``, as the section is displayed).
 
     Each picture is saved like a ``look`` picture (recipe, caption, number),

@@ -1068,6 +1068,15 @@ def record(out: Path) -> dict[str, Any]:
         write_sections(declared)
         record_declarations(rec, declared)
         record_mcp_variants(rec, root / "variants")
+        region_folder = root / "region_zoom"
+        write_sections(region_folder)
+        region_spec = full_spec(region_folder)
+        region_box = open_toolbox(region_spec, stub_image_model(region_spec))
+        region_tools = tool_map(region_box)
+        rec.tool("regions", region_tools, "look", "overlay", sections=[ID1])
+        rec.tool("regions", region_tools, "zoom", region="STR")
+        rec.tool("regions", region_tools, "zoom", region="TH:left")
+        rec.tool("regions", region_tools, "zoom", box=[0, 0, 50, 50], region="STR")
         built = sorted(set(main_names) | set(auto_names) | set(gated_names)
                        | set(long_names))
         from langslice.ops.registry import VERBS
