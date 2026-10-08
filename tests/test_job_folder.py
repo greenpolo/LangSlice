@@ -277,7 +277,10 @@ def test_the_layers_agree_with_the_borders_drawn_on_a_picture(tmp_path: Path):
     strong = borders >= 128
     assert strong.sum() > 500
     assert (yellow & strong).sum() / strong.sum() > 0.85  # the layer is where lines are drawn
-    assert (yellow & (borders > 0)).sum() / yellow.sum() > 0.98  # and every drawn line is in it
+    # ...and every drawn line is in it (JPEG's colour subsampling bleeds a
+    # one-pixel-wide line's yellow one pixel to the side).
+    layer = cv2.dilate((borders > 0).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    assert (yellow & layer).sum() / yellow.sum() > 0.98
     change = np.zeros(labels.shape, dtype=bool)
     change[:-1] |= labels[:-1] != labels[1:]
     change[1:] |= labels[:-1] != labels[1:]

@@ -212,6 +212,33 @@ def _smooth_closed(points: np.ndarray, window: int) -> np.ndarray:
     )
 
 
+def _on_pixel_edges(contour: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """*contour* (the centres of a region's boundary pixels, as OpenCV traces
+    them) moved half a pixel outward, onto the edges the region shares with
+    its neighbours.
+
+    Traced through pixel centres, two adjacent regions' outlines run one
+    pixel apart, one on each side of their common edge, and a zoomed picture
+    shows every border as a double line. Moved out by half a pixel along the
+    outline's normal, both land on the edge itself. The outward side of each
+    outline (an outer boundary or a hole's) is the side where its points'
+    neighbours lie off *mask*.
+    """
+    points = contour.astype(np.float64)
+    if len(points) < 3:
+        return points
+    tangent = np.roll(points, -1, axis=0) - np.roll(points, 1, axis=0)
+    normal = np.stack([tangent[:, 1], -tangent[:, 0]], axis=1)
+    length = np.hypot(normal[:, 0], normal[:, 1])
+    normal = np.divide(normal, length[:, None], out=np.zeros_like(normal),
+                       where=length[:, None] > 0)
+    rows, cols = mask.shape
+    probe = np.rint(points + normal).astype(np.int64)
+    inside = mask[np.clip(probe[:, 1], 0, rows - 1), np.clip(probe[:, 0], 0, cols - 1)] > 0
+    outward = 1.0 if inside.mean() <= 0.5 else -1.0
+    return points + 0.5 * outward * normal
+
+
 def region_contours(
     labels: np.ndarray,
     *,
@@ -242,7 +269,8 @@ def region_contours(
         contours, _ = cv2.findContours(sub, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
         offset = np.array([cols.start - 1, rows.start - 1], dtype=np.float64)
         polys = [
-            _smooth_closed(contour.reshape(-1, 2).astype(np.float64) + offset, smooth_window)
+            _smooth_closed(_on_pixel_edges(contour.reshape(-1, 2), sub) + offset,
+                           smooth_window)
             for contour in contours
             if cv2.contourArea(contour) >= min_area_px
         ]
