@@ -9,11 +9,11 @@ and coordinate contracts.
 ## Supported design
 
 The stack agent's optional `nonlinear` task uses a supplied linear placement via
-`registration_tool.py`. Its only image tool is `trace_borders(id, prompt="")`:
+`registration_tool.py`. Its only image tool is `trace_borders(section, prompt="", restrict_to=())`:
 placed-border correction with the agent's edited copy of the base prompt
 (blank = base), one retained reply per geometry, raw and extracted images
 returned separately, no atlas search or rejection. The fit of the extracted
-lines is `fit_deformable`'s (traced), in `core/deformation.py` and the
+lines is the traced ANTs fit (`ops.traces.land_trace`), in `core/deformation.py` and the
 `core/deformable/` package. The prompt sentence review is below; `docs/nonlinear_design.md` has the
 contract.
 
@@ -45,7 +45,7 @@ grayscale plate with thin yellow family borders.
   placement, never shown to the model). It needs a written transform.
 
 Both routes keep the call-key folders and attempts, take the image model as
-an argument, and leave fitting to `fit_deformable`.
+an argument, and leave fitting to the ops layer.
 
 Atlas labels and grayscale references use the same position, plane, cutting
 angles and orientation. Reflection is explicit, never guessed from a

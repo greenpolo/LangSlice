@@ -1,11 +1,11 @@
 # LangSlice
 
 LangSlice registers histological brain sections to BrainGlobe atlases. An agent
-orders the sections, places each at its atlas position and aligns it in-plane;
-optionally it then deforms the atlas onto each section with ANTs or Elastix,
-choosing the regions and settings itself and, where it chooses, reading
-borders an image model has traced on the tissue. The README has the install and
-the ways to use it.
+looks at the sections and the atlas, places each section at its atlas position
+(with the stack's cutting angles) and aligns it in-plane; optionally it then
+deforms the atlas onto each section with ANTs, choosing the regions and
+settings itself and, where it chooses, reading borders an image model has
+traced on the tissue. The README has the install and the ways to use it.
 
 ## Using LangSlice
 
@@ -18,7 +18,7 @@ the ways to use it.
 ## How it works
 
 - [Architecture](architecture_overview.md): the layers and how the doors share one job.
-- [The linear job](linear_design.md): job spec, state, tools, submit gates.
+- [The job](linear_design.md): job spec, tasks, state, the toolbox, submit gates.
 - [Nonlinear](nonlinear_design.md): the agent's deformation toolbox, with the optional image model.
 - [Fiji connector and worker](abba_plugin_design.md): the worker protocol and the dialog-to-spec mapping.
 

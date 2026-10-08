@@ -18,15 +18,15 @@
 </p>
 
 LangSlice puts a stack of histology sections on a [BrainGlobe](https://brainglobe.info)
-atlas. A vision-language model agent orders the sections, places each at its
-atlas position (with cutting angles) and aligns it in-plane against the atlas at
-true scale. Optionally the agent then deforms the atlas onto each section with
-ANTs or Elastix, choosing the regions and settings itself and, where it
+atlas. A vision-language model agent looks at the sections and the atlas, places
+each section at its atlas position (with the stack's cutting angles) and aligns
+it in-plane at true scale. Optionally the agent then deforms the atlas onto each
+section with ANTs, choosing the regions and settings itself and, where it
 chooses, reading borders an image model has traced on the tissue. Results
 are per-section coordinate and label maps, `registration.json`, and
 QuickNII / VisuAlign JSON. LangSlice complements registration software such as
-[ABBA](https://abba-documentation.readthedocs.io) and QUINT; it has no manual
-registration tools. Coronal sections of the Allen mouse atlas are the most
+[ABBA](https://abba-documentation.readthedocs.io) and QUINT; it has no registration
+interface of its own. Coronal sections of the Allen mouse atlas are the most
 tested case.
 
 ## Install

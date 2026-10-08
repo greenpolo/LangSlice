@@ -222,7 +222,7 @@ longer exist be taken over by the images it is opened with.
   an update, an older pre-release's for a new job, `--fresh` or
   `resume=False`; a saved `appearance` passes through
   `core.appearance.migrated`: an older `fit` recipe read as `preprocessed`,
-  the `preprocess` tool's `view` look dropped; history steps are read the
+  an older `view` look dropped; history steps are read the
   same way), `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
@@ -308,9 +308,9 @@ longer exist be taken over by the images it is opened with.
   exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
   number and id, arguments, `caption`, `step`, `recipe`, sections, mode, picture size and bytes, `frame`)
-  and, for a placement picture or a `fit_deformable` picture (its note's
+  and, for a placement picture or an `ants_syn` picture (its note's
   `warp`, `core.layers.warp_layers`), `labels.tif` (uint32, zlib) and
-  `borders.png` (8-bit coverage), plus `residual.tif` for a `fit_deformable`
+  `borders.png` (8-bit coverage), plus `residual.tif` for an `ants_syn`
   picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`, and `caption`, `step`,

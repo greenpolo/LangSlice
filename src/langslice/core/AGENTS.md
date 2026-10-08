@@ -294,7 +294,7 @@ the angles in a caption (empty for the flat plane).
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
   `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.
 - `layers.py` — a placement picture's layers and frame record (and a
-  `fit_deformable` picture's), the on-demand coordinate map, and the
+  deformation-fit picture's), the on-demand coordinate map, and the
   per-call picture notes (below).
 - `maps.py` — section pixels to atlas
   micrometres for the job folder's public files (`job/formats.py`,
@@ -367,7 +367,7 @@ the angles in a caption (empty for the flat plane).
   transform is refused by `missing_transform_message(spec)`: with Linear
   (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller to
   supply the transforms (`inputs.transforms`, `--transforms`) or switch
-  Linear on and run `fit_affine` first (the maps still read a missing
+  Linear on and run `elastix_affine` on the section first (the maps still read a missing
   transform as the identity). No provider import.
 
 ## The frame of a picture and its layers
@@ -415,7 +415,7 @@ takes a `view.json` (record or path) and returns the `(rows, cols, 3)`
 float32 map on demand, NaN in the caption band. The labels layer is what
 that map reads in the atlas annotation, up to ties at exact half voxels.
 
-A `fit_deformable` picture gets the same layers on its own
+A deformation-fit picture (`ants_syn`, a landed trace) gets the same layers on its own
 grid through `warp_layers(atlas, note, size)`: labels through the record's
 composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
@@ -434,7 +434,7 @@ extra=, recipe=, caption=)`; `note_for` finds a picture's note by
 identity; `annotate(image, recipe=, caption=)` sets fields on the note a
 renderer already made for that image (its frame and panel kept). `draw_canvas`
 and the `look` renderers note theirs; `ops.deformable.pictures` notes
-`fit_deformable`'s fits (through `core.deformation.picture(note=...)`, with
+the deformation fits (`ants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door
 the pictures it labels itself (`set_preprocessed_channel_properties`'

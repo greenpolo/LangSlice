@@ -10,14 +10,14 @@ register a brain but cannot start another agent through it. `ops` and
 path (`./ops`). Code: `src/langslice/doors/cli/`.
 
 ```bash
-langslice-job sections/ init --tasks position,transform --pixel-size-um 0.65
+langslice-job sections/ init --tasks position,transform,nonlinear --pixel-size-um 0.65
 langslice-job sections/ brief                  # the job statement, opening pictures, status
 langslice-job ops                              # every verb: name, kind, group, one line, long
-langslice-job schema fit_deformable            # one verb's description and arguments
+langslice-job schema ants_syn                  # one verb's description and arguments
 langslice-job schema init                      # init's job flags (or: FOLDER init --help)
-langslice-job sections/ set_positions --entries '[{"id": "s01.tif", "position_mm": 5.2}]'
-langslice-job sections/ view_slices --slices s01.tif --view '{"resolution": 1200}'
-langslice-job sections/ fit_deformable --slices s01.tif --background   # then: wait
+langslice-job sections/ position_sections --sections '[{"id": "s01.tif", "position_mm": 5.2}]'
+langslice-job sections/ look --mode overlay --sections s01.tif --resolution 1200
+langslice-job sections/ ants_syn --sections s01.tif --background   # then: wait
 ```
 
 `FOLDER` is the job folder or the image folder beside it.
@@ -28,8 +28,16 @@ The verbs are the agent tools, with the same names, arguments and
 descriptions: one declaration per verb (`src/langslice/doors/declarations.py`)
 feeds the agent tools, the MCP tools, this CLI and the library, and
 `src/langslice/ops/registry.py` lists them with their kind (read or write) and
-group (Common, Positioning, Linear, Nonlinear). A job has the verbs its tasks
-switch on (`status` lists them). Kebab-case is accepted (`set-positions`).
+group (Common, Positioning, Linear, Nonlinear). The looking and channel tools
+(`look`, `zoom`, `set_channel_properties`,
+`set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`,
+`status`, the job-folder file tools) are in every job; the tasks switch the
+others on or off whole (`position_sections`, `interactive_transform`,
+`elastix_affine`, `ants_syn`, `trace_borders`;
+[linear_design.md](linear_design.md)), and `status` says what the job lets you
+change. Kebab-case is accepted (`position-sections`). A replaced tool's old
+name (`view_slices`, `fit_affine`, ...) answers with `RETIRED_TOOL` and the
+tool to use.
 `export_maps` exists only here and in the library (`Verb.scripting`): it
 writes each placed section's maps and the exports from the job as it stands
 ([file_formats.md](file_formats.md)).
@@ -38,7 +46,7 @@ writes each placed section's maps and the exports from the job as it stands
 `summary`, `kind`, `group`, `long`, the argument schema and, for a verb that
 returns pictures, `picture_options`. With `--job` (or run inside a job
 folder) it declares the verbs as that job's settings do. A long verb
-(`fit_affine`, `fit_deformable`, `trace_borders`, `export_maps`) may take
+(`elastix_affine`, `ants_syn`, `trace_borders`, `export_maps`) may take
 minutes: `ops` marks it `long` and `schema` or a dry run gives the
 `--background` command. `schema` of a command on FOLDER (`init`, `brief`,
 `runs`, `wait`) gives its summary, usage and `flags` (each with its `help`,
@@ -47,15 +55,12 @@ NAME --help` (or `-h`) answers what `schema NAME` does, declared for
 FOLDER's job when it has one, and runs nothing.
 
 Some verbs take a bounded number of items per call (`Verb.limits` in
-`src/langslice/ops/registry.py`; the reference card lists them):
-`view_slices` 4 sections, `view_atlas` 4 positions, `view_placement` 4
-section-position pairs and `adjust_transforms` 4 entries; `fit_deformable` 4
-sections, 4 candidates and 8 fits (sections times candidates). A job's
-`transform.max_parallel` can lower `fit_affine`'s and `adjust_transforms`'s.
-
-`search_position` (offered with `--bayesian`) needs no written position:
-without one, and without `around_mm` (a centre to search around), it
-searches the atlas's whole valid range; it writes nothing.
+`src/langslice/ops/registry.py`; the reference card lists them): `look`,
+`grep_atlas_view` and `set_preprocessed_channel_properties` show at most 4
+pictures (the rest are named, with the call that draws them),
+`interactive_transform` and `ants_syn` take 4 sections. A job's
+`transform.max_parallel` can lower `elastix_affine`'s and
+`interactive_transform`'s.
 
 ## Commands on FOLDER
 
@@ -103,9 +108,11 @@ sections; a file that cannot be read or places no section is `BAD_REGISTRATION`
   recorded in `logs/runs/<id>.json`.
 - `--verbose`: the whole reply (whole-stack rows, descriptions written for a model).
 
-Pictures take the same `view` options as the tools, `view.resolution` included:
-any long edge from 128 px up to the viewer's largest, never past the source's
-own pixels. A larger request is clamped and `view.resolution_note` says so.
+`look` takes a `resolution` (the change tools a `view` switch, false for no
+picture): any long edge from 128 px up to the viewer's largest, never past the
+source's own pixels. A larger request is clamped and the reply's
+`resolution_note` says so. Every picture has a number and a caption; `zoom`
+takes the number.
 
 ## Pictures and the viewer
 
@@ -134,7 +141,7 @@ that model is connected here (a key or login present, checked offline by
 ```json
 {"ok": true,
  "result": {"status": "ok", "written": [{"id": "s0.png", "position_mm": 0.1}], "...": "..."},
- "artifacts": [{"path": "/data/sections/langslice/sections/s0/views/000001_set_positions_overlay/view.jpg", "kind": "view"}],
+ "artifacts": [{"path": "/data/sections/langslice/sections/s0/views/000001_position_sections_positioning/view.jpg", "kind": "view"}],
  "warnings": [],
  "next": []}
 ```
@@ -153,16 +160,15 @@ always parses.
 | 4 | internal error (traceback on stderr); a background run that ended without an answer |
 
 `result` is concise by default; `--verbose` gives the full text. Status rows
-(`status`, `view_stack`, a write's `changed`) carry every field on every row,
+(`status`, a write's `changed`) carry every field on every row,
 null where a section has none (the last placed section's `delta_to_next_mm`,
 an untransformed section's `transform`), `false` for `locked` and
 `damage_by_user` when unset, `[]` for no `caveats` or `damaged_regions`. Pictures are
 never inlined: each is saved in the job folder and listed under `artifacts` by
-absolute path and `kind` with its `index` (the number the reply's
-`image_indexes` give): `view` (the JPEG), `view_json` (its frame:
+absolute path and `kind` with its `index` (the picture's number): `view` (the JPEG), `view_json` (its frame:
 `langslice.coordinate_map(path)` gives each pixel's atlas micrometres),
-`labels` and `borders` (a section on its atlas), `residual` (a
-`fit_deformable` picture); after `submit` and `export_maps`: `results`,
+`labels` and `borders` (a section on its atlas), `residual` (an
+`ants_syn` picture); after `submit` and `export_maps`: `results`,
 `registration`, `quicknii`, `visualign` and each section's `coords`, `labels`,
 `labels_fiji`, `labels_csv`, `tissue`, `residual`, `maps`; after `init`:
 `card`, `state`, `brief`.
@@ -178,7 +184,7 @@ Each call opens the job as it stands on disk, runs the verb and closes it. A
 `langslice linear run` on the same folder picks up a CLI write before its next
 tool call and the reverse; every write is one undo step. Writes hold the job
 folder's lock (across processes): lock, reload, apply, commit, unlock.
-`fit_affine`, `fit_deformable` and `trace_borders` compute outside the lock and
+`elastix_affine`, `ants_syn` and `trace_borders` compute outside the lock and
 take it only to apply: a section whose inputs changed meanwhile is refused as
 that section's row, `STALE_INPUT` (run it again), and the others apply.
 
@@ -196,7 +202,7 @@ and that the agent keeps its own files in the job folder (`scripts/`,
 import langslice
 
 job = langslice.open_job("/data/sections")   # the verbs as methods
-reply = job.set_positions(entries=[{"id": "s0.png", "position_mm": 5.2}])
+reply = job.position_sections(sections=[{"id": "s0.png", "position_mm": 5.2}])
 reply["artifacts"]                           # the pictures' files, as the CLI lists them
 reply.images                                 # the same pictures as PIL images
 langslice.coordinate_map(".../view.json")    # (rows, cols, 3) float32 atlas micrometres
