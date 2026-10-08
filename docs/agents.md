@@ -186,6 +186,15 @@ embedded. MCP traces record calls and results, not the host model's private
 conversation. The agent CLI logs every call in `logs/calls.jsonl` and uses
 `LANGSLICE_TRACE_DIR` for additional tool traces.
 
+The `openai-oauth` agent transport automatically retries connection failures,
+timeouts, HTTP 408/409/429 and 5xx errors (including 507) up to three times
+before a successful response stream starts. It logs each retry and waits
+2, 4 and 8 seconds with jitter, honoring a longer `Retry-After` up to 60
+seconds. Longer server delays, explicit quota exhaustion, certificate errors
+and other permanent failures stop the run. A 401 can refresh credentials once.
+Stream failures are surfaced without replaying partially delivered tool calls;
+image edits are not covered by these request retries.
+
 `langslice login` stores OAuth credentials in
 `~/.langslice/openai_auth.json`; `LANGSLICE_OPENAI_AUTH` overrides that path.
 LangSlice uses its own login. ABBA setup can also save API keys in
