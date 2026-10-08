@@ -908,7 +908,7 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         most = limits["grep_atlas_view"]["pictures"]
         shown = job.grep_atlas_view(regions=["root"],
                                     positions_mm=[0.02 + 0.04 * i for i in range(most + 1)])
-        assert len(shown.images) <= most and shown.get("not_shown")
+        assert len(shown.images) == most and len(shown["not_shown"]) == 1
 
 
 # --- a script that exits without closing its job ----------------------------------------

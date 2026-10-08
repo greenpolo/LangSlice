@@ -21,7 +21,7 @@ from langslice.ops import atlas as ops_atlas
 from langslice.ops import look as ops_look
 from langslice.ops.refusal import Refused
 from tests.deformable_synthetic import SyntheticAtlas
-from tests.look_synthetic import MARKED, POSITIONS, SECTIONS, SQUARE, stack
+from tests.look_synthetic import MARKED, POSITIONS, SECTIONS, stack
 
 
 def _record(job: Job, number: int) -> PictureRecord:
@@ -158,9 +158,14 @@ def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
     assert inner["args"]["zoom"][0] == pytest.approx(window[0])
     assert inner["args"]["zoom"][2] < window[2]
     assert again.picture == zoomed.entries[0]["id"] and again.redrawn
-    # The zoomed content is the white square; the box was read on the picture.
-    shown = np.asarray(zoomed.pictures[0].convert("L"))
-    assert shown.max() == 255 and SQUARE[2] > SQUARE[0]
+    # The box was read on the picture: the white square fills the middle of
+    # the zoom's content, framed by the slab's gray margin.
+    zoom_width, zoom_height = _recipe(job, zoomed.entries[0]["id"])["shown"]
+    shown = np.asarray(zoomed.pictures[0].convert("L"))[:zoom_height, :zoom_width]
+    middle = shown[zoom_height * 2 // 5:zoom_height * 3 // 5,
+                   zoom_width * 2 // 5:zoom_width * 3 // 5]
+    assert middle.min() > 240
+    assert shown[:, :zoom_width // 20].mean() < 200  # the margin left of the square
 
 
 def test_a_changed_stack_is_redrawn_as_it_was_and_flagged_stale(tmp_path: Path):

@@ -117,17 +117,6 @@ def test_ingest_gives_starting_positions_that_submit_refuses(tmp_path: Path):
     assert job.state.by_id("s1.png").position_source == DEFAULT_POSITION  # type: ignore[union-attr]
 
 
-def test_positions_against_the_order_are_no_longer_refused(tmp_path: Path):
-    """Order follows position: the old order/position mismatch gate is gone."""
-    job, _ = _open(tmp_path, tasks=["position"])
-    with job.writing():
-        before = job.snapshot()
-        for record, position in zip(job.state.in_order(), (3.0, 2.0, 4.0), strict=True):
-            record.position_mm = position
-        job.commit(before)
-    assert ops_submit.submit(job, summary="placed").summary == "placed"
-
-
 def test_starting_positions_fill_in_around_supplied_ones(tmp_path: Path):
     job, ctx = _open(tmp_path, n=5, tasks=["position"],
                      inputs={"positions": {"s1.png": 2.0, "s3.png": 3.0}})
@@ -148,9 +137,19 @@ def test_without_positioning_no_starting_positions(tmp_path: Path):
 
 def test_saved_pictures_record_the_history_depth(tmp_path: Path):
     job, _ = _open(tmp_path, tasks=["position"])
-    depth = len(job.undo_stack)
+    for position in (2.0, 3.0):  # two writes: the depth is not the store's default
+        with job.writing():
+            before = job.snapshot()
+            job.state.by_id("s0.png").position_mm = position  # type: ignore[union-attr]
+            job.commit(before)
+    assert len(job.undo_stack) == 2
     picture = Image.new("RGB", (20, 10))
     job.views.save(tool="note", pictures=[(picture, None)])
     job.views.flush()
     latest = job.views.latest()
-    assert latest is not None and latest.step == depth
+    assert latest is not None and latest.step == 2
+    job.undo()
+    job.views.save(tool="note", pictures=[(picture, None)])
+    job.views.flush()
+    latest = job.views.latest()
+    assert latest is not None and latest.step == 1

@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 
 from langslice.agent.engine import build_context
-from langslice.core import deformation
 from langslice.core.damage import exclusions, normalized_entries
 from langslice.core.display import default_options
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
@@ -201,6 +200,11 @@ def test_the_reply_picture_shows_the_marks_on_section_and_atlas(tmp_path: Path):
 
 
 # --- every fit path leaves the marked regions out -------------------------------------
+# elastix_affine: tests/test_ops_interactive_transform.py (the regions it is
+# handed) and tests/test_linear_fit_affine_elastix.py (a real fit); ants_syn and
+# the trace's ANTs fit: tests/test_linear_fit_deformable.py (the engine's
+# settings) and tests/test_ants_syn.py (the recorded step); the image model's
+# trace: below.
 
 
 def test_a_marked_section_is_still_a_default_fit_target(tmp_path: Path):
@@ -212,44 +216,6 @@ def test_a_marked_section_is_still_a_default_fit_target(tmp_path: Path):
     damage.mark_damage(box.job, ctx, ID, [])
     state.by_id(ID).damage_note = "torn"
     assert [r.id for r in transforms.fit_targets(box.job)] == [ID]
-
-
-def test_the_elastix_fit_gets_the_marks_and_restrict_to(tmp_path: Path, monkeypatch):
-    from langslice.core import transform as core_transform
-
-    seen: list[dict[str, Any]] = []
-
-    def spy(state: Any, ctx: Any, record: Any, **kwargs: Any) -> dict[str, Any]:
-        seen.append(kwargs)
-        return {"id": record.id, "status": "error", "error": "SPY"}
-
-    monkeypatch.setattr(core_transform, "fit_elastix", spy)
-    state, ctx, box = _box(tmp_path)
-    damage.mark_damage(box.job, ctx, ID, ["R"])
-    transforms.elastix_affine(box.job, ctx, [ID])
-    transforms.elastix_affine(box.job, ctx, [ID], restrict_to=["L"])
-    assert [(call["include"], call["exclude"]) for call in seen] == [
-        ((), ("R",)), (("L",), ("R",))]
-
-
-def test_fit_deformable_leaves_the_marked_regions_out(tmp_path: Path, monkeypatch):
-    captured: list[deformation.Job] = []
-    monkeypatch.setattr(deformation, "run_jobs",
-                        lambda _ws, jobs: captured.extend(jobs))
-    state, ctx, box = _box(tmp_path)
-    record = state.by_id(ID)
-    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                        "calibration": {"section_um_per_px": 50.0, "source": "host"}}
-    damage.mark_damage(box.job, ctx, ID, ["R"])
-    choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                engine="ants", stiffness="medium")
-    done = deformable.fit_deformable(box.job, ctx, [record], choice, restrict_to=("L",))
-    assert captured, done.rows
-    assert tuple(captured[0].settings.exclude) == ("R",)
-    assert tuple(captured[0].settings.structures) == ("L",)
-    deformable.fit_deformable(box.job, ctx, [record], choice)
-    assert tuple(captured[1].settings.exclude) == ("R",)
-    assert tuple(captured[1].settings.structures) == ()
 
 
 def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, monkeypatch):

@@ -171,10 +171,12 @@ def test_elastix_affine_leaves_marked_damage_out_on_its_own(
     transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     assert {call["id"]: call["exclude"] for call in calls} == {"s0.png": ("R",),
                                                                "s1.png": ()}
-    # Asking for the marked region by name wins over the mark.
+    # restrict_to another region keeps the mark out; naming the marked region wins.
     calls.clear()
+    transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"])
     transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=["R"])
-    assert calls[0]["include"] == ("R",) and calls[0]["exclude"] == ()
+    assert [(call["include"], call["exclude"]) for call in calls] == [
+        (("L",), ("R",)), (("R",), ())]
 
 
 def test_elastix_affine_refuses_bad_arguments_and_unfittable_sections(

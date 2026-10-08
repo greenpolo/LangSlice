@@ -115,6 +115,25 @@ def test_display_properties_change_pictures_and_never_the_preprocessed_channel(
     assert state.appearance["channels"]["red"]["gamma"] == 2.0
 
 
+def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
+    """Set once, a channel's display stays: checkpointed with the job, and a
+    job reopened from the folder draws and captions with it."""
+    from langslice.core.look import LookRequest, look
+
+    job, ctx = _open(tmp_path, atlas)
+    ops_appearance.set_channel_properties(job, ctx, "red", gamma=0.5, colormap="magenta")
+    saved = load_checkpoint(ctx.checkpoint_path)
+    assert saved is not None
+    held = saved.appearance["channels"]["red"]
+    assert (held["gamma"], held["colormap"]) == (0.5, "magenta")
+    later = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
+    reopened = Job.open(job.spec, later, folder=later.job_folder,
+                        results_path=later.results_path)
+    assert reopened.state.appearance["channels"]["red"]["gamma"] == 0.5
+    picture = look(later, reopened.state, LookRequest("section", sections=("s0.png",)))[0]
+    assert "red gamma 0.5 magenta" in picture.caption
+
+
 def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
     with pytest.raises(Refused) as unknown:
@@ -328,9 +347,40 @@ def test_the_elastix_affine_reads_the_preprocessed_channel(tmp_path: Path, atlas
     assert np.array_equal(seen[2], seen[1])
 
 
+def test_the_ants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, monkeypatch):
+    """What ANTs SyN is handed is the section's preprocessed channel on the fit
+    grid: a recipe changes it, a raw channel's display properties do not."""
+    from langslice.core import deformation
+    from langslice.ops import deformable as ops_deformable
+
+    job, ctx = _open(tmp_path, atlas)
+    state = job.state
+    record = state.slices[0]
+    record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        "calibration": {"section_um_per_px": UM, "source": "host"}}
+    seen: list[np.ndarray] = []
+    monkeypatch.setattr(deformation, "run_jobs", lambda _ws, jobs: seen.extend(
+        np.asarray(item.image).copy() for item in jobs))
+    monkeypatch.setattr(ops_deformable, "refuse_without_ants", lambda: None)
+    ops_deformable.ants_syn(job, ctx, [record.id])
+    looks.set_settings(state, looks.PREPROCESSED, None, dict(RECIPE))
+    ops_deformable.ants_syn(job, ctx, [record.id])
+    grid = deformation.fit_grid(state, ctx, record)
+    wanted = looks.preprocessed_image(ctx, state, record, long_edge=deformation.FIT_LONG_EDGE)
+    if wanted.size != grid.image.size:
+        wanted = wanted.resize(grid.image.size, Image.Resampling.BILINEAR)
+    assert len(seen) == 2
+    assert np.array_equal(seen[1], np.asarray(wanted))
+    assert not np.array_equal(seen[0], seen[1])
+    # Display properties are not read.
+    channels.set_properties(state, "green", channels.ChannelProperties(gamma=3.0))
+    ops_deformable.ants_syn(job, ctx, [record.id])
+    assert np.array_equal(seen[2], seen[1])
+
+
 def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypatch):
-    from langslice.core.nonlinear import registration_tool as tool
     from langslice.core.handoff import LinearRegistrationInput
+    from langslice.core.nonlinear import registration_tool as tool
     from langslice.providers.registry import ImageModel, resolve_image_model
 
     original = Image.new("RGB", (60, 40), (40, 70, 90))

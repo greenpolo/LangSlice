@@ -20,47 +20,9 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import apply_host_inputs, ingest
 from tests import fakes
-from tests.fakes import SlabAtlas
-from tests.fakes import install_fake_adk_model_stack as _install_fake_stack
+from tests.fakes import SlabAtlas, install_fake_adk_model_stack
 
 _ATLAS = SlabAtlas()
-
-
-def install_fake_adk_model_stack(monkeypatch, **kwargs) -> None:
-    """The shared fake model stack (tests/fakes.py), writing its positions
-    with ``position_sections``: the tool that writes positions now."""
-    from google.adk.models.llm_response import LlmResponse
-    from google.genai import types
-
-    _install_fake_stack(monkeypatch, **kwargs)
-
-    async def generate(self, llm_request, stream=False):
-        del stream
-        available = set(llm_request.tools_dict or {})
-        if fakes._has_function_response(llm_request, "submit"):
-            part = types.Part.from_text(text="Debrief: nothing was missing.")
-        elif (self.positions and "position_sections" in available
-              and fakes._count_function_responses(llm_request) == 0):
-            part = types.Part.from_function_call(name="position_sections", args={
-                "sections": [{"id": slice_id, "position_mm": position}
-                             for slice_id, position in self.positions.items()]})
-        elif "submit" in available:
-            part = types.Part.from_function_call(name="submit", args={
-                "summary": "Placed the stack.", "notes": [], "interval_breaks": []})
-        else:
-            part = types.Part.from_text(text="Nothing to submit.")
-        fakes._QUOTA_CALLS[0] += 1
-        quota = ({"quota": {"primary_used_percent": str(
-            40 + fakes._QUOTA_CALLS[0] * self.quota_percent_per_call)}}
-            if self.quota_percent_per_call else None)
-        yield LlmResponse(
-            content=types.Content(role="model", parts=[part]), partial=False,
-            turn_complete=True,
-            usage_metadata=types.GenerateContentResponseUsageMetadata(
-                prompt_token_count=self.input_tokens_per_call, candidates_token_count=1),
-            custom_metadata=quota)
-
-    monkeypatch.setattr(fakes._StackLlm, "generate_content_async", generate)
 
 
 def _make_stack(folder: Path, n: int = 4) -> list[str]:
@@ -278,7 +240,7 @@ def test_a_tools_plain_pictures_reach_the_model_as_message_images(
 
     # position_sections shows its positioning picture of the written sections.
     pictures = images(requests[1])
-    assert len(pictures) >= 1 and all(data[:2] == b"\xff\xd8" for data in pictures)
+    assert len(pictures) == 1 and all(data[:2] == b"\xff\xd8" for data in pictures)
 
 
 def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(

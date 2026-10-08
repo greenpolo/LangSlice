@@ -656,6 +656,11 @@ def test_4_the_library_takes_an_image_model(images):
     model = stub_image_model(spec_for(images, ["nonlinear"], provider="openai-oauth"))
     with langslice.open_job(images, image_model=model) as job:
         assert job.trace_borders(section=ID0)["status"] == "started"
+        job.job.background.wait_all()
+        # The model handed in answered (no network): the trace landed and was fitted.
+        record = job.state.by_id(ID0)
+        assert (record.image_correction or {}).get("status") == "ok", record.image_correction
+        assert record.deformation is not None and len(record.deformation["steps"]) == 1
 
 
 # --- 5. Nonlinear without an image model --------------------------------------------------
@@ -697,6 +702,7 @@ def test_5_nonlinear_without_an_image_model_through_mcp(images):
                     "left_linear": _left_linear(ID1, ID2)}),
     ])
     assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
+    assert_exported(images / "langslice", residual=(ID0,))
 
 
 def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(images):

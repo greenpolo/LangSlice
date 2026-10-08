@@ -99,9 +99,9 @@ def test_activity_hides_protocol_payloads_and_reports_image_count():
     assert style == "result"
     assert activity.format_event({"kind": "usage", "tokens": {"input": 5000}})[0] == ""
     assert activity.format_event({"kind": "progress", "text": "[tokens] diagnostic"})[0] == ""
-    refused = {"name": "fit_affine", "response": {"status": "error", "message": "s1 is locked"}}
+    refused = {"name": "elastix_affine", "response": {"status": "error", "message": "s1 is locked"}}
     shown = activity.format_event({"kind": "tool_end", **refused})
-    assert shown == ("fit affine: s1 is locked", "error")
+    assert shown == ("elastix affine: s1 is locked", "error")
     assert activity.format_event({"kind": "tool_result", **refused})[0] == ""
     assert len(response["detail"]) == 10_000
 
@@ -110,7 +110,7 @@ def test_html_renders_public_markdown_without_interpreting_markup():
     rendered = activity.transcript_html(
         [
             ("**Comparing slices**\n<script>hidden</script>", "reasoning"),
-            ("Called view slices", "tool"),
+            ("Called look", "tool"),
             ("Viewing 4 images", "result"),
         ]
     )
@@ -121,14 +121,14 @@ def test_html_renders_public_markdown_without_interpreting_markup():
 
 
 def test_actual_execution_has_one_compact_tool_line():
-    assert activity.format_event({"kind": "tool_call", "name": "view_slices"})[0] == ""
+    assert activity.format_event({"kind": "tool_call", "name": "look"})[0] == ""
     assert activity.format_event(
         {
             "kind": "tool_start",
-            "name": "view_slices",
+            "name": "look",
             "args": {"secret": "noise"},
         }
-    ) == ("Called view slices", "tool")
+    ) == ("Called look", "tool")
 
 
 def test_formatted_live_events_never_include_encrypted_fields_or_object_repr():

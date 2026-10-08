@@ -56,6 +56,7 @@ def _edit_on_disk(path: str, edit: Any) -> None:
 def test_undo_history_survives_a_reopen(tmp_path: Path):
     folder = _folder(tmp_path)
     job, _ = _open(folder)
+    start = job.state.by_id("s0.png").position_mm  # the starting position
     before = job.snapshot()
     job.state.by_id("s0.png").position_mm = 1.5
     job.commit(before)
@@ -72,9 +73,11 @@ def test_undo_history_survives_a_reopen(tmp_path: Path):
     assert again.state.by_id("s0.png").position_mm == 1.5
     assert again.undo() and "second step" not in again.state.notes
     assert again.undo() and again.state.by_id("s0.png").position_source == "default"
+    assert again.state.by_id("s0.png").position_mm == start != 1.5
     assert not again.undo()
     third, _ = _open(folder)
     assert third.state.by_id("s0.png").position_source == "default"
+    assert third.state.by_id("s0.png").position_mm == start
     assert third.redo() and third.state.by_id("s0.png").position_mm == 1.5
 
 
@@ -97,6 +100,7 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     folder = _folder(tmp_path)
     job, ctx = _open(folder, tasks=["position"])
     box = build_tools(job.state, ctx, job.spec, job=job)
+    start = job.state.by_id("s1.png").position_mm
     written = _tool(box, "position_sections")([{"id": "s1.png", "position_mm": 2.0}],
                                               view=False)
     assert written["status"] == "ok"
@@ -106,6 +110,7 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     undone = _tool(box, "undo")()
     assert undone["status"] == "ok" and undone["undo_depth"] == 0
     assert again.state.by_id("s1.png").position_source == "default"
+    assert again.state.by_id("s1.png").position_mm == start != 2.0
 
 
 # --- versioned files ---------------------------------------------------------------
@@ -144,6 +149,7 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
     job, ctx = _open(folder, tasks=["position"])
     box = build_tools(job.state, ctx, job.spec, job=job)
     _tool(box, "position_sections")([{"id": "s0.png", "position_mm": 1.0}], view=False)
+    start = job.state.by_id("s1.png").position_mm
 
     def script(data: dict[str, Any]) -> None:
         data["slices"][1]["position_mm"] = 4.5
@@ -165,8 +171,10 @@ def test_a_script_edit_is_picked_up_before_the_next_tool_and_is_undoable(tmp_pat
     assert job.state.notes[-1] == "script: placed s1"
     assert _tool(box, "undo")()["status"] == "ok"
     assert job.state.by_id("s1.png").position_source == "default"
+    assert job.state.by_id("s1.png").position_mm == start != 4.5
     assert job.state.by_id("s0.png").position_mm == 1.0
-    assert load_checkpoint(ctx.checkpoint_path).by_id("s1.png").position_source == "default"
+    saved = load_checkpoint(ctx.checkpoint_path).by_id("s1.png")
+    assert saved.position_source == "default" and saved.position_mm == start
 
 
 def test_an_unchanged_or_half_written_file_is_not_a_step(tmp_path: Path):
@@ -187,6 +195,7 @@ def test_another_job_writing_both_files_hands_over_its_history(tmp_path: Path):
     folder = _folder(tmp_path)
     first, _ = _open(folder)
     second, _ = _open(folder)
+    start = second.state.by_id("s2.png").position_mm
     before = second.snapshot()
     second.state.by_id("s2.png").position_mm = 6.0
     second.commit(before)
@@ -195,6 +204,7 @@ def test_another_job_writing_both_files_hands_over_its_history(tmp_path: Path):
     assert first.state.by_id("s2.png").position_mm == 6.0
     assert len(first.undo_stack) == 1  # second's step, not an extra one
     assert first.undo() and first.state.by_id("s2.png").position_source == "default"
+    assert first.state.by_id("s2.png").position_mm == start != 6.0
 
 
 def test_a_job_made_around_a_state_takes_the_files_as_they_stand(tmp_path: Path):

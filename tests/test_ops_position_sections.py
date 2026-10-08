@@ -46,6 +46,7 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     low, high = ctx.position_range
     middle = (low + high) / 2
     before_angles = dict(job.state.cutting_angles_deg)
+    start = _position(job, "s0.png")
     done = positions.position_sections(
         job, ctx,
         [{"id": "s0.png", "position_mm": middle}, {"id": "s1.png", "position_mm": high + 3}],
@@ -57,6 +58,7 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     assert len(job.undo_stack) == 1
     assert job.undo()
     assert job.state.by_id("s0.png").position_source == "default"  # type: ignore[union-attr]
+    assert _position(job, "s0.png") == start != middle
     assert job.state.cutting_angles_deg == before_angles
 
 
