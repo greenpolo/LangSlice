@@ -20,30 +20,9 @@ Python dependencies from `pyproject.toml`. It is a regular installation, not an
 editable development checkout. Authentication is performed from Fiji's setup
 window after selecting this environment; command-line login is also available.
 
-`environment.yml` is a source installation recipe, not a conda package. It uses
-pip inside an isolated conda environment because the full native dependency
-chain is not currently available from conda-forge.
-
-## Conda package publication blocker
-
-On conda-forge, `google-adk`, `google-genai`, `litellm`, `openai`,
-`brainglobe-atlasapi` and `brainglobe-space` are published. **`itk-elastix` is
-not** (its package endpoint below returns HTTP 404). This Python extension is a required LangSlice
-dependency and is different from the standalone Elastix executable.
-
-Before advertising `conda install -c conda-forge langslice`, package
-`itk-elastix` and any missing native dependencies, verify the full dependency
-solve on supported platforms, and submit a LangSlice recipe through
-[conda-forge's staging process](https://conda-forge.org/docs/maintainer/adding_pkgs/).
-No conda package or Fiji update site is published. We deliberately do not supply a recipe that claims a working solve
-against a nonexistent dependency or installs hidden pip packages in a conda
-post-link script.
-
-Registry checks:
-
-- [itk-elastix package endpoint](https://api.anaconda.org/package/conda-forge/itk-elastix)
-- [google-adk package endpoint](https://api.anaconda.org/package/conda-forge/google-adk)
-- [brainglobe-atlasapi package endpoint](https://api.anaconda.org/package/conda-forge/brainglobe-atlasapi)
+`environment.yml` is a source installation recipe. It creates an isolated
+conda environment and installs the Python package and its dependencies with
+pip.
 
 ## Build and verify the Python wheel
 

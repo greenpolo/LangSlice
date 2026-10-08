@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "langslice"
 version = "0.1.0"
-description = "ADK harness for brain slice registration using image generation and BrainGlobe atlases"
+description = "Agent-driven registration of histological brain sections to BrainGlobe atlases"
 requires-python = ">=3.10"
 dependencies = [
     "google-genai",
@@ -63,7 +63,7 @@ include = ["langslice*"]
 [tool.setuptools.package-data]
 langslice = ["core/atlas/*.json", "hosts/integrations/static/*"]
 
-# The layered core's dependency rule (docs/architecture_overview.md): each
+# The layered core's dependency rule (docs/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs
 # `lint-imports`. Imports under `if TYPE_CHECKING:` are left out: a type
 # named in an annotation is not a dependency at run time. No contract has

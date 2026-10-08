@@ -2,8 +2,8 @@
 
 LangSlice registers histology section images to BrainGlobe atlases: an agent
 (or a script) orders the sections, places each at its atlas position and
-cutting angles, aligns it in-plane, and optionally corrects atlas borders with
-an image model and fits a deformation. The CLI is `langslice`; the package is
+cutting angles, aligns it in-plane, and optionally fits a deformation, using an image model
+to trace borders when useful. The CLI is `langslice`; the package is
 `src/langslice/` (imports are `langslice.*`). `AGENTS.md` is a byte-identical
 copy of this file, and each package guide `CLAUDE.md` under `src/langslice/`
 has an `AGENTS.md` twin: edit one, then `cp CLAUDE.md AGENTS.md` in that folder.
@@ -22,7 +22,7 @@ and CI) with no exceptions: a violation is fixed by moving code.
 | `core/` | state, job spec, renders and pictures, in-plane fits, atlas access, deformable engine, image-model border route | `core/CLAUDE.md`, `core/atlas/`, `core/deformable/`, `core/nonlinear/` |
 | `job/` | the `Job`: state, undo, checkpoint, submit gates; the job folder `<images>/langslice/` and its public files | `job/CLAUDE.md` |
 | `ops/` | the verbs, as functions on a job; `registry.py` lists them for every door | `ops/CLAUDE.md` |
-| `doors/` | one declaration per verb feeds the native agent tools (`tools/`), MCP (`mcp/`), the agent CLI and the other commands (`cli/`), the engine contract and worker (`api/`), and the library (`library.py`, `pipeline.py`) | `doors/CLAUDE.md` |
+| `doors/` | one declaration per verb feeds the native agent tools (`tools/`), MCP (`mcp/`), the agent CLI and the other commands (`cli/`), the engine contract and worker (`api/`), and the library (`library.py`) | `doors/CLAUDE.md` |
 | `agent/` | the ADK driver of `langslice linear run` | `agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth`, `none`; no task logic | |
 | `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `serve` commands, the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
@@ -40,10 +40,10 @@ and `environment.yml` hold the worker's source installation.
   `schema`), the library (`langslice.open_job`, `create_job`),
   MCP and the Fiji worker. `trace_from_atlas` is an internal scripting verb
   (`Verb.hidden` in `ops/registry.py`) in no listing.
-- Tasks `reorder` / `position` / `transform` / `nonlinear` are switched on in
+- Tasks `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from
   `JobSpec.inputs`. Nonlinear needs a linear placement first.
-- The toolbox (`ops/registry.py`, `docs/linear_design.md`): looking and channel
+- The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
   `trace_borders`); a task switches its tools on or off whole. Sections are
@@ -60,7 +60,7 @@ and `environment.yml` hold the worker's source installation.
   `google-adk`, and skips without them.
 - Image-model prompts live in `core/nonlinear/prompts.py`; every sentence of an
   edit is audited for a second reading, and no border line is made conditional
-  on visibility (`docs/nonlinear_design.md`).
+  on visibility (`src/langslice/core/nonlinear/CLAUDE.md`).
 - Judge image output by looking at it: open the raw output, describe what is
   anatomically right and wrong, and report a disagreement between the picture
   and a metric as a finding. Metrics are secondary diagnostics.
@@ -75,10 +75,8 @@ and `environment.yml` hold the worker's source installation.
 
 ## Docs
 
-`docs/` (built by MkDocs, `mkdocs.yml`, strict): `index.md`, `abba_installation.md`,
-`cli.md`, `agent_cli.md`, `library.md`, `file_formats.md`,
-`architecture_overview.md`, `linear_design.md`, `nonlinear_design.md`,
-`abba_plugin_design.md`.
+`docs/` (built by MkDocs, `mkdocs.yml`, strict): `index.md`, `agents.md`,
+`abba.md`, `registration.md`, `library.md`, `file_formats.md`, `architecture.md`.
 
 ## Environment and checks
 

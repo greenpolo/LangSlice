@@ -71,8 +71,7 @@ dialog's three tabs and both run windows from fake slices and a fake worker, as
 Setup.
 
 Copy `target/langslice-fiji-0.2.0.jar` into your Fiji `jars` folder and restart
-Fiji. This manual JAR installation is the development route; a public Fiji update
-site has not been published. Do not copy the Maven dependency jars into Fiji.
+Fiji. Install the connector by copying this JAR. Do not copy the Maven dependency jars into Fiji.
 
 ## Setup and lifecycle
 
@@ -144,7 +143,7 @@ in Claude mode).
   number, its plain reason ("Estimated cost: no estimate (…)"). **Setup…**, **Cancel**
   and **Run**.
 
-Every choice except the per-slice damage checks is saved (Java preferences, node
+Dialog settings are saved; per-slice damage notes are not. Settings are stored (Java preferences, node
 `org/langslice/fiji/registration`) when a run starts, and restored next time; section
 thickness and interval come from ABBA whenever ABBA's slices give them.
 

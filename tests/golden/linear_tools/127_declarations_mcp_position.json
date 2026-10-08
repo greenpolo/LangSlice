@@ -103,10 +103,11 @@
    "annotations": {
     "readOnlyHint": true
    },
-   "description": "Draw a box of an earlier picture again, in more detail. Writes nothing.\n\n        The new picture is as large as the earlier one. In a picture of a\n        section or of a section with the atlas on it, the section is read again\n        from its original image file at the file's own resolution, only inside\n        the box, and drawn with the same channels, display settings and atlas\n        borders; the caption says when the file holds fewer pixels than the\n        picture. A positioning picture's sections are drawn again from their\n        working copies (the file reduced to at most 3072 pixels), and the atlas\n        from its voxels. The box is drawn as the picture was, even if the stack\n        has changed since (the reply then says `stale`). The new picture has its\n        own number, so it can be zoomed again.\n\n        Args:\n            box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n                from its top-left corner.\n            picture: The picture's number; 0 is the newest picture that is not\n                itself a zoom.\n\n        Returns:\n            One picture with its number and caption, and `redrawn`: false when\n            the picture could not be drawn again, so the box was cut from the\n            saved picture and enlarged, with no more detail than it had.\n        ",
+   "description": "Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.\n\n        The new picture is as large as the earlier one. In a picture of a\n        section or of a section with the atlas on it, the section is read again\n        from its original image file at the file's own resolution, only inside\n        the box, and drawn with the same channels, display settings and atlas\n        borders; the caption says when the file holds fewer pixels than the\n        picture. A positioning picture's sections are drawn again from their\n        working copies (the file reduced to at most 3072 pixels), and the atlas\n        from its voxels. The box is drawn as the picture was, even if the stack\n        has changed since (the reply then says `stale`). The new picture has its\n        own number, so it can be zoomed again.\n\n        Args:\n            box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n                from its top-left corner. Give either box or region, not both.\n            picture: The picture's number; 0 is the newest picture that is not\n                itself a zoom.\n            region: One atlas acronym or numeric id, descendants included;\n                \"CTX:left\" or \"CTX:right\" selects one displayed side. Overlay\n                pictures only. Crops to the entire region with a small margin\n                and draws only its border, preserving the saved registration\n                and display settings. An absent region is reported. Leave box\n                empty when using region.\n\n        Returns:\n            One picture with its number and caption, and `redrawn`: false when\n            the picture could not be drawn again, so the box was cut from the\n            saved picture and enlarged, with no more detail than it had.\n        ",
    "inputSchema": {
     "properties": {
      "box": {
+      "default": [],
       "items": {
        "type": "number"
       },
@@ -117,11 +118,13 @@
       "default": 0,
       "title": "Picture",
       "type": "integer"
+     },
+     "region": {
+      "default": "",
+      "title": "Region",
+      "type": "string"
      }
     },
-    "required": [
-     "box"
-    ],
     "title": "zoomArguments",
     "type": "object"
    },
@@ -253,7 +256,7 @@
    "annotations": {
     "readOnlyHint": true
    },
-   "description": "Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.\n\n        The named regions' borders are drawn strong and the other borders\n        faint, at the stack's cutting angles. Look highlights no regions; this\n        tool does.\n\n        Args:\n            regions: Acronyms, names or ids, descendants included; \"CTX:left\" or\n                \"CTX:right\" names one side, as the pictures show it.\n            positions_mm: Atlas positions in millimetres along the slicing axis;\n                a position outside the atlas is clamped into its range.\n\n        Returns:\n            Up to 4 pictures with their numbers and captions, and per position\n            the named regions that have no pixel in that plane.\n        ",
+   "description": "Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.\n\n        Only the named regions' borders are drawn, at the stack's cutting\n        angles. Look highlights no regions; this tool does.\n\n        Args:\n            regions: Acronyms, names or ids, descendants included; \"CTX:left\" or\n                \"CTX:right\" names one side, as the pictures show it.\n            positions_mm: Atlas positions in millimetres along the slicing axis;\n                a position outside the atlas is clamped into its range.\n\n        Returns:\n            Up to 4 pictures with their numbers and captions, and per position\n            the named regions that have no pixel in that plane.\n        ",
    "inputSchema": {
     "properties": {
      "positions_mm": {

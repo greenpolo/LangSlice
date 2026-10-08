@@ -1,0 +1,32 @@
+{
+ "args": [
+  "overlay"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "s1.png overlay, at 0.12 mm; identity transform, no deformation; 31.2 um/px; raw red, green, blue auto; atlas borders",
+    "id": 1
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "regions",
+ "images": [
+  {
+   "file": "144_regions_look.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    333
+   ]
+  }
+ ],
+ "kwargs": {
+  "sections": [
+   "s1.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

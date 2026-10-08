@@ -78,7 +78,7 @@ Registering it? Start with `langslice-job {layout.folder} brief`: the job statem
 LangSlice's own agent gets, the user's notes and the opening pictures as files, also
 written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
 
-## Files: state is truth, everything else is derived
+## Files: settings, state and derived outputs
 - `state.json`: THE TRUTH. Order, positions, flips, transforms and the applied
   deformation of every section. Change it through the verbs below; a direct
   edit by a script is picked up by a running agent as one undo step.

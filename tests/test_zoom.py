@@ -141,3 +141,66 @@ def test_section_gone_falls_back_to_the_saved_picture(tmp_path: Path):
     crop = redraw(first.recipe, [0, 0, width / 2, height / 2], ws, state=state,
                   picture=first.image)
     assert not crop.redrawn and crop.stale
+
+
+def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_path: Path):
+    from langslice.core.look import LookError
+
+    ws, state = stack(tmp_path)
+    first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
+    with collecting() as notes:
+        zoomed = redraw(first.recipe, [], ws, state=state, region="STR")
+    assert zoomed.redrawn and zoomed.mode == "overlay"
+    held = note_for(zoomed.image, notes)
+    assert held is not None and held.panel is not None
+    assert not held.panel.lines and held.panel.highlighted
+    window = zoomed.recipe["args"]["zoom"]
+    assert window[2] - window[0] < 0.6
+    assert window[3] - window[1] < 0.6
+    assert zoomed.um_per_px < first.um_per_px
+    # An explicit box on this result keeps the selected-only borders.
+    width, height = zoomed.recipe["shown"]
+    again = redraw(zoomed.recipe, [0, 0, width / 2, height], ws, state=state)
+    assert again.recipe["args"]["region_only"]
+    assert again.recipe["args"]["highlight"] == ["STR"]
+    # Moving the live section does not move a zoom of the saved overlay.
+    record(state, "s1.png").position_mm = 0.22
+    stale = redraw(first.recipe, [], ws, state=state, region="STR")
+    assert stale.stale and "at 0.15 mm" in stale.caption
+    assert stale.recipe["args"]["zoom"] == window
+    assert np.array_equal(np.asarray(stale.image)[:height], np.asarray(zoomed.image)[:height])
+    with pytest.raises(LookError) as caught:
+        redraw(first.recipe, [], ws, state=state, region="not-a-region")
+    assert caught.value.code == "UNKNOWN_REGIONS"
+
+
+@pytest.mark.parametrize("mode", ["section", "atlas", "positioning"])
+def test_region_zoom_refuses_other_picture_modes(tmp_path: Path, mode: str):
+    ws, state = stack(tmp_path)
+    first = look(ws, state, LookRequest(mode, sections=("s1.png",), positions_mm=(0.1,)))[0]
+    with pytest.raises(ZoomError) as caught:
+        redraw(first.recipe, [], ws, state=state, region="STR")
+    assert caught.value.code == "BAD_REGION_PICTURE"
+
+
+def test_region_zoom_requires_exactly_one_kind_of_selection(tmp_path: Path):
+    ws, state = stack(tmp_path)
+    first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
+    for box, region in (([0, 0, 20, 20], "STR"), ([], ["STR", "TH"])):
+        with pytest.raises(ZoomError) as caught:
+            redraw(first.recipe, box, ws, state=state, region=region)
+        assert caught.value.code == "BAD_ARGS"
+
+
+def test_region_zoom_resolves_displayed_side_and_reports_absent_region(tmp_path: Path):
+    from langslice.core.look import LookError
+
+    ws, state = stack(tmp_path)
+    first = look(ws, state, LookRequest("overlay", sections=("s1.png",)))[0]
+    left = redraw(first.recipe, [], ws, state=state, region="CTX:left")
+    right = redraw(first.recipe, [], ws, state=state, region="CTX:right")
+    a, b = left.recipe["args"]["zoom"], right.recipe["args"]["zoom"]
+    assert a[0] < b[0] and a[2] < b[2]
+    with pytest.raises(LookError) as caught:
+        redraw(first.recipe, [], ws, state=state, region="TH:left")
+    assert caught.value.code == "REGION_NOT_IN_PLANE"

@@ -290,3 +290,14 @@ def test_grep_atlas_view_refuses_unknown_regions(tmp_path: Path):
         ops_atlas.grep_atlas_view(job, ws, ["CTX"], [])
     assert caught.value.code == "BAD_ARGS"
     assert job.views.latest(exclude_tool=None) is None
+
+
+def test_grep_atlas_view_has_no_context_borders(tmp_path: Path):
+    job, ws = _job(tmp_path)
+    view = ops_atlas.grep_atlas_view(job, ws, ["STR"], [0.1])
+    image = np.asarray(view.pictures[0]).astype(int)
+    # The template and caption are gray. Any colored pixel is a border,
+    # including faint context lines; STR occupies only the left half.
+    colored = image.max(axis=-1) - image.min(axis=-1) > 5
+    assert colored[:, :image.shape[1] // 2].any()
+    assert not colored[:, image.shape[1] // 2:].any()

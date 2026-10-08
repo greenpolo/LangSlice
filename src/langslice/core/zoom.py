@@ -140,6 +140,7 @@ def redraw(
     store: Any = None,
     picture: Image.Image | bytes | str | Path | None = None,
     long_edge: int | None = None,
+    region: str = "",
 ) -> Zoomed:
     """*box* of the picture *recipe* describes, drawn again.
 
@@ -151,16 +152,34 @@ def redraw(
     from) is cropped and enlarged towards *long_edge* (None: the run's
     picture size, :func:`langslice.core.sizes.picture_edge`). Notes the zoom with its recipe and
     caption (:func:`langslice.core.layers.note`).
+
+    *region* replaces *box* for an overlay: one atlas region, its entire
+    bounds with a small margin and only its border. It uses the saved
+    placement even when the source picture is already cropped. Other
+    modes, a missing region, or both selections together are refused.
     """
     renderer = (recipe or {}).get("renderer")
+    if not isinstance(region, str):
+        raise ZoomError("BAD_ARGS", "region must be one atlas acronym or numeric id.")
+    region = region.strip()
+    if region and box:
+        raise ZoomError("BAD_ARGS", "Give either box or region, not both.")
+    window = None
+    if region:
+        if (recipe is None or renderer != looks.RENDERER or state is None
+                or (recipe.get("args") or {}).get("mode") != "overlay"):
+            raise ZoomError("BAD_REGION_PICTURE", "Region zoom works only on overlay pictures.")
+        recipe, window = looks.overlay_region_window(workspace, state, recipe, region,
+                                                     store=store)
     source = _image(picture)
     if recipe is not None and renderer in RENDERERS and state is not None:
-        inner = box_fractions(box, _shown(recipe, None))
-        window = compose((recipe.get("args") or {}).get("zoom") or (), inner)
+        if window is None:
+            inner = box_fractions(box, _shown(recipe, None))
+            window = compose((recipe.get("args") or {}).get("zoom") or (), inner)
         try:
             drawn = RENDERERS[renderer](recipe, window, workspace, state, store, long_edge)
         except looks.LookError as exc:
-            if exc.code != "UNKNOWN_SECTION" or source is None:
+            if region or exc.code != "UNKNOWN_SECTION" or source is None:
                 raise
             return _crop(None, box, source, long_edge or picture_edge(workspace), stale=True,
                          note_text=str(exc))

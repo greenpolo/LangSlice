@@ -10,24 +10,22 @@
 </p>
 
 <p align="center">
-  <em>Register histological brain sections to BrainGlobe atlases using vision-language &amp; image-generation models.</em>
+  <em>Agent-driven registration of histological brain sections to BrainGlobe atlases.</em>
 </p>
 
 <p align="center">
   <img alt="Three histology slices registered to the Allen mouse atlas" src="assets/promo_registration_combined.png" width="780">
 </p>
 
-LangSlice puts a stack of histology sections on a [BrainGlobe](https://brainglobe.info)
-atlas. A vision-language model agent looks at the sections and the atlas, places
-each section at its atlas position (with the stack's cutting angles) and aligns
-it in-plane at true scale. Optionally the agent then deforms the atlas onto each
-section with ANTs, choosing the regions and settings itself and, where it
-chooses, reading borders an image model has traced on the tissue. Results
-are per-section coordinate and label maps, `registration.json`, and
-QuickNII / VisuAlign JSON. LangSlice complements registration software such as
-[ABBA](https://abba-documentation.readthedocs.io) and QUINT; it has no registration
-interface of its own. Coronal sections of the Allen mouse atlas are the most
-tested case.
+LangSlice gives a vision-language agent tools to register a stack of histology
+sections to a [BrainGlobe](https://brainglobe.info) atlas. The agent inspects
+the anatomy, sets positions and cutting angles, aligns sections in-plane,
+and optionally fits ANTs deformations. It chooses regions and settings and
+can use an image model to trace borders where useful.
+
+Source images stay unchanged. Work is checkpointed and undoable, with
+coordinate and label maps, `registration.json`, and QuickNII / VisuAlign
+exports. Coronal sections of the Allen mouse atlas are the most tested case.
 
 ## Install
 
@@ -47,33 +45,20 @@ user's `.brainglobe` folder. Python 3.10 or newer is required; the environment
 includes the ANTs deformable engine, the Claude Desktop server and the ABBA
 launcher.
 
-## Ways to use it
+## Use LangSlice
 
-- **ABBA (Fiji)**: the connector adds **Register > LangSlice Registration...** to an existing
-  ABBA 0.24 and applies every change as an undoable ABBA step. Setup and sign-in
-  are inside ABBA: [install and use](docs/abba_installation.md),
-  [connector](connectors/fiji/README.md). `langslice abba` starts ABBA from
-  Python with the connector, an agent viewer and an agent log.
-- **Claude Desktop**: `langslice mcp` serves the tools to Claude's own app, so the
-  model runs on your Claude subscription: [setup](connectors/claude-desktop/README.md).
-- **Claude Code and Codex**: skills and one-brain registration agents over the agent
-  CLI: [Claude Code](connectors/claude-code/README.md), [Codex](connectors/codex/README.md);
-  the CLI itself, `langslice-job FOLDER VERB`, is in [docs/agent_cli.md](docs/agent_cli.md).
-- **Command line agent**: `langslice linear run sections/` runs the built-in agent
-  ([docs/cli.md](docs/cli.md)); add `--tasks nonlinear` for the deformation on a
-  saved linear placement.
-- **Python library**: `langslice.open_job` and `create_job`, every verb as a
-  method, for scripts and coding agents: [docs/library.md](docs/library.md).
+- **[Agents, CLI and MCP](docs/agents.md):** Claude Code or Codex through
+  `langslice-job`, Claude Desktop through MCP, or the built-in agent with
+  `langslice linear run sections/`.
+- **[ABBA](docs/abba.md):** register selected sections through the Fiji
+  connector and review changes in ABBA.
+- **[Python](docs/library.md):** coding agents can open a job and write their
+  own workflows using the same tools.
 
-```python
-import langslice
-job = langslice.open_job("sections/")
-job.status()
-```
-
-Output files: [docs/file_formats.md](docs/file_formats.md). How the pieces fit:
-[docs/architecture_overview.md](docs/architecture_overview.md). Full documentation:
-[langslice.readthedocs.io](https://langslice.readthedocs.io).
+[Registration tools](docs/registration.md) ·
+[File formats](docs/file_formats.md) ·
+[Architecture](docs/architecture.md) ·
+[Full documentation](https://langslice.readthedocs.io)
 
 ## Citation and license
 

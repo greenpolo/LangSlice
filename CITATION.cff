@@ -2,11 +2,12 @@ cff-version: 1.2.0
 message: "If you use LangSlice in your research, please cite it as below."
 title: "LangSlice: VLM-driven registration of histological brain sections to BrainGlobe atlases"
 abstract: >
-  LangSlice registers histological brain sections to BrainGlobe atlases.
-  A vision-language model estimates atlas-native AP position through tool
-  calls, an image-generation model produces an atlas-colored target, and
-  itk-elastix recovers a dense B-spline deformation. Results export to
-  VisuAlign-compatible JSON for QUINT / ABBA.
+  LangSlice gives a vision-language agent tools to register histological
+  brain sections to BrainGlobe atlases. The agent determines positions and
+  cutting angles, aligns sections in-plane, and optionally fits ANTs
+  deformations to the stain or to borders traced by an image model.
+  Results include coordinate and label maps, registration parameters,
+  and QuickNII / VisuAlign exports, with native registration updates in ABBA.
 type: software
 authors:
   - family-names: Baughman

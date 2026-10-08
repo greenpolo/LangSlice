@@ -194,8 +194,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--damaged", default=None, metavar="JSON",
-        help="Sections the user marked damaged: JSON file or inline mapping of "
-        "filenames to a note; the flags cannot be cleared",
+        help="Notes on damaged tissue: JSON file or inline mapping of filenames "
+        "to notes; notes alone do not exclude atlas regions from fits",
     )
     p.add_argument(
         "--out",

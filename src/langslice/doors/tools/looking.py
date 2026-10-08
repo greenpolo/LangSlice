@@ -101,9 +101,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["resolution_note"] = note
         return pictured(result, done)
 
-    def zoom(box: list[float], picture: int) -> dict[str, Any]:
+    def zoom(box: list[float], picture: int, region: str) -> dict[str, Any]:
         try:
-            done = ops_look.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None)
+            done = ops_look.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
+                                 region=region)
         except Refused as refusal:
             return refusal.payload()
         except (TypeError, ValueError):
