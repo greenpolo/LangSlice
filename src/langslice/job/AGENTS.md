@@ -173,7 +173,7 @@ longer exist be taken over by the images it is opened with.
   sections, land, wait_for_images=)` returns a `Work` at once (`id` `w1`,
   `w2`, ...; `kind`, `sections`, `status` `running`/`done`/`failed`,
   `started`/`finished` wall-clock seconds, `notice`, `pictures`, `images`,
-  `result`); on a work thread it waits for the sections' running image calls
+  `captions` (each picture's index caption, from its note), `result`); on a work thread it waits for the sections' running image calls
   (`Job.wait_image_job`, which records each reply), then runs *land*, the
   caller's callable (an operation's fit; this module imports no operation
   and no provider), which writes its own undo step and returns a `Landed`

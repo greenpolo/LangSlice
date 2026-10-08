@@ -25,7 +25,7 @@ def test_nonlinear_task_notes_tool_configuration_and_host_transforms() -> None:
     assert spec.nonlinear.image_model == "test-image"
     assert spec.inputs["transforms"]["s.png"]["params"] == [1, 0, 0, 0, 1, 0]
     defaults = build_linear_spec(parser.parse_args(["linear", "run", "/stack"]), "/stack")
-    assert defaults.tasks == ["reorder", "position", "transform"]
+    assert defaults.tasks == ["position", "transform"]
     # No image model: the nonlinear task fits deformations to the stain alone.
     none = build_linear_spec(parser.parse_args([
         "linear", "run", "/stack", "--tasks", "transform,nonlinear", "--image-provider", "none",

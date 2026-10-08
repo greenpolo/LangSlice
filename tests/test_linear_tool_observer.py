@@ -92,6 +92,7 @@ def test_build_tools_forwards_execution_observer(tmp_path):
     events = []
     state = StackState(slices=[SliceState("a", 0, 0)])
     ctx: Any = SimpleNamespace(position_range=(0, 10),
+                               section_channels=lambda _id: (("gray",), []),
                                layout=JobLayout.for_images(tmp_path),
                                results_path=str(tmp_path / "linear_results.json"))
     box = build_tools(state, ctx, JobSpec(str(tmp_path), tasks=[]), on_event=events.append)

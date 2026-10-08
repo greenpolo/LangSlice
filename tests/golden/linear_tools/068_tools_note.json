@@ -14,10 +14,12 @@
   ],
   "pictures": [
    {
+    "caption": "s1.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.15 mm; the fitted atlas borders on the image the fit read; regions TH drawn thick, the other borders faint; displacement median 0.051 mm, max 0.201 mm; fold fraction 0.0",
     "id": 51,
     "work": "w2"
    },
    {
+    "caption": "s1.png trace_borders: the image model's traced lines drawn on the section, at 0.15 mm",
     "id": 52,
     "work": "w2"
    }

@@ -101,7 +101,7 @@ def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, 
         raise ValueError("locked must be between 0 and n_slices")
     parsed = JobSpec.from_dict({**spec, "image_folder": spec.get("image_folder") or "."})
     tasks = set(parsed.tasks)
-    positioning = bool(tasks & {"reorder", "position"})
+    positioning = "position" in tasks
     transform = "transform" in tasks
     nonlinear = "nonlinear" in tasks
     if not (positioning or transform):

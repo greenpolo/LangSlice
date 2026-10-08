@@ -20,7 +20,7 @@ import numpy as np
 from langslice.core import appearance as looks
 from langslice.core import layers
 from langslice.core.captions import caption
-from langslice.core.channels import all_properties
+from langslice.core.channels import stack_display
 from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.core.state import unknown_sections
@@ -206,9 +206,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def status() -> dict[str, Any]:
         state = job.state
         result: dict[str, Any] = {"status": "ok", **door.rows()}
-        held = {name: value.to_dict() for name, value in all_properties(state).items()}
-        if held:
-            result["channel_display"] = held
+        result["channel_display"] = stack_display(ctx, state)
         recipe = state.appearance.get(looks.PREPROCESSED)
         result["preprocessed_recipe"] = recipe if recipe else "default"
         running = [work.summary() for work in job.background.running()]

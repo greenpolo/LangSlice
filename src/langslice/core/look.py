@@ -55,7 +55,7 @@ from langslice.core.appearance import describe as describe_look
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.captions import angles_label, caption, view_angles_label
-from langslice.core.channels import CHANNELS_KEY, all_properties, describe
+from langslice.core.channels import CHANNELS_KEY, all_properties, display_words
 from langslice.core.display import (
     DEFAULT_ATLAS_OPACITY,
     DEFAULT_BORDER_THICKNESS,
@@ -121,8 +121,9 @@ class LookError(ValueError):
     ``UNKNOWN_SECTION``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS`` (atlas mode
     without ``positions_mm``), ``NO_POSITION`` (a section without one, in
-    overlay mode), ``BAD_WARP`` or ``UNKNOWN_PART`` (a positioning part past
-    the call's last picture)."""
+    overlay mode), ``BAD_WARP``, ``UNKNOWN_PART`` (a positioning part past
+    the call's last picture) or ``UNKNOWN_REGIONS`` (a highlighted region
+    the atlas does not have)."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -154,6 +155,10 @@ class LookRequest:
     #: Positioning: which picture of a split call (0-based); None: every one
     #: (with ``zoom``: the first).
     part: int | None = None
+    #: Overlay: atlas regions (acronyms, names or ids, ``"CTX:left"`` for one
+    #: side) whose borders are drawn thick, the other borders faint (a
+    #: restricted fit's picture of its ``restrict_to``).
+    highlight: tuple[str, ...] = ()
 
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
@@ -164,7 +169,7 @@ class LookRequest:
             "atlas_layers": None if self.atlas_layers is None else list(self.atlas_layers),
             "atlas_opacity": self.atlas_opacity, "warp": self.warp,
             "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
-            "part": self.part,
+            "part": self.part, "highlight": list(self.highlight),
         }
 
     @classmethod
@@ -179,6 +184,7 @@ class LookRequest:
             long_edge=args.get("long_edge"),
             zoom=tuple(float(v) for v in args.get("zoom") or ()),
             part=None if args.get("part") is None else int(args["part"]),
+            highlight=tuple(str(v) for v in args.get("highlight") or ()),
         )
 
 
@@ -305,16 +311,33 @@ def _atlas_layers(ws: Workspace, request: LookRequest) -> tuple[str, ...]:
     return tuple(name for name in allowed if name in layers)
 
 
+def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozenset[int]], ...]:
+    """The request's highlighted regions as the renderers take them,
+    ``(name, ids with descendants)``; :class:`LookError` ``UNKNOWN_REGIONS``."""
+    if not request.highlight:
+        return ()
+    from langslice.core.deformable.atlas_images import resolve_entries
+
+    names = list(request.highlight)
+    try:
+        found = resolve_entries(ws.atlas, names)
+    except ValueError as exc:
+        raise LookError("UNKNOWN_REGIONS", str(exc)) from None
+    return tuple((name, frozenset(ids)) for name, (_region, _side, ids) in zip(
+        names, found, strict=True))
+
+
 def _options(
     request: LookRequest, *, names: tuple[str, ...], version: str, layers: tuple[str, ...],
     long_edge: int, zoom_px: tuple[float, ...] = (),
+    regions: tuple[tuple[str, frozenset[int]], ...] = (),
 ) -> DisplayOptions:
     images = [name for name in layers if name != "borders"]
     opacity = (request.atlas_opacity if request.atlas_opacity is not None
                else DEFAULT_ATLAS_OPACITY if images else 0.0)
     return DisplayOptions(
         mode=_DISPLAY_MODE[request.mode], zoom=zoom_px, channels=names, version=version,
-        atlas_channels=layers, atlas_opacity=float(opacity), regions=(), outlines="all",
+        atlas_channels=layers, atlas_opacity=float(opacity), regions=regions, outlines="all",
         border_color=_BORDER_COLOR, border_thickness=DEFAULT_BORDER_THICKNESS,
         deformation=request.warp, long_edge=int(long_edge),
     )
@@ -323,29 +346,17 @@ def _options(
 def channel_words(state: StackState, record: SliceState, names: Sequence[str], version: str,
                   ) -> tuple[str, str]:
     """``(short, full)``: the channels shown, for a burned label and for the
-    index caption (with the display settings in force)."""
+    index caption, each channel with its own display setting
+    (:func:`langslice.core.channels.display_words`: ``raw red, green auto;
+    blue 0-70 gamma 0.8``)."""
     if version == PREPROCESSED:
         return ("preprocessed",
                 f"preprocessed channel ({describe_look(preprocessed_settings(state, record.id))})")
-    held = all_properties(state)
-    colours = {name: word for name, word, _rgb in channel_colors(names)} if len(names) > 1 else {}
-    short: list[str] = []
-    full: list[str] = []
-    for name in names:
-        if name in held:
-            short.append(describe(name, held[name]))
-            full.append(describe(name, held[name]))
-            continue
-        word = colours.get(name, "gray")
-        # One channel is drawn in gray; among several, a channel named for
-        # its colour needs no colour word.
-        short.append(name if len(names) == 1 or word == name.lower() else f"{name} {word}")
-        full.append(f"{name} in {word}" if word != name.lower() else name)
-    plain = [name for name in names if name not in held]
-    contrast = ("" if not plain else
-                "; percentile contrast" + ("" if len(plain) == len(names) else
-                                           f" for {', '.join(plain)}"))
-    return "raw " + " + ".join(short), "raw " + " + ".join(full) + contrast
+    # One channel is drawn in gray; among several, each in its overlay colour.
+    colours = ({name: word for name, word, _rgb in channel_colors(names)} if len(names) > 1
+               else {name: "gray" for name in names})
+    words = "raw " + display_words(names, all_properties(state), colours)
+    return words, words
 
 
 def _orientation(record: SliceState) -> str:
@@ -460,7 +471,7 @@ def _overlay_picture(
     names, version = _channels_for(ws, record, request.channels)
     layers = _atlas_layers(ws, request)
     options = _options(request, names=names, version=version, layers=layers,
-                       long_edge=long_edge)
+                       long_edge=long_edge, regions=_highlighted(ws, request))
     position = float(record.position_mm)
     if request.zoom and base is None:
         whole = placement_pictures(ws, state, record, position, options, {}, store=store)
@@ -487,10 +498,14 @@ def _overlay_picture(
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
+    if options.regions:
+        atlas_words += (f"; regions {', '.join(name for name, _ids in options.regions)} "
+                        "drawn thick, the other borders faint")
     read = (placed.canvas.panels[0].from_file
             if placed.canvas is not None and placed.canvas.panels else None)
     text = (f"{record.id} overlay{_orientation(record)}, "
-            f"{_where(record)}; {placed.row.get('transform', 'identity')} transform, "
+            f"{_where(record)}; "
+            f"{placed.row.get('transform_words') or 'identity transform'}, "
             f"{warp_words}; {um:.1f} um/px; {full}; atlas {atlas_words}"
             + (f";{FROM_FILE}" if read is not None else ""))
     held = snapshot(state, [record.id])

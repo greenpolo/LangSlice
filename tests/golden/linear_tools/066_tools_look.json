@@ -5,7 +5,7 @@
  "data": {
   "pictures": [
    {
-    "caption": "s0.png overlay, at 0.10 mm; elastix transform, linear placement only; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), linear placement only; 31.2 um/px; raw gray auto; atlas borders",
     "id": 50
    }
   ],
@@ -18,7 +18,7 @@
    "mode": "RGB",
    "size": [
     338,
-    315
+    333
    ]
   }
  ],

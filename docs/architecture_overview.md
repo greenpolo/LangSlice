@@ -41,8 +41,8 @@ Image files are never modified.
 
 1. A door fills a `JobSpec` and opens the `Job` (ingesting the folder, or
    resuming the checkpoint).
-2. Tasks switch whole tools on: `reorder`, `position`, `transform`, and the
-   opt-in `nonlinear`. The looking and channel tools are in every run; a task
+2. Tasks switch whole tools on: `position`, `transform`, and the opt-in
+   `nonlinear`. The looking and channel tools are in every run; a task
    that is off builds no tools and takes its answer from the spec's
    `inputs` ([linear_design.md](linear_design.md)).
 3. The agent (or script) calls verbs: look (`look`, `zoom`, `grep_atlas`),

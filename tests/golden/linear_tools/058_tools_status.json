@@ -13,16 +13,7 @@
    "deformations (ants_syn, trace_borders)",
    "channel display and the preprocessed channel"
   ],
-  "channel_display": {
-   "red": {
-    "colormap": "magenta",
-    "contrast_limits": [
-     20.0,
-     200.0
-    ],
-    "gamma": 1.4
-   }
-  },
+  "channel_display": "gray auto; red 20-200 gamma 1.4 in magenta",
   "cutting_angles_deg": {
    "pitch": 0.0,
    "yaw": 0.0
@@ -30,10 +21,12 @@
   "interval_breaks": [],
   "pictures": [
    {
+    "caption": "s0.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.10 mm; the fitted atlas borders on the image the fit read; displacement median 0.022 mm, max 0.208 mm; fold fraction 0.0",
     "id": 44,
     "work": "w1"
    },
    {
+    "caption": "s0.png trace_borders: the image model's traced lines drawn on the section, at 0.10 mm",
     "id": 45,
     "work": "w1"
    }

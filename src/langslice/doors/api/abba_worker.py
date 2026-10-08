@@ -87,7 +87,7 @@ def _host_updates(
             raise ValueError("Agent checkpoint contains an unknown snapshot")
         old = prior[name]
         update: dict[str, Any] = {"id": name}
-        if {"position", "reorder"}.intersection(tasks) and (
+        if "position" in tasks and (
             row.get("position_mm") != old.get("position_mm")
             or row.get("index_corrected") != old.get("index_corrected")
         ):

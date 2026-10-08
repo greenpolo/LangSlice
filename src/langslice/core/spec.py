@@ -16,8 +16,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 #: Every task, in the order they are listed everywhere else.
-DEFAULT_TASKS: tuple[str, ...] = ("reorder", "position", "transform")
+DEFAULT_TASKS: tuple[str, ...] = ("position", "transform")
 ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
+#: Tasks of older jobs that are read and dropped: ``reorder`` (the stack's
+#: order follows the positions, so ``position`` holds it).
+RETIRED_TASKS: tuple[str, ...] = ("reorder",)
 
 PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
@@ -311,6 +314,7 @@ class JobSpec:
             raise ValueError("host_preprocessing must be a settings object or null")
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
+        self.tasks = [task for task in self.tasks if task not in RETIRED_TASKS]
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
         if unknown:
             raise ValueError(f"Unknown task(s) {unknown}; expected any of {list(ALL_TASKS)}")

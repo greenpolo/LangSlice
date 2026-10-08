@@ -8,7 +8,8 @@ tissue-framed pictures below):
 
 - ``mode`` — :data:`MODE_RULES` says what each mode draws.
 - ``channels`` — what of the SECTION is shown: one or more raw channel names
-  (each stretched by percentile; one is gray, several are added in distinct
+  (each with its display setting or automatic contrast limits,
+  :mod:`langslice.core.channels`; one is gray, several are added in distinct
   colours, ABBA's multichannel display), or the version ``preprocessed``
   (what registration reads); neither is the section's default render.
 - ``atlas_channels`` — what of the ATLAS is shown: any of ``template`` (the
@@ -46,6 +47,7 @@ from langslice.core.appearance import (
 )
 from langslice.core.atlas.core import get_reference_slice
 from langslice.core.atlas.render import (
+    HIGHLIGHT_WIDTH,
     annotation_slice,
     family_outlines,
     outer_outline,
@@ -57,7 +59,7 @@ from langslice.core.canvas import (
     region_polys,
     regions_left,
 )
-from langslice.core.channels import all_properties, describe_shown, with_properties
+from langslice.core.channels import all_properties, display_words, with_properties
 from langslice.core.image_prep import mask_box
 from langslice.core.sections import render_slice
 from langslice.core.sizes import PICTURE_EDGES
@@ -86,9 +88,6 @@ MAX_OVERLAY_CHANNELS = 6
 DEFAULT_ATLAS_OPACITY = 0.5
 #: Region line width in output pixels, everywhere.
 DEFAULT_BORDER_THICKNESS = 1.0
-#: How much thicker than the faint context lines an atlas picture draws the
-#: regions it highlights (``grep_atlas_view``).
-HIGHLIGHT_WIDTH = 2.0
 #: Intensity percentile mapped to white when a Nissl plane is shown.
 NISSL_PERCENTILE = 99.5
 
@@ -222,19 +221,15 @@ class DisplayOptions:
 
     def section_tag(self, state: StackState | None = None) -> str:
         """Caption fragment naming what of the section is shown ("" for the
-        default render); with *state*, the display properties of the raw
-        channels shown (:func:`langslice.core.channels.describe`)."""
+        default render): each raw channel with its display setting, ``auto``
+        without *state* (:func:`langslice.core.channels.display_words`)."""
         if self.version in ("fit", PREPROCESSED):
             return "  [preprocessed channel]"
         if not self.channels:
             return ""
-        shown = describe_shown(state, self.channels) if state is not None else ""
-        extra = f"; {shown}" if shown else ""
-        if len(self.channels) == 1:
-            return f"  [raw {self.channels[0]}, stretched{extra}]"
-        return "  [raw " + " + ".join(
-            name if name.lower() == word else f"{name} {word}"
-            for name, word in self.channel_colors(state).items()) + extra + "]"
+        held = all_properties(state) if state is not None else {}
+        colours = self.channel_colors(state) or {self.channels[0]: "gray"}
+        return "  [raw " + display_words(self.channels, held, colours) + "]"
 
     def atlas_name(self) -> str:
         """How captions name the atlas picture."""

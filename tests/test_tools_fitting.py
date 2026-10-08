@@ -217,6 +217,11 @@ def test_a_changed_placement_clears_the_deformation_in_the_same_step(tmp_path: P
     _tool(box, "undo")()  # the placement and the deformation come back together
     assert state.by_id("s1.png").deformation is not None
     assert state.by_id("s1.png").transform["kind"] == "interactive"
+    # With its picture: the deformation goes first, so the picture shows the
+    # section as it now stands.
+    shown = _tool(box, "interactive_transform")([{"id": "s1.png", "rotation_deg": 4.0}])
+    assert shown["deformation_cleared"] == ["s1.png"]
+    assert "no deformation" in shown["pictures"][0]["caption"]
 
 
 @needs_ants

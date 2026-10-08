@@ -154,6 +154,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         }
         if not ok or not shows(view):
             return result
+        # A deformation this write made stale goes before the picture is
+        # drawn, so the picture shows the section as it now stands.
+        cleared = job.clear_stale_deformations()
+        if cleared:
+            result["deformation_cleared"] = cleared
         shown = ops_look.show_result(job, ctx, "interactive_transform", "overlay", drawn)
         return pictured(result, shown)
 

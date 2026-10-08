@@ -27,7 +27,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.core.atlas.render import family_labels
+from langslice.core.atlas.render import HIGHLIGHT_WIDTH, family_labels
 from langslice.core.deformable.atlas_images import native_labels, placement_left, regions_mask
 from langslice.core.deformable.record import DeformableRecord
 
@@ -146,12 +146,14 @@ def warped_border_layers(
 ) -> dict[str, np.ndarray]:
     """Border coverage in [0, 1] on the section grid, per layer, tissue-clipped.
 
-    Layers: ``strong`` (edges touching a *highlight* region; every edge when
-    nothing is highlighted), ``marked`` (edges touching a *marked* region,
-    e.g. the regions excluded from a fit), ``faint`` (every other edge between
-    color-family regions) and ``outer`` (edges against the background: the
-    atlas's outer boundary). Highlighted and marked leaves keep their own
-    identity, so their edges show even inside one color family. With
+    Layers: ``strong`` (edges touching a *highlight* region, stroked
+    :data:`~langslice.core.atlas.render.HIGHLIGHT_WIDTH` times as thick;
+    every edge, at *width_px*, when nothing is highlighted), ``marked``
+    (edges touching a *marked* region, e.g. the regions excluded from a
+    fit), ``faint`` (every other edge between color-family regions) and
+    ``outer`` (edges against the background: the atlas's outer boundary).
+    Highlighted and marked leaves keep their own identity, so their edges
+    show even inside one color family. With
     ``warped=False`` the residual field is ignored (the linear placement alone).
     """
     s = int(supersample)
@@ -194,7 +196,8 @@ def warped_border_layers(
     size = (width, height)
     return {
         "faint": _stroke(edges & ~strong_edges & ~marked_edges & fine_tissue, size, s, width_px),
-        "strong": _stroke(strong_edges & fine_tissue, size, s, width_px),
+        "strong": _stroke(strong_edges & fine_tissue, size, s,
+                          width_px * (HIGHLIGHT_WIDTH if highlight else 1.0)),
         "marked": _stroke(marked_edges & fine_tissue, size, s, width_px),
         "outer": _stroke(outer_edges & fine_tissue, size, s, width_px),
     }

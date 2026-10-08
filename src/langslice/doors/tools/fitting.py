@@ -1,9 +1,12 @@
 """The fit tools, one per registration method, and the scripting verbs: their bodies.
 
 ``elastix_affine`` and ``ants_syn`` fit, apply, then show each fitted
-section under its new registration with the atlas borders on it, zoomed to
-the ``restrict_to`` regions when given (:func:`langslice.ops.look.show_result`),
-unless the call's ``view`` is false and the host does not force it.
+section under its new registration with the atlas borders on it
+(:func:`langslice.ops.look.show_result`), unless the call's ``view`` is
+false and the host does not force it. With ``restrict_to`` those regions'
+borders are drawn thick and the others faint, and the picture is zoomed to
+the regions' box when that magnifies it at least
+:data:`~langslice.ops.transforms.MIN_ZOOM_GAIN` times.
 ``trace_borders`` starts background work and answers at once; its landing
 draws the trace and the fit, and the tool door hands its notice out at the
 head of a later reply.
@@ -78,9 +81,14 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if not fits or not shows(view):
             return result
         fitted = [str(row["id"]) for row in fits]
-        zooms = {str(row["id"]): row["restrict_box"] for row in fits if row.get("restrict_box")}
+        # A deformation this fit made stale goes before the picture is drawn.
+        cleared = job.clear_stale_deformations()
+        if cleared:
+            result["deformation_cleared"] = cleared
+        zooms = {str(row["id"]): window for row in fits
+                 if (window := ops_transforms.zoom_window(row.get("restrict_box")))}
         shown = ops_look.show_result(job, ctx, "elastix_affine", "overlay", fitted,
-                                     zooms=zooms)
+                                     zooms=zooms, highlight=regions)
         return pictured(result, shown)
 
     def ants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
@@ -109,9 +117,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 record = job.state.by_id(name)
                 box = (ops_transforms.region_box(ctx, job.state, record, regions)
                        if record is not None else None)
-                if box is not None:
-                    zooms[name] = box
-        shown = ops_look.show_result(job, ctx, "ants_syn", "overlay", drawn, zooms=zooms)
+                window = ops_transforms.zoom_window(box)
+                if window is not None:
+                    zooms[name] = window
+        shown = ops_look.show_result(job, ctx, "ants_syn", "overlay", drawn, zooms=zooms,
+                                     highlight=regions)
         return pictured(result, shown)
 
     def trace_borders(section: str, prompt: str, restrict_to: list[str]) -> dict[str, Any]:

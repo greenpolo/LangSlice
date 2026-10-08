@@ -10,10 +10,14 @@ the ``channels`` strip) and nothing else: no fit, no image model and no
 preprocessed channel reads them (:mod:`langslice.core.appearance` holds the
 preprocessed channel).
 
-A channel without properties is drawn as before: alone in the strip as read,
-in an overlay stretched between its 1st and 99.5th percentiles
-(:data:`~langslice.core.appearance.OVERLAY_STRETCH`) in its overlay colour
-(:func:`~langslice.core.appearance.channel_colors`).
+A channel without contrast limits is drawn with automatic ones: alone in
+the strip as read; in an overlay by :func:`auto_limits`, per section, in its
+overlay colour (:func:`~langslice.core.appearance.channel_colors`). On a dark
+background (fluorescence) the section's tissue is found on the mean of its
+channels and each channel is drawn black at its background level and at full
+colour at its :data:`TISSUE_WHITE_PERCENTILE` inside the tissue; on a light
+background (brightfield) between its 1st and 99.5th percentiles
+(:data:`~langslice.core.appearance.OVERLAY_STRETCH`).
 """
 
 from __future__ import annotations
@@ -51,6 +55,15 @@ MIN_GAMMA = 0.1
 MAX_GAMMA = 10.0
 #: Pixels per section the stack's channel summary samples.
 SUMMARY_SAMPLES = 200_000
+#: Percentile of a channel's intensities inside the tissue that its automatic
+#: contrast draws at full colour on a dark background (:func:`auto_limits`):
+#: the brightest twentieth of the tissue saturates, so faint fluorescence is
+#: legible without a setting and a bright section is not blown out.
+TISSUE_WHITE_PERCENTILE = 95.0
+#: Pixels per plane :func:`auto_limits` samples.
+AUTO_SAMPLES = 1_000_000
+#: The word for a channel drawn with automatic contrast limits (captions).
+AUTO_WORD = "auto"
 
 
 @dataclass(frozen=True)
@@ -229,24 +242,62 @@ def fine_detail(stretched: np.ndarray) -> float:
     return float(fine[tissue].std())
 
 
+def auto_limits(planes: Sequence[np.ndarray]) -> list[tuple[float, float]]:
+    """Each plane's automatic contrast limits, as plane values.
+
+    *planes* are one section's raw channels at working size (0..255
+    values), sampled to about :data:`AUTO_SAMPLES` pixels. A dark
+    background (the median of the planes' mean along the picture's border at
+    most its median everywhere: fluorescence) separates tissue from
+    background by Otsu's threshold on that mean (exact zeros, unscanned
+    tiles or padding, left out of the threshold); each channel's low limit
+    is its median over the background (zeros included, so a padded black
+    background reads as 0), its high one its :data:`TISSUE_WHITE_PERCENTILE`
+    over the tissue. A light background (brightfield), or no usable split, keeps the
+    1st and 99.5th percentiles of each plane
+    (:data:`~langslice.core.appearance.OVERLAY_STRETCH`).
+    """
+    arrays = [np.asarray(plane, dtype=np.float32) for plane in planes]
+    if not arrays:
+        return []
+    step = max(1, int(math.ceil(math.sqrt(arrays[0].size / AUTO_SAMPLES))))
+    sampled = [array[::step, ::step] for array in arrays]
+
+    def spread(values: np.ndarray) -> tuple[float, float]:
+        low, high = (float(v) for v in np.percentile(values, OVERLAY_STRETCH))
+        return (low, high if high > low else low + 1.0)
+
+    fallback = [spread(values) for values in sampled]
+    mean = np.mean(np.stack(sampled), axis=0)
+    border = np.concatenate([mean[0], mean[-1], mean[:, 0], mean[:, -1]])
+    if float(np.median(border)) > float(np.median(mean)):
+        return fallback
+    scanned = mean > 0
+    if scanned.sum() < 100:
+        return fallback
+    values = np.clip(mean[scanned], 0, 255).astype(np.uint8).reshape(-1, 1)
+    threshold, _ = cv2.threshold(values, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    tissue = mean > threshold
+    background = ~tissue
+    if tissue.sum() < 100 or background.sum() < 100:
+        return fallback
+    out: list[tuple[float, float]] = []
+    for values, default in zip(sampled, fallback, strict=True):
+        low = float(np.median(values[background]))
+        high = float(np.percentile(values[tissue], TISSUE_WHITE_PERCENTILE))
+        out.append((low, high) if high > low else default)
+    return out
+
+
 def _stretched(
     plane: np.ndarray, properties: ChannelProperties | None, limits: tuple[float, float] | None,
-    *, percentile: bool,
 ) -> np.ndarray:
-    """One working plane (float32, 0..255 values) mapped to 0..1.
-
-    *limits* are the contrast limits as plane values; without them the
-    default: the overlay's percentile stretch (*percentile*) or the plane
-    as read.
-    """
-    if limits is not None:
-        low, high = limits
-    elif percentile:
-        low, high = (float(v) for v in np.percentile(plane, OVERLAY_STRETCH))
-        if high <= low:
-            high = low + 1.0
-    else:
-        low, high = 0.0, 255.0
+    """One working plane (float32, 0..255 values) mapped to 0..1 between
+    *limits* (plane values; None: the plane as read), then raised to its
+    gamma."""
+    low, high = limits if limits is not None else (0.0, 255.0)
+    if high <= low:
+        high = low + 1.0
     stretched = np.clip((plane - low) / (high - low), 0.0, 1.0)
     if properties is not None and properties.gamma != 1.0:
         stretched = np.power(stretched, properties.gamma).astype(np.float32)
@@ -277,8 +328,9 @@ def composite(
     *framed* crops and sizes a working-size picture as the render does.
     Each channel is stretched on its WHOLE working plane (so a framed and an
     unframed picture share one stretch): between its contrast limits when
-    it has them, else (an overlay) its percentiles or (*single*, the
-    ``channels`` strip) as read; then raised to its gamma and added in its
+    it has them, else (an overlay) its automatic limits (:func:`auto_limits`,
+    measured on all of *planes*) or (*single*, the ``channels`` strip) as
+    read; then raised to its gamma and added in its
     colormap (gray alone, else :func:`channel_colors`). Among several
     channels, each one without contrast limits is dimmed by its fine detail
     relative to the most detailed of them, so a flat autofluorescence
@@ -294,10 +346,13 @@ def composite(
     stretched_planes: list[np.ndarray] = []
     detail: list[float | None] = []
     colors: list[tuple[int, int, int]] = []
-    for (name, plane), (_name, _word, rgb) in zip(planes, defaults, strict=True):
+    automatic = None if single else auto_limits([plane for _name, plane in planes])
+    for index, ((name, plane), (_name, _word, rgb)) in enumerate(
+            zip(planes, defaults, strict=True)):
         held = props.get(name)
         limits = _plane_limits(held, (ranges or {}).get(name))
-        stretched = _stretched(plane, held, limits, percentile=not single)
+        stretched = _stretched(plane, held, limits if limits is not None else
+                               None if automatic is None else automatic[index])
         stretched_planes.append(stretched)
         detail.append(None if limits is not None else fine_detail(stretched))
         colors.append(COLORMAPS[held.colormap] if held is not None and held.colormap
@@ -320,24 +375,66 @@ def stretched_to_u8(stretched: np.ndarray) -> np.ndarray:
 # --- words --------------------------------------------------------------------
 
 
-def describe(name: str, properties: ChannelProperties | Mapping[str, Any] | None) -> str:
-    """A short caption form of one channel's display, e.g. ``DAPI 120-3400 gamma 1.2 gray``;
-    just the name without properties."""
+def setting_words(properties: ChannelProperties | Mapping[str, Any] | None) -> str:
+    """One channel's display setting for a caption: ``auto``, ``0-70 gamma
+    0.8``, ``auto gamma 1.5 in cyan`` (the contrast limits in file
+    intensities, or ``auto``; the gamma when not 1; the colormap when set)."""
     if properties is None:
-        return str(name)
+        return AUTO_WORD
     held = (properties if isinstance(properties, ChannelProperties)
             else ChannelProperties.from_dict(properties))
-    parts = [str(name)]
-    if held.contrast_limits is not None:
-        parts.append(f"{held.contrast_limits[0]:g}-{held.contrast_limits[1]:g}")
-    parts.append(f"gamma {held.gamma:g}")
+    parts = [AUTO_WORD if held.contrast_limits is None
+             else f"{held.contrast_limits[0]:g}-{held.contrast_limits[1]:g}"]
+    if held.gamma != 1.0:
+        parts.append(f"gamma {held.gamma:g}")
     if held.colormap:
-        parts.append(held.colormap)
+        parts.append(f"in {held.colormap}")
     return " ".join(parts)
 
 
-def describe_shown(state: StackState, names: Sequence[str]) -> str:
-    """The properties of the channels in *names* that have any, joined for a
-    caption; empty when none has."""
+def describe(name: str, properties: ChannelProperties | Mapping[str, Any] | None) -> str:
+    """A short caption form of one channel's display, e.g. ``DAPI 120-3400
+    gamma 1.2 in gray``, or ``DAPI auto`` without properties
+    (:func:`setting_words`)."""
+    return f"{name} {setting_words(properties)}"
+
+
+def display_words(
+    names: Sequence[str], held: Mapping[str, ChannelProperties],
+    colours: Mapping[str, str] | None = None,
+) -> str:
+    """Every channel of *names* with its own display setting, channels in a
+    row with the same setting grouped: ``red, green auto; blue 0-70 gamma
+    0.8``. *colours* gives the overlay colour of a channel not named after
+    it (``DAPI in cyan``); a channel's own colormap is in its setting."""
+    groups: list[tuple[str, list[str]]] = []
+    for name in names:
+        properties = held.get(name)
+        setting = setting_words(properties)
+        word = (colours or {}).get(name)
+        own = properties is not None and bool(properties.colormap)
+        shown = name if not word or own or word == name.lower() else f"{name} in {word}"
+        if groups and groups[-1][0] == setting:
+            groups[-1][1].append(shown)
+        else:
+            groups.append((setting, [shown]))
+    return "; ".join(f"{', '.join(shown)} {setting}" for setting, shown in groups)
+
+
+def describe_shown(state: StackState, names: Sequence[str],
+                   colours: Mapping[str, str] | None = None) -> str:
+    """Every channel in *names* with its display setting, for a caption
+    (:func:`display_words`)."""
+    return display_words(names, all_properties(state), colours)
+
+
+def stack_display(ctx: Workspace, state: StackState) -> str:
+    """Every raw channel's display setting, for the status reply: the first
+    section's channels (in stack order) and any other channel that has
+    properties (:func:`display_words`, e.g. ``red, green auto; blue 0-70
+    gamma 0.8``); empty for a stack without sections."""
     held = all_properties(state)
-    return ", ".join(describe(name, held[name]) for name in names if name in held)
+    first = sorted(state.slices, key=lambda record: record.index_original)[:1]
+    names = list(ctx.section_channels(first[0].id)[0]) if first else []
+    names += [name for name in held if name not in names]
+    return display_words(names, held)

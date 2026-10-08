@@ -135,8 +135,8 @@ job = langslice.create_job(
   file's metadata, else estimated from the tissue width.
 - `inputs=` takes any other key of `JobSpec.inputs` (`order`, `damaged`,
   `locked`, `channel_names`).
-- `tasks`: the tasks the job's verbs come from (`reorder`, `position`,
-  `transform`, `nonlinear`; a task that is off takes its answer from what you
+- `tasks`: the tasks the job's verbs come from (`position`, `transform`,
+  `nonlinear`; a task that is off takes its answer from what you
   supplied). Default: `["nonlinear"]` when every section has a supplied
   transform, else `["transform", "nonlinear"]`.
 - `registration`: a registration file made elsewhere, instead of the four

@@ -79,7 +79,7 @@ def test_the_descriptions_say_what_the_design_asks():
         return " ".join(declaration(name).doc.split())
 
     assert "Fit the whole section first, then refine regions" in words("ants_syn")
-    assert "zoomed to the restrict_to regions" in words("elastix_affine")
+    assert "restrict_to, those regions' borders are drawn thick" in words("elastix_affine")
     assert "order follows the positions" in words("position_sections")
 
 

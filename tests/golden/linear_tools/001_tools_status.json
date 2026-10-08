@@ -10,6 +10,7 @@
    "deformations (ants_syn, trace_borders)",
    "channel display and the preprocessed channel"
   ],
+  "channel_display": "gray auto",
   "cutting_angles_deg": {
    "pitch": 0.0,
    "yaw": 0.0

@@ -10,16 +10,7 @@
    "deformations (ants_syn, trace_borders)",
    "channel display and the preprocessed channel"
   ],
-  "channel_display": {
-   "red": {
-    "colormap": "magenta",
-    "contrast_limits": [
-     20.0,
-     200.0
-    ],
-    "gamma": 1.4
-   }
-  },
+  "channel_display": "gray auto; red 20-200 gamma 1.4 in magenta",
   "cutting_angles_deg": {
    "pitch": 0.0,
    "yaw": 0.0

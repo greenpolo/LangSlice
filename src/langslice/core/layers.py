@@ -195,6 +195,7 @@ def labels_layer(panel: PanelFrame) -> np.ndarray:
 
 def borders_layer(panel: PanelFrame) -> np.ndarray:
     """The drawn atlas borders' coverage of every picture pixel, uint8."""
+    from langslice.core.atlas.render import HIGHLIGHT_WIDTH
     from langslice.core.canvas import line_coverage
 
     width, height = panel.size
@@ -205,9 +206,10 @@ def borders_layer(panel: PanelFrame) -> np.ndarray:
               "offset": panel.geometry.atlas_offset, "origin": panel.crop_box[:2],
               "factor": panel.factor}
     coverage = np.zeros(shape, dtype=np.float32)
-    for polys in (panel.lines, panel.highlighted):
+    for polys, width in ((panel.lines, 1.0), (panel.highlighted, HIGHLIGHT_WIDTH)):
         if polys:
-            coverage = np.maximum(coverage, line_coverage(shape, list(polys), **kwargs))
+            coverage = np.maximum(coverage, line_coverage(
+                shape, list(polys), **{**kwargs, "thickness": panel.line_width * width}))
     out[y0:y1, x0:x1] = np.rint(coverage * 255.0).astype(np.uint8)
     return out
 

@@ -20,7 +20,7 @@
   ],
   "pictures": [
    {
-    "caption": "s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn; 31.2 um/px; raw gray auto; atlas borders",
     "id": 6
    }
   ],

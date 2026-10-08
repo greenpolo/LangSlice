@@ -39,6 +39,7 @@ from langslice.core.canvas import (
     PanelFrame,
     SectionDetail,
     canvas_geometry,
+    knob_words,
     physical_views,
     pivot_on_canvas,
 )
@@ -257,6 +258,28 @@ def _file_detail(
     return detail
 
 
+def transform_words(record: SliceState, kind: str, *, warp: bool = False,
+                    index: bool = False) -> str:
+    """The placement a picture of *record* is drawn under, for its caption:
+    the transform's kind and, for a stored one, its knobs
+    (:func:`langslice.core.canvas.knob_words`; in parentheses for the index
+    caption, *index*); then ``+ deformation`` when *warp* is drawn."""
+    physical = (record.transform or {}).get("physical") if kind != "identity" else None
+    words = f"{kind} transform"
+    if isinstance(physical, dict) and all(key in physical for key in IDENTITY_KNOBS):
+        words += (f" ({knob_words(physical, ', ')})" if index
+                  else f" {knob_words(physical)}")
+    return words + (" + deformation" if warp else "")
+
+
+def orientation_words(record: SliceState) -> str:
+    """The section's quarter turn and mirror for a caption (`` turned 90
+    flipped``), empty when it has neither."""
+    words = (f" turned {record.rotation_deg}" if record.rotation_deg else "") + (
+        " flipped" if record.flip else "")
+    return words
+
+
 def stored_placement(record: SliceState, section: Any) -> tuple[Any, str]:
     """``(params or matrix, kind)`` of the section's in-plane transform.
 
@@ -333,11 +356,12 @@ def placement_pictures(
             else None)
     canvas = draw_canvas(
         ws, state, record, section, um_per_px, position, params, options,
-        label=f"{record.id} vs atlas {position:.2f} mm",
-        matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
+        label=f"{record.id}{orientation_words(record)} vs atlas {position:.2f} mm",
+        matrix_label=transform_words(record, kind, warp=warp is not None),
         warp=warp,
     )
     row["transform"] = kind
+    row["transform_words"] = transform_words(record, kind, index=True)
     if warp is not None:
         row["deformation_drawn"] = True
     elif (options.mode in WARPED_PLACEMENT_MODES and record.deformation

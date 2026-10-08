@@ -181,14 +181,14 @@ def test_channel_properties_persist_are_undoable_and_captioned(tmp_path: Path, a
     assert len(box.job.undo_stack) == 1
     (picture,) = _tool(box, "look")("section", sections=["s0.png"])["pictures"]
     assert "gray 20-200 gamma 1.5" in picture["caption"]
-    assert _tool(box, "status")()["channel_display"]["gray"]["gamma"] == 1.5
+    assert _tool(box, "status")()["channel_display"] == "gray 20-200 gamma 1.5"
     # The same settings again change nothing and take no undo step.
     assert setter("gray", gamma=1.5, contrast_limits=[20, 200])["changed"] is False
     assert len(box.job.undo_stack) == 1
     assert setter("dapi", gamma=2.0) == {"status": "error", "error": "UNKNOWN_CHANNEL",
                                          "channel": "dapi", "channels": ["gray"]}
     _tool(box, "undo")()
-    assert "channel_display" not in _tool(box, "status")()
+    assert _tool(box, "status")()["channel_display"] == "gray auto"
     setter("gray", gamma=2.0)
     assert setter("gray", reset=True)["properties"] is None
 
@@ -307,7 +307,8 @@ def test_status_is_the_table_and_what_the_run_lets_change(tmp_path: Path, atlas)
     assert result["cutting_angles_deg"] == {"pitch": 0.0, "yaw": 0.0}
     assert result["interval_breaks"] == []
     assert result["preprocessed_recipe"] == "default"
-    assert "channel_display" not in result and "background_running" not in result
+    assert result["channel_display"] == "gray auto"
+    assert "background_running" not in result
     assert result["can_change"] == [
         "positions (the order follows them)", "cutting angles",
         "orientation and mirroring and in-plane transforms by hand",
@@ -379,15 +380,15 @@ def test_one_raw_channel_in_gray_several_overlaid_in_colour(tmp_path: Path):
     state, _, box = _rgb(tmp_path)
     look = _tool(box, "look")
     green = look("section", sections=["s0.png"], channels=["green"])
-    assert "raw green in gray" in green["pictures"][0]["caption"]
+    assert "raw green in gray auto" in green["pictures"][0]["caption"]
     pixels = _pixels(green)
     assert np.abs(pixels[..., 0] - pixels[..., 1]).max() <= 12  # grayscale
     both = look("section", sections=["s0.png"], channels=["red", "blue"])
-    assert "raw red + blue" in both["pictures"][0]["caption"]
+    assert "raw red, blue auto" in both["pictures"][0]["caption"]
     mixed = _pixels(both)
     assert mixed[..., 0].max() > 200 and mixed[..., 2].max() > 40
     assert mixed[..., 1].max() < 40  # no green channel in a red + blue overlay
-    assert "raw red + green + blue" in look("section", sections=["s0.png"])[
+    assert "raw red, green, blue auto" in look("section", sections=["s0.png"])[
         "pictures"][0]["caption"]
     assert state.appearance == {}
 

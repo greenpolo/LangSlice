@@ -36,6 +36,12 @@ __all__ = [
 Rgb = tuple[int, int, int]
 
 
+#: How much thicker than the other atlas lines a picture draws the regions
+#: it highlights (``grep_atlas_view``'s regions, a restricted fit's
+#: ``restrict_to``, marked damage), the others drawn faint.
+HIGHLIGHT_WIDTH = 2.0
+
+
 def annotation_slice(
     atlas: Any,
     position_mm: float,
