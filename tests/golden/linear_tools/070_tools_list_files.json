@@ -4,7 +4,7 @@
  ],
  "data": {
   "status": "ok",
-  "text": "views:\nviews/000008_look_atlas/view.json  text, 1164 B\nviews/000009_look_atlas/view.json  text, 1162 B\nviews/000010_look_atlas/view.json  text, 1225 B\nviews/000011_look_atlas/view.json  text, 1176 B\nviews/000012_look_positioning/view.json  text, 2319 B\nviews/000025_grep_atlas_view_atlas/view.json  text, 1316 B\nviews/000026_grep_atlas_view_atlas/view.json  text, 1318 B\nviews/000027_position_sections_positioning/view.json  text, 2691 B\nviews/000030_look_atlas/view.json  text, 1527 B\nviews/000033_look_positioning/view.json  text, 2752 B\nviews/000034_look_positioning/view.json  text, 2371 B"
+  "text": "views:\nviews/000008_look_atlas/view.json  text, 1164 B\nviews/000009_look_atlas/view.json  text, 1162 B\nviews/000010_look_atlas/view.json  text, 1225 B\nviews/000011_look_atlas/view.json  text, 1176 B\nviews/000012_look_positioning/view.json  text, 2347 B\nviews/000025_grep_atlas_view_atlas/view.json  text, 1316 B\nviews/000026_grep_atlas_view_atlas/view.json  text, 1318 B\nviews/000027_position_sections_positioning/view.json  text, 2691 B\nviews/000030_look_atlas/view.json  text, 1527 B\nviews/000033_look_positioning/view.json  text, 2752 B\nviews/000034_look_positioning/view.json  text, 2371 B"
  },
  "door": "tools",
  "images": [],

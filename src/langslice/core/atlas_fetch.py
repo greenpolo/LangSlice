@@ -107,7 +107,7 @@ def reference_atlas(
     """
     pos_lo, pos_hi = ctx.position_range
     span = pos_hi - pos_lo
-    step = max(state.interval_mm, span / max(1, max_images - 1))
+    step = max(state.interval_mm or 0.0, span / max(1, max_images - 1))
     step = math.ceil(step / 0.05) * 0.05  # a round number of 50 um
     edge = int(long_edge or opening_edge(ctx))
     pictures: list[tuple[float, Image.Image]] = []

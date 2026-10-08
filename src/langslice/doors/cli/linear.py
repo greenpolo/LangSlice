@@ -126,8 +126,10 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         metavar="TEXT",
         help="What marks a hemisphere in these sections (a notch, an injection...)",
     )
-    p.add_argument("--thickness", type=int, default=50, help="Section thickness in microns")
-    p.add_argument("--interval", type=int, default=200, help="Section interval in microns")
+    p.add_argument("--thickness", type=int,
+                   help="Known section thickness in microns; omit if unknown")
+    p.add_argument("--interval", type=int,
+                   help="Known section interval in microns; omit to infer spacing")
     p.add_argument(
         "--strict-interval",
         action="store_true",
@@ -437,8 +439,11 @@ def run_linear(args: argparse.Namespace) -> None:
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
-    print(f"Interval: {spec.position.interval_um}um  "
-          f"Thickness: {spec.position.thickness_um}um")
+    interval = (f"{spec.position.interval_um}um"
+                if spec.position.interval_um is not None else "not supplied")
+    thickness = (f"{spec.position.thickness_um}um"
+                 if spec.position.thickness_um is not None else "not supplied")
+    print(f"Interval: {interval}  Thickness: {thickness}")
     print(f"Folder: {spec.image_folder}  Resume: {spec.resume}")
     if os.environ.get(TRACE_DIR_ENV):
         print(f"Agent traces: {os.environ[TRACE_DIR_ENV]}")

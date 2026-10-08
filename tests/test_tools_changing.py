@@ -138,6 +138,10 @@ def test_an_exact_rewrite_of_a_starting_position_makes_it_the_agents(tmp_path: P
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: SLAB)
     job = Job.open(spec, ctx)
     box = build_tools(job.state, ctx, spec, job=job)
+    # A checkpoint from a version that assigned starting positions.
+    for record in job.state.slices:
+        record.position_mm, record.position_source = 2.0, "default"
+    job.checkpoint()
     rows = {row["id"]: row for row in _tool(box, "status")()["rows"]}
     assert all(row["position_source"] == "default" for row in rows.values())
     start = rows["s1.png"]["position_mm"]
@@ -598,3 +602,19 @@ def test_left_linear_belongs_to_runs_with_nonlinear(tmp_path: Path):
         {"id": "s0.png", "reason": "no deformation needed"}])
     assert refused["error"] == "UNKNOWN_ARGUMENTS"
     assert state.submitted is False
+
+
+def test_gated_positioning_can_start_with_no_positions(tmp_path: Path):
+    state, _, box = _gated(tmp_path)
+    for record in state.slices:
+        record.position_mm = None
+    box.job.checkpoint()
+    write = _tool(box, "position_sections")
+    sections = [{"id": "s0.png", "position_mm": 3.0}]
+    assert write(sections, view=False)["error"] == "NOT_COMPARED"
+    assert _tool(box, "look")("positioning", sections=["s0.png"],
+                               positions_mm=[2.5, 3.0])["status"] == "ok"
+    assert state.by_id("s0.png").position_mm is None
+    assert write(sections, view=False)["status"] == "ok"
+    assert state.by_id("s0.png").position_mm == 3.0
+    assert write(sections, view=False)["error"] == "NOT_COMPARED"

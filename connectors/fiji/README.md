@@ -146,6 +146,9 @@ in Claude mode).
 Dialog settings are saved; per-slice damage notes are not. Settings are stored (Java preferences, node
 `org/langslice/fiji/registration`) when a run starts, and restored next time; section
 thickness and interval come from ABBA whenever ABBA's slices give them.
+Otherwise saved user settings are used; a new dialog leaves them at zero
+(unspecified). Zero omits the value from the job, allowing the agent to infer
+what the anatomy supports. There are no fixed lab protocol defaults.
 
 | Control | Request |
 | --- | --- |

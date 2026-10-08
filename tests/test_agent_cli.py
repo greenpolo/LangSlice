@@ -352,7 +352,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
                                   + ", ".join(f"`{name}`" for name in verbs) + ".")
         assert expected != native and statement.startswith(expected + "\n\n")
         tail = statement[len(expected):]
-        assert "Opening pictures: `brief` saved 1 picture files" in tail
+        assert "Opening pictures: `brief` saved 2 picture files" in tail
         assert "User notes:\nSection 2 is torn." in tail
         assert "trace_from_atlas" not in statement  # a hidden verb is listed nowhere
         from langslice.doors.statement import status_and_notes
@@ -598,7 +598,7 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert code == 0, envelope
     assert envelope["result"]["dry_run"] is True
     assert envelope["result"]["would_change"] == {
-        "sections": {ID1: ["position_mm", "position_source"]}, "stack": []}
+        "sections": {ID1: ["position_mm"]}, "stack": []}
     assert envelope["artifacts"] == []
     assert envelope["next"] and "--dry-run" not in envelope["next"][0]
     assert (job / "state.json").read_bytes() == state_before
@@ -672,6 +672,9 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
     monkeypatch.setattr(toolbox, "resolve_image_model", lambda provider, model: stub_image_model(
         SimpleNamespace(nonlinear=SimpleNamespace(provider=provider, image_model=model))))
     job = init(capsys, images, "--image-provider", "openai-oauth")
+    code, placed = cli(capsys, str(images), "position_sections", "--sections",
+                       json.dumps([{"id": ID0, "position_mm": 0.05}]), "--view", "false")
+    assert code == 0, placed
     code, envelope = cli(capsys, str(images), "interactive_transform", "--sections",
                          json.dumps([{"id": ID0, "rotation_deg": 0.0}]), "--view", "false")
     assert code == 0, envelope
@@ -927,6 +930,8 @@ apply_patches()
 install(atlas_loader())
 import langslice
 job = langslice.open_job(sys.argv[1])
+job.position_sections(sections=[{"id": name, "position_mm": 0.05 + index * 0.05}
+                                for index, name in enumerate([ID0, ID1, ID2])], view=False)
 raw = {tool.__name__: tool for tool in job._opened.tools().tools}
 # The tool itself, which only queues its pictures: the writer is still busy
 # when the script ends, and no one calls close().

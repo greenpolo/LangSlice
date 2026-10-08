@@ -54,8 +54,8 @@ final class RegistrationDialog extends JDialog {
 
     final JCheckBox positioning = header("Positioning"), flip = new JCheckBox("Enable hemisphere flipping");
     final JTextField cue = new JTextField(16);
-    final JSpinner thickness = new JSpinner(new SpinnerNumberModel(50, 1, 100000, 10));
-    final JSpinner interval = new JSpinner(new SpinnerNumberModel(200, 1, 100000, 10));
+    final JSpinner thickness = new JSpinner(new SpinnerNumberModel(0, 0, 100000, 10));
+    final JSpinner interval = new JSpinner(new SpinnerNumberModel(0, 0, 100000, 10));
     final JTextArea positionNotes = notes();
     final JCheckBox linear = header("Linear"), affine = new JCheckBox("Enable affine tool");
     final JCheckBox angles = new JCheckBox("Enable slice angle estimation");
@@ -171,8 +171,8 @@ final class RegistrationDialog extends JDialog {
         JPanel grid = new JPanel(new GridBagLayout());
         int y = 0;
         cell(grid, positioning, 0, y++, 4, true);
-        cell(grid, indent(label("Section thickness (µm)")), 0, y, 1, false); cell(grid, left(thickness), 1, y, 1, false);
-        cell(grid, label("Section interval (µm)"), 2, y, 1, false); cell(grid, left(interval), 3, y++, 1, false);
+        cell(grid, indent(label("Section thickness (µm; 0 = infer)")), 0, y, 1, false); cell(grid, left(thickness), 1, y, 1, false);
+        cell(grid, label("Section interval (µm; 0 = infer)"), 2, y, 1, false); cell(grid, left(interval), 3, y++, 1, false);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(positionNotes), 1, y++, 3, true);
         cell(grid, new JSeparator(), 0, y++, 4, true);
 

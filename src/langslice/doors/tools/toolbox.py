@@ -307,9 +307,10 @@ class ToolBox:
     #: positioning) since its last write, and whether a positioning look of
     #: every section has run since the last write (the gates). A position
     #: that undo, redo or a reload of the state file moves counts as a
-    #: write (``Door.forget_looks``); nothing else of this door's record is
+    #: write (``Door.forget_looks``); None records an unplaced section seen
+    #: in positioning mode. Nothing else of this door's record is
     #: undone.
-    compared: dict[str, set[float]] = field(default_factory=dict)
+    compared: dict[str, set[float | None]] = field(default_factory=dict)
     reviewed: bool = False
     #: The largest picture the driver model takes: the cap of ``look``'s
     #: ``resolution`` at image resolution "auto".

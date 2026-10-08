@@ -32,10 +32,9 @@
   "debrief": "",
   "image_folder": "<ROOT>/tools",
   "interval_breaks": [],
-  "interval_mm": 0.2,
+  "interval_mm": null,
   "notes": [
    "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
-   "ingest: 3 section(s) given evenly spaced starting positions",
    "Golden run: three synthetic sections.",
    "Second trace landed.",
    "golden",
@@ -349,11 +348,11 @@
    "plane": "coronal",
    "position": {
     "gated": false,
-    "interval_um": 200,
+    "interval_um": null,
     "notes": "",
     "playbook": false,
     "strict_interval": false,
-    "thickness_um": 50
+    "thickness_um": null
    },
    "preprocess": "none",
    "reasoning": null,
@@ -374,6 +373,6 @@
    }
   },
   "submitted": true,
-  "thickness_mm": 0.05
+  "thickness_mm": null
  }
 }

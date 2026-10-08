@@ -135,12 +135,12 @@ def test_the_playbook_puts_a_method_in_the_job_statement(tmp_path: Path):
     state, spec, tools = _stack(tmp_path, tasks=["position"],
                                 position=PositionSpec(playbook=True))
     text = " ".join(_statement(state, spec, tools).split())
-    assert "initial positions as hypotheses" in text
+    assert "initial position hypotheses from the anatomy" in text
     assert "`grep_atlas_view`" in text
     assert "Write supported placements with `position_sections`" in text
     spec.position.playbook = False
     plain = " ".join(_statement(state, spec, tools).split())
-    assert "initial positions as hypotheses" not in plain and "Method:" in plain
+    assert "initial position hypotheses from the anatomy" not in plain and "Method:" in plain
     method = plain.split("Method:", 1)[1]
     assert "batch" not in method.lower()
     assert "candidate atlas positions before writing" in method
@@ -376,3 +376,26 @@ def test_image_resolution_auto_gives_look_a_resolution(tmp_path: Path):
     assert clamped["status"] == "ok"
     assert clamped["resolution_note"].startswith("resolution 1000000 is outside")
     assert auto["look"]("section", resolution="big")["error"] == "BAD_ARGS"
+
+
+@pytest.mark.parametrize("interval,thickness", [(None, None), (0.2, None),
+                                               (None, 0.05), (0.2, 0.05)])
+def test_prompt_distinguishes_known_protocol_from_inferred_spacing(interval, thickness):
+    from langslice.agent.prompt import cutting_protocol_fact
+    from langslice.core.state import StackState
+
+    text = cutting_protocol_fact(StackState(interval_mm=interval, thickness_mm=thickness))
+    assert ("0.200 mm center-to-center" in text) == (interval is not None)
+    assert ("0.050 mm" in text) == (thickness is not None)
+    unknown = interval is None or thickness is None
+    assert ("not supplied" in text) == unknown
+    assert ("Infer positions and spacing from anatomy" in text) == unknown
+    assert ("uncertainty in your notes" in text) == unknown
+
+
+def test_legacy_zero_protocol_is_unknown():
+    from langslice.agent.prompt import cutting_protocol_fact
+    from langslice.core.state import StackState
+
+    text = cutting_protocol_fact(StackState(interval_mm=0.0, thickness_mm=0.0))
+    assert text.count("not supplied") == 2 and "0.000" not in text

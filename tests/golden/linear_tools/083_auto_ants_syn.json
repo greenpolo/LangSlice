@@ -9,7 +9,6 @@
    {
     "damaged": false,
     "deformation_steps": 1,
-    "delta_to_next_mm": 0.025,
     "flip": false,
     "id": "s0.png",
     "position_mm": 0.1,

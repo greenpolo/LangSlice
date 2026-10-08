@@ -120,7 +120,7 @@ class SliceState:
     damage_note: str = ""
     position_mm: float | None = None
     #: ``"default"`` while the position is the evenly spaced starting one
-    #: the job gave the section at ingest (``job.job.default_positions``);
+    #: stored in a legacy checkpoint;
     #: empty once anything wrote it, or when it was supplied.
     position_source: str = ""
     transform: dict[str, Any] | None = None
@@ -172,8 +172,9 @@ class StackState:
     image_folder: str = ""
     atlas: str = ""
     plane: str = "coronal"
-    interval_mm: float = 0.0
-    thickness_mm: float = 0.0
+    #: Optional protocol values; None means not supplied.
+    interval_mm: float | None = None
+    thickness_mm: float | None = None
     #: The JobSpec as run (:meth:`langslice.core.spec.JobSpec.to_dict`).
     spec: dict[str, Any] = field(default_factory=dict)
     #: Corrected indices of the sections AFTER a gap the agent concluded is real.

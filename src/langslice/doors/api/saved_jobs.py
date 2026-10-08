@@ -65,10 +65,11 @@ def copy_prompt(job_id: str, spec: Any) -> str:
              f"Selected tasks: {selected}; atlas: {spec.atlas}; plane: {spec.plane}.",
              "Use only the LangSlice tools and finish with submit."]
     if spec.has("position"):
-        lines.append(
-            f"Positioning: section thickness {spec.position.thickness_um:g} µm, "
-            f"interval {spec.position.interval_um:g} µm."
-        )
+        thickness = (f"{spec.position.thickness_um:g} µm"
+                     if spec.position.thickness_um is not None else "not supplied")
+        interval = (f"{spec.position.interval_um:g} µm"
+                    if spec.position.interval_um is not None else "not supplied")
+        lines.append(f"Positioning: section thickness {thickness}, interval {interval}.")
     if spec.has("transform"):
         lines.append(
             f"Linear: automatic affine {'enabled' if spec.transform.automatic else 'disabled'}, "

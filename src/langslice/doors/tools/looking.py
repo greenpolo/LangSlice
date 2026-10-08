@@ -90,9 +90,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             named, _unknown = door.resolve_many(as_list(sections))
             drawn = named or job.state.in_order()
             for record in drawn:
-                if record.position_mm is not None:
-                    door.box.compared.setdefault(record.id, set()).add(
-                        round(float(record.position_mm), 2))
+                door.box.compared.setdefault(record.id, set()).add(
+                    round(float(record.position_mm), 2) if record.position_mm is not None else None)
             if (str(mode).strip().lower() == "positioning"
                     and len(drawn) == len(job.state.slices)):
                 door.box.reviewed = True

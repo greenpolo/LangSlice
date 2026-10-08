@@ -239,16 +239,14 @@ longer exist be taken over by the images it is opened with.
   picture's `step` is the undo history's depth), `nonlinear_refusal`
   (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
-  checked), `changed_inputs` (above). With `position` on, `Job.open` gives a
-  new job's sections without a supplied position a starting one
-  (`default_positions`, `SliceState.position_source` `DEFAULT_POSITION`
-  "default"): in `index_original` order, at the stack's interval centred in
-  the atlas's range (evenly over the whole range when the stack does not
-  fit at it), or interpolated between supplied positions and continued at
-  the interval beyond them, always inside the range. `commit` drops the
-  mark of every section whose position the step changed
-  (`clear_default_marks`), whatever wrote it (and `ops.positions` drops it
-  on every written position, the same value included); undo restores it.
+  checked), `changed_inputs` (above). New sections remain unplaced until
+  the caller supplies or writes positions; no positions are interpolated
+  or extrapolated around supplied ones. Saved positions are preserved on
+  resume. Legacy checkpoints may carry `SliceState.position_source`
+  `DEFAULT_POSITION` ("default"); these are unconfirmed. `commit` drops
+  that mark when the position changes (`clear_default_marks`), and
+  `ops.positions` drops it on every explicit write, the same value included;
+  undo restores it.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
   gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and

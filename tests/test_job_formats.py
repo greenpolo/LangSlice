@@ -394,7 +394,12 @@ def test_a_starting_position_is_said_in_registration_json_and_the_maps(tmp_path,
     write_sections(folder)
     spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
                                agent_preprocessing=False)
-    create(spec, atlas_loader=atlas_loader()).close()
+    # A legacy checkpoint still identifies unconfirmed starting estimates.
+    opened = create(spec, atlas_loader=atlas_loader())
+    for index, record in enumerate(opened.job.state.slices):
+        record.position_mm, record.position_source = 0.05 + 0.05 * index, "default"
+    opened.job.checkpoint()
+    opened.close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     root = Path(job.folder)
 

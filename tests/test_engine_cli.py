@@ -71,3 +71,22 @@ def test_run_abba_without_a_connector_jar_says_how_to_get_one(monkeypatch, tmp_p
     monkeypatch.setattr(abba_launch, "repository_root", lambda: tmp_path)
     with pytest.raises(SystemExit, match="mvn package"):
         run_abba(build_parser().parse_args(["abba"]))
+
+
+def test_cli_protocol_is_optional_and_explicit_values_survive():
+    parser = build_parser()
+    unknown = parser.parse_args(["linear", "run", "/tmp/sections"])
+    assert unknown.thickness is None and unknown.interval is None
+    known = parser.parse_args(["linear", "run", "/tmp/sections", "--thickness", "50",
+                               "--interval", "200"])
+    assert known.thickness == 50 and known.interval == 200
+
+
+def test_saved_job_prompt_handles_unknown_protocol():
+    from langslice.core.spec import JobSpec, PositionSpec
+    from langslice.doors.api.saved_jobs import copy_prompt
+
+    spec = JobSpec(image_folder=".", tasks=["position"])
+    assert "section thickness not supplied, interval not supplied" in copy_prompt("job", spec)
+    spec.position = PositionSpec(interval_um=200)
+    assert "section thickness not supplied, interval 200 µm" in copy_prompt("job", spec)

@@ -79,6 +79,10 @@ def look(
     and a caption stating the positions, cutting angles, scale and channel
     settings it was drawn with; zoom takes the number.
 
+    Use positioning mode to compare sections with candidate atlas planes
+    along the slicing axis. Use overlays to assess in-plane alignment and
+    deformation against internal anatomy.
+
     Args:
         mode: "section": each section alone, as oriented, framed to its
             tissue. "atlas": the atlas plane alone at each of positions_mm,
@@ -87,8 +91,10 @@ def look(
             atlas_layers on it. "positioning": the sections and the atlas
             along the slicing axis as ABBA lays them out: the atlas at
             positions_mm above a millimetre ruler, the sections below it in
-            order of position, each joined by a line to its position; a long
-            stack is split into several pictures, none shrunk.
+            order of position, each placed section joined by a line to its
+            position. Unplaced sections appear at the right, labelled "no
+            position", without a line to the ruler. A long stack is split
+            into several pictures, none shrunk.
         sections: Filenames (the extension may be left off); empty is every
             section.
         positions_mm: Atlas positions in millimetres along the slicing axis:
@@ -129,6 +135,17 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str,
     from its voxels. The box is drawn as the picture was, even if the stack
     has changed since (the reply then says `stale`). The new picture has its
     own number, so it can be zoomed again.
+
+    After a linear or nonlinear fit, use region on its overlay to inspect
+    a particular structure closely, with only that region's border shown.
+    This can reveal internal mismatches hidden at whole-section scale and
+    help you decide whether to adjust the linear alignment, refine that
+    region nonlinearly, or revisit the section's position.
+
+    Earlier pictures remain available by number. Reopen or zoom a saved
+    overlay to compare an intermediate registration with the current result;
+    its saved placement is preserved. Use undo when the latest change makes
+    the alignment worse.
 
     Args:
         box: [x0, y0, x1, y1] in pixels of that picture as it was shown,
@@ -203,6 +220,11 @@ def set_preprocessed_channel_properties(
     never changed; look draws this channel with channels ["preprocessed"].
     Undoable; another call replaces the recipe.
 
+    Tune channel weights and preprocessing to make the internal anatomy
+    useful for registration stand out. Inspect the before-and-after pictures
+    and compare with the raw channels before fitting. Raw-channel display
+    adjustments alone do not change what the fitting algorithms receive.
+
     Args:
         sections: Filenames (the extension may be left off) of the sections
             that get a recipe of their own; empty sets the whole stack's
@@ -229,7 +251,10 @@ def set_preprocessed_channel_properties(
 def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
     """Look regions up in the atlas hierarchy by acronym, name or id. Text only.
 
-    To see a region's borders on the atlas, use grep_atlas_view.
+    When you recognize a structure in the tissue, find its atlas name here,
+    then use grep_atlas_view to check its shape and location at candidate
+    positions. Confirm the region visually before using it to guide a fit
+    or mark damage.
 
     Args:
         query: Text matched case-insensitively against region acronyms and
@@ -252,6 +277,10 @@ def grep_atlas_view(regions: list[str], positions_mm: list[float]) -> dict[str, 
     Only the named regions' borders are drawn, at the stack's cutting
     angles. Look highlights no regions; this tool does.
 
+    After finding a region with grep_atlas, compare its shape and location
+    here with the structure you recognize in the tissue, before using it
+    to guide a fit or mark damage.
+
     Args:
         regions: Acronyms, names or ids, descendants included; "CTX:left" or
             "CTX:right" names one side, as the pictures show it.
@@ -270,8 +299,8 @@ def status() -> dict[str, Any]:
 
     Returns:
         One row per section in stack order: filename, position
-        (position_source "default": a starting position the job gave the
-        section, not yet placed), distance to the next placed section, flip
+        (position_source "default": an unconfirmed starting position
+        from a saved job), distance to the next placed section, flip
         and quarter turn, transform, damaged regions and damage note,
         deformation steps. Also the cutting angles, the interval breaks, the
         raw channels' display settings ("auto": automatic contrast limits),
@@ -476,6 +505,11 @@ def elastix_affine(
     regions are left out automatically. Each fit is written as the
     section's transform, one undoable write for the call.
 
+    Use restrict_to when a few clearly recognizable, surviving regions
+    provide better registration evidence than the whole section. Those
+    regions guide a whole-section affine transform. Review the wider
+    overlay afterward as well.
+
     A region too small for elastix is skipped with REGION_TOO_SMALL; use
     a larger region or interactive_transform. No fit is written for it.
 
@@ -522,6 +556,11 @@ def ants_syn(
     section's deformation, one undoable write; a later change to the
     section's position, orientation, cutting angles or transform clears it.
 
+    Use restrict_to when a few clearly recognizable, surviving regions
+    provide better registration evidence than the whole section, to refine
+    the existing registration locally. Review the wider overlay afterward
+    as well.
+
     Args:
         sections: One to four filenames (the extension may be left off).
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
@@ -559,6 +598,11 @@ def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -
     placement and region choice is saved and reused, whatever the prompt;
     when its fit is already applied, nothing is fitted again. Every prompt
     sent is saved in the job folder.
+
+    A focused trace can address one difficult region without tracing the
+    whole section. Use restrict_to to select it and, when helpful, tailor
+    the full image prompt to that section while preserving the stated
+    border-drawing rules. The tool handles both tracing and fitting the result.
 
     Starts the work in the background and returns at once with its id, so
     you can carry on with other sections. When the work finishes, the next

@@ -97,8 +97,9 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
   `_CONTEXT_GRACE`); a stop never breaks out of a turn, so the pending tool
   call is answered first and the history stays well formed.
 - `prompt.py` — `build_job_statement`: the job, the run facts (`run_facts`:
-  the range, the protocol, the cutting angles, the sections still at their
-  starting positions (not yet placed), the damaged sections and the user's
+  the range, the optional protocol (`cutting_protocol_fact`: unknown values
+  stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections
+  (legacy default positions remain unconfirmed), the damaged sections and the user's
   damage notes, the locked sections, that the order follows the positions;
   `channel_facts`: the raw channels, the atlas layers here, and where the
   caller sizes pictures, `look`'s `resolution` range), the tools BY NAME
@@ -260,8 +261,10 @@ run's cost. The rules that follow:
   unchanged history prefix may be cached; a byte-identical copy appended
   later is new input. Never budget a re-sent picture as a cache hit.
 - **The opening** is ABBA-style strips (`core/opening.py`): the sections in
-  corrected order with the atlas at each one's current position beneath it
-  (labelled `start` while that is the job's starting position), every tile
+  current order. Unplaced sections have no paired atlas plane; a separate
+  atlas overview follows whenever any section is unplaced. Placed sections
+  have the atlas at their current position beneath them (legacy default
+  positions are labelled `start`). Every tile is
   labelled in its pixels, each strip at the model lane's largest image
   (`doors.tools.view_options.image_limit`) and within its patch budget.
 

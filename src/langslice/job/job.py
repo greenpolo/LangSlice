@@ -52,8 +52,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from langslice.core import deformation
 from langslice.core.discovery import discover_slices
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
@@ -321,68 +319,9 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
         state.notes.append(f"inputs: {len(names)} section(s) {note}")
 
 
-#: ``SliceState.position_source`` of a starting position LangSlice gave a
-#: section at ingest (:func:`default_positions`): the submit gate
-#: ``MISSING_POSITIONS`` refuses a section still there.
+#: Legacy checkpoints may carry automatically assigned positions with this
+#: mark. They remain unconfirmed until explicitly written by the caller.
 DEFAULT_POSITION = "default"
-
-
-def default_positions(state: StackState, workspace: Workspace) -> list[str]:
-    """Give every section without a position a starting one, marked
-    :data:`DEFAULT_POSITION`; return their ids.
-
-    Stack order is the order the images were found (``index_original``).
-    With no position supplied, the sections are spread across the atlas's
-    range in that order: at the stack's interval, centred, when the stack
-    fits in the range at it, else evenly over the whole range. Between
-    supplied positions a section gets the linear interpolation by stack
-    order; beyond them, the nearest supplied one continued at the stack's
-    interval (the median supplied step when no interval is set) in the
-    direction the supplied ones run. Every starting position lies in the
-    atlas's range.
-    """
-    ordered = sorted(state.slices, key=lambda record: record.index_original)
-    missing = [index for index, record in enumerate(ordered) if record.position_mm is None]
-    if not missing:
-        return []
-    low, high = (float(value) for value in workspace.position_range)
-    count = len(ordered)
-    interval = float(state.interval_mm)
-    known = [(index, float(record.position_mm)) for index, record in enumerate(ordered)
-             if record.position_mm is not None]
-    values: dict[int, float] = {}
-    if not known:
-        if interval > 0 and interval * (count - 1) <= high - low:
-            first = (low + high) / 2 - interval * (count - 1) / 2
-            values = {index: first + interval * index for index in range(count)}
-        else:
-            values = {index: low + (high - low) * (index + 0.5) / count for index in range(count)}
-    else:
-        steps = [(b - a) / (j - i) for (i, a), (j, b) in zip(known, known[1:], strict=False)]
-        trend = float(np.median(steps)) if steps else 0.0
-        step = interval if interval > 0 else abs(trend)
-        step = step if trend >= 0 else -step
-        for index in missing:
-            before = [(i, v) for i, v in known if i < index]
-            after = [(i, v) for i, v in known if i > index]
-            if before and after:
-                (i, a), (j, b) = before[-1], after[0]
-                values[index] = a + (b - a) * (index - i) / (j - i)
-            elif before:
-                i, a = before[-1]
-                values[index] = a + step * (index - i)
-            else:
-                j, b = after[0]
-                values[index] = b - step * (j - index)
-    placed: list[str] = []
-    for index in missing:
-        record = ordered[index]
-        record.position_mm = round(min(high, max(low, values[index])), 4)
-        record.position_source = DEFAULT_POSITION
-        placed.append(record.id)
-    state.notes.append(f"ingest: {len(placed)} section(s) given evenly spaced starting "
-                       "positions")
-    return placed
 
 
 def clear_default_marks(before: dict[str, Any], state: StackState) -> list[str]:
@@ -484,7 +423,7 @@ def strict_interval_error(state: StackState, breaks: list[int]) -> dict[str, Any
                 f"{len(breaks)} were reported."
             ),
         }
-    interval = float(state.interval_mm)
+    interval = float(state.interval_mm or 0.0)
     if interval <= 0:
         return None
     placed = [s for s in state.in_order() if s.position_mm is not None]
@@ -823,8 +762,6 @@ class Job:
             else:
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
-                if spec.has("position"):
-                    default_positions(state, workspace)
                 if history.exists():
                     history.load()  # read before it is emptied: never delete unread steps
             if history.problem is not None:

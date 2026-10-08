@@ -5,7 +5,7 @@
  "data": {
   "pictures": [
    {
-    "caption": "positioning: 3 sections below in position order, 0.04-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.04 mm, s1.png 0.12 mm, s2.png 0.21 mm",
+    "caption": "positioning: 3 sections below in position order, 3 without a position at the right; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png no position, s1.png no position, s2.png no position",
     "id": 12
    }
   ],

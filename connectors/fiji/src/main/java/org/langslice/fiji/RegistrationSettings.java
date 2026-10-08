@@ -26,7 +26,7 @@ final class RegistrationSettings {
     /** Where full agent traces go when saving is on. */
     String traceDir = java.nio.file.Paths.get(System.getProperty("user.home"), "LangSlice", "traces").toString();
     String cue = "", positionNotes = "", linearNotes = "", nonlinearNotes = "", strength = "medium";
-    int thickness = 50, interval = 200, maxParallel = 4;
+    int thickness = 0, interval = 0, maxParallel = 4;
     double pixelSize = 25;
     double[] weights = {};
     /** No saved run yet: the dialog takes the worker's default models. */
@@ -144,7 +144,8 @@ final class RegistrationSettings {
         spec.addProperty("agent_damage", agentDamage);
         spec.addProperty("agent_preprocessing", agentPreprocessing);
         JsonObject position = new JsonObject();
-        position.addProperty("thickness_um", thickness); position.addProperty("interval_um", interval);
+        if (thickness > 0) position.addProperty("thickness_um", thickness);
+        if (interval > 0) position.addProperty("interval_um", interval);
         position.addProperty("notes", positionNotes.trim());
         spec.add("position", position);
         JsonObject transform = new JsonObject();
