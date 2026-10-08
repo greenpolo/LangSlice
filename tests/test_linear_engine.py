@@ -285,9 +285,10 @@ def test_run_resumes_from_the_checkpoint(tmp_path: Path, monkeypatch):
 def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypatch):
     names = _make_stack(tmp_path, n=3)
     positions = {names[0]: 4.0}  # incomplete: submit is refused every turn
-    install_fake_adk_model_stack(monkeypatch, positions=positions)
+    install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
 
-    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500),
+                 max_input_tokens=999)
     state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
 
     assert state.submitted is False
@@ -300,7 +301,7 @@ def test_one_request_over_the_input_context_limit_stops_with_grace(
     tmp_path: Path, monkeypatch
 ):
     names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: it would loop to max_iterations
+    positions = {names[0]: 4.0}  # incomplete: submit keeps being refused
     install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
     lines: list[str] = []
 
@@ -362,7 +363,7 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
     """The window was at 40% before the run; the run may spend 25 points of
     it, not reach 25%."""
     names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: it would loop to max_iterations
+    positions = {names[0]: 4.0}  # incomplete: submit keeps being refused
     install_fake_adk_model_stack(monkeypatch, positions=positions, quota_percent_per_call=10)
     lines: list[str] = []
 

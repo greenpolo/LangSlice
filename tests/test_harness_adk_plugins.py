@@ -330,7 +330,7 @@ def _session(script: list, *, background=None) -> tuple[_ScriptLlm, dict]:
         agent=agent, seed_message=types.Content(
             role="user", parts=[types.Part.from_text(text="Register the stack.")]),
         done=lambda: bool(submitted), nudge_no_tool="NUDGE: call a tool",
-        nudge_continue="NUDGE: continue", max_iterations=8, run_label="unit_session",
+        nudge_continue="NUDGE: continue", run_label="unit_session",
         background=background))
     return model, submitted
 
@@ -387,3 +387,51 @@ def test_a_turn_ended_while_work_runs_gets_its_notice_as_the_next_message(monkey
     # Nothing running when the next turn ends: the nudge, as before.
     assert _texts(model.requests[2].contents[-1]) == ["NUDGE: call a tool"]
     assert len(waits) == 2
+
+
+class _LongSessionLlm(BaseLlm):
+    """Finish after exceeding both the old driver and ADK call cutoffs."""
+
+    calls: int = 0
+
+    async def generate_content_async(self, llm_request: LlmRequest, stream: bool = False):
+        del llm_request, stream
+        self.calls += 1
+        if self.calls <= 65:
+            part = types.Part.from_text(text="Still reviewing.")
+        elif self.calls <= 566:
+            part = _call("inspect_section")
+        else:
+            part = _call("submit")
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[part]),
+            partial=False, turn_complete=True,
+        )
+
+
+def test_session_has_no_turn_tool_or_adk_call_cutoff(monkeypatch):
+    monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
+    submitted = []
+    inspected = []
+
+    def inspect_section() -> dict:
+        """Inspect the next section."""
+        inspected.append(True)
+        return {"status": "ok"}
+
+    def submit() -> dict:
+        """Submit the completed registration."""
+        submitted.append(True)
+        return {"status": "ok"}
+
+    model = _LongSessionLlm(model="long-session")
+    agent = LlmAgent(name="uncapped", model=model, tools=[inspect_section, submit])
+    calls, turns = asyncio.run(run_agent_session(
+        agent=agent,
+        seed_message=types.Content(role="user", parts=[types.Part.from_text(text="Register.")]),
+        done=lambda: bool(submitted), nudge_no_tool="Continue", nudge_continue="Continue",
+        run_label="uncapped",
+    ))
+    assert submitted and len(inspected) == 501
+    assert calls == 502 and turns == 66
+    assert model.calls == 567

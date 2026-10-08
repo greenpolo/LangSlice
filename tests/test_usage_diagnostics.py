@@ -137,7 +137,7 @@ def test_session_enables_optional_diagnostics_only_when_traced(tmp_path, monkeyp
     agent = LlmAgent(name="test", model=model)
     # Already done: test session setup without invoking any provider.
     asyncio.run(run_agent_session(
-        agent=agent, run_label="usage_test", max_iterations=1, done=lambda: True,
+        agent=agent, run_label="usage_test", done=lambda: True,
         nudge_no_tool="continue", nudge_continue="continue",
         seed_message=types.Content(role="user", parts=[types.Part.from_text(text="test")]),
     ))
@@ -159,7 +159,7 @@ def test_diagnostics_survive_the_adk_session_to_trace(tmp_path, monkeypatch):
     monkeypatch.setattr(openai_oauth, "stream_events", fake_stream)
     agent = LlmAgent(name="test", model=openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test"))
     asyncio.run(run_agent_session(
-        agent=agent, run_label="usage_test", max_iterations=1, done=lambda: bool(sent),
+        agent=agent, run_label="usage_test", done=lambda: bool(sent),
         nudge_no_tool="continue", nudge_continue="continue",
         seed_message=types.Content(role="user", parts=[types.Part.from_text(text="test")]),
     ))
