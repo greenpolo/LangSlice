@@ -310,11 +310,6 @@ class ToolBox:
     #: undone.
     compared: dict[str, set[float]] = field(default_factory=dict)
     reviewed: bool = False
-    #: Placement pictures produced but not yet carried into a model request,
-    #: and those delivered (``agent.plugins.ToolMediaDeliveryPlugin``): kept
-    #: for the hosts that report deliveries; no tool reads them.
-    pending_placement_views: dict[str, set[Any]] = field(default_factory=dict)
-    seen_placement_views: set[Any] = field(default_factory=set)
     #: The largest picture the driver model takes: the cap of ``look``'s
     #: ``resolution`` at image resolution "auto".
     max_view_edge: int = DEFAULT_IMAGE_LIMIT[0]
@@ -323,10 +318,6 @@ class ToolBox:
     #: ``None`` while the door has not armed it (:meth:`require_opening`).
     #: Every write is refused (``OPENING_NOT_READ``) until the set is empty.
     opening_unread: set[int] | None = None
-    #: Calls of a door whose host may send several at once (MCP) that are
-    #: running now (:meth:`in_flight`).
-    _flying: int = field(default=0, repr=False)
-    _flight: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
     def names(self) -> list[str]:
@@ -353,36 +344,6 @@ class ToolBox:
                 "detail": "Read every opening page before the first write: "
                 + ", ".join(f"show_stack(page={page})" for page in pages)
                 + " (the pictures of the stack the job statement asks for)."}
-
-    @contextlib.contextmanager
-    def in_flight(self) -> Iterator[None]:
-        """Around one call of a door whose host may send several at once:
-        while it runs, :meth:`begin_model_call` promotes nothing."""
-        with self._flight:
-            self._flying += 1
-        try:
-            yield
-        finally:
-            with self._flight:
-                self._flying -= 1
-
-    def mark_placement_views_delivered(self, delivery_ids: set[str]) -> None:
-        """Promote pictures whose media survived into a model request."""
-        for delivery_id in delivery_ids:
-            self.seen_placement_views.update(
-                self.pending_placement_views.pop(delivery_id, set())
-            )
-
-    def begin_model_call(self) -> None:
-        """A new call from the host: the pictures of the calls before it
-        reached it, unless another call is still in flight (:meth:`in_flight`)."""
-        with self._flight:
-            if self._flying:
-                return
-            direct = self.pending_placement_views.pop("__direct__", None)
-        if direct is not None:
-            self.seen_placement_views.update(direct)
-
 
 # --- the toolbox ---------------------------------------------------------
 

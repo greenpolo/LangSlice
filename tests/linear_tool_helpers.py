@@ -12,7 +12,6 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.arguments import ViewAuto
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
@@ -92,41 +91,3 @@ def single_transform(tool):
             row["changed"] = result["changed"]
         return row
     return transform
-
-
-#: The older name of :func:`single_transform` (``adjust_transforms`` is retired).
-single_adjust = single_transform
-
-#: Keys that went into an older picture tool's ``view``.
-VIEW_KEYS = frozenset(ViewAuto.__annotations__)
-
-
-def keyword_view(tool):
-    """For tests still written against the older ``view`` options dict: picture
-    keywords (and picture keys inside an ``entries`` dict) are moved into
-    ``view``. No tool of the current toolbox takes ``view`` as a dict."""
-    import functools
-    import inspect
-
-    takes_view = "view" in inspect.signature(tool).parameters
-
-    @functools.wraps(tool)
-    def call(*args, **kwargs):
-        view = dict(kwargs.pop("view", None) or {})
-        for key in list(kwargs):
-            if key in VIEW_KEYS:
-                view[key] = kwargs.pop(key)
-        entries = kwargs.get("entries", args[0] if args else None)
-        if isinstance(entries, list) and all(isinstance(e, dict) for e in entries):
-            moved = [{k: v for k, v in e.items() if k not in VIEW_KEYS} for e in entries]
-            for entry in entries:
-                view.update({k: v for k, v in entry.items() if k in VIEW_KEYS})
-            if "entries" in kwargs:
-                kwargs["entries"] = moved
-            else:
-                args = (moved, *args[1:])
-        if takes_view:
-            kwargs["view"] = view
-        return tool(*args, **kwargs)
-
-    return call

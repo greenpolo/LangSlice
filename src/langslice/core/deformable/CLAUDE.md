@@ -3,10 +3,10 @@
 Package guide for `src/langslice/core/deformable/`; `AGENTS.md` is a verbatim
 twin of this file. A core sub-package, like `core/affine.py`: it belongs to
 neither the linear method nor `core/nonlinear/` and imports neither. It is the
-engine behind the linear agent's `fit_deformable` tool (`core/deformation.py`,
-task `nonlinear`) and behind `fit_affine`'s default Elastix method
-(`core/transform.elastix_affine`: `prepare_fit` builds its images and masks,
-`engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
+engine behind the deformable fits (`ants_syn` and the packaged
+`trace_borders`' fit, through `core/deformation.py`, task `nonlinear`) and
+behind `elastix_affine` (`core/transform.elastix_affine`: `prepare_fit`
+builds its images and masks, `engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
 markers read an applied record (`core/maps.py`); the ABBA connector receives
 it as landmark pairs (`core/abba_warp.py`). `engines.py` is LangSlice's one
 itk-elastix registration wrapper.
@@ -24,9 +24,10 @@ and returns a `record.DeformableRecord`. No custom solver.
   template aligned to the CCFv3, `nissl.py`; Allen mouse atlases). Metric
   (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
   cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
-  (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); Elastix has
-  no local correlation and uses `ELASTIX_STAIN_METRIC` (mutual information)
-  and says so in `engine["notes"]`; `mutual_information` is the alternative. Plus, by default (`stain_edges`), an EDGE channel: the gradient
+  (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); the
+  Elastix affine has no local correlation and uses `ELASTIX_STAIN_METRIC`
+  (mutual information); `mutual_information` is the alternative. Plus, by
+  default (`stain_edges`), an EDGE channel: the gradient
   magnitude after a `EDGE_SIGMA_UM` (30 µm) Gaussian of the stain and of the
   atlas image (`fit.edge_image`, scaled by its 99th percentile in each mask),
   a second metric of the same kind at `EDGE_CHANNEL_WEIGHT` 1.0. The
@@ -34,7 +35,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   brightfield stains and the template share pial surface, ventricle walls
   and layer boundaries. Excluded regions are inpainted from their
   surroundings before the atlas edges are taken (`fit._fill_from_surroundings`):
-  the blanked region's rim otherwise pulled tissue in (Elastix).
+  the blanked region's rim otherwise pulled tissue in.
   Optionally SEQUENTIAL: each call with `structures=(...)` (acronyms/ids,
   descendants included, optionally one-sided) restricts both masks to those
   structures plus
@@ -45,10 +46,9 @@ and returns a `record.DeformableRecord`. No custom solver.
   `atlas_to_canvas`) against `borders_merged` (the same color-family set the
   model was shown, `core.atlas.render.family_labels`) or `borders`; both softened
   by the same Gaussian ridge (`settings.LINE_SOFTENING_UM`, fixed at 60 µm).
-  Mean squares. `settings.traced_settings(engine)` is the traced-lines
-  setting in one call: ANTs with the lines as named regions too
-  (`labels="model"`), or Elastix lines against borders; `engine=None` picks
-  ANTs when installed. The crossed pairings are refused (`metric_for`): lines
+  Mean squares (`core/deformation.Choice` adds the lines as named regions,
+  `labels="model"`, for `traced_borders`). The crossed pairings are refused
+  (`metric_for`): lines
   against `template`/`nissl`, and the stain against borders (the pairing that
   stays at the linear placement).
 - Label-map channels (`labels=`, ANTs only): `model` names each area the
@@ -61,25 +61,22 @@ and returns a `record.DeformableRecord`. No custom solver.
   `multivariate_extras` (the same per-label MeanSquares construction
   `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
   so would ignore stiffness); the edge channel is the first extra.
-- Engines (`engines.py`): ANTs `SyNOnly` with an identity initial transform
-  (antspyx, a core dependency below Python 3.14, imported lazily with an
-  install hint), or Elastix B-spline with a bending-energy penalty (itk-elastix,
-  core dependency). Both see the same working-grid images, masks, spacing and
-  origin and return millimetre fields. ANTs supplies its own inverse; Elastix
-  has none, so its inverse is a fixed-point approximation, said so in
-  `inverse_source` and `engine["notes"]`. Elastix's edge channel is a
-  second image pair (`AddFixedImage`/`AddMovingImage`, masks per pair); its
-  multi-image rules want pyramids, interpolators and samplers numbering one
-  per metric, the bending penalty included, and so an image pair per metric:
-  the intensity pair is passed again for the penalty.
+- The deformable engine (`engines.run_engine`): ANTs `SyNOnly` with an
+  identity initial transform (antspyx, a core dependency below Python 3.14,
+  imported lazily with an install hint), on the working-grid images, masks,
+  spacing and origin, returning millimetre fields and ANTs' own inverse.
+  Any other `FitSettings.engine` is refused there: `engine="elastix"` exists
+  for the Elastix affine's inputs (its metric, no label channels), never a
+  deformation. `engines.invert_field` (a fixed-point inverse) serves
+  pictures of a record without a stored inverse.
 - DETERMINISM: identical inputs give identical fields, bit for bit (test
   `test_identical_inputs_give_identical_fields`: twice in process and in a
   pool worker). Fixed seed `engines.RANDOM_SEED` (antsRegistration
   `--random-seed` through `ants.config._random_seed`, restored after the
-  call; Elastix `RandomSeed`, which its random sampler reads). Fixed thread
-  count `engines.FIT_THREADS` (8), because a multithreaded metric's sums
-  depend on the split (ANTs fields moved ~2 µm between 1 and 8 threads,
-  Elastix ~1e-9 mm). ANTs' bundled ITK reads
+  call; the Elastix affine's `RandomSeed`, which its random sampler reads).
+  Fixed thread count `engines.FIT_THREADS` (8), because a multithreaded
+  metric's sums depend on the split (ANTs fields moved ~2 µm between 1 and 8
+  threads). ANTs' bundled ITK reads
   `ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` once per process at first use, so
   `engines.import_ants` (also used by `image_prep.ants_enhance`) sets it,
   runs one tiny filter and restores the environment; pool workers set it in
@@ -93,11 +90,11 @@ and returns a `record.DeformableRecord`. No custom solver.
   (intensity pair, edge pair, masks; `AutomaticTransformInitialization` off,
   so it refines the placement the moving image was drawn at), mutual
   information, `ELASTIX_AFFINE_RESOLUTIONS` 3 x `ELASTIX_AFFINE_ITERATIONS`
-  500, the same seed and thread count. Returns `AffineResult.matrix_mm`
-  (section mm -> placed-atlas mm, the field's direction); a non-finite or
-  singular matrix raises. `_elastix_register` is the one Elastix call both
-  runners share (images, masks, extra pairs, the global thread count). The
-  affine stays Elastix-only; ANTs is a deformable option.
+  500, the same seed and thread count; the edge channel a second image pair
+  (`AddFixedImage`/`AddMovingImage`, masks per pair). Returns
+  `AffineResult.matrix_mm` (section mm -> placed-atlas mm, the field's
+  direction); a non-finite or singular matrix raises. `_elastix_register` is
+  the one Elastix call (images, masks, extra pairs, the global thread count).
 - Optional ANTs preprocessing of the stain (`preprocess=("n4", "denoise")`).
 - `fit_prepared` runs 1–8 prepared fits (different sections or settings) in
   a spawn process pool (atlas work in the caller, engine calls in workers,
@@ -107,9 +104,7 @@ and returns a `record.DeformableRecord`. No custom solver.
 ## Settings (`settings.py`)
 
 Named ladders, physical units: `stiffness` soft/medium/firm (ANTs
-update/total Gaussian sigma in mm, converted to voxel variances; Elastix
-control spacing in mm and bending weight, scaled by
-`ELASTIX_MEAN_SQUARES_BENDING_SCALE` for mean squares); `detail`
+update/total Gaussian sigma in mm, converted to voxel variances); `detail`
 coarse/standard (working µm and pyramid depth/iterations — the extra ANTs
 levels are its capture range); `atlas_image`, `section_image`, `exclude`,
 `labels`, `structures`, `neighbourhood_um`, `preprocess`, and for stain fits
@@ -184,11 +179,8 @@ named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
 `MIN_FLAG_AREA_MM2`, `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED
 (`displacement_report`, also in `diagnostics["displacement"]`) a maximum
 displacement in tissue above `OUTSIZED_MAX_FRACTION` (0.1) of the tissue's
-longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6).
-Elastix fits are the ones that trip DISPLACEMENT_OUTSIZED in practice (a
-stretch over a displaced flap, or the raw blue channel against Nissl); ANTs
-fits stay well under it. The median limit sits above every observed median:
-0.4 mm would flag Elastix fits whose borders look as plausible as ANTs's.
+longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6). The median
+limit sits above every observed median.
 
 ## The aligned Nissl (`nissl.py`)
 
@@ -225,7 +217,7 @@ rest (`warped_border_layers` returns every layer; `drawn_border_coverage`
 the lines a call draws, as a saved picture's borders layer). `resampled_record` carries a
 record onto a smaller or cropped grid for pictures; `warp_section_image`
 resamples a section render into its placed-atlas frame through the inverse
-field (fixed-point inverse when none is stored), so a picture drawn under the
+field (`engines.invert_field` when none is stored), so a picture drawn under the
 linear placement shows the full registration. Never judge borders traced from `record.labels`: those
 are nearest-sampled from the 25 um atlas grid and look staircased on fine
 section pixels (3.5 section px per step at 7 um/px), which is the whole of the

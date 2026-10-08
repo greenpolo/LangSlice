@@ -25,7 +25,6 @@ from collections.abc import Sequence
 
 from PIL import Image, ImageDraw
 
-from langslice.core.appearance import view_look
 from langslice.core.atlas_fetch import reference_atlas
 from langslice.core.captions import angles_label, caption
 from langslice.core.scale import atlas_at, pair_scale, section_at
@@ -48,7 +47,7 @@ CLAUDE_MAX_IMAGE_EDGE = 1568
 #: Claude's per-image area at that edge, ~1.15 MP (~1600 tokens at w*h/750),
 #: as 32-px patches so one rule serves both lanes.
 CLAUDE_MAX_IMAGE_PATCHES = 1_200_000 // (32 * 32)
-#: The largest picture a Claude host may ask for per call (``view.resolution``
+#: The largest picture a Claude host may ask for per call (``look``'s ``resolution``
 #: at image resolution "auto"): a request holding more than 20 images, which
 #: any working session does, takes none past 2000 px. Claude 4.7+ reads up
 #: to ~2576 px alone; older models shrink anything past 1568 px, which costs
@@ -131,20 +130,18 @@ def tile_label(record: SliceState) -> str:
 def section_tile(ctx: Workspace, state: StackState, record: SliceState, tile: int
                  ) -> Image.Image:
     """The section as the agent is shown it, tissue-framed, at most *tile*."""
-    return render_slice(ctx, record, long_edge=tile, frame=True, look=view_look(state, record))
+    return render_slice(ctx, record, long_edge=tile, frame=True)
 
 
 def pair_tiles(ctx: Workspace, state: StackState, record: SliceState, position_mm: float,
                tile: int) -> tuple[Image.Image, Image.Image]:
     """``(section, atlas)``: *record* and the atlas at *position_mm* at its
     own angles, each tissue-framed, at ONE micrometres per pixel, the larger
-    of the two at most *tile*, as ``view_stack`` draws them
-    (:func:`langslice.core.scale.pair_scale`): the section reads at its true
-    size against the atlas, and a small plane (an olfactory bulb) is drawn
-    large when its section is small too."""
+    of the two at most *tile* (:func:`langslice.core.scale.pair_scale`): the
+    section reads at its true size against the atlas, and a small plane (an
+    olfactory bulb) is drawn large when its section is small too."""
     shown, working = pair_scale(ctx, state, record, position_mm, tile)
-    return (section_at(ctx, record, shown, working_um=working, long_edge=tile,
-                       look=view_look(state, record)),
+    return (section_at(ctx, record, shown, working_um=working, long_edge=tile),
             atlas_at(ctx, state, position_mm, shown, angles=record.angles))
 
 

@@ -71,11 +71,6 @@ _GEMINI_ATTACHMENTS = (("Image 1: placed borders", "rough_overlay"),
                        ("Image 2: clean photograph", "original"))
 
 
-def correction_instructions(plane: Plane, provider: str | None = None) -> str:
-    """Expose the tool's base image prompt to the agent, which may lightly edit it."""
-    return border_correction_tool_prompt(plane, provider=provider)
-
-
 #: Where a profile's own prompt names the section plane.
 PLANE_PLACEHOLDER = "{plane}"
 

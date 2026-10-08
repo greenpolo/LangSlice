@@ -224,7 +224,6 @@ async def run_session(
         progress=ctx.progress,
         max_input_tokens=spec.max_input_tokens,
         max_quota_percent=spec.max_quota_percent,
-        tool_media_delivered=box.mark_placement_views_delivered,
         on_event=on_event,
         background=functools.partial(background_message, box.job),
     )

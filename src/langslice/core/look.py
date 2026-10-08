@@ -53,7 +53,7 @@ from langslice.core.appearance import PREPROCESSED, channel_colors, preprocessed
 from langslice.core.appearance import describe as describe_look
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
-from langslice.core.captions import angles_label, caption
+from langslice.core.captions import angles_label, caption, view_angles_label
 from langslice.core.channels import CHANNELS_KEY, all_properties, describe
 from langslice.core.display import (
     DEFAULT_ATLAS_OPACITY,
@@ -310,7 +310,6 @@ def _options(
         atlas_channels=layers, atlas_opacity=float(opacity), regions=(), outlines="all",
         border_color=_BORDER_COLOR, border_thickness=DEFAULT_BORDER_THICKNESS,
         deformation=request.warp, long_edge=int(long_edge),
-        has_deformation=request.mode == "overlay",
     )
 
 
@@ -501,11 +500,13 @@ def _atlas_picture(
     else:
         picture = framed_atlas(ws, state, position_mm, options, angles=angles)
         um = base_um
+    median = state.drawn_at_median(angles)
     label = _zoom_tag(request.zoom, base, picture.size) + atlas_caption(
-        state, position_mm, options, angles=angles)
+        state, position_mm, options, angles=angles, median=median)
     layers_words = " + ".join(layers) or "none"
-    text = (f"atlas at {position_mm:.2f} mm{angles_label(angles)} (the stack's view angles); "
-            f"{um:.1f} um/px; layers {layers_words}")
+    plane = (view_angles_label(angles, median=True) if median
+             else f"{angles_label(angles)} (the stack's cutting angles)")
+    text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}"
     image = caption(picture, label)
     held = snapshot(state, [], view_angles=True)
     one = replace(request, sections=(), positions_mm=(float(position_mm),))

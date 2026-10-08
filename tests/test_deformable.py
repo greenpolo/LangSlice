@@ -44,16 +44,13 @@ from tests.deformable_synthetic import (
     render_section,
 )
 
-#: Elastix ships with LangSlice; ANTs comes with the optional 'registration'
-#: extra, so ANTs-only tests skip without it and the rest fall back to Elastix.
+#: The deformable engine is ANTs SyN (antspyx); a fit test skips without it.
 HAVE_ANTS = importlib.util.find_spec("ants") is not None
-DEFAULT_ENGINE = "ants" if HAVE_ANTS else "elastix"
-needs_ants = pytest.mark.skipif(not HAVE_ANTS, reason="antspyx (registration extra) missing")
-BOTH_ENGINES = [pytest.param("ants", marks=needs_ants), "elastix"]
+needs_ants = pytest.mark.skipif(not HAVE_ANTS, reason="antspyx missing")
 
 
 def _settings(**options) -> FitSettings:
-    return FitSettings(**{"engine": DEFAULT_ENGINE, **options})
+    return FitSettings(**{"engine": "ants", **options})
 
 
 #: The synthetic sections are flat-intensity regions with no texture, where
@@ -83,11 +80,11 @@ def _errors(record: DeformableRecord, field: np.ndarray, truth: np.ndarray):
     return error, flipped, np.linalg.norm(field, axis=-1)[inner].mean()
 
 
-@pytest.mark.parametrize("engine", BOTH_ENGINES)
-def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped, engine):
+@needs_ants
+def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped):
     field, image, truth = warped
     record = fit_section(image, atlas, placement(),
-                         FitSettings(engine=engine, detail="coarse", **MI))
+                         FitSettings(engine="ants", detail="coarse", **MI))
     error, flipped, magnitude = _errors(record, field, truth)
     # atlas point = section point + field: the recovered field matches u, not -u.
     assert error < 0.4 * magnitude
@@ -98,9 +95,10 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped,
     linear = np.mean(record.placed_labels(atlas.annotation[0])[truth > 0] == truth[truth > 0])
     fitted = np.mean(record.labels[truth > 0] == truth[truth > 0])
     assert fitted > linear
-    assert record.inverse_source == ("engine" if engine == "ants" else "numerical_fixed_point")
+    assert record.inverse_source == "engine"
 
 
+@needs_ants
 def test_labels_are_clipped_to_tissue(atlas):
     remove = np.zeros((260, 340), dtype=bool)
     remove[:, 250:] = True  # the right side of the section is missing
@@ -142,8 +140,9 @@ def test_torn_edge_rule_on_a_plain_mask():
     assert not band[50, 11] and not band[11, 30]
 
 
-@pytest.mark.parametrize("engine", BOTH_ENGINES)
-def test_excluded_region_does_not_drive_the_fit(atlas, engine):
+@needs_ants
+def test_excluded_region_does_not_drive_the_fit(atlas):
+    engine = "ants"
     # Only the thalamus is displaced; everywhere else the placement is right.
     field = bump_field([(226, 132, 16, 0.12, 0.0)])
     image, _ = render_section(atlas, field)
@@ -295,29 +294,29 @@ def test_stain_metric_per_engine_and_pairing():
         FitSettings(stain_metric="cc")  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("engine", BOTH_ENGINES)
-def test_default_stain_fit_recovers_the_warp_direction(atlas, warped, engine):
+@needs_ants
+def test_default_stain_fit_recovers_the_warp_direction(atlas, warped):
     field, image, truth = warped
-    record = fit_section(image, atlas, placement(), FitSettings(engine=engine))
+    record = fit_section(image, atlas, placement(), FitSettings(engine="ants"))
     error, flipped, magnitude = _errors(record, field, truth)
     assert error < 0.6 * magnitude and flipped > 1.4 * magnitude
-    parameters = record.engine["native_parameters"]
-    if engine == "ants":
-        used = parameters["antsRegistration"]
-        assert used["syn_metric"] == "CC" and used["edge_channel"]
-        assert used["correlation_radius_mm"] == pytest.approx(0.08, abs=0.011)
-        assert used["threads"] == FIT_THREADS and used["random_seed"] == RANDOM_SEED
-    else:
-        assert parameters["edge_channel"] and parameters["threads"] == FIT_THREADS
-        assert parameters["requested"]["RandomSeed"] == [str(RANDOM_SEED)]
-        assert any("no local correlation" in note for note in record.engine["notes"])
+    used = record.engine["native_parameters"]["antsRegistration"]
+    assert used["syn_metric"] == "CC" and used["edge_channel"]
+    assert used["correlation_radius_mm"] == pytest.approx(0.08, abs=0.011)
+    assert used["threads"] == FIT_THREADS and used["random_seed"] == RANDOM_SEED
 
 
-@pytest.mark.parametrize("engine", BOTH_ENGINES)
-def test_identical_inputs_give_identical_fields(atlas, warped, engine):
+def test_elastix_fits_no_deformation():
+    """Elastix fits the affine only; the deformable engine is ANTs SyN."""
+    with pytest.raises(ValueError, match="ANTs SyN"):
+        run_engine(None, FitSettings(engine="elastix"))  # type: ignore[arg-type]
+
+
+@needs_ants
+def test_identical_inputs_give_identical_fields(atlas, warped):
     """Same fit in this process twice and in a pool worker: the same field, bit for bit."""
     _field, image, _truth = warped
-    settings = FitSettings(engine=engine, detail="coarse")
+    settings = FitSettings(engine="ants", detail="coarse")
     prepared = prepare_fit(image, atlas, placement(), settings)
     first = run_engine(prepared.inputs, settings)
     second = run_engine(prepared.inputs, settings)
@@ -340,6 +339,7 @@ def test_auto_labels_detect_the_ventricle_hole(atlas, warped):
     assert ventricle_ids(atlas) == frozenset({VS, VL})
 
 
+@needs_ants
 def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
@@ -366,6 +366,7 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
                                                            structures=("VS",), exclude=("VS",)))
 
 
+@needs_ants
 def test_record_carries_volume_coordinates(atlas, warped):
     _, image, _ = warped
     record = fit_section(image, atlas, placement(), _settings(detail="coarse"))
@@ -382,7 +383,7 @@ def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped
     results = fit_prepared([prepare_fit(image, atlas, placement(), settings) for settings in (
         FitSettings(engine="ants", detail="coarse", **MI),
-        FitSettings(engine="elastix", detail="coarse", stiffness="firm", **MI),
+        FitSettings(engine="ants", detail="coarse", stiffness="firm", **MI),
     )])
     assert len(results) == 2
     for result in results:
@@ -470,12 +471,3 @@ def test_the_augmented_atlas_holds_the_ccfv3_at_the_offset():
 
 def test_section_mm_per_px_constant_is_the_synthetic_scale():
     assert SECTION_MM_PER_PX == 0.025 and HY == 5
-
-
-def test_elastix_writes_nothing_into_the_working_directory(atlas, warped, tmp_path, monkeypatch):
-    _field, image, _truth = warped
-    monkeypatch.chdir(tmp_path)
-    record = fit_section(image, atlas, placement(),
-                         FitSettings(engine="elastix", detail="coarse", stiffness="firm"))
-    assert np.abs(record.field_mm).max() > 0
-    assert list(tmp_path.iterdir()) == []

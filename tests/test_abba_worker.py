@@ -381,12 +381,12 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     from langslice.core.thin_plate import ThinPlateKernel
     from tests.golden.record import ID0, ID1
 
+    pytest.importorskip("ants", reason="ants_syn needs antspyx")
     job, tracker, events, prepared = warped
-    # The conversion's exactness is checked on a smooth (Elastix B-spline)
-    # field through the ops-level fit: the tool door's deformable fit is ANTs
-    # SyN alone, whose field the 33x33 landmark cap does not reach within
-    # abba_warp.TOLERANCE_MM (test_an_ants_syn_deformation_is_sent_with_its_error).
-    _elastix_fit(job, ID0)
+    # An ANTs SyN field varies on a finer scale than the 33x33 landmark cap
+    # follows, so the pairs approximate it with an error the row reports; the
+    # conversion's own exactness on a smooth field is test_abba_warp's.
+    assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     row = _row(events[-1], ID0)
     warp = row["warp"]
@@ -398,9 +398,9 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     source = np.asarray(warp["source_mm"]).T
     target = np.asarray(warp["target_mm"]).T
     assert len(warp["source_mm"]) == 2 and source.shape == (warp["points"], 2)
-    assert warp["max_error_mm"] <= 0.005
     assert _row(events[-1], ID1) is None  # nothing changed there
-    # ABBA's pull-back reproduces the record's own map at points off the grid.
+    # ABBA's pull-back reproduces the record's own map at points off the
+    # grid, within the error the row reports.
     record = job.state.by_id(ID0)
     frame = section_frame(job.state, job.workspace, record)
     deformation = job.job.deformations.current(job.state, record)
@@ -415,19 +415,9 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     before = (to_world @ frame.file_to_render @ homogeneous.T).T[:, :2]
     after = (native_to_world @ np.stack([nx[0], ny[0], np.ones(len(points))])).T[:, :2]
     pullback = ThinPlateKernel(target, source, max_points=33 ** 2)
-    assert np.linalg.norm(pullback.forward(after) - before, axis=1).max() <= 0.005
-
-
-def _elastix_fit(job, name):
-    """An Elastix B-spline deformation of *name*, applied (ops level)."""
-    from langslice.core import deformation
-    from langslice.ops.deformable import START_LATEST, fit_deformable
-
-    choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                engine="elastix", stiffness="medium")
-    done = fit_deformable(job.job, job.workspace, [job.state.by_id(name)], [choice],
-                          start=START_LATEST)
-    assert done.rows[0]["status"] == "ok", done.rows
+    errors = np.linalg.norm(pullback.forward(after) - before, axis=1)
+    assert np.percentile(errors, 99) <= warp["max_error_mm"]
+    assert errors.max() <= 1.5 * warp["max_error_mm"]
 
 
 def test_an_ants_syn_deformation_is_sent_with_its_error(warped):
@@ -447,10 +437,9 @@ def test_an_ants_syn_deformation_is_sent_with_its_error(warped):
 
 
 def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
-    """The "linear placement stands" record (``ops.deformable.keep_linear``,
-    what submit's ``left_linear`` writes) and a moved placement each send
-    ABBA no warp for the section."""
-    from langslice.ops.deformable import keep_linear
+    """The "linear placement stands" record (what submit's ``left_linear``
+    writes) and a moved placement each send ABBA no warp for the section."""
+    from langslice.core.deformation import linear_key
     from tests.golden.record import ID0
 
     pytest.importorskip("ants", reason="ants_syn needs antspyx")
@@ -458,7 +447,12 @@ def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
     if job.state.by_id(ID0).deformation is None:
         assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
         tracker(job.state)
-    keep_linear(job.job, [job.state.by_id(ID0)], "kept for the test")
+    with job.job.writing():
+        before = job.job.snapshot()
+        record = job.state.by_id(ID0)
+        record.deformation = {"keep_linear": "kept for the test",
+                              "linear_key": linear_key(job.state, record)}
+        job.job.commit(before)
     tracker(job.state)
     assert _row(events[-1], ID0)["warp"] is None
     assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"

@@ -53,7 +53,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     depth = len(job.undo_stack)
     first = ops_deformable.ants_syn(job, ctx, [ID])
     (row,) = first.rows
-    assert row["status"] == "ok" and row["written"] and first.applied
+    assert row["status"] == "ok" and row["written"]
     assert row["settings"] == {"engine": "ants", "stiffness": "medium", "fit_section": "fit",
                                "fit_atlas": "template"}
     assert len(job.undo_stack) == depth + 1

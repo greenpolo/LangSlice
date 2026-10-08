@@ -80,7 +80,7 @@ def exclusions(
     older per-call exclusions, still taken), except a marked entry that
     *restrict_to* names exactly (same region, same side or none): an
     explicit request for that region wins. Repeats are dropped
-    (case-insensitive). Every fit (``ops.transforms.fit_affine``,
+    (case-insensitive). Every fit (``ops.transforms.elastix_affine``,
     ``ops.deformable.fit_deformable``) and the image model's trace
     (``ops.traces.trace_borders``) take their regions through here.
     """
@@ -151,6 +151,16 @@ def _native_marks(
     return native
 
 
+def beside(left: Image.Image, right: Image.Image) -> Image.Image:
+    """*left* next to *right* on black, top-aligned, a thin gap between."""
+    gap = 6
+    height = max(left.height, right.height)
+    out = Image.new("RGB", (left.width + gap + right.width, height), (0, 0, 0))
+    out.paste(left.convert("RGB"), (0, 0))
+    out.paste(right.convert("RGB"), (left.width + gap, 0))
+    return out
+
+
 def damage_picture(
     ws: Workspace,
     state: StackState,
@@ -184,7 +194,6 @@ def damage_picture(
     from langslice.core.layers import note
     from langslice.core.placement import current_warp, draw_canvas, stored_placement
     from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
-    from langslice.core.sheets import beside
     from langslice.core.transform import calibrate
 
     if record.position_mm is None:

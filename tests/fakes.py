@@ -105,7 +105,7 @@ _QUOTA_CALLS = [0]
 class _StackLlm(BaseLlm):
     """A fake BaseLlm that drives one linear stack session to ``submit``.
 
-    ``positions`` (id -> mm) is written with ``set_positions`` on the first
+    ``positions`` (id -> mm) is written with ``position_sections`` on the first
     turn — ``submit`` refuses a stack with any section still unplaced — and the
     submission follows on the next.
     """
@@ -127,13 +127,13 @@ class _StackLlm(BaseLlm):
             part = types.Part.from_text(text="Debrief: nothing was missing.")
         elif (
             self.positions
-            and "set_positions" in available
+            and "position_sections" in available
             and _count_function_responses(llm_request) == 0
         ):
             part = types.Part.from_function_call(
-                name="set_positions",
+                name="position_sections",
                 args={
-                    "entries": [
+                    "sections": [
                         {"id": slice_id, "position_mm": position}
                         for slice_id, position in self.positions.items()
                     ]

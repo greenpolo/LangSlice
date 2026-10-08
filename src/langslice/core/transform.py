@@ -1,21 +1,16 @@
-"""In-plane transforms: the closed-form fit and the interactive tools' core.
+"""In-plane transforms: the Elastix affine fit and the interactive tool's core.
 
-Three routes to the same field. :func:`fit_elastix` (``fit_affine``'s default)
+Two routes to the same field. :func:`fit_elastix` (``elastix_affine``)
 refines the section's current placement with an Elastix intensity affine on
-the deformable package's prepared stain and atlas images.
-:func:`fit_silhouette` is plain code — the shared moments fit
-(:func:`langslice.core.affine.silhouette_affine`) of a section's silhouette onto
-its atlas section. The interactive route is the main agent's
-own hand: `adjust_transforms` in :mod:`langslice.doors.tools.toolbox`, whose
-arithmetic (calibration and the decomposition it reports) lives here.
+the deformable package's prepared stain and atlas images. The interactive
+route is the agent's own hand (``interactive_transform``,
+:mod:`langslice.ops.transforms`), whose arithmetic (calibration and the
+decomposition it reports) lives here.
 
-The fits return numbers, never pictures: each ok payload carries its
-:class:`FitFrame` (the working frame, its calibration and the fitted matrix
-on it) under :data:`FIT_FRAME_KEY`, and the caller draws whatever picture it
-wants from that. Parameters are ABBA's — rotation about the canvas centre (or a
-chosen pivot), per-axis scales, translations in MILLIMETRES — which only mean
-anything once the canvas is calibrated, so every payload carries the
-calibration and where it came from.
+The fit returns numbers, never pictures. Parameters are ABBA's — rotation
+about the canvas centre (or a chosen pivot), per-axis scales, translations in
+MILLIMETRES — which only mean anything once the canvas is calibrated, so
+every payload carries the calibration and where it came from.
 
 Everything here is a PROPOSAL: six normalized numbers recorded on the state,
 never applied to the user's images (see :mod:`langslice.core.affine` for the
@@ -26,23 +21,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast
 
-import cv2
 import numpy as np
 from PIL import Image
 
 from langslice.core.affine import (
-    AFFINE_LONG_EDGE,
     IDENTITY_PARAMS,
-    axis_ratio,
     decompose_affine,
     denormalized_affine,
-    mask_affine,
     normalized_affine,
-    silhouette_affine,
-    tissue_silhouette,
 )
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.canvas import canvas_geometry, estimate_um_per_px
@@ -84,242 +73,6 @@ def calibrate(
 
 # --- the closed-form fit -------------------------------------------------
 
-#: Key of the :class:`FitFrame` in an ok fit payload. A caller that draws
-#: pops it; one that records the payload as JSON must drop it.
-FIT_FRAME_KEY = "frame"
-
-
-@dataclass(frozen=True)
-class FitFrame:
-    """What a picture of one fit is drawn from.
-
-    ``section`` is the working frame the fit ran on (the oriented section at
-    ``PREVIEW_LONG_EDGE``), ``um_per_px`` its calibration and ``matrix`` the
-    fitted 2x3 on it (the six stored numbers, in pixels).
-    """
-
-    section: Image.Image
-    um_per_px: float
-    matrix: np.ndarray
-    #: Native atlas-plane pixels on the section's displayed left, as the fit
-    #: resolved them (from the placement it started from) when an include or
-    #: exclude entry named a side; None otherwise. A picture of the fit
-    #: highlights one-sided regions with this same split, so the picture
-    #: shows the sides the fit used, however far the fit turned the section.
-    left: np.ndarray | None = None
-
-#: Below this long/short axis ratio an outline has no defined long axis, and a
-#: region-restricted fit's reply says so with the rotation it chose (a
-#: near-round outline can turn the section by almost any angle).
-ROUND_AXIS_RATIO = 1.2
-
-
-class RegionRefusal(ValueError):
-    """A region restriction the silhouette method cannot honour, with its code."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
-@dataclass
-class RegionFit:
-    """A silhouette fit restricted to atlas regions.
-
-    ``matrix`` is on the section's frame, like the six stored numbers
-    (section pixels -> the frame the atlas is drawn on, shifted by the
-    section's canvas offset).
-    """
-
-    matrix: np.ndarray
-    iou: float
-    report: dict[str, Any] = field(default_factory=dict)
-    #: The section's displayed left on the native plane, as the fit resolved
-    #: it (None when no entry named a side).
-    left: np.ndarray | None = None
-
-
-def _place(mask: np.ndarray, matrix: np.ndarray, size: tuple[int, int]) -> np.ndarray:
-    """*mask* drawn through *matrix* onto a ``(w, h)`` frame, 0/255 (nearest)."""
-    return cv2.warpAffine(mask.astype(np.uint8) * 255, np.asarray(matrix, dtype=np.float64),
-                          size, flags=cv2.INTER_NEAREST, borderValue=0)
-
-
-def _square(matrix: np.ndarray) -> np.ndarray:
-    return np.vstack([np.asarray(matrix, dtype=np.float64)[:2], [0.0, 0.0, 1.0]])
-
-
-def region_silhouette_fit(
-    section: Image.Image,
-    geometry: Any,
-    atlas: Any,
-    current: np.ndarray,
-    *,
-    include: Sequence[str] = (),
-    exclude: Sequence[str] = (),
-    long_edge: int = AFFINE_LONG_EDGE,
-    plane_at: tuple[float, str, float, float] = (0.0, "coronal", 0.0, 0.0),
-) -> RegionFit:
-    """The moments fit with atlas regions removed or singled out.
-
-    Regions mean what they mean in ``fit_deformable`` and resolve the same
-    way (acronyms or ids, descendants included, :mod:`langslice.core.deformable`):
-    *exclude* leaves those regions out of the atlas footprint; *include*
-    keeps only the footprint within ``DEFAULT_NEIGHBOURHOOD_UM`` of them. The
-    section side is the tissue that corresponds under the section's
-    *current* placement (its stored transform on the section frame, or
-    identity): minus what that placement lays on excluded regions, and only
-    what it lays within the included zone. One pass, no hidden iteration
-    (iterating moved D_08 by ten degrees in eight passes without settling):
-    a second call starts from the first call's answer.
-
-    The fit runs on the TRUE-SCALE canvas (*geometry*), not the whole-outline
-    fit's frame with the atlas stretched to the section's aspect, so its
-    rotation and scales are physical. A silhouette carries only its
-    outline, so an included zone that never reaches the atlas outline gives
-    the fit nothing to measure (``REGIONS_INSIDE_OUTLINE``).
-
-    An entry may name one side (``"CTX:left"``, :mod:`langslice.core.atlas.sides`):
-    the section's side, carried onto the atlas plane through *current*;
-    *plane_at* is the plane *geometry* was drawn at (position mm, plane,
-    pitch, yaw), which the sides are derived from.
-    """
-    from langslice.core.atlas.sides import SideError, has_sides, native_left
-    from langslice.core.deformable.atlas_images import regions_mask
-    from langslice.core.deformable.masks import dilate, outline
-    from langslice.core.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
-
-    labels = np.asarray(geometry.annotation)
-    footprint = labels != 0
-    left: np.ndarray | None = None
-    if has_sides([*include, *exclude]):
-        # Sides are the section's: carry the native plane onto the section
-        # frame through the CURRENT placement (native -> canvas is the atlas
-        # scale; the section reaches the canvas through *current*).
-        native_to_section = (np.linalg.inv(_square(current))[:2, :2]
-                             * float(geometry.atlas_scale))
-        try:
-            left = native_left(atlas, *plane_at, native_to_section)
-        except SideError as error:
-            raise RegionRefusal(error.code, str(error)) from error
-    dropped = (regions_mask(atlas, labels, exclude, left) & footprint
-               if exclude else np.zeros(labels.shape, dtype=bool))
-    kept = footprint & ~dropped
-    if not kept.any():
-        raise RegionRefusal("REGIONS_LEAVE_NOTHING",
-                            "Excluding these regions leaves no atlas at this position.")
-    report: dict[str, Any] = {
-        "include": list(include), "exclude": list(exclude),
-        "atlas_kept_fraction": round(float(kept.sum()) / float(footprint.sum()), 3),
-    }
-    notes: list[str] = []
-    near: np.ndarray | None = None
-    zone = kept
-    if include:
-        wanted = regions_mask(atlas, labels, include, left) & kept
-        if not wanted.any():
-            raise RegionRefusal("REGIONS_ABSENT", "None of the included regions is in the "
-                                "atlas plane at this position.")
-        near = dilate(wanted, DEFAULT_NEIGHBOURHOOD_UM / atlas_um_per_px(atlas))
-        zone = kept & near
-        rim = outline(kept)
-        share = float((rim & near).sum()) / float(max(1, rim.sum()))
-        report["outline_share"] = round(share, 3)
-        if share == 0.0:
-            raise RegionRefusal(
-                "REGIONS_INSIDE_OUTLINE",
-                "The included regions (plus 300 um) do not reach the atlas outline at this "
-                "position. A silhouette fit compares outlines only, so it has nothing to "
-                "fit them by; set the transform by hand or fit by other regions.")
-        notes.append(f"Only the outline counts: the included regions reach {share:.0%} of "
-                     "the atlas outline, and only that part steers this fit.")
-    if exclude and not (outline(footprint) & dropped).any():
-        notes.append("The excluded regions do not reach the atlas outline here, so they "
-                     "barely change a silhouette fit.")
-
-    # One true-scale frame: the canvas, shrunk so its long edge is *long_edge*.
-    scale = long_edge / float(max(geometry.size))
-    size = (max(1, round(geometry.size[0] * scale)), max(1, round(geometry.size[1] * scale)))
-    shrink = np.diag([scale, scale, 1.0])
-    ox, oy = (float(v) for v in geometry.section_offset)
-    to_canvas = np.array([[1.0, 0.0, ox], [0.0, 1.0, oy], [0.0, 0.0, 1.0]])
-    atlas_to_frame = shrink @ np.array([
-        [geometry.atlas_scale, 0.0, geometry.atlas_offset[0]],
-        [0.0, geometry.atlas_scale, geometry.atlas_offset[1]],
-        [0.0, 0.0, 1.0],
-    ])
-    tissue_small, _rgb = tissue_silhouette(
-        section, max(1, round(max(section.size) * scale)))
-    section_to_frame = shrink @ to_canvas @ np.diag(
-        [section.width / tissue_small.shape[1], section.height / tissue_small.shape[0], 1.0])
-    tissue = _place(tissue_small > 0, section_to_frame[:2], size) > 0
-    zone_f = _place(zone, atlas_to_frame[:2], size)
-
-    # The current placement on this frame: frame px -> where it lays the atlas.
-    placed = shrink @ to_canvas @ _square(current) @ np.linalg.inv(to_canvas) @ np.linalg.inv(
-        shrink)
-    used = tissue.copy()
-    h, w = tissue.shape
-    for mask, keep in ((dropped if exclude else None, False), (near, True)):
-        if mask is None:
-            continue
-        on_mask = cv2.warpAffine(
-            _place(mask, atlas_to_frame[:2], size), placed[:2], (w, h),
-            flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP, borderValue=0) > 0
-        used &= on_mask if keep else ~on_mask
-    if not used.any():
-        raise RegionRefusal("NO_TISSUE_IN_REGIONS", "The current placement lays no tissue on "
-                            "the kept regions; the restriction leaves nothing to fit.")
-    fitted, iou, _pattern = mask_affine(used.astype(np.uint8) * 255, zone_f)
-    ratios = (axis_ratio(used.astype(np.uint8)), axis_ratio(zone_f))
-    report["axis_ratio"] = {"tissue": round(ratios[0], 2), "atlas": round(ratios[1], 2)}
-    turn = abs((decompose_affine(fitted)["rotation_deg"]
-                - decompose_affine(placed[:2])["rotation_deg"] + 180.0) % 360.0 - 180.0)
-    if min(ratios) < ROUND_AXIS_RATIO or turn > 45.0:
-        notes.append(
-            f"The fit turns the section {turn:.0f} degrees from its current placement: a "
-            "moments fit turns the tissue's long axis onto the kept atlas's, and their axis "
-            f"ratios are {ratios[0]:.2f} (tissue) and {ratios[1]:.2f} (atlas); an outline "
-            "with a ratio near 1.0 has no defined long axis.")
-    # Back from the frame to the section's own frame (the six stored numbers').
-    on_canvas = np.linalg.inv(shrink) @ _square(fitted) @ shrink
-    in_section = np.linalg.inv(to_canvas) @ on_canvas @ to_canvas
-    report["tissue_used_fraction"] = round(float(used.sum()) / float(tissue.sum()), 3)
-    if notes:
-        report["note"] = " ".join(notes)
-    return RegionFit(matrix=in_section[:2], iou=float(iou), report=report, left=left)
-
-
-def _fit_matrix_in_section_frame(
-    fit_matrix: np.ndarray,
-    fit_size: tuple[int, int],
-    section: Image.Image,
-    geometry: Any,
-) -> np.ndarray:
-    """The silhouette fit's 2x3, re-expressed on the physical overlay's canvas.
-
-    The fit works in its own frame: the section resized to
-    :data:`~langslice.core.affine.AFFINE_LONG_EDGE` and the atlas silhouette
-    STRETCHED to that same frame. To draw it truthfully the whole chain has to
-    be composed — section render -> fit frame -> atlas pixels -> canvas —
-    otherwise the picture shows the fit against an atlas that is the wrong
-    size, which is the very error physical calibration exists to remove.
-    """
-    fit_w, fit_h = fit_size
-    rows, cols = geometry.annotation.shape[:2]
-    to_section = fit_w / float(section.width)  # uniform: the fit keeps aspect
-    kx = cols * geometry.atlas_scale / fit_w
-    ky = rows * geometry.atlas_scale / fit_h
-    ox = geometry.atlas_offset[0] - geometry.section_offset[0]
-    oy = geometry.atlas_offset[1] - geometry.section_offset[1]
-    chain = (
-        np.array([[kx, 0.0, ox], [0.0, ky, oy], [0.0, 0.0, 1.0]])
-        @ np.vstack([np.asarray(fit_matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
-        @ np.diag([to_section, to_section, 1.0])
-    )
-    return chain[:2]
-
-
 def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
     """The same map read on a frame shifted by *offset*.
 
@@ -335,90 +88,6 @@ def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
     return (shift @ square @ inverse)[:2]
 
 
-def fit_silhouette(
-    state: StackState,
-    ctx: Workspace,
-    record: SliceState,
-    *,
-    include: Sequence[str] = (),
-    exclude: Sequence[str] = (),
-) -> dict[str, Any]:
-    """Fit the silhouette affine for one positioned section.
-
-    With *include* / *exclude* the fit is :func:`region_silhouette_fit`'s
-    (the payload adds its ``regions`` report, and ``iou`` is the overlap of
-    the kept atlas footprint with the tissue that corresponds); without them
-    it is the whole-outline fit, unchanged.
-
-    The whole tissue outline is matched against the whole atlas outline
-    (:func:`langslice.core.affine.silhouette_affine`, in its own frame). Damaged
-    sections are refused before this runs (see `ops.transforms.fit_affine`).
-
-    Returns the tool-shaped payload: on success ``params`` (six normalized
-    numbers on the section's frame), ``iou``, the ``physical`` knobs about the
-    canvas centre, the ``calibration`` of the working frame, and the
-    :class:`FitFrame` to draw it from (:data:`FIT_FRAME_KEY`). The fit measures against
-    the atlas plane at the stack's cutting angles, the same plane every
-    picture in the run shows.
-    """
-    if record.position_mm is None:
-        return {"status": "error", "error": "NO_POSITION", "id": record.id}
-    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    um_per_px, source = calibrate(state, ctx, record, section)
-    try:
-        geometry = canvas_geometry(
-            section.size,
-            um_per_px,
-            ctx.atlas,
-            record.position_mm,
-            cast(Plane, state.plane),
-            record.pitch_deg,
-            record.yaw_deg,
-        )
-        position = record.position_mm
-        regions: dict[str, Any] | None = None
-        left: np.ndarray | None = None
-        if include or exclude:
-            stored = (record.transform or {}).get("params")
-            current = (denormalized_affine(stored, section.size)
-                       if stored is not None and len(stored) == 6 else np.eye(3)[:2])
-            restricted = region_silhouette_fit(section, geometry, ctx.atlas, current,
-                                               plane_at=(position, str(state.plane),
-                                                         record.pitch_deg, record.yaw_deg),
-                                               include=include, exclude=exclude)
-            regions = restricted.report
-            left = restricted.left
-            iou = restricted.iou
-            in_section = restricted.matrix
-        else:
-            fit = silhouette_affine(
-                section,
-                atlas=ctx.atlas,
-                position_mm=position,
-                plane=cast(Plane, state.plane),
-                pitch_deg=record.pitch_deg,
-                yaw_deg=record.yaw_deg,
-            )
-            iou = float(fit.iou)
-            in_section = _fit_matrix_in_section_frame(
-                fit.matrix, fit.size, section, geometry
-            )
-    except RegionRefusal as refusal:
-        return {"status": "error", "error": refusal.code, "id": record.id,
-                "message": str(refusal)}
-    except Exception as exc:
-        logger.warning("fit_affine: silhouette fit failed for %s: %s", record.id, exc)
-        return {
-            "status": "error",
-            "error": "FIT_FAILED",
-            "id": record.id,
-            "message": str(exc),
-        }
-
-    return _fit_payload(record, section, um_per_px, source, geometry, in_section, iou,
-                        regions=regions, left=left)
-
-
 def _fit_payload(
     record: SliceState,
     section: Image.Image,
@@ -429,13 +98,11 @@ def _fit_payload(
     iou: float,
     *,
     regions: dict[str, Any] | None,
-    left: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """The tool-shaped payload of one fit, whichever method made it.
+    """The tool-shaped payload of one fit.
 
     *in_section* is the fitted 2x3 on the working frame *section*; the
-    numbers stay on that frame, and the :class:`FitFrame` lets a caller
-    carry the matrix onto whatever render it draws from.
+    numbers stay on that frame.
     """
     assert record.position_mm is not None
     on_canvas = _conjugate(in_section, geometry.section_offset)
@@ -460,8 +127,6 @@ def _fit_payload(
             "section_um_per_px": round(um_per_px, 4),
             "source": source,
         },
-        FIT_FRAME_KEY: FitFrame(section=section, um_per_px=um_per_px, matrix=in_section,
-                                left=left),
     }
     if regions is not None:
         payload["regions"] = regions
@@ -485,11 +150,11 @@ def elastix_settings(
 
     The section's preprocessed channel against *atlas_image* (``template``, the
     default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` on an Allen mouse atlas:
-    ``fit_affine``'s ``fit_atlas``),
+    ``elastix_affine``'s ``atlas_image``),
     mutual information plus the edge channel (the Elastix stain fit's own
     pairing). *include* becomes the restricted ``structures`` (the regions
     plus 300 um), *exclude* the excluded regions; one-sided entries such as
-    ``"CTX:left"`` resolve as in ``fit_deformable``.
+    ``"CTX:left"`` resolve as in every deformable fit.
     """
     from langslice.core.deformable import FitSettings
 
@@ -520,17 +185,13 @@ class ElastixFit:
     grid_image: Image.Image
     fit_image: Image.Image
     engine: dict[str, Any]
-    #: The section's displayed left on the native plane, resolved once from
-    #: the start placement (None when no entry named a side).
-    left: np.ndarray | None = None
 
 
 def _overlap(prepared: Any, atlas: Any, atlas_to_section: np.ndarray,
              include: Sequence[str]) -> float:
     """Tissue against the kept atlas footprint under *atlas_to_section*.
 
-    Mirrors the silhouette fit's region overlap: excluded regions leave the
-    atlas side, the tissue laid on them leaves the section side, and with
+    Excluded regions leave the atlas side, the tissue laid on them leaves the section side, and with
     *include* both are limited to those regions plus 300 um.
     """
     from langslice.core.deformable.atlas_images import placement_left, regions_mask
@@ -596,7 +257,6 @@ def elastix_affine(
 
     from langslice.core import deformation
     from langslice.core.deformable import prepare_fit
-    from langslice.core.deformable.atlas_images import placement_left
     from langslice.core.deformable.engines import run_elastix_affine
 
     start = [float(v) for v in start_params]
@@ -635,7 +295,6 @@ def elastix_affine(
         grid_image=grid.image, fit_image=image,
         engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
                 "fit_look": look, "native_parameters": result.native_parameters},
-        left=placement_left(ctx.atlas, grid.placement, [*include, *exclude]),
     )
 
 
@@ -648,13 +307,15 @@ def fit_elastix(
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
 ) -> dict[str, Any]:
-    """`fit_affine`'s Elastix method for one positioned section.
+    """``elastix_affine`` for one positioned section.
 
     A local refinement of the section's CURRENT placement (its stored six
-    numbers, or the identity without a transform) by :func:`elastix_affine`;
-    the payload is :func:`fit_silhouette`'s, with ``iou`` the overlap of the
-    tissue and the kept atlas footprint under the fitted placement, and a
-    ``regions`` report when regions were given.
+    numbers, or the identity without a transform) by :func:`elastix_affine`.
+    The payload: ``params`` (six normalized numbers on the section's frame),
+    ``iou`` (the overlap of the tissue and the kept atlas footprint under the
+    fitted placement), the ``physical`` knobs about the canvas centre, the
+    ``calibration`` of the working frame, and a ``regions`` report when
+    regions were given.
     """
     from langslice.core.atlas.sides import SideError
 
@@ -680,7 +341,7 @@ def fit_elastix(
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
     except Exception as exc:
-        logger.warning("fit_affine: elastix fit failed for %s: %s", record.id, exc)
+        logger.warning("elastix_affine failed for %s: %s", record.id, exc)
         return {
             "status": "error",
             "error": "FIT_FAILED",
@@ -689,7 +350,7 @@ def fit_elastix(
         }
     in_section = denormalized_affine(fit.params, section.size)
     return _fit_payload(record, section, um_per_px, source, geometry, in_section, fit.iou,
-                        regions=fit.report if (include or exclude) else None, left=fit.left)
+                        regions=fit.report if (include or exclude) else None)
 
 
 # --- what the interactive tools share ------------------------------------
@@ -717,7 +378,7 @@ def physical_params(
     The inverse of :func:`langslice.core.affine.physical_affine_matrix`: rotation,
     scales and ``shear`` come out of the linear part
     (:func:`langslice.core.affine.decompose_affine`'s convention, the one the
-    ``shear`` knob of ``adjust_transforms`` takes), and the shift is what is
+    ``shear`` knob of ``interactive_transform`` takes), and the shift is what is
     left of the translation once the pivot's own displacement is taken out.
     """
     values = np.asarray(matrix, dtype=np.float64).reshape(2, 3)

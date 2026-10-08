@@ -37,7 +37,6 @@ from langslice.agent.plugins import (
     RequestCapturePlugin,
     RetiredToolsPlugin,
     StrictArgumentsPlugin,
-    ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
 from langslice.agent.trace import open_trace
@@ -51,20 +50,12 @@ _USER_ID = "langslice-user"
 DEFAULT_MAX_ITERATIONS = 60
 
 
-def build_plugins(
-    run_label: str,
-    *,
-    tool_media_delivered: Callable[[set[str]], None] | None = None,
-) -> list[BasePlugin]:
+def build_plugins(run_label: str) -> list[BasePlugin]:
     """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
         # One working set per session: the instance remembers its cut.
         ContextFilterPlugin(custom_filter=WorkingSetImages()),
     ]
-    if tool_media_delivered is not None:
-        # Must follow the context filter: only media that survived pruning is
-        # about to be delivered to the model.
-        plugins.append(ToolMediaDeliveryPlugin(tool_media_delivered))
     model_call_delay_s = env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
         plugins.append(ModelCallPacingPlugin(model_call_delay_s))
@@ -212,7 +203,6 @@ async def run_agent_session(
     progress: Callable[[str], None] | None = None,
     max_input_tokens: int | None = None,
     max_quota_percent: int | None = None,
-    tool_media_delivered: Callable[[set[str]], None] | None = None,
     on_event: LiveCallback | None = None,
     background: Callable[[], list[Any] | None] | None = None,
 ) -> tuple[int, int]:
@@ -238,9 +228,7 @@ async def run_agent_session(
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=build_plugins(
-            run_label, tool_media_delivered=tool_media_delivered,
-        ),
+        plugins=build_plugins(run_label),
     )
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None

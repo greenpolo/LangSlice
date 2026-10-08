@@ -21,9 +21,8 @@ from PIL import Image
 
 from langslice.core.affine import resize_long_edge
 from langslice.core.atlas.core import get_reference_slice, get_root_mask
-from langslice.core.captions import angles_label, caption
 from langslice.core.image_prep import crop_to_mask
-from langslice.core.sizes import opening_edge, picture_edge
+from langslice.core.sizes import opening_edge
 from langslice.core.space import Plane
 from langslice.core.state import Angles, StackState, plane_angles
 from langslice.core.workspace import Workspace
@@ -89,27 +88,6 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
     if max(picture.size) <= int(long_edge):
         return picture
     return resize_long_edge(picture, int(long_edge))
-
-
-def atlas_picture(
-    ctx: Workspace, state: StackState, position_mm: float, *,
-    long_edge: int | None = None, prepared: Image.Image | None = None,
-    angles: Angles | None = None,
-) -> Image.Image:
-    """One tissue-framed atlas section at *position_mm*, sized and captioned.
-
-    *long_edge* None is the run's later-picture size
-    (:func:`langslice.core.sizes.picture_edge`); *prepared* is a picture
-    already drawn at *long_edge*.
-    """
-    long_edge = long_edge or picture_edge(ctx)
-    plane = plane_angles(state, angles)
-    return caption(
-        prepared if prepared is not None else atlas_sized(
-            atlas_section(ctx, state, position_mm, frame=True, angles=plane), long_edge,
-        ),
-        f"atlas {position_mm:.2f} mm{angles_label(plane)}",
-    )
 
 
 def reference_atlas(

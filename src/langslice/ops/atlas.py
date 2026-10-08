@@ -13,7 +13,7 @@ from langslice.core import zoom as zooms
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.atlas_grep import GREP_ATLAS_LIMIT, grep_structures, plane_structure_ids
-from langslice.core.captions import angles_label, caption
+from langslice.core.captions import angles_label, caption, view_angles_label
 from langslice.core.display import (
     atlas_caption,
     default_options,
@@ -156,9 +156,13 @@ def _region_picture(
         picture = framed_atlas(workspace, state, position_mm, options, angles=angles)
         um = base_um
     names = ", ".join(name for name, _ids in regions)
-    text = (f"atlas at {position_mm:.2f} mm{angles_label(angles)} (the stack's view angles); "
+    median = state.drawn_at_median(angles)
+    plane = (view_angles_label(angles, median=True) if median
+             else f"{angles_label(angles)} (the stack's cutting angles)")
+    text = (f"atlas at {position_mm:.2f} mm{plane}; "
             f"{um:.1f} um/px; regions highlighted: {names}")
-    image = caption(picture, tag + atlas_caption(state, position_mm, options, angles=angles))
+    image = caption(picture, tag + atlas_caption(state, position_mm, options, angles=angles,
+                                                  median=median))
     args = {"mode": "atlas", "regions": [name for name, _ids in regions],
             "positions_mm": [float(position_mm)], "long_edge": int(long_edge),
             "zoom": [float(v) for v in window]}

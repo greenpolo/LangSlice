@@ -42,7 +42,7 @@ class Brief:
 
 
 def resolution_range(opened: Any) -> dict[str, int]:
-    """``view.resolution``'s range on this door: the smallest, the largest
+    """``look``'s ``resolution`` range on this door: the smallest, the largest
     (the viewer's) and what 0 or nothing gives."""
     from langslice.core.sizes import AUTO_RESOLUTION, MIN_RESOLUTION, PICTURE_EDGES
 

@@ -1,24 +1,10 @@
-"""In-plane affine alignment of one histology section to one atlas section.
+"""In-plane affines: the matrix builders and the normalized six-number convention.
 
-The linear ``fit_affine`` tool's silhouette method records
-:func:`silhouette_affine`'s parameters as the proposed affine for an intact
-section; the matrix builders and the normalized six-number convention are
-shared by every reader of a stored transform. Pure
-functions only — no CLI, no agent, no model calls, no file writes.
-
-Two ways to get a 2x3 affine here:
-
-* :func:`silhouette_affine` — closed-form fit from image moments. Registers
-  SHAPES, not intensities: an Otsu silhouette of the tissue against the atlas
-  root silhouette, centroid for translation, second-moment eigenvectors for
-  rotation and principal axes, eigenvalue ratios for scale. The 4-way sign
-  ambiguity on the eigenvectors (rotations vs reflections) is resolved by
-  picking the candidate with the best silhouette IoU. ~150 ms warm, no
-  Elastix, no itk. :func:`mask_affine` is its core, taking two prepared masks
-  in one frame — what an ROI-restricted fit hands it.
-* :func:`affine_matrix` — the same 2x3 built from human-readable knobs
-  (rotation, per-axis scale, translation), which is what the interactive
-  transform loop proposes.
+Shared by every reader of a stored transform. Pure functions only — no CLI,
+no agent, no model calls, no file writes. :func:`affine_matrix` builds the
+2x3 from human-readable knobs (rotation, per-axis scale, translation), which
+is what the interactive transform proposes; :func:`decompose_affine` reads
+the knobs back.
 
 PARAMETER CONVENTION. Matrices are OpenCV 2x3 row-major, in PIXELS of a
 working frame::
@@ -37,50 +23,12 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
-import cv2
 import numpy as np
 from PIL import Image
-from scipy.ndimage import binary_fill_holes
-
-from langslice.core.atlas.core import get_root_mask
-from langslice.core.space import Plane
 
 logger = logging.getLogger(__name__)
-
-#: Long-edge target for silhouette ops. Alignment of a brain outline does not
-#: need resolution, and everything downstream is cheaper at 512.
-AFFINE_LONG_EDGE = 512
-
-# Sanity bounds on the tissue silhouette. Outside this band Otsu probably
-# failed (uniform image, blank field) and a garbage fit is worse than an error.
-_MIN_AREA_FRAC = 0.05
-_MAX_AREA_FRAC = 0.90
-
-# All four sign patterns for the source eigenvectors. (1,1) and (-1,-1) keep
-# det(R) positive (pure rotations); (-1,1) and (1,-1) flip it (reflections).
-# We try all four and pick the best by silhouette IoU.
-_SIGN_PATTERNS: tuple[tuple[int, int], ...] = ((1, 1), (-1, 1), (1, -1), (-1, -1))
-
-
-@dataclass
-class SilhouetteFit:
-    """One silhouette affine plus the pixels it was computed from.
-
-    ``matrix`` maps slice pixels to atlas pixels within ``size``; both the
-    resized slice and the atlas mask live in that frame.
-    """
-
-    matrix: np.ndarray
-    iou: float
-    size: tuple[int, int]
-    slice_rgb: np.ndarray
-    atlas_mask: np.ndarray
-    sign_pattern: tuple[int, int]
-
 
 #: The identity's six normalized numbers (:func:`normalized_affine`): what a
 #: section without a transform is drawn and mapped with.
@@ -118,219 +66,6 @@ def resize_long_edge(image: Image.Image, long_edge: int) -> Image.Image:
     return image.resize(
         (max(1, round(width * scale)), max(1, round(height * scale))),
         resample=Image.Resampling.LANCZOS,
-    )
-
-
-def extract_slice_silhouette(image_gray: np.ndarray) -> np.ndarray:
-    """Filled binary tissue silhouette of a grayscale histology section.
-
-    Otsu picks the threshold, corner-pixel sampling resolves
-    foreground/background polarity (histology can be dark-on-light or
-    light-on-dark depending on stain), holes get filled, and only the largest
-    connected component survives so staining debris drops out.
-    """
-    _, binary = cv2.threshold(image_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    # Corner-patch majority vote decides polarity. Background is whichever
-    # class dominates the corners. Averaging four corners is more robust than
-    # any one in case the tissue happens to touch a corner.
-    h, w = binary.shape
-    patch = max(4, min(h, w) // 32)
-    corners = np.concatenate([
-        binary[:patch, :patch].ravel(),
-        binary[:patch, -patch:].ravel(),
-        binary[-patch:, :patch].ravel(),
-        binary[-patch:, -patch:].ravel(),
-    ])
-    if corners.mean() > 127:
-        binary = 255 - binary
-
-    # Fill ventricles, white-matter gaps etc. that Otsu classed as background.
-    filled_bool = cast(np.ndarray, binary_fill_holes(binary > 0))
-    filled = filled_bool.astype(np.uint8) * 255
-
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(filled, connectivity=8)
-    if num <= 1:
-        return filled
-    areas = stats[1:, cv2.CC_STAT_AREA]
-    largest = 1 + int(np.argmax(areas))
-    return (labels == largest).astype(np.uint8) * 255
-
-
-def _moments_pose(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """(centroid, eigenvalues_desc, eigenvectors_cols) of a binary mask.
-
-    Centroid is in (x, y) image coordinates (col, row). Eigenvalues are sorted
-    descending so column 0 of the eigenvector matrix is the major axis.
-    """
-    M = cv2.moments(mask, binaryImage=True)
-    m00 = M["m00"]
-    if m00 < 1e-6:
-        raise ValueError("Empty mask — cannot compute moments.")
-    cx = M["m10"] / m00
-    cy = M["m01"] / m00
-    cov = np.array([
-        [M["mu20"] / m00, M["mu11"] / m00],
-        [M["mu11"] / m00, M["mu02"] / m00],
-    ])
-    eigvals, eigvecs = np.linalg.eigh(cov)  # ascending
-    eigvals = eigvals[::-1]
-    eigvecs = eigvecs[:, ::-1]  # cols reordered to match
-    return np.array([cx, cy]), eigvals, eigvecs
-
-
-def axis_ratio(mask: np.ndarray) -> float:
-    """Long over short principal axis of a binary mask (1.0: no preferred axis).
-
-    The moments fit turns the section so the two masks' long axes meet; near
-    1.0 that axis, and so the fitted rotation, is set by small outline noise.
-    """
-    _centre, eigvals, _vectors = _moments_pose(mask)
-    return float(np.sqrt(max(eigvals[0], 1e-12) / max(eigvals[1], 1e-12)))
-
-
-def _affine_from_pose(
-    src_c: np.ndarray, src_eigvals: np.ndarray, src_V: np.ndarray,
-    dst_c: np.ndarray, dst_eigvals: np.ndarray, dst_V: np.ndarray,
-    sign_pattern: tuple[int, int],
-) -> np.ndarray:
-    """Closed-form 2x3 affine that maps src silhouette -> dst silhouette.
-
-    Derivation: project the source into its principal-axis frame (V_src^T),
-    scale each axis by sqrt(lambda_dst / lambda_src) so the variance matches,
-    rotate into the destination's frame (V_dst), then translate so centroids
-    coincide. ``sign_pattern`` flips columns of V_src to explore the 4
-    sign-ambiguity cases.
-    """
-    V_src_signed = src_V * np.array(sign_pattern)  # broadcast as row -> scales cols
-    scale = np.sqrt(np.maximum(dst_eigvals, 1e-9) / np.maximum(src_eigvals, 1e-9))
-    R = dst_V @ np.diag(scale) @ V_src_signed.T
-    t = dst_c - R @ src_c
-    return np.array([
-        [R[0, 0], R[0, 1], t[0]],
-        [R[1, 0], R[1, 1], t[1]],
-    ], dtype=np.float64)
-
-
-def silhouette_iou(a: np.ndarray, b: np.ndarray) -> float:
-    """Intersection over union of two binary masks."""
-    a_bool = a > 0
-    b_bool = b > 0
-    inter = int(np.logical_and(a_bool, b_bool).sum())
-    union = int(np.logical_or(a_bool, b_bool).sum())
-    return inter / union if union > 0 else 0.0
-
-
-def mask_affine(
-    src_mask: np.ndarray, dst_mask: np.ndarray
-) -> tuple[np.ndarray, float, tuple[int, int]]:
-    """The moments fit of one binary mask onto another: ``(2x3, iou, pattern)``.
-
-    The core both silhouette routes share — the whole-tissue fit below and the
-    linear tool's ROI-restricted variant, which prepares its own two masks on
-    the physical canvas. Both masks live in the SAME frame; the affine maps
-    *src_mask* pixels to *dst_mask* pixels.
-
-    Raises ``ValueError`` when either mask is empty or no candidate survives.
-    """
-    src_c, src_eigvals, src_V = _moments_pose(src_mask)
-    dst_c, dst_eigvals, dst_V = _moments_pose(dst_mask)
-
-    h, w = dst_mask.shape
-    best_iou = -1.0
-    best_affine: np.ndarray | None = None
-    best_pattern: tuple[int, int] = (1, 1)
-    for sign_pattern in _SIGN_PATTERNS:
-        candidate = _affine_from_pose(
-            src_c, src_eigvals, src_V,
-            dst_c, dst_eigvals, dst_V,
-            sign_pattern,
-        )
-        # Reflections are not the fit's to make: a mirrored section is an
-        # ORIENTATION correction (the section's flip flag), and the atlas
-        # silhouette is left-right symmetric anyway, so a reflected candidate
-        # ties the proper one on IoU and would win by handedness noise.
-        if np.linalg.det(candidate[:, :2]) <= 0:
-            continue
-        warped_mask = cv2.warpAffine(
-            src_mask, candidate, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
-        )
-        score = silhouette_iou(warped_mask, dst_mask)
-        if score > best_iou:
-            best_iou = score
-            best_affine = candidate
-            best_pattern = sign_pattern
-
-    if best_affine is None:
-        raise ValueError("No affine candidate could be computed.")
-    return best_affine, best_iou, best_pattern
-
-
-def tissue_silhouette(
-    image: Image.Image, long_edge: int = AFFINE_LONG_EDGE
-) -> tuple[np.ndarray, np.ndarray]:
-    """``(mask, rgb)``: the section's filled tissue silhouette in the fit frame.
-
-    The section resized to *long_edge* (the frame every silhouette fit works
-    in) and its Otsu silhouette, 0/255. Raises ``ValueError`` when the
-    silhouette is implausible (Otsu failed on a blank or uniform field).
-    """
-    slice_pil = resize_long_edge(image.convert("RGB"), long_edge)
-    slice_rgb = np.asarray(slice_pil, dtype=np.uint8)
-    slice_gray = cv2.cvtColor(slice_rgb, cv2.COLOR_RGB2GRAY)
-
-    slice_mask = extract_slice_silhouette(slice_gray)
-    area_frac = float((slice_mask > 0).sum()) / slice_mask.size
-    if area_frac < _MIN_AREA_FRAC or area_frac > _MAX_AREA_FRAC:
-        raise ValueError(
-            f"Slice silhouette area fraction {area_frac:.2%} out of range "
-            f"[{_MIN_AREA_FRAC:.0%}, {_MAX_AREA_FRAC:.0%}] — Otsu likely failed."
-        )
-    return slice_mask, slice_rgb
-
-
-def silhouette_affine(
-    image: Image.Image,
-    *,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane = "coronal",
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-    long_edge: int = AFFINE_LONG_EDGE,
-    atlas_mask_at: Callable[[tuple[int, int]], np.ndarray] | None = None,
-) -> SilhouetteFit:
-    """Fit a 2x3 affine aligning *image* to the atlas section at *position_mm*.
-
-    The one silhouette wrapper: the linear ``fit_affine`` silhouette method
-    (``core.transform.fit_silhouette``) calls it. The atlas tissue silhouette is
-    the root mask of the plane at *position_mm* and the cutting angles
-    (:func:`langslice.core.atlas.core.get_root_mask`), so an angled stack is
-    measured against the plane every other picture in the run shows.
-    *atlas_mask_at* (a ``(w, h)`` size -> mask) replaces that silhouette with
-    the caller's own.
-
-    Raises ``ValueError`` when the tissue silhouette is implausible (Otsu
-    failed on a blank or uniform field) or no candidate could be computed.
-    """
-    slice_mask, slice_rgb = tissue_silhouette(image, long_edge)
-    size = (slice_mask.shape[1], slice_mask.shape[0])  # (w, h)
-
-    atlas_mask = (
-        atlas_mask_at(size)
-        if atlas_mask_at is not None
-        else get_root_mask(atlas, position_mm, size, plane=plane,
-                           pitch_deg=pitch_deg, yaw_deg=yaw_deg)
-    )
-    matrix, iou, pattern = mask_affine(slice_mask, atlas_mask)
-
-    return SilhouetteFit(
-        matrix=matrix,
-        iou=iou,
-        size=size,
-        slice_rgb=slice_rgb,
-        atlas_mask=atlas_mask,
-        sign_pattern=pattern,
     )
 
 

@@ -129,7 +129,8 @@ def submit(
     positions, interval breaks, transforms, deformations, *left_linear*
     counted as covered), then
     *gate*, when given, before anything is written: a door's own check (the
-    tool door's "view_stack first"); a payload it returns refuses the call.
+    tool door's "look at the whole stack in mode positioning first"); a
+    payload it returns refuses the call.
     A refusal is :class:`Refused` with the gate's payload, nothing written.
     With *traces* (the image model is part of the run), image-model traces
     still running are waited for and recorded first; tracing is the agent's

@@ -395,7 +395,6 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
             thickness_um=args.thickness,
             interval_um=args.interval,
             strict_interval=args.strict_interval,
-            bayesian=args.bayesian,
             gated=args.gates,
             playbook=args.playbook,
         ),
@@ -404,7 +403,6 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,
-            engine=getattr(args, "engine", "either"),
         ),
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),

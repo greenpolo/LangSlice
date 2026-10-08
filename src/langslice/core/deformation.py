@@ -1,20 +1,22 @@
-"""The deformable fit as the linear agent uses it: inputs, cache, records, pictures.
+"""The deformable fit as the tools use it: inputs, cache, records, pictures.
 
-``fit_deformable`` (``toolbox.py``) is a thin tool over this module and the
-engine package :mod:`langslice.core.deformable`. What lives here:
+``ants_syn`` and ``trace_borders``' landing (through
+:func:`langslice.ops.deformable.fit_deformable`) are thin verbs over this
+module and the engine package :mod:`langslice.core.deformable`. What lives
+here:
 
 - the fit grid: the section's oriented, unframed render at
   :data:`FIT_LONG_EDGE` with its linear placement
   (:func:`langslice.core.handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
-  the section's preprocessed channel (:mod:`langslice.core.appearance`; one
-  raw channel is a recipe the ``preprocess`` tool's ``fit`` target sets), or
-  the image model's traced lines mapped onto that grid;
-- one resolved :class:`Choice` per candidate and its engine settings;
-- :class:`RecordStore`: results cached by a digest of every input (so
-  applying a previewed candidate reuses it), applied records saved under the
-  results folder (``deformable/<section>/<key>/``, the parent steps inside),
-  and loaded back for ``start="current"`` and for placement pictures;
+  the section's preprocessed channel (:mod:`langslice.core.appearance`, set by
+  ``set_preprocessed_channel_properties``), or the image model's traced lines
+  mapped onto that grid;
+- the resolved :class:`Choice` and its engine settings;
+- :class:`RecordStore`: results cached by a digest of every input (the same
+  fit again reuses it), applied records saved under the section's folder
+  (``deformable/<key>/``, the parent steps inside), and loaded back for
+  ``start="current"`` and for placement pictures;
 - :func:`linear_key` and :func:`clear_stale`: a deformation lives on top of
   the linear placement it was fitted at, and any change to that placement
   drops it;
@@ -64,8 +66,6 @@ from langslice.core.deformable.settings import (
     ANTS_STIFFNESS,
     CORRELATION_RADIUS_UM,
     DETAIL,
-    ELASTIX_MEAN_SQUARES_BENDING_SCALE,
-    ELASTIX_STIFFNESS,
 )
 from langslice.core.handoff import digest
 from langslice.core.state import SliceState, StackState
@@ -81,10 +81,6 @@ FIT_LONG_EDGE = 1536
 #: candidate looks best, so the tool fixes it; tests set ``coarse`` here for
 #: speed.
 DETAIL_LEVEL = "standard"
-#: Setting variants one call may preview.
-MAX_CANDIDATES = 4
-#: Fits one call may run (sections x candidates).
-MAX_FITS_PER_CALL = 8
 #: Fitted records kept in memory for reuse (a record is tens of megabytes).
 CACHE_SIZE = 8
 #: The atlas a fit can read (``fit_atlas``), as the agent names it, and the
@@ -98,13 +94,7 @@ TRACED_BORDERS = "traced_borders"
 TRACED_LINES = "traced_lines"
 TRACED = (TRACED_BORDERS, TRACED_LINES)
 FIT_SECTIONS = (FIT_LOOK, *TRACED)
-STARTS = ("linear", "current")
-ENGINES = ("ants", "elastix")
-#: What a candidate may change.
-CANDIDATE_KEYS = ("stiffness", "fit_section", "fit_atlas", "engine")
-#: Picture modes: the fit alone, or the fit then what it started from.
-MODES = ("borders", "ab")
-#: Flags listed per candidate before the rest are only counted.
+#: Flags listed per fit before the rest are only counted.
 MAX_FLAGS = 12
 #: Flags about the whole section, listed before any per-region flag.
 SECTION_FLAGS = ("DISPLACEMENT_OUTSIZED", "FOLDS")
@@ -183,8 +173,8 @@ def fit_grid(
 ) -> Grid:
     """The section's fit grid (``ValueError`` without a usable linear placement).
 
-    *transform* stands in for the written one (``fit_affine``'s Elastix
-    method starts from it).
+    *transform* stands in for the written one (``elastix_affine`` starts
+    from it).
     """
     from langslice.core.handoff import prepare_linear_registration
 
@@ -324,19 +314,10 @@ def engine_settings(settings: FitSettings) -> dict[str, Any]:
         used["correlation_radius_um"] = CORRELATION_RADIUS_UM
     if settings.section_image == "stain" and settings.stain_edges:
         used["edge_channel"] = True
-    if settings.engine == "ants":
-        stiffness = ANTS_STIFFNESS[settings.stiffness]
-        used.update(update_sigma_mm=stiffness.update_sigma_mm,
-                    total_sigma_mm=stiffness.total_sigma_mm,
-                    iterations=list(level.ants_iterations))
-    else:
-        stiffness_e = ELASTIX_STIFFNESS[settings.stiffness]
-        bending = stiffness_e.bending_weight
-        if metric == "mean_squares":
-            bending *= ELASTIX_MEAN_SQUARES_BENDING_SCALE
-        used.update(grid_spacing_mm=stiffness_e.grid_spacing_mm, bending_weight=bending,
-                    resolutions=level.elastix_resolutions,
-                    iterations=level.elastix_iterations)
+    stiffness = ANTS_STIFFNESS[settings.stiffness]
+    used.update(update_sigma_mm=stiffness.update_sigma_mm,
+                total_sigma_mm=stiffness.total_sigma_mm,
+                iterations=list(level.ants_iterations))
     if settings.labels != "none":
         used["label_map"] = settings.labels
     if settings.structures:

@@ -138,7 +138,7 @@ def prepare_linear_registration(
 
     *transform* stands in for the section's written transform (``params``),
     for a fit that starts from a placement it has not written:
-    ``fit_affine``'s Elastix method on a section with no transform yet
+    ``elastix_affine`` on a section with no transform yet
     starts from the identity.
 
     *preprocessed* renders the section as its preprocessed channel
@@ -238,10 +238,6 @@ def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -
     stat = source.stat()
     transform = record.transform or {}
     nonlinear = dict(ctx.spec.to_dict().get("nonlinear") or {})
-    # The deformable-fit engine never reaches the image call; leaving it in
-    # made every trace saved before the field existed (or under another
-    # engine choice) stale at an unchanged placement.
-    nonlinear.pop("engine", None)
     return digest({
         "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
         "section_id": record.id, "atlas": state.atlas, "plane": state.plane,

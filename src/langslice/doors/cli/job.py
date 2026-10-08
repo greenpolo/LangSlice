@@ -21,8 +21,8 @@ descriptions written for a model), ``--timeout SECONDS`` (``wait``).
 
 Each call opens the job as it stands on disk (``doors.jobs.open_folder``),
 runs the verb through the same tool a running agent has (the
-look-before-commit gates off: they are tool-only; ``view.resolution`` any
-size from 128 px to the source's own pixels) and closes it, so calls and a
+look-before-commit gates off: they are tool-only; ``look``'s ``resolution``
+any size from 128 px to the source's own pixels) and closes it, so calls and a
 running agent interleave on one folder: each picks up the other's writes
 (``Job.sync``) and every write is one undo step. The answer is the JSON
 envelope of :mod:`langslice.doors.cli.envelope` on stdout; anything a
@@ -560,13 +560,12 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     what they are as one line, ``picture_note``; *verbose* keeps the
     description and the pictures' text lines as written for a model)."""
     from langslice.core.status import with_uniform_rows
-    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     if not isinstance(reply, dict):
         return reply
     body = with_uniform_rows(dict(reply))
     media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
-    body.pop(TOOL_MEDIA_DELIVERY_ID_KEY, None)
     if verbose:
         texts = [item for item in media if isinstance(item, str)] if isinstance(media, list) \
             else []

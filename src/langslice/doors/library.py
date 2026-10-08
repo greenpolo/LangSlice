@@ -108,12 +108,11 @@ def library_reply(verb: str, reply: Any, saved: Sequence[Any]) -> Reply:
     everything else JSON values (:func:`plain`); a picture that could not be
     saved is a line under ``warnings``."""
     from langslice.core.status import with_uniform_rows
-    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
     from langslice.job.views import artifacts
 
     body = dict(reply) if isinstance(reply, Mapping) else {"result": reply}
     media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
-    body.pop(TOOL_MEDIA_DELIVERY_ID_KEY, None)
     media = media if isinstance(media, list) else []
     texts = [item for item in media if isinstance(item, str)]
     if texts:

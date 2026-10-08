@@ -55,8 +55,7 @@ What every door shares beyond the verbs: the job statement
 (`statement.py`), the ending of a job (`jobs.close_job`), the host trace
 (`trace.py`), the reply byte budget and paging (`tools/reply.py`), the
 image-model check (`jobs.provider_connected`, `jobs.image_model_off`), and in
-the `ToolBox` the in-flight rule (`in_flight`, `begin_model_call`) and the
-opening-read gate (`require_opening`, `opening_read`, `opening_refusal`;
+the `ToolBox` the opening-read gate (`require_opening`, `opening_read`, `opening_refusal`;
 armed by the MCP door only). Deliberately different: the host owns the loop
 for MCP and the CLI (no turn budget, nudges, debrief, image working set or
 quota accounting there); the look-before-commit gates are the agent and MCP
@@ -207,11 +206,10 @@ the CLI is a process per call.
   `ops.look.show_result` unless its `view` is false and the host does not
   force it), `arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`,
-  `LeftLinear`, and the older `View` / `ViewAuto` that `view_options` still
-  reads; `argument_refusal`, the one strictness rule every door applies;
-  `normalize_arguments` for a door that validates first), `view_options.py`
-  (`parse_view` against a `Profile`, `image_limit` / `view_edge_limit` of
-  the model lane, `clamp_resolution`), `media.py` (the ADK message parts: `packaged`,
+  `LeftLinear`; `argument_refusal`, the one strictness rule every door
+  applies; `normalize_arguments` for a door that validates first),
+  `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
+  `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
   `shrunk_note`; no model framework) and, in `__init__.py`, the media keys
@@ -223,8 +221,7 @@ the CLI is a process per call.
   at `CLAUDE_IMAGE_LIMIT`, each composed within a page's byte budget, paged
   under `PAGE_BYTES`, a strip and its text kept together), `save_page`,
   `result_blocks` (every reply through `fit_reply`; a shrunk reply says so),
-  `host_tool` (each call `in_flight`, so a sibling call promotes no picture
-  as seen), `strict_arguments` (FastMCP drops unknown arguments; refused
+  `host_tool` (each call serialized on the session's lock), `strict_arguments` (FastMCP drops unknown arguments; refused
   first, a nested object sent as a JSON string parsed), `open_saved_job`
   (a saved ABBA job by id), `open_folder` (the job of a named image or job
   folder as saved: `doors.jobs.find` / `read_spec`, its notes; a folder

@@ -1,9 +1,9 @@
 """The view controls of the interactive alignment screen.
 
 The alignment loop is a vision-action loop, so a view control that lies is
-worse than one that does not exist: a zoom that does not magnify, a
-checkerboard missing one of its two sources, or a scale bar that keeps its old
-length after a crop would all be read as anatomy. These pin what each mode
+worse than one that does not exist: a zoom that does not magnify, lines on
+a view meant to be clean, or a scale bar that keeps its old length after a
+crop would all be read as anatomy. These pin what each mode
 actually puts on the screen, in pixels.
 """
 
@@ -36,8 +36,9 @@ def _section(value: int = 120, size: tuple[int, int] = (300, 300)) -> Image.Imag
     return Image.fromarray(arr, mode="RGB")
 
 
-def _views(value: int = 120, **kwargs) -> tuple[list[np.ndarray], float]:
-    images, iou = physical_views(
+def _views(value: int = 120, **kwargs) -> list[np.ndarray]:
+    panels: list = []
+    images = physical_views(
         _section(value),
         UM_PER_PX,
         TwoRegionAtlas(),
@@ -50,12 +51,12 @@ def _views(value: int = 120, **kwargs) -> tuple[list[np.ndarray], float]:
         # The model-facing screen size is the pixel-size rule's business
         # (test_the_model_screen_is_sized_by_the_atlas_resolution).
         long_edge=None,
-        frames=(frames := []),
+        panel_frames=panels,
         **kwargs,
     )
     # The picture content, above its caption band.
-    return [np.asarray(image.convert("RGB"))[:frame["content_box"][3]]
-            for image, frame in zip(images, frames, strict=True)], iou
+    return [np.asarray(image.convert("RGB"))[:panel.content_box[3]]
+            for image, panel in zip(images, panels, strict=True)]
 
 
 def test_the_screen_is_the_long_edge_and_never_an_upsample():
@@ -89,8 +90,8 @@ def _bar_length(rgb: np.ndarray) -> int:
 def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
     geometry = _geometry()
     box = [0.3, 0.3, 0.7, 0.7]
-    (whole,), _ = _views()
-    (zoomed,), _ = _views(zoom=box)
+    (whole,) = _views()
+    (zoomed,) = _views(zoom=box)
 
     # Canvas pixels one to one: the zoom is the crop, at its own size.
     assert zoomed.shape[1] == round(0.7 * geometry.size[0]) - round(0.3 * geometry.size[0])
@@ -107,47 +108,12 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
 
 
 def test_an_empty_zoom_is_the_whole_canvas():
-    (plain,), _ = _views()
-    (empty,), _ = _views(zoom=[])
+    (plain,) = _views()
+    (empty,) = _views(zoom=[])
     assert np.array_equal(plain, empty)
 
 
 # --- the modes -----------------------------------------------------------
-
-
-def test_side_by_side_returns_two_images_of_equal_size():
-    images, _ = _views(mode="side_by_side")
-    assert len(images) == 2
-    assert images[0].shape == images[1].shape
-    assert not np.array_equal(images[0], images[1])
-    # Same crop, same scale: the 1 mm bar is the same length on both.
-    assert _bar_length(images[0]) == _bar_length(images[1])
-
-
-def test_checkerboard_carries_both_sources():
-    """The section's tissue is 120-bright; this atlas's template renders white."""
-    (board,), _ = _views(mode="checkerboard")
-    geometry = _geometry()
-    band = board.shape[0] - geometry.size[1]  # the caption above the canvas
-    cx, cy = geometry.size[0] // 2, band + geometry.size[1] // 2
-    middle = board[cy - 90 : cy + 90, cx - 90 : cx + 90]
-    section_px = ((middle >= 110) & (middle <= 130)).all(axis=2).sum()
-    template_px = (middle >= 250).all(axis=2).sum()
-    assert section_px > 1000 and template_px > 1000
-
-
-def test_outlines_mode_is_black_outside_the_lines():
-    (lines,), _ = _views(mode="outlines")
-    # No tissue, no template: the centre of the anatomy is bare canvas.
-    geometry = _geometry()
-    cx = geometry.size[0] // 2
-    cy = lines.shape[0] - geometry.size[1] + geometry.size[1] // 2
-    centre = lines[cy - 5 : cy + 5, cx - 5 : cx + 5]
-    assert centre.max() == 0
-    assert float((lines > 40).any(axis=2).mean()) < 0.05, "more than lines on screen"
-    # Yellow atlas lines and a neutral grey tissue silhouette.
-    values = set(np.unique(lines[lines > 40]))
-    assert max(values) >= 200 and any(90 < v < 190 for v in values)
 
 
 def test_the_atlas_opacity_is_a_dial_not_a_switch():
@@ -157,9 +123,9 @@ def test_the_atlas_opacity_is_a_dial_not_a_switch():
     geometry = _geometry()
     cx, cy = geometry.size[0] // 2, geometry.size[1] // 2
     box = (slice(cy - 30, cy + 30), slice(cx - 49, cx - 42))
-    (none,), _ = _views()
-    (half,), _ = _views(atlas_opacity=0.5)
-    (full,), _ = _views(atlas_opacity=1.0)
+    (none,) = _views()
+    (half,) = _views(atlas_opacity=0.5)
+    (full,) = _views(atlas_opacity=1.0)
     assert none[box].mean() < half[box].mean() < full[box].mean()
 
 
@@ -178,9 +144,9 @@ def _line_pixels(rgb: np.ndarray) -> int:
 
 def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
     """This atlas has two families: the 1 mm square and a region inside it."""
-    (every,), _ = _views()
-    (outer,), _ = _views(outlines="outer")
-    (bare,), _ = _views(outlines="none")
+    (every,) = _views()
+    (outer,) = _views(outlines="outer")
+    (bare,) = _views(outlines="none")
 
     assert _line_pixels(bare) == 0, "outlines='none' still drew lines"
     assert _line_pixels(outer) > 300, "the root contour is missing"
@@ -293,15 +259,15 @@ def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path)
 
     turned = {"rotation_deg": 40.0, "scale_x": 1.0, "scale_y": 1.0,
               "translate_x_mm": 0.0, "translate_y_mm": 0.0}
-    still, _ = physical_views(
+    still = physical_views(
         section, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
         mode="section", long_edge=None,
     )
-    about_tissue, _ = physical_views(
+    about_tissue = physical_views(
         section, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, turned,
         mode="section", pivot=pivot, long_edge=None,
     )
-    about_canvas, _ = physical_views(
+    about_canvas = physical_views(
         section, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, turned,
         mode="section", long_edge=None,
     )
@@ -313,15 +279,15 @@ def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path)
 
 
 def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
-    """The pivot is the operation's (``ops.transforms.adjust_transforms``; no
-    tool takes one): a hand transform afterwards keeps the stored pivot."""
+    """The pivot is the operation's (``ops.transforms.interactive_transform``;
+    no tool takes one): a hand transform afterwards keeps the stored pivot."""
     from langslice.ops import transforms
 
     tools, box, state = _tools(tmp_path)
     job, ctx = box.job, box.job.workspace
 
     def adjust(pivot: object) -> transforms.Adjustment:
-        done = transforms.adjust_transforms(job, ctx, [{
+        done = transforms.interactive_transform(job, ctx, [{
             "id": "s.tif", **_IDENTITY, "rotation_deg": 10.0, "pivot": pivot}])
         return done.entries[0]
 
@@ -349,36 +315,35 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
 
 def _bodies(**kwargs) -> list[np.ndarray]:
     """Each panel above its caption band (the band's height varies with wrapping)."""
-    frames: list[dict] = []
+    panels: list = []
     long_edge = kwargs.pop("long_edge", None)
-    images, _iou = physical_views(
+    images = physical_views(
         _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
-        long_edge=long_edge, frames=frames, **kwargs,
+        long_edge=long_edge, panel_frames=panels, **kwargs,
     )
-    return [np.asarray(image.convert("RGB"))[:frame["content_box"][3]]
-            for image, frame in zip(images, frames, strict=True)]
+    return [np.asarray(image.convert("RGB"))[:panel.content_box[3]]
+            for image, panel in zip(images, panels, strict=True)]
 
 
 def test_clean_section_and_template_views_carry_no_outlines():
     (section_only,) = _bodies(mode="section")
     (template_only,) = _bodies(mode="template")
+    (template_lined,) = _bodies(mode="template", template_lines=True)
     (overlaid,) = _bodies(mode="overlay")
-    pair = _bodies(mode="side_by_side")
 
     # The synthetic tissue is 120 grey; anti-aliased hairlines are far brighter.
     # Picture area only: above the scale bar (the caption band is cut off).
     assert overlaid[:-40].max() >= 200
     assert section_only[:-40].max() < 200
-    # The template alone is the side-by-side's second panel minus its lines.
-    assert template_only.shape == pair[1].shape
-    assert not np.array_equal(template_only[:-40], pair[1][:-40])
+    # The template alone carries no lines unless asked for them.
+    assert template_only.shape == template_lined.shape
+    assert _line_pixels(template_only) == 0 < _line_pixels(template_lined)
 
 
 @pytest.mark.parametrize("color", ["cyan", "#00ffff"])
-def test_border_color_changes_atlas_lines_without_changing_tissue_or_overlap(color):
-    (yellow,), original_iou = _views()
-    (cyan,), recolored_iou = _views(border_color=color)
-    assert original_iou == recolored_iou
+def test_border_color_changes_atlas_lines_without_changing_tissue(color):
+    (yellow,) = _views()
+    (cyan,) = _views(border_color=color)
     # Both images carry the same tissue, scale bar and geometry. Only the
     # atlas lines change; their RGB channels swap red and blue for cyan.
     assert np.array_equal(yellow[..., 1], cyan[..., 1])
@@ -408,11 +373,10 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
     assert widths[4][0] > widths[1][0]
 
 
-@pytest.mark.parametrize("mode", ["overlay", "side_by_side", "checkerboard", "outlines"])
+@pytest.mark.parametrize("mode", ["overlay", "template"])
 def test_border_style_reaches_all_atlas_bearing_panels(mode):
-    defaults, default_iou = _views(mode=mode)
-    styled, styled_iou = _views(mode=mode, border_color="cyan", border_thickness=4)
-    assert default_iou == styled_iou
+    defaults = _views(mode=mode, template_lines=True)
+    styled = _views(mode=mode, template_lines=True, border_color="cyan", border_thickness=4)
     for default, custom in zip(defaults, styled, strict=True):
         assert default.shape == custom.shape
         assert _line_pixels(default) > 0
@@ -422,8 +386,8 @@ def test_border_style_reaches_all_atlas_bearing_panels(mode):
 
 @pytest.mark.parametrize("mode", ["section", "template"])
 def test_border_style_does_not_add_lines_to_clean_views(mode):
-    (default,), _ = _views(mode=mode)
-    (custom,), _ = _views(mode=mode, border_color="cyan", border_thickness=4)
+    (default,) = _views(mode=mode)
+    (custom,) = _views(mode=mode, border_color="cyan", border_thickness=4)
     assert np.array_equal(default, custom)
 
 

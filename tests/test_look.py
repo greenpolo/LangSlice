@@ -11,10 +11,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-from langslice.core.appearance import set_settings
 from langslice.core.channels import ChannelProperties, set_properties
 from langslice.core.layers import collecting, note_for
 from langslice.core.look import (
@@ -79,16 +77,6 @@ def test_display_properties_restated_in_the_caption(tmp_path: Path):
     assert "gray 20-200 gamma 1.5" in picture.caption
     assert "percentile" not in picture.caption
     assert picture.recipe["state"]["appearance"]["channels"]["gray"]["gamma"] == 1.5
-
-
-def test_defaults_do_not_read_the_agents_view_look(tmp_path: Path):
-    ws, state = stack(tmp_path)
-    request = LookRequest("section", sections=("s1.png",))
-    before = np.asarray(look(ws, state, request)[0].image)
-    set_settings(state, "view", None, {"channel_weights": None, "clahe_clip": 12.0,
-                                       "clahe_tiles": 4, "n4": False, "denoise": False})
-    after = np.asarray(look(ws, state, request)[0].image)
-    assert np.array_equal(before, after)
 
 
 def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):

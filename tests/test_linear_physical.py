@@ -17,7 +17,7 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.core.affine import normalized_physical_affine, physical_affine_matrix
 from langslice.core.atlas.render import family_mapping, family_outlines
-from langslice.core.canvas import canvas_geometry, physical_overlay
+from langslice.core.canvas import canvas_geometry, physical_views
 from langslice.core.captions import scale_bar_px
 from langslice.core.image_prep import read_pixel_size_um
 from langslice.core.sections import canvas_um_per_px
@@ -62,7 +62,7 @@ def _section(size: tuple[int, int] = (300, 300)) -> Image.Image:
 
 
 def _overlay(params: dict[str, float], um_per_px: float = 10.0, **kwargs) -> np.ndarray:
-    image = physical_overlay(
+    (image,) = physical_views(
         _section(), um_per_px, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, params,
         **kwargs,
     )
@@ -349,18 +349,17 @@ def _half_section(tmp_path: Path):
     return {tool.__name__: tool for tool in box.tools}, state, box
 
 
-def test_a_value_left_out_keeps_the_stored_fits_own(tmp_path: Path):
-    """A hand adjustment after a fit starts from the fit: the knobs it does not
-    give keep the stored fit's values (no identity fallback)."""
-    from langslice.ops import transforms
-
-    tools, state, box = _half_section(tmp_path)
+def test_a_value_left_out_keeps_the_stored_transforms_own(tmp_path: Path):
+    """A hand adjustment starts from the stored transform: the knobs it does
+    not give keep the stored values (no identity fallback)."""
+    tools, state, _box = _half_section(tmp_path)
     record = state.slices[0]
-    # The silhouette fit is an operation now (no tool offers it).
-    fit = transforms.fit_affine(box.job, box.job.workspace, [record], method="silhouette")
-    assert fit.rows[0]["status"] == "ok", fit.rows
+    first = tools["interactive_transform"]([{
+        "id": "s.tif", "rotation_deg": 7.0, "scale_x": 1.3, "scale_y": 0.8,
+        "translate_x_mm": 0.0, "translate_y_mm": 0.05}], view=False)
+    assert first["status"] == "ok", first
     stored = dict(record.transform["physical"])
-    assert stored["scale_x"] != pytest.approx(1.0)  # the half section is stretched
+    assert stored["scale_x"] == pytest.approx(1.3)
 
     done = tools["interactive_transform"]([{"id": "s.tif", "translate_x_mm": 0.1}])
     (row,) = done["results"]

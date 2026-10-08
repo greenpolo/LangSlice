@@ -14,7 +14,7 @@ def _draw(**kwargs) -> tuple[list[Image.Image], list[canvas.PanelFrame]]:
     atlas = SyntheticAtlas()
     section, _ = render_section(atlas, SMOOTH_FIELD(), seed=0)
     panels: list[canvas.PanelFrame] = []
-    images, _iou = canvas.physical_views(
+    images = canvas.physical_views(
         section, 25.0, atlas, 0.15, "coronal", 0.0, 0.0,
         {"rotation_deg": 6.0, "scale_x": 1.0, "scale_y": 1.0, "translate_x_mm": 0.2,
          "translate_y_mm": 0.0}, long_edge=300, panel_frames=panels, **kwargs)
@@ -22,8 +22,8 @@ def _draw(**kwargs) -> tuple[list[Image.Image], list[canvas.PanelFrame]]:
 
 
 def test_a_panel_frame_per_picture_on_the_pictures_grid():
-    images, panels = _draw(mode="side_by_side", zoom=[0.1, 0.1, 0.9, 0.8])
-    assert len(panels) == len(images) == 2
+    images, panels = _draw(mode="overlay", zoom=[0.1, 0.1, 0.9, 0.8])
+    assert len(panels) == len(images) == 1
     for image, panel in zip(images, panels, strict=True):
         # The content starts at the top; the caption band is below it.
         assert panel.size == image.size and panel.content_box[1] == 0
@@ -33,7 +33,7 @@ def test_a_panel_frame_per_picture_on_the_pictures_grid():
 
 
 def test_the_border_layer_is_the_drawn_lines():
-    images, panels = _draw(mode="outlines", outlines="all", border_color="#ff0000",
+    images, panels = _draw(mode="overlay", outlines="all", border_color="#ff0000",
                            border_thickness=1.0)
     picture = np.asarray(images[0]).astype(int)
     borders = layers.borders_layer(panels[0])

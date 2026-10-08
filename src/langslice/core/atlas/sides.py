@@ -7,8 +7,8 @@ one hemisphere), and excluding a region by name alone also drops the side
 that is present.
 
 Left and right are the SECTION'S, in its displayed frame: the oriented
-section render (rotation and flip applied) that ``view_slices``,
-``fit_deformable`` and ``trace_borders`` pictures show, never the animal's
+section render (rotation and flip applied) that ``look``, the deformable
+fits' and ``trace_borders`` pictures show, never the animal's
 anatomical left. They are derived, never guessed from the tissue:
 
 1. Each native atlas-plane pixel's medio-lateral volume index comes from
@@ -66,21 +66,6 @@ def split_side(entry: str | int) -> tuple[str, str | None]:
 def has_sides(entries: Any) -> bool:
     """Whether any entry names one side."""
     return any(split_side(entry)[1] is not None for entry in entries or ())
-
-
-def overlapping(first: Any, second: Any) -> list[str]:
-    """Entries of *first* that cover part of an entry of *second* (case-insensitive).
-
-    ``CTX`` overlaps ``CTX:left``; ``CTX:left`` does not overlap ``CTX:right``.
-    """
-    others = [(region.lower(), side) for region, side in map(split_side, second or ())]
-    found = []
-    for entry in first or ():
-        region, side = split_side(entry)
-        if any(region.lower() == other and (side is None or theirs is None or side == theirs)
-               for other, theirs in others):
-            found.append(str(entry).strip())
-    return found
 
 
 def ml_halves(

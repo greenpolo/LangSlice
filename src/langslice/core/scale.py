@@ -2,10 +2,10 @@
 
 The physical canvas (:func:`langslice.core.canvas.physical_views`) puts the
 atlas on the section's frame at true scale. The pictures that show the two
-as separate panels (``stacked``, ``side_by_side``, ``view_stack``'s sheet,
-the opening strips) frame each to its own anatomy; this module sizes both
-panels at ONE micrometres per pixel, so the section reads at its true size
-against the atlas, as on the canvas:
+as separate panels (the positioning picture, the opening strips) frame each
+to its own anatomy; this module sizes both panels at ONE micrometres per
+pixel, so the section reads at its true size against the atlas, as on the
+canvas:
 
 - the section's scale is the one its placement pictures draw it at: its
   calibration (:func:`langslice.core.transform.calibrate`: the file, the
@@ -14,35 +14,22 @@ against the atlas, as on the canvas:
 - the atlas plane is at its voxel size (:func:`atlas_um_per_px`);
 - the common scale puts the larger of the panels at the picture's long
   edge (:func:`pair_um_per_px`); the other is smaller, never stretched.
-
-``side_by_side`` shows one section picture beside every atlas of a call, so
-its scale must not depend on the position: :func:`brain_extent_um` bounds
-every framed atlas plane at the cutting angles instead.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Any, cast
+from typing import Any
 
-import numpy as np
 from PIL import Image
 
 from langslice.core.appearance import Look
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
-from langslice.core.image_prep import FRAME_MARGIN
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_cache_key, render_slice
-from langslice.core.space import Plane
-from langslice.core.state import Angles, SliceState, StackState, plane_angles
+from langslice.core.state import Angles, SliceState, StackState
 from langslice.core.transform import calibrate
 from langslice.core.workspace import Workspace
-
-#: Voxels sampled along the longest atlas axis when bounding the anatomy.
-_BOUND_SAMPLES = 200
-#: Per atlas (by identity): the anatomy's bounding box in micrometres,
-#: ``(lo, hi)`` per atlas axis.
-_ANATOMY_BOXES: dict[int, tuple[Any, np.ndarray, np.ndarray]] = {}
 
 
 def stored_scale(record: SliceState) -> float:
@@ -101,54 +88,6 @@ def atlas_extent_um(
     return max(picture.size) * atlas_um_per_px(ws.atlas)
 
 
-def _anatomy_box(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
-    """``(lo, hi)`` micrometres per atlas axis of the annotated anatomy, from
-    a strided sample widened by one stride (an outer bound)."""
-    hit = _ANATOMY_BOXES.get(id(atlas))
-    if hit is not None and hit[0] is atlas:
-        return hit[1], hit[2]
-    annotation = np.asarray(atlas.annotation)
-    step = max(1, math.ceil(max(annotation.shape) / _BOUND_SAMPLES))
-    sample = annotation[::step, ::step, ::step]
-    resolution = np.asarray([float(r) for r in atlas.resolution], dtype=np.float64)
-    shape = np.asarray(annotation.shape, dtype=np.float64)
-    lo = np.zeros(3)
-    hi = shape - 1.0
-    for axis in range(3):
-        others = tuple(a for a in range(3) if a != axis)
-        filled = np.nonzero(np.any(sample, axis=others))[0]
-        if filled.size:
-            lo[axis] = max(0.0, filled.min() * step - step)
-            hi[axis] = min(shape[axis] - 1.0, filled.max() * step + step)
-    box = (lo * resolution, (hi + 1.0) * resolution)
-    if len(_ANATOMY_BOXES) > 4:
-        _ANATOMY_BOXES.clear()
-    _ANATOMY_BOXES[id(atlas)] = (atlas, *box)
-    return box
-
-
-def brain_extent_um(ws: Workspace, state: StackState, *, angles: Angles | None = None) -> float:
-    """An upper bound of every anatomy-framed atlas plane's long edge, in
-    micrometres, at *angles*: the anatomy's bounding box seen along the
-    plane's two in-plane directions, plus the frame margin."""
-    from langslice.core.oblique import build_rotation_matrix, plane_axes
-
-    atlas = ws.atlas
-    pitch, yaw = plane_angles(state, angles)
-    _normal, row_axis, col_axis = plane_axes(atlas, cast(Plane, state.plane))
-    rotation = build_rotation_matrix(pitch, yaw, row_axis=row_axis, col_axis=col_axis)
-    lo, hi = _anatomy_box(atlas)
-    corners = np.array([[(lo, hi)[(k >> axis) & 1][axis] for axis in range(3)]
-                        for k in range(8)])
-    extent = 0.0
-    for axis in (row_axis, col_axis):
-        unit = np.zeros(3)
-        unit[axis] = 1.0
-        along = corners @ (rotation @ unit)
-        extent = max(extent, float(along.max() - along.min()))
-    return extent * (1.0 + 2.0 * FRAME_MARGIN) + 2.0 * atlas_um_per_px(atlas)
-
-
 def finest_um_per_px(ws: Workspace, record: SliceState, working_um: float) -> float:
     """Micrometres per pixel of the section's working copy, given
     *working_um* (the working frame's): no picture draws the section finer."""
@@ -179,23 +118,6 @@ def pair_scale(
     shown = pair_um_per_px(
         (section_extent_um(ws, record, working_um),
          atlas_extent_um(ws, state, position_mm, angles=record.angles)),
-        long_edge, finest=finest_um_per_px(ws, record, working_um),
-    )
-    return shown, working_um
-
-
-def reference_scale(
-    ws: Workspace, state: StackState, record: SliceState, long_edge: int,
-    *, um_per_px: float | None = None,
-) -> tuple[float, float]:
-    """``(picture um/px, working um/px)`` of *record* beside the atlas at ANY
-    position (``side_by_side``: one section picture for every atlas of a
-    call): the larger of the framed section and :func:`brain_extent_um` at
-    *long_edge*."""
-    working_um = section_um_per_px(ws, state, record, um_per_px)
-    shown = pair_um_per_px(
-        (section_extent_um(ws, record, working_um),
-         brain_extent_um(ws, state, angles=record.angles)),
         long_edge, finest=finest_um_per_px(ws, record, working_um),
     )
     return shown, working_um
@@ -238,7 +160,7 @@ def resized(picture: Image.Image, factor: float) -> Image.Image:
 
 
 __all__ = [
-    "atlas_at", "atlas_extent_um", "brain_extent_um", "finest_um_per_px", "framed_um_per_px",
-    "pair_scale", "pair_um_per_px", "reference_scale", "resized", "section_at",
+    "atlas_at", "atlas_extent_um", "finest_um_per_px", "framed_um_per_px",
+    "pair_scale", "pair_um_per_px", "resized", "section_at",
     "section_extent_um", "section_um_per_px", "stored_scale",
 ]

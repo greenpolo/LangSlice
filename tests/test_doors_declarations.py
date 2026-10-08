@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from langslice.core.nonlinear.prompts import border_correction_tool_prompt
-from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
+from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.doors import declarations
 from langslice.doors.declarations import FULL, VIEW_TOOLS, Variant, declaration, declare
 from langslice.doors.tools.arguments import SectionPosition, SectionTransform
@@ -130,8 +130,7 @@ _BOOKKEEPING = ["note", "undo", "redo", "submit"]
                "elastix_affine", *_BOOKKEEPING]),
     (_spec(tasks=["transform"], transform=TransformSpec(automatic=False), agent_damage=False),
      [*_EVERY_RUN, "interactive_transform", *_BOOKKEEPING]),
-    (_spec(tasks=["position"], position=PositionSpec(bayesian=True),
-           agent_preprocessing=True),
+    (_spec(tasks=["position"], agent_preprocessing=True),
      [*_EVERY_RUN, "position_sections", "mark_damage", *_BOOKKEEPING]),
     (_spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none")),
      [*_EVERY_RUN, "mark_damage", "ants_syn", *_BOOKKEEPING]),

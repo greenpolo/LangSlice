@@ -45,7 +45,7 @@ class TraceStarted:
     #: was already running (nothing started, nothing written).
     running: bool = False
     #: The packaged trace's background work id (:func:`trace_borders`); None
-    #: for the trace alone, and when the trace had already landed.
+    #: when nothing was started, and when the trace had already landed.
     work: str | None = None
     #: The packaged trace at this placement and region choice had already
     #: landed: the section's deformation holds its fit (nothing started).
@@ -131,15 +131,14 @@ def _start_trace(
     image_model: ImageModel,
     prompt: str,
     chosen: tuple[str, ...],
-    exclude: tuple[str, ...],
     workers: int,
 ) -> TraceStarted:
     """Start one section's image correction in the background, or reuse it
-    (the trace alone: no fit; see :func:`trace_borders`)."""
+    (the trace alone; :func:`trace_borders` adds the fit)."""
 
     def prepare(state: Any, ctx: Any, section_id: str, calls_dir: Any,
                 ) -> tuple[dict[str, Any], Any]:
-        kept, dropped = exclusions(state.by_id(section_id), chosen, exclude)
+        kept, dropped = exclusions(state.by_id(section_id), chosen, ())
         return registration_tool.start_correction(
             state, ctx, section_id, prompt=prompt, image_model=image_model,
             calls_dir=calls_dir, include=kept, exclude=dropped)
@@ -182,8 +181,6 @@ def trace_borders(
     image_model: ImageModel,
     prompt: str = "",
     restrict_to: Any = (),
-    include: tuple[str, ...] | None = None,
-    exclude: tuple[str, ...] | None = None,
     options: DisplayOptions | None = None,
     workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
 ) -> TraceStarted:
@@ -223,17 +220,9 @@ def trace_borders(
     ``NONLINEAR_SKIPPED`` (the host kept the section out of Nonlinear),
     ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
     ``STALE_INPUT`` (the geometry changed while the call was prepared).
-
-    Given *include* or *exclude* (the older form), only the trace is
-    started, as before the packaging: no ANTs check, no background work, no
-    fit; a traced ``fit_deformable`` reads it.
     """
     from langslice.ops.deformable import START_LATEST, refuse_without_ants, region_entries
 
-    if include is not None or exclude is not None:
-        return _start_trace(job, workspace, ref, image_model=image_model, prompt=prompt,
-                            chosen=tuple(restrict_to) or tuple(include or ()),
-                            exclude=tuple(exclude or ()), workers=workers)
     refuse_without_ants()
     regions = region_entries(workspace, job.state, restrict_to)
     record = job.state.resolve(ref)
@@ -244,7 +233,7 @@ def trace_borders(
         return TraceStarted(id=record.id, running=True, work=held.id,
                             record=dict(record.image_correction or {}))
     started = _start_trace(job, workspace, record.id, image_model=image_model, prompt=prompt,
-                           chosen=regions, exclude=(), workers=workers)
+                           chosen=regions, workers=workers)
     now = job.state.by_id(record.id) or record
     if not started.started and _landed(job, now):
         return replace(started, landed=True)
@@ -294,7 +283,7 @@ def land_trace(
                       "nothing was applied.", result={"error": "TRACE_FAILED", "trace": trace})
     if section_inputs(state, record, deformation=True) != expected or held.get("status") != "ok":
         return _stale(trace)
-    done = fit_deformable(job, workspace, [record], [TRACE_FIT], restrict_to=regions,
+    done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
                           start=start, options=options)
     row: dict[str, Any] = (done.rows[0] if done.rows
                            else {"status": "error", "error": "FIT_FAILED"})
@@ -326,8 +315,8 @@ def land_trace(
 def _landed(job: Job, record: Any) -> bool:
     """Whether *record*'s saved trace has landed: its image correction is a
     completed reply and a step of its applied deformation, at its current
-    linear placement, fitted that very trace (``fit_deformable`` records the
-    trace a traced step read)."""
+    linear placement, fitted that very trace (:func:`~langslice.ops.deformable.fit_deformable`
+    records the trace a traced step read)."""
     held = record.image_correction or {}
     applied = record.deformation or {}
     if held.get("status") != "ok" or not applied.get("steps"):
@@ -376,8 +365,9 @@ def trace_from_atlas(
     (``registration_tool.start_atlas_correction``; *passes* 2 adds the
     corrective second call). The result is the section's
     ``image_correction`` record exactly as :func:`trace_borders` writes it,
-    so ``fit_deformable`` with a traced fit section (starting from the
-    section's written linear placement) and the maps read it unchanged.
+    so :func:`langslice.ops.deformable.fit_deformable` with a traced fit
+    section (from the section's written linear placement), the submit gate
+    and the maps read it unchanged; no verb fits it: a script does.
     Each section needs a position and a written transform.
 
     Long-verb semantics, as :func:`trace_borders`: every edit is prepared

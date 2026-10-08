@@ -37,7 +37,7 @@ from tests.golden.record import (
 
 
 def _fit_deformable(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
-    """``ops.deformable.fit_deformable`` with one Elastix setting, applied, its
+    """``ops.deformable.fit_deformable`` with one ANTs setting, applied, its
     pictures (a deformable-fit picture, with the residual layer) saved as a
     door saves a tool's pictures (``Job.views.shown``)."""
     from langslice.core import deformation
@@ -45,13 +45,13 @@ def _fit_deformable(handle: Any, ids: list[str], *, long_edge: int | None = None
     from langslice.ops.deformable import fit_deformable
 
     choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                engine="elastix", stiffness="medium")
+                                engine="ants", stiffness="medium")
     options = (default_options("overlay") if long_edge is None
                else default_options("overlay", long_edge=long_edge))
     job, workspace = handle.job, handle.workspace
     with job.views.shown("fit_deformable", atlas_of=lambda: workspace.atlas) as shown:
         done = fit_deformable(job, workspace, [job.state.by_id(name) for name in ids],
-                              [choice], options=options)
+                              choice, options=options)
         shown.show(list(done.pictures), arguments={"slices": ids})
     job.views.flush()
     return done
@@ -60,9 +60,9 @@ def _fit_deformable(handle: Any, ids: list[str], *, long_edge: int | None = None
 @pytest.fixture(scope="module")
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     import langslice
+    from langslice.core.deformation import linear_key
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
-    from langslice.ops.deformable import keep_linear
 
     root = tmp_path_factory.mktemp("formats")
     patch = pytest.MonkeyPatch()
@@ -85,7 +85,12 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
         view=False)["status"] == "ok"
     fitted = _fit_deformable(job, [ID0])
     assert fitted.written == [ID0], fitted.rows
-    keep_linear(job.job, [job.state.by_id(ID1)], "kept for the test")
+    with job.job.writing():  # the "linear placement stands" record submit writes
+        before = job.job.snapshot()
+        kept = job.state.by_id(ID1)
+        kept.deformation = {"keep_linear": "kept for the test",
+                            "linear_key": linear_key(job.state, kept)}
+        job.job.commit(before)
     job.look(mode="overlay", sections=[ID1], resolution=700)
     job.look(mode="overlay", sections=[ID2], resolution=300)
     job.zoom(box=[30, 25, 270, 200])
