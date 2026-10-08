@@ -29,7 +29,7 @@ from PIL import Image
 from langslice.core import look as looks
 from langslice.core import zoom as zooms
 from langslice.core.layers import PictureNote, collecting, note_for
-from langslice.core.sizes import MAX_IMAGES_PER_CALL, MIN_RESOLUTION, picture_edge
+from langslice.core.sizes import MAX_IMAGES_PER_CALL, MIN_RESOLUTION
 from langslice.job.views import PICTURE_FILE, PictureRecord, has_frame
 from langslice.ops.refusal import Refused, unknown_sections
 
@@ -163,8 +163,10 @@ def look(
     No argument reads the job's state: no *sections* is every section, no
     *channels* every raw channel, no *atlas_layers* the mode's default.
     *sections* are filenames (``StackState.resolve``). *resolution* is a picture's
-    long edge (clamped up to :data:`~langslice.core.sizes.MIN_RESOLUTION`; it
-    applies at image_resolution ``auto`` only, as everywhere). At most
+    long edge (clamped up to :data:`~langslice.core.sizes.MIN_RESOLUTION`); a
+    door passes one only where its caller sizes the pictures (image_resolution
+    ``auto``, or the agent CLI and the library, whose toolbox works at
+    ``auto`` whatever the job's level). At most
     :data:`MAX_LOOK_PICTURES` pictures are saved and returned; the rest are
     ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
     ``UNKNOWN_MODE``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
@@ -191,8 +193,7 @@ def look(
         atlas_layers, "atlas_layers"))
     if atlas_opacity is not None and not 0.0 <= float(atlas_opacity) <= 1.0:
         raise Refused("BAD_ARGS", message="atlas_opacity is between 0 and 1.")
-    edge = (picture_edge(workspace, max(int(resolution), MIN_RESOLUTION))
-            if resolution else None)
+    edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
     request = looks.LookRequest(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
         channels=tuple(str(c) for c in _strings(channels, "channels")), atlas_layers=layers,
