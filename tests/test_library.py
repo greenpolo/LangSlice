@@ -100,7 +100,7 @@ def test_image_model_builtin_profiles():
 
     model = langslice.image_model("openai-oauth")
     assert (model.provider, model.model, model.prompt, model.tested, model.profile) == (
-        "openai-oauth", "gpt-image-2", None, True, "openai-oauth")
+        "openai-oauth", "gpt-image-2.5-sunburst", None, True, "openai-oauth")
     assert langslice.image_model("gemini-api", model="some-image-model").model == \
         "some-image-model"
     assert langslice.image_model(model) is model

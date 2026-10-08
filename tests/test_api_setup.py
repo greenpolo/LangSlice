@@ -130,8 +130,8 @@ def test_status_lists_the_chatgpt_agent_and_image_models(isolated_home: Path) ->
     ]
     assert oauth["default_agent_model"] == OPENAI_OAUTH_DEFAULT_AGENT_MODEL
     assert oauth["default_agent_model"] in oauth["agent_models"]
-    assert oauth["image_models"] == ["gpt-image-2"]
-    assert oauth["default_image_model"] == "gpt-image-2"
+    assert oauth["image_models"] == ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
+    assert oauth["default_image_model"] == "gpt-image-2.5-sunburst"
     # One definition: the transport's defaults are the listed ones.
     from langslice.providers import openai_oauth
 
@@ -206,7 +206,8 @@ def test_status_lists_every_image_model_choice_with_its_connection(
     """The dialog's image-model choices, in its order, connected or not, from
     offline presence checks only."""
     for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENAI_IMAGE_API_KEY",
-                 "OPENAI_IMAGE_BASE_URL", "OPENAI_BASE_URL", "LANGSLICE_OPENAI_AUTH"):
+                 "OPENAI_IMAGE_BASE_URL", "OPENAI_BASE_URL", "LANGSLICE_OPENAI_AUTH",
+                 "OPENAI_IMAGE_MODEL"):
         monkeypatch.delenv(name, raising=False)
     choices = setup.setup_status()["image_models"]
     assert [c["provider"] for c in choices] == ["openai-oauth", "gemini-api", "openai-api",
@@ -215,7 +216,11 @@ def test_status_lists_every_image_model_choice_with_its_connection(
     assert connected == {"openai-oauth": False, "gemini-api": False, "openai-api": False,
                          "none": True}
     oauth = choices[0]
-    assert oauth["models"] == ["gpt-image-2"] and oauth["default_model"] == "gpt-image-2"
+    assert oauth["models"] == ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
+    assert oauth["default_model"] == "gpt-image-2.5-sunburst"
+    api = choices[2]
+    assert api["models"] == ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
+    assert api["default_model"] == "gpt-image-2.5-sunburst"
     gemini = choices[1]
     assert gemini["models"] and all("-image" in m for m in gemini["models"])
     assert gemini["default_model"] == "gemini-3.1-flash-image"

@@ -200,7 +200,8 @@ photograph_first=None, name=None)` returns the model `trace_borders` calls.
 
 - **A provider name**: `"openai-oauth"`, `"openai-api"` or `"gemini-api"`.
   `model` names the image model; without it the provider's default
-  (`gpt-image-2` on `openai-oauth`). Without a prompt this is the provider's
+  (`gpt-image-2.5-sunburst`, GPT Image 2.5, on `openai-oauth` and
+  `openai-api`; `gpt-image-2.5-flare` is the faster one). Without a prompt this is the provider's
   **built-in profile**: LangSlice's prompt for that provider.
 - **A model of your own**: a plain function, or any object with a `call`
   method (and, optionally, `provider` and `model` attributes). It is called

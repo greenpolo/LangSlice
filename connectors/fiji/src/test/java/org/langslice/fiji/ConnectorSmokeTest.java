@@ -262,7 +262,7 @@ public final class ConnectorSmokeTest {
                 "Nonlinear block: no image model, no engine, notes are sent");
         s.imageProvider = "gemini-api"; s.imageModel = "gemini-3-pro-image";
         require(s.spec().getAsJsonObject("nonlinear").get("image_model").getAsString().equals("gemini-3-pro-image") && s.usesImageModel(), "Image provider and model");
-        s.linear = true; s.nonlinear = false; s.imageProvider = "openai-oauth"; s.imageModel = "gpt-image-2";
+        s.linear = true; s.nonlinear = false; s.imageProvider = "openai-oauth"; s.imageModel = "gpt-image-2.5-sunburst";
         require(s.preprocessing(3).toString().equals("{\"mode\":\"auto\"}") && s.exportChannels(3).equals(Arrays.asList(0, 1, 2)), "Auto exports every channel");
         s.custom = true; s.weights = new double[]{1, 0, 0.5}; s.clahe = false; s.strength = "high";
         require(s.exportChannels(3).equals(Arrays.asList(0, 2)), "Custom exports only weighted channels, in channel order");
@@ -297,20 +297,20 @@ public final class ConnectorSmokeTest {
                 && back.saveTraces && back.traceDir.equals(s.traceDir), "Every choice persists between runs");
         node.removeNode();
         JsonObject status = JsonParser.parseString("{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],"
-                + "\"default_agent_model\":\"openai-oauth/gpt-6-sol\",\"default_image_model\":\"gpt-image-2\"}}}").getAsJsonObject();
+                + "\"default_agent_model\":\"openai-oauth/gpt-6-sol\",\"default_image_model\":\"gpt-image-2.5-sunburst\"}}}").getAsJsonObject();
         require(RegistrationSettings.agentModels(status).equals(Collections.singletonList("openai-oauth/gpt-6-sol")), "Models come from setup.status");
-        require(RegistrationSettings.accountDefault(status, "default_image_model").equals("gpt-image-2")
+        require(RegistrationSettings.accountDefault(status, "default_image_model").equals("gpt-image-2.5-sunburst")
                 && RegistrationSettings.accountDefault(new JsonObject(), "default_agent_model") == null, "Account defaults");
         require(RegistrationSettings.signedIn(status) && !RegistrationSettings.signedIn(new JsonObject()), "Account status");
         require(RegistrationSettings.modelLabel("openai-oauth/gpt-5.6-sol").equals("gpt-5.6-sol"), "Model labels drop the account prefix");
         require(new RegistrationSettings().problem(1) != null, "No agent model until the dialog fills in the worker's default");
         // Image models in the worker's order, with None (fit to the stain only) as the worker places it.
         JsonObject current = JsonParser.parseString("{\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,"
-                + "\"models\":[\"gpt-image-2\"],\"default_model\":\"gpt-image-2\"},{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":false,"
+                + "\"models\":[\"gpt-image-2.5-sunburst\"],\"default_model\":\"gpt-image-2.5-sunburst\"},{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":false,"
                 + "\"models\":[\"g1\",\"g2\"],\"default_model\":\"g1\"},{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":true,\"models\":[],"
                 + "\"default_model\":\"img-1\"},{\"provider\":\"none\",\"label\":\"None\",\"connected\":true,\"models\":[],\"default_model\":null}]}").getAsJsonObject();
         List<RegistrationSettings.ImageChoice> given = RegistrationSettings.imageChoices(current);
-        require(given.size() == 5 && given.get(0).label.equals("ChatGPT image lane: gpt-image-2") && given.get(2).matches("gemini-api", "g2")
+        require(given.size() == 5 && given.get(0).label.equals("ChatGPT image lane: gpt-image-2.5-sunburst") && given.get(2).matches("gemini-api", "g2")
                 && given.get(2).toString().endsWith("(not set up)") && given.get(3).matches("openai-api", "img-1")
                 && given.get(4).label.equals("None (fit to the stain only)"), "setup.status image_models list: " + given);
         require(RegistrationSettings.imageChoices(new JsonObject()).isEmpty(), "No list, no choices");

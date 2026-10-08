@@ -4,7 +4,8 @@ Endpoint and key come from the environment (loaded by
 ``doors.api.setup.load_credentials``): ``OPENAI_IMAGE_BASE_URL``, else
 ``OPENAI_BASE_URL``, else the OpenAI API itself; ``OPENAI_IMAGE_API_KEY``,
 else ``OPENAI_API_KEY``. The image model is ``OPENAI_IMAGE_MODEL``, else
-``gpt-image-2``.
+``gpt-image-2.5-sunburst`` (GPT Image 2.5, the most capable; ``gpt-image-2.5-flare``
+is the fastest).
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_IMAGE_MODEL = "gpt-image-2"
+#: The GPT Image 2.5 models a host offers on ``openai-api``, the default first.
+OPENAI_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare")
+DEFAULT_IMAGE_MODEL = OPENAI_IMAGE_MODELS[0]
 
 
 def _env(name: str) -> str | None:

@@ -123,7 +123,8 @@ def _image_models(provider: str) -> tuple[list[str], str | None]:
         from langslice.providers import openai_config
 
         default = openai_config.get_openai_image_model()
-        return [default], default
+        return ([default, *(model for model in openai_config.OPENAI_IMAGE_MODELS
+                            if model != default)], default)
     return [], None
 
 

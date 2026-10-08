@@ -10,7 +10,7 @@ no API key:
 
 * chat/vision/tool-use through :class:`OpenAIOAuthLlm`, a native ``google-adk``
   model backend registered for ``openai-oauth/*`` model strings;
-* image edits (``gpt-image-2``) through :func:`edit_image`, the Codex
+* image edits (``gpt-image-2.5-sunburst`` by default) through :func:`edit_image`, the Codex
   ``images/edits`` endpoint, used by the image-model trace.
 
 Credentials come only from LangSlice's own file, ``~/.langslice/openai_auth.json``

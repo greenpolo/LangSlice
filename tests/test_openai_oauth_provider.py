@@ -561,7 +561,7 @@ def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
 
     assert generated.provider == "openai-oauth"
     assert generated.route == "openai_oauth_images_edit"
-    assert generated.model == "gpt-image-2"
+    assert generated.model == "gpt-image-2.5-sunburst"
     assert generated.revised_prompt is None  # nothing rewrites on this path
     assert captured["prompt"] == "warp it"  # delivered verbatim
     assert len(captured["references"]) == 3

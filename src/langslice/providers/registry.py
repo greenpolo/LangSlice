@@ -44,9 +44,11 @@ OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
 )
 #: Default agent/review model on the ``openai-oauth`` lane.
 OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-5.6-sol"
-#: Image models on the ``openai-oauth`` lane, and the default.
-OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2",)
-OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = "gpt-image-2"
+#: Image models on the ``openai-oauth`` lane (GPT Image 2.5: ``sunburst``
+#: the most capable, ``flare`` the fastest), and the default. The Codex
+#: backend serves its own current image model whatever the request names.
+OPENAI_OAUTH_IMAGE_MODELS: tuple[str, ...] = ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare")
+OPENAI_OAUTH_DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_IMAGE_MODELS[0]
 #: Image models on the ``gemini-api`` lane (Google's image-generation
 #: models), and the default: the general-purpose one.
 GEMINI_IMAGE_MODELS: tuple[str, ...] = (
