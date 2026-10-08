@@ -116,14 +116,6 @@ conditional on visibility (the atlas alone decides which borders exist; the
 one exception is tissue torn away); the OpenAI wording uses "change only X"
 plus a preserve list, the Gemini wording positive framing only.
 
-## Without an agent
-
-`langslice.register_job` (scripted, [library.md](library.md)) runs the same
-verbs in a fixed order: `trace_borders` on every section when the job has an
-image model, then `fit_deformable` with the traced lines against the atlas
-borders (Elastix, medium); without an image model, the stain against `template`
-(Elastix, medium). A `fit=` argument replaces those settings.
-
 ## What the deformation becomes
 
 - The job folder's maps hold the complete mapping, linear plus residual

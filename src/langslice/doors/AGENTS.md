@@ -13,7 +13,7 @@ every door is generated from them and from the registry (`ops/registry.py`:
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
 | agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, the hidden `trace_from_atlas`) and `brief` | Claude Code, Codex |
-| library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `pipeline.py` (`register_section`, `register_job`) calls those verbs in a fixed order | a script |
+| library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included | a script |
 
 A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
 placement-free image-model trace kept for experiments) is built by the
@@ -48,8 +48,8 @@ exceptions listed. The host commands (`abba`, `serve`) live in
 `hosts/cli.py`; `cli/__init__.py` names them by module path
 (`HOST_COMMANDS`) and imports that module when it builds the parser.
 `tests/test_core_imports.py` loads the doors' agent-free modules in a fresh
-interpreter and runs `import langslice; langslice.open_job(...)` and a
-scripted `register_section`. An operation (`ops/`) never imports a door.
+interpreter and runs `import langslice; langslice.open_job(...)` and
+`create_job` with a script's own image model. An operation (`ops/`) never imports a door.
 
 What every door shares beyond the verbs: the job statement
 (`statement.py`), the ending of a job (`jobs.close_job`), the host trace
@@ -107,7 +107,7 @@ the CLI is a process per call.
   persist=, door=)` (`Job.load`: nothing rewritten; the card brought up to
   date; the model keys loaded by `api.setup.load_credentials`),
   `create(spec)` (`Job.open`, the ingest every host uses; the card), both
-  taking `image_model=` and writing no card for a lean job. `Opened.tools()`
+  taking `image_model=`. `Opened.tools()`
   (the toolbox with `gates=False`, `level="auto"`, `scripting=True`,
   `max_view_edge` the viewer's or `OPEN_MAX_VIEW_EDGE` for a script; one per
   open job), `Opened.listed_verbs()`, `Opened.image_model_connected` (a model
@@ -140,36 +140,19 @@ the CLI is a process per call.
   interpreter exit by `_close_open`, registered with `job.views.at_exit`
   (before `concurrent.futures` stops taking work), so a script that never
   calls `close` keeps its `trace_borders` results and pictures. `create_job(images | JobSpec, atlas=, plane=, tasks=,
-  image_model=, job_dir=, output=, positions=, transforms=, angles=,
+  image_model=, job_dir=, positions=, transforms=, angles=,
   orientation=, pixel_size_um=, inputs=, registration=, fresh=, **JobSpec
   fields)`: six-number transforms become `{"kind": "interactive", "params",
   "mirrored"}` (`_transform`); `angles` in either `inputs.angles` form
   (`_angles`); `registration=` a file made elsewhere (`tasks` None is then
-  `["nonlinear"]`); otherwise `tasks` None is `pipeline_tasks`
+  `["nonlinear"]`); otherwise `tasks` None is `default_tasks`
   (`nonlinear`, plus `transform` unless every section has a transform).
   `image_model` None is provider `none`; else the model's provider (`custom`
   for a model of the caller's own) and `job.json` records the profile
   (`profile_record`). `open_job` of a job whose record says untested,
   without `image_model=`, sets `Opened.traces_off`. `langslice/__init__.py`
   exposes `open_job`, `create_job`, `image_model`, `default_prompt`,
-  `register_section`, `register_job`, `RegistrationError`, `coordinate_map`
-  and `load_atlas`, each imported on first use.
-- `pipeline.py` — the scripted nonlinear registration (`docs/library.md`).
-  `register_job(job, sections=, fit=, full_resolution=, arrays=)`: per
-  section `elastix_affine` where no transform, then `trace_borders` when the
-  job has the verb (the packaged trace and its ANTs fit, waited for:
-  `Job.background.wait_all`), else `ants_syn` (`STAIN_FIT`, any of its
-  arguments replaced by *fit*; `FIT_BATCH` 4 per call); then `submit`, a
-  section whose deformation failed named in its `left_linear` with the
-  reason (with a section unplaced or unaligned, `export_maps` instead); a
-  failure kept per section in `problems`. Both deformable steps need
-  antspyx. `register_section(image, position_mm=, ...)`: the section
-  linked, copied or (an array) written as a TIFF into a folder of its own
-  (the folder checked first: other section images there, or a different
-  file under the section's name, are refused and nothing is written), then
-  `create_job(fresh=True)` and `register_job`; `RegistrationError` on a
-  problem. `RegistrationResult` / `SectionOutput` (paths, trace,
-  `untested`, `problem`, `read()` the maps as arrays).
+  `coordinate_map` and `load_atlas`, each imported on first use.
 - `card.py` — the job folder's reference card, `AGENTS.md` and `CLAUDE.md`
   (identical; Codex reads one, Claude Code the other): `card_text(layout)`
   (the folder's files, the maps and their coordinate convention, the CLI

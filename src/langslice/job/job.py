@@ -29,13 +29,6 @@ the job folder's ``history/`` (:mod:`langslice.job.history`: an index and one
 file per step), depth :data:`UNDO_DEPTH`; a resumed job reads it back, a
 fresh one starts empty.
 
-**Lean.** A job whose spec's ``output_level`` is "lean" keeps the results
-only: no pictures (:class:`~langslice.job.views.DiscardedViews`), no undo
-history on disk (undo and redo still work in the process that made the
-steps), no ``logs/``. The state, ``registration.json``, the maps, the
-deformation records, the image-model traces and the exports are written as
-in a full job.
-
 **Paths.** Every path the state stores (a deformation's ``record``, an image
 correction's artifacts) is relative to the job folder.
 
@@ -729,12 +722,8 @@ class Job:
         self.layout = layout
         self.results_path = str(results_path or layout.results_file)
         self.history = history or History(layout.history_dir)
-        #: The job folder keeps the results only (``JobSpec.output_level``
-        #: "lean"): no pictures, no undo history on disk, no event log.
-        self.lean = spec.lean
-        #: The pictures the model was shown, saved with their layers (none
-        #: in a lean job).
-        self.views = DiscardedViews(layout) if self.lean else ViewStore(layout)
+        #: The pictures the model was shown, saved with their layers.
+        self.views: ViewStore = ViewStore(layout)
         #: The job folder's write lock (:meth:`writing`), across processes.
         self.lock = FolderLock(layout.folder)
         #: Sections whose flip, rotation and transform the host locked.
@@ -809,7 +798,7 @@ class Job:
         images = Path(os.path.abspath(workspace.image_folder))
         layout = JobLayout(Path(os.path.abspath(folder)), images)
         check_owner(layout)
-        layout.ensure(lean=spec.lean)
+        layout.ensure()
         lock = FolderLock(layout.folder)
         with lock.held():  # read and first checkpoint as one write
             state = None
@@ -847,8 +836,7 @@ class Job:
             if not undo and not redo and history.exists():
                 job._save_history()  # a fresh job empties a history it read; never another
             job.checkpoint()
-        if not spec.lean:
-            layout.log_event("open", resumed=resumed)
+        layout.log_event("open", resumed=resumed)
         return job
 
     @classmethod
@@ -1000,7 +988,7 @@ class Job:
             return True
 
     def _save_history(self) -> None:
-        if not self.persist or self.lean:  # a lean job's undo lives in this process only
+        if not self.persist:
             return
         with self.lock.held():
             self.history.save(self.undo_stack, self.redo_stack)

@@ -351,10 +351,10 @@ def _angles(value: Mapping[str, Any]) -> dict[str, Any]:
     return {name: {"pitch": pitch, "yaw": yaw} for name, (pitch, yaw) in sections.items()}
 
 
-def pipeline_tasks(images: str | os.PathLike[str], transforms: Mapping[str, Any]) -> list[str]:
-    """The tasks a scripted registration needs: ``nonlinear``, plus
-    ``transform`` (the automatic linear alignment, ``elastix_affine``) unless
-    every section in *images* has a supplied transform."""
+def default_tasks(images: str | os.PathLike[str], transforms: Mapping[str, Any]) -> list[str]:
+    """:func:`create_job`'s tasks when none are given: ``nonlinear``, plus
+    ``transform`` unless every section in *images* has a supplied
+    transform."""
     from langslice.core.discovery import discover_slices
 
     names = {os.path.basename(path) for path in discover_slices(os.fspath(images))}
@@ -369,7 +369,6 @@ def create_job(
     tasks: Sequence[str] | None = None,
     image_model: Any = None,
     job_dir: str | os.PathLike[str] | None = None,
-    output: str = "full",
     positions: Mapping[str, float] | None = None,
     transforms: Mapping[str, Any] | None = None,
     angles: Mapping[str, Any] | None = None,
@@ -387,9 +386,7 @@ def create_job(
 
     *images* is the folder of sections (or a :class:`JobSpec`, used as it
     is: then only *image_model*, *atlas_loader* and *emit* apply). The job
-    folder is *job_dir*, else ``<images>/langslice``. *output* "full" keeps
-    every file a job writes, "lean" the results only (no pictures, no undo
-    history on disk, no logs, no reference card: ``JobSpec.output_level``).
+    folder is *job_dir*, else ``<images>/langslice``.
 
     The registration you supply, by section filename: *positions* (atlas
     millimetres from the anterior edge of the volume), *transforms* (six
@@ -431,7 +428,7 @@ def create_job(
             "orientation": orientation, "pixel_size_um": pixel_size_um, "inputs": inputs,
             "tasks": tasks, "job_dir": job_dir,
             "registration": registration}.items() if value is not None}
-        if given or settings or output != "full" or fresh:
+        if given or settings or fresh:
             raise ValueError("create_job takes a JobSpec as it is: set "
                              f"{sorted({*given, *settings})} on the spec instead")
         spec = images
@@ -467,12 +464,12 @@ def create_job(
             "atlas": atlas, "plane": plane, "debrief": False, **settings,
             "image_folder": str(folder),
             "tasks": list(tasks) if tasks is not None else ["nonlinear"]
-            if registration is not None else pipeline_tasks(
+            if registration is not None else default_tasks(
                 folder, supplied.get("transforms") or {}),
             "nonlinear": nonlinear, "inputs": supplied,
             "job_dir": None if job_dir is None else os.path.abspath(
                 os.path.expanduser(os.fspath(job_dir))),
-            "output_level": output, "resume": not fresh,
+            "resume": not fresh,
         })
     _check_model_fits(spec, model)
     imported: dict[str, Any] | None = None

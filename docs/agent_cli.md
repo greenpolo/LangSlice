@@ -170,7 +170,7 @@ absolute path and `kind` with its `index` (the number the reply's
 ## Call log, traces, shared editing
 
 Every call is logged in `logs/calls.jsonl` (verb, arguments, `ok`, exit code,
-error code, artifacts, seconds, background run id; a lean job logs nothing).
+error code, artifacts, seconds, background run id).
 With `LANGSLICE_TRACE_DIR` set, each call is also traced like an MCP tool call
 (`src/langslice/doors/trace.py`) into `cli_<images>_<digest>.jsonl`.
 
@@ -206,8 +206,8 @@ A method's reply is a JSON-safe dict (`json.dumps(reply)` works): the CLI's
 `result` in full (not shortened), uniform status rows, and `artifacts`; it
 returns once its pictures are written ([library.md](library.md)).
 
-`import langslice` loads no agent framework or model client. A scripted
-pipeline (`create_job`, image-model profiles, `register_section`,
-`register_job`): [library.md](library.md). Ready-made Claude Code and Codex
+`import langslice` loads no agent framework or model client. Scripting in
+Python (`open_job`, `create_job`, image-model profiles):
+[library.md](library.md). Ready-made Claude Code and Codex
 setups: [`connectors/claude-code/`](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-code/README.md),
 [`connectors/codex/`](https://github.com/greenpolo/LangSlice/blob/main/connectors/codex/README.md).

@@ -12,7 +12,7 @@ the ways to use it.
 - [Install in ABBA](abba_installation.md): the Fiji connector and the Python environment.
 - [CLI usage](cli.md): `langslice linear run`, the other commands, traces.
 - [Agent CLI](agent_cli.md): `langslice-job FOLDER VERB` for Claude Code, Codex and scripts.
-- [Python library](library.md): `open_job`, `create_job`, `register_section`, `register_job`.
+- [Python library](library.md): `open_job`, `create_job`, the verbs as methods.
 - [File formats](file_formats.md): `registration.json`, the coordinate and label maps, the QuickNII / VisuAlign exports, importing a registration.
 
 ## How it works

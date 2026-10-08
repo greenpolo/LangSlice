@@ -1,5 +1,5 @@
 """The picture index: every saved picture carries a caption, a step and a
-recipe, and can be looked up by its number (also in a lean job)."""
+recipe, and can be looked up by its number (also in a dry run)."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def test_lookup_and_latest_skip_zoom_and_survive_a_new_store(tmp_path: Path):
     assert again is not None and again.tool == "zoom"
 
 
-def test_a_lean_job_indexes_pictures_in_memory(tmp_path: Path):
+def test_a_dry_run_indexes_pictures_in_memory(tmp_path: Path):
     store = _store(tmp_path, DiscardedViews)
     store.step_source = lambda: 7
     assert store.save(tool="view", pictures=[
@@ -85,7 +85,7 @@ def test_a_lean_job_indexes_pictures_in_memory(tmp_path: Path):
     assert not (tmp_path / "langslice" / "views.jsonl").exists()
 
 
-def test_a_lean_store_keeps_only_the_newest_images(tmp_path: Path):
+def test_a_dry_run_store_keeps_only_the_newest_images(tmp_path: Path):
     store = _store(tmp_path, DiscardedViews)
     for _ in range(DiscardedViews.KEPT_PICTURES + 3):
         store.save(tool="view", pictures=[(_picture(), None)])

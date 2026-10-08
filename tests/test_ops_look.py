@@ -42,11 +42,11 @@ def _section(job: Job, section_id: str) -> SliceState:
     return found
 
 
-def _job(tmp_path: Path, *, lean: bool = False):
+def _job(tmp_path: Path, *, persist: bool = True):
     ws0, state0 = stack(tmp_path, marked=True)
     atlas = SyntheticAtlas()
     spec = JobSpec(image_folder=ws0.image_folder, model="fake-model", preprocess="none",
-                   inputs={"pixel_size_um": 25.0}, output_level="lean" if lean else "full")
+                   inputs={"pixel_size_um": 25.0})
     ws = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     job = Job.open(spec, ws, folder=ws.job_folder, results_path=ws.results_path)
     with job.writing():
@@ -56,6 +56,9 @@ def _job(tmp_path: Path, *, lean: bool = False):
             assert source is not None
             record.position_mm = source.position_mm
         job.commit(before)
+    if not persist:  # a dry run's job: it writes nothing, its pictures in memory
+        job = Job.load(spec, ws, folder=ws.job_folder, results_path=ws.results_path,
+                       persist=False)
     return job, ws
 
 
@@ -207,19 +210,19 @@ def test_a_picture_that_is_not_saved_is_refused(tmp_path: Path):
     with pytest.raises(Refused) as caught:
         ops_look.zoom(job, ws, [0, 0, 20, 20], picture=number)
     assert caught.value.code == "PICTURE_NOT_SAVED"
-    # A lean job keeps no pictures between processes: an unknown number is "not saved".
-    (tmp_path / "lean").mkdir()
-    lean, lean_ws = _job(tmp_path / "lean", lean=True)
+    # A dry run keeps no pictures between processes: an unknown number is "not saved".
+    (tmp_path / "dry").mkdir()
+    dry, dry_ws = _job(tmp_path / "dry", persist=False)
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(lean, lean_ws, [0, 0, 20, 20], picture=7)
+        ops_look.zoom(dry, dry_ws, [0, 0, 20, 20], picture=7)
     assert caught.value.code == "PICTURE_NOT_SAVED"
     with pytest.raises(Refused) as caught:
-        ops_look.zoom(lean, lean_ws, [0, 0, 20, 20])
+        ops_look.zoom(dry, dry_ws, [0, 0, 20, 20])
     assert caught.value.code == "NO_PICTURE"
 
 
-def test_a_lean_job_zooms_from_memory(tmp_path: Path):
-    job, ws = _job(tmp_path, lean=True)
+def test_a_dry_run_zooms_from_memory(tmp_path: Path):
+    job, ws = _job(tmp_path, persist=False)
     (entry,) = ops_look.look(job, ws, "section", sections=[SECTIONS[0]]).entries
     zoomed = ops_look.zoom(job, ws, [0, 0, 60, 40])
     assert zoomed.picture == entry["id"] and zoomed.redrawn

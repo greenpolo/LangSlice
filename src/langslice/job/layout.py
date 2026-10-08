@@ -326,13 +326,10 @@ class JobLayout:
         path = Path(os.fspath(ref))
         return path if path.is_absolute() else self.folder / path
 
-    def ensure(self, *, lean: bool = False) -> None:
-        """Create the job folder and its fixed subfolders (*lean*: those a
-        lean job writes, without ``history/``, ``views/`` and ``logs/``)."""
-        folders = ((self.folder, self.sections_dir, self.exports_dir) if lean else
-                   (self.folder, self.history_dir, self.sections_dir, self.views_dir,
-                    self.exports_dir, self.logs_dir))
-        for folder in folders:
+    def ensure(self) -> None:
+        """Create the job folder and its fixed subfolders."""
+        for folder in (self.folder, self.history_dir, self.sections_dir, self.views_dir,
+                       self.exports_dir, self.logs_dir):
             folder.mkdir(parents=True, exist_ok=True)
 
     def log_event(self, kind: str, **fields: Any) -> None:

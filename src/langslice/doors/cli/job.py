@@ -168,21 +168,18 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
     arguments as given, the envelope's outcome, the artifacts' paths) and,
     with ``LANGSLICE_TRACE_DIR`` set, trace it as the MCP door traces a tool
     call (:mod:`langslice.doors.trace`). Never raises; a folder without a
-    job, or a lean job (which keeps no logs), logs nothing."""
+    job logs nothing."""
     import os
 
     from langslice.doors.jobs import NoJob, find
     from langslice.doors.trace import TRACE_DIR_ENV, cli_trace, log_call
-    from langslice.job.layout import JobLayout, read_job_file
+    from langslice.job.layout import JobLayout
 
     try:
         layout = JobLayout(find(folder))
-        held = read_job_file(layout) or {}
     except (NoJob, OSError, ValueError):
         return
     try:
-        if (held.get("spec") or {}).get("output_level") == "lean":
-            return
         paths = [str(item.get("path")) for item in envelope.artifacts]
         log_call(layout.logs_dir, {
             "verb": verb, "arguments": list(rest), "ok": envelope.ok, "exit": envelope.exit,
@@ -712,7 +709,7 @@ def brief(folder: str, *, atlas_loader: Any = None) -> Envelope:
         pictures = [item for item in written.artifacts if item["kind"] == "opening"]
         expected = sum(1 for entry in written.opening if "picture" in entry)
         warnings = ([] if len(pictures) == expected else [
-            "The opening pictures were not saved (a lean job keeps no pictures); "
+            "The opening pictures were not saved; "
             "`langslice.open_job` gives them to a script."])
         return Envelope(result={
             "job_folder": str(opened.job.folder),

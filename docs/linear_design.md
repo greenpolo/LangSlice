@@ -16,7 +16,7 @@ A host (CLI, Fiji connector, MCP, library) fills one `JobSpec`
 
 | Field | Meaning |
 |---|---|
-| `image_folder`, `atlas`, `plane`, `job_dir`, `output_level` | what is registered and where the job lives (`full` or `lean`, see [library.md](library.md)) |
+| `image_folder`, `atlas`, `plane`, `job_dir` | what is registered and where the job lives |
 | `tasks` | subset of `reorder`, `position`, `transform`, `nonlinear`; default the first three. Hosts present `reorder` + `position` as Positioning, `transform` as Linear, `nonlinear` as Nonlinear |
 | `model`, `reasoning`, `image_resolution`, `preprocess`, `agent_preprocessing`, `agent_damage` | agent model and what it sees |
 | `position` | `thickness_um`, `interval_um`, `strict_interval`, `bayesian` (offers `search_position`), `gated`, `playbook`, `notes` |

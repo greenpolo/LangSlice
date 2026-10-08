@@ -270,7 +270,7 @@ def show_result(
 
 
 def _saved_image(job: Job, record: PictureRecord) -> Image.Image | None:
-    """The picture as it was saved: from memory (a lean job's newest), else
+    """The picture as it was saved: from memory (a dry run's newest), else
     its JPEG in the job folder; None when neither exists."""
     held = record.image
     try:
@@ -299,7 +299,7 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
         raise Refused("BAD_ARGS", message="picture is a picture number.") from None
     found = job.views.lookup(number)
     if found is None:
-        if not job.persist or job.lean:
+        if not job.persist:
             raise Refused("PICTURE_NOT_SAVED", picture=number,
                           message=f"Picture {number} is not saved: this job keeps no pictures "
                           "beyond this process.")
