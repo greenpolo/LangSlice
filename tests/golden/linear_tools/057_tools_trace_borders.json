@@ -1,0 +1,22 @@
+{
+ "args": [
+  "s0.png"
+ ],
+ "data": {
+  "id": "s0.png",
+  "message": "Started in the background as work w1. Carry on; its notice comes at the head of a later reply, and submit waits for it.",
+  "status": "started",
+  "trace": {
+   "attempt": 1,
+   "cached": false,
+   "prompt_edited": false,
+   "status": "running"
+  },
+  "work": "w1"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "trace_borders"
+}

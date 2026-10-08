@@ -1,0 +1,30 @@
+{
+ "args": [
+  "s1.png"
+ ],
+ "data": {
+  "id": "s1.png",
+  "message": "Started in the background as work w2. Carry on; its notice comes at the head of a later reply, and submit waits for it.",
+  "status": "started",
+  "trace": {
+   "attempt": 1,
+   "cached": false,
+   "include": [
+    "TH"
+   ],
+   "prompt_edited": true,
+   "status": "running"
+  },
+  "work": "w2"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "prompt": "Trace only the thalamus.",
+  "restrict_to": [
+   "TH"
+  ]
+ },
+ "media_texts": [],
+ "tool": "trace_borders"
+}

@@ -1,0 +1,70 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "rotation_deg": 0.0
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.025,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0,
+    "transform": "interactive",
+    "transform_mirrored": false
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 5
+   }
+  ],
+  "results": [
+   {
+    "id": "s0.png",
+    "orientation": {
+     "changed": false,
+     "flip": false,
+     "rotate_quarter": 0
+    },
+    "status": "ok",
+    "transform": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": 0.0,
+     "scale_x": 1.0,
+     "scale_y": 1.0,
+     "shear": 0.0,
+     "translate_x_mm": 0.0,
+     "translate_y_mm": 0.0
+    },
+    "written": true
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "auto",
+ "images": [
+  {
+   "file": "082_auto_interactive_transform.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "interactive_transform"
+}

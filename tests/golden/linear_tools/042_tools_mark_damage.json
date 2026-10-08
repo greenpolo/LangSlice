@@ -1,0 +1,18 @@
+{
+ "args": [
+  "s1.png",
+  [
+   "NOPE"
+  ]
+ ],
+ "data": {
+  "error": "UNKNOWN_REGIONS",
+  "message": "Unknown atlas structures: NOPE",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "mark_damage"
+}

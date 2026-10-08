@@ -1,0 +1,23 @@
+{
+ "args": [
+  [
+   0,
+   0,
+   50,
+   50
+  ]
+ ],
+ "data": {
+  "error": "UNKNOWN_PICTURE",
+  "message": "There is no picture 999.",
+  "picture": 999,
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "picture": 999
+ },
+ "media_texts": [],
+ "tool": "zoom"
+}

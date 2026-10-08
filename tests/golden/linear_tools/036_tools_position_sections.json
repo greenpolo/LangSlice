@@ -1,0 +1,34 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "mm": 1,
+    "position_mm": 0.1
+   }
+  ]
+ ],
+ "data": {
+  "error": "UNKNOWN_ARGUMENTS",
+  "message": "position_sections: Unknown key(s) in sections[0]: mm; accepted: id, position_mm. Nothing was done.",
+  "problems": [
+   {
+    "accepted": [
+     "id",
+     "position_mm"
+    ],
+    "argument": "sections[0]",
+    "unknown": [
+     "mm"
+    ]
+   }
+  ],
+  "status": "error",
+  "tool": "position_sections"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "position_sections"
+}

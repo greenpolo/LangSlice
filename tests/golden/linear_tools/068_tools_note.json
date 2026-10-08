@@ -1,0 +1,49 @@
+{
+ "args": [
+  "Second trace landed."
+ ],
+ "data": {
+  "background": [
+   "w2 trace_borders of s1.png finished: the trace landed and ANTs fitted the traced borders (medium stiffness, restricted to TH) on top of its previous deformation. The deformation is applied as its own undo step: undo removes it while it is the latest step. Displacement median 0.051 mm, max 0.201 mm; fold fraction 0.0. Pictures #51, #52."
+  ],
+  "notes": [
+   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
+   "ingest: 3 section(s) given evenly spaced starting positions",
+   "Golden run: three synthetic sections.",
+   "Second trace landed."
+  ],
+  "pictures": [
+   {
+    "id": 51,
+    "work": "w2"
+   },
+   {
+    "id": 52,
+    "work": "w2"
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "068_tools_note.0.png",
+   "mode": "RGB",
+   "size": [
+    272,
+    261
+   ]
+  },
+  {
+   "file": "068_tools_note.1.png",
+   "mode": "RGB",
+   "size": [
+    272,
+    243
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "note"
+}

@@ -5,7 +5,7 @@
  },
  "content": [
   {
-   "text": "[\"adjust_transforms\", \"fit_affine\", \"grep_atlas\", \"mark_damaged\", \"note\", \"orient_slices\", \"redo\", \"show_stack\", \"start_job\", \"status\", \"submit\", \"undo\", \"view_atlas\", \"view_placement\", \"view_slices\"]"
+   "text": "[\"elastix_affine\", \"grep_atlas\", \"grep_atlas_view\", \"interactive_transform\", \"list_files\", \"look\", \"mark_damage\", \"note\", \"read_file\", \"redo\", \"search_files\", \"set_channel_properties\", \"set_preprocessed_channel_properties\", \"show_stack\", \"start_job\", \"status\", \"submit\", \"undo\", \"zoom\"]"
   }
  ],
  "door": "mcp_auto",

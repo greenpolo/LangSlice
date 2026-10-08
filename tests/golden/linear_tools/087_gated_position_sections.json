@@ -1,0 +1,66 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   },
+   {
+    "id": "s1.png",
+    "position_mm": 0.15
+   },
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.025,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "n_sections": 3,
+  "order": [
+   "s0.png",
+   "s1.png",
+   "s2.png"
+  ],
+  "rejected": [
+   {
+    "id": "s1.png",
+    "reason": "not compared since its last write; look at it in mode overlay or positioning first"
+   },
+   {
+    "id": "s2.png",
+    "reason": "not compared since its last write; look at it in mode overlay or positioning first"
+   }
+  ],
+  "status": "ok",
+  "written": [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   }
+  ]
+ },
+ "door": "gated",
+ "images": [],
+ "kwargs": {
+  "view": false
+ },
+ "media_texts": [],
+ "tool": "position_sections"
+}

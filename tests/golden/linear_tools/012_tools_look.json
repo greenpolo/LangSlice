@@ -1,0 +1,15 @@
+{
+ "args": [
+  "stack"
+ ],
+ "data": {
+  "error": "UNKNOWN_MODE",
+  "message": "mode must be one of section, atlas, overlay, positioning",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "look"
+}

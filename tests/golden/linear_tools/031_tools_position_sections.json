@@ -1,0 +1,66 @@
+{
+ "args": [
+  [
+   {
+    "id": "s2.png",
+    "position_mm": 0.05
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s2.png",
+    "index": 0,
+    "position_mm": 0.05,
+    "rotation_deg": 0
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "n_sections": 3,
+  "order": [
+   "s2.png",
+   "s0.png",
+   "s1.png"
+  ],
+  "pictures": [
+   {
+    "caption": "positioning: 1 section below in position order at 0.05 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 2: s2.png 0.05 mm",
+    "id": 29
+   }
+  ],
+  "reordered": [
+   "s2.png",
+   "s0.png",
+   "s1.png"
+  ],
+  "status": "ok",
+  "written": [
+   {
+    "id": "s2.png",
+    "position_mm": 0.05
+   }
+  ]
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "031_tools_position_sections.0.png",
+   "mode": "RGB",
+   "size": [
+    720,
+    620
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "position_sections"
+}

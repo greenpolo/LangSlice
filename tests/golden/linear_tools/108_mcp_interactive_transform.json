@@ -1,0 +1,28 @@
+{
+ "call": {
+  "arguments": {
+   "sections": "[{\"id\": \"s0.png\", \"rotation_deg\": 2.0}]"
+  },
+  "tool": "interactive_transform"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"results\": [{\"id\": \"s0.png\", \"status\": \"ok\", \"orientation\": {\"flip\": false, \"rotate_quarter\": 0, \"changed\": false}, \"written\": true, \"transform\": {\"rotation_deg\": 2.0, \"scale_x\": 1.0, \"scale_y\": 1.0, \"translate_x_mm\": 0.0, \"translate_y_mm\": 0.0, \"shear\": 0.0, \"pivot\": [0.5, 0.5]}}], \"changed\": [{\"index\": 0, \"id\": \"s0.png\", \"position_mm\": 0.1, \"delta_to_next_mm\": 0.05, \"flip\": false, \"rotation_deg\": 0, \"damaged\": false, \"transform\": \"interactive\", \"transform_mirrored\": false}], \"pictures\": [{\"id\": 4, \"caption\": \"0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders\"}], \"images_attached\": 1}"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg"
+  }
+ ],
+ "door": "mcp",
+ "images": [
+  {
+   "file": "108_mcp_interactive_transform.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ]
+}

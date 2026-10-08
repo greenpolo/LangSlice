@@ -1,0 +1,17 @@
+{
+ "call": {
+  "arguments": {
+   "slices": [
+    "s1.png"
+   ]
+  },
+  "tool": "view_slices"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"error\", \"error\": \"RETIRED_TOOL\", \"tool\": \"view_slices\", \"use\": \"look\", \"message\": \"view_slices is no longer a tool. Use look instead: mode \\\"section\\\" shows sections alone; zoom shows detail. Nothing was done.\"}"
+  }
+ ],
+ "door": "mcp",
+ "images": []
+}

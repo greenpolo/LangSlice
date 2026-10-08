@@ -1,0 +1,15 @@
+{
+ "args": [
+  "../outside.txt"
+ ],
+ "data": {
+  "error": "BAD_PATH",
+  "message": "'../outside.txt' is outside the job folder; only files inside it can be read.",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "read_file"
+}

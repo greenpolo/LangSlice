@@ -1,0 +1,20 @@
+{
+ "args": [
+  [
+   "NOPE"
+  ],
+  [
+   0.1
+  ]
+ ],
+ "data": {
+  "error": "UNKNOWN_REGIONS",
+  "message": "Unknown atlas structures: NOPE",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "grep_atlas_view"
+}

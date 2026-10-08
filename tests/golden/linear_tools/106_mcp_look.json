@@ -1,0 +1,21 @@
+{
+ "call": {
+  "arguments": {
+   "mode": "section",
+   "sections": [
+    "s0.png"
+   ],
+   "view": {
+    "mode": "section"
+   }
+  },
+  "tool": "look"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"error\", \"error\": \"UNKNOWN_ARGUMENTS\", \"tool\": \"look\", \"problems\": [{\"argument\": \"(top level)\", \"unknown\": [\"view\"], \"accepted\": [\"mode\", \"sections\", \"positions_mm\", \"channels\", \"atlas_layers\", \"atlas_opacity\", \"warp\"]}], \"message\": \"look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, channels, atlas_layers, atlas_opacity, warp. Nothing was done.\"}"
+  }
+ ],
+ "door": "mcp",
+ "images": []
+}

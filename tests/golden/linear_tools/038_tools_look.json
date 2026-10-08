@@ -1,0 +1,37 @@
+{
+ "args": [
+  "overlay"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "1: s1.png overlay, at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas template + borders (images at 0.3)",
+    "id": 32
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "038_tools_look.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    369
+   ]
+  }
+ ],
+ "kwargs": {
+  "atlas_layers": [
+   "template",
+   "borders"
+  ],
+  "atlas_opacity": 0.3,
+  "sections": [
+   "s1.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

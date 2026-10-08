@@ -1,0 +1,65 @@
+{
+ "args": [
+  [
+   "STR",
+   "TH:left"
+  ],
+  [
+   0.1,
+   0.4
+  ]
+ ],
+ "data": {
+  "clamped": [
+   {
+    "asked_mm": 0.4,
+    "used_mm": 0.25
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "atlas at 0.10 mm (the stack's cutting angles); 50.0 um/px; regions highlighted: STR, TH:left",
+    "id": 25
+   },
+   {
+    "caption": "atlas at 0.25 mm (the stack's cutting angles); 50.0 um/px; regions highlighted: STR, TH:left",
+    "id": 26
+   }
+  ],
+  "regions": [
+   "STR",
+   "TH:left"
+  ],
+  "regions_not_in_plane": {
+   "0.10": [
+    "TH:left"
+   ],
+   "0.25": [
+    "TH:left"
+   ]
+  },
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "023_tools_grep_atlas_view.0.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    156
+   ]
+  },
+  {
+   "file": "023_tools_grep_atlas_view.1.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    156
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "grep_atlas_view"
+}

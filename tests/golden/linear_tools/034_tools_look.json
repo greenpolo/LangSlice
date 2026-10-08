@@ -1,0 +1,32 @@
+{
+ "args": [
+  "atlas"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "atlas at 0.10 mm pitch 1.0 yaw 0.5 (the stack's cutting angles); 50.0 um/px; layers template",
+    "id": 30
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "034_tools_look.0.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    157
+   ]
+  }
+ ],
+ "kwargs": {
+  "positions_mm": [
+   0.1
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

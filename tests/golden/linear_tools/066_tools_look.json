@@ -1,0 +1,33 @@
+{
+ "args": [
+  "overlay"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, linear placement only; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 50
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "066_tools_look.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ],
+ "kwargs": {
+  "sections": [
+   "s0.png"
+  ],
+  "warp": "none"
+ },
+ "media_texts": [],
+ "tool": "look"
+}

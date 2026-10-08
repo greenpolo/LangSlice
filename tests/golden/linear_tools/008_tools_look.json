@@ -1,0 +1,45 @@
+{
+ "args": [
+  "atlas"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "atlas at 0.05 mm (the stack's cutting angles); 50.0 um/px; layers template",
+    "id": 8
+   },
+   {
+    "caption": "atlas at 0.20 mm (the stack's cutting angles); 50.0 um/px; layers template",
+    "id": 9
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "008_tools_look.0.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  },
+  {
+   "file": "008_tools_look.1.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  }
+ ],
+ "kwargs": {
+  "positions_mm": [
+   0.05,
+   0.2
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

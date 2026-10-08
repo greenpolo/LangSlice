@@ -1,0 +1,67 @@
+{
+ "args": [],
+ "data": {
+  "channels": [
+   "red",
+   "green",
+   "blue"
+  ],
+  "pictures": [
+   {
+    "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+    "id": 23
+   },
+   {
+    "caption": "1: s1.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+    "id": 24
+   }
+  ],
+  "recipe": {
+   "preprocessed": {
+    "sections": {
+     "s1.png": {
+      "channel_weights": null,
+      "clahe_clip": 6.0,
+      "clahe_tiles": 4,
+      "denoise": false,
+      "n4": false
+     }
+    }
+   }
+  },
+  "scope": [
+   "s1.png"
+  ],
+  "shown": [
+   "s1.png"
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "021_tools_set_preprocessed_channel_properties.0.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  },
+  {
+   "file": "021_tools_set_preprocessed_channel_properties.1.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  }
+ ],
+ "kwargs": {
+  "reset": true,
+  "sections": [
+   "s1.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "set_preprocessed_channel_properties"
+}

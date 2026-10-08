@@ -1,0 +1,21 @@
+{
+ "args": [
+  "purple"
+ ],
+ "data": {
+  "channel": "purple",
+  "channels": [
+   "blue",
+   "gray",
+   "green",
+   "red"
+  ],
+  "error": "UNKNOWN_CHANNEL",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "set_channel_properties"
+}

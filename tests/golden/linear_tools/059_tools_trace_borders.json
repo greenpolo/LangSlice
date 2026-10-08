@@ -1,0 +1,22 @@
+{
+ "args": [
+  "s0.png"
+ ],
+ "data": {
+  "id": "s0.png",
+  "landed": true,
+  "message": "This trace has already been fitted: the section's deformation holds its fit, so nothing was fitted again.",
+  "status": "ok",
+  "trace": {
+   "attempt": 1,
+   "cached": true,
+   "prompt_edited": false,
+   "status": "ok"
+  }
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "trace_borders"
+}

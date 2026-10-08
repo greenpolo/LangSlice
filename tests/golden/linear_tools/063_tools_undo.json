@@ -1,0 +1,60 @@
+{
+ "args": [],
+ "data": {
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "rows": [
+   {
+    "damaged": false,
+    "deformation_steps": 1,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.989,
+    "transform_mirrored": false
+   },
+   {
+    "damaged": false,
+    "deformation_steps": 2,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 1.0,
+    "transform_mirrored": false
+   },
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.911,
+    "transform_mirrored": false
+   }
+  ],
+  "status": "ok",
+  "undo_depth": 18
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "undo"
+}

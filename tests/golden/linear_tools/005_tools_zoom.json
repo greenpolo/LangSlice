@@ -1,0 +1,37 @@
+{
+ "args": [
+  [
+   120,
+   80,
+   520,
+   380
+  ]
+ ],
+ "data": {
+  "picture": 5,
+  "pictures": [
+   {
+    "caption": "1: s1.png section, at 0.12 mm; 7.8 um/px; raw red + green; percentile contrast",
+    "id": 6
+   }
+  ],
+  "redrawn": true,
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "005_tools_zoom.0.png",
+   "mode": "RGB",
+   "size": [
+    488,
+    397
+   ]
+  }
+ ],
+ "kwargs": {
+  "picture": 5
+ },
+ "media_texts": [],
+ "tool": "zoom"
+}

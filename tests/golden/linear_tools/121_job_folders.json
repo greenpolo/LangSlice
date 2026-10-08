@@ -1,0 +1,6340 @@
+{
+ "door": "job",
+ "folders": {
+  "auto": {
+   "derived": {
+    "registration.json": "<hex>"
+   },
+   "files": [
+    "history/index.json",
+    "history/step-000001.json",
+    "history/step-000002.json",
+    "history/step-000003.json",
+    "job.json",
+    "job.lock",
+    "logs/events.jsonl",
+    "registration.json",
+    "sections/s0/deformable/<hex>/arrays.npz",
+    "sections/s0/deformable/<hex>/record.json",
+    "sections/s0/views/000001_look_section/view.jpg",
+    "sections/s0/views/000001_look_section/view.json",
+    "sections/s0/views/000002_look_section/view.jpg",
+    "sections/s0/views/000002_look_section/view.json",
+    "sections/s0/views/000003_position_sections_positioning/view.jpg",
+    "sections/s0/views/000003_position_sections_positioning/view.json",
+    "sections/s0/views/000004_look_overlay/borders.png",
+    "sections/s0/views/000004_look_overlay/labels.tif",
+    "sections/s0/views/000004_look_overlay/view.jpg",
+    "sections/s0/views/000004_look_overlay/view.json",
+    "sections/s0/views/000005_interactive_transform_overlay/borders.png",
+    "sections/s0/views/000005_interactive_transform_overlay/labels.tif",
+    "sections/s0/views/000005_interactive_transform_overlay/view.jpg",
+    "sections/s0/views/000005_interactive_transform_overlay/view.json",
+    "sections/s0/views/000006_ants_syn_overlay/borders.png",
+    "sections/s0/views/000006_ants_syn_overlay/labels.tif",
+    "sections/s0/views/000006_ants_syn_overlay/view.jpg",
+    "sections/s0/views/000006_ants_syn_overlay/view.json",
+    "sections/s0/views/000007_look_overlay/borders.png",
+    "sections/s0/views/000007_look_overlay/labels.tif",
+    "sections/s0/views/000007_look_overlay/view.jpg",
+    "sections/s0/views/000007_look_overlay/view.json",
+    "state.json",
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock"
+   ],
+   "job_file": {
+    "format_version": 1,
+    "image_folder": "..",
+    "spec": {
+     "agent_damage": true,
+     "agent_preprocessing": false,
+     "atlas": "allen_mouse_25um",
+     "debrief": true,
+     "facts": [],
+     "host_preprocessing": null,
+     "image_folder": "<ROOT>/auto",
+     "image_resolution": "auto",
+     "inputs": {
+      "pixel_size_um": 31.25
+     },
+     "max_input_tokens": null,
+     "max_quota_percent": 25,
+     "model": "fake-model",
+     "nonlinear": {
+      "image_model": null,
+      "notes": "",
+      "provider": "none"
+     },
+     "out": null,
+     "plane": "coronal",
+     "position": {
+      "gated": false,
+      "interval_um": 200,
+      "notes": "",
+      "playbook": false,
+      "strict_interval": false,
+      "thickness_um": 50
+     },
+     "preprocess": "none",
+     "reasoning": null,
+     "resume": true,
+     "tasks": [
+      "position",
+      "transform",
+      "nonlinear"
+     ],
+     "transform": {
+      "angles": false,
+      "automatic": true,
+      "flip": true,
+      "hemisphere_cue": "",
+      "interactive": true,
+      "max_parallel": 4,
+      "notes": ""
+     }
+    }
+   },
+   "layers": {
+    "sections/s0/views/000001_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000002_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000003_position_sections_positioning": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000004_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      300,
+      304
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000005_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000006_ants_syn_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000007_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      256,
+      288
+     ],
+     "view_json": "<hex>"
+    }
+   },
+   "pictures_sent": 7,
+   "saved_jpegs_equal_sent": true,
+   "views_index": [
+    {
+     "call": 1,
+     "caption": "0: s0.png section, at 0.04 mm; 39.8 um/px; raw gray; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000001_look_section",
+     "path": "sections/s0/views/000001_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": 200,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       200,
+       155
+      ],
+      "renderer": "look",
+      "shown": [
+       200,
+       155
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.0417,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 39.8438
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 1,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 2,
+     "caption": "0: s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000002_look_section",
+     "path": "sections/s0/views/000002_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": 2048,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       255,
+       198
+      ],
+      "renderer": "look",
+      "shown": [
+       255,
+       198
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.0417,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 2,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 3,
+     "caption": "positioning: 1 section below in position order at 0.10 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000003_position_sections_positioning",
+     "path": "sections/s0/views/000003_position_sections_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.1
+       ],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       720,
+       590
+      ],
+      "renderer": "look",
+      "shown": [
+       720,
+       590
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 3,
+     "step": 1,
+     "tool": "position_sections"
+    },
+    {
+     "call": 4,
+     "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 35.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000004_look_overlay",
+     "path": "sections/s0/views/000004_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": 300,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       300,
+       229
+      ],
+      "renderer": "look",
+      "shown": [
+       300,
+       229
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 35.2083
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 4,
+     "step": 1,
+     "tool": "look"
+    },
+    {
+     "call": 5,
+     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000005_interactive_transform_overlay",
+     "path": "sections/s0/views/000005_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           1.0,
+           0.0,
+           0.0,
+           -0.0,
+           1.0,
+           0.0
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.0,
+           "scale_x": 1.0,
+           "scale_y": 1.0,
+           "shear": 0.0,
+           "translate_x_mm": 0.0,
+           "translate_y_mm": 0.0
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 5,
+     "step": 2,
+     "tool": "interactive_transform"
+    },
+    {
+     "call": 6,
+     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000006_ants_syn_overlay",
+     "path": "sections/s0/views/000006_ants_syn_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s0/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.174,
+            "median": 0.076
+           },
+           "flags": [],
+           "fold_fraction": 0.0
+          }
+         },
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           1.0,
+           0.0,
+           0.0,
+           -0.0,
+           1.0,
+           0.0
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.0,
+           "scale_x": 1.0,
+           "scale_y": 1.0,
+           "shear": 0.0,
+           "translate_x_mm": 0.0,
+           "translate_y_mm": 0.0
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 6,
+     "step": 3,
+     "tool": "ants_syn"
+    },
+    {
+     "call": 7,
+     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 41.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000007_look_overlay",
+     "path": "sections/s0/views/000007_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": 256,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       256,
+       195
+      ],
+      "renderer": "look",
+      "shown": [
+       256,
+       195
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s0/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.174,
+            "median": 0.076
+           },
+           "flags": [],
+           "fold_fraction": 0.0
+          }
+         },
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           1.0,
+           0.0,
+           0.0,
+           -0.0,
+           1.0,
+           0.0
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.0,
+           "scale_x": 1.0,
+           "scale_y": 1.0,
+           "shear": 0.0,
+           "translate_x_mm": 0.0,
+           "translate_y_mm": 0.0
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 41.2445
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 7,
+     "step": 3,
+     "tool": "look"
+    }
+   ]
+  },
+  "engine": {
+   "derived": {
+    "registration.json": "<hex>"
+   },
+   "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "job.json",
+    "job.lock",
+    "logs/events.jsonl",
+    "registration.json",
+    "state.json",
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
+    "views/000001_opening/view.jpg",
+    "views/000001_opening/view.json"
+   ],
+   "job_file": {
+    "format_version": 1,
+    "image_folder": "..",
+    "spec": {
+     "agent_damage": true,
+     "agent_preprocessing": true,
+     "atlas": "allen_mouse_25um",
+     "debrief": true,
+     "facts": [],
+     "host_preprocessing": null,
+     "image_folder": "<ROOT>/engine",
+     "image_resolution": "low",
+     "inputs": {
+      "pixel_size_um": 31.25
+     },
+     "max_input_tokens": null,
+     "max_quota_percent": 25,
+     "model": "fake-model",
+     "nonlinear": {
+      "image_model": null,
+      "notes": "",
+      "provider": "openai-oauth"
+     },
+     "out": null,
+     "plane": "coronal",
+     "position": {
+      "gated": false,
+      "interval_um": 200,
+      "notes": "",
+      "playbook": false,
+      "strict_interval": false,
+      "thickness_um": 50
+     },
+     "preprocess": "none",
+     "reasoning": null,
+     "resume": true,
+     "tasks": [
+      "reorder",
+      "position",
+      "transform",
+      "nonlinear"
+     ],
+     "transform": {
+      "angles": true,
+      "automatic": true,
+      "flip": true,
+      "hemisphere_cue": "",
+      "interactive": true,
+      "max_parallel": 4,
+      "notes": ""
+     }
+    }
+   },
+   "layers": {
+    "views/000001_opening": {
+     "view_json": "<hex>"
+    }
+   },
+   "pictures_sent": 1,
+   "saved_jpegs_equal_sent": true,
+   "views_index": [
+    {
+     "call": 1,
+     "layers": false,
+     "mode": null,
+     "name": "000001_opening",
+     "path": "views/000001_opening",
+     "sections": [],
+     "seq": 1,
+     "step": 0,
+     "tool": "opening"
+    }
+   ]
+  },
+  "gated": {
+   "derived": {
+    "exports/quicknii.json": "<hex>",
+    "exports/visualign.json": "<hex>",
+    "registration.json": "<hex>",
+    "sections/s0/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s0/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/maps.json": "<hex>",
+    "sections/s1/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s1/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/maps.json": "<hex>",
+    "sections/s2/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s2/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/maps.json": "<hex>"
+   },
+   "files": [
+    "exports/quicknii.json",
+    "exports/visualign.json",
+    "history/index.json",
+    "history/step-000001.json",
+    "history/step-000002.json",
+    "history/step-000003.json",
+    "job.json",
+    "job.lock",
+    "logs/events.jsonl",
+    "registration.json",
+    "sections/s0/coords.tif",
+    "sections/s0/labels.csv",
+    "sections/s0/labels.tif",
+    "sections/s0/labels_fiji.tif",
+    "sections/s0/maps.json",
+    "sections/s0/tissue.png",
+    "sections/s0/views/000001_look_overlay/borders.png",
+    "sections/s0/views/000001_look_overlay/labels.tif",
+    "sections/s0/views/000001_look_overlay/view.jpg",
+    "sections/s0/views/000001_look_overlay/view.json",
+    "sections/s1/coords.tif",
+    "sections/s1/labels.csv",
+    "sections/s1/labels.tif",
+    "sections/s1/labels_fiji.tif",
+    "sections/s1/maps.json",
+    "sections/s1/tissue.png",
+    "sections/s2/coords.tif",
+    "sections/s2/labels.csv",
+    "sections/s2/labels.tif",
+    "sections/s2/labels_fiji.tif",
+    "sections/s2/maps.json",
+    "sections/s2/tissue.png",
+    "state.json",
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
+    "views/000002_look_positioning/view.jpg",
+    "views/000002_look_positioning/view.json",
+    "views/000003_position_sections_positioning/view.jpg",
+    "views/000003_position_sections_positioning/view.json",
+    "views/000004_look_positioning/view.jpg",
+    "views/000004_look_positioning/view.json"
+   ],
+   "job_file": {
+    "format_version": 1,
+    "image_folder": "..",
+    "spec": {
+     "agent_damage": true,
+     "agent_preprocessing": false,
+     "atlas": "allen_mouse_25um",
+     "debrief": true,
+     "facts": [],
+     "host_preprocessing": null,
+     "image_folder": "<ROOT>/gated",
+     "image_resolution": "low",
+     "inputs": {
+      "pixel_size_um": 31.25
+     },
+     "max_input_tokens": null,
+     "max_quota_percent": 25,
+     "model": "fake-model",
+     "nonlinear": {
+      "image_model": null,
+      "notes": "",
+      "provider": "openai-oauth"
+     },
+     "out": null,
+     "plane": "coronal",
+     "position": {
+      "gated": true,
+      "interval_um": 200,
+      "notes": "",
+      "playbook": false,
+      "strict_interval": false,
+      "thickness_um": 50
+     },
+     "preprocess": "none",
+     "reasoning": null,
+     "resume": true,
+     "tasks": [
+      "reorder",
+      "position"
+     ],
+     "transform": {
+      "angles": false,
+      "automatic": true,
+      "flip": true,
+      "hemisphere_cue": "",
+      "interactive": true,
+      "max_parallel": 4,
+      "notes": ""
+     }
+    }
+   },
+   "layers": {
+    "sections/s0/views/000001_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "views/000002_look_positioning": {
+     "view_json": "<hex>"
+    },
+    "views/000003_position_sections_positioning": {
+     "view_json": "<hex>"
+    },
+    "views/000004_look_positioning": {
+     "view_json": "<hex>"
+    }
+   },
+   "pictures_sent": 4,
+   "saved_jpegs_equal_sent": true,
+   "views_index": [
+    {
+     "call": 1,
+     "caption": "0: s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000001_look_overlay",
+     "path": "sections/s0/views/000001_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.0417,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 1,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 2,
+     "caption": "positioning: 3 sections below in position order, 0.10-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.12 mm, 2: s2.png 0.21 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000002_look_positioning",
+     "path": "views/000002_look_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [],
+       "sections": [
+        "s0.png",
+        "s1.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1567,
+       397
+      ],
+      "renderer": "look",
+      "shown": [
+       1567,
+       397
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2083,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 2,
+     "step": 1,
+     "tool": "look"
+    },
+    {
+     "call": 3,
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000003_position_sections_positioning",
+     "path": "views/000003_position_sections_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.1,
+        0.15,
+        0.2
+       ],
+       "sections": [
+        "s0.png",
+        "s1.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1567,
+       631
+      ],
+      "renderer": "look",
+      "shown": [
+       1567,
+       631
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 3,
+     "step": 2,
+     "tool": "position_sections"
+    },
+    {
+     "call": 4,
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000004_look_positioning",
+     "path": "views/000004_look_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [],
+       "sections": [
+        "s0.png",
+        "s1.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1567,
+       397
+      ],
+      "renderer": "look",
+      "shown": [
+       1567,
+       397
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 4,
+     "step": 2,
+     "tool": "look"
+    }
+   ]
+  },
+  "mcp": {
+   "derived": {
+    "registration.json": "<hex>"
+   },
+   "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "history/index.json",
+    "history/step-000001.json",
+    "history/step-000002.json",
+    "job.json",
+    "job.lock",
+    "logs/events.jsonl",
+    "registration.json",
+    "sections/s0/views/000002_look_overlay/borders.png",
+    "sections/s0/views/000002_look_overlay/labels.tif",
+    "sections/s0/views/000002_look_overlay/view.jpg",
+    "sections/s0/views/000002_look_overlay/view.json",
+    "sections/s0/views/000004_interactive_transform_overlay/borders.png",
+    "sections/s0/views/000004_interactive_transform_overlay/labels.tif",
+    "sections/s0/views/000004_interactive_transform_overlay/view.jpg",
+    "sections/s0/views/000004_interactive_transform_overlay/view.json",
+    "sections/s1/views/000003_elastix_affine_overlay/borders.png",
+    "sections/s1/views/000003_elastix_affine_overlay/labels.tif",
+    "sections/s1/views/000003_elastix_affine_overlay/view.jpg",
+    "sections/s1/views/000003_elastix_affine_overlay/view.json",
+    "state.json",
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
+    "views/000001_show_stack/view.jpg",
+    "views/000001_show_stack/view.json"
+   ],
+   "job_file": {
+    "format_version": 1,
+    "image_folder": "..",
+    "spec": {
+     "agent_damage": true,
+     "agent_preprocessing": false,
+     "atlas": "allen_mouse_25um",
+     "debrief": true,
+     "facts": [],
+     "host_preprocessing": null,
+     "image_folder": "<ROOT>/mcp",
+     "image_resolution": "low",
+     "inputs": {
+      "pixel_size_um": 31.25,
+      "positions": {
+       "s0.png": 0.1,
+       "s1.png": 0.15,
+       "s2.png": 0.2
+      }
+     },
+     "max_input_tokens": null,
+     "max_quota_percent": 25,
+     "model": null,
+     "nonlinear": {
+      "image_model": null,
+      "notes": "",
+      "provider": "openai-oauth"
+     },
+     "out": null,
+     "plane": "coronal",
+     "position": {
+      "gated": false,
+      "interval_um": 200,
+      "notes": "",
+      "playbook": false,
+      "strict_interval": false,
+      "thickness_um": 50
+     },
+     "preprocess": "none",
+     "reasoning": null,
+     "resume": true,
+     "tasks": [
+      "transform"
+     ],
+     "transform": {
+      "angles": false,
+      "automatic": true,
+      "flip": true,
+      "hemisphere_cue": "",
+      "interactive": true,
+      "max_parallel": 4,
+      "notes": ""
+     }
+    }
+   },
+   "layers": {
+    "sections/s0/views/000002_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000004_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000003_elastix_affine_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "views/000001_show_stack": {
+     "view_json": "<hex>"
+    }
+   },
+   "pictures_sent": 4,
+   "saved_jpegs_equal_sent": true,
+   "views_index": [
+    {
+     "call": 1,
+     "layers": false,
+     "mode": null,
+     "name": "000001_show_stack",
+     "path": "views/000001_show_stack",
+     "sections": [],
+     "seq": 1,
+     "step": 0,
+     "tool": "show_stack"
+    },
+    {
+     "call": 2,
+     "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000002_look_overlay",
+     "path": "sections/s0/views/000002_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 2,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 3,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000003_elastix_affine_overlay",
+     "path": "sections/s1/views/000003_elastix_affine_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.92,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0191168665938428,
+           0.005324753496131722,
+           -0.015979164105269145,
+           -0.005134596255220053,
+           1.0263920417630004,
+           -0.02014529784974927
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.221,
+           "scale_x": 1.0191,
+           "scale_y": 1.0264,
+           "shear": 0.003,
+           "translate_x_mm": -0.0319,
+           "translate_y_mm": -0.0619
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 3,
+     "step": 1,
+     "tool": "elastix_affine"
+    },
+    {
+     "call": 4,
+     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000004_interactive_transform_overlay",
+     "path": "sections/s0/views/000004_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           0.9993908270190958,
+           0.026687850419559563,
+           -0.013039338719327694,
+           -0.04563780338019357,
+           0.9993908270190958,
+           0.023123488180548914
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 2.0,
+           "scale_x": 1.0,
+           "scale_y": 1.0,
+           "shear": 0.0,
+           "translate_x_mm": 0.0,
+           "translate_y_mm": 0.0
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 4,
+     "step": 2,
+     "tool": "interactive_transform"
+    }
+   ]
+  },
+  "resume": {
+   "derived": {
+    "exports/quicknii.json": "<hex>",
+    "exports/visualign.json": "<hex>",
+    "registration.json": "<hex>",
+    "sections/s0/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s0/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/maps.json": "<hex>",
+    "sections/s1/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s1/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/maps.json": "<hex>",
+    "sections/s2/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s2/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/maps.json": "<hex>"
+   },
+   "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "exports/linear_results.json",
+    "exports/quicknii.json",
+    "exports/visualign.json",
+    "history/index.json",
+    "history/step-000001.json",
+    "history/step-000002.json",
+    "history/step-000005.json",
+    "history/step-000006.json",
+    "history/step-000007.json",
+    "job.json",
+    "job.lock",
+    "logs/events.jsonl",
+    "registration.json",
+    "sections/s0/coords.tif",
+    "sections/s0/labels.csv",
+    "sections/s0/labels.tif",
+    "sections/s0/labels_fiji.tif",
+    "sections/s0/maps.json",
+    "sections/s0/tissue.png",
+    "sections/s0/views/000001_interactive_transform_overlay/borders.png",
+    "sections/s0/views/000001_interactive_transform_overlay/labels.tif",
+    "sections/s0/views/000001_interactive_transform_overlay/view.jpg",
+    "sections/s0/views/000001_interactive_transform_overlay/view.json",
+    "sections/s1/coords.tif",
+    "sections/s1/labels.csv",
+    "sections/s1/labels.tif",
+    "sections/s1/labels_fiji.tif",
+    "sections/s1/maps.json",
+    "sections/s1/tissue.png",
+    "sections/s1/views/000002_elastix_affine_overlay/borders.png",
+    "sections/s1/views/000002_elastix_affine_overlay/labels.tif",
+    "sections/s1/views/000002_elastix_affine_overlay/view.jpg",
+    "sections/s1/views/000002_elastix_affine_overlay/view.json",
+    "sections/s2/coords.tif",
+    "sections/s2/labels.csv",
+    "sections/s2/labels.tif",
+    "sections/s2/labels_fiji.tif",
+    "sections/s2/maps.json",
+    "sections/s2/tissue.png",
+    "sections/s2/views/000004_interactive_transform_overlay/borders.png",
+    "sections/s2/views/000004_interactive_transform_overlay/labels.tif",
+    "sections/s2/views/000004_interactive_transform_overlay/view.jpg",
+    "sections/s2/views/000004_interactive_transform_overlay/view.json",
+    "state.json",
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
+    "views/000003_show_stack/view.jpg",
+    "views/000003_show_stack/view.json"
+   ],
+   "job_file": {
+    "format_version": 1,
+    "image_folder": "..",
+    "spec": {
+     "agent_damage": true,
+     "agent_preprocessing": false,
+     "atlas": "allen_mouse_25um",
+     "debrief": true,
+     "facts": [],
+     "host_preprocessing": null,
+     "image_folder": "<ROOT>/resume",
+     "image_resolution": "low",
+     "inputs": {
+      "pixel_size_um": 31.25,
+      "positions": {
+       "s0.png": 0.1,
+       "s1.png": 0.15,
+       "s2.png": 0.2
+      }
+     },
+     "max_input_tokens": null,
+     "max_quota_percent": 25,
+     "model": null,
+     "nonlinear": {
+      "image_model": null,
+      "notes": "",
+      "provider": "openai-oauth"
+     },
+     "out": null,
+     "plane": "coronal",
+     "position": {
+      "gated": false,
+      "interval_um": 200,
+      "notes": "",
+      "playbook": false,
+      "strict_interval": false,
+      "thickness_um": 50
+     },
+     "preprocess": "none",
+     "reasoning": null,
+     "resume": true,
+     "tasks": [
+      "transform"
+     ],
+     "transform": {
+      "angles": false,
+      "automatic": true,
+      "flip": true,
+      "hemisphere_cue": "",
+      "interactive": true,
+      "max_parallel": 4,
+      "notes": ""
+     }
+    }
+   },
+   "layers": {
+    "sections/s0/views/000001_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000002_elastix_affine_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000004_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "views/000003_show_stack": {
+     "view_json": "<hex>"
+    }
+   },
+   "pictures_sent": 4,
+   "saved_jpegs_equal_sent": true,
+   "views_index": [
+    {
+     "call": 1,
+     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000001_interactive_transform_overlay",
+     "path": "sections/s0/views/000001_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           0.9993908270190958,
+           0.026687850419559563,
+           -0.0118628681310924,
+           -0.04563780338019357,
+           0.9993908270190958,
+           0.023123488180548914
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 2.0,
+           "scale_x": 1.0,
+           "scale_y": 1.0,
+           "shear": 0.0,
+           "translate_x_mm": 0.01,
+           "translate_y_mm": 0.0
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 1,
+     "step": 1,
+     "tool": "interactive_transform"
+    },
+    {
+     "call": 2,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000002_elastix_affine_overlay",
+     "path": "sections/s1/views/000002_elastix_affine_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.92,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0191168665938428,
+           0.005324753496131722,
+           -0.015979164105269145,
+           -0.005134596255220053,
+           1.0263920417630004,
+           -0.02014529784974927
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.221,
+           "scale_x": 1.0191,
+           "scale_y": 1.0264,
+           "shear": 0.003,
+           "translate_x_mm": -0.0319,
+           "translate_y_mm": -0.0619
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 2,
+     "step": 2,
+     "tool": "elastix_affine"
+    },
+    {
+     "call": 3,
+     "layers": false,
+     "mode": null,
+     "name": "000003_show_stack",
+     "path": "views/000003_show_stack",
+     "sections": [],
+     "seq": 3,
+     "step": 3,
+     "tool": "show_stack"
+    },
+    {
+     "call": 4,
+     "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000004_interactive_transform_overlay",
+     "path": "sections/s2/views/000004_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           0.9998476951563913,
+           -0.013345957863805038,
+           0.0067491313537069554,
+           0.022822377648755363,
+           0.9998476951563913,
+           -0.01133503640257334
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": -1.0,
+           "scale_x": 1.0,
+           "scale_y": 1.0,
+           "shear": 0.0,
+           "translate_x_mm": 0.0,
+           "translate_y_mm": 0.0
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 4,
+     "step": 4,
+     "tool": "interactive_transform"
+    }
+   ]
+  },
+  "tools": {
+   "derived": {
+    "exports/quicknii.json": "<hex>",
+    "exports/visualign.json": "<hex>",
+    "registration.json": "<hex>",
+    "sections/s0/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s0/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/maps.json": "<hex>",
+    "sections/s0/residual.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      2,
+      208,
+      272
+     ]
+    },
+    "sections/s1/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s1/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/maps.json": "<hex>",
+    "sections/s1/residual.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      2,
+      208,
+      272
+     ]
+    },
+    "sections/s2/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s2/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/maps.json": "<hex>"
+   },
+   "files": [
+    "exports/quicknii.json",
+    "exports/visualign.json",
+    "history/index.json",
+    "history/step-000001.json",
+    "history/step-000002.json",
+    "history/step-000003.json",
+    "history/step-000004.json",
+    "history/step-000005.json",
+    "history/step-000006.json",
+    "history/step-000015.json",
+    "history/step-000016.json",
+    "history/step-000017.json",
+    "history/step-000020.json",
+    "history/step-000021.json",
+    "history/step-000022.json",
+    "history/step-000023.json",
+    "history/step-000026.json",
+    "history/step-000027.json",
+    "history/step-000028.json",
+    "history/step-000029.json",
+    "history/step-000030.json",
+    "history/step-000033.json",
+    "history/step-000034.json",
+    "history/step-000035.json",
+    "history/step-000036.json",
+    "job.json",
+    "job.lock",
+    "logs/events.jsonl",
+    "registration.json",
+    "sections/s0/coords.tif",
+    "sections/s0/deformable/<hex>/arrays.npz",
+    "sections/s0/deformable/<hex>/record.json",
+    "sections/s0/image_correction/<hex>/attempt-01/base_prompt.txt",
+    "sections/s0/image_correction/<hex>/attempt-01/extracted_lines.png",
+    "sections/s0/image_correction/<hex>/attempt-01/input_slice.png",
+    "sections/s0/image_correction/<hex>/attempt-01/lines_on_original.png",
+    "sections/s0/image_correction/<hex>/attempt-01/prompt.txt",
+    "sections/s0/image_correction/<hex>/attempt-01/prompt_diff.txt",
+    "sections/s0/image_correction/<hex>/attempt-01/raw_reply.png",
+    "sections/s0/image_correction/<hex>/attempt-01/request.json",
+    "sections/s0/image_correction/<hex>/attempt-01/result.json",
+    "sections/s0/image_correction/<hex>/attempt-01/rough_border_overlay.png",
+    "sections/s0/image_correction/<hex>/result.json",
+    "sections/s0/labels.csv",
+    "sections/s0/labels.tif",
+    "sections/s0/labels_fiji.tif",
+    "sections/s0/maps.json",
+    "sections/s0/residual.tif",
+    "sections/s0/tissue.png",
+    "sections/s0/views/000001_look_section/view.jpg",
+    "sections/s0/views/000001_look_section/view.json",
+    "sections/s0/views/000007_zoom_section/view.jpg",
+    "sections/s0/views/000007_zoom_section/view.json",
+    "sections/s0/views/000016_set_preprocessed_channel_properties_before/view.jpg",
+    "sections/s0/views/000016_set_preprocessed_channel_properties_before/view.json",
+    "sections/s0/views/000017_set_preprocessed_channel_properties_after/view.jpg",
+    "sections/s0/views/000017_set_preprocessed_channel_properties_after/view.json",
+    "sections/s0/views/000028_position_sections_positioning/view.jpg",
+    "sections/s0/views/000028_position_sections_positioning/view.json",
+    "sections/s0/views/000031_look_overlay/borders.png",
+    "sections/s0/views/000031_look_overlay/labels.tif",
+    "sections/s0/views/000031_look_overlay/view.jpg",
+    "sections/s0/views/000031_look_overlay/view.json",
+    "sections/s0/views/000040_elastix_affine_overlay/borders.png",
+    "sections/s0/views/000040_elastix_affine_overlay/labels.tif",
+    "sections/s0/views/000040_elastix_affine_overlay/view.jpg",
+    "sections/s0/views/000040_elastix_affine_overlay/view.json",
+    "sections/s0/views/000044_trace_borders_borders/borders.png",
+    "sections/s0/views/000044_trace_borders_borders/labels.tif",
+    "sections/s0/views/000044_trace_borders_borders/residual.tif",
+    "sections/s0/views/000044_trace_borders_borders/view.jpg",
+    "sections/s0/views/000044_trace_borders_borders/view.json",
+    "sections/s0/views/000045_trace_borders_trace/view.jpg",
+    "sections/s0/views/000045_trace_borders_trace/view.json",
+    "sections/s0/views/000048_look_overlay/borders.png",
+    "sections/s0/views/000048_look_overlay/labels.tif",
+    "sections/s0/views/000048_look_overlay/view.jpg",
+    "sections/s0/views/000048_look_overlay/view.json",
+    "sections/s0/views/000050_look_overlay/borders.png",
+    "sections/s0/views/000050_look_overlay/labels.tif",
+    "sections/s0/views/000050_look_overlay/view.jpg",
+    "sections/s0/views/000050_look_overlay/view.json",
+    "sections/s1/coords.tif",
+    "sections/s1/deformable/<hex>/arrays.npz",
+    "sections/s1/deformable/<hex>/arrays.npz",
+    "sections/s1/deformable/<hex>/arrays.npz",
+    "sections/s1/deformable/<hex>/parent/arrays.npz",
+    "sections/s1/deformable/<hex>/parent/arrays.npz",
+    "sections/s1/deformable/<hex>/parent/parent/arrays.npz",
+    "sections/s1/deformable/<hex>/parent/parent/record.json",
+    "sections/s1/deformable/<hex>/parent/record.json",
+    "sections/s1/deformable/<hex>/parent/record.json",
+    "sections/s1/deformable/<hex>/record.json",
+    "sections/s1/deformable/<hex>/record.json",
+    "sections/s1/deformable/<hex>/record.json",
+    "sections/s1/image_correction/<hex>/attempt-01/base_prompt.txt",
+    "sections/s1/image_correction/<hex>/attempt-01/extracted_lines.png",
+    "sections/s1/image_correction/<hex>/attempt-01/input_slice.png",
+    "sections/s1/image_correction/<hex>/attempt-01/lines_on_original.png",
+    "sections/s1/image_correction/<hex>/attempt-01/prompt.txt",
+    "sections/s1/image_correction/<hex>/attempt-01/prompt_diff.txt",
+    "sections/s1/image_correction/<hex>/attempt-01/raw_reply.png",
+    "sections/s1/image_correction/<hex>/attempt-01/request.json",
+    "sections/s1/image_correction/<hex>/attempt-01/result.json",
+    "sections/s1/image_correction/<hex>/attempt-01/rough_border_overlay.png",
+    "sections/s1/image_correction/<hex>/result.json",
+    "sections/s1/labels.csv",
+    "sections/s1/labels.tif",
+    "sections/s1/labels_fiji.tif",
+    "sections/s1/maps.json",
+    "sections/s1/residual.tif",
+    "sections/s1/tissue.png",
+    "sections/s1/views/000002_look_section/view.jpg",
+    "sections/s1/views/000002_look_section/view.json",
+    "sections/s1/views/000004_look_section/view.jpg",
+    "sections/s1/views/000004_look_section/view.json",
+    "sections/s1/views/000005_zoom_section/view.jpg",
+    "sections/s1/views/000005_zoom_section/view.json",
+    "sections/s1/views/000006_zoom_section/view.jpg",
+    "sections/s1/views/000006_zoom_section/view.json",
+    "sections/s1/views/000013_look_section/view.jpg",
+    "sections/s1/views/000013_look_section/view.json",
+    "sections/s1/views/000014_set_preprocessed_channel_properties_before/view.jpg",
+    "sections/s1/views/000014_set_preprocessed_channel_properties_before/view.json",
+    "sections/s1/views/000015_set_preprocessed_channel_properties_after/view.jpg",
+    "sections/s1/views/000015_set_preprocessed_channel_properties_after/view.json",
+    "sections/s1/views/000018_set_preprocessed_channel_properties_before/view.jpg",
+    "sections/s1/views/000018_set_preprocessed_channel_properties_before/view.json",
+    "sections/s1/views/000019_set_preprocessed_channel_properties_after/view.jpg",
+    "sections/s1/views/000019_set_preprocessed_channel_properties_after/view.json",
+    "sections/s1/views/000022_look_section/view.jpg",
+    "sections/s1/views/000022_look_section/view.json",
+    "sections/s1/views/000023_set_preprocessed_channel_properties_before/view.jpg",
+    "sections/s1/views/000023_set_preprocessed_channel_properties_before/view.json",
+    "sections/s1/views/000024_set_preprocessed_channel_properties_after/view.jpg",
+    "sections/s1/views/000024_set_preprocessed_channel_properties_after/view.json",
+    "sections/s1/views/000032_look_overlay/borders.png",
+    "sections/s1/views/000032_look_overlay/labels.tif",
+    "sections/s1/views/000032_look_overlay/view.jpg",
+    "sections/s1/views/000032_look_overlay/view.json",
+    "sections/s1/views/000036_mark_damage_damage/view.jpg",
+    "sections/s1/views/000036_mark_damage_damage/view.json",
+    "sections/s1/views/000037_interactive_transform_overlay/borders.png",
+    "sections/s1/views/000037_interactive_transform_overlay/labels.tif",
+    "sections/s1/views/000037_interactive_transform_overlay/view.jpg",
+    "sections/s1/views/000037_interactive_transform_overlay/view.json",
+    "sections/s1/views/000041_elastix_affine_overlay/borders.png",
+    "sections/s1/views/000041_elastix_affine_overlay/labels.tif",
+    "sections/s1/views/000041_elastix_affine_overlay/view.jpg",
+    "sections/s1/views/000041_elastix_affine_overlay/view.json",
+    "sections/s1/views/000043_elastix_affine_overlay/borders.png",
+    "sections/s1/views/000043_elastix_affine_overlay/labels.tif",
+    "sections/s1/views/000043_elastix_affine_overlay/view.jpg",
+    "sections/s1/views/000043_elastix_affine_overlay/view.json",
+    "sections/s1/views/000046_ants_syn_overlay/borders.png",
+    "sections/s1/views/000046_ants_syn_overlay/labels.tif",
+    "sections/s1/views/000046_ants_syn_overlay/view.jpg",
+    "sections/s1/views/000046_ants_syn_overlay/view.json",
+    "sections/s1/views/000047_ants_syn_overlay/borders.png",
+    "sections/s1/views/000047_ants_syn_overlay/labels.tif",
+    "sections/s1/views/000047_ants_syn_overlay/view.jpg",
+    "sections/s1/views/000047_ants_syn_overlay/view.json",
+    "sections/s1/views/000049_look_overlay/borders.png",
+    "sections/s1/views/000049_look_overlay/labels.tif",
+    "sections/s1/views/000049_look_overlay/view.jpg",
+    "sections/s1/views/000049_look_overlay/view.json",
+    "sections/s1/views/000051_trace_borders_borders/borders.png",
+    "sections/s1/views/000051_trace_borders_borders/labels.tif",
+    "sections/s1/views/000051_trace_borders_borders/residual.tif",
+    "sections/s1/views/000051_trace_borders_borders/view.jpg",
+    "sections/s1/views/000051_trace_borders_borders/view.json",
+    "sections/s1/views/000052_trace_borders_trace/view.jpg",
+    "sections/s1/views/000052_trace_borders_trace/view.json",
+    "sections/s2/coords.tif",
+    "sections/s2/deformable/<hex>/arrays.npz",
+    "sections/s2/deformable/<hex>/record.json",
+    "sections/s2/labels.csv",
+    "sections/s2/labels.tif",
+    "sections/s2/labels_fiji.tif",
+    "sections/s2/maps.json",
+    "sections/s2/tissue.png",
+    "sections/s2/views/000003_look_section/view.jpg",
+    "sections/s2/views/000003_look_section/view.json",
+    "sections/s2/views/000020_set_preprocessed_channel_properties_before/view.jpg",
+    "sections/s2/views/000020_set_preprocessed_channel_properties_before/view.json",
+    "sections/s2/views/000021_set_preprocessed_channel_properties_after/view.jpg",
+    "sections/s2/views/000021_set_preprocessed_channel_properties_after/view.json",
+    "sections/s2/views/000029_position_sections_positioning/view.jpg",
+    "sections/s2/views/000029_position_sections_positioning/view.json",
+    "sections/s2/views/000035_mark_damage_damage/view.jpg",
+    "sections/s2/views/000035_mark_damage_damage/view.json",
+    "sections/s2/views/000038_interactive_transform_overlay/borders.png",
+    "sections/s2/views/000038_interactive_transform_overlay/labels.tif",
+    "sections/s2/views/000038_interactive_transform_overlay/view.jpg",
+    "sections/s2/views/000038_interactive_transform_overlay/view.json",
+    "sections/s2/views/000039_interactive_transform_overlay/borders.png",
+    "sections/s2/views/000039_interactive_transform_overlay/labels.tif",
+    "sections/s2/views/000039_interactive_transform_overlay/view.jpg",
+    "sections/s2/views/000039_interactive_transform_overlay/view.json",
+    "sections/s2/views/000042_elastix_affine_overlay/borders.png",
+    "sections/s2/views/000042_elastix_affine_overlay/labels.tif",
+    "sections/s2/views/000042_elastix_affine_overlay/view.jpg",
+    "sections/s2/views/000042_elastix_affine_overlay/view.json",
+    "state.json",
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
+    "views/000008_look_atlas/view.jpg",
+    "views/000008_look_atlas/view.json",
+    "views/000009_look_atlas/view.jpg",
+    "views/000009_look_atlas/view.json",
+    "views/000010_look_atlas/view.jpg",
+    "views/000010_look_atlas/view.json",
+    "views/000011_look_atlas/view.jpg",
+    "views/000011_look_atlas/view.json",
+    "views/000012_look_positioning/view.jpg",
+    "views/000012_look_positioning/view.json",
+    "views/000025_grep_atlas_view_atlas/view.jpg",
+    "views/000025_grep_atlas_view_atlas/view.json",
+    "views/000026_grep_atlas_view_atlas/view.jpg",
+    "views/000026_grep_atlas_view_atlas/view.json",
+    "views/000027_position_sections_positioning/view.jpg",
+    "views/000027_position_sections_positioning/view.json",
+    "views/000030_look_atlas/view.jpg",
+    "views/000030_look_atlas/view.json",
+    "views/000033_look_positioning/view.jpg",
+    "views/000033_look_positioning/view.json",
+    "views/000034_look_positioning/view.jpg",
+    "views/000034_look_positioning/view.json"
+   ],
+   "job_file": {
+    "format_version": 1,
+    "image_folder": "..",
+    "spec": {
+     "agent_damage": true,
+     "agent_preprocessing": true,
+     "atlas": "allen_mouse_25um",
+     "debrief": true,
+     "facts": [],
+     "host_preprocessing": null,
+     "image_folder": "<ROOT>/tools",
+     "image_resolution": "low",
+     "inputs": {
+      "pixel_size_um": 31.25
+     },
+     "max_input_tokens": null,
+     "max_quota_percent": 25,
+     "model": "fake-model",
+     "nonlinear": {
+      "image_model": null,
+      "notes": "",
+      "provider": "openai-oauth"
+     },
+     "out": null,
+     "plane": "coronal",
+     "position": {
+      "gated": false,
+      "interval_um": 200,
+      "notes": "",
+      "playbook": false,
+      "strict_interval": false,
+      "thickness_um": 50
+     },
+     "preprocess": "none",
+     "reasoning": null,
+     "resume": true,
+     "tasks": [
+      "reorder",
+      "position",
+      "transform",
+      "nonlinear"
+     ],
+     "transform": {
+      "angles": true,
+      "automatic": true,
+      "flip": true,
+      "hemisphere_cue": "",
+      "interactive": true,
+      "max_parallel": 4,
+      "notes": ""
+     }
+    }
+   },
+   "layers": {
+    "sections/s0/views/000001_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000007_zoom_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000016_set_preprocessed_channel_properties_before": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000017_set_preprocessed_channel_properties_after": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000028_position_sections_positioning": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000031_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000040_elastix_affine_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000044_trace_borders_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000045_trace_borders_trace": {
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000048_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s0/views/000050_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000002_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000004_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000005_zoom_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000006_zoom_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000013_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000014_set_preprocessed_channel_properties_before": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000015_set_preprocessed_channel_properties_after": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000018_set_preprocessed_channel_properties_before": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000019_set_preprocessed_channel_properties_after": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000022_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000023_set_preprocessed_channel_properties_before": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000024_set_preprocessed_channel_properties_after": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000032_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      369
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000036_mark_damage_damage": {
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000037_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      280,
+      431
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000041_elastix_affine_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000043_elastix_affine_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      100,
+      427
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000046_ants_syn_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000047_ants_syn_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      100,
+      445
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000049_look_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      333
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000051_trace_borders_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      261
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s1/views/000052_trace_borders_trace": {
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000003_look_section": {
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000020_set_preprocessed_channel_properties_before": {
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000021_set_preprocessed_channel_properties_after": {
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000029_position_sections_positioning": {
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000035_mark_damage_damage": {
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000038_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000039_interactive_transform_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "sections/s2/views/000042_elastix_affine_overlay": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      338,
+      315
+     ],
+     "view_json": "<hex>"
+    },
+    "views/000008_look_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000009_look_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000010_look_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000011_look_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000012_look_positioning": {
+     "view_json": "<hex>"
+    },
+    "views/000025_grep_atlas_view_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000026_grep_atlas_view_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000027_position_sections_positioning": {
+     "view_json": "<hex>"
+    },
+    "views/000030_look_atlas": {
+     "view_json": "<hex>"
+    },
+    "views/000033_look_positioning": {
+     "view_json": "<hex>"
+    },
+    "views/000034_look_positioning": {
+     "view_json": "<hex>"
+    }
+   },
+   "pictures_sent": 52,
+   "saved_jpegs_equal_sent": true,
+   "views_index": [
+    {
+     "call": 1,
+     "caption": "0: s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000001_look_section",
+     "path": "sections/s0/views/000001_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       255,
+       198
+      ],
+      "renderer": "look",
+      "shown": [
+       255,
+       198
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.0417,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 1,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 1,
+     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red + green + blue; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000002_look_section",
+     "path": "sections/s1/views/000002_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       258,
+       201
+      ],
+      "renderer": "look",
+      "shown": [
+       258,
+       201
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 2,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 1,
+     "caption": "2: s2.png section, at 0.21 mm; 31.2 um/px; raw gray; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000003_look_section",
+     "path": "sections/s2/views/000003_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       184,
+       190
+      ],
+      "renderer": "look",
+      "shown": [
+       184,
+       190
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2083,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 3,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 2,
+     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red + green; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000004_look_section",
+     "path": "sections/s1/views/000004_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [
+        "red",
+        "green"
+       ],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       258,
+       201
+      ],
+      "renderer": "look",
+      "shown": [
+       258,
+       201
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 4,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 3,
+     "caption": "1: s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000005_zoom_section",
+     "path": "sections/s1/views/000005_zoom_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [
+        "red",
+        "green"
+       ],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": [
+        0.15503875968992248,
+        0.09950248756218906,
+        0.7751937984496124,
+        0.6965174129353234
+       ]
+      },
+      "base": [
+       258,
+       201
+      ],
+      "renderer": "look",
+      "shown": [
+       512,
+       384
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 9.7656
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 5,
+     "step": 0,
+     "tool": "zoom"
+    },
+    {
+     "call": 4,
+     "caption": "1: s1.png section, at 0.12 mm; 7.8 um/px; raw red + green; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000006_zoom_section",
+     "path": "sections/s1/views/000006_zoom_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [
+        "red",
+        "green"
+       ],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": [
+        0.3003875968992248,
+        0.2238805970149254,
+        0.7751937984496124,
+        0.6902985074626866
+       ]
+      },
+      "base": [
+       258,
+       201
+      ],
+      "renderer": "look",
+      "shown": [
+       488,
+       376
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 7.8445
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 6,
+     "step": 0,
+     "tool": "zoom"
+    },
+    {
+     "call": 5,
+     "caption": "0: s0.png section, at 0.04 mm; 7.8 um/px; raw gray; percentile contrast",
+     "layers": false,
+     "mode": "section",
+     "name": "000007_zoom_section",
+     "path": "sections/s0/views/000007_zoom_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": [
+        0.11764705882352941,
+        0.20202020202020202,
+        0.5882352941176471,
+        0.6565656565656566
+       ]
+      },
+      "base": [
+       255,
+       198
+      ],
+      "renderer": "look",
+      "shown": [
+       480,
+       360
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.0417,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 7.8125
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 7,
+     "step": 0,
+     "tool": "zoom"
+    },
+    {
+     "call": 6,
+     "caption": "atlas at 0.05 mm (the stack's cutting angles); 50.0 um/px; layers template",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000008_look_atlas",
+     "path": "views/000008_look_atlas",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "atlas",
+       "part": null,
+       "positions_mm": [
+        0.05
+       ],
+       "sections": [],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "look",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {},
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 8,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 6,
+     "caption": "atlas at 0.20 mm (the stack's cutting angles); 50.0 um/px; layers template",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000009_look_atlas",
+     "path": "views/000009_look_atlas",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "atlas",
+       "part": null,
+       "positions_mm": [
+        0.2
+       ],
+       "sections": [],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "look",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {},
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 9,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 7,
+     "caption": "atlas at 0.10 mm (the stack's cutting angles); 50.0 um/px; layers template + borders",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000010_look_atlas",
+     "path": "views/000010_look_atlas",
+     "recipe": {
+      "args": {
+       "atlas_layers": [
+        "template",
+        "borders"
+       ],
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "atlas",
+       "part": null,
+       "positions_mm": [
+        0.1
+       ],
+       "sections": [],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "look",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {},
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 10,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 8,
+     "caption": "atlas at 0.10 mm (the stack's cutting angles); 50.0 um/px; layers template",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000011_look_atlas",
+     "path": "views/000011_look_atlas",
+     "recipe": {
+      "args": {
+       "atlas_layers": [
+        "ara"
+       ],
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "atlas",
+       "part": null,
+       "positions_mm": [
+        0.1
+       ],
+       "sections": [],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "look",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {},
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 11,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 9,
+     "caption": "positioning: 3 sections below in position order, 0.04-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.04 mm, 1: s1.png 0.12 mm, 2: s2.png 0.21 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000012_look_positioning",
+     "path": "views/000012_look_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [],
+       "sections": [
+        "s0.png",
+        "s1.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1567,
+       397
+      ],
+      "renderer": "look",
+      "shown": [
+       1567,
+       397
+      ],
+      "state": {
+       "appearance": {},
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.0417,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2083,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 12,
+     "step": 0,
+     "tool": "look"
+    },
+    {
+     "call": 10,
+     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue",
+     "layers": false,
+     "mode": "section",
+     "name": "000013_look_section",
+     "path": "sections/s1/views/000013_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       258,
+       201
+      ],
+      "renderer": "look",
+      "shown": [
+       258,
+       201
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 13,
+     "step": 1,
+     "tool": "look"
+    },
+    {
+     "call": 11,
+     "caption": "1: s1.png preprocessed channel before this call (default appearance)",
+     "layers": false,
+     "mode": "before",
+     "name": "000014_set_preprocessed_channel_properties_before",
+     "path": "sections/s1/views/000014_set_preprocessed_channel_properties_before",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 14,
+     "step": 2,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 11,
+     "caption": "1: s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
+     "layers": false,
+     "mode": "after",
+     "name": "000015_set_preprocessed_channel_properties_after",
+     "path": "sections/s1/views/000015_set_preprocessed_channel_properties_after",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 15,
+     "step": 2,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 12,
+     "caption": "0: s0.png preprocessed channel before this call (default appearance)",
+     "layers": false,
+     "mode": "before",
+     "name": "000016_set_preprocessed_channel_properties_before",
+     "path": "sections/s0/views/000016_set_preprocessed_channel_properties_before",
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 16,
+     "step": 3,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 12,
+     "caption": "0: s0.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+     "layers": false,
+     "mode": "after",
+     "name": "000017_set_preprocessed_channel_properties_after",
+     "path": "sections/s0/views/000017_set_preprocessed_channel_properties_after",
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 17,
+     "step": 3,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 12,
+     "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+     "layers": false,
+     "mode": "before",
+     "name": "000018_set_preprocessed_channel_properties_before",
+     "path": "sections/s1/views/000018_set_preprocessed_channel_properties_before",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 18,
+     "step": 3,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 12,
+     "caption": "1: s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
+     "layers": false,
+     "mode": "after",
+     "name": "000019_set_preprocessed_channel_properties_after",
+     "path": "sections/s1/views/000019_set_preprocessed_channel_properties_after",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 19,
+     "step": 3,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 12,
+     "caption": "2: s2.png preprocessed channel before this call (default appearance)",
+     "layers": false,
+     "mode": "before",
+     "name": "000020_set_preprocessed_channel_properties_before",
+     "path": "sections/s2/views/000020_set_preprocessed_channel_properties_before",
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 20,
+     "step": 3,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 12,
+     "caption": "2: s2.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+     "layers": false,
+     "mode": "after",
+     "name": "000021_set_preprocessed_channel_properties_after",
+     "path": "sections/s2/views/000021_set_preprocessed_channel_properties_after",
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 21,
+     "step": 3,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 13,
+     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
+     "layers": false,
+     "mode": "section",
+     "name": "000022_look_section",
+     "path": "sections/s1/views/000022_look_section",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [
+        "preprocessed"
+       ],
+       "long_edge": null,
+       "mode": "section",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       258,
+       201
+      ],
+      "renderer": "look",
+      "shown": [
+       258,
+       201
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {
+          "s1.png": {
+           "channel_weights": [
+            1.0,
+            0.5,
+            0.0
+           ],
+           "clahe_clip": 2.0,
+           "clahe_tiles": 8,
+           "denoise": false,
+           "n4": false
+          }
+         },
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.125,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 22,
+     "step": 3,
+     "tool": "look"
+    },
+    {
+     "call": 14,
+     "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+     "layers": false,
+     "mode": "before",
+     "name": "000023_set_preprocessed_channel_properties_before",
+     "path": "sections/s1/views/000023_set_preprocessed_channel_properties_before",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 23,
+     "step": 4,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 14,
+     "caption": "1: s1.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+     "layers": false,
+     "mode": "after",
+     "name": "000024_set_preprocessed_channel_properties_after",
+     "path": "sections/s1/views/000024_set_preprocessed_channel_properties_after",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 24,
+     "step": 4,
+     "tool": "set_preprocessed_channel_properties"
+    },
+    {
+     "call": 15,
+     "caption": "atlas at 0.10 mm (the stack's cutting angles); 50.0 um/px; regions highlighted: STR, TH:left",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000025_grep_atlas_view_atlas",
+     "path": "views/000025_grep_atlas_view_atlas",
+     "recipe": {
+      "args": {
+       "long_edge": 512,
+       "mode": "atlas",
+       "positions_mm": [
+        0.1
+       ],
+       "regions": [
+        "STR",
+        "TH:left"
+       ],
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "grep_atlas_view",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {},
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 25,
+     "step": 4,
+     "tool": "grep_atlas_view"
+    },
+    {
+     "call": 15,
+     "caption": "atlas at 0.25 mm (the stack's cutting angles); 50.0 um/px; regions highlighted: STR, TH:left",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000026_grep_atlas_view_atlas",
+     "path": "views/000026_grep_atlas_view_atlas",
+     "recipe": {
+      "args": {
+       "long_edge": 512,
+       "mode": "atlas",
+       "positions_mm": [
+        0.25
+       ],
+       "regions": [
+        "STR",
+        "TH:left"
+       ],
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "grep_atlas_view",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {},
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 26,
+     "step": 4,
+     "tool": "grep_atlas_view"
+    },
+    {
+     "call": 16,
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000027_position_sections_positioning",
+     "path": "views/000027_position_sections_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.1,
+        0.15,
+        0.2
+       ],
+       "sections": [
+        "s0.png",
+        "s1.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1567,
+       631
+      ],
+      "renderer": "look",
+      "shown": [
+       1567,
+       631
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 27,
+     "step": 6,
+     "tool": "position_sections"
+    },
+    {
+     "call": 17,
+     "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.25 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000028_position_sections_positioning",
+     "path": "sections/s0/views/000028_position_sections_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.25
+       ],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       720,
+       590
+      ],
+      "renderer": "look",
+      "shown": [
+       720,
+       590
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 0,
+         "position_mm": 0.25,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 28,
+     "step": 7,
+     "tool": "position_sections"
+    },
+    {
+     "call": 18,
+     "caption": "positioning: 1 section below in position order at 0.05 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 2: s2.png 0.05 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000029_position_sections_positioning",
+     "path": "sections/s2/views/000029_position_sections_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.05
+       ],
+       "sections": [
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       720,
+       582
+      ],
+      "renderer": "look",
+      "shown": [
+       720,
+       582
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 2,
+         "position_mm": 0.05,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 29,
+     "step": 7,
+     "tool": "position_sections"
+    },
+    {
+     "call": 19,
+     "caption": "atlas at 0.10 mm pitch 1.0 yaw 0.5 (the stack's cutting angles); 50.0 um/px; layers template",
+     "layers": false,
+     "mode": "atlas",
+     "name": "000030_look_atlas",
+     "path": "views/000030_look_atlas",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "atlas",
+       "part": null,
+       "positions_mm": [
+        0.1
+       ],
+       "sections": [],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       158,
+       119
+      ],
+      "renderer": "look",
+      "shown": [
+       158,
+       119
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {},
+       "view_angles": [
+        1.0,
+        0.5
+       ]
+      },
+      "um_per_px": 50.0
+     },
+     "sections": [],
+     "seq": 30,
+     "step": 7,
+     "tool": "look"
+    },
+    {
+     "call": 20,
+     "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000031_look_overlay",
+     "path": "sections/s0/views/000031_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 31,
+     "step": 6,
+     "tool": "look"
+    },
+    {
+     "call": 21,
+     "caption": "1: s1.png overlay, at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas template + borders (images at 0.3)",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000032_look_overlay",
+     "path": "sections/s1/views/000032_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": [
+        "template",
+        "borders"
+       ],
+       "atlas_opacity": 0.3,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 32,
+     "step": 6,
+     "tool": "look"
+    },
+    {
+     "call": 22,
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 2 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000033_look_positioning",
+     "path": "views/000033_look_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.1,
+        0.2
+       ],
+       "sections": [
+        "s0.png",
+        "s1.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1567,
+       631
+      ],
+      "renderer": "look",
+      "shown": [
+       1567,
+       631
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s1.png",
+      "s2.png"
+     ],
+     "seq": 33,
+     "step": 6,
+     "tool": "look"
+    },
+    {
+     "call": 23,
+     "caption": "positioning: 2 sections below in position order, 0.10-0.20 mm, raw gray; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 2: s2.png 0.20 mm",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000034_look_positioning",
+     "path": "views/000034_look_positioning",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [],
+       "sections": [
+        "s0.png",
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       1090,
+       365
+      ],
+      "renderer": "look",
+      "shown": [
+       1090,
+       365
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": null
+        },
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": null
+        }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png",
+      "s2.png"
+     ],
+     "seq": 34,
+     "step": 6,
+     "tool": "look"
+    },
+    {
+     "call": 24,
+     "caption": "s2.png: marked damage regions CTX:right shaded on the section under its current registration (left) and on the atlas (right)",
+     "layers": false,
+     "mode": "damage",
+     "name": "000035_mark_damage_damage",
+     "path": "sections/s2/views/000035_mark_damage_damage",
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 35,
+     "step": 7,
+     "tool": "mark_damage"
+    },
+    {
+     "call": 25,
+     "caption": "s1.png: marked damage regions HY shaded on the section under its current registration (left) and on the atlas (right)",
+     "layers": false,
+     "mode": "damage",
+     "name": "000036_mark_damage_damage",
+     "path": "sections/s1/views/000036_mark_damage_damage",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 36,
+     "step": 8,
+     "tool": "mark_damage"
+    },
+    {
+     "call": 26,
+     "caption": "1: s1.png overlay (rotated 90, flipped), at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000037_interactive_transform_overlay",
+     "path": "sections/s1/views/000037_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       280,
+       338
+      ],
+      "renderer": "look",
+      "shown": [
+       280,
+       338
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": true,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 90,
+         "transform": null
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 37,
+     "step": 10,
+     "tool": "interactive_transform"
+    },
+    {
+     "call": 27,
+     "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000038_interactive_transform_overlay",
+     "path": "sections/s2/views/000038_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [
+          "CTX:right"
+         ],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           1.0485610114923025,
+           0.03922118132559438,
+           -0.03800874346777205,
+           -0.07186129376434981,
+           0.9786569440594823,
+           0.043525251775510615
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 3.0,
+           "scale_x": 1.05,
+           "scale_y": 0.98,
+           "shear": 0.0,
+           "translate_x_mm": 0.05,
+           "translate_y_mm": -0.02
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 38,
+     "step": 10,
+     "tool": "interactive_transform"
+    },
+    {
+     "call": 28,
+     "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000039_interactive_transform_overlay",
+     "path": "sections/s2/views/000039_interactive_transform_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [
+          "CTX:right"
+         ],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "kind": "interactive",
+          "mirrored": false,
+          "note": "",
+          "params": [
+           1.0485610114923025,
+           0.03922118132559438,
+           -0.04389109640894852,
+           -0.07186129376434981,
+           0.9786569440594823,
+           0.043525251775510615
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 3.0,
+           "scale_x": 1.05,
+           "scale_y": 0.98,
+           "shear": 0.0,
+           "translate_x_mm": 0.0,
+           "translate_y_mm": -0.02
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 39,
+     "step": 11,
+     "tool": "interactive_transform"
+    },
+    {
+     "call": 29,
+     "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000040_elastix_affine_overlay",
+     "path": "sections/s0/views/000040_elastix_affine_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.989,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.001393692992846,
+           0.00045068498858011607,
+           -0.0032746221412246527,
+           -0.00779177774567784,
+           1.0045951285810455,
+           -0.009030841638644201
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.341,
+           "scale_x": 1.0014,
+           "scale_y": 1.0046,
+           "shear": -0.0054,
+           "translate_x_mm": -0.02,
+           "translate_y_mm": -0.0691
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 40,
+     "step": 13,
+     "tool": "elastix_affine"
+    },
+    {
+     "call": 29,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000041_elastix_affine_overlay",
+     "path": "sections/s1/views/000041_elastix_affine_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.992,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0048982325789915,
+           0.0012952972137533468,
+           -0.007225847613061627,
+           -0.0005714786807347334,
+           1.0053895956861394,
+           -0.011324127260855094
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.025,
+           "scale_x": 1.0049,
+           "scale_y": 1.0054,
+           "shear": 0.0013,
+           "translate_x_mm": -0.0351,
+           "translate_y_mm": -0.0579
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 41,
+     "step": 13,
+     "tool": "elastix_affine"
+    },
+    {
+     "call": 29,
+     "caption": "2: s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000042_elastix_affine_overlay",
+     "path": "sections/s2/views/000042_elastix_affine_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s2.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s2.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [
+          "CTX:right"
+         ],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 2,
+         "index_original": 2,
+         "position_mm": 0.2,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.911,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0071986487184268,
+           -0.004295060371306138,
+           -0.00183785199010385,
+           0.005619990182850775,
+           1.0036665335151937,
+           -0.01623242981682699
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": -0.244,
+           "scale_x": 1.0072,
+           "scale_y": 1.0037,
+           "shear": -0.0013,
+           "translate_x_mm": -0.0033,
+           "translate_y_mm": -0.0753
+          },
+          "regions": {
+           "exclude": [
+            "CTX:right"
+           ],
+           "include": []
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s2.png"
+     ],
+     "seq": 42,
+     "step": 13,
+     "tool": "elastix_affine"
+    },
+    {
+     "call": 30,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000043_elastix_affine_overlay",
+     "path": "sections/s1/views/000043_elastix_affine_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": [
+        0.4855,
+        0.3353,
+        0.7796,
+        0.6647
+       ]
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       100,
+       84
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": null,
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 1.0,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0097750761415503,
+           0.0047262741218024925,
+           -0.014345808550973106,
+           -0.02242086042173003,
+           0.9945996175475558,
+           0.010338807234242934
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.973,
+           "scale_x": 1.0099,
+           "scale_y": 0.9946,
+           "shear": -0.0106,
+           "translate_x_mm": -0.0603,
+           "translate_y_mm": -0.0232
+          },
+          "regions": {
+           "exclude": [],
+           "include": [
+            "TH"
+           ]
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 43,
+     "step": 14,
+     "tool": "elastix_affine"
+    },
+    {
+     "call": 31,
+     "layers": true,
+     "mode": "borders",
+     "name": "000044_trace_borders_borders",
+     "path": "sections/s0/views/000044_trace_borders_borders",
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 44,
+     "step": 16,
+     "tool": "trace_borders"
+    },
+    {
+     "call": 31,
+     "layers": false,
+     "mode": "trace",
+     "name": "000045_trace_borders_trace",
+     "path": "sections/s0/views/000045_trace_borders_trace",
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 45,
+     "step": 16,
+     "tool": "trace_borders"
+    },
+    {
+     "call": 32,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000046_ants_syn_overlay",
+     "path": "sections/s1/views/000046_ants_syn_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s1/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.144,
+            "median": 0.037
+           },
+           "flags": [],
+           "fold_fraction": 0.0
+          }
+         },
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 1.0,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0097750761415503,
+           0.0047262741218024925,
+           -0.014345808550973106,
+           -0.02242086042173003,
+           0.9945996175475558,
+           0.010338807234242934
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.973,
+           "scale_x": 1.0099,
+           "scale_y": 0.9946,
+           "shear": -0.0106,
+           "translate_x_mm": -0.0603,
+           "translate_y_mm": -0.0232
+          },
+          "regions": {
+           "exclude": [],
+           "include": [
+            "TH"
+           ]
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 46,
+     "step": 17,
+     "tool": "ants_syn"
+    },
+    {
+     "call": 33,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000047_ants_syn_overlay",
+     "path": "sections/s1/views/000047_ants_syn_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": null,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": [
+        0.4855,
+        0.3353,
+        0.7796,
+        0.6647
+       ]
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       100,
+       84
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "composed: engine then engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s1/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium"
+           },
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [
+             "TH"
+            ],
+            "start": "current",
+            "stiffness": "soft"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.156,
+            "median": 0.046
+           },
+           "flags": [],
+           "fold_fraction": 0.0,
+           "step_displacement_mm": {
+            "max": 0.151,
+            "median": 0.0
+           }
+          }
+         },
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 1.0,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0097750761415503,
+           0.0047262741218024925,
+           -0.014345808550973106,
+           -0.02242086042173003,
+           0.9945996175475558,
+           0.010338807234242934
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.973,
+           "scale_x": 1.0099,
+           "scale_y": 0.9946,
+           "shear": -0.0106,
+           "translate_x_mm": -0.0603,
+           "translate_y_mm": -0.0232
+          },
+          "regions": {
+           "exclude": [],
+           "include": [
+            "TH"
+           ]
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 47,
+     "step": 18,
+     "tool": "ants_syn"
+    },
+    {
+     "call": 34,
+     "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000048_look_overlay",
+     "path": "sections/s0/views/000048_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s0/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "borders",
+            "fit_section": "traced_borders",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium",
+            "trace": "sections/s0/image_correction/<hex>/attempt-01"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.208,
+            "median": 0.022
+           },
+           "flags": [],
+           "fold_fraction": 0.0
+          }
+         },
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.989,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.001393692992846,
+           0.00045068498858011607,
+           -0.0032746221412246527,
+           -0.00779177774567784,
+           1.0045951285810455,
+           -0.009030841638644201
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.341,
+           "scale_x": 1.0014,
+           "scale_y": 1.0046,
+           "shear": -0.0054,
+           "translate_x_mm": -0.02,
+           "translate_y_mm": -0.0691
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 48,
+     "step": 18,
+     "tool": "look"
+    },
+    {
+     "call": 34,
+     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000049_look_overlay",
+     "path": "sections/s1/views/000049_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s1.png"
+       ],
+       "warp": "applied",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s1.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "composed: engine then engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s1/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium"
+           },
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "template",
+            "fit_section": "fit",
+            "include": [
+             "TH"
+            ],
+            "start": "current",
+            "stiffness": "soft"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.156,
+            "median": 0.046
+           },
+           "flags": [],
+           "fold_fraction": 0.0,
+           "step_displacement_mm": {
+            "max": 0.151,
+            "median": 0.0
+           }
+          }
+         },
+         "flip": false,
+         "index_corrected": 1,
+         "index_original": 1,
+         "position_mm": 0.15,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 1.0,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.0097750761415503,
+           0.0047262741218024925,
+           -0.014345808550973106,
+           -0.02242086042173003,
+           0.9945996175475558,
+           0.010338807234242934
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.973,
+           "scale_x": 1.0099,
+           "scale_y": 0.9946,
+           "shear": -0.0106,
+           "translate_x_mm": -0.0603,
+           "translate_y_mm": -0.0232
+          },
+          "regions": {
+           "exclude": [],
+           "include": [
+            "TH"
+           ]
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 49,
+     "step": 18,
+     "tool": "look"
+    },
+    {
+     "call": 35,
+     "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, linear placement only; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "layers": true,
+     "mode": "overlay",
+     "name": "000050_look_overlay",
+     "path": "sections/s0/views/000050_look_overlay",
+     "recipe": {
+      "args": {
+       "atlas_layers": null,
+       "atlas_opacity": 0.5,
+       "channels": [],
+       "long_edge": null,
+       "mode": "overlay",
+       "part": null,
+       "positions_mm": [],
+       "sections": [
+        "s0.png"
+       ],
+       "warp": "none",
+       "zoom": []
+      },
+      "base": [
+       338,
+       258
+      ],
+      "renderer": "look",
+      "shown": [
+       338,
+       258
+      ],
+      "state": {
+       "appearance": {
+        "channels": {
+         "red": {
+          "colormap": "magenta",
+          "contrast_limits": [
+           20.0,
+           200.0
+          ],
+          "gamma": 1.4
+         }
+        },
+        "preprocessed": {
+         "sections": {},
+         "stack": {
+          "channel_weights": null,
+          "clahe_clip": 6.0,
+          "clahe_tiles": 4,
+          "denoise": false,
+          "n4": false
+         }
+        }
+       },
+       "sections": {
+        "s0.png": {
+         "cutting_angles_deg": {
+          "pitch": 0.0,
+          "yaw": 0.0
+         },
+         "damaged_regions": [],
+         "deformation": {
+          "inverse_source": "engine",
+          "key": "<hex>",
+          "linear_key": "<hex>",
+          "record": "sections/s0/deformable/<hex>",
+          "steps": [
+           {
+            "engine": "ants",
+            "exclude": [],
+            "fit_atlas": "borders",
+            "fit_section": "traced_borders",
+            "include": [],
+            "start": "linear",
+            "stiffness": "medium",
+            "trace": "sections/s0/image_correction/<hex>/attempt-01"
+           }
+          ],
+          "summary": {
+           "displacement_mm": {
+            "max": 0.208,
+            "median": 0.022
+           },
+           "flags": [],
+           "fold_fraction": 0.0
+          }
+         },
+         "flip": false,
+         "index_corrected": 0,
+         "index_original": 0,
+         "position_mm": 0.1,
+         "rotation_deg": 0,
+         "transform": {
+          "calibration": {
+           "section_um_per_px": 31.25,
+           "source": "host"
+          },
+          "iou": 0.989,
+          "kind": "elastix",
+          "mirrored": false,
+          "params": [
+           1.001393692992846,
+           0.00045068498858011607,
+           -0.0032746221412246527,
+           -0.00779177774567784,
+           1.0045951285810455,
+           -0.009030841638644201
+          ],
+          "physical": {
+           "pivot": [
+            0.5,
+            0.5
+           ],
+           "rotation_deg": 0.341,
+           "scale_x": 1.0014,
+           "scale_y": 1.0046,
+           "shear": -0.0054,
+           "translate_x_mm": -0.02,
+           "translate_y_mm": -0.0691
+          }
+         }
+        }
+       }
+      },
+      "um_per_px": 31.25
+     },
+     "sections": [
+      "s0.png"
+     ],
+     "seq": 50,
+     "step": 18,
+     "tool": "look"
+    },
+    {
+     "call": 36,
+     "layers": true,
+     "mode": "borders",
+     "name": "000051_trace_borders_borders",
+     "path": "sections/s1/views/000051_trace_borders_borders",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 51,
+     "step": 20,
+     "tool": "trace_borders"
+    },
+    {
+     "call": 36,
+     "layers": false,
+     "mode": "trace",
+     "name": "000052_trace_borders_trace",
+     "path": "sections/s1/views/000052_trace_borders_trace",
+     "sections": [
+      "s1.png"
+     ],
+     "seq": 52,
+     "step": 20,
+     "tool": "trace_borders"
+    }
+   ]
+  }
+ },
+ "images": []
+}

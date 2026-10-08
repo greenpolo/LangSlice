@@ -1,0 +1,465 @@
+{
+ "door": "declarations",
+ "images": [],
+ "tools": [
+  {
+   "description": "Draw pictures of sections and the atlas. Writes nothing.\n\nThe same request draws the same kind of picture at every stage of the\nrun: no default depends on the stack's state. Each picture gets a number\nand a caption stating the positions, cutting angles, scale and channel\nsettings it was drawn with; zoom takes the number.\n\nArgs:\n    mode: \"section\": each section alone, as oriented, framed to its\n        tissue. \"atlas\": the atlas plane alone at each of positions_mm,\n        at the stack's cutting angles. \"overlay\": each section under its\n        current registration, with the atlas borders and any other\n        atlas_layers on it. \"positioning\": the sections and the atlas\n        along the slicing axis as ABBA lays them out: the atlas at\n        positions_mm above a millimetre ruler, the sections below it in\n        order of position, each joined by a line to its position; a long\n        stack is split into several pictures, none shrunk.\n    sections: Filenames or indices; empty is every section.\n    positions_mm: Atlas positions in millimetres along the slicing axis:\n        the planes \"atlas\" draws (at least one), and the atlas pictures\n        above the ruler in \"positioning\" (none when empty).\n    channels: The raw channels of each section to draw, by name (several\n        are blended in distinct colours, at most 6), or [\"preprocessed\"]\n        for the channel the fits and the image model read. Empty is every\n        raw channel, each with its display settings.\n    atlas_layers: Any of \"template\", \"nissl\" (Allen mouse atlases only)\n        and \"borders\". Empty is the mode's default: borders in \"overlay\",\n        template in \"atlas\" and \"positioning\". \"section\" draws no atlas.\n    atlas_opacity: 0 to 1: how strongly an atlas image (template or\n        nissl) shows under the section in \"overlay\".\n    warp: \"applied\" draws each section with its deformation, \"none\" with\n        its linear placement only.\n\nReturns:\n    Up to 4 pictures, attached in the order `pictures` lists them, each\n    with its number and caption. Pictures past 4 are listed under\n    `not_shown` with the call that draws them.",
+   "name": "look",
+   "parameters_json_schema": {
+    "properties": {
+     "atlas_layers": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Atlas Layers",
+      "type": "array"
+     },
+     "atlas_opacity": {
+      "default": 0.5,
+      "title": "Atlas Opacity",
+      "type": "number"
+     },
+     "channels": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Channels",
+      "type": "array"
+     },
+     "mode": {
+      "title": "Mode",
+      "type": "string"
+     },
+     "positions_mm": {
+      "default": [],
+      "items": {
+       "type": "number"
+      },
+      "title": "Positions Mm",
+      "type": "array"
+     },
+     "sections": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Sections",
+      "type": "array"
+     },
+     "warp": {
+      "default": "applied",
+      "title": "Warp",
+      "type": "string"
+     }
+    },
+    "required": [
+     "mode"
+    ],
+    "title": "lookParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Draw a box of an earlier picture again, in more detail. Writes nothing.\n\nThe box is redrawn from the full-resolution image, as the picture was\ndrawn even if the stack has changed since (the reply then says `stale`).\nThe new picture has its own number, so it can be zoomed again.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n\nReturns:\n    One picture with its number and caption, and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
+   "name": "zoom",
+   "parameters_json_schema": {
+    "properties": {
+     "box": {
+      "items": {
+       "type": "number"
+      },
+      "title": "Box",
+      "type": "array"
+     },
+     "picture": {
+      "default": 0,
+      "title": "Picture",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "box"
+    ],
+    "title": "zoomParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Set how a raw channel is displayed, in every section that has it.\n\nDisplay only: it changes how look draws the channel and nothing a fit\nor the image model reads; the image files are never edited. The setting\nstays until it is changed, and every caption states it. Undoable.\n\nArgs:\n    channel: The raw channel's name.\n    contrast_limits: [low, high] in the file's own intensities: low is\n        drawn black, high at full brightness. Empty keeps the current\n        limits.\n    gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma.\n    colormap: \"gray\", \"red\", \"green\", \"blue\", \"magenta\", \"cyan\" or\n        \"yellow\"; empty keeps the current one.\n    reset: True returns the channel to its default display; the other\n        arguments are then ignored.\n\nReturns:\n    The settings now in force, the sections that have the channel, and\n    its file intensities over them: the sample type and its range, and\n    the 1st and 99.5th percentiles.",
+   "name": "set_channel_properties",
+   "parameters_json_schema": {
+    "properties": {
+     "channel": {
+      "title": "Channel",
+      "type": "string"
+     },
+     "colormap": {
+      "default": "",
+      "title": "Colormap",
+      "type": "string"
+     },
+     "contrast_limits": {
+      "default": [],
+      "items": {
+       "type": "number"
+      },
+      "title": "Contrast Limits",
+      "type": "array"
+     },
+     "gamma": {
+      "default": 0.0,
+      "title": "Gamma",
+      "type": "number"
+     },
+     "reset": {
+      "default": false,
+      "title": "Reset",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "channel"
+    ],
+    "title": "set_channel_propertiesParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Set the recipe of the preprocessed channel that the fits and the image model read.\n\nEvery section has one preprocessed channel, made from its raw channels\nby a recipe, LangSlice's default until this is called: each raw channel\nwith a weight above zero is optionally N4-corrected and denoised (ANTs)\nand contrast-enhanced by CLAHE, then the channels are blended by their\nweights. The fits match it against an atlas image. The raw channels are\nnever changed; look draws this channel with channels [\"preprocessed\"].\nUndoable; another call replaces the recipe.\n\nArgs:\n    sections: Filenames or indices that get a recipe of their own; empty\n        sets the whole stack's recipe.\n    channel_weights: One weight per raw channel, in the order the reply's\n        `channels` lists them; 0 leaves a channel out. Empty: automatic\n        weights by tissue coverage.\n    clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.\n    clahe_tiles: CLAHE tiles per side, 1 to 32.\n    n4: ANTs N4 correction of uneven illumination.\n    denoise: ANTs denoising.\n    reset: True returns the stack to the default recipe, or the named\n        sections to the stack's recipe; the other arguments are then\n        ignored.\n\nReturns:\n    The recipe in force, the raw channels, and for up to 4 of the\n    sections (spread over the stack when none are named) two pictures\n    each: the preprocessed channel before this call, then after it.",
+   "name": "set_preprocessed_channel_properties",
+   "parameters_json_schema": {
+    "properties": {
+     "channel_weights": {
+      "default": [],
+      "items": {
+       "type": "number"
+      },
+      "title": "Channel Weights",
+      "type": "array"
+     },
+     "clahe_clip": {
+      "default": 4.0,
+      "title": "Clahe Clip",
+      "type": "number"
+     },
+     "clahe_tiles": {
+      "default": 8,
+      "title": "Clahe Tiles",
+      "type": "integer"
+     },
+     "denoise": {
+      "default": false,
+      "title": "Denoise",
+      "type": "boolean"
+     },
+     "n4": {
+      "default": false,
+      "title": "N4",
+      "type": "boolean"
+     },
+     "reset": {
+      "default": false,
+      "title": "Reset",
+      "type": "boolean"
+     },
+     "sections": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Sections",
+      "type": "array"
+     }
+    },
+    "title": "set_preprocessed_channel_propertiesParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Look regions up in the atlas hierarchy by acronym, name or id. Text only.\n\nTo see a region's borders on the atlas, use grep_atlas_view.\n\nArgs:\n    query: Text matched case-insensitively against region acronyms and\n        names (substring), or an exact acronym or numeric id.\n    section: Optional filename or index of a section with a position;\n        each row then says whether the region (or any descendant)\n        appears in the atlas plane at that section's placement.\n\nReturns:\n    Rows of acronym, id, name, ancestry (root to parent, as acronyms)\n    and descendant count, at most 40, with the number left over.",
+   "name": "grep_atlas",
+   "parameters_json_schema": {
+    "properties": {
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "section": {
+      "default": "",
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "grep_atlasParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Draw the atlas at given positions with chosen regions' borders highlighted. Writes nothing.\n\nThe named regions' borders are drawn strong and the other borders\nfaint, at the stack's cutting angles. Look highlights no regions; this\ntool does.\n\nArgs:\n    regions: Acronyms, names or ids, descendants included; \"CTX:left\" or\n        \"CTX:right\" names one side, as the pictures show it.\n    positions_mm: Atlas positions in millimetres along the slicing axis;\n        a position outside the atlas is clamped into its range.\n\nReturns:\n    Up to 4 pictures with their numbers and captions, and per position\n    the named regions that have no pixel in that plane.",
+   "name": "grep_atlas_view",
+   "parameters_json_schema": {
+    "properties": {
+     "positions_mm": {
+      "items": {
+       "type": "number"
+      },
+      "title": "Positions Mm",
+      "type": "array"
+     },
+     "regions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Regions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "regions",
+     "positions_mm"
+    ],
+    "title": "grep_atlas_viewParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "The stack as it stands, and what this run lets you change. Writes nothing.\n\nReturns:\n    One row per section in stack order: index, filename, position\n    (position_source \"default\": a starting position the job gave the\n    section, not yet placed), distance to the next placed section, flip\n    and quarter turn, transform, damaged regions and damage note,\n    deformation steps. Also the cutting angles, the interval breaks, the\n    raw channels' display settings, the preprocessed channel's recipe,\n    the background work still running, and what this run lets you\n    change.",
+   "name": "status"
+  },
+  {
+   "description": "List the files and folders of the job folder. Writes nothing.\n\nThe job folder keeps every picture you were shown, indexed in\nviews.jsonl (number, tool, history step, sections, caption), with the\nrun notes (state.json), the settings (job.json) and the results.\n\nArgs:\n    path: A folder inside the job folder, relative to it; \".\" is the job\n        folder itself.\n    pattern: A glob (e.g. \"*.json\", \"views/*\"): every file below path\n        whose name or path matches. Empty lists path itself.\n\nReturns:\n    The entries, folders first, each with its kind and size, at most 200,\n    with the number left out.",
+   "name": "list_files",
+   "parameters_json_schema": {
+    "properties": {
+     "path": {
+      "default": ".",
+      "title": "Path",
+      "type": "string"
+     },
+     "pattern": {
+      "default": "",
+      "title": "Pattern",
+      "type": "string"
+     }
+    },
+    "title": "list_filesParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Search the job folder's text files for lines that match. Writes nothing.\n\nArgs:\n    query: A regular expression, or plain text when it is not one; upper\n        and lower case alike.\n    path: A folder or file inside the job folder, relative to it.\n    glob: Only files whose name or path matches this glob.\n\nReturns:\n    Matches as \"file:line: text\", at most 60, with the number left out.\n    Pictures and binary files are not searched.",
+   "name": "search_files",
+   "parameters_json_schema": {
+    "properties": {
+     "glob": {
+      "default": "",
+      "title": "Glob",
+      "type": "string"
+     },
+     "path": {
+      "default": ".",
+      "title": "Path",
+      "type": "string"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "search_filesParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Read a text file of the job folder, with line numbers. Writes nothing.\n\nA picture file is answered with its entry in the picture index (its\nnumber, tool, sections and caption), never its pixels: zoom shows it\nagain by that number.\n\nArgs:\n    path: The file, relative to the job folder.\n    offset: Lines to skip from the start.\n    limit: Lines to show, at most 2000.\n\nReturns:\n    The lines shown, the file's line count and, when lines remain, the\n    offset to continue from.",
+   "name": "read_file",
+   "parameters_json_schema": {
+    "properties": {
+     "limit": {
+      "default": 400,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "offset": {
+      "default": 0,
+      "title": "Offset",
+      "type": "integer"
+     },
+     "path": {
+      "title": "Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "title": "read_fileParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Set where sections sit along the slicing axis, and the stack's cutting angles.\n\nPositions are atlas millimetres along the slicing axis; a value outside\nthe atlas range is clamped into it and reported. The stack's order\nfollows the positions: after every call the sections are numbered by\nposition, so indices can change; filenames never do. A changed position\nor angle clears the deformation of each section it moves (the reply\nlists them). One undoable write.\n\nCutting angles tilt the atlas plane every section is cut at; every\nsection gets the same angles, and every later atlas picture is drawn at\nthem. Pitch 0 and yaw 0 is the atlas's flat plane. A tilt moves each\nedge of the plane along the slicing axis: an edge D mm from the\npicture's centre moves about D x tan(angle) mm (10 degrees moves an edge\n4 mm from the centre about 0.7 mm). Which edge moves which way, for\npositive angles, by the plane the stack is cut in (edges as the pictures\nshow them):\n\n- coronal: pitch puts the top edge at a larger position (mm) than the\n  bottom edge; yaw puts the right edge at a larger position than the\n  left edge.\n- sagittal: pitch puts the left edge at a larger position than the\n  right edge; yaw puts the bottom edge at a larger position than the\n  top edge.\n- horizontal: pitch puts the right edge at a larger position than the\n  left edge; yaw puts the top edge at a larger position than the\n  bottom edge.\n\nNegative angles move the edges the opposite way.\n\nArgs:\n    sections: [{\"id\": \"<filename or index>\", \"position_mm\": <number>}].\n    cutting_angles: {\"pitch_deg\": <number>, \"yaw_deg\": <number>} for the\n        whole stack; empty leaves the angles as they are.\n    view: True returns the picture described below; false returns none.\n\nReturns:\n    What was written and what was clamped, the stack's order after the\n    call, the rows that changed, and a positioning picture of the\n    written sections: the atlas at their new positions above a\n    millimetre ruler, the sections below it, each joined by a line to\n    its position.",
+   "name": "position_sections",
+   "parameters_json_schema": {
+    "$defs": {
+     "CuttingAngles": {
+      "additionalProperties": false,
+      "description": "``position_sections``' cutting angles, for the whole stack.",
+      "properties": {
+       "pitch_deg": {
+        "title": "Pitch Deg",
+        "type": "number"
+       },
+       "yaw_deg": {
+        "title": "Yaw Deg",
+        "type": "number"
+       }
+      },
+      "title": "CuttingAngles",
+      "type": "object"
+     },
+     "SectionPosition": {
+      "additionalProperties": false,
+      "description": "One ``position_sections`` section: where it sits along the slicing axis.",
+      "properties": {
+       "id": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ],
+        "title": "Id"
+       },
+       "position_mm": {
+        "title": "Position Mm",
+        "type": "number"
+       }
+      },
+      "title": "SectionPosition",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "cutting_angles": {
+      "$ref": "#/$defs/CuttingAngles",
+      "default": {}
+     },
+     "sections": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/SectionPosition"
+      },
+      "title": "Sections",
+      "type": "array"
+     },
+     "view": {
+      "default": true,
+      "title": "View",
+      "type": "boolean"
+     }
+    },
+    "title": "position_sectionsParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Mark the atlas regions a section has lost, so that every fit leaves them out.\n\nDamage is tissue that is missing from the section, or so badly\ndisplaced that it would wreck a fit, such as a whole hemisphere, the\nolfactory bulb or the cortex. Small tears, bubbles, stains, low contrast\nand folds within an intact outline are not damage and are not marked.\nA section is damaged exactly when it has marked regions. The marked\nregions are left out of elastix_affine, ants_syn and the image model's\ntrace automatically, and they move with the registration because they\nare named by atlas region. One undoable write.\n\nArgs:\n    section: Filename or index.\n    regions: Acronyms, names or ids, descendants included; \"CTX:left\" or\n        \"CTX:right\" names one side, as the pictures show the section.\n        They replace the section's marked regions; empty clears them.\n    note: What is wrong with the tissue. A note the user gave stays\n        first.\n\nReturns:\n    The section's marked regions and note, and a picture of the marked\n    regions shaded on the section under its current registration beside\n    the same regions on the atlas, to check both at once.",
+   "name": "mark_damage",
+   "parameters_json_schema": {
+    "properties": {
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
+     "regions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Regions",
+      "type": "array"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "section",
+     "regions"
+    ],
+    "title": "mark_damageParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Append one line to the run notes, which are saved with the results.\n\nArgs:\n    text: The note.",
+   "name": "note",
+   "parameters_json_schema": {
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "noteParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Undo the last write. A tool call, or a finished piece of background work, is one step.",
+   "name": "undo"
+  },
+  {
+   "description": "Redo the write that ``undo`` reversed.",
+   "name": "redo"
+  },
+  {
+   "description": "End the run. Call this exactly once, last.\n\nWaits for the background work still running. Refused, with the reason\nand nothing changed, while something the run needs is missing.\n\nArgs:\n    summary: One or two sentences on what you did.\n    notes: Short observations worth carrying forward.\n    interval_breaks: Indices of the sections AFTER a gap you conclude is\n        real. Empty if there are none.",
+   "name": "submit",
+   "parameters_json_schema": {
+    "properties": {
+     "interval_breaks": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Interval Breaks",
+      "type": "array"
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+     },
+     "summary": {
+      "title": "Summary",
+      "type": "string"
+     }
+    },
+    "required": [
+     "summary",
+     "notes",
+     "interval_breaks"
+    ],
+    "title": "submitParams",
+    "type": "object"
+   }
+  }
+ ]
+}

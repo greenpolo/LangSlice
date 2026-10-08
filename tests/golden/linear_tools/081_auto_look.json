@@ -1,0 +1,33 @@
+{
+ "args": [
+  "overlay"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 35.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 4
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "auto",
+ "images": [
+  {
+   "file": "081_auto_look.0.png",
+   "mode": "RGB",
+   "size": [
+    300,
+    304
+   ]
+  }
+ ],
+ "kwargs": {
+  "resolution": 300,
+  "sections": [
+   "s0.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

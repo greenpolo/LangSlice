@@ -1,0 +1,34 @@
+{
+ "args": [
+  "section"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "0: s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+    "id": 2
+   }
+  ],
+  "resolution_note": "resolution 4000 is outside 128..2048; used 2048",
+  "status": "ok"
+ },
+ "door": "auto",
+ "images": [
+  {
+   "file": "079_auto_look.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    219
+   ]
+  }
+ ],
+ "kwargs": {
+  "resolution": 4000,
+  "sections": [
+   "s0.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}
