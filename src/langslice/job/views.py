@@ -28,7 +28,7 @@ a line while None).
 
 Every picture can be looked up by its ``seq``: :meth:`ViewStore.lookup` and
 :meth:`ViewStore.latest` read the index (:class:`PictureRecord`);
-:class:`DiscardedViews` (a lean job) keeps the same index in memory, with the
+:class:`DiscardedViews` (a dry run) keeps the same index in memory, with the
 newest pictures themselves, for the life of the process.
 
 Saving never touches what the doors send and never slows a tool: the tool
@@ -132,13 +132,13 @@ class Saved:
 
 @dataclass(frozen=True)
 class PictureRecord:
-    """One indexed picture (a ``views.jsonl`` line, or a lean job's memory)."""
+    """One indexed picture (a ``views.jsonl`` line, or a dry run's memory)."""
 
     seq: int
     name: str
     tool: str
     call: int
-    #: The picture's folder relative to the job folder ("" in a lean job).
+    #: The picture's folder relative to the job folder ("" in a dry run).
     path: str
     sections: tuple[str, ...] = ()
     mode: str | None = None
@@ -614,10 +614,10 @@ class ViewStore:
 
 class DiscardedViews(ViewStore):
     """A store that saves nothing to disk: a job that writes nothing
-    (``Job.persist`` False: the CLI's dry run) or keeps the results only
-    (``Job.lean``). It indexes the pictures in memory, so :meth:`lookup` and
-    :meth:`latest` work within the process; the newest :data:`KEPT_PICTURES`
-    keep the picture itself (``PictureRecord.image``)."""
+    (``Job.persist`` False: the CLI's dry run). It indexes the pictures in
+    memory, so :meth:`lookup` and :meth:`latest` work within the process; the
+    newest :data:`KEPT_PICTURES` keep the picture itself
+    (``PictureRecord.image``)."""
 
     #: How many of the newest pictures keep their image in memory.
     KEPT_PICTURES = 24

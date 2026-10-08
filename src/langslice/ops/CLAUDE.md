@@ -319,7 +319,7 @@ wording; `registry.py` lists which.
   from its saved image (`redrawn` False) and its crop recipe names its
   `source` picture, so a crop of a crop is cut from the original. Refused:
   `NO_PICTURE`, `UNKNOWN_PICTURE`, `PICTURE_NOT_SAVED` (no saved image to
-  crop, or a lean job's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
+  crop, or a dry run's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_CHANNEL`,
   `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`). `show_result(job, workspace, tool,

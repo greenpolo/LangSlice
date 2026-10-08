@@ -261,7 +261,7 @@ def open_folder(
     """Open the job *path* names (:func:`find`) as it stands on disk.
 
     *persist* False opens it for a dry run: nothing is written. Otherwise the
-    reference card is brought up to date (not in a lean job). *image_model*
+    reference card is brought up to date. *image_model*
     is the model ``trace_borders`` calls (None: the spec's provider). *door*
     ``cli`` opens it for the agent CLI: its declarations worded for the CLI,
     its pictures capped at the job's viewer's (:func:`job_viewer`).
@@ -273,7 +273,7 @@ def open_folder(
     load_credentials()  # the image model's keys, as every door loads them
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.load(spec, ctx, folder=folder, results_path=ctx.results_path, persist=persist)
-    if persist and not job.lean:
+    if persist:
         write_card(job.layout)
     return Opened(job, ctx, image_model, door=door,
                   viewer=job_viewer(job.layout) if door == "cli" else None)
@@ -289,14 +289,13 @@ def create(
     """A job for *spec*'s image folder, as every host makes one
     (``Job.open``: the job folder beside the images or ``spec.job_dir``,
     ingest, host inputs, first checkpoint; a resume when ``spec.resume``),
-    with its reference card (not in a lean job). *image_model* and *door*
+    with its reference card. *image_model* and *door*
     as in :func:`open_folder`."""
     folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir,
                                           emit=emit or log_progress)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
     job = Job.open(spec, ctx, folder=folder, results_path=ctx.results_path)
-    if not job.lean:
-        write_card(job.layout)
+    write_card(job.layout)
     return Opened(job, ctx, image_model, door=door,
                   viewer=job_viewer(job.layout) if door == "cli" else None)
 

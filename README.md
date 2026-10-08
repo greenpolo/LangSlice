@@ -62,8 +62,8 @@ launcher.
 - **Command line agent**: `langslice linear run sections/` runs the built-in agent
   ([docs/cli.md](docs/cli.md)); add `--tasks nonlinear` for the deformation on a
   saved linear placement.
-- **Python library**: `langslice.open_job`, `create_job`, `register_section`,
-  `register_job` for a scripted pipeline: [docs/library.md](docs/library.md).
+- **Python library**: `langslice.open_job` and `create_job`, every verb as a
+  method, for scripts and coding agents: [docs/library.md](docs/library.md).
 
 ```python
 import langslice

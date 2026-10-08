@@ -93,17 +93,6 @@ BRIEF.md             the agent CLI's brief (`langslice-job FOLDER brief`, `init`
                      the job statement and the opening pictures' paths
 ```
 
-**Lean job folders.** `JobSpec.output_level` "lean" (the library's `create_job(output="lean")`; `docs/library.md`; left out of
-`job.json`'s spec when "full") keeps the results only. The `Job` honours it
-(`Job.lean`): its `views` is a `views.DiscardedViews` (no `views/`,
-`views.jsonl`, `views.seq`, nor `sections/<stem>/views/`), `_save_history`
-writes nothing (no `history/`; undo and redo work in memory within the
-process), `Job.open` writes no `logs/events.jsonl` and creates only the job
-folder, `sections/` and `exports/` (`JobLayout.ensure(lean=True)`), and the
-doors write no reference card (`doors.jobs`). Everything else is written as in
-a full job: `job.json`, `state.json`, `registration.json`, the maps, the
-deformation records, the image-model trace attempts and `exports/`.
-
 **The public files (`docs/file_formats.md` has every field).**
 `state.json` stays the one working source; `formats.py` renders it for scripts and other programs, in BrainGlobe micrometres (the
 atlas's axis order, voxel `i`'s centre at `i * resolution`) and image-file
@@ -206,7 +195,7 @@ longer exist be taken over by the images it is opened with.
 - `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
   `JobLayout` (the folder, every name, `section_dir`,
   `deformable_dir`, `image_correction_dir`, `section_views_dir`,
-  `relative`/`resolve`, `ensure` (`lean=`), `log_event`), `job_folder_for`,
+  `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
 - `history.py` — `History`: the undo/redo stacks on disk. A step is written
@@ -341,7 +330,7 @@ longer exist be taken over by the images it is opened with.
   (`flush_all` runs once more from `atexit`, for a picture a still-running
   thread queued after the first flush). A failed write is logged and skipped; only the numbering and
   queueing run on the tool's thread. `DiscardedViews` writes nothing (a
-  dry run, a lean job) but keeps the same index in memory (its `save`
+  dry run) but keeps the same index in memory (its `save`
   returns the names a saved picture would have), with the newest
   pictures' images, for `lookup` / `latest`. `captured()` collects every
   picture any store queues inside the block (`Saved`: its folder,

@@ -102,7 +102,6 @@ PLAIN_DOORS = (
     "langslice.doors.declarations",
     "langslice.doors.jobs",
     "langslice.doors.library",
-    "langslice.doors.pipeline",
     "langslice.providers.profiles",
     "langslice.doors.card",
     "langslice.doors.cli",
@@ -177,9 +176,13 @@ job.look(mode="overlay", sections=["s0.png"])
 job.close()
 apply_patches()
 model = langslice.image_model(lambda request: request.slice_image, prompt="Image 1 ... {plane}")
-langslice.register_section(images / "s0.png", position_mm=0.1, transform=[1, 0, 0, 0, 1, 0],
-                           pixel_size_um=PIXEL_SIZE_UM, image_model=model,
-                           folder=images.parent / "one", atlas_loader=loader, output="lean")
+made = langslice.create_job(images, tasks=["nonlinear"], positions={"s0.png": 0.1},
+                            transforms={"s0.png": [1, 0, 0, 0, 1, 0]},
+                            pixel_size_um=PIXEL_SIZE_UM, image_model=model,
+                            job_dir=images.parent / "one", atlas_loader=loader)
+made.status()
+made.export_maps(slices=["s0.png"])
+made.close()
 forbidden = tuple(sys.argv[2:])
 print(json.dumps(sorted(
     name for name in sys.modules
@@ -189,8 +192,8 @@ print(json.dumps(sorted(
 
 
 def test_the_library_opens_a_job_without_an_agent_or_model_client(tmp_path):
-    """``import langslice``, ``open_job`` and a verb or two, then a scripted
-    ``register_section`` with a model of the script's own: the script door."""
+    """``import langslice``, ``open_job`` and a verb or two, then ``create_job``
+    with a model of the script's own and a scripting verb: the script door."""
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[1]

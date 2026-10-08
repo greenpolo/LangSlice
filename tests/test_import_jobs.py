@@ -383,10 +383,8 @@ class Stub:
         return max([request.slice_image, *request.reference_images], key=colour)
 
 
-def test_the_library_creates_and_registers_an_imported_job(capsys, images, atlas, tmp_path):
+def test_the_library_creates_an_imported_job(capsys, images, atlas, tmp_path):
     import langslice
-
-    pytest.importorskip("ants", reason="register_job's deformable step is ANTs (antspyx)")
 
     source = source_job(capsys, images, atlas, tmp_path)
     given = matrices(source)
@@ -402,8 +400,8 @@ def test_the_library_creates_and_registers_an_imported_job(capsys, images, atlas
     assert job.job.spec.tasks == ["nonlinear"]
     assert job.imported is not None and job.imported["format"] == "quicknii-json"
     assert job.state.mixed_angles
-    result = langslice.register_job(job)
-    assert result.ok, result.problems
+    exported = job.export_maps()
+    assert sorted(exported["written"]) == sorted(given), exported
+    job.close()
     for name, matrix in matrices(tmp_path / "lib").items():
         assert np.allclose(matrix, given[name], atol=ROUNDED_UM, rtol=0), name
-    assert all(section.residual is not None for section in result.sections)
