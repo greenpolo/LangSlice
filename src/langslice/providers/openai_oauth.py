@@ -46,6 +46,8 @@ import http.server
 import itertools
 import json
 import logging
+import math
+import random
 import secrets
 import threading
 import time
@@ -54,6 +56,7 @@ import uuid
 import webbrowser
 from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -299,37 +302,89 @@ def quota_from_headers(headers: Any) -> dict[str, str]:
 def stream_events(
     body: dict[str, Any], *, session_id: str | None = None
 ) -> Iterator[dict[str, Any]]:
-    """POST a Responses request and yield its SSE events, refreshing on 401.
+    """POST a Responses request with bounded retries, refreshing once on 401.
 
     The first event is a synthetic ``langslice.quota`` carrying any quota
     headers the backend sent. *session_id* rides in the headers; keep it
     stable across one agent loop so the backend routes to a warm cache.
+    Only request establishment is retried; a delivered stream is never replayed.
     """
     creds = load_credentials()
     session_id = session_id or str(uuid.uuid4())
-    response = requests.post(
-        RESPONSES_URL, headers=_headers(creds, session_id), json=body, stream=True, timeout=600
-    )
-    if response.status_code == 401 and creds.refresh_token:
-        response.close()
-        creds = refresh(creds)
-        response = requests.post(
-            RESPONSES_URL,
-            headers=_headers(creds, session_id),
-            json=body,
-            stream=True,
-            timeout=600,
-        )
-    if response.status_code >= 400:
-        message = response.text[:500]
-        quota = quota_from_headers(response.headers)
-        response.close()
-        raise RuntimeError(
-            f"Codex Responses request failed ({response.status_code}): {message}"
-            + (f" quota={quota}" if quota else "")
-        )
+    retries = 0
+    refreshed = False
+    while True:
+        try:
+            response = requests.post(
+                RESPONSES_URL,
+                headers=_headers(creds, session_id),
+                json=body,
+                stream=True,
+                timeout=600,
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if isinstance(exc, requests.exceptions.SSLError) or retries >= 3:
+                raise
+            delay = _response_retry_delay(retries, None)
+            assert delay is not None
+            reason = type(exc).__name__
+        else:
+            if response.status_code == 401 and creds.refresh_token and not refreshed:
+                response.close()
+                creds = refresh(creds)
+                refreshed = True
+                continue
+            if response.status_code < 400:
+                break
+            try:
+                message = response.text
+                quota = quota_from_headers(response.headers)
+                delay = _response_retry_delay(retries, response.headers.get("Retry-After"))
+            finally:
+                response.close()
+            retryable = response.status_code in (408, 409, 429) or 500 <= response.status_code < 600
+            if retries >= 3 or not retryable or delay is None or _hard_quota_error(message):
+                raise RuntimeError(
+                    f"Codex Responses request failed ({response.status_code}): {message[:500]}"
+                    + (f" quota={quota}" if quota else "")
+                )
+            reason = f"HTTP {response.status_code}"
+        retries += 1
+        logger.warning("Codex Responses %s; retry %d/3 in %.1fs", reason, retries, delay)
+        time.sleep(delay)
     quota = quota_from_headers(response.headers)
     return itertools.chain([{"type": "langslice.quota", "quota": quota}], _closing(response))
+
+
+def _response_retry_delay(retries: int, retry_after: str | None) -> float | None:
+    """Respect server delay; defer to the caller if it exceeds our one-minute wait."""
+    delay = float(2 ** (retries + 1))
+    if retry_after:
+        try:
+            server_delay = float(retry_after)
+        except ValueError:
+            try:
+                server_delay = parsedate_to_datetime(retry_after).timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                server_delay = 0.0
+        if math.isfinite(server_delay):
+            delay = max(delay, server_delay)
+    if delay > 60:
+        return None
+    return delay + random.uniform(0, min(0.5, 60 - delay))
+
+
+def _hard_quota_error(message: str) -> bool:
+    try:
+        payload = json.loads(message)
+    except ValueError:
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    return isinstance(error, dict) and any(
+        error.get(key)
+        in ("insufficient_quota", "usage_limit_reached", "billing_hard_limit_reached")
+        for key in ("code", "type")
+    )
 
 
 def _closing(response: requests.Response) -> Iterator[dict[str, Any]]:
