@@ -330,7 +330,7 @@ def test_the_elastix_affine_reads_the_preprocessed_channel(tmp_path: Path, atlas
 
 def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypatch):
     from langslice.core.nonlinear import registration_tool as tool
-    from langslice.core.nonlinear.registration_handoff import LinearRegistrationInput
+    from langslice.core.handoff import LinearRegistrationInput
     from langslice.providers.registry import ImageModel, resolve_image_model
 
     original = Image.new("RGB", (60, 40), (40, 70, 90))
