@@ -86,6 +86,9 @@ MAX_OVERLAY_CHANNELS = 6
 DEFAULT_ATLAS_OPACITY = 0.5
 #: Region line width in output pixels, everywhere.
 DEFAULT_BORDER_THICKNESS = 1.0
+#: How much thicker than the faint context lines an atlas picture draws the
+#: regions it highlights (``grep_atlas_view``).
+HIGHLIGHT_WIDTH = 2.0
 #: Intensity percentile mapped to white when a Nissl plane is shown.
 NISSL_PERCENTILE = 99.5
 
@@ -222,7 +225,7 @@ class DisplayOptions:
         default render); with *state*, the display properties of the raw
         channels shown (:func:`langslice.core.channels.describe`)."""
         if self.version in ("fit", PREPROCESSED):
-            return "  [fit appearance]"
+            return "  [preprocessed channel]"
         if not self.channels:
             return ""
         shown = describe_shown(state, self.channels) if state is not None else ""
@@ -468,7 +471,8 @@ def framed_atlas(
         left = regions_left(ctx.atlas, options.regions, position_mm, plane,
                             pitch, yaw, np.eye(2))
         _draw_polys(canvas, region_polys(labels, options.regions, left), rgb,
-                    thickness=options.border_thickness, origin=origin, factor=factor)
+                    thickness=options.border_thickness * HIGHLIGHT_WIDTH, origin=origin,
+                    factor=factor)
     return Image.fromarray(canvas, mode="RGB")
 
 

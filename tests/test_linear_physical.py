@@ -164,9 +164,28 @@ def test_a_known_atlas_width_lands_at_the_pixel_width_it_should():
     points = np.concatenate([poly for _color, poly in outlines])
     drawn = (points[:, 0].max() - points[:, 0].min()) * geometry.atlas_scale
     # 40 voxels x 25 um = 1.000 mm, and 1 mm on a 10 um/px canvas is 100 px.
-    # Contours run through pixel CENTRES, so the span is one voxel (2.5 px)
-    # short of the region's outer edge.
-    assert drawn == pytest.approx(100.0 - ATLAS_UM / 10.0, abs=1.0)
+    # Contours run along the voxels' outer edges, so the span is the region's.
+    assert drawn == pytest.approx(100.0, abs=1.0)
+
+
+def test_two_neighbouring_regions_share_one_outline():
+    """Each region is traced along its pixels' outer edges, so the border two
+    regions share is one line, not one line per side a voxel apart (which a
+    zoomed picture shows as a double line)."""
+    from langslice.core.atlas.render import region_contours
+
+    labels = np.zeros((60, 80), dtype=np.int32)
+    labels[10:50, 10:40] = 1
+    labels[10:50, 40:70] = 2
+    contours = region_contours(labels, smooth_window=1)
+    left = np.concatenate(contours[1])
+    right = np.concatenate(contours[2])
+    # The left region's rightmost edge and the right region's leftmost edge
+    # are the same column boundary, between pixels 39 and 40.
+    assert left[:, 0].max() == pytest.approx(39.5, abs=0.01)
+    assert right[:, 0].min() == pytest.approx(39.5, abs=0.01)
+    assert left[:, 0].min() == pytest.approx(9.5, abs=0.01)
+    assert right[:, 0].max() == pytest.approx(69.5, abs=0.01)
 
 
 def test_the_canvas_grows_when_the_atlas_would_not_fit():
