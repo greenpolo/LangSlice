@@ -214,9 +214,11 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   `core.sizes.PICTURE_EDGES` gives each level an opening tile size and a
   later-picture size (low 256/512, medium 384/768, high 512/1024; `auto`
   opens at 256 and declares `look`'s `resolution`, 128 up to the driver
-  model's largest image). Only what the agent is SHOWN changes: nothing is
-  upsampled past its source, and fits, calibration and the image model's
-  inputs do not depend on it. Below `auto` the sizes never appear in
+  model's largest image). Only what the agent is SHOWN changes: a whole
+  picture is never upsampled past its source (a zoom, and a change tool's
+  picture zoomed to its `restrict_to` regions, is drawn at the picture size
+  and says when that enlarges its source), and fits, calibration and the
+  image model's inputs do not depend on it. Below `auto` the sizes never appear in
   model-facing text.
 - **`TransformSpec.interactive` / `.automatic`** (default true): a host may
   remove `interactive_transform` or `elastix_affine`; a host enabling the

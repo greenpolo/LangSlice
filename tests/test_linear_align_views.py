@@ -59,10 +59,11 @@ def _views(value: int = 120, **kwargs) -> list[np.ndarray]:
             for image, panel in zip(images, panels, strict=True)]
 
 
-def test_the_screen_is_the_long_edge_and_never_an_upsample():
-    """Each panel's long edge is *long_edge*, or the crop's own pixels when it
-    has fewer: a small canvas stays small, and a zoom on it is a crop at the
-    same scale (magnification needs a larger render, the toolbox's job)."""
+def test_the_screen_is_the_long_edge_and_a_whole_canvas_is_never_upsampled():
+    """Each panel's long edge is *long_edge*; the whole canvas stays at its
+    own pixels when it has fewer, while a zoom is drawn at *long_edge* (a
+    small region at the size of any other picture), enlarged past the
+    canvas's pixels and said so in its caption."""
     geometry = _geometry()
     canvas_long = max(geometry.size)
     (shrunk,) = _bodies(long_edge=128)
@@ -70,7 +71,14 @@ def test_the_screen_is_the_long_edge_and_never_an_upsample():
     (whole,) = _bodies(long_edge=4 * canvas_long)
     assert whole.shape[1] == geometry.size[0], "never upsampled past the canvas"
     (zoomed,) = _bodies(long_edge=4 * canvas_long, zoom=[0.3, 0.3, 0.7, 0.7])
-    assert zoomed.shape[1] == pytest.approx(0.4 * geometry.size[0], abs=2)
+    assert max(zoomed.shape[:2]) == 4 * canvas_long
+    panels: list = []
+    (picture,) = physical_views(
+        _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
+        long_edge=4 * canvas_long, zoom=[0.45, 0.3, 0.55, 0.7], panel_frames=panels)
+    (panel,) = panels
+    # A tall, narrow region: the caption band is laid out at the long edge.
+    assert picture.width == 4 * canvas_long > panel.content_box[2]
 
 
 def _geometry():

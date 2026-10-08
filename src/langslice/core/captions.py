@@ -50,7 +50,7 @@ def _caption_font() -> Any:
         return ImageFont.load_default()
 
 
-def caption(image: Image.Image, text: str) -> Image.Image:
+def caption(image: Image.Image, text: str, *, min_width: int = 0) -> Image.Image:
     """A COPY of *image* with *text* burned into a dark strip below it.
 
     Tool images reach the model as bare attachments, so the text that binds an
@@ -60,10 +60,14 @@ def caption(image: Image.Image, text: str) -> Image.Image:
 
     Text wider than the picture wraps (:func:`wrap_caption`) instead of
     running off its right edge, so a small picture keeps its whole label.
+    *min_width* lays the strip out at least that wide: a narrow picture
+    (a zoom on a tall region) then sits at the top left of a dark band of
+    that width, its pixels still the content's own.
     """
     source = image.convert("RGB")
+    width = max(source.width, int(min_width))
     font = _caption_font()
-    text = wrap_caption(text, font, source.width - 6)
+    text = wrap_caption(text, font, width - 6)
     probe = ImageDraw.Draw(source)
     left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
     band = int(bottom - top + 6)
@@ -71,7 +75,7 @@ def caption(image: Image.Image, text: str) -> Image.Image:
     # pixels covered exactly the magnified dorsal tissue an agent was
     # reading), and never above it: the picture's pixel (x, y) is then the
     # content's own, the coordinates a zoom box is given in.
-    labelled = Image.new("RGB", (source.width, source.height + band), (0, 0, 0))
+    labelled = Image.new("RGB", (width, source.height + band), (0, 0, 0))
     labelled.paste(source, (0, 0))
     draw = ImageDraw.Draw(labelled)
     draw.text((3 - left, source.height + 3 - top), text, fill=(255, 255, 255), font=font)

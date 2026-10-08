@@ -21,6 +21,7 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.core import deformation
 from langslice.core.nonlinear.types import GeneratedSegmentation
+from langslice.core.sizes import picture_edge
 from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
@@ -122,7 +123,7 @@ def test_elastix_affine_fits_writes_one_step_and_shows_each_section(tmp_path: Pa
 
 
 def test_a_restricted_fit_zooms_its_picture_to_the_regions(tmp_path: Path, atlas):
-    state, _, box, _ = _run(tmp_path, atlas)
+    state, ctx, box, _ = _run(tmp_path, atlas)
     result = _tool(box, "elastix_affine")(["s0.png"], ["TH"])
     assert result["status"] == "ok", result
     (row,) = result["results"]
@@ -132,6 +133,11 @@ def test_a_restricted_fit_zooms_its_picture_to_the_regions(tmp_path: Path, atlas
     (record,) = box.job.views.records()
     assert record.recipe["args"]["zoom"] == box_fractions
     assert state.slices[0].transform["kind"] == "elastix"
+    # The region comes out at the picture size, its caption at that width.
+    (picture,) = result[TOOL_MEDIA_PARTS_KEY]
+    edge = picture_edge(ctx)
+    assert picture.width == edge
+    assert max(record.recipe["shown"]) == edge
 
 
 def test_elastix_affine_without_a_picture_and_its_refusals(tmp_path: Path, atlas):

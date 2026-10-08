@@ -2761,8 +2761,8 @@
      "labels": "<hex>",
      "labels_dtype": "uint32",
      "size": [
-      100,
-      427
+      512,
+      521
      ],
      "view_json": "<hex>"
     },
@@ -2781,8 +2781,8 @@
      "labels": "<hex>",
      "labels_dtype": "uint32",
      "size": [
-      100,
-      445
+      512,
+      521
      ],
      "view_json": "<hex>"
     },
@@ -5449,7 +5449,7 @@
     },
     {
      "call": 30,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000043_elastix_affine_overlay",
@@ -5480,8 +5480,8 @@
       ],
       "renderer": "look",
       "shown": [
-       100,
-       84
+       512,
+       430
       ],
       "state": {
        "appearance": {
@@ -5557,7 +5557,7 @@
         }
        }
       },
-      "um_per_px": 31.25
+      "um_per_px": 6.1035
      },
      "sections": [
       "s1.png"
@@ -5732,7 +5732,7 @@
     },
     {
      "call": 33,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000047_ants_syn_overlay",
@@ -5763,8 +5763,8 @@
       ],
       "renderer": "look",
       "shown": [
-       100,
-       84
+       512,
+       430
       ],
       "state": {
        "appearance": {
@@ -5879,7 +5879,7 @@
         }
        }
       },
-      "um_per_px": 31.25
+      "um_per_px": 6.1035
      },
      "sections": [
       "s1.png"

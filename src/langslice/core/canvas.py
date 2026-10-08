@@ -666,12 +666,17 @@ def physical_views(
             + (f"  shear {params['shear']:+.3f}" if params.get("shear") else "")
         )
 
-    # The crop happens first, then the screen is sized: *long_edge*, or the
-    # crop's own pixels when fewer (never upsampled). No *long_edge* means
-    # canvas pixels one to one (host-side use, never a model's screen).
+    # The crop happens first, then the screen is sized: *long_edge*, or, for
+    # the whole canvas, its own pixels when fewer (never upsampled). A zoom
+    # is always drawn at *long_edge*: a small region comes out at the size of
+    # any other picture, enlarged past the canvas's pixels when it has fewer
+    # (said in the caption). No *long_edge* means canvas pixels one to one
+    # (host-side use, never a model's screen).
+    zoomed = box != (0, 0, geometry.size[0], geometry.size[1])
     edge = None
     if long_edge is not None:
-        edge = max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1])))
+        edge = (max(1, int(long_edge)) if zoomed else
+                max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1]))))
     images: list[Image.Image] = []
     for panel, head in panels:
         screen, factor = _to_screen(panel, box, edge)
@@ -693,19 +698,22 @@ def physical_views(
             f"{head} @ {position_mm:.3f} mm  pitch {pitch_deg:.2f} yaw {yaw_deg:.2f}\n"
             f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
         ).strip()
-        if mode != "overlay" or box != (0, 0, geometry.size[0], geometry.size[1]):
-            zoomed = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
-                      if zoom_pixels else "")
-            text += f"\n{mode}{zoomed}  view {geometry.um_per_px / factor:.2f} um/px"
+        if mode != "overlay" or zoomed:
+            where = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
+                     if zoom_pixels else "")
+            text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"
+            if factor > 1.05:
+                text += f" (canvas pixels enlarged x{factor:.1f})"
         if layer == "outer" and lines:
             text += "  outlines outer"
         if regions:
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
-        labelled = caption(Image.fromarray(screen, mode="RGB"), text)
+        labelled = caption(Image.fromarray(screen, mode="RGB"), text,
+                           min_width=edge if zoomed and edge is not None else 0)
         if panel_frames is not None:
             panel_frames.append(PanelFrame(
                 size=labelled.size,
-                content_box=(0, 0, labelled.width, screen.shape[0]),
+                content_box=(0, 0, screen.shape[1], screen.shape[0]),
                 crop_box=box, factor=float(factor), geometry=geometry,
                 section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
                 lines=tuple(poly for _color, poly in atlas_lines) if lines else (),
