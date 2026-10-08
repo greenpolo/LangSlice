@@ -1,7 +1,6 @@
 """How sections look: the preprocessed channel every fit and the image model
-read (:mod:`langslice.core.appearance`), the raw channels' display properties
-(:mod:`langslice.core.channels`), and the ``preprocess`` tool's ``view`` and
-``fit`` targets."""
+read (:mod:`langslice.core.appearance`), and the raw channels' display
+properties (:mod:`langslice.core.channels`)."""
 
 from __future__ import annotations
 

@@ -371,10 +371,16 @@ def test_a_mixed_stack_is_drawn_per_section_and_said_plainly(images):
                   (Path(job.folder) / "sections" / "s1" / "views").glob("*/view.json")]
         planes = {(f["plane"]["pitch_deg"], f["plane"]["yaw_deg"]) for f in frames if f}
         assert planes == {(2.5, 1.0)}  # drawn at the section's own plane
-        # The atlas alone is drawn at the stack's view angles: the medians.
+        # The atlas alone is drawn at the stack's view angles, the medians,
+        # and every picture of it says so.
+        median = "at the median of the sections' cutting angles, pitch 1.0 yaw 0.5"
         atlas = job.look(mode="atlas", positions_mm=[0.15])
         assert atlas["status"] == "ok"
-        assert "at 0.15 mm pitch 1.0 yaw 0.5" in atlas["pictures"][0]["caption"]
+        assert f"at 0.15 mm {median}" in atlas["pictures"][0]["caption"]
+        regions = job.grep_atlas_view(regions=["CTX"], positions_mm=[0.15])
+        assert f"at 0.15 mm {median}" in regions["pictures"][0]["caption"]
+        positioning = job.look(mode="positioning")
+        assert f"atlas {median}" in positioning["pictures"][0]["caption"]
         # A single-angle stack says exactly what it always said.
         job.position_sections(cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0})
         assert stack_angles_fact(job.state) == (
@@ -384,7 +390,7 @@ def test_a_mixed_stack_is_drawn_per_section_and_said_plainly(images):
         assert "at 0.15 mm pitch 1.0 yaw 0.0" in atlas["pictures"][0]["caption"]
 
 
-@pytest.mark.parametrize("mode", ["overlay", "side_by_side", "stacked", "template"])
+@pytest.mark.parametrize("mode", ["overlay", "section", "template"])
 def test_a_sections_pictures_match_a_single_angle_stack_at_its_angle(images, mode):
     """Each section of a mixed stack is pictured exactly as a single-angle
     stack at that section's angle pictures it, pixel for pixel."""
@@ -399,9 +405,7 @@ def test_a_sections_pictures_match_a_single_angle_stack_at_its_angle(images, mod
         for name in IDS:
             record = state.by_id(name)
             single = _uniform_copy(state, record.angles)
-            workspace.picture_cache.clear()
             mixed = placement_pictures(workspace, state, record, POSITIONS[name], options, {})
-            workspace.picture_cache.clear()
             alone = placement_pictures(workspace, single, single.by_id(name), POSITIONS[name],
                                        options, {})
             assert len(mixed.images) == len(alone.images)

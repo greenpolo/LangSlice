@@ -15,7 +15,7 @@ here is a verbatim copy — edit one, mirror to the other.
   `get_root_mask`. The public surface is deliberately small: what LangSlice
   itself reads.
 - `sides.py` — one side of a region, `"CTX:left"`: the grammar
-  (`split_side`, `overlapping`), the native plane's two ML halves
+  (`split_side`), the native plane's two ML halves
   (`ml_halves`: ML volume index per pixel from `oblique.plane_index_coordinates`
   on the axis `space.atlas_space_context` derives; split where BrainGlobe
   splits a symmetric atlas, at `round(n_ml / 2)`, or by the atlas's own

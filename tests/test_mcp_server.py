@@ -599,17 +599,16 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
 
 def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
     from langslice.doors.mcp.server import result_blocks
-    from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
     from langslice.doors.tools.reply import REPLY_BYTES
 
     rng = np.random.default_rng(3)
     noise = [Image.fromarray(rng.integers(0, 256, (1500, 2000, 3), dtype=np.uint8))
              for _ in range(4)]
-    blocks = result_blocks({"status": "ok", TOOL_MEDIA_DELIVERY_ID_KEY: "abc",
-                            TOOL_MEDIA_PARTS_KEY: ["four pictures", *noise]})
+    blocks = result_blocks({"status": "ok", TOOL_MEDIA_PARTS_KEY: ["four pictures", *noise]})
     assert page_size(blocks) <= REPLY_BYTES
     body = json.loads(blocks[0].text)
-    assert TOOL_MEDIA_DELIVERY_ID_KEY not in body and body["images_attached"] == 5
+    assert body["images_attached"] == 5
     images = [block for block in blocks if isinstance(block, ImageContent)]
     assert len(images) == 4  # nothing dropped
     note = blocks[-1]
@@ -618,19 +617,6 @@ def test_every_reply_stays_within_the_hosts_budget_and_says_when_shrunk():
     # A reply that fits is untouched and says nothing.
     small = result_blocks({"status": "ok", TOOL_MEDIA_PARTS_KEY: [noise[0].resize((200, 150))]})
     assert len(small) == 2 and isinstance(small[1], ImageContent)
-
-
-def test_pictures_are_not_taken_as_seen_while_another_call_is_in_flight():
-    from langslice.doors.tools.toolbox import ToolBox
-
-    box = ToolBox(job=None)  # type: ignore[arg-type]
-    key = ("s0.png", 0.1, False, 0, 0.0, 0.0)
-    box.pending_placement_views["__direct__"] = {key}
-    with box.in_flight():  # a call the host sent beside this one is running
-        box.begin_model_call()
-    assert key not in box.seen_placement_views
-    box.begin_model_call()  # nothing in flight: the earlier pictures reached the host
-    assert key in box.seen_placement_views
 
 
 def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, monkeypatch):

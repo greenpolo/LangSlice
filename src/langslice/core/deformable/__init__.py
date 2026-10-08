@@ -26,7 +26,7 @@ from langslice.core.deformable.render import (
     warp_section_image,
     warped_border_layers,
 )
-from langslice.core.deformable.settings import FitSettings, traced_settings
+from langslice.core.deformable.settings import FitSettings
 
 __all__ = [
     "CandidateFailure",
@@ -44,7 +44,6 @@ __all__ = [
     "placement_from_handoff",
     "prepare_fit",
     "resampled_record",
-    "traced_settings",
     "ventricle_ids",
     "warp_section_image",
     "warped_border_layers",

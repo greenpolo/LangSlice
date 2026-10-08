@@ -112,8 +112,7 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
   assembled in `doors/statement.py`.
 - `plugins.py` — the ADK plugins every session runs with:
   `WorkingSetImages` (in ADK's `ContextFilterPlugin`, below),
-  `ToolMediaDeliveryPlugin` (after the filter: reports the media-bearing
-  results that reached the model), `RetiredToolsPlugin` (a call of a
+  `RetiredToolsPlugin` (a call of a
   retired tool's name, which ADK hands the plugins as a placeholder tool
   before its "tool not found" answer, is answered with
   `ops.registry.retired_payload`), `StrictArgumentsPlugin` (ADK drops

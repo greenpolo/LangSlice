@@ -105,11 +105,6 @@ def supplied_angles(
 OUTPUT_LEVELS: tuple[str, ...] = ("full", "lean")
 
 
-#: ``NonlinearSpec.engine`` values: a fixed deformable-fit engine, or the
-#: agent's choice per call.
-DEFORMABLE_ENGINES: tuple[str, ...] = ("ants", "elastix", "either")
-
-
 @dataclass
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""
@@ -118,11 +113,10 @@ class PositionSpec:
     interval_um: int = 200
     #: Sections must sit exactly one interval apart (gated at submit).
     strict_interval: bool = False
-    #: Build the ``search_position`` tool (the oblique fitter).
-    bayesian: bool = False
-    #: Look-before-you-write gates: ``set_positions`` is refused for a section
-    #: not compared at any position since its last write, and ``submit`` until
-    #: ``view_stack`` has run after the last write. The refusals name what is
+    #: Look-before-you-write gates: ``position_sections`` is refused for a
+    #: section not looked at in mode ``overlay`` or ``positioning`` since its
+    #: last write, and ``submit`` until ``look`` in mode ``positioning`` has
+    #: shown every section after the last write. The refusals name what is
     #: missing.
     gated: bool = False
     #: A suggested method written into the job statement: hypothesise order
@@ -138,22 +132,22 @@ class PositionSpec:
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
-    #: The agent may mirror sections left-right (``orient_slices``). A mirror
-    #: is part of the in-plane alignment: the sign of the affine.
+    #: The agent may mirror sections left-right (``interactive_transform``'s
+    #: ``flip``). A mirror is part of the in-plane alignment: the sign of the
+    #: affine.
     flip: bool = True
     #: User text describing what marks a hemisphere (a notch, an injection...).
     hemisphere_cue: str = ""
     #: Offer direct visual adjustment.
     interactive: bool = True
-    #: Offer the automatic affine fit (``fit_affine``: Elastix by default,
-    #: silhouette as an option).
+    #: Offer the automatic affine fit (``elastix_affine``).
     automatic: bool = True
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
-    #: Most sections one transform-tool call (``fit_affine``,
-    #: ``adjust_transforms``) may take, 1..4. At 4, the default, the tools
-    #: keep their own limits (``adjust_transforms`` four, ``fit_affine`` any
-    #: number); below 4 both refuse a call naming more sections.
+    #: Most sections one transform-tool call (``elastix_affine``,
+    #: ``interactive_transform``) may take, 1..4. At 4, the default, the tools
+    #: keep their own limits (``interactive_transform`` four, ``elastix_affine``
+    #: any number); below 4 both refuse a call naming more sections.
     max_parallel: int = MAX_PARALLEL_TRANSFORMS
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
@@ -185,9 +179,6 @@ class NonlinearSpec:
 
     provider: str = "openai-oauth"
     image_model: str | None = None
-    #: The deformable-fit engine (`fit_deformable`): "ants" or "elastix" fixes
-    #: it for the run; "either" (default) lets the agent choose per call.
-    engine: str = "either"
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
     #: The host requires a deformation on every section: ``submit`` refuses
@@ -201,10 +192,6 @@ class NonlinearSpec:
             canonical_provider,
         )
 
-        if self.engine not in DEFORMABLE_ENGINES:
-            raise ValueError(
-                f"nonlinear.engine must be one of {DEFORMABLE_ENGINES}; got {self.engine!r}"
-            )
         accepted = (*CANONICAL_PROVIDERS, CUSTOM_PROVIDER)
         if canonical_provider(str(self.provider or "")) not in accepted:
             raise ValueError(
@@ -288,9 +275,8 @@ class JobSpec:
     #: "damaged": {filename: note}, "locked": [filename, ...]}``.
     #: A supplied transform may be mirrored (negative determinant, as a
     #: host's own alignment carries a flip); it is kept as supplied. A
-    #: supplied ``orientation`` is the section's flip and quarter turn (the
-    #: ``orient_slices`` data; a supplied transform describes the section
-    #: after it), kept as supplied.
+    #: supplied ``orientation`` is the section's flip and quarter turn (a
+    #: supplied transform describes the section after it), kept as supplied.
     #: ``angles`` is the whole stack's plane, or per section
     #: ``{filename: {"pitch": deg, "yaw": deg}}`` (a registration made
     #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
@@ -301,11 +287,11 @@ class JobSpec:
     #: rotation or transform (a ``"host"`` identity transform unless
     #: ``transforms`` supplies one), but their positions still move.
     #: ``keep_warp`` sections (a list of filenames) carry the user's own
-    #: deformation in the host: ``fit_deformable`` refuses them
-    #: (``KEEPS_HOST_WARP``). ``nonlinear_skip`` sections (a list of
+    #: deformation in the host: ``ants_syn`` and ``trace_borders`` refuse
+    #: them (``KEEPS_HOST_WARP``). ``nonlinear_skip`` sections (a list of
     #: filenames) the user left out of Nonlinear (no linear registration and
-    #: not to be aligned first): ``fit_deformable`` and ``trace_borders``
-    #: refuse them (``NONLINEAR_SKIPPED``).
+    #: not to be aligned first): ``ants_syn`` and ``trace_borders`` refuse
+    #: them (``NONLINEAR_SKIPPED``).
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True

@@ -51,7 +51,7 @@ from langslice.doors.jobs import (
 )
 from langslice.doors.mcp.host_channel import HostChannel
 from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
-from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.reply import (
     REPLY_BYTES,
     Item,
@@ -174,8 +174,7 @@ def result_blocks(result: Any) -> list[ContentBlock]:
     The tools return plain pictures (PIL images, captions burned in) and
     lines of text under ``TOOL_MEDIA_PARTS_KEY``; each picture becomes an
     image block in the doors' JPEG encoding (:func:`image_block`), each
-    non-empty text a text block. ``images_attached`` counts both. The
-    ADK-only delivery id (``media_delivery_id``) is left out. The whole
+    non-empty text a text block. ``images_attached`` counts both. The whole
     reply stays within the host's reply budget
     (:func:`langslice.doors.tools.reply.fit_reply`): past it every picture is
     shrunk together and a last text says so and how to get full-size ones.
@@ -183,7 +182,6 @@ def result_blocks(result: Any) -> list[ContentBlock]:
     media: list[Any] = []
     if isinstance(result, dict):
         body = dict(result)
-        body.pop(TOOL_MEDIA_DELIVERY_ID_KEY, None)
         listed = body.pop(TOOL_MEDIA_PARTS_KEY, None)
         if isinstance(listed, list):
             media = [item for item in listed if isinstance(item, (str, Image.Image))]
@@ -366,10 +364,6 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
     parameters = [p for name, p in signature.parameters.items() if name != "tool_context"]
 
     async def run(**kwargs: Any) -> list[ContentBlock]:
-        # Pictures from earlier calls have reached the host by now: the call
-        # that follows them is the host's next move. The placement gates
-        # (compare-before-write, review-after-write) read this record.
-        session.box.begin_model_call()
         try:
             def invoke() -> Any:
                 if session.host_update is None:
@@ -385,10 +379,7 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
                 with session.lock:
                     return invoke()
 
-            # In flight until it answers: a call the host sent beside it
-            # promotes no picture as seen (begin_model_call).
-            with session.box.in_flight():
-                result = await to_thread.run_sync(serialized)
+            result = await to_thread.run_sync(serialized)
         except Exception as exc:
             logger.exception("Tool %s failed", tool.__name__)
             result = {"status": "error", "error": type(exc).__name__, "message": str(exc)}

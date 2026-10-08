@@ -1,22 +1,23 @@
-"""ANTs (SyN) and Elastix (B-spline) adapters behind one call.
+"""The deformable engine (ANTs SyN) and the Elastix affine, behind plain calls.
 
-Both engines see the same thing: a fixed image (the section), a moving image
-(the placed atlas, already on the section's working grid), a fixed and a
-moving mask, and the physical spacing and origin of that grid. Both return a
-displacement field in millimetres on the working grid that points from a
-section point to the matching point of the placed atlas image — the
-convention of brainglobe-registration and of both libraries' own resampling
-fields: ``atlas_point = section_point + field(section_point)``.
+Both see the same thing: a fixed image (the section), a moving image (the
+placed atlas, already on the section's working grid), a fixed and a moving
+mask, and the physical spacing and origin of that grid. :func:`run_engine`
+(ANTs SyN) returns a displacement field in millimetres on the working grid
+that points from a section point to the matching point of the placed atlas
+image — the convention of brainglobe-registration and of ANTs' own
+resampling fields: ``atlas_point = section_point + field(section_point)``.
+:func:`run_elastix_affine` returns an affine on the same millimetres.
 
-No deformation solver lives here; the libraries do the fitting. Pure arrays
+No registration solver lives here; the libraries do the fitting. Pure arrays
 in, pure arrays out, so the adapters run unchanged in a worker process.
 
-Determinism: identical inputs give identical fields. Neither engine samples
+Determinism: identical inputs give identical results. Neither engine samples
 randomly with these settings except Elastix's random coordinate sampler, which
 gets a fixed seed; what remains is the thread count, because a multithreaded
 metric sums partial results in an order that depends on how the image is
-split (ANTs fields differ by ~2 um between 1 and 8 threads, Elastix by
-~1e-9 mm). Every fit therefore runs on :data:`FIT_THREADS` threads. Elastix
+split (ANTs fields differ by ~2 um between 1 and 8 threads). Every fit
+therefore runs on :data:`FIT_THREADS` threads. Elastix
 takes the number per call. ANTs (its own bundled ITK) reads the count from
 the environment once per process, at its first use, so :func:`import_ants`
 sets it around that first use and restores the environment afterwards (the
@@ -41,8 +42,6 @@ from scipy import ndimage as ndi
 from langslice.core.deformable.settings import (
     ANTS_STIFFNESS,
     DETAIL,
-    ELASTIX_MEAN_SQUARES_BENDING_SCALE,
-    ELASTIX_STIFFNESS,
     FitSettings,
     Metric,
 )
@@ -102,10 +101,13 @@ class EngineResult:
 
 
 def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
-    """Fit one candidate. Raises when the engine is not installed or fails."""
-    if settings.engine == "ants":
-        return _run_ants(inputs, settings, settings.metric)
-    return _run_elastix(inputs, settings, settings.metric)
+    """Fit one deformation with ANTs SyN. Raises when ANTs is not installed or
+    fails, and for any other engine (Elastix fits affines only:
+    :func:`run_elastix_affine`)."""
+    if settings.engine != "ants":
+        raise ValueError(f"No deformable fit with {settings.engine!r}: the deformable "
+                         "engine is ANTs SyN")
+    return _run_ants(inputs, settings, settings.metric)
 
 
 #: ANTs' thread count in this process: FIT_THREADS once :func:`import_ants`
@@ -266,59 +268,6 @@ ELASTIX_METRICS: dict[str, str] = {
 }
 
 
-def _elastix_parameters(
-    settings: FitSettings, metric: Metric, spacing_mm: tuple[float, float], *,
-    edge_weight: float | None = None,
-) -> tuple[Any, dict[str, list[str]]]:
-    import itk
-
-    level = DETAIL[settings.detail]
-    stiffness = ELASTIX_STIFFNESS[settings.stiffness]
-    bending = stiffness.bending_weight
-    if metric == "mean_squares":
-        bending *= ELASTIX_MEAN_SQUARES_BENDING_SCALE
-    parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
-    pm = parameter_object.GetDefaultParameterMap("bspline")
-    if metric not in ELASTIX_METRICS:
-        raise ValueError(f"Elastix has no {metric!r} metric")
-    data_metric = ELASTIX_METRICS[metric]
-    pm["Registration"] = ("MultiMetricMultiResolutionRegistration",)
-    # Metric k reads image pair k; the edge pair (when present) is pair 1, and
-    # the bending penalty, which reads no image, comes last.
-    data = [data_metric] if edge_weight is None else [data_metric, data_metric]
-    weights = [1.0] if edge_weight is None else [1.0, float(edge_weight)]
-    pm["Metric"] = (*data, "TransformBendingEnergyPenalty")
-    for k, weight in enumerate([*weights, float(bending)]):
-        pm[f"Metric{k}Weight"] = (repr(weight),)
-    pm["NumberOfHistogramBins"] = (str(MUTUAL_INFORMATION_BINS),)
-    if edge_weight is not None:
-        # Elastix's multi-image rules: pyramids, interpolators and samplers
-        # (set below) number one or one per metric, the penalty included, and
-        # at least one per image.
-        for key in ("FixedImagePyramid", "MovingImagePyramid", "Interpolator"):
-            pm[key] = tuple(pm[key]) * 3
-    pm["FinalGridSpacingInPhysicalUnits"] = (repr(float(stiffness.grid_spacing_mm)),)
-    pm["NumberOfResolutions"] = (str(level.elastix_resolutions),)
-    # Control points double in spacing at each coarser level.
-    pm["GridSpacingSchedule"] = tuple(
-        str(2 ** k) for k in range(level.elastix_resolutions - 1, -1, -1)
-    )
-    pm["MaximumNumberOfIterations"] = (str(level.elastix_iterations),)
-    pm["ImageSampler"] = ("RandomCoordinate",) * (1 if edge_weight is None else 3)
-    pm["NumberOfSpatialSamples"] = (str(ELASTIX_SPATIAL_SAMPLES),)
-    pm["NewSamplesEveryIteration"] = ("true",)
-    pm["RandomSeed"] = (str(RANDOM_SEED),)
-    # Masks are already widened past the tissue outline; eroding them at
-    # coarse pyramid levels would cut away exactly that informative edge.
-    pm["ErodeMask"] = ("false",)
-    pm["ErodeFixedMask"] = ("false",)
-    pm["ErodeMovingMask"] = ("false",)
-    pm["FinalBSplineInterpolationOrder"] = ("1",)
-    pm["WriteResultImage"] = ("false",)
-    parameter_object.AddParameterMap(pm)
-    return parameter_object, {key: list(value) for key, value in pm.items()}
-
-
 def _elastix_image(array: np.ndarray, inputs: EngineInputs, pixel: type = np.float32) -> Any:
     """An ITK image on the working grid (x = columns, y = rows, millimetres)."""
     import itk
@@ -375,61 +324,8 @@ def _parameter_maps(transform: Any) -> list[dict[str, list[str]]]:
     ]
 
 
-def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) -> EngineResult:
-    import itk
-
-    if inputs.fixed_labels:
-        raise ValueError("Label-map channels are ANTs-only")
-
-    start = time.perf_counter()
-    edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
-    parameter_object, requested = _elastix_parameters(
-        settings, metric, inputs.spacing_mm,
-        edge_weight=inputs.edge_weight if edges else None)
-    extra_pairs: list[tuple[Any, Any]] = []
-    if edges:
-        assert inputs.fixed_edges is not None and inputs.moving_edges is not None
-        # The bending penalty (metric 2) reads no image, but with several
-        # pairs Elastix wants one per metric: the intensity pair again.
-        extra_pairs = [(_elastix_image(inputs.fixed_edges, inputs),
-                        _elastix_image(inputs.moving_edges, inputs)),
-                       (_elastix_image(inputs.fixed, inputs),
-                        _elastix_image(inputs.moving, inputs))]
-    moving, transform = _elastix_register(inputs, parameter_object, extra_pairs)
-    # Transformix writes deformationField.nii to its output directory, the
-    # process's working directory by default (the user's folder, shared by
-    # every pool worker); point it at a private scratch directory instead.
-    with tempfile.TemporaryDirectory(prefix="langslice-transformix-") as scratch:
-        deformation = itk.transformix_deformation_field(  # type: ignore[attr-defined]
-            moving, transform, output_directory=scratch)
-        forward = np.array(itk.array_from_image(deformation), dtype=np.float32)
-    maps = _parameter_maps(transform)
-    inverse, residual = invert_field(forward, inputs.spacing_mm)
-    notes = []
-    if settings.section_image == "stain" and settings.stain_metric == "local_correlation":
-        notes.append(f"Elastix has no local correlation metric; this stain fit used "
-                     f"{ELASTIX_METRICS[metric]} instead")
-    return EngineResult(
-        field_mm=forward,
-        inverse_field_mm=inverse,
-        inverse_source="numerical_fixed_point",
-        native_parameters={"requested": requested, "transform_parameter_maps": maps,
-                           "metric": metric, "edge_channel": edges,
-                           "threads": FIT_THREADS},
-        runtime_s=time.perf_counter() - start,
-        engine_version=f"itk-elastix (itk {itk.__version__})",
-        notes=[
-            *notes,
-            "Elastix B-splines have no closed-form inverse; the inverse field was "
-            "approximated by fixed-point iteration on the working grid "
-            f"(max residual {residual:.4g} mm over the grid)",
-        ],
-    )
-
-
 #: Pyramid levels and iterations per level of the Elastix affine refinement
-#: (``fit_affine``'s default method): the B-spline fit's standard depth, since
-#: both start from a placement that is already close.
+#: (``elastix_affine``), which starts from a placement that is already close.
 ELASTIX_AFFINE_RESOLUTIONS = 3
 ELASTIX_AFFINE_ITERATIONS = 500
 
@@ -456,8 +352,9 @@ def run_elastix_affine(
 
     The identity is the placement the moving image was drawn at, so this is a
     local refinement of that placement, never a search from scratch
-    (``AutomaticTransformInitialization`` off). Same images, masks, edge
-    channel, seed and thread count as the B-spline fit. Raises when Elastix
+    (``AutomaticTransformInitialization`` off). The images, masks and edge
+    channel are a deformable stain fit's; a fixed seed and thread count.
+    Raises when Elastix
     fails or returns a non-finite or singular matrix.
     """
     import itk
@@ -490,7 +387,8 @@ def run_elastix_affine(
     pm["NumberOfSpatialSamples"] = (str(ELASTIX_SPATIAL_SAMPLES),)
     pm["NewSamplesEveryIteration"] = ("true",)
     pm["RandomSeed"] = (str(RANDOM_SEED),)
-    # As in the B-spline fit: the masks are already widened past the outline.
+    # Masks are already widened past the tissue outline; eroding them at
+    # coarse pyramid levels would cut away exactly that informative edge.
     pm["ErodeMask"] = ("false",)
     pm["ErodeFixedMask"] = ("false",)
     pm["ErodeMovingMask"] = ("false",)

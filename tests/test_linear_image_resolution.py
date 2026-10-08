@@ -23,7 +23,6 @@ from langslice.agent.engine import build_context, build_seed_message
 from langslice.core.captions import CAPTION_PX, _caption_font, caption, wrap_caption
 from langslice.core.opening import COLUMN_GAP, section_tile, strip_layout
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice, shown_section
-from langslice.core.sheets import SHEET_MAX_LONG_EDGE, stack_sheet
 from langslice.core.sizes import MIN_RESOLUTION, PICTURE_EDGES, opening_edge
 from langslice.core.spec import JobSpec
 from langslice.core.transform import calibrate
@@ -147,18 +146,6 @@ def test_a_zoom_magnifies_the_section_up_to_the_picture_size(tmp_path: Path):
     assert whole.width == _images(zoomed)[0].width == PICTURE_EDGES["low"][1]
 
 
-def test_the_contact_sheet_tiles_follow_the_level_and_stay_bounded(tmp_path: Path):
-    state, ctx, _tools, _spec = _run(tmp_path / "few", "medium", count=2)
-    few = stack_sheet(state, ctx)
-    # Two tiles at the medium opening size plus the gap between them.
-    assert few.width == 2 * PICTURE_EDGES["medium"][0] + 6
-    state, ctx, _tools, _spec = _run(tmp_path / "many", "high", count=24,
-                                     size=(1200, 900), um_per_px=5.0)
-    many = stack_sheet(state, ctx)
-    assert max(many.size) <= SHEET_MAX_LONG_EDGE
-    assert many.width > 0.8 * SHEET_MAX_LONG_EDGE  # shrunk to fit, not to a stamp
-
-
 # --- auto -------------------------------------------------------------------
 
 
@@ -233,11 +220,8 @@ def test_resolution_is_ignored_and_invisible_below_auto(tmp_path: Path):
 # --- what is computed does not move ------------------------------------------
 
 
-#: The silhouette fit and adjust_transforms (the operations; no tool calls the
-#: silhouette fit any more) on this stack, computed with the code before
-#: pictures were sized by level: the stored numbers must match.
-_PINNED_S0_FIT = [-0.24853608803995778, 9.56406142034393e-16, 0.6245949944548352,
-                  -2.2479381284208716e-15, -0.3341968926388023, 0.6672419978191492]
+#: A hand transform about the tissue pivot on this stack, computed with the
+#: code before pictures were sized by level: the stored numbers must match.
 _PINNED_S1_ADJUST = [1.0973204552858067, 0.04970148754268928, -0.053191461442875475,
                      -0.10230949482471711, 0.947685847746833, 0.06586465442425882]
 
@@ -266,31 +250,22 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
 
 
 @pytest.mark.parametrize("level", ["low", "high", "auto"])
-def test_fits_and_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
+def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
     from langslice.ops import transforms
 
     state, ctx, job = _fixed_stack(tmp_path / level, level)
-    fit = transforms.fit_affine(job, ctx, state.in_order(), method="silhouette")
-    assert [row["iou"] for row in fit.rows] == [1.0, 1.0]
-    assert state.by_id("s0.tif").transform["params"] == _PINNED_S0_FIT
-    transforms.adjust_transforms(job, ctx, [{
+    transforms.interactive_transform(job, ctx, [{
         "id": "s1.tif", "rotation_deg": 4.0, "scale_x": 1.1, "scale_y": 0.95,
         "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue",
-        # A left-out shear keeps the fit's ; the pin is shear-free.
         "shear": 0.0}])
     assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
 
 
 @pytest.mark.parametrize("level", ["medium", "high", "auto"])
 def test_pictures_change_while_fits_and_transforms_stay(tmp_path: Path, level: str):
-    from langslice.ops import transforms
 
     low_state, low_ctx, low, _ = _run(tmp_path / "low", "low")
     big_state, big_ctx, big, _ = _run(tmp_path / level, level)
-    low_fit = transforms.fit_affine(low.box.job, low_ctx, [low_state.by_id("s0.tif")],
-                                    method="silhouette")
-    big_fit = transforms.fit_affine(big.box.job, big_ctx, [big_state.by_id("s0.tif")],
-                                    method="silhouette")
     low_set = low["interactive_transform"]([_entry(id="s1.tif")])
     big_set = big["interactive_transform"]([_entry(id="s1.tif")])
     # The pictures follow the level (auto's default later size is low's).
@@ -301,7 +276,6 @@ def test_pictures_change_while_fits_and_transforms_stay(tmp_path: Path, level: s
         assert section_low.size == section_big.size
         assert calibrate(low_state, low_ctx, record_low, section_low) == calibrate(
             big_state, big_ctx, record_big, section_big)
-    assert low_fit.rows == big_fit.rows
     assert low_state.slices[0].transform == big_state.slices[0].transform
     assert low_set["results"][0]["transform"] == big_set["results"][0]["transform"]
     assert low_state.slices[1].transform == big_state.slices[1].transform
@@ -314,12 +288,11 @@ def _digest(image: Image.Image) -> str:
 def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tmp_path: Path):
     from langslice.core import deformation
     from langslice.core.nonlinear.registration_handoff import prepare_linear_registration
-    from langslice.ops import transforms
 
     seen: dict[str, tuple[str, str, Any]] = {}
     for level in ("low", "high", "auto"):
         state, ctx, tools, _ = _run(tmp_path / level, level)
-        transforms.fit_affine(tools.box.job, ctx, [state.by_id("s0.tif")], method="silhouette")
+        tools["interactive_transform"]([_entry()], view=False)
         prepared = prepare_linear_registration(state, ctx, "s0.tif")
         grid = deformation.fit_grid(state, ctx, state.by_id("s0.tif"))
         seen[level] = (_digest(prepared.image), _digest(grid.image), prepared.metadata)
@@ -341,11 +314,10 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     drawn: list[np.ndarray] = []
 
     def capture(*args, **kwargs):
-        frames: list[dict[str, Any]] = []
-        images, iou = canvas.physical_views(*args, **kwargs, frames=frames)
-        x0, y0, x1, y1 = frames[0]["content_box"]
+        images = canvas.physical_views(*args, **kwargs)
+        x0, y0, x1, y1 = kwargs["panel_frames"][0].content_box
         drawn.append(np.asarray(images[0].convert("L"))[y0:y1, x0:x1])
-        return images, iou
+        return images
 
     monkeypatch.setattr(placement, "physical_views", capture)
     _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low")

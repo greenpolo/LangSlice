@@ -1,24 +1,14 @@
-"""The shared silhouette-affine core and its parameter conventions.
-
-No model calls and no Elastix: the fit is closed-form OpenCV moments against a
-tiny synthetic atlas built here.
-"""
-
+"""The in-plane affine's parameter conventions: building, normalizing and reading back."""
 
 import cv2
 import numpy as np
 import pytest
-from PIL import Image
 
 from langslice.core.affine import (
     affine_matrix,
     decompose_affine,
-    extract_slice_silhouette,
     normalized_affine,
-    silhouette_affine,
-    silhouette_iou,
 )
-from tests.fakes import EllipseAtlas, ellipse_section
 
 # --- affine_matrix -------------------------------------------------------
 
@@ -126,39 +116,6 @@ def test_the_identity_normalizes_to_the_identity():
     )
 
 
-# --- silhouette_affine ---------------------------------------------------
-
-
-def test_silhouette_affine_aligns_a_rotated_section_to_the_atlas():
-    atlas = EllipseAtlas()
-    section = ellipse_section(angle=25.0)
-
-    fit = silhouette_affine(section, atlas=atlas, position_mm=5.0, long_edge=256)
-
-    assert fit.matrix.shape == (2, 3)
-    assert fit.size == (256, int(round(256 * 160 / 200)))
-    # A closed-form moments fit of one ellipse onto another should be tight.
-    assert fit.iou > 0.9
-
-    # And the reported IoU is really the overlap after warping.
-    gray = cv2.cvtColor(fit.slice_rgb, cv2.COLOR_RGB2GRAY)
-    warped = cv2.warpAffine(
-        extract_slice_silhouette(gray),
-        fit.matrix,
-        fit.size,
-        flags=cv2.INTER_NEAREST,
-    )
-    assert silhouette_iou(warped, fit.atlas_mask) == pytest.approx(fit.iou, abs=1e-6)
-
-
-def test_silhouette_affine_refuses_a_blank_field():
-    atlas = EllipseAtlas()
-    blank = Image.new("RGB", (200, 160), (255, 255, 255))
-
-    with pytest.raises(ValueError, match="Otsu likely failed"):
-        silhouette_affine(blank, atlas=atlas, position_mm=5.0, long_edge=256)
-
-
 # --- reading a transform back --------------------------------------------
 
 
@@ -196,40 +153,6 @@ def test_decompose_affine_flags_a_reflection():
     assert identity["rotation_deg"] == 0.0
 
 
-def test_silhouette_affine_never_reflects():
-    """The fit may rotate, scale and shear, never mirror: flips are orientation."""
-    import numpy as np
-    from PIL import Image, ImageDraw
-
-    from langslice.core.affine import silhouette_affine
-
-    class _Atlas:  # minimal: get_root_mask reads only what the fit asks for
-        pass
-
-    canvas = Image.new("RGB", (200, 160), 0)
-    ImageDraw.Draw(canvas).ellipse((30, 20, 170, 140), fill=(200, 200, 200))
-    # Off-centre notch so the silhouette has a handedness the fit could "fix".
-    ImageDraw.Draw(canvas).rectangle((30, 20, 60, 50), fill=0)
-
-    import langslice.core.affine as affine_mod
-
-    def fake_root_mask(atlas, position_mm, size, plane="coronal", pitch_deg=0.0, yaw_deg=0.0):
-        w, h = size
-        mask = Image.new("L", (w, h), 0)
-        draw = ImageDraw.Draw(mask)
-        draw.ellipse((int(w * 0.2), int(h * 0.15), int(w * 0.8), int(h * 0.85)), fill=255)
-        draw.rectangle((int(w * 0.65), int(h * 0.15), int(w * 0.8), int(h * 0.3)), fill=0)
-        return np.asarray(mask, dtype=np.uint8)
-
-    original = affine_mod.get_root_mask
-    affine_mod.get_root_mask = fake_root_mask
-    try:
-        fit = silhouette_affine(canvas, atlas=_Atlas(), position_mm=1.0)
-    finally:
-        affine_mod.get_root_mask = original
-    assert np.linalg.det(fit.matrix[:, :2]) > 0
-
-
 def test_decompose_affine_reads_a_pure_rotation_on_a_wide_image_when_given_its_size():
     """The normalized frame is anisotropic on a non-square image; with the
     size the decomposition is done in pixels and a 5-degree turn reads as 5."""
@@ -254,29 +177,3 @@ def test_the_six_numbers_go_back_to_the_pixels_they_came_from():
     matrix = np.array([[1.03, 0.21, 12.0], [-0.07, 0.94, -5.0]])
     back = denormalized_affine(normalized_affine(matrix, size), size)
     assert back == pytest.approx(matrix, abs=1e-9)
-
-
-def test_silhouette_affine_measures_against_the_mask_it_is_given():
-    """A stack cut at an angle passes its oblique mask; the fit must use it,
-    not the flat root mask it would otherwise build."""
-    import numpy as np
-    from PIL import Image
-
-    from langslice.core.affine import silhouette_affine
-
-    seen: dict[str, tuple[int, int]] = {}
-
-    def mask_at(size):
-        seen["size"] = size
-        w, h = size
-        m = np.zeros((h, w), dtype=np.uint8)
-        m[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4] = 255
-        return m
-
-    canvas = np.zeros((200, 200, 3), dtype=np.uint8)
-    canvas[60:140, 40:160] = 200
-    fit = silhouette_affine(
-        Image.fromarray(canvas), atlas=None, position_mm=1.0, long_edge=200, atlas_mask_at=mask_at
-    )
-    assert seen["size"] == (200, 200)
-    assert 0.0 < fit.iou <= 1.0

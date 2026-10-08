@@ -6,7 +6,6 @@ import asyncio
 import io
 import json
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +15,6 @@ from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
-
-from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY
 
 #: Images in context before the working set is cut, and what it is cut to.
 #: Every image is kept; the oldest are cut in ONE batch only at a backstop far
@@ -148,8 +145,8 @@ class StrictArgumentsPlugin(BasePlugin):
     """Refuse a tool call that carries arguments the tool does not take.
 
     ADK's ``FunctionTool`` keeps only the arguments its function names and
-    drops the rest without a word, so a misplaced argument (a picture option
-    outside ``view``) used to run the tool with its default. This answers such
+    drops the rest without a word, so a misplaced argument used to run the
+    tool with its default. This answers such
     a call instead, before it runs, with
     :func:`langslice.doors.tools.arguments.argument_refusal`: the stray keys named
     and the accepted ones listed. Tools without a Python function are left
@@ -172,41 +169,6 @@ class StrictArgumentsPlugin(BasePlugin):
             return argument_refusal(func, dict(tool_args or {}))
         except (TypeError, ValueError):  # an unintrospectable tool keeps ADK's behaviour
             return None
-
-
-class ToolMediaDeliveryPlugin(BasePlugin):
-    """Report media-bearing function responses present in a model request.
-
-    Register this after the context filter. The callback therefore observes
-    the request after working-set pruning and can distinguish an image that
-    was successfully rendered from one the model is actually about to see.
-    """
-
-    def __init__(
-        self,
-        delivered: Callable[[set[str]], None],
-        *,
-        name: str = "langslice_tool_media_delivery",
-    ) -> None:
-        super().__init__(name)
-        self.delivered = delivered
-
-    async def before_model_callback(
-        self, *, callback_context: CallbackContext, llm_request: LlmRequest
-    ) -> LlmResponse | None:
-        del callback_context
-        delivery_ids = {
-            str(response[TOOL_MEDIA_DELIVERY_ID_KEY])
-            for content in (llm_request.contents or [])
-            for part in (content.parts or [])
-            if (function_response := part.function_response) is not None
-            and function_response.parts
-            and isinstance((response := function_response.response), dict)
-            and response.get(TOOL_MEDIA_DELIVERY_ID_KEY)
-        }
-        if delivery_ids:
-            self.delivered(delivery_ids)
-        return None
 
 
 def part_summary(part: types.Part) -> dict[str, Any]:

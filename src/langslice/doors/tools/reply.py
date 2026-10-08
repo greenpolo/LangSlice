@@ -85,7 +85,7 @@ def shrunk_note(count: int, edges: tuple[int, int], budget: int = REPLY_BYTES) -
     return (f"The {count} picture{'s' if count != 1 else ''} above were shrunk together to fit "
             f"the host's reply limit ({budget // 1000} KB): the largest went from "
             f"{edges[0]} to {edges[1]} px on its long edge. For full-size pictures, ask for "
-            "fewer sections per call or a smaller view.resolution.")
+            "fewer sections per call or a smaller resolution.")
 
 
 def paged(items: Sequence[Item], budget: int = REPLY_BYTES) -> list[list[Item]]:

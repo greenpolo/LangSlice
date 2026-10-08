@@ -123,8 +123,8 @@ in Claude mode).
   slices, notes for the agent).
   *Linear* (**Enable hemisphere flipping** with an optional hemisphere cue, the affine
   tool, max parallel slice transforms 1–4, **Enable slice angle estimation**, notes for
-  the agent). *Nonlinear* (deformable-fit engine: Either, ANTs or Elastix; notes for the
-  agent). Any combination of the three may run, Nonlinear alone included. When
+  the agent). *Nonlinear* (a deformable-fit engine choice, Either, ANTs or Elastix,
+  which LangSlice ignores: ANTs SyN is its one deformable fit; notes for the agent). Any combination of the three may run, Nonlinear alone included. When
   Nonlinear is on, Linear is off and some listed slices have no ABBA registration, Run
   asks "Slices … have no linear registration. Let the agent align them first?": Yes
   switches Linear on; No leaves them out of Nonlinear (out of the run entirely when
@@ -156,7 +156,7 @@ thickness and interval come from ABBA whenever ABBA's slices give them.
 | Image resolution | `spec.image_resolution` |
 | Positioning | `spec.tasks` += `reorder`, `position`; `position.thickness_um`, `position.interval_um`, `position.notes` |
 | Linear | `spec.tasks` += `transform`; `transform.flip`, `transform.hemisphere_cue`, `transform.automatic` (affine tool), `transform.interactive` true, `transform.angles`, `transform.max_parallel`, `transform.notes` |
-| Nonlinear | `spec.tasks` += `nonlinear`; `nonlinear.engine` (`either`, `ants`, `elastix`), `nonlinear.notes` |
+| Nonlinear | `spec.tasks` += `nonlinear`; `nonlinear.engine` (`either`, `ants`, `elastix`; ignored by LangSlice), `nonlinear.notes` |
 | Let the agent flag damaged slices; Damaged + note | `spec.agent_damage`; `damaged` |
 | Allow the agent to overwrite existing transforms (off) | off: every listed slice with registrations is in `locked` |
 | Let the agent drive preprocessing | `spec.agent_preprocessing`; every channel is exported |

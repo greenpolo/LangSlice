@@ -137,7 +137,7 @@ def _host_appearance(
     blends it — the function ``preprocess.preview`` shows the user — but the
     blend is only the DEFAULT appearance (``JobSpec.host_preprocessing``): the
     snapshots stay the run's images and their pages stay readable as raw
-    channels, for the agent's picture options and ``preprocess``. Otherwise
+    channels, for the agent's ``look`` and channel tools. Otherwise
     (no settings, single pages) None: the engine's own automatic path.
     """
     from langslice.core.image_prep import host_preprocess_settings, page_count

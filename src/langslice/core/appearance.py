@@ -1,4 +1,4 @@
-"""What a section looks like: its preprocessed channel, and the view look.
+"""What a section looks like: its preprocessed channel.
 
 Every section has exactly ONE preprocessed channel, derived from its raw
 channels, and it is what every algorithm and the image model read: the
@@ -21,19 +21,15 @@ everything else:
 
 - ``"preprocessed"``: ``{"stack": recipe or None, "sections": {id: recipe}}``;
 - ``"channels"``: the raw channels' display properties, by channel name
-  (:mod:`langslice.core.channels`);
-- ``"view"``: the look the ``preprocess`` tool's ``view`` target gives the
-  agent's pictures, the shape of ``"preprocessed"``. It is kept in memory and
-  in undo steps only: :func:`migrated` drops it from a state read from disk.
+  (:mod:`langslice.core.channels`).
 
 A state saved before the preprocessed channel held its recipe under
 ``"fit"``; :func:`migrated` moves it to ``"preprocessed"``, and every reader
-here reads it there too. ``preprocess``'s targets are ``"view"`` and
-``"fit"`` (the preprocessed channel).
+here reads it there too. An older saved ``"view"`` look is dropped.
 
-The silhouette fit, calibration and the tissue pivot measure geometry on the
-default render whatever the recipe, so neither a recipe nor a display
-property can move them.
+Calibration and the tissue pivot measure geometry on the default render
+whatever the recipe, so neither a recipe nor a display property can move
+them.
 """
 
 from __future__ import annotations
@@ -49,17 +45,13 @@ from langslice.core.workspace import Workspace
 
 #: The preprocessed channel's key on ``StackState.appearance``.
 PREPROCESSED = "preprocessed"
-#: The ``preprocess`` tool's view look's key.
-VIEW = "view"
-#: The key a state saved before the preprocessed channel held it under, and
-#: the ``preprocess`` tool's name for it.
+#: The key a state saved before the preprocessed channel held it under (also
+#: its name as a fit reads it, ``ops.inputs``).
 FIT = "fit"
-#: ``preprocess``'s targets.
-TARGETS: tuple[str, ...] = (VIEW, FIT)
-#: ``preprocess``'s ``target`` values.
-TARGET_CHOICES: tuple[str, ...] = (*TARGETS, "both")
+#: A view look an older saved state may hold; dropped on reading.
+_OLD_VIEW = "view"
 #: Where each name is held on ``StackState.appearance``.
-HELD_UNDER: dict[str, str] = {VIEW: VIEW, FIT: PREPROCESSED, PREPROCESSED: PREPROCESSED}
+HELD_UNDER: dict[str, str] = {FIT: PREPROCESSED, PREPROCESSED: PREPROCESSED}
 #: CLAHE clip limit and tile grid of the automatic path.
 DEFAULT_CLAHE_CLIP = 4.0
 DEFAULT_CLAHE_TILES = 8
@@ -160,7 +152,7 @@ def migrated(appearance: Any) -> dict[str, Any]:
     """
     if not isinstance(appearance, dict):
         return {}
-    out = {key: value for key, value in appearance.items() if key not in (VIEW, FIT)}
+    out = {key: value for key, value in appearance.items() if key not in (_OLD_VIEW, FIT)}
     if PREPROCESSED not in out and appearance.get(FIT) is not None:
         out[PREPROCESSED] = appearance[FIT]
     return out
@@ -177,8 +169,8 @@ def _held(state: StackState, target: str) -> dict[str, Any]:
 
 
 def section_settings(state: StackState, target: str, section_id: str) -> Look:
-    """The recipe *target* (``"preprocessed"``, or ``preprocess``'s ``"fit"``
-    or ``"view"``) uses for one section: its override, else the stack's."""
+    """The recipe *target* (``"preprocessed"``, or its older name ``"fit"``)
+    uses for one section: its override, else the stack's."""
     held = _held(state, target)
     override = (held.get("sections") or {}).get(section_id)
     if override is not None:
@@ -225,11 +217,6 @@ def look_token(ctx: Workspace, look: Look) -> str:
     if look is None:
         return str(ctx.spec.preprocess)
     return json.dumps(look, sort_keys=True)
-
-
-def view_look(state: StackState, record: SliceState) -> Look:
-    """What a picture of *record* shows by default: its view look."""
-    return section_settings(state, VIEW, record.id)
 
 
 def preprocessed_image(

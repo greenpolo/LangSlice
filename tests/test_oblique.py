@@ -1,4 +1,4 @@
-"""Oblique-plane sampling and (pitch, yaw) fitting on a synthetic phantom."""
+"""Oblique-plane sampling on a synthetic phantom."""
 
 from __future__ import annotations
 
@@ -7,11 +7,8 @@ import pytest
 
 from langslice.core.oblique import (
     build_rotation_matrix,
-    compute_similarity_metric,
-    fit_oblique,
     plane_axes,
     sample_oblique_plane,
-    score_oblique,
 )
 
 RES_UM = 100.0
@@ -129,134 +126,9 @@ def test_pitch_is_lr_symmetric_but_yaw_is_not() -> None:
     assert not np.allclose(yawed, yawed[:, ::-1], atol=1.0)
 
 
-def test_mirrored_yawed_plane_scores_worse_unmirrored(atlas: _Phantom) -> None:
-    """A mirrored section beats its as-is self once the plane is yawed."""
-    position_mm = 55 * RES_UM / 1000.0
-    truth_yaw = 10.0
-    section = sample_oblique_plane(atlas, position_mm, "coronal", 4.0, truth_yaw)
-    mirrored_section = section[:, ::-1]
-
-    kwargs = dict(pitch_deg=4.0, yaw_deg=truth_yaw, downsample=1, metric="ncc")
-    as_is = score_oblique(atlas, mirrored_section, position_mm, "coronal", **kwargs)
-    remirrored = score_oblique(
-        atlas, mirrored_section, position_mm, "coronal", mirror=True, **kwargs
-    )
-    assert remirrored > as_is
-
-
 # NCC, not MI: on a 96x96 phantom plane the masked region is only ~3.4k pixels,
 # and a joint-histogram MI over that few samples is noise-dominated. On the real
 # 25 um atlas (~19k pixels) the two agree.
-@pytest.mark.parametrize(("truth_pitch", "truth_yaw"), [(8.0, 0.0), (-6.0, 5.0)])
-def test_known_rotation_is_recovered(
-    atlas: _Phantom, truth_pitch: float, truth_yaw: float
-) -> None:
-    position_mm = 55 * RES_UM / 1000.0
-    section = sample_oblique_plane(atlas, position_mm, "coronal", truth_pitch, truth_yaw)
-
-    fit = fit_oblique(
-        atlas,
-        section,
-        position_mm,
-        "coronal",
-        pitch_bounds=(-15.0, 15.0),
-        yaw_bounds=(-15.0, 15.0),
-        allow_mirror=False,
-        downsample=1,
-        metric="ncc",
-    )
-
-    assert fit["pitch_deg"] == pytest.approx(truth_pitch, abs=2.5)
-    assert fit["yaw_deg"] == pytest.approx(truth_yaw, abs=2.5)
-    assert fit["mirrored"] is False
-
-
-def test_mirror_hypothesis_wins_for_a_mirrored_section(atlas: _Phantom) -> None:
-    """With yaw constrained to the brain's true sign, the mirror branch wins.
-
-    Bounds matter: given free yaw over a symmetric range, the as-is branch can
-    always reach -yaw and tie the mirror branch, so the margin collapses.
-    """
-    position_mm = 55 * RES_UM / 1000.0
-    section = sample_oblique_plane(atlas, position_mm, "coronal", 4.0, 9.0)
-    mirrored_section = np.ascontiguousarray(section[:, ::-1])
-
-    fit = fit_oblique(
-        atlas,
-        mirrored_section,
-        position_mm,
-        "coronal",
-        pitch_bounds=(0.0, 8.0),
-        yaw_bounds=(6.0, 12.0),
-        allow_mirror=True,
-        downsample=1,
-        metric="ncc",
-    )
-
-    assert fit["mirrored"] is True
-    assert fit["mirror_margin"] is not None and fit["mirror_margin"] > 0.0
-    assert fit["yaw_deg"] == pytest.approx(9.0, abs=2.5)
-
-
-def test_position_window_recovers_a_shifted_position(atlas: _Phantom) -> None:
-    truth_mm = 62 * RES_UM / 1000.0
-    section = sample_oblique_plane(atlas, truth_mm, "coronal", 0.0, 0.0)
-
-    fit = fit_oblique(
-        atlas,
-        section,
-        truth_mm + 0.25,
-        "coronal",
-        pitch_bounds=(-6.0, 6.0),
-        yaw_bounds=(-6.0, 6.0),
-        position_window_mm=0.5,
-        allow_mirror=False,
-        downsample=1,
-        metric="ncc",
-    )
-
-    assert abs(fit["position_mm"] - truth_mm) < 0.15
-
-
-def test_a_whole_range_search_skips_planes_beyond_the_brain(atlas: _Phantom) -> None:
-    """The volume's end planes hold no brain (scored as the worst, never a
-    failure); with the section's pixel size, slivers too small to hold it
-    are skipped too, and a dense coarse grid finds the plane."""
-    truth_mm = 70 * RES_UM / 1000.0
-    section = sample_oblique_plane(atlas, truth_mm, "coronal", 0.0, 0.0)
-    span = SHAPE[0] * RES_UM / 1000.0
-
-    fit = fit_oblique(
-        atlas,
-        section,
-        span / 2.0,
-        "coronal",
-        pitch_bounds=(0.0, 0.0),
-        yaw_bounds=(0.0, 0.0),
-        position_window_mm=span / 2.0,
-        allow_mirror=False,
-        downsample=1,
-        position_step_mm=0.25,
-        section_um_per_px=RES_UM,
-    )
-
-    assert abs(fit["position_mm"] - truth_mm) < 0.3
-    assert fit["n_evals"] > 4 * span  # the coarse grid at most 0.25 mm apart
-
-
-def test_metric_dispatch_and_self_similarity(atlas: _Phantom) -> None:
-    plane = sample_oblique_plane(atlas, 2.6, "coronal", 0.0, 0.0)
-    other = sample_oblique_plane(atlas, 3.4, "coronal", 0.0, 0.0)
-
-    for metric in ("mi", "ncc", "ssim", "combined"):
-        same = compute_similarity_metric(plane, plane, metric)  # type: ignore[arg-type]
-        different = compute_similarity_metric(plane, other, metric)  # type: ignore[arg-type]
-        assert same > different, metric
-
-    with pytest.raises(ValueError):
-        compute_similarity_metric(plane, plane, "nope")  # type: ignore[arg-type]
-
-
 def test_annotation_sampling_keeps_large_ids_exact() -> None:
     """Allen ids exceed float32's exact integer range; the sampler must not round."""
     from langslice.core.oblique import sample_oblique_annotation

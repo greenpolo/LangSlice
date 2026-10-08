@@ -176,7 +176,7 @@ def _job_here() -> str | None:
 def add_parsers(subparsers: argparse._SubParsersAction) -> None:
     subparsers.add_parser("ops", help="List the verbs of the agent CLI (JSON)")
     schema = subparsers.add_parser(
-        "schema", help="A verb's description, arguments and picture options (JSON)")
+        "schema", help="A verb's description and arguments (JSON)")
     schema.add_argument("verb", nargs="?", default=None, help="One verb (default: every verb)")
     schema.add_argument("--job", default=None, metavar="FOLDER",
                         help="Declare the verb as this job's settings do (default: the job "

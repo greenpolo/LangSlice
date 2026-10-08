@@ -12,7 +12,6 @@ from langslice.core.atlas.sides import (
     has_sides,
     ml_halves,
     native_left,
-    overlapping,
     split_side,
 )
 from langslice.core.deformable import FitSettings, draw_warped_borders, fit_section, prepare_fit
@@ -53,9 +52,6 @@ def test_entries_name_a_region_and_optionally_a_side():
     with pytest.raises(ValueError, match="Unknown side"):
         split_side("CTX:dorsal")
     assert has_sides(["STR", "CTX:left"]) and not has_sides(["STR", "CTX"])
-    assert overlapping(["CTX"], ["ctx:left"]) == ["CTX"]
-    assert overlapping(["CTX:left"], ["CTX"]) == ["CTX:left"]
-    assert overlapping(["CTX:left"], ["CTX:right"]) == []
 
 
 # --- left and right in the displayed frame ---------------------------------------
@@ -145,9 +141,10 @@ def test_a_one_sided_exclusion_keeps_the_other_side(atlas):
 
 
 def test_one_sided_highlights_and_marks_are_drawn_on_that_side(atlas):
+    pytest.importorskip("ants", reason="the deformable fit needs antspyx")
     image, _ = render_section(atlas, SMOOTH_FIELD())
     record = fit_section(image, atlas, placement(),
-                         FitSettings(engine="elastix", detail="coarse", exclude=("CTX:left",)))
+                         FitSettings(engine="ants", detail="coarse", exclude=("CTX:left",)))
     pink = np.asarray(draw_warped_borders(image, record, atlas, marked=["CTX:left"]))
     marked = (pink[..., 0] > 200) & (pink[..., 1] < 140)
     # Native column 80 sits at section x = 2 * 80 + 10 = 170.

@@ -78,11 +78,6 @@ class Workspace:
     #: Each file's raw channels' map from file intensities to their 8-bit
     #: planes, by channel name (:func:`langslice.core.channels.intensity_ranges`).
     intensity_cache: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
-    #: The captioned reference pictures the comparison tools send (a section
-    #: tissue-framed, an atlas section), keyed by everything they draw
-    #: (:mod:`langslice.core.pictures`); a section's keeps the caption of its
-    #: first display. Shared: read only.
-    picture_cache: dict[tuple[Any, ...], Image.Image] = field(default_factory=dict, repr=False)
     #: Each placed section's linear frame (:func:`langslice.core.maps.section_frame`:
     #: file pixels to atlas micrometres), keyed by everything it depends on,
     #: so ``registration.json`` is rewritten on every write without

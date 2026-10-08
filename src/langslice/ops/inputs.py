@@ -1,6 +1,6 @@
 """What a long operation's result depends on, per section: checked before it applies.
 
-A fit (``fit_affine``, ``fit_deformable``) computes outside the job's write
+A fit (``elastix_affine``, ``ants_syn``, a landing trace) computes outside the job's write
 lock, from the state it read, so a running agent and CLI calls keep working
 meanwhile. Before it applies, under the lock and after the job has reloaded
 what others wrote (:meth:`langslice.job.job.Job.writing`), it compares

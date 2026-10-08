@@ -44,7 +44,7 @@ from langslice.core.appearance import Look
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.canvas import zoom_box
-from langslice.core.captions import _font, angles_label, caption
+from langslice.core.captions import _font, caption, view_angles_label
 from langslice.core.display import DisplayOptions, framed_atlas
 from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE
 from langslice.core.scale import (
@@ -673,7 +673,8 @@ def positioning_pictures(
             enlarged = scale / max(detail, 1.0)
         picture = paint(layout, draw_section=draw_section, draw_atlas=draw_atlas, scale=scale,
                         window=frame)
-        text = positioning_caption(ws, layout, angles=angles, shown=shown,
+        text = positioning_caption(ws, layout, angles=angles,
+                                   median=state.drawn_at_median(angles), shown=shown,
                                    atlas_name=atlas_options.atlas_name(),
                                    um_per_px=layout.um_per_px / scale,
                                    zoom=scale if frame else None, enlarged=enlarged)
@@ -685,7 +686,7 @@ def positioning_pictures(
 
 def positioning_caption(
     ws: Workspace, layout: Layout, *, angles: Angles, shown: str, atlas_name: str,
-    um_per_px: float, zoom: float | None = None, enlarged: float = 1.0,
+    um_per_px: float, zoom: float | None = None, enlarged: float = 1.0, median: bool = False,
 ) -> str:
     """The caption burned under a positioning picture; *enlarged*: how far
     a zoom shows its thumbnails past their source pixels."""
@@ -722,7 +723,12 @@ def positioning_caption(
         parts.append(f"atlas{name} above at {len(layout.atlas)} position"
                      f"{'s' if len(layout.atlas) != 1 else ''}")
     lo, hi = layout.range_mm
-    parts.append(f"ruler {lo:.1f}-{hi:.1f} mm from {low} (left) to {high}{angles_label(angles)}")
+    ruler = f"ruler {lo:.1f}-{hi:.1f} mm from {low} (left) to {high}"
+    if median:  # the atlas thumbnails are not at any one section's angles
+        parts.append(ruler)
+        parts.append("atlas" + view_angles_label(angles, median=True))
+    else:
+        parts.append(ruler + view_angles_label(angles, median=False))
     parts.append(f"all at {um_per_px:.1f} um/px")
     return "; ".join(parts)
 

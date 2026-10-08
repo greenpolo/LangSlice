@@ -33,33 +33,6 @@ from typing import Any
 from pydantic import ConfigDict, with_config
 from typing_extensions import TypedDict, is_typeddict
 
-# --- the older picture options ---------------------------------------------------
-
-
-@with_config(ConfigDict(extra="forbid"))
-class View(TypedDict, total=False):
-    """The older picture options (:mod:`langslice.doors.tools.view_options`);
-    no tool declares them."""
-
-    mode: str
-    channels: list[str]
-    atlas_channels: list[str]
-    atlas_opacity: float
-    regions: list[str]
-    outlines: str
-    border_color: str
-    border_thickness: float
-    zoom: list[float]
-    deformation: str
-
-
-@with_config(ConfigDict(extra="forbid"))
-class ViewAuto(View, total=False):
-    """The older picture options, with the picture size."""
-
-    resolution: int
-
-
 # --- per-entry arguments ----------------------------------------------------
 
 
@@ -103,16 +76,6 @@ class LeftLinear(TypedDict, total=False):
     reason: str
 
 
-#: Why a key a typed dict does not have is refused, where the plain "unknown"
-#: would mislead.
-KEY_NOTES: dict[Any, dict[str, str]] = {
-    View: {
-        "resolution": "The user fixed the picture size for this run, so resolution "
-        "cannot be set.",
-    },
-}
-
-
 # --- the check --------------------------------------------------------------
 
 
@@ -133,11 +96,6 @@ def _typed_dict(annotation: Any) -> tuple[Any, bool] | None:
     return None
 
 
-def issubclass_typed(typed: Any, base: Any) -> bool:
-    """Whether typed dict *typed* is *base* or extends it."""
-    return typed is base or base in getattr(typed, "__orig_bases__", ())
-
-
 def _keys(typed: Any) -> list[str]:
     return list(typing.get_type_hints(typed))
 
@@ -155,9 +113,6 @@ def parameters(func: Callable[..., Any]) -> dict[str, Any]:
 
 def _note(key: str, typed: Any, params: dict[str, Any], *, top_level: bool) -> str:
     """Where a stray key belongs, when it belongs somewhere else."""
-    explained = KEY_NOTES.get(typed, {}).get(key) if typed is not None else None
-    if explained:
-        return explained
     if not top_level and key in params:
         return f"`{key}` is a top-level argument of this tool, not a key here."
     for name, annotation in params.items():
@@ -167,9 +122,6 @@ def _note(key: str, typed: Any, params: dict[str, Any], *, top_level: bool) -> s
         if key in _keys(found[0]):
             inside = f"each `{name}` entry" if found[1] else f"`{name}`"
             return f"`{key}` belongs inside {inside}."
-        for kind, notes in KEY_NOTES.items():
-            if key in notes and issubclass_typed(found[0], kind):
-                return notes[key]
     return ""
 
 

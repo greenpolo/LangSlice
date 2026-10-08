@@ -79,7 +79,7 @@ class SliceState:
 
     ``transform`` is one dict, whatever produced it::
 
-        {"kind": "silhouette" | "elastix" | "interactive",
+        {"kind": "elastix" | "interactive" | the host's,
          "params": [a, b, tx, c, d, ty],   # normalized 2x3, see langslice.core.affine
          "physical": {rotation_deg, scale_x, scale_y, shear,
                       translate_x_mm, translate_y_mm, pivot},
@@ -88,7 +88,7 @@ class SliceState:
          "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
 
-    ``iou`` is always tissue-silhouette overlap, not anatomical quality.
+    ``iou`` is always tissue overlap, not anatomical quality.
 
     For an affine, ``physical`` is the ONE representation it carries, whatever
     made it: the five knobs the alignment tools take (plus the ``shear`` an
@@ -136,7 +136,7 @@ class SliceState:
     #: This section's own cutting angles, ``{"pitch": deg, "yaw": deg}``:
     #: the atlas plane every picture, fit and map of it is drawn at. Equal
     #: on every section of a stack LangSlice angled itself
-    #: (``set_cutting_angles`` sets them all); a registration supplied per
+    #: (``position_sections``' cutting angles set them all); a registration supplied per
     #: section keeps each its own (``inputs.angles``). Serialized on the
     #: stack when all sections share one (:meth:`StackState.to_dict`).
     cutting_angles_deg: dict[str, float] = field(default_factory=flat_angles)
@@ -180,8 +180,9 @@ class StackState:
     interval_breaks: list[int] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     slices: list[SliceState] = field(default_factory=list)
-    #: The agent's appearance settings (``preprocess`` tool), per target:
-    #: ``{"view"|"fit": {"stack": settings, "sections": {id: settings}}}``.
+    #: The appearance settings (:mod:`langslice.core.appearance`):
+    #: ``{"preprocessed": {"stack": settings, "sections": {id: settings}},
+    #: "channels": {name: properties}}``.
     #: Empty means the default appearance everywhere. Undone and checkpointed
     #: with everything else (:mod:`langslice.core.appearance`).
     appearance: dict[str, Any] = field(default_factory=dict)
@@ -237,7 +238,7 @@ class StackState:
     @property
     def view_angles(self) -> Angles:
         """The plane an atlas picture without a section is drawn at
-        (``view_atlas``, the opening's atlas reference): the stack's one
+        (``look``'s atlas, the opening's atlas reference): the stack's one
         angle, or, when the sections differ, the median pitch and the median
         yaw of its sections."""
         if not self.mixed_angles:
@@ -245,6 +246,12 @@ class StackState:
         pitches = [record.pitch_deg for record in self.slices]
         yaws = [record.yaw_deg for record in self.slices]
         return float(statistics.median(pitches)), float(statistics.median(yaws))
+
+    def drawn_at_median(self, angles: Angles) -> bool:
+        """Whether an atlas picture without a section drawn at *angles* is
+        drawn at the median of differing sections' angles (:attr:`view_angles`),
+        which its caption must say."""
+        return self.mixed_angles and (float(angles[0]), float(angles[1])) == self.view_angles
 
     @property
     def cutting_angles_deg(self) -> dict[str, float]:
@@ -257,7 +264,7 @@ class StackState:
 
     @cutting_angles_deg.setter
     def cutting_angles_deg(self, angles: dict[str, Any]) -> None:
-        """Set every section to *angles* (``set_cutting_angles``): a stack
+        """Set every section to *angles* (``position_sections``): a stack
         whose sections differed now has one plane."""
         pitch, yaw = angles_tuple(angles)
         for record in self.slices:

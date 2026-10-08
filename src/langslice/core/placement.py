@@ -1,10 +1,11 @@
 """A section on its physical canvas at a placement: every placement picture.
 
-The core of `view_placement`, `set_positions`, `fit_affine` and
-`adjust_transforms`'s pictures. Plain inputs in (the workspace, the stack state, a section
-record, numbers, the call's :class:`~langslice.core.display.DisplayOptions`),
-plain PIL pictures with their captions burned in out, plus the metadata a
-door words its reply from. No undo, no gates, no message types.
+The core of ``look``'s ``overlay`` pictures (and so of every change tool's
+picture of what it wrote) and of ``mark_damage``'s. Plain inputs in (the
+workspace, the stack state, a section record, numbers, the call's
+:class:`~langslice.core.display.DisplayOptions`), plain PIL pictures with
+their captions burned in out, plus the metadata a door words its reply
+from. No undo, no gates, no message types.
 
 - :func:`draw_canvas` — the ONE renderer of a section at a placement on its
   millimetre-true canvas (:func:`langslice.core.canvas.physical_views`),
@@ -15,12 +16,10 @@ door words its reply from. No undo, no gates, no message types.
 - :func:`stored_placement` — a section's stored in-plane transform as a
   drawable map; :func:`current_warp` — its applied deformation, when it
   still sits on its placement.
-- :func:`placement_pictures` — one section-position pair in a placement mode
-  (:data:`PLACEMENT_MODES`): the physical canvas under the complete current
-  registration, the stacked picture, or the two separate references.
-- :func:`stage` / :class:`Staged` / :func:`staged_views` — the interactive
-  transform's section, its calibrated canvas and the resolved pivot, and its
-  pictures at any knobs or matrix.
+- :func:`placement_pictures` — one section at one position on the physical
+  canvas, under its complete current registration.
+- :func:`stage` / :class:`Staged` — the interactive transform's section, its
+  calibrated canvas and the resolved pivot.
 """
 
 from __future__ import annotations
@@ -35,31 +34,24 @@ from PIL import Image
 
 from langslice.core.affine import denormalized_affine, physical_affine_matrix
 from langslice.core.canvas import (
-    VIEW_MODES,
     CanvasGeometry,
     PanelFrame,
     canvas_geometry,
     physical_views,
     pivot_on_canvas,
 )
-from langslice.core.captions import caption
 from langslice.core.display import (
     MODE_RULES,
     DisplayOptions,
-    atlas_caption,
     atlas_image_picture,
-    framed_atlas,
 )
 from langslice.core.layers import note
-from langslice.core.pictures import reference_atlas_picture, reference_section_picture
-from langslice.core.scale import pair_scale, reference_scale, section_at
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
     render_slice,
     rescale_section_matrix,
     shown_section,
 )
-from langslice.core.sheets import stacked
 from langslice.core.space import Plane
 from langslice.core.state import IDENTITY_KNOBS, SliceState, StackState
 from langslice.core.transform import calibrate
@@ -67,16 +59,9 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-#: Placement pictures (``view_placement``, ``set_positions``): the physical
-#: views plus ``stacked`` — the section over the atlas, each tissue-framed,
-#: both at one micrometres per pixel.
-PLACEMENT_MODES = ("template", "stacked", *[m for m in VIEW_MODES if m != "template"])
-#: Placement modes whose pictures are tissue-framed rather than drawn on the
-#: physical canvas (no zoom, no stored placement drawn).
-FRAMED_PLACEMENT_MODES = ("stacked", "side_by_side")
 #: Placement modes that draw the section under its stored placement, where an
-#: applied deformation can be drawn too.
-WARPED_PLACEMENT_MODES = ("overlay", "checkerboard", "outlines", "section")
+#: applied deformation can be drawn too (``template`` draws the atlas alone).
+WARPED_PLACEMENT_MODES = ("overlay", "section")
 
 
 # --- the physical canvas --------------------------------------------------------
@@ -153,7 +138,6 @@ def draw_canvas(
     long_edge: int | None = None,
     matrix_label: str = "fitted matrix",
     warp: Any = None,
-    left: np.ndarray | None = None,
 ) -> Canvas:
     """The physical canvas pictures of one section at one placement.
 
@@ -163,12 +147,9 @@ def draw_canvas(
     included, comes out at *long_edge* (None: ``options.long_edge``)
     unless the section's working copy has fewer pixels, with a matrix and
     the pivot carried onto it. The one renderer of every placement
-    picture: `view_placement`, `set_positions`, `adjust_transforms` and
-    `fit_affine` all draw through here. *warp* (a `DeformableRecord` on
-    this placement) resamples the section into its placed-atlas frame
-    first, so the picture shows the full registration: linear placement
-    plus deformation. *left* is a fit's own side split for one-sided
-    regions (:class:`~langslice.core.transform.FitFrame`).
+    picture. *warp* (a `DeformableRecord` on this placement) resamples the
+    section into its placed-atlas frame first, so the picture shows the full
+    registration: linear placement plus deformation.
     """
     edge = int(long_edge or options.long_edge)
     window: list[float] = []
@@ -181,7 +162,7 @@ def draw_canvas(
             ws, state, record, section, um_per_px, position, params,
             replace(options, zoom=()), mode=mode, pivot=pivot,
             section_offset=section_offset, label=label, long_edge=long_edge,
-            matrix_label=matrix_label, warp=warp, left=left,
+            matrix_label=matrix_label, warp=warp,
         )
         x0, y0, x1, y1 = whole.panels[0].content_box
         window = options.window((x1 - x0, y1 - y0))
@@ -218,7 +199,7 @@ def draw_canvas(
         shown = warp_section_image(shown, warp)
     panels: list[PanelFrame] = []
     drawn_mode = mode or options.mode
-    images, _iou = physical_views(
+    images = physical_views(
         shown, shown_um, ws.atlas, position, cast(Plane, state.plane),
         record.pitch_deg, record.yaw_deg, params,
         mode=drawn_mode, zoom=window, zoom_pixels=options.zoom,
@@ -229,8 +210,7 @@ def draw_canvas(
         atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position,
                                           angles=record.angles),
         atlas_name=options.atlas_name(), regions=options.regions,
-        matrix_label=matrix_label, template_lines=options.borders, left=left,
-        panel_frames=panels,
+        matrix_label=matrix_label, template_lines=options.borders, panel_frames=panels,
     )
     applied = (record.deformation or {}).get("record") if warp is not None else None
     for image, panel in zip(images, panels, strict=True):
@@ -271,18 +251,12 @@ def current_warp(store: Any, state: StackState, record: SliceState) -> Any:
 
 @dataclass
 class Placed:
-    """One section-position pair's pictures, in the call's placement mode.
-
-    ``separate`` (mode ``side_by_side``): ``images`` is ``[section, atlas]``,
-    two independently tissue-framed references, the section's shared by
-    every pair of the same id. ``canvas``: the physical canvas, when the mode
-    draws one. ``row``: the pair's facts (calibration, the transform drawn,
-    whether a deformation was drawn).
-    """
+    """One section-position pair's pictures on the physical canvas
+    (``canvas``). ``row``: the pair's facts (calibration, the transform
+    drawn, whether a deformation was drawn)."""
 
     images: list[Image.Image]
     row: dict[str, Any]
-    separate: bool = False
     canvas: Canvas | None = None
 
 
@@ -300,16 +274,11 @@ def placement_pictures(
     *,
     store: Any = None,
 ) -> Placed:
-    """One section-position pair's pictures.
-
-    ``side_by_side``: separate tissue-framed references, the section and the
-    atlas (the doors map them by index), at one scale for every position
-    (:func:`langslice.core.scale.reference_scale`). ``stacked``: one image,
-    the framed section over the framed atlas at one scale
-    (:func:`langslice.core.scale.pair_scale`). Every other mode: the physical canvas, the
-    section under its complete current registration — the stored in-plane
-    transform (identity when it has none) and, at the position it was fitted
-    at, the applied deformation from *store* (unless ``view.deformation`` is
+    """One section-position pair's pictures: the physical canvas in the
+    options' mode (:data:`langslice.core.canvas.VIEW_MODES`), the section
+    under its complete current registration — the stored in-plane transform
+    (identity when it has none) and, at the position it was fitted at, the
+    applied deformation from *store* (unless the options' ``deformation`` is
     ``none``). *working* caches each section's working frame for the call.
     """
     if record.id not in working:
@@ -317,45 +286,6 @@ def placement_pictures(
         working[record.id] = (section, *calibrate(state, ws, record, section))
     section, um_per_px, source = working[record.id]
     row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
-    default_atlas = options.atlas_images == ("template",) and not options.lines
-    if options.mode == "side_by_side":
-        # Both at one scale, the same for every position, so the one section
-        # picture of a call reads true against each of its atlases.
-        scale = reference_scale(ws, state, record, options.long_edge, um_per_px=um_per_px)
-        atlas_image = (
-            reference_atlas_picture(ws, state, position, long_edge=options.long_edge,
-                                    angles=record.angles, um_per_px=scale[0])
-            if default_atlas else caption(
-                framed_atlas(ws, state, position, options, um_per_px=scale[0],
-                             angles=record.angles),
-                atlas_caption(state, position, options, angles=record.angles),
-            )
-        )
-        tissue_image = reference_section_picture(
-            ws, record, long_edge=options.long_edge, look=options.look(state, record),
-            scale=scale,
-        )
-        note(tissue_image, sections=(record.id,), mode="side_by_side",
-             extra={"panel": "section"})
-        note(atlas_image, sections=(record.id,), mode="side_by_side",
-             extra={"panel": "atlas", "position_mm": float(position)})
-        return Placed(images=[tissue_image, atlas_image], row=row, separate=True)
-    if options.mode == "stacked":
-        # One picture, the section over the atlas at one scale (the larger
-        # of the two at the call's size), as in `view_stack`.
-        shown, working_um = pair_scale(ws, state, record, position, options.long_edge,
-                                       um_per_px=um_per_px)
-        picture = stacked(
-            section_at(ws, record, shown, working_um=working_um, long_edge=options.long_edge,
-                       look=options.look(state, record)),
-            framed_atlas(ws, state, position, options, um_per_px=shown, angles=record.angles),
-        )
-        name = options.atlas_name()
-        return Placed(images=[note(caption(
-            picture, f"{record.id}{options.section_tag(state)} above atlas {position:.2f} mm"
-            + ("" if name == "template" else f" ({name})"),
-        ), sections=(record.id,), mode="stacked", extra={"position_mm": float(position)})],
-            row=row)
     params, kind = stored_placement(record, section)
     # The section under its full placement: the stored warp too, at the
     # position it was fitted at (the atlas-only view needs no section).
@@ -485,99 +415,3 @@ def stage(
         pivot_frac=[round(centre[0] / width, 4), round(centre[1] / height, 4)],
         pivot_mode=mode,
     )
-
-
-def staged_views(
-    ws: Workspace,
-    state: StackState,
-    staged: Staged,
-    params: dict[str, float] | np.ndarray,
-    options: DisplayOptions,
-    *,
-    mode: str,
-    pivot: tuple[float, float] | None,
-    label: str = "",
-) -> Canvas:
-    """One staged section's canvas pictures at *params* (knobs or a 2x3 on
-    its working frame) about *pivot* (canvas pixels)."""
-    return draw_canvas(
-        ws, state, staged.record, staged.section, staged.um_per_px,
-        float(staged.record.position_mm or 0.0), params, options,
-        mode=mode, pivot=pivot, section_offset=staged.geometry.section_offset,
-        label=label,
-    )
-
-
-# --- the transform tools' pictures -------------------------------------------------
-
-
-def fit_picture(
-    ws: Workspace, state: StackState, record: SliceState, frame: Any, options: DisplayOptions,
-) -> list[Image.Image]:
-    """A fitted section under its new transform (``fit_affine``'s picture).
-
-    Drawn from the fit's working frame and matrix (*frame*, a
-    :class:`~langslice.core.transform.FitFrame`). One-sided regions are
-    highlighted with the sides the fit resolved (``frame.left``), so the
-    picture shows what the fit used even after a large turn.
-    """
-    return draw_canvas(
-        ws, state, record, frame.section, frame.um_per_px,
-        float(record.position_mm or 0.0), frame.matrix, options, label=record.id,
-        left=frame.left,
-    ).images
-
-
-def ab_reference(
-    staged: Staged, previous: dict[str, Any] | None,
-) -> tuple[Any, tuple[float, float] | None]:
-    """What an ``ab`` picture's B side draws: ``(params, pivot)``.
-
-    The six numbers the section carried before the call, when it had them:
-    they are the exact map, where the knobs (shear included) are rounded.
-    Knobs alone are drawn as given, about their stored pivot; no transform
-    at all is identity.
-    """
-    stored = (previous or {}).get("physical")
-    before = (previous or {}).get("params")
-    other: Any = dict(IDENTITY_KNOBS)
-    if before is not None and len(before) == 6:
-        other = denormalized_affine(before, staged.section.size)
-    elif isinstance(stored, dict):
-        other = {key: float(stored[key]) for key in IDENTITY_KNOBS}
-        if stored.get("shear"):
-            other["shear"] = float(stored["shear"])
-    other_pivot = staged.pivot
-    if isinstance(stored, dict) and stored.get("pivot"):
-        fractions = [float(value) for value in stored["pivot"]]
-        other_pivot = (
-            fractions[0] * staged.geometry.size[0],
-            fractions[1] * staged.geometry.size[1],
-        )
-    return other, other_pivot
-
-
-def transform_views(
-    ws: Workspace, state: StackState, staged: Staged, options: DisplayOptions,
-    previous: dict[str, Any] | None,
-) -> list[Image.Image]:
-    """``adjust_transforms``'s pictures of one staged section.
-
-    Mode ``ab``: two overlays at the same crop, the staged knobs (labelled
-    "candidate") then what the section carried before the call, *previous*
-    (labelled "stored"; "identity" when it had none, :func:`ab_reference`).
-    Any other mode: the staged knobs in that mode.
-    """
-    record = staged.record
-    if options.mode != "ab":
-        return staged_views(ws, state, staged, staged.params, options, mode=options.mode,
-                            pivot=staged.pivot).images
-    other, other_pivot = ab_reference(staged, previous)
-    held = previous is not None
-    return staged_views(
-        ws, state, staged, staged.params, options, mode="overlay", pivot=staged.pivot,
-        label=f"{record.id} candidate",
-    ).images + staged_views(
-        ws, state, staged, other, options, mode="overlay", pivot=other_pivot,
-        label=f"{record.id} {'stored' if held else 'identity'}",
-    ).images

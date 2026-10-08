@@ -22,7 +22,7 @@ def test_spec_round_trips_through_dict():
     spec = JobSpec(
         image_folder="/tmp/x",
         tasks=["position"],
-        position=PositionSpec(interval_um=300, strict_interval=True, bayesian=True),
+        position=PositionSpec(interval_um=300, strict_interval=True),
         transform=TransformSpec(
             angles=True, flip=False, hemisphere_cue="notch on the left"
         ),

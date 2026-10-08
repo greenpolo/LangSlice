@@ -13,8 +13,7 @@ from __future__ import annotations
 
 from langslice.core.media_keys import (
     MEDIA_LAYOUT_ATTR,
-    TOOL_MEDIA_DELIVERY_ID_KEY,
     TOOL_MEDIA_PARTS_KEY,
 )
 
-__all__ = ["MEDIA_LAYOUT_ATTR", "TOOL_MEDIA_DELIVERY_ID_KEY", "TOOL_MEDIA_PARTS_KEY"]
+__all__ = ["MEDIA_LAYOUT_ATTR", "TOOL_MEDIA_PARTS_KEY"]

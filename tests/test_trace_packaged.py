@@ -245,15 +245,3 @@ def test_without_ants_nothing_is_asked_of_the_image_model(tmp_path, atlas, monke
         monkeypatch.setattr(ops_deformable, "ants_ready", lambda: True)
         traces.trace_borders(job, ctx, ID, image_model=stub.model, restrict_to=["NOPE"])
     assert unknown.value.code == "UNKNOWN_REGIONS" and stub.calls == []
-
-
-def test_the_older_form_starts_the_trace_alone(tmp_path, atlas):
-    """Given include / exclude (today's tool door), only the trace is started."""
-    job, ctx, stub = _job(tmp_path, atlas)
-    started = traces.trace_borders(job, ctx, ID, image_model=stub.model, include=(),
-                                   exclude=())
-    assert started.work is None
-    assert job.background.all() == []
-    assert job.settle_image_corrections()
-    assert job.state.slices[0].image_correction["status"] == "ok"
-    assert job.state.slices[0].deformation is None

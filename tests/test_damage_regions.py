@@ -203,29 +203,15 @@ def test_the_reply_picture_shows_the_marks_on_section_and_atlas(tmp_path: Path):
 # --- every fit path leaves the marked regions out -------------------------------------
 
 
-def test_fit_affine_leaves_the_marked_regions_out(tmp_path: Path):
+def test_a_marked_section_is_still_a_default_fit_target(tmp_path: Path):
     state, ctx, box = _box(tmp_path)
-    job = box.job
-    record = state.by_id(ID)
-    explicit = transforms.fit_affine(job, ctx, [record], method="silhouette", exclude=("R",))
-    by_hand = dict(record.transform)
-    job.undo()
-    record = state.by_id(ID)  # undo refills the state with new records
-    damage.mark_damage(job, ctx, ID, ["R"])
-    # The marked section is a default target now, and needs no regions in the call.
-    assert [r.id for r in transforms.fit_targets(job)] == [ID]
-    auto = transforms.fit_affine(job, ctx, [record], method="silhouette")
-    assert auto.rows[0]["status"] == "ok", auto.rows
-    assert record.transform["regions"] == {"include": [], "exclude": ["R"]}
-    assert record.transform["params"] == pytest.approx(by_hand["params"], abs=1e-12)
-    assert explicit.rows[0]["physical"] == auto.rows[0]["physical"]
-    # A note alone has nothing to leave out: the fit is the whole section's.
-    damage.mark_damage(job, ctx, ID, [])
-    record = state.by_id(ID)
-    record.damage_note = "torn"
-    assert [r.id for r in transforms.fit_targets(job)] == [ID]
-    whole = transforms.fit_affine(job, ctx, [record], method="silhouette")
-    assert whole.rows[0]["status"] == "ok" and "regions" not in whole.rows[0]
+    damage.mark_damage(box.job, ctx, ID, ["R"])
+    # The marked section needs no regions in the call: its marks are left out.
+    assert [r.id for r in transforms.fit_targets(box.job)] == [ID]
+    # A note alone has nothing to leave out.
+    damage.mark_damage(box.job, ctx, ID, [])
+    state.by_id(ID).damage_note = "torn"
+    assert [r.id for r in transforms.fit_targets(box.job)] == [ID]
 
 
 def test_the_elastix_fit_gets_the_marks_and_restrict_to(tmp_path: Path, monkeypatch):
@@ -240,12 +226,10 @@ def test_the_elastix_fit_gets_the_marks_and_restrict_to(tmp_path: Path, monkeypa
     monkeypatch.setattr(core_transform, "fit_elastix", spy)
     state, ctx, box = _box(tmp_path)
     damage.mark_damage(box.job, ctx, ID, ["R"])
-    record = state.by_id(ID)
-    transforms.fit_affine(box.job, ctx, [record])
-    transforms.fit_affine(box.job, ctx, [record], restrict_to=("L",))
-    transforms.fit_affine(box.job, ctx, [record], include=("C",))  # the older name
+    transforms.elastix_affine(box.job, ctx, [ID])
+    transforms.elastix_affine(box.job, ctx, [ID], restrict_to=["L"])
     assert [(call["include"], call["exclude"]) for call in seen] == [
-        ((), ("R",)), (("L",), ("R",)), (("C",), ("R",))]
+        ((), ("R",)), (("L",), ("R",))]
 
 
 def test_fit_deformable_leaves_the_marked_regions_out(tmp_path: Path, monkeypatch):
@@ -258,12 +242,12 @@ def test_fit_deformable_leaves_the_marked_regions_out(tmp_path: Path, monkeypatc
                         "calibration": {"section_um_per_px": 50.0, "source": "host"}}
     damage.mark_damage(box.job, ctx, ID, ["R"])
     choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                engine="elastix", stiffness="medium")
-    done = deformable.fit_deformable(box.job, ctx, [record], [choice], restrict_to=("L",))
+                                engine="ants", stiffness="medium")
+    done = deformable.fit_deformable(box.job, ctx, [record], choice, restrict_to=("L",))
     assert captured, done.rows
     assert tuple(captured[0].settings.exclude) == ("R",)
     assert tuple(captured[0].settings.structures) == ("L",)
-    deformable.fit_deformable(box.job, ctx, [record], [choice])
+    deformable.fit_deformable(box.job, ctx, [record], choice)
     assert tuple(captured[1].settings.exclude) == ("R",)
     assert tuple(captured[1].settings.structures) == ()
 
@@ -280,14 +264,18 @@ def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, mon
 
     monkeypatch.setattr(registration_tool, "start_correction", spy)
     monkeypatch.setattr(traces.handoff, "correction_fingerprint", lambda *_a: "fp")
+    monkeypatch.setattr(deformable, "refuse_without_ants", lambda: None)
     state, ctx, box = _box(tmp_path)
+    # The trace alone: no fit lands in the background here.
+    monkeypatch.setattr(box.job.background, "start",
+                        lambda *_a, **_k: SimpleNamespace(id="work-1"))
     damage.mark_damage(box.job, ctx, ID, ["R"])
     model = SimpleNamespace(provider="fake", model="fake", call=None)
     traces.trace_borders(box.job, ctx, ID, image_model=model)  # type: ignore[arg-type]
     traces.trace_borders(box.job, ctx, ID, image_model=model,  # type: ignore[arg-type]
-                         include=("L",), exclude=("C",))
+                         restrict_to=["L"])
     assert [(call["include"], call["exclude"]) for call in seen] == [
-        ((), ("R",)), (("L",), ("C", "R"))]
+        ((), ("R",)), (("L",), ("R",))]
     # A traced fit then reads the trace's exclusions along with the marks.
     held = state.by_id(ID).image_correction
-    assert held["exclude"] == ["C", "R"]
+    assert held["exclude"] == ["R"]

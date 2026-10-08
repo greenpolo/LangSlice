@@ -1,37 +1,31 @@
-"""Picture options: ONE argument, ``view``, the same on every tool that returns a picture.
+"""Picture options and the tissue-framed renderers.
 
-``view`` is a dict (:class:`langslice.doors.tools.arguments.View`) with these keys,
-validated once by the tool door (:func:`langslice.doors.tools.view_options.parse_view`)
-into a :class:`DisplayOptions` and drawn by the shared renderers (the physical
-canvas in :func:`langslice.core.canvas.physical_views`, the tissue-framed
-pictures below):
+A :class:`DisplayOptions` is one picture's options, built by the core's own
+callers (``look``'s pictures, :mod:`langslice.core.look`; the fit, trace and
+damage pictures, :func:`default_options`) and drawn by the shared renderers
+(the physical canvas in :func:`langslice.core.canvas.physical_views`, the
+tissue-framed pictures below):
 
-- ``mode`` — per tool (its :class:`langslice.doors.tools.view_options.Profile`),
-  default per tool; :data:`MODE_RULES` says what each mode draws.
+- ``mode`` — :data:`MODE_RULES` says what each mode draws.
 - ``channels`` — what of the SECTION is shown: one or more raw channel names
   (each stretched by percentile; one is gray, several are added in distinct
-  colours, ABBA's multichannel display), or ONE version:
-  ``view`` (the agent's own appearance, the default) or ``fit`` (what
-  registration reads). Raw channels and a version cannot be mixed.
+  colours, ABBA's multichannel display), or the version ``preprocessed``
+  (what registration reads); neither is the section's default render.
 - ``atlas_channels`` — what of the ATLAS is shown: any of ``template`` (the
   reference template), ``nissl`` (a Nissl template aligned to the Allen CCFv3,
   Allen mouse atlases only, :mod:`langslice.core.deformable.nissl`) and
   ``borders`` (the region lines).
   Images are drawn under the section at ``atlas_opacity`` (overlay modes) or
   as the atlas picture; two images are added in two colours. No ``borders``
-  means no lines. The defaults per mode reproduce the pictures each mode drew
-  before ``view`` existed.
+  means no lines.
 - ``atlas_opacity``, ``regions`` (one side allowed, ``"CTX:left"``),
   ``outlines`` (which lines ``borders`` draws: all or outer), ``border_color``,
   ``border_thickness``, ``zoom`` (``[x0, y0, x1, y1]`` pixels of the picture
   the same call returns unzoomed, top-left origin: :func:`zoom_fractions`),
-  ``deformation`` (placement pictures: draw the
-  applied warp, or ``none`` for the linear placement alone), ``resolution``
-  (only where the host's image resolution is "auto").
+  ``deformation`` (placement pictures: draw the applied warp, or ``none`` for
+  the linear placement alone).
 
-This module is the core half: the options record, the mode rules and the
-renderers. Options belong to one call: nothing here writes state (a
-section's appearance changes only through ``preprocess``).
+Options belong to one call: nothing here writes state.
 """
 
 from __future__ import annotations
@@ -39,7 +33,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 from PIL import Image
@@ -49,7 +43,6 @@ from langslice.core.appearance import (
     Look,
     channel_colors,
     preprocessed_settings,
-    section_settings,
 )
 from langslice.core.atlas.core import get_reference_slice
 from langslice.core.atlas.render import (
@@ -64,7 +57,7 @@ from langslice.core.canvas import (
     region_polys,
     regions_left,
 )
-from langslice.core.channels import all_properties, describe, describe_shown, with_properties
+from langslice.core.channels import all_properties, describe_shown, with_properties
 from langslice.core.image_prep import mask_box
 from langslice.core.sections import render_slice
 from langslice.core.sizes import PICTURE_EDGES
@@ -87,19 +80,12 @@ def canonical_atlas_name(name: str) -> str:
     the old name ``ara`` is accepted (call arguments, saved jobs and settings)."""
     return _ATLAS_NAME_ALIASES.get(name, name)
 
-#: The preprocessed versions of a section a picture may show.
-VERSIONS: tuple[str, ...] = ("view", "fit")
-#: ``outlines``: every family boundary, or the outer contour alone.
-OUTLINE_CHOICES: tuple[str, ...] = ("all", "outer")
-#: ``deformation``: draw the applied warp, or the linear placement alone.
-DEFORMATION_CHOICES: tuple[str, ...] = ("applied", "none")
 #: Raw channels one overlay may add up.
 MAX_OVERLAY_CHANNELS = 6
 #: Atlas image opacity in an overlay when the call lists an image but no opacity.
 DEFAULT_ATLAS_OPACITY = 0.5
 #: Region line width in output pixels, everywhere.
 DEFAULT_BORDER_THICKNESS = 1.0
-DEFAULT_BORDER_COLOR = "yellow"
 #: Intensity percentile mapped to white when a Nissl plane is shown.
 NISSL_PERCENTILE = 99.5
 
@@ -125,35 +111,26 @@ def zoom_fractions(zoom: tuple[float, ...] | list[float],
 
 @dataclass(frozen=True)
 class ModeRule:
-    """What one mode draws, and so which ``view`` keys mean something in it."""
+    """What one mode draws."""
 
     #: A section is drawn (``channels`` applies).
     section: bool
     #: Something of the atlas is drawn (the atlas keys apply).
     atlas: bool
-    #: ``atlas_channels`` when the call gives none.
+    #: ``atlas_channels`` when the caller gives none.
     atlas_default: tuple[str, ...] = ()
     #: The atlas images are blended under the section (``atlas_opacity`` applies).
     opacity: bool = False
-    #: The mode cannot draw without an atlas image (template or nissl).
-    needs_image: bool = False
-    #: The mode cannot draw without some atlas channel.
-    needs_atlas: bool = False
 
 
-#: Every mode a picture tool has, by name.
+#: Every picture mode, by name: ``look``'s (``section``, ``template`` for
+#: ``atlas``, ``overlay``, ``stacked`` for ``positioning``) and ``borders``
+#: (a deformable fit or trace picture).
 MODE_RULES: dict[str, ModeRule] = {
     "section": ModeRule(section=True, atlas=False),
-    "channels": ModeRule(section=True, atlas=False),
-    "template": ModeRule(section=False, atlas=True, atlas_default=("template",), needs_atlas=True),
-    "stacked": ModeRule(section=True, atlas=True, atlas_default=("template",), needs_atlas=True),
-    "side_by_side": ModeRule(section=True, atlas=True, atlas_default=("template", "borders"),
-                             needs_atlas=True),
+    "template": ModeRule(section=False, atlas=True, atlas_default=("template",)),
+    "stacked": ModeRule(section=True, atlas=True, atlas_default=("template",)),
     "overlay": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
-    "ab": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
-    "checkerboard": ModeRule(section=True, atlas=True, atlas_default=("template", "borders"),
-                             needs_image=True),
-    "outlines": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
     "borders": ModeRule(section=True, atlas=True, atlas_default=("borders",), opacity=True),
 }
 
@@ -166,9 +143,9 @@ class DisplayOptions:
     #: ``[x0, y0, x1, y1]`` pixels of the unzoomed picture (:func:`zoom_fractions`);
     #: empty is the whole picture.
     zoom: tuple[float, ...]
-    #: Raw channel names shown (empty when a version is shown).
+    #: Raw channel names shown (empty: the default render, or the version).
     channels: tuple[str, ...]
-    #: ``view`` or ``fit`` (empty when raw channels are shown).
+    #: ``preprocessed`` (or its older name ``fit``), or empty.
     version: str
     atlas_channels: tuple[str, ...]
     atlas_opacity: float
@@ -185,22 +162,6 @@ class DisplayOptions:
     #: Long edge of each picture this call returns
     #: (:func:`langslice.core.sizes.picture_edge`).
     long_edge: int = PICTURE_EDGES["low"][1]
-    #: The clamped ``resolution`` the agent asked for ("auto" only; None when
-    #: it asked for none). A contact sheet sizes its tiles by it.
-    resolution: int | None = None
-    #: Whether the run's level is "auto" (the payload then echoes the size).
-    auto: bool = False
-    #: Why the asked resolution was changed ("" when it was not).
-    resolution_note: str = ""
-    #: The keys the call gave (the echo reports what applied, not defaults
-    #: that mean nothing in this mode).
-    given: frozenset[str] = frozenset()
-    #: Whether this tool takes ``deformation``.
-    has_deformation: bool = False
-    #: Whether ``channels`` picks what this tool shows of the section. Not for
-    #: ``preprocess`` (a target's appearance) or ``fit_deformable`` (the image
-    #: the fit read): their echo names no channels or version.
-    channels_apply: bool = True
 
     @property
     def full_view(self) -> bool:
@@ -232,13 +193,14 @@ class DisplayOptions:
         return self.borders or bool(self.regions)
 
     def look(self, state: StackState, record: SliceState) -> Look:
-        """The look a picture of *record* is drawn in: the version ``fit``
-        (or ``preprocessed``) is the preprocessed channel, ``view`` the view
-        look; raw channels carry their display properties."""
+        """The look a picture of *record* is drawn in: the version
+        ``preprocessed`` (or ``fit``) is the preprocessed channel, no channels
+        the default render (None); raw channels carry their display
+        properties."""
         if self.version in ("fit", PREPROCESSED):
             return preprocessed_settings(state, record.id)
-        if self.version or not self.channels:
-            return section_settings(state, "view", record.id)
+        if not self.channels:
+            return None
         # One channel is stretched too, in gray (the `channels` strip is the
         # unmodified picture).
         return with_properties(state, {"overlay": list(self.channels)})
@@ -257,11 +219,11 @@ class DisplayOptions:
 
     def section_tag(self, state: StackState | None = None) -> str:
         """Caption fragment naming what of the section is shown ("" for the
-        view version); with *state*, the display properties of the raw
+        default render); with *state*, the display properties of the raw
         channels shown (:func:`langslice.core.channels.describe`)."""
         if self.version in ("fit", PREPROCESSED):
             return "  [fit appearance]"
-        if self.version or not self.channels:
+        if not self.channels:
             return ""
         shown = describe_shown(state, self.channels) if state is not None else ""
         extra = f"; {shown}" if shown else ""
@@ -282,41 +244,6 @@ class DisplayOptions:
             return images[0]
         return " + ".join(f"{kind} {word}" for kind, word, _rgb in channel_colors(images))
 
-    def echo(self) -> dict[str, Any]:
-        """The options as a payload's ``view`` field: what this call drew."""
-        rule = MODE_RULES[self.mode]
-        out: dict[str, Any] = {"mode": self.mode}
-        if rule.section and self.channels_apply:
-            out["channels"] = [self.version] if self.version else list(self.channels)
-            colors = self.channel_colors()
-            if colors:
-                out["channel_colors"] = colors
-        if rule.atlas:
-            out["atlas_channels"] = list(self.atlas_channels)
-            if len(self.atlas_images) > 1:
-                out["atlas_colors"] = {kind: word for kind, word, _rgb
-                                       in channel_colors(self.atlas_images)}
-            if rule.opacity and self.atlas_images:
-                out["atlas_opacity"] = self.atlas_opacity
-            if self.regions:
-                out["regions"] = [name for name, _ids in self.regions]
-            if self.borders:
-                out["outlines"] = self.outlines
-            if self.lines:
-                out["border_color"] = self.border_color
-                out["border_thickness"] = self.border_thickness
-        out["zoom"] = list(self.zoom)
-        if self.has_deformation:
-            out["deformation"] = self.deformation
-        # The size is the agent's to choose only at "auto"; any other level
-        # keeps it out of model-facing text.
-        if self.auto:
-            out["resolution"] = self.resolution or self.long_edge
-        if self.resolution_note:
-            out["resolution_note"] = self.resolution_note
-        return out
-
-
 def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
     """The atlas channels this host can draw."""
     return ATLAS_CHANNELS if ctx.nissl_atlas is not None else ("template", "borders")
@@ -329,7 +256,7 @@ def default_options(
     """The options a picture uses when called with none (internal callers)."""
     rule = MODE_RULES[mode]
     return DisplayOptions(
-        mode=mode, zoom=(), channels=(), version="view",
+        mode=mode, zoom=(), channels=(), version="",
         atlas_channels=rule.atlas_default if atlas_channels is None else atlas_channels,
         atlas_opacity=0.0, regions=(), outlines="all", border_color="#ffff00",
         border_thickness=DEFAULT_BORDER_THICKNESS, long_edge=long_edge,
@@ -453,35 +380,6 @@ def framed_section(
     return _crop_fraction(larger, tuple(window))
 
 
-def channel_strip(
-    ctx: Workspace, state: StackState, record: SliceState, options: DisplayOptions,
-    *, tile_edge: int,
-) -> tuple[Image.Image, list[str]]:
-    """One section's raw channels side by side, each labelled.
-
-    Every tile is the same tissue frame as the section's other pictures, one
-    raw plane in grayscale exactly as read (no stretch, no enhancement), at
-    *tile_edge* at most; a channel with display properties is drawn and
-    labelled with them (:mod:`langslice.core.channels`). Returns the strip
-    and the channel names in order.
-    """
-    from langslice.core.captions import caption
-    from langslice.core.sheets import beside
-
-    names, _planes = ctx.section_channels(record.id)
-    held = all_properties(state)
-    strip: Image.Image | None = None
-    for name in names:
-        tile = caption(
-            framed_section(ctx, state, record, options, long_edge=tile_edge,
-                           look=with_properties(state, {"channel": name})),
-            describe(name, held.get(name)),
-        )
-        strip = tile if strip is None else beside(strip, tile)
-    assert strip is not None
-    return strip, list(names)
-
-
 def framed_atlas(
     ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
     *, long_edge: int | None = None, um_per_px: float | None = None,
@@ -490,14 +388,14 @@ def framed_atlas(
     """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
 
     At *angles*: a section's own for a picture beside that section, the
-    stack's view angles for ``view_atlas``; None, the stack's one angle.
+    stack's view angles for a picture without a section; None, the stack's
+    one angle.
 
     At most *long_edge* (None: ``options.long_edge``) and never upsampled
     past the plane's own voxels, unless *um_per_px*: then drawn at exactly
     that many micrometres per pixel, lines included, for a picture that puts
     the atlas beside a section drawn at the same scale
-    (:mod:`langslice.core.scale`). With ``template`` alone (no lines, no regions,
-    no zoom) and no *um_per_px* this is the picture ``view_atlas`` always sent.
+    (:mod:`langslice.core.scale`).
     """
     from langslice.core.atlas.render import atlas_um_per_px
     from langslice.core.atlas_fetch import atlas_mask, atlas_section, atlas_sized
@@ -567,12 +465,13 @@ def framed_atlas(
 
 
 def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions,
-                  *, angles: Angles | None = None) -> str:
+                  *, angles: Angles | None = None, median: bool = False) -> str:
     """The label burned into an atlas picture drawn at *angles* (the stack's
-    when None)."""
-    from langslice.core.captions import angles_label
+    when None); *median*: drawn at the median of differing sections' angles,
+    which the label says (:func:`langslice.core.captions.view_angles_label`)."""
+    from langslice.core.captions import view_angles_label
 
-    shown = angles_label(plane_angles(state, angles))
+    shown = view_angles_label(plane_angles(state, angles), median=median)
     name = options.atlas_name()
     extra = "" if name == "template" else f" {name}"
     if options.borders and options.outlines == "outer":
@@ -584,6 +483,6 @@ def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions
 
 __all__ = [
     "ATLAS_CHANNELS", "DisplayOptions", "canonical_atlas_name", "MODE_RULES",
-    "atlas_caption", "atlas_image_picture", "available_atlas_channels", "channel_strip",
+    "atlas_caption", "atlas_image_picture", "available_atlas_channels",
     "default_options", "framed_atlas", "framed_section", "regions_in_plane",
 ]

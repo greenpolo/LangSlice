@@ -61,8 +61,7 @@ takes every `langslice linear run` flag (`--tasks`, `--interval`, `--atlas`,
 the host names over, a saved job included. Put them in `args`.
 
 The Nonlinear task (`--tasks ...,nonlinear`) works through this connector:
-its fitting tools (`fit_deformable`, including `keep_linear`, and
-`grep_atlas`) are always offered with it. The image-model tool
+its fitting tool (`ants_syn`) is always offered with it. The image-model tool
 (`trace_borders`) is offered only when the job's image provider is not
 `none` and its key or login is present on this machine (`langslice login`,
 or a saved or environment API key); otherwise it is simply not listed, and

@@ -38,7 +38,7 @@ public final class ConnectorSmokeTest {
         "elif m=='linear.run':",
         " data({'kind':'checkpoint','initial':True,'host_updates':[],'updates_since_start':[]})",
         " data({'kind':'log','message':'agent started'})",
-        " data({'kind':'agent_event','event':{'kind':'tool_start','name':'view_slices','target_ids':['a']}})",
+        " data({'kind':'agent_event','event':{'kind':'tool_start','name':'look','target_ids':['a']}})",
         " data({'kind':'checkpoint','initial':False,'host_updates':[{'id':'a','position_mm':1}],'host_angles':{'pitch_deg':2.0,'yaw_deg':-1.0},'updates_since_start':[{'id':'a','position_mm':1}]})",
         " if p.get('stall'):",
         "  data({'kind':'checkpoint','initial':False,'host_updates':[{'id':'a','position_mm':2}],'updates_since_start':[{'id':'a','position_mm':2}]})",
@@ -174,7 +174,7 @@ public final class ConnectorSmokeTest {
         require(progress.lines.contains("agent started") && progress.lines.stream().anyMatch(l -> l.contains("Saved steps: 1") && l.contains("live in ABBA")),
                 "Run log and live status reach the window");
         require(heard.stream().filter(m -> m.contains("\"kind\":\"checkpoint\"")).count() == 2, "Both checkpoints reach listeners");
-        require(heard.stream().anyMatch(m -> m.contains("\"kind\":\"agent_event\"") && m.contains("view_slices")), "Agent events reach listeners");
+        require(heard.stream().anyMatch(m -> m.contains("\"kind\":\"agent_event\"") && m.contains("\"look\"")), "Agent events reach listeners");
 
         // A stop ends the run; checkpoints before it were already applied live.
         JsonObject stall = new JsonObject(); stall.addProperty("stall", true);
@@ -223,7 +223,7 @@ public final class ConnectorSmokeTest {
             require(host.viewerAvailable(), "Viewer offered while a listener is registered");
         } finally { LangSliceEvents.removeListener(broken); LangSliceEvents.removeListener(good); }
         require(!LangSliceEvents.hasListeners(), "Listeners can be removed");
-        JsonObject refused = JsonParser.parseString("{\"kind\":\"tool_end\",\"name\":\"fit_affine\",\"response\":{\"status\":\"error\","
+        JsonObject refused = JsonParser.parseString("{\"kind\":\"tool_end\",\"name\":\"elastix_affine\",\"response\":{\"status\":\"error\","
                 + "\"error\":\"LOCKED\",\"message\":\"s1 is locked\"}}").getAsJsonObject();
         require(AgentRunner.agentText(refused).equals("\ns1 is locked\n"), "A failing tool's reason reaches the run log (both modes)");
         refused.addProperty("kind", "tool_result");

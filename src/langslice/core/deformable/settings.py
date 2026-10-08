@@ -67,14 +67,6 @@ class AntsStiffness:
     total_sigma_mm: float
 
 
-@dataclass(frozen=True)
-class ElastixStiffness:
-    """B-spline control-point spacing and bending-energy weight."""
-
-    grid_spacing_mm: float
-    bending_weight: float
-
-
 #: Soft lets a region bend at roughly the scale of a large nucleus; firm keeps
 #: the residual to smooth, larger-scale shape change.
 ANTS_STIFFNESS: dict[str, AntsStiffness] = {
@@ -82,17 +74,6 @@ ANTS_STIFFNESS: dict[str, AntsStiffness] = {
     "medium": AntsStiffness(update_sigma_mm=0.08, total_sigma_mm=0.02),
     "firm": AntsStiffness(update_sigma_mm=0.12, total_sigma_mm=0.04),
 }
-ELASTIX_STIFFNESS: dict[str, ElastixStiffness] = {
-    "soft": ElastixStiffness(grid_spacing_mm=0.25, bending_weight=0.01),
-    "medium": ElastixStiffness(grid_spacing_mm=0.4, bending_weight=0.05),
-    "firm": ElastixStiffness(grid_spacing_mm=0.6, bending_weight=0.2),
-}
-#: Mean squares on soft line images is orders of magnitude smaller than mutual
-#: information, so the same bending weight would freeze the fit. The penalty
-#: is scaled by this factor whenever the metric is mean squares.
-ELASTIX_MEAN_SQUARES_BENDING_SCALE = 0.02
-
-
 @dataclass(frozen=True)
 class DetailLevel:
     """Working resolution and optimization effort.
@@ -104,15 +85,11 @@ class DetailLevel:
 
     working_um: float
     ants_iterations: tuple[int, ...]
-    elastix_resolutions: int
-    elastix_iterations: int
 
 
 DETAIL: dict[str, DetailLevel] = {
-    "coarse": DetailLevel(working_um=40.0, ants_iterations=(80, 50, 25),
-                          elastix_resolutions=2, elastix_iterations=300),
-    "standard": DetailLevel(working_um=20.0, ants_iterations=(100, 70, 50, 25),
-                            elastix_resolutions=3, elastix_iterations=500),
+    "coarse": DetailLevel(working_um=40.0, ants_iterations=(80, 50, 25)),
+    "standard": DetailLevel(working_um=20.0, ants_iterations=(100, 70, 50, 25)),
 }
 #: ANTs halves the grid at each level before the last (shrink factors
 #: 2^(n-1)..1, smoothing n-1..0 voxels): the extra coarse levels are what give
@@ -256,27 +233,3 @@ def metric_for(
     if stain_metric == "mutual_information":
         return "mutual_information"
     return "local_correlation" if engine == "ants" else ELASTIX_STAIN_METRIC
-
-
-def traced_settings(
-    engine: Engine | None = None, *, stiffness: Stiffness = "medium",
-    detail: Detail = "standard",
-) -> FitSettings:
-    """The recommended fit of the image model's traced lines (route B).
-
-    What the linear agent's ``fit_deformable`` recommends with a completed
-    trace (``traced_borders`` + ANTs + medium): with ANTs, the lines turned
-    into named regions against the placed colour-family regions
-    (``labels="model"``) next to the lines against the family borders; with
-    Elastix (no label channels), the lines against the family borders alone
-    (``traced_lines``). *engine* None picks ANTs when antspyx is installed
-    (the ``registration`` extra), else Elastix (a core dependency).
-    """
-    if engine is None:
-        import importlib.util
-
-        engine = "ants" if importlib.util.find_spec("ants") is not None else "elastix"
-    return FitSettings(
-        engine=engine, stiffness=stiffness, detail=detail, atlas_image="borders_merged",
-        section_image="lines", labels="model" if engine == "ants" else "none",
-    )

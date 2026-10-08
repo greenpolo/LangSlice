@@ -19,10 +19,8 @@ import numpy as np
 from PIL import Image, ImageColor
 
 from langslice.core.affine import (
-    extract_slice_silhouette,
     physical_affine_matrix,
     resize_long_edge,
-    silhouette_iou,
 )
 from langslice.core.atlas.core import get_reference_slice
 from langslice.core.atlas.render import (
@@ -124,24 +122,10 @@ def canvas_geometry(
     )
 
 
-#: How the ONE alignment screen may be composed. ``overlay`` is the default and
-#: what every earlier run saw.
-VIEW_MODES = ("overlay", "side_by_side", "checkerboard", "outlines", "section", "template")
-
-#: Which atlas lines a view draws: every family boundary, the root silhouette
-#: alone, or none at all.
-OUTLINE_LAYERS = ("all", "outer", "none")
-
-#: Tiles across the width of a ``checkerboard`` view.
-CHECKER_TILES = 8
-
-#: Landmark glyph colors (RGB): the section's point, its atlas point, the
-#: connector between them. Colored on purpose — a landmark is a click, not
-#: anatomy, and the atlas hairlines keep their one neutral grey.
-MARKER_SECTION = (80, 220, 255)
-MARKER_ATLAS = (255, 170, 60)
-MARKER_CONNECTOR = (170, 170, 170)
-
+#: How the ONE alignment screen may be composed: the section under its
+#: placement with the atlas over it (``overlay``, the default), the placed
+#: section alone (``section``) or the atlas image alone (``template``).
+VIEW_MODES = ("overlay", "section", "template")
 
 def _background_color(section: Image.Image) -> tuple[int, int, int]:
     """The section's own border color, so padding does not read as anatomy."""
@@ -180,11 +164,6 @@ def normalize_border_style(
     ):
         raise ValueError("border_thickness must be a number from 0.25 to 8 output pixels")
     return (rgb[0], rgb[1], rgb[2]), float(thickness)
-
-
-def _tissue_color(dark: bool) -> tuple[int, int, int]:
-    """Neutral grey for the section's silhouette, distinct from atlas borders."""
-    return (150, 150, 150) if dark else (140, 140, 140)
 
 
 def _draw_polys(
@@ -388,41 +367,6 @@ def _blend_template(
     ).astype(np.uint8)
 
 
-def template_canvas(
-    atlas: Any,
-    position_mm: float,
-    plane: Plane,
-    pitch_deg: float,
-    yaw_deg: float,
-    geometry: CanvasGeometry,
-) -> np.ndarray:
-    """The atlas template alone on a black canvas, RGB uint8, at the placement."""
-    plate = np.zeros((geometry.size[1], geometry.size[0], 3), dtype=np.uint8)
-    _blend_template(plate, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry, opacity=1.0)
-    return plate
-
-
-def atlas_mask_canvas(geometry: CanvasGeometry) -> np.ndarray:
-    """The atlas anatomy's silhouette on the canvas, as a uint8 0/255 mask.
-
-    The same placement the outlines are drawn at, so an overlap measured
-    against it is measured against the lines the model is looking at.
-    """
-    scale = geometry.atlas_scale
-    rows, cols = geometry.annotation.shape[:2]
-    resized = cv2.resize(
-        (geometry.annotation > 0).astype(np.uint8) * 255,
-        (max(1, round(cols * scale)), max(1, round(rows * scale))),
-        interpolation=cv2.INTER_NEAREST,
-    )
-    width, height = geometry.size
-    mask = np.zeros((height, width), dtype=np.uint8)
-    y0, x0, patch = _patch_window((height, width), resized, geometry.atlas_offset)
-    if patch.size:
-        mask[y0 : y0 + patch.shape[0], x0 : x0 + patch.shape[1]] = patch
-    return mask
-
-
 def zoom_box(zoom: list[float] | None, size: tuple[int, int]) -> tuple[int, int, int, int]:
     """``[x0, y0, x1, y1]`` fractions of the canvas as a pixel crop box.
 
@@ -462,15 +406,6 @@ def _to_screen(
     return np.asarray(image, dtype=np.uint8).copy(), factor
 
 
-def _checkerboard(a: np.ndarray, b: np.ndarray, tiles: int = CHECKER_TILES) -> np.ndarray:
-    """*a* and *b* in alternating tiles, *tiles* of them across the width."""
-    height, width = a.shape[:2]
-    size = max(1, int(np.ceil(width / float(tiles))))
-    ys, xs = np.mgrid[0:height, 0:width]
-    even = ((xs // size + ys // size) % 2 == 0)[..., None]
-    return np.where(even, a, b)
-
-
 def pivot_on_canvas(
     pivot: Any, section: Image.Image, geometry: CanvasGeometry
 ) -> tuple[float, float] | None:
@@ -503,69 +438,6 @@ def pivot_on_canvas(
     if len(values) != 2:
         raise ValueError("pivot fractions must be [fx, fy] of the canvas")
     return (values[0] * width, values[1] * height)
-
-
-def _draw_markers(
-    canvas: np.ndarray,
-    section_pts: np.ndarray,
-    atlas_pts: np.ndarray,
-    *,
-    origin: tuple[int, int] = (0, 0),
-    factor: float = 1.0,
-) -> None:
-    """Landmark pairs: a cross on each section point, a ring on its atlas point.
-
-    Two glyphs and two colors rather than two greys — these are the model's
-    own clicks, not anatomy, and they have to be findable against both the
-    tissue and the hairlines. A connector runs between the pair, and the pair's
-    1-based index is written by the cross so a glyph can be tied to the row in
-    the payload.
-    """
-    def screen(points: np.ndarray) -> np.ndarray:
-        return np.round(
-            (np.asarray(points, dtype=np.float64) - np.asarray(origin, dtype=np.float64))
-            * factor
-        ).astype(np.int32)
-
-    # Glyphs are drawn thicker than the atlas hairline on purpose: at the same
-    # weight they read as another contour instead of as a marker.
-    radius = max(6, round(min(canvas.shape[:2]) / 55))
-    weight = max(1, round(min(canvas.shape[:2]) / 350))
-    for index, (start, end) in enumerate(
-        zip(screen(section_pts), screen(atlas_pts), strict=True), start=1
-    ):
-        sx, sy = int(start[0]), int(start[1])
-        ax, ay = int(end[0]), int(end[1])
-        cv2.line(canvas, (sx, sy), (ax, ay), MARKER_CONNECTOR, 1, cv2.LINE_AA)
-        cv2.line(
-            canvas, (sx - radius, sy), (sx + radius, sy), MARKER_SECTION, weight, cv2.LINE_AA
-        )
-        cv2.line(
-            canvas, (sx, sy - radius), (sx, sy + radius), MARKER_SECTION, weight, cv2.LINE_AA
-        )
-        cv2.circle(canvas, (ax, ay), radius, MARKER_ATLAS, weight, cv2.LINE_AA)
-        cv2.putText(
-            canvas,
-            str(index),
-            (sx + radius + 3, sy - 3),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            MARKER_SECTION,
-            weight,
-            cv2.LINE_AA,
-        )
-
-
-def _silhouette_polys(mask: np.ndarray) -> list[np.ndarray]:
-    """Closed contours of the section's own tissue silhouette, in canvas px.
-
-    Traced by the same smoothed tracer the atlas lines come from: a raw
-    findContours boundary on speckled fluorescence is a stipple, and a
-    stippled line next to a smooth one reads as texture, not as an edge.
-    """
-    return region_contours(
-        (mask > 0).astype(np.int32), smooth_window=9, min_area_px=64.0
-    ).get(1, [])
 
 
 def placement_matrices(
@@ -650,10 +522,8 @@ def physical_views(
     outlines: str = "all",
     pad_to_fit_atlas: bool = True,
     pivot: tuple[float, float] | None = None,
-    markers: tuple[np.ndarray, np.ndarray] | None = None,
     label: str = "",
     long_edge: int | None = None,
-    frames: list[dict[str, Any]] | None = None,
     panel_frames: list[PanelFrame] | None = None,
     pivot_in_section: tuple[float, float] | None = None,
     atlas_picture: Image.Image | None = None,
@@ -661,21 +531,18 @@ def physical_views(
     regions: Any = (),
     matrix_label: str = "fitted matrix",
     template_lines: bool = False,
-    left: np.ndarray | None = None,
-) -> tuple[list[Image.Image], float]:
-    """The alignment screen in one of :data:`VIEW_MODES`, plus the overlap.
+) -> list[Image.Image]:
+    """The alignment screen in one of :data:`VIEW_MODES`.
 
-    One composition, several ways of showing it. Every view is built on the
-    SAME millimetre-true canvas (:func:`canvas_geometry`) and the same crop, so
-    a number read off one is the number on the others:
+    Every view is built on the SAME millimetre-true canvas
+    (:func:`canvas_geometry`) and the same crop, so a number read off one is
+    the number on the others:
 
     * ``overlay`` — the warped section with the atlas family outlines on it,
       and the atlas image blended under them at *atlas_opacity*.
-    * ``side_by_side`` — two images, the warped section and the atlas template,
-      at the same micrometres per pixel and the same crop, outlines on both.
-    * ``checkerboard`` — section and template in alternating tiles.
-    * ``outlines`` — the atlas lines and the section's own silhouette contour
-      in a second grey, on black. No pixels.
+    * ``section`` — the warped section alone, no lines.
+    * ``template`` — the atlas image alone; *template_lines* adds the
+      *outlines* layer to it.
 
     *zoom* is ``[x0, y0, x1, y1]`` in fractions of the CANVAS (the tools take
     pixels and convert, :func:`langslice.core.display.zoom_fractions`); the crop happens
@@ -687,35 +554,25 @@ def physical_views(
     *zoom_pixels* is the zoom as the caller gave it (pixels of the unzoomed
     picture), for the caption.
 
-    *outlines* picks which atlas lines are drawn (:data:`OUTLINE_LAYERS`):
-    every family boundary, the root silhouette alone, or none. *border_color*
+    *outlines* picks which atlas lines are drawn: every family boundary
+    (``all``), the root silhouette alone (``outer``), or none (``none``). *border_color*
     is a named color or #RRGGBB (default yellow); *border_thickness* is 0.25..8
     output-image pixels (default 0.5), unchanged by zoom or canvas resolution.
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
-    canvas centre), and *markers* is ``(section points, atlas points)`` in
-    canvas pixels, drawn on every panel as landmark pairs. *pivot_in_section*
-    gives the pivot on the SECTION's frame instead and wins over *pivot*: a
-    picture drawn from a larger render (:func:`shown_section`) knows its pivot
-    only relative to the section.
+    canvas centre). *pivot_in_section* gives the pivot on the SECTION's frame
+    instead and wins over *pivot*: a picture drawn from a larger render
+    (:func:`shown_section`) knows its pivot only relative to the section.
 
     *atlas_picture* is the atlas image on the native plane grid (None: the
     reference template), named *atlas_name* in captions. *regions*
     (``[(name, ids)]``) are drawn at full strength in every mode, the
     *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for context.
-    *matrix_label* names a ready matrix in the caption. ``template`` draws
-    the atlas image alone; *template_lines* adds the *outlines* layer to it.
-    *left* is the section's displayed left on the native plane as resolved
-    elsewhere (a fit's own split, :class:`langslice.core.transform.FitFrame`);
-    a one-sided region then uses it instead of resolving the sides through
-    this placement, which has none once it turns the midline past 45 degrees.
+    *matrix_label* names a ready matrix in the caption.
 
     *panel_frames*, when given, receives one :class:`PanelFrame` per image:
-    where its pixels sit, for the picture's layers.
-
-    Returns ``(images, silhouette_iou)`` — every image captioned, and the
-    overlap between the warped section's tissue mask and the atlas anatomy at
-    this placement.
+    where its pixels sit, for the picture's layers. Returns the images, each
+    captioned.
     """
     line_color, line_width = normalize_border_style(border_color, border_thickness)
     geometry = canvas_geometry(
@@ -744,9 +601,6 @@ def physical_views(
         borderValue=fill,
     )
 
-    tissue = extract_slice_silhouette(cv2.cvtColor(warped, cv2.COLOR_RGB2GRAY))
-    iou = silhouette_iou(tissue, atlas_mask_canvas(geometry))
-
     dark = is_dark_background(section)
     layer = str(outlines or "all").strip().lower()
     draw = outer_outline if layer == "outer" else family_outlines
@@ -762,13 +616,8 @@ def physical_views(
         # A side is the SECTION's: carry the native plane onto the section
         # frame (native -> canvas is the atlas scale; section -> canvas the matrix).
         linear = _as_3x3(section_matrix)[:2, :2]
-        if left is not None and left.shape == geometry.annotation.shape[:2]:
-            from langslice.core.atlas.sides import has_sides
-
-            sides = left if has_sides([name for name, _ids in regions]) else None
-        else:
-            sides = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
-                                 np.linalg.inv(linear) * geometry.atlas_scale)
+        sides = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
+                             np.linalg.inv(linear) * geometry.atlas_scale)
         highlighted = region_polys(geometry.annotation, regions, sides)
         if sides is not None and np.linalg.det(linear) < 0:
             sides_note = " (the section's sides; this placement mirrors it)"
@@ -782,28 +631,15 @@ def physical_views(
         )
         return plate
 
-    silhouette: list[np.ndarray] = []
-    lines = True  # atlas outlines drawn on every panel...
+    lines = True  # atlas outlines drawn over the section...
+    if mode not in VIEW_MODES:
+        raise ValueError(f"mode must be one of {VIEW_MODES}; got {mode!r}")
     if mode == "section":
         panels = [(warped, label or "section")]
         lines = False  # ...except the clean views, which show one source alone
     elif mode == "template":
         panels = [(_template_canvas(), atlas_head)]
         lines = template_lines
-    elif mode == "side_by_side":
-        panels = [(warped, label or "section"), (_template_canvas(), atlas_head)]
-    elif mode == "checkerboard":
-        panels = [(_checkerboard(warped, _template_canvas()), label or "section")]
-    elif mode == "outlines":
-        silhouette = _silhouette_polys(tissue)
-        black = np.zeros_like(warped)
-        if atlas_opacity > 0.0:  # an atlas image the call listed, on the black
-            _blend_template(
-                black, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry,
-                opacity=float(np.clip(atlas_opacity, 0.0, 1.0)), picture=atlas_picture,
-            )
-        panels = [(black, label or "section")]
-        dark = True  # the canvas is black whatever the section is
     else:
         if atlas_opacity > 0.0:
             _blend_template(
@@ -851,16 +687,6 @@ def physical_views(
                 scale=geometry.atlas_scale, offset=geometry.atlas_offset,
                 origin=box[:2], factor=factor,
             )
-        if silhouette:
-            _draw_polys(
-                screen,
-                silhouette,
-                _tissue_color(dark),
-                origin=box[:2],
-                factor=factor,
-            )
-        if markers is not None and len(markers[0]):
-            _draw_markers(screen, markers[0], markers[1], origin=box[:2], factor=factor)
         _draw_scale_bar(screen, geometry.um_per_px / factor, dark)
         # Two lines by meaning; `caption` wraps any line wider than the panel.
         text = (
@@ -885,67 +711,8 @@ def physical_views(
                 lines=tuple(poly for _color, poly in atlas_lines) if lines else (),
                 highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
             ))
-        if frames is not None:
-            frames.append({
-                "width": labelled.width, "height": labelled.height,
-                "content_box": [0, 0, labelled.width, screen.shape[0]],
-                "canvas_box": list(box), "section_offset": list(geometry.section_offset),
-                "section_size": list(section.size), "um_per_px": geometry.um_per_px,
-            })
         images.append(labelled)
-    return images, iou
-
-
-def physical_overlay(
-    section: Image.Image,
-    section_um_per_px: float,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane,
-    pitch_deg: float,
-    yaw_deg: float,
-    params: dict[str, float] | np.ndarray,
-    *,
-    atlas_opacity: float = 0.0,
-    border_color: str = "yellow",
-    border_thickness: float = 0.5,
-    pad_to_fit_atlas: bool = True,
-    pivot: tuple[float, float] | None = None,
-    label: str = "",
-    long_edge: int | None = None,
-) -> Image.Image:
-    """The ONE screen of the alignment loop: section and atlas in millimetres.
-
-    *section* is the display render, *section_um_per_px* the micrometres one
-    of its pixels covers. The atlas is drawn at true physical scale on that
-    canvas (:func:`canvas_geometry`), as one smoothed outline per FAMILY
-    region; leaf boundaries are visual noise at this size and are not drawn.
-
-    *params* is either the five physical knobs (``rotation_deg``,
-    ``scale_x``, ``scale_y``, ``translate_x_mm``, ``translate_y_mm``) or a
-    ready 2x3 matrix in the SECTION's frame — what a closed-form fit hands
-    back — so the interactive loop and ``fit_affine`` draw the same picture.
-    The ``overlay`` view of :func:`physical_views`, which is where the other
-    views live.
-    """
-    images, _iou = physical_views(
-        section,
-        section_um_per_px,
-        atlas,
-        position_mm,
-        plane,
-        pitch_deg,
-        yaw_deg,
-        params,
-        atlas_opacity=atlas_opacity,
-        border_color=border_color,
-        border_thickness=border_thickness,
-        pad_to_fit_atlas=pad_to_fit_atlas,
-        pivot=pivot,
-        label=label,
-        long_edge=long_edge,
-    )
-    return images[0]
+    return images
 
 
 def estimate_um_per_px(

@@ -105,8 +105,8 @@ ROW_FIELDS: tuple[str, ...] = (
 #: when true.
 ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "locked": False,
                                 "damage_by_user": False}
-#: The reply keys that hold status rows (``status``, ``view_stack``: the
-#: whole table; a write: the rows it changed).
+#: The reply keys that hold status rows (``status``: the whole table; a
+#: write: the rows it changed).
 ROW_KEYS: tuple[str, ...] = ("rows", "changed")
 
 
@@ -193,20 +193,6 @@ def status_text(state: StackState) -> str:
             + transform
         )
     return "\n".join(lines)
-
-
-def slice_flags(record: SliceState) -> list[str]:
-    """The section's current corrections, as short human-readable flags."""
-    flags: list[str] = []
-    if record.rotation_deg:
-        flags.append(f"rotated {record.rotation_deg}")
-    if record.flip:
-        flags.append("flipped")
-    if record.damaged:
-        flags.append(_damage_flag(record.damaged_regions, record.damage_note))
-    elif record.damage_note:
-        flags.append(f"damage note: {record.damage_note}")
-    return flags
 
 
 def _damage_flag(regions: list[str], note: str) -> str:

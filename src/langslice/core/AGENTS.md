@@ -5,7 +5,7 @@ project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
 The lowest layer. The pictures the tools send and their layers, the section
-renders, captions, canvas, sheets and status table, and every other module
+renders, captions, canvas and status table, and every other module
 whose imports are core-only:
 
 - shared foundations: `space.py`, `oblique.py`, `affine.py`,
@@ -69,55 +69,40 @@ whose imports are core-only:
 
 Every atlas plane drawn, fitted or mapped for a section is at that
 section's own angles (`SliceState.angles`): the placement pictures
-(`placement.py`, `CanvasFrame`), the side-by-side and stacked references,
-`view_stack`'s atlas under each section, the opening's atlas tiles, the
-fits (`transform.py`), the handoff and every deformable fit and trace
+(`placement.py`, `CanvasFrame`), the opening's atlas tiles, the fits
+(`transform.py`), the handoff and every deformable fit and trace
 (`handoff.py`), the deformation's `linear_key`, the maps and
 `registration.json` (`maps.section_frame`, memoized by the section's
 angles) and so the QuickNII/VisuAlign anchorings, and `grep_atlas`'s
-in-section check. A picture without a section (`view_atlas`, the
-opening's atlas reference) is drawn at `StackState.view_angles` (the shared
-angle, or the median of the sections' when they differ). The atlas-plane
-helpers (`atlas_fetch`, `display`, `pictures.reference_atlas_picture`)
-take `angles=`; None reads the stack's one angle (`state.plane_angles`),
-which raises `MixedAngles` on a stack whose sections differ, so a call
-that should pass a section's own fails loudly instead of drawing the
-wrong plane. `captions.angles_label` words the angles in a caption (empty
-for the flat plane).
+in-section check. A picture without a section (`look`'s `atlas` and the
+positioning picture's atlas thumbnails, `grep_atlas_view`, the opening's
+atlas reference) is drawn at `StackState.view_angles` (the shared angle, or
+the median of the sections' when they differ), and its caption says which:
+`StackState.drawn_at_median(angles)`, `captions.view_angles_label` ("at the
+median of the sections' cutting angles, pitch .. yaw .."). The atlas-plane
+helpers (`atlas_fetch`, `display`) take `angles=`; None reads the stack's
+one angle (`state.plane_angles`), which raises `MixedAngles` on a stack
+whose sections differ, so a call that should pass a section's own fails
+loudly instead of drawing the wrong plane. `captions.angles_label` words
+the angles in a caption (empty for the flat plane).
 
 ## Files
 
-- `pictures.py` — the captioned section and atlas pictures the viewing tools
-  send: `section_picture` (`view_slices`, `orient_slices`: the section
-  tissue-framed, or mode `channels`, its raw channels side by side),
-  `atlas_view_picture` (`view_atlas`), `stack_review` (`view_stack`: the
-  contact sheet in written-position order and the spacing plot), and the two
-  cached reference pictures, `reference_section_picture` and
-  `reference_atlas_picture`, on `Workspace.picture_cache` (keyed by
-  everything they draw; a section's keeps the caption of its first display,
-  filenames being the stable identity).
 - `placement.py` — a section on its physical canvas at a placement.
-  `draw_canvas` is the one renderer of every placement picture
-  (`view_placement`, `set_positions`, `fit_affine`, `adjust_transforms`):
-  it draws from the render the options ask for at the call's size, the
-  matrix and pivot carried onto it, an applied deformation resampling it
-  first, through `core.canvas.physical_views`, and returns a `Canvas`:
-  the panels and the `CanvasFrame` they were drawn in. `stored_placement`
-  (the six stored numbers as a drawable matrix, identity without),
-  `current_warp` (the applied record from a `deformation.RecordStore`, None
-  when stale or unreadable), `placement_pictures` (one section-position pair
-  in a placement mode, `PLACEMENT_MODES`: the canvas under the complete
-  registration, `stacked`, or the two separate `side_by_side` references the
-  door maps by index; returns `Placed`: images, row facts, the canvas),
-  and the interactive transform's `stage` (the working frame, calibration,
-  canvas and resolved pivot; `StageFailure` `ATLAS_RENDER_FAILED` /
-  `BAD_PIVOT`), `Staged` and `staged_views`. The transform tools' pictures:
-  `fit_picture` (`fit_affine`: a fit drawn from its `FitFrame`,
-  one-sided regions with the sides the fit resolved) and `transform_views`
-  (`adjust_transforms`: the staged knobs in the call's mode, or for `ab`
-  the "candidate" overlay then the "stored" (or "identity") one,
-  `ab_reference` giving what the B side draws: the six stored numbers, else
-  the stored knobs about their pivot).
+  `draw_canvas` is the one renderer of every placement picture (`look`'s
+  `overlay` and so every change tool's picture of what it wrote, and
+  `mark_damage`'s): it draws from the render the options ask for at the
+  call's size, the matrix and pivot carried onto it, an applied deformation
+  resampling it first, through `core.canvas.physical_views`, and returns a
+  `Canvas`: the panels and the `CanvasFrame` they were drawn in.
+  `stored_placement` (the six stored numbers as a drawable matrix, identity
+  without), `current_warp` (the applied record from a
+  `deformation.RecordStore`, None when stale or unreadable),
+  `placement_pictures` (one section-position pair on the canvas under the
+  complete registration, in the options' mode; returns `Placed`: images,
+  row facts, the canvas), and the interactive transform's `stage` (the
+  working frame, calibration, canvas and resolved pivot; `StageFailure`
+  `ATLAS_RENDER_FAILED` / `BAD_PIVOT`) and `Staged`.
 - `sections.py` — the section renders and their cache: `render_slice`
   (ROTATE first, then FLIP, then the display-only `--preprocess auto`
   enhancement; a non-default look drawn from the raw channels over the same
@@ -135,17 +120,16 @@ for the flat plane).
   exactly; the Elastix affine and every deformable fit
   (`deformation.stain_image`) and the image-model routes
   (`handoff.prepare_linear_registration(preprocessed=True)`; a recipe joins
-  the call key) read it. Geometry (calibration, the silhouette, the tissue
-  pivot, the maps) is measured on the default render. `"view"` is the
-  `preprocess` tool's view look, kept in memory and undo only; `migrated`
-  (called by `job.checkpoint.current_state`) drops it from a saved state and
-  reads an older saved `"fit"` as `"preprocessed"`. `channels.py`: each raw
+  the call key) read it. Geometry (calibration, the tissue pivot, the maps)
+  is measured on the default render. `migrated` (called by
+  `job.checkpoint.current_state`) reads an older saved `"fit"` as
+  `"preprocessed"` and drops an older saved `"view"` look. `channels.py`: each raw
   channel name's display properties (`appearance["channels"]`,
   `ChannelProperties`: `contrast_limits` in FILE intensities, `gamma`,
   `colormap` from `COLORMAPS`; `validate_properties`, `set_properties`,
   `with_properties` adds them to a raw look so the render cache keys them),
-  applied where raw channels are drawn (`composite`: the `channels` strip
-  and the raw overlay; a channel with contrast limits is not dimmed by
+  applied where raw channels are drawn (`composite`: the raw pictures; a
+  channel with contrast limits is not dimmed by
   `fine_detail`) and restated in captions (`describe`, `describe_shown`);
   nothing a fit or the image model reads uses them. `intensity_ranges`
   (cached on `Workspace.intensity_cache`, from
@@ -154,44 +138,35 @@ for the flat plane).
   `channel_summary` gives a channel's sample type, its range and its 1st and
   99.5th percentiles.
 - `captions.py` — `caption` (a COPY with the text in a band below the
-  picture, so a picture pixel is the content's own, the coordinates a
-  `view.zoom` is given in; never caption an image a fit measures),
-  `wrap_caption`, the fonts, `scale_bar_px` and the 1 mm bar `_draw_scale_bar`.
-- Zoom: every picture tool takes `view.zoom` as `[x0, y0, x1, y1]` pixels of
-  the picture the same call returns unzoomed (top-left origin, the
-  convention of Claude's and OpenAI's computer-use tools; a later zoom is
-  again in the unzoomed picture's pixels). Each renderer converts it with
+  picture, so a picture pixel is the content's own, the coordinates a zoom
+  is given in; never caption an image a fit measures), `wrap_caption`, the
+  fonts, `scale_bar_px` and the 1 mm bar `_draw_scale_bar`; `angles_label`
+  and `view_angles_label` (the angles of a picture without a section, said
+  to be the median when the sections' differ).
+- Zoom: a renderer takes its options' `zoom` as `[x0, y0, x1, y1]` pixels of
+  the picture unzoomed (top-left origin, the convention of Claude's and
+  OpenAI's computer-use tools). Each renderer converts it with
   `display.zoom_fractions` against its own unzoomed content size
   (`framed_section`, `framed_atlas`, `placement.draw_canvas`, which draws
   the unzoomed canvas first for its size, `deformation.picture` and
   `trace_picture` through `deformation.unzoomed_size`); below that the
-  renderers crop by fractions (`canvas.zoom_box`). In a picture of panels
-  side by side (`channels`), the box is read on the first panel.
+  renderers crop by fractions (`canvas.zoom_box`). The `zoom` tool's redraw
+  is `zoom.py`.
 - `canvas.py` — the physical canvas: `CanvasGeometry` / `canvas_geometry`
   (the atlas section at true scale on the section's frame, anatomy centred,
-  canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES`,
-  `OUTLINE_LAYERS`, `normalize_border_style`, `line_coverage` (the one
-  border rasteriser), `regions_left` / `region_polys`, `template_canvas`,
-  `atlas_mask_canvas`, `zoom_box`, `pivot_on_canvas`, `placement_matrices`,
-  `PanelFrame`, `physical_views` (the alignment picture in every view mode),
-  `physical_overlay` and `estimate_um_per_px`.
-- `sheets.py` — the stack sheets: `stack_pictures` (captioned per section,
-  optionally in written-position order over its atlas match, the pair at
-  one scale, `scale.pair_scale`), `reference_slice_picture` (with `scale=`,
-  at that scale), `stack_sheet` (one contact sheet, shrunk under
-  `SHEET_MAX_LONG_EDGE`), `grid`, `beside`, `stacked`, `spacing_plot`.
+  canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES` (`overlay`,
+  `section`, `template`), `normalize_border_style`, `line_coverage` (the
+  one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
+  `pivot_on_canvas`, `placement_matrices`, `PanelFrame`, `physical_views`
+  (the alignment picture in a view mode) and `estimate_um_per_px`.
 - `scale.py` — one micrometres per pixel for a section and its atlas drawn
-  as separate panels (`stacked`, `side_by_side`, `view_stack`'s sheet, the
-  opening strips): the section at the scale its overlay draws it
+  as separate panels (the positioning picture, the opening strips): the
+  section at the scale its overlay draws it
   (`section_um_per_px`: `transform.calibrate` times `stored_scale`, the
   stored transform's `sqrt(|ad - bc|)`), the atlas plane at its voxels, the
   larger framed panel at the picture's long edge and never finer than the
   section's working copy (`pair_um_per_px`, `finest_um_per_px`).
-  `pair_scale` sizes a pair at one position; `reference_scale` sizes
-  `side_by_side` by `brain_extent_um` (the anatomy's bounding box along the
-  plane's in-plane directions plus the frame margin, an outer bound of every
-  framed plane at those angles), so one section picture serves every
-  position of a call. `section_at` / `atlas_at` (and
+  `pair_scale` sizes a pair at one position. `section_at` / `atlas_at` (and
   `display.framed_atlas(um_per_px=)`) draw at exactly that scale.
 - `status.py` — the status table, data for the doors rather than a
   picture: `status_rows` (`position_source` "default" on a section still
@@ -199,7 +174,7 @@ for the flat plane).
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`; the agent CLI and the
-  library), `status_text`, `slice_flags`.
+  library), `status_text`.
 - `damage.py` — damage by atlas region (`SliceState.damaged_regions`;
   `SliceState.damaged` is read-only: the section has marked regions;
   `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the
@@ -210,7 +185,7 @@ for the flat plane).
   deformable pictures' excluded-region ink) on the section under its
   current registration (`placement.draw_canvas`, mode `overlay`, the warp
   from *store*) and on the atlas template (mode `template`), on one canvas
-  and crop, side by side (`sheets.beside`), their outlines strong over the
+  and crop, side by side (`beside`), their outlines strong over the
   faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
@@ -221,7 +196,9 @@ for the flat plane).
   (`atlas`: `display.framed_atlas` at the stack's view angles) or per run
   of positions (`positioning`: one picture for up to `PER_PICTURE`
   sections, several for a longer stack; `part` (0-based) draws only that
-  one, `UNKNOWN_PART` past the last). Defaults never read the job's state: every section,
+  one, `UNKNOWN_PART` past the last); a picture without a section says
+  when its angles are the median of differing sections'
+  (`atlas_caption(median=)`). Defaults never read the job's state: every section,
   every raw channel with its display properties (`channels` may instead
   name raw channels, or `["preprocessed"]`), `ATLAS_LAYER_DEFAULTS` per
   mode. Each picture has an index caption (position, angles, um/px, the
@@ -251,7 +228,8 @@ for the flat plane).
   the run around it), each picture with its own ruler segment over the
   positions it holds plus a margin (`ruler_range`, at least
   `RULER_MIN_SPAN_MM`) and a caption `part i of n: sections k-m of N ...,
-  x-y mm`. One um/px for every thumbnail of every picture of a call
+  x-y mm` (on a stack whose sections' angles differ, `atlas at the median
+  of the sections' cutting angles, ...`). One um/px for every thumbnail of every picture of a call
   (`scale.pair_um_per_px`, never finer than a section's working copy): the
   tile is the picture size while the fullest picture's row fits
   `POSITIONING_MAX_WIDTH` (1568 px; six tiles of about 240 px), so one
@@ -415,14 +393,13 @@ tool call inside it) and
 `layers.note(image, sections=, mode=, frame=, panel=, deformation=,
 extra=, recipe=, caption=)`; `note_for` finds a picture's note by
 identity; `annotate(image, recipe=, caption=)` sets fields on the note a
-renderer already made for that image (its frame and panel kept). `draw_canvas`,
-`placement_pictures` (stacked, side_by_side references), `section_picture`,
-`atlas_view_picture` and `stack_review` note theirs;
-`ops.deformable.pictures` notes `fit_deformable`'s fits (through
-`core.deformation.picture(note=...)`, with a `WarpNote`: the record
-resampled onto the picture, the caption band, whether the field is drawn,
-the border style) and traces, and the
-tool door the pictures it labels itself (`preprocess` before/after). With
+renderer already made for that image (its frame and panel kept). `draw_canvas`
+and the `look` renderers note theirs; `ops.deformable.pictures` notes
+`fit_deformable`'s fits (through `core.deformation.picture(note=...)`, with
+a `WarpNote`: the record resampled onto the picture, the caption band,
+whether the field is drawn, the border style) and traces, and the tool door
+the pictures it labels itself (`set_preprocessed_channel_properties`'
+before/after). With
 nothing collecting, a note costs nothing. The job saves the pictures
 (`langslice.job.views`, `job/CLAUDE.md`).
 

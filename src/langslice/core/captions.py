@@ -22,6 +22,22 @@ def angles_label(angles: tuple[float, float], template: str = ANGLES_LABEL) -> s
     pitch, yaw = angles
     return template.format(pitch, yaw) if (pitch or yaw) else ""
 
+
+#: How a caption names the plane an atlas picture without a section is drawn
+#: at when the sections' cutting angles differ (``StackState.view_angles``).
+MEDIAN_ANGLES_LABEL = " at the median of the sections' cutting angles, pitch {:.1f} yaw {:.1f}"
+
+
+def view_angles_label(angles: tuple[float, float], *, median: bool) -> str:
+    """The angles of an atlas picture without a section: *median* (the
+    sections' angles differ, :meth:`langslice.core.state.StackState.drawn_at_median`)
+    says they are the median, even for the flat plane; else
+    :func:`angles_label`."""
+    if median:
+        return MEDIAN_ANGLES_LABEL.format(*angles)
+    return angles_label(angles)
+
+
 #: Font size of the label strip :func:`caption` burns into an image.
 CAPTION_PX = 14
 
@@ -54,7 +70,7 @@ def caption(image: Image.Image, text: str) -> Image.Image:
     # The band sits BELOW the picture, never over it (a caption drawn on the
     # pixels covered exactly the magnified dorsal tissue an agent was
     # reading), and never above it: the picture's pixel (x, y) is then the
-    # content's own, the coordinates a `view.zoom` is given in.
+    # content's own, the coordinates a zoom box is given in.
     labelled = Image.new("RGB", (source.width, source.height + band), (0, 0, 0))
     labelled.paste(source, (0, 0))
     draw = ImageDraw.Draw(labelled)

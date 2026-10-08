@@ -1174,7 +1174,7 @@ def test_8_trace_from_atlas_through_the_library_then_fit_and_submit(images):
         assert traced["results"][0]["status"] == "running" and traced["results"][0]["started"]
         rest = job.trace_from_atlas(slices=[ID1, ID2])
         assert [row["status"] for row in rest["results"]] == ["running", "running"], rest
-        fit = fit_deformable(job.job, job.workspace, [job.state.by_id(ID0)], [TRACE_FIT])
+        fit = fit_deformable(job.job, job.workspace, [job.state.by_id(ID0)], TRACE_FIT)
         assert fit.rows[0]["status"] == "ok" and fit.rows[0]["written"] is True, fit.rows
         submitted = job.submit(summary="done", notes=[], interval_breaks=[],
                                left_linear=_left_linear(ID1, ID2))

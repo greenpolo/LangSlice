@@ -23,11 +23,12 @@ def warped_border_coverage(record, atlas, **options):
 
 @pytest.fixture(scope="module")
 def case():
+    pytest.importorskip("ants", reason="the deformable fit needs antspyx")
     atlas = SyntheticAtlas()
     remove = np.zeros((260, 340), dtype=bool)
     remove[:, 250:] = True  # the right side of the section is missing
     image, _ = render_section(atlas, SMOOTH_FIELD(), remove=remove)
-    record = fit_section(image, atlas, placement(), FitSettings(engine="elastix", detail="coarse"))
+    record = fit_section(image, atlas, placement(), FitSettings(engine="ants", detail="coarse"))
     return atlas, image, record
 
 

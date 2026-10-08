@@ -19,11 +19,10 @@ from langslice.agent.plugins import (
     RequestCapturePlugin,
     RetiredToolsPlugin,
     StrictArgumentsPlugin,
-    ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
 from langslice.agent.session import build_plugins, run_agent_session
-from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.ops.registry import RETIRED, retired_payload
 
 
@@ -112,44 +111,6 @@ def test_model_call_pacing_plugin_accepts_zero_delay():
     )
 
     assert result is None
-
-
-def test_tool_media_delivery_reports_only_tagged_media_that_survived_filtering():
-    delivered: list[set[str]] = []
-    plugin = ToolMediaDeliveryPlugin(delivered.append)
-    kept = _media_part(1)
-    assert kept.function_response is not None
-    kept.function_response.name = "look"
-    kept.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "compare-1"
-    dropped = _media_part(1)
-    assert dropped.function_response is not None
-    dropped.function_response.name = "position_sections"
-    dropped.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "write-1"
-    dropped.function_response.parts = None
-    # Historical untagged media is replayed too; it must not be guessed to
-    # belong to a new pending call merely because its tool name matches.
-    anonymous = _media_part(1)
-    assert anonymous.function_response is not None
-    anonymous.function_response.name = "look"
-    request = LlmRequest(
-        model="capture-model",
-        contents=[types.Content(role="user", parts=[kept, dropped, anonymous])],
-    )
-
-    asyncio.run(
-        plugin.before_model_callback(
-            callback_context=None,  # type: ignore[arg-type]
-            llm_request=request,
-        )
-    )
-
-    assert delivered == [{"compare-1"}]
-
-
-def test_media_delivery_tracker_runs_after_the_working_set_filter():
-    plugins = build_plugins("unit", tool_media_delivered=lambda _responses: None)
-    assert plugins[0].__class__.__name__ == "ContextFilterPlugin"
-    assert isinstance(plugins[1], ToolMediaDeliveryPlugin)
 
 
 def test_request_capture_plugin_redacts_inline_image_bytes(tmp_path):

@@ -129,16 +129,17 @@ def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path,
     assert job.state.appearance == {} and not job.undo_stack
 
 
-def test_the_channel_strip_and_captions_restate_the_properties(tmp_path: Path, atlas):
-    from langslice.core.pictures import section_picture
+def test_raw_channel_pictures_and_captions_restate_the_properties(tmp_path: Path, atlas):
+    from langslice.core.look import LookRequest, look
 
     job, ctx = _open(tmp_path, atlas)
     state = job.state
-    options = default_options("channels")
-    before = _pixels(section_picture(ctx, state, state.slices[0], options))
+    request = LookRequest("section", sections=(state.slices[0].id,), channels=("green",))
+    before = _pixels(look(ctx, state, request)[0].image)
     ops_appearance.set_channel_properties(job, ctx, "green", contrast_limits=[0, 100])
-    after = section_picture(ctx, state, state.slices[0], options)
-    assert not np.array_equal(_pixels(after), before)
+    after = look(ctx, state, request)[0]
+    assert not np.array_equal(_pixels(after.image), before)
+    assert "green 0-100 gamma 1" in after.caption
     assert channels.describe("green", channels.channel_properties(state, "green")) == (
         "green 0-100 gamma 1")
     overlay = default_options("section")
@@ -276,7 +277,6 @@ def test_old_saved_states_load_fit_as_preprocessed_and_drop_view(tmp_path: Path)
     assert loaded is not None
     assert loaded.appearance == {"preprocessed": fit, "channels": shown}
     assert looks.preprocessed_settings(loaded, "a.png") == RECIPE
-    assert looks.section_settings(loaded, "view", "a.png") is None
 
     # In memory, a state still holding "fit" reads it as the preprocessed
     # channel, and the next write moves it under its own name.
