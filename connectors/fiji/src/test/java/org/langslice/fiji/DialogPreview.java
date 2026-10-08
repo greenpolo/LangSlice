@@ -18,11 +18,11 @@ public final class DialogPreview {
         File folder = new File(args.length > 0 ? args[0] : ".");
         JsonObject status = JsonParser.parseString("{\"protocol_version\":1,\"providers\":{\"openai-oauth\":{\"configured\":true,"
                 + "\"agent_models\":[\"openai-oauth/gpt-6-astra\",\"openai-oauth/gpt-6-sol\",\"openai-oauth/gpt-6-luna\",\"openai-oauth/gpt-5.6-sol\",\"openai-oauth/gpt-5.6-terra\",\"openai-oauth/gpt-5.6-luna\"],"
-                + "\"default_agent_model\":\"openai-oauth/gpt-5.6-sol\",\"image_models\":[\"gpt-image-2\"],\"default_image_model\":\"gpt-image-2\"},"
+                + "\"default_agent_model\":\"openai-oauth/gpt-5.6-sol\",\"image_models\":[\"gpt-image-2.5-sunburst\"],\"default_image_model\":\"gpt-image-2.5-sunburst\"},"
                 + "\"gemini-api\":{\"configured\":true},\"openai-api\":{\"configured\":false},\"none\":{\"configured\":true}},"
-                + "\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,\"models\":[\"gpt-image-2\"],\"default_model\":\"gpt-image-2\"},"
+                + "\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,\"models\":[\"gpt-image-2.5-sunburst\"],\"default_model\":\"gpt-image-2.5-sunburst\"},"
                 + "{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":true,\"models\":[\"gemini-3-pro-image\"],\"default_model\":\"gemini-3-pro-image\"},"
-                + "{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":false,\"models\":[\"gpt-image-2\"],\"default_model\":\"gpt-image-2\"},"
+                + "{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":false,\"models\":[\"gpt-image-2.5-sunburst\"],\"default_model\":\"gpt-image-2.5-sunburst\"},"
                 + "{\"provider\":\"none\",\"label\":\"None\",\"connected\":true,\"models\":[],\"default_model\":null}]}").getAsJsonObject();
         List<RegistrationDialog.SliceRow> rows = new ArrayList<>();
         for (int i = 1; i <= 12; i++) rows.add(new RegistrationDialog.SliceRow("M03_B_" + String.format("%02d", i) + ".vsi - 10x_01", i % 5 == 0 ? 2 : 0));

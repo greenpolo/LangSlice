@@ -91,7 +91,7 @@
      "fit_performed": false,
      "geometry_fingerprint": "<hex>",
      "id": "s0.png",
-     "model": "gpt-image-2",
+     "model": "gpt-image-2.5-sunburst",
      "model_border_pixels": 7436,
      "output_kind": "border_annotation",
      "prompt_edited": false,
@@ -216,7 +216,7 @@
      "include": [
       "TH"
      ],
-     "model": "gpt-image-2",
+     "model": "gpt-image-2.5-sunburst",
      "model_border_pixels": 1200,
      "output_kind": "border_annotation",
      "prompt_edited": true,

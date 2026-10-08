@@ -89,7 +89,7 @@ def test_openai_images_route_sends_the_edited_image_first(monkeypatch):
     providers = _providers()
     fake_client = _FakeOpenAIImagesClient()
     monkeypatch.setattr(providers, "get_openai_image_client", lambda: fake_client)
-    monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2")
+    monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2.5-sunburst")
 
     request = providers.SegmentationGenerationRequest(
         reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
@@ -102,7 +102,7 @@ def test_openai_images_route_sends_the_edited_image_first(monkeypatch):
 
     assert isinstance(result, GeneratedSegmentation)
     assert result.provider == "openai-api"
-    assert result.model == "gpt-image-2"
+    assert result.model == "gpt-image-2.5-sunburst"
     assert result.route == "openai_images"
     assert result.revised_prompt is None
     assert result.metadata["provider"] == "openai-api"
@@ -111,7 +111,7 @@ def test_openai_images_route_sends_the_edited_image_first(monkeypatch):
 
     assert len(fake_client.calls) == 1
     call: dict[str, Any] = fake_client.calls[0]
-    assert call["model"] == "gpt-image-2"
+    assert call["model"] == "gpt-image-2.5-sunburst"
     assert call["prompt"] == "warp it"
     image_files = cast(list[io.BytesIO], call["image"])
     assert len(image_files) == 3
@@ -160,21 +160,21 @@ def test_openai_api_provider_uses_the_images_route(monkeypatch):
     providers = _providers()
     fake_client = _FakeOpenAIImagesClient()
     monkeypatch.setattr(providers, "get_openai_image_client", lambda: fake_client)
-    monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2")
+    monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2.5-sunburst")
 
     request = providers.SegmentationGenerationRequest(
         reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="compat",
         provider="openai-api",
-        model="gpt-image-2",
+        model="gpt-image-2.5-sunburst",
     )
 
     result = providers.generate_warped_segmentation_image(request)
 
     assert result.provider == "openai-api"  # canonical access-method name
     assert result.route == "openai_images"
-    assert result.model == "gpt-image-2"
+    assert result.model == "gpt-image-2.5-sunburst"
     assert _decode_image(result.image) == (9, 7, (12, 34, 56))
 
 
@@ -259,4 +259,4 @@ def test_every_image_provider_resolves_to_an_image_model():
     from langslice.providers.registry import resolve_image_model
 
     assert resolve_image_model("gemini-api").model == "gemini-3.1-flash-image"
-    assert resolve_image_model("openai-oauth").model == "gpt-image-2"
+    assert resolve_image_model("openai-oauth").model == "gpt-image-2.5-sunburst"
