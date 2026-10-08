@@ -218,7 +218,9 @@ the lines a call draws, as a saved picture's borders layer). `resampled_record` 
 record onto a smaller or cropped grid for pictures; `warp_section_image`
 resamples a section render into its placed-atlas frame through the inverse
 field (`engines.invert_field` when none is stored), so a picture drawn under the
-linear placement shows the full registration. Never judge borders traced from `record.labels`: those
+linear placement shows the full registration; `warp_source_points` gives the
+section points it shows at any points of its result (a zoom reads the image
+file there, `core/native.py`). Never judge borders traced from `record.labels`: those
 are nearest-sampled from the 25 um atlas grid and look staircased on fine
 section pixels (3.5 section px per step at 7 um/px), which is the whole of the
 zig-zag along hippocampal arcs in label-map mode (the residual field there

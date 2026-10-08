@@ -4,9 +4,12 @@
 :mod:`langslice.job.views`) and a box ``[x0, y0, x1, y1]`` in that
 picture's pixels (top-left origin; the caption band lies below the content,
 so a pixel of the content is the picture's own). It re-runs the recipe's
-renderer on that box: the section from its working copy, the atlas past its
-voxels by at most :data:`langslice.core.positioning.ATLAS_UPSAMPLE`, at the
-picture's own long edge (:mod:`langslice.core.look`). A zoom's recipe holds
+renderer on that box at the picture's own long edge
+(:mod:`langslice.core.look`): a section, alone or under the atlas, read
+again from its image file at the file's own resolution
+(:mod:`langslice.core.native`), a positioning picture's sections from their
+working copies, the atlas past its voxels by at most
+:data:`langslice.core.positioning.ATLAS_UPSAMPLE`. A zoom's recipe holds
 its window as fractions of the unzoomed picture, so a zoom of a zoom (a box
 in the zoomed picture's pixels) maps back onto the first picture and is
 redrawn from the source again, never enlarged from the zoom.

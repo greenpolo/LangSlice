@@ -112,9 +112,16 @@ def look(
 def zoom(box: list[float], picture: int = 0) -> dict[str, Any]:
     """Draw a box of an earlier picture again, in more detail. Writes nothing.
 
-    The box is redrawn from the full-resolution image, as the picture was
-    drawn even if the stack has changed since (the reply then says `stale`).
-    The new picture has its own number, so it can be zoomed again.
+    The new picture is as large as the earlier one. In a picture of a
+    section or of a section with the atlas on it, the section is read again
+    from its original image file at the file's own resolution, only inside
+    the box, and drawn with the same channels, display settings and atlas
+    borders; the caption says when the file holds fewer pixels than the
+    picture. A positioning picture's sections are drawn again from their
+    working copies (the file reduced to at most 3072 pixels), and the atlas
+    from its voxels. The box is drawn as the picture was, even if the stack
+    has changed since (the reply then says `stale`). The new picture has its
+    own number, so it can be zoomed again.
 
     Args:
         box: [x0, y0, x1, y1] in pixels of that picture as it was shown,
@@ -644,7 +651,8 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
         slices: Filenames (the extension may be left off); empty is every
             section.
         full_resolution: Write the maps on the image file's own pixels
-            instead of its working copy (what every picture is drawn from).
+            instead of its working copy (what every picture but a zoom is
+            drawn from).
 
     Returns:
         written (the sections), skipped (each with its reason), files

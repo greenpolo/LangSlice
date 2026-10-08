@@ -24,6 +24,7 @@ from langslice.core.deformable.render import (
     draw_warped_borders,
     resampled_record,
     warp_section_image,
+    warp_source_points,
     warped_border_layers,
 )
 from langslice.core.deformable.settings import FitSettings
@@ -46,5 +47,6 @@ __all__ = [
     "resampled_record",
     "ventricle_ids",
     "warp_section_image",
+    "warp_source_points",
     "warped_border_layers",
 ]

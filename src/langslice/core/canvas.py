@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +38,13 @@ from langslice.core.space import Plane
 #: Black working space on each side of the larger of section and atlas, as a
 #: fraction of that extent. Room for x/y moves, like ABBA's viewer.
 WORKING_MARGIN = 0.12
+
+#: A zoom's source of section pixels (:func:`physical_views`' *detail*):
+#: points of the section image (x and y arrays) -> ``(rgb, inside,
+#: enlarged)``, or None.
+SectionDetail = Callable[[np.ndarray, np.ndarray],
+                         "tuple[np.ndarray, np.ndarray, float] | None"]
+
 
 @dataclass(frozen=True)
 class CanvasGeometry:
@@ -488,7 +495,9 @@ class PanelFrame:
     *section_matrix* (3x3, the section render's frame -> canvas,
     :func:`placement_matrices`), and the atlas *lines* and *highlighted*
     region outlines drawn on it (native plane pixels, x/y; empty when none
-    were drawn) at *line_width*.
+    were drawn) at *line_width*. *from_file*: a zoom whose section pixels
+    were read from the image file, how many picture pixels one file pixel
+    spans (None: drawn from the render).
     """
 
     size: tuple[int, int]
@@ -501,6 +510,7 @@ class PanelFrame:
     highlighted: tuple[np.ndarray, ...]
     line_width: float
     mode: str
+    from_file: float | None = None
 
 
 def physical_views(
@@ -531,6 +541,7 @@ def physical_views(
     regions: Any = (),
     matrix_label: str = "fitted matrix",
     template_lines: bool = False,
+    detail: SectionDetail | None = None,
 ) -> list[Image.Image]:
     """The alignment screen in one of :data:`VIEW_MODES`.
 
@@ -569,6 +580,14 @@ def physical_views(
     (``[(name, ids)]``) are drawn at full strength in every mode, the
     *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for context.
     *matrix_label* names a ready matrix in the caption.
+
+    *detail*, for a zoom of the ``overlay`` or ``section`` view, gives the
+    section's pixels at points of *section* (pixels, centres at integers):
+    the zoom shows them in place of *section*'s own, the atlas image and the
+    lines over them as usual (:func:`langslice.core.placement.draw_canvas`
+    passes the image file's own pixels, :mod:`langslice.core.native`). It
+    answers ``(rgb, inside, enlarged)`` or None (the section's own pixels
+    then).
 
     *panel_frames*, when given, receives one :class:`PanelFrame` per image:
     where its pixels sit, for the picture's layers. Returns the images, each
@@ -634,6 +653,12 @@ def physical_views(
     lines = True  # atlas outlines drawn over the section...
     if mode not in VIEW_MODES:
         raise ValueError(f"mode must be one of {VIEW_MODES}; got {mode!r}")
+    box = zoom_box(zoom, geometry.size)
+    zoomed = box != (0, 0, geometry.size[0], geometry.size[1])
+    # The section alone on the canvas, before an atlas image is blended under
+    # it: what the file's pixels replace in a zoom.
+    bare = warped.copy() if detail is not None and zoomed and mode != "template" else None
+    opacity = float(np.clip(atlas_opacity, 0.0, 1.0))
     if mode == "section":
         panels = [(warped, label or "section")]
         lines = False  # ...except the clean views, which show one source alone
@@ -650,12 +675,11 @@ def physical_views(
                 pitch_deg,
                 yaw_deg,
                 geometry,
-                opacity=float(np.clip(atlas_opacity, 0.0, 1.0)),
+                opacity=opacity,
                 picture=atlas_picture,
             )
         panels = [(warped, label or "section")]
 
-    box = zoom_box(zoom, geometry.size)
     if isinstance(params, np.ndarray):
         knobs = matrix_label
     else:
@@ -672,7 +696,6 @@ def physical_views(
     # any other picture, enlarged past the canvas's pixels when it has fewer
     # (said in the caption). No *long_edge* means canvas pixels one to one
     # (host-side use, never a model's screen).
-    zoomed = box != (0, 0, geometry.size[0], geometry.size[1])
     edge = None
     if long_edge is not None:
         edge = (max(1, int(long_edge)) if zoomed else
@@ -680,6 +703,13 @@ def physical_views(
     images: list[Image.Image] = []
     for panel, head in panels:
         screen, factor = _to_screen(panel, box, edge)
+        from_file: float | None = None
+        if bare is not None and detail is not None:
+            found = _detailed_screen(bare, box, edge, matrix, geometry.section_offset, detail)
+            if found is not None:
+                screen, from_file = found
+                if mode == "overlay" and opacity > 0.0:
+                    _blend_screen(screen, _template_canvas(), box, edge, opacity)
         if lines:
             _draw_outlines(
                 screen, atlas_lines, geometry, color=line_color, thickness=line_width,
@@ -702,7 +732,10 @@ def physical_views(
             where = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
                      if zoom_pixels else "")
             text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"
-            if factor > 1.05:
+            if from_file is not None:
+                text += "  section from its image file" + (
+                    f" (file pixels enlarged x{from_file:.1f})" if from_file > 1.05 else "")
+            elif factor > 1.05:
                 text += f" (canvas pixels enlarged x{factor:.1f})"
         if layer == "outer" and lines:
             text += "  outlines outer"
@@ -718,9 +751,48 @@ def physical_views(
                 section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
                 lines=tuple(poly for _color, poly in atlas_lines) if lines else (),
                 highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
+                from_file=from_file,
             ))
         images.append(labelled)
     return images
+
+
+def _detailed_screen(
+    bare: np.ndarray, box: tuple[int, int, int, int], edge: int | None, matrix: np.ndarray,
+    offset: tuple[int, int], detail: SectionDetail,
+) -> tuple[np.ndarray, float] | None:
+    """The zoom of *bare* (the section alone on the canvas) with the
+    section's pixels from *detail* wherever it has them, and how far they
+    are enlarged; None when *detail* has none."""
+    screen, _factor = _to_screen(bare, box, edge)
+    rows, cols = screen.shape[:2]
+    x0, y0, x1, y1 = box
+    cx = x0 + (np.arange(cols, dtype=np.float64) + 0.5) * (x1 - x0) / cols - 0.5
+    cy = y0 + (np.arange(rows, dtype=np.float64) + 0.5) * (y1 - y0) / rows - 0.5
+    grid_x, grid_y = np.meshgrid(cx, cy)
+    inverse = np.linalg.inv(_as_3x3(matrix))
+    sx = inverse[0, 0] * grid_x + inverse[0, 1] * grid_y + inverse[0, 2] - offset[0]
+    sy = inverse[1, 0] * grid_x + inverse[1, 1] * grid_y + inverse[1, 2] - offset[1]
+    found = detail(sx, sy)
+    if found is None:
+        return None
+    rgb, inside, enlarged = found
+    screen[inside] = rgb[inside]
+    return screen, float(enlarged)
+
+
+def _blend_screen(
+    screen: np.ndarray, plate: np.ndarray, box: tuple[int, int, int, int], edge: int | None,
+    opacity: float,
+) -> None:
+    """The atlas image *plate* (zero where it has none) blended under
+    *screen* at *opacity*, as :func:`_blend_template` blends it on the canvas."""
+    shown, _factor = _to_screen(plate, box, edge)
+    x0, y0, x1, y1 = box
+    lit = (plate[y0:y1, x0:x1].max(axis=2) > 0).astype(np.uint8)
+    lit = cv2.resize(lit, (screen.shape[1], screen.shape[0]),
+                     interpolation=cv2.INTER_NEAREST) > 0
+    screen[lit] = (screen[lit] * (1.0 - opacity) + shown[lit] * opacity).astype(np.uint8)
 
 
 def estimate_um_per_px(

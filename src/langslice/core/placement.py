@@ -33,9 +33,11 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.affine import denormalized_affine, physical_affine_matrix
+from langslice.core.appearance import Look
 from langslice.core.canvas import (
     CanvasGeometry,
     PanelFrame,
+    SectionDetail,
     canvas_geometry,
     physical_views,
     pivot_on_canvas,
@@ -193,6 +195,8 @@ def draw_canvas(
         pivot=pivot if in_section is None else None, pivot_in_section=in_section,
         warp=warp, zoom=window, long_edge=edge,
     )
+    detail = (_file_detail(ws, record, options.look(state, record), shown.size, warp)
+              if window else None)
     if warp is not None:
         from langslice.core.deformable import warp_section_image
 
@@ -211,12 +215,46 @@ def draw_canvas(
                                           angles=record.angles),
         atlas_name=options.atlas_name(), regions=options.regions,
         matrix_label=matrix_label, template_lines=options.borders, panel_frames=panels,
+        detail=detail,
     )
     applied = (record.deformation or {}).get("record") if warp is not None else None
     for image, panel in zip(images, panels, strict=True):
         note(image, sections=(record.id,), mode=drawn_mode, frame=frame, panel=panel,
              deformation=applied if isinstance(applied, str) else None)
     return Canvas(images=images, frame=frame, panels=panels)
+
+
+def _file_detail(
+    ws: Workspace, record: SliceState, look: Look, size: tuple[int, int], warp: Any,
+) -> SectionDetail:
+    """A zoom's section pixels from the image file (:mod:`langslice.core.native`):
+    points of the *size* render the canvas is drawn from (turned and flipped,
+    unframed; with *warp*, its warped picture), carried back through the warp
+    and the turn to the working copy and read from the file at its own
+    resolution, in *look*. None (the render's own pixels) when the file cannot
+    be read."""
+    from langslice.core import native
+
+    def detail(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, float] | None:
+        try:
+            if warp is not None:
+                from langslice.core.deformable import warp_source_points
+
+                x, y = warp_source_points(warp, size, x, y)
+            ux, uy = native.unoriented_points(x, y, size, record.rotation_deg, record.flip)
+            width, height = ((size[1], size[0]) if int(record.rotation_deg) % 180
+                             else size)
+            source, _factor = ws.working_source(record.id)
+            wx = (ux + 0.5) * source.size[0] / float(width) - 0.5
+            wy = (uy + 0.5) * source.size[1] / float(height) - 0.5
+            found = native.section_pixels(ws, record, look, wx, wy)
+        except Exception:  # noqa: BLE001 - the picture stands on the render's own pixels
+            logger.warning("zoom of %s: the image file could not be read; drawn from its "
+                           "working copy", record.id, exc_info=True)
+            return None
+        return found.rgb, found.inside, found.enlarged
+
+    return detail
 
 
 def stored_placement(record: SliceState, section: Any) -> tuple[Any, str]:

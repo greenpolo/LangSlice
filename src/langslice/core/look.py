@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -67,6 +68,7 @@ from langslice.core.display import (
     framed_section,
 )
 from langslice.core.layers import annotate, note
+from langslice.core.native import framed_window
 from langslice.core.placement import placement_pictures
 from langslice.core.positioning import (
     ATLAS_UPSAMPLE,
@@ -98,6 +100,9 @@ WARP_CHOICES: tuple[str, ...] = ("applied", "none")
 #: The :data:`langslice.core.display.MODE_RULES` entry each mode is drawn under.
 _DISPLAY_MODE = {"section": "section", "atlas": "template", "overlay": "overlay",
                  "positioning": "stacked"}
+#: What a zoom's label and caption say when its section was read from the
+#: image file (:mod:`langslice.core.native`).
+FROM_FILE = " from the image file"
 #: The section fields a picture of it depends on (:func:`snapshot`).
 SECTION_FIELDS: tuple[str, ...] = (
     "index_original", "index_corrected", "position_mm", "cutting_angles_deg", "flip",
@@ -107,6 +112,8 @@ SECTION_FIELDS: tuple[str, ...] = (
 #: preprocessed channel's recipe).
 APPEARANCE_KEYS: tuple[str, ...] = (CHANNELS_KEY, PREPROCESSED)
 _BORDER_COLOR = "#ffff00"
+
+logger = logging.getLogger(__name__)
 
 
 class LookError(ValueError):
@@ -400,14 +407,25 @@ def _section_picture(
     look_ = options.look(state, record)
     whole = render_slice(ws, record, long_edge=long_edge, frame=True, look=look_)
     base = base or whole.size
+    picture: Image.Image | None = None
+    enlarged = ""
     if request.zoom:
-        options = replace(options, zoom=_zoom_pixels(request.zoom, base))
-    picture = framed_section(ws, state, record, options)
+        # A zoom reads the box from the image file at its own resolution.
+        try:
+            picture, scale = framed_window(ws, record, look_, tuple(request.zoom), long_edge)
+            enlarged = FROM_FILE + (f" (file pixels enlarged x{scale:.1f})"
+                                    if scale > 1.05 else "")
+        except Exception:  # noqa: BLE001 - drawn from the working copy instead
+            logger.warning("zoom of %s: the image file could not be read; drawn from its "
+                           "working copy", record.id, exc_info=True)
+    if picture is None:
+        if request.zoom:
+            options = replace(options, zoom=_zoom_pixels(request.zoom, base))
+        picture = framed_section(ws, state, record, options)
     working = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     working_um, _source = calibrate(state, ws, record, working)
     base_um = framed_um_per_px(ws, record, working_um, long_edge=long_edge, look=look_)
-    enlarged = ""
-    if request.zoom and max(picture.size) < long_edge:
+    if request.zoom and not enlarged and max(picture.size) < long_edge:
         # The box holds fewer source pixels than the picture size: shown
         # larger, and said so (no detail is added).
         factor = min(long_edge / max(picture.size), ATLAS_UPSAMPLE)
@@ -422,8 +440,9 @@ def _section_picture(
     label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
              f"{_orientation(record)}  [{short}]{enlarged}")
     text = (f"{record.id} section{_orientation(record)}, "
-            f"{_where(record)}; {um:.1f} um/px; {full}")
-    image = caption(picture, label)
+            f"{_where(record)}; {um:.1f} um/px; {full}"
+            + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else ""))
+    image = caption(picture, label, min_width=long_edge if request.zoom else 0)
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
     recipe = _recipe(one, held, base=base, shown=picture.size, um_per_px=um)
@@ -468,9 +487,12 @@ def _overlay_picture(
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
+    read = (placed.canvas.panels[0].from_file
+            if placed.canvas is not None and placed.canvas.panels else None)
     text = (f"{record.id} overlay{_orientation(record)}, "
             f"{_where(record)}; {placed.row.get('transform', 'identity')} transform, "
-            f"{warp_words}; {um:.1f} um/px; {full}; atlas {atlas_words}")
+            f"{warp_words}; {um:.1f} um/px; {full}; atlas {atlas_words}"
+            + (f";{FROM_FILE}" if read is not None else ""))
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
     recipe = _recipe(one, held, base=base, shown=shown, um_per_px=um)

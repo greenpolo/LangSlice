@@ -2762,7 +2762,7 @@
      "labels_dtype": "uint32",
      "size": [
       512,
-      521
+      523
      ],
      "view_json": "<hex>"
     },
@@ -2782,7 +2782,7 @@
      "labels_dtype": "uint32",
      "size": [
       512,
-      521
+      523
      ],
      "view_json": "<hex>"
     },
@@ -3132,7 +3132,7 @@
     },
     {
      "call": 3,
-     "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000005_zoom_section",
@@ -3199,7 +3199,7 @@
     },
     {
      "call": 4,
-     "caption": "s1.png section, at 0.12 mm; 7.8 um/px; raw red + green; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 7.5 um/px; raw red + green; percentile contrast; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000006_zoom_section",
@@ -3233,8 +3233,8 @@
       ],
       "renderer": "look",
       "shown": [
-       488,
-       376
+       512,
+       392
       ],
       "state": {
        "appearance": {},
@@ -3255,7 +3255,7 @@
         }
        }
       },
-      "um_per_px": 7.8445
+      "um_per_px": 7.4768
      },
      "sections": [
       "s1.png"
@@ -3266,7 +3266,7 @@
     },
     {
      "call": 5,
-     "caption": "s0.png section, at 0.04 mm; 7.8 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 7.3 um/px; raw gray; percentile contrast; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000007_zoom_section",
@@ -3297,8 +3297,8 @@
       ],
       "renderer": "look",
       "shown": [
-       480,
-       360
+       512,
+       384
       ],
       "state": {
        "appearance": {},
@@ -3319,7 +3319,7 @@
         }
        }
       },
-      "um_per_px": 7.8125
+      "um_per_px": 7.3242
      },
      "sections": [
       "s0.png"
@@ -5449,7 +5449,7 @@
     },
     {
      "call": 30,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders; from the image file",
      "layers": true,
      "mode": "overlay",
      "name": "000043_elastix_affine_overlay",
@@ -5732,7 +5732,7 @@
     },
     {
      "call": 33,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders; from the image file",
      "layers": true,
      "mode": "overlay",
      "name": "000047_ants_syn_overlay",
