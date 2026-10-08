@@ -125,6 +125,7 @@ def test_status_lists_the_chatgpt_agent_and_image_models(isolated_home: Path) ->
 
     oauth = setup.setup_status()["providers"]["openai-oauth"]
     assert oauth["agent_models"] == [
+        "openai-oauth/gpt-6.1-sol",
         "openai-oauth/gpt-6-astra", "openai-oauth/gpt-6-sol", "openai-oauth/gpt-6-luna",
         "openai-oauth/gpt-5.6-sol", "openai-oauth/gpt-5.6-terra", "openai-oauth/gpt-5.6-luna",
     ]

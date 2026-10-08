@@ -241,8 +241,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--playbook",
         action="store_true",
-        help="Put a working method in the job statement (hypothesise everything, "
-        "confirm, write, re-check, review); for the cheaper models",
+        help="Add optional positioning guidance: compare candidate planes and regions, "
+        "write supported placements, revisit uncertainty and review the stack",
     )
     p.add_argument(
         "--max-quota-percent",

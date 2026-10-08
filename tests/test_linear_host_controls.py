@@ -135,11 +135,12 @@ def test_the_playbook_puts_a_method_in_the_job_statement(tmp_path: Path):
     state, spec, tools = _stack(tmp_path, tasks=["position"],
                                 position=PositionSpec(playbook=True))
     text = " ".join(_statement(state, spec, tools).split())
-    assert "form a complete hypothesis" in text
-    assert "Write every position in one `position_sections`" in text
+    assert "initial positions as hypotheses" in text
+    assert "`grep_atlas_view`" in text
+    assert "Write supported placements with `position_sections`" in text
     spec.position.playbook = False
     plain = " ".join(_statement(state, spec, tools).split())
-    assert "complete hypothesis" not in plain and "Method:" in plain
+    assert "initial positions as hypotheses" not in plain and "Method:" in plain
     method = plain.split("Method:", 1)[1]
     assert "batch" not in method.lower()
     assert "candidate atlas positions before writing" in method
