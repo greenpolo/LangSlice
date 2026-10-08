@@ -87,10 +87,10 @@ slices selected when it opens (or all). Controls map to the job spec:
 | Image resolution | `spec.image_resolution` |
 | Show agent log; Open agent viewer (only when ABBA was started with `langslice abba`) | log window or compact status window; `viewer` in the `run_started` event |
 | Save traces to FOLDER | `trace_dir` |
-| Positioning | tasks `reorder`, `position`; `position.thickness_um`, `interval_um` (from ABBA), `notes` |
+| Positioning | task `position`; `position.thickness_um`, `interval_um` (from ABBA), `notes` |
 | Linear | task `transform`; `transform.flip`, `hemisphere_cue`, `angles`, `notes` |
-| Nonlinear | task `nonlinear`; `nonlinear.engine`, `notes`. With Linear off and unregistered slices listed, Run asks whether the agent should align them first (No leaves them out of Nonlinear) |
-| Slices tab: Damaged + note; agent may flag damage | `damaged`; `spec.agent_damage` |
+| Nonlinear | task `nonlinear`; `nonlinear.notes`. With Linear off and unregistered slices listed, Run asks whether the agent should align them first (No leaves them out of Nonlinear) |
+| Slices tab: note on damaged tissue; agent may mark damaged regions | `damaged` (filename to note; a note, not a damage mark); `spec.agent_damage` |
 | Allow the agent to overwrite existing transforms (off) | off: every listed slice with registrations is in `locked` |
 | Preprocessing tab: Auto / Custom, weights, CLAHE; agent-driven preprocessing | `preprocessing`; `spec.agent_preprocessing` |
 

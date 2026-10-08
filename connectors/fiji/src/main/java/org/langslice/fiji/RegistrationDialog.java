@@ -62,11 +62,10 @@ final class RegistrationDialog extends JDialog {
     final JSpinner parallel = new JSpinner(new SpinnerNumberModel(4, 1, 4, 1));
     final JTextArea linearNotes = notes();
     final JCheckBox nonlinear = header("Nonlinear");
-    final JComboBox<String> engine = new JComboBox<>(new String[]{"Either (the agent chooses)", "ANTs", "Elastix"});
     final JTextArea nonlinearNotes = notes();
 
     final DefaultTableModel table;
-    final JCheckBox agentDamage = new JCheckBox("Let the agent flag damaged slices");
+    final JCheckBox agentDamage = new JCheckBox("Let the agent mark damaged regions");
     final JCheckBox overwrite = new JCheckBox("Allow the agent to overwrite existing transforms");
 
     final JRadioButton auto = new JRadioButton("Auto"), custom = new JRadioButton("Custom");
@@ -97,11 +96,11 @@ final class RegistrationDialog extends JDialog {
             weights[c].setEditor(new JSpinner.NumberEditor(weights[c], "0.0#"));
             ((JSpinner.DefaultEditor) weights[c].getEditor()).getTextField().setColumns(4);
         }
-        table = new DefaultTableModel(new Object[]{"Slice", "Registrations", "Damaged", "Damage note (optional)"}, 0) {
-            @Override public Class<?> getColumnClass(int column) { return column == 1 ? Integer.class : column == 2 ? Boolean.class : String.class; }
-            @Override public boolean isCellEditable(int row, int column) { return column == 2 || column == 3 && Boolean.TRUE.equals(getValueAt(row, 2)); }
+        table = new DefaultTableModel(new Object[]{"Slice", "Registrations", "Note on damaged tissue (optional)"}, 0) {
+            @Override public Class<?> getColumnClass(int column) { return column == 1 ? Integer.class : String.class; }
+            @Override public boolean isCellEditable(int row, int column) { return column == 2; }
         };
-        for (SliceRow row : rows) { table.addRow(new Object[]{row.name, row.registrations, false, ""}); previewSlice.addItem(row.name); }
+        for (SliceRow row : rows) { table.addRow(new Object[]{row.name, row.registrations, ""}); previewSlice.addItem(row.name); }
         fill(settings);
 
         tabs.addTab("Tasks", tasksTab());
@@ -190,10 +189,8 @@ final class RegistrationDialog extends JDialog {
         angles.setToolTipText("The agent may change the atlas cutting angles of the whole stack (ABBA's slicing angles).");
 
         cell(grid, nonlinear, 0, y++, 4, true);
-        cell(grid, indent(label("Deformable-fit engine")), 0, y, 1, false); cell(grid, left(engine), 1, y++, 3, true);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(nonlinearNotes), 1, y++, 3, true);
         nonlinear.setToolTipText("A deformation per slice on top of its linear placement, added to ABBA as a BigWarp step.");
-        engine.setToolTipText("The library that fits each deformation. Either lets the agent choose per slice.");
         return padded(grid);
     }
 
@@ -203,8 +200,7 @@ final class RegistrationDialog extends JDialog {
         grid.setRowHeight(Math.max(grid.getRowHeight(), 22));
         grid.getColumnModel().getColumn(0).setPreferredWidth(260);
         grid.getColumnModel().getColumn(1).setPreferredWidth(90);
-        grid.getColumnModel().getColumn(2).setPreferredWidth(70);
-        grid.getColumnModel().getColumn(3).setPreferredWidth(240);
+        grid.getColumnModel().getColumn(2).setPreferredWidth(310);
         JScrollPane pane = new JScrollPane(grid);
         pane.setPreferredSize(new Dimension(620, 230));
         long registered = rows.stream().filter(r -> r.registrations > 0).count();
@@ -213,7 +209,7 @@ final class RegistrationDialog extends JDialog {
         GridBagConstraints wide = constraints(0, 1, 1, true); wide.fill = GridBagConstraints.BOTH; wide.weighty = 1;
         panel.add(pane, wide);
         cell(panel, agentDamage, 0, 2, 1, true);
-        agentDamage.setToolTipText("The agent may add damage flags of its own; it never removes yours.");
+        agentDamage.setToolTipText("The agent may mark the atlas regions a slice has lost or displaced (mark_damage). Your notes are shown to it either way; a note alone does not mark a slice damaged.");
         cell(panel, overwrite, 0, 3, 1, true);
         cell(panel, indent(wrap(registered == 0 ? "No listed slice has an ABBA registration yet."
                 : registered + " listed slice" + (registered == 1 ? " has" : "s have") + " ABBA registrations. With this option off, "
@@ -272,7 +268,6 @@ final class RegistrationDialog extends JDialog {
         linear.setSelected(s.linear); affine.setSelected(s.affine); angles.setSelected(s.angles);
         parallel.setValue(s.maxParallel); linearNotes.setText(s.linearNotes);
         nonlinear.setSelected(s.nonlinear); nonlinearNotes.setText(s.nonlinearNotes);
-        engine.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.ENGINES).indexOf(s.engine)));
         agentDamage.setSelected(s.agentDamage); overwrite.setSelected(s.overwrite);
         (s.custom ? custom : auto).setSelected(true);
         agentPreprocessing.setSelected(s.agentPreprocessing);
@@ -300,7 +295,6 @@ final class RegistrationDialog extends JDialog {
         s.linear = linear.isSelected(); s.affine = affine.isSelected(); s.angles = angles.isSelected();
         s.maxParallel = (Integer) parallel.getValue(); s.linearNotes = linearNotes.getText();
         s.nonlinear = nonlinear.isSelected(); s.nonlinearNotes = nonlinearNotes.getText();
-        s.engine = RegistrationSettings.ENGINES[Math.max(0, engine.getSelectedIndex())];
         s.agentDamage = agentDamage.isSelected(); s.overwrite = overwrite.isSelected();
         s.custom = custom.isSelected(); s.clahe = clahe.isSelected(); s.agentPreprocessing = agentPreprocessing.isSelected();
         s.strength = RegistrationSettings.LEVELS[strength.getSelectedIndex()];
@@ -314,7 +308,7 @@ final class RegistrationDialog extends JDialog {
     Map<Integer, String> damaged() {
         Map<Integer, String> marked = new LinkedHashMap<>();
         for (int r = 0; r < table.getRowCount(); r++)
-            if (Boolean.TRUE.equals(table.getValueAt(r, 2))) marked.put(r, String.valueOf(table.getValueAt(r, 3)).trim());
+            { String note = String.valueOf(table.getValueAt(r, 2)).trim(); if (!note.isEmpty()) marked.put(r, note); }
         return marked;
     }
 
@@ -323,7 +317,6 @@ final class RegistrationDialog extends JDialog {
         for (JComponent field : new JComponent[]{thickness, interval}) field.setEnabled(p);
         for (JComponent field : new JComponent[]{flip, affine, parallel, angles}) field.setEnabled(l);
         cue.setEnabled(l && flip.isSelected());
-        engine.setEnabled(n);
         enable(positionNotes, p); enable(linearNotes, l); enable(nonlinearNotes, n);
         for (JSpinner weight : weights) weight.setEnabled(c);
         clahe.setEnabled(c); strength.setEnabled(c && clahe.isSelected());
@@ -357,7 +350,7 @@ final class RegistrationDialog extends JDialog {
         ActionListener tasks = e -> { sync(); estimateTimer.restart(); };
         for (AbstractButton b : new AbstractButton[]{positioning, flip, linear, affine, angles, nonlinear, overwrite, agentDamage}) b.addActionListener(tasks);
         saveTraces.addActionListener(e -> sync());
-        for (JComboBox<?> box : Arrays.asList(provider, model, reasoning, resolution, imageModel, engine)) box.addActionListener(tasks);
+        for (JComboBox<?> box : Arrays.asList(provider, model, reasoning, resolution, imageModel)) box.addActionListener(tasks);
         parallel.addChangeListener(e -> estimateTimer.restart());
         ActionListener prep = e -> { sync(); estimateTimer.restart(); schedulePreview(); };
         for (AbstractButton b : new AbstractButton[]{auto, custom, clahe, agentPreprocessing}) b.addActionListener(prep);

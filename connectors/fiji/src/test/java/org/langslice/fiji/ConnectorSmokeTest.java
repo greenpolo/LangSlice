@@ -237,7 +237,7 @@ public final class ConnectorSmokeTest {
         s.positioning = true; s.linear = true; s.affine = false; s.maxParallel = 2; s.agentDamage = false;
         s.positionNotes = " thick sections "; s.linearNotes = "tears ventral"; s.cue = "ink right";
         JsonObject spec = s.spec();
-        require(spec.getAsJsonArray("tasks").toString().equals("[\"reorder\",\"position\",\"transform\"]"), "Positioning = reorder+position, Linear = transform");
+        require(spec.getAsJsonArray("tasks").toString().equals("[\"position\",\"transform\"]"), "Positioning = position, Linear = transform");
         require(spec.get("model").getAsString().equals("openai-oauth/gpt-6-luna") && spec.get("reasoning").getAsString().equals("high"), "Model id and reasoning");
         require(spec.get("image_resolution").getAsString().equals("medium") && !spec.get("agent_damage").getAsBoolean(), "Resolution and agent damage flag");
         JsonObject transform = spec.getAsJsonObject("transform");
@@ -254,15 +254,15 @@ public final class ConnectorSmokeTest {
         require(spec(s).equals("[\"transform\"]"), "Linear alone");
         s.linear = false;
         require(s.problem(1) != null, "At least one task is required");
-        s.nonlinear = true; s.nonlinearNotes = " hippocampus torn "; s.engine = "ants"; s.imageProvider = "none"; s.imageModel = null;
+        s.nonlinear = true; s.nonlinearNotes = " hippocampus torn "; s.imageProvider = "none"; s.imageModel = null;
         require(s.problem(1) == null && spec(s).equals("[\"nonlinear\"]"), "Nonlinear alone is a valid run");
         JsonObject deform = s.spec().getAsJsonObject("nonlinear");
         require(deform.get("provider").getAsString().equals("none") && deform.get("image_model").isJsonNull()
-                && deform.get("engine").getAsString().equals("ants") && deform.get("notes").getAsString().equals("hippocampus torn"),
-                "Nonlinear block: no image model, engine and notes are sent");
+                && !deform.has("engine") && deform.get("notes").getAsString().equals("hippocampus torn"),
+                "Nonlinear block: no image model, no engine, notes are sent");
         s.imageProvider = "gemini-api"; s.imageModel = "gemini-3-pro-image";
         require(s.spec().getAsJsonObject("nonlinear").get("image_model").getAsString().equals("gemini-3-pro-image") && s.usesImageModel(), "Image provider and model");
-        s.linear = true; s.nonlinear = false; s.imageProvider = "openai-oauth"; s.imageModel = "gpt-image-2"; s.engine = "either";
+        s.linear = true; s.nonlinear = false; s.imageProvider = "openai-oauth"; s.imageModel = "gpt-image-2";
         require(s.preprocessing(3).toString().equals("{\"mode\":\"auto\"}") && s.exportChannels(3).equals(Arrays.asList(0, 1, 2)), "Auto exports every channel");
         s.custom = true; s.weights = new double[]{1, 0, 0.5}; s.clahe = false; s.strength = "high";
         require(s.exportChannels(3).equals(Arrays.asList(0, 2)), "Custom exports only weighted channels, in channel order");
@@ -282,7 +282,7 @@ public final class ConnectorSmokeTest {
         require(s.problem(3) != null, "All-zero weights are refused");
         require(new RegistrationSettings().weightsFor(2).length == 2, "Saved weights adapt to the channel count");
         s.weights = new double[]{0.2, 0.7, 1};
-        s.nonlinear = true; s.angles = true; s.agentPreprocessing = true; s.viewer = true; s.engine = "elastix";
+        s.nonlinear = true; s.angles = true; s.agentPreprocessing = true; s.viewer = true;
         s.imageProvider = "none"; s.imageModel = null; s.nonlinearNotes = "notes";
         s.saveTraces = true; s.traceDir = " ";
         require(s.problem(3) != null, "Saving traces needs a folder");
@@ -293,7 +293,7 @@ public final class ConnectorSmokeTest {
         RegistrationSettings back = RegistrationSettings.load(node);
         require(!back.fresh && back.spec().equals(s.spec()) && back.preprocessing(3).equals(s.preprocessing(3)) && back.pixelSize == s.pixelSize
                 && back.overwrite == s.overwrite && back.showLog == s.showLog && back.viewer
-                && back.imageProvider.equals("none") && back.imageModel == null && back.engine.equals("elastix")
+                && back.imageProvider.equals("none") && back.imageModel == null 
                 && back.saveTraces && back.traceDir.equals(s.traceDir), "Every choice persists between runs");
         node.removeNode();
         JsonObject status = JsonParser.parseString("{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],"
