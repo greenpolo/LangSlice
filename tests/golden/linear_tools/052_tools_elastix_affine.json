@@ -1,0 +1,73 @@
+{
+ "args": [
+  [
+   "s1.png"
+  ]
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "id": 43
+   }
+  ],
+  "results": [
+   {
+    "calibration": {
+     "section_um_per_px": 31.25,
+     "source": "host"
+    },
+    "id": "s1.png",
+    "iou": 1.0,
+    "mirrored": false,
+    "physical": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": 0.973,
+     "scale_x": 1.0099,
+     "scale_y": 0.9946,
+     "shear": -0.0106,
+     "translate_x_mm": -0.0603,
+     "translate_y_mm": -0.0232
+    },
+    "position_mm": 0.15,
+    "regions": {
+     "atlas_kept_fraction": 1.0,
+     "exclude": [],
+     "include": [
+      "TH"
+     ]
+    },
+    "restrict_box": [
+     0.4855,
+     0.3353,
+     0.7796,
+     0.6647
+    ],
+    "status": "ok"
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "052_tools_elastix_affine.0.png",
+   "mode": "RGB",
+   "size": [
+    100,
+    427
+   ]
+  }
+ ],
+ "kwargs": {
+  "atlas_image": "ara",
+  "restrict_to": [
+   "TH"
+  ]
+ },
+ "media_texts": [],
+ "tool": "elastix_affine"
+}

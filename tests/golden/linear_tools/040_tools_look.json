@@ -1,0 +1,33 @@
+{
+ "args": [
+  "positioning"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "positioning: 2 sections below in position order, 0.10-0.20 mm, raw gray; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 2: s2.png 0.20 mm",
+    "id": 34
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "040_tools_look.0.png",
+   "mode": "RGB",
+   "size": [
+    1090,
+    386
+   ]
+  }
+ ],
+ "kwargs": {
+  "sections": [
+   "s0.png",
+   "s2.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

@@ -1,0 +1,119 @@
+{
+ "args": [],
+ "data": {
+  "channels": {
+   "s0.png": [
+    "gray"
+   ],
+   "s1.png": [
+    "red",
+    "green",
+    "blue"
+   ],
+   "s2.png": [
+    "gray"
+   ]
+  },
+  "pictures": [
+   {
+    "caption": "0: s0.png preprocessed channel before this call (default appearance)",
+    "id": 16
+   },
+   {
+    "caption": "0: s0.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+    "id": 17
+   },
+   {
+    "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+    "id": 18
+   },
+   {
+    "caption": "1: s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
+    "id": 19
+   },
+   {
+    "caption": "2: s2.png preprocessed channel before this call (default appearance)",
+    "id": 20
+   },
+   {
+    "caption": "2: s2.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+    "id": 21
+   }
+  ],
+  "recipe": {
+   "preprocessed": {
+    "stack": {
+     "channel_weights": null,
+     "clahe_clip": 6.0,
+     "clahe_tiles": 4,
+     "denoise": false,
+     "n4": false
+    }
+   }
+  },
+  "scope": "stack",
+  "shown": [
+   "s0.png",
+   "s1.png",
+   "s2.png"
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "019_tools_set_preprocessed_channel_properties.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    236
+   ]
+  },
+  {
+   "file": "019_tools_set_preprocessed_channel_properties.1.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    236
+   ]
+  },
+  {
+   "file": "019_tools_set_preprocessed_channel_properties.2.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  },
+  {
+   "file": "019_tools_set_preprocessed_channel_properties.3.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  },
+  {
+   "file": "019_tools_set_preprocessed_channel_properties.4.png",
+   "mode": "RGB",
+   "size": [
+    184,
+    246
+   ]
+  },
+  {
+   "file": "019_tools_set_preprocessed_channel_properties.5.png",
+   "mode": "RGB",
+   "size": [
+    184,
+    245
+   ]
+  }
+ ],
+ "kwargs": {
+  "clahe_clip": 6.0,
+  "clahe_tiles": 4
+ },
+ "media_texts": [],
+ "tool": "set_preprocessed_channel_properties"
+}

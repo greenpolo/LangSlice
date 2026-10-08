@@ -333,7 +333,11 @@ def regions_in_plane(
     *, angles: Angles | None = None,
 ) -> list[str]:
     """The highlighted regions with at least one pixel in the plane at
-    *position_mm* and *angles* (the stack's when None)."""
+    *position_mm* and *angles* (the stack's when None); a region with a side
+    (``"CTX:left"``) counts only that side of the atlas picture, as it is
+    drawn."""
+    from langslice.core.atlas.sides import restrict, split_side
+
     if not options.regions:
         return []
     pitch, yaw = plane_angles(state, angles)
@@ -341,7 +345,11 @@ def regions_in_plane(
         ctx.atlas, position_mm, plane=cast(Plane, state.plane),
         pitch_deg=pitch, yaw_deg=yaw,
     ))
-    return [name for name, ids in options.regions if np.isin(labels, list(ids)).any()]
+    # An atlas-only picture has no section: a side is the picture's own.
+    left = regions_left(ctx.atlas, options.regions, position_mm, state.plane, pitch, yaw,
+                        np.eye(2))
+    return [name for name, ids in options.regions
+            if restrict(np.isin(labels, list(ids)), split_side(name)[1], left).any()]
 
 
 def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:

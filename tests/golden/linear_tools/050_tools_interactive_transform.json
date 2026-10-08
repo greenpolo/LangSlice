@@ -1,0 +1,32 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "rotate_quarter": 45
+   }
+  ]
+ ],
+ "data": {
+  "error": "NOTHING_WRITTEN",
+  "results": [
+   {
+    "allowed": [
+     0,
+     90,
+     180,
+     270
+    ],
+    "error": "BAD_ROTATION",
+    "id": "s0.png",
+    "status": "error"
+   }
+  ],
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "interactive_transform"
+}

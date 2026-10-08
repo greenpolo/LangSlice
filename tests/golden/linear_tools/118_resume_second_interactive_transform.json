@@ -1,0 +1,33 @@
+{
+ "call": {
+  "arguments": {
+   "sections": [
+    {
+     "id": "s2.png",
+     "rotation_deg": -1.0
+    }
+   ]
+  },
+  "tool": "interactive_transform"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"results\": [{\"id\": \"s2.png\", \"status\": \"ok\", \"orientation\": {\"flip\": false, \"rotate_quarter\": 0, \"changed\": false}, \"written\": true, \"transform\": {\"rotation_deg\": -1.0, \"scale_x\": 1.0, \"scale_y\": 1.0, \"translate_x_mm\": 0.0, \"translate_y_mm\": 0.0, \"shear\": 0.0, \"pivot\": [0.5, 0.5]}}], \"changed\": [{\"index\": 2, \"id\": \"s2.png\", \"position_mm\": 0.2, \"flip\": false, \"rotation_deg\": 0, \"damaged\": false, \"transform\": \"interactive\", \"transform_mirrored\": false}], \"pictures\": [{\"id\": 4, \"caption\": \"2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders\"}], \"images_attached\": 1}"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg"
+  }
+ ],
+ "door": "resume",
+ "images": [
+  {
+   "file": "118_resume_second_interactive_transform.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ]
+}

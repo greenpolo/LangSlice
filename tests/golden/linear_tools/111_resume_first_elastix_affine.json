@@ -1,0 +1,30 @@
+{
+ "call": {
+  "arguments": {
+   "sections": [
+    "s1.png"
+   ]
+  },
+  "tool": "elastix_affine"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"results\": [{\"status\": \"ok\", \"id\": \"s1.png\", \"position_mm\": 0.15, \"iou\": 0.92, \"physical\": {\"rotation_deg\": 0.221, \"scale_x\": 1.0191, \"scale_y\": 1.0264, \"translate_x_mm\": -0.0319, \"translate_y_mm\": -0.0619, \"shear\": 0.003, \"pivot\": [0.5, 0.5]}, \"mirrored\": false, \"calibration\": {\"section_um_per_px\": 31.25, \"source\": \"host\"}}], \"pictures\": [{\"id\": 2, \"caption\": \"1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders\"}], \"images_attached\": 1}"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg"
+  }
+ ],
+ "door": "resume",
+ "images": [
+  {
+   "file": "111_resume_first_elastix_affine.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ]
+}

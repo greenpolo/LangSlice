@@ -1,0 +1,88 @@
+{
+ "args": [],
+ "data": {
+  "can_change": [
+   "positions (the order follows them)",
+   "cutting angles",
+   "orientation and mirroring and in-plane transforms by hand",
+   "in-plane transforms by elastix_affine",
+   "damaged regions",
+   "deformations (ants_syn, trace_borders)",
+   "channel display and the preprocessed channel"
+  ],
+  "channel_display": {
+   "red": {
+    "colormap": "magenta",
+    "contrast_limits": [
+     20.0,
+     200.0
+    ],
+    "gamma": 1.4
+   }
+  },
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "preprocessed_recipe": {
+   "sections": {},
+   "stack": {
+    "channel_weights": null,
+    "clahe_clip": 6.0,
+    "clahe_tiles": 4,
+    "denoise": false,
+    "n4": false
+   }
+  },
+  "rows": [
+   {
+    "damaged": false,
+    "deformation_steps": 1,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.989,
+    "transform_mirrored": false
+   },
+   {
+    "damaged": false,
+    "deformation_steps": 3,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 1.0,
+    "transform_mirrored": false
+   },
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.911,
+    "transform_mirrored": false
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "status"
+}

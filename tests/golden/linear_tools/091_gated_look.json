@@ -1,0 +1,28 @@
+{
+ "args": [
+  "positioning"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+    "id": 4
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "gated",
+ "images": [
+  {
+   "file": "091_gated_look.0.png",
+   "mode": "RGB",
+   "size": [
+    1567,
+    418
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "look"
+}

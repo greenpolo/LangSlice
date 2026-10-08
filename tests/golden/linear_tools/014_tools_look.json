@@ -1,0 +1,22 @@
+{
+ "args": [
+  "section"
+ ],
+ "data": {
+  "error": "UNKNOWN_CHANNEL",
+  "message": "s0.png has no channel 'purple'; its channels: gray, or 'preprocessed'",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "channels": [
+   "purple"
+  ],
+  "sections": [
+   "s0.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

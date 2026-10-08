@@ -1,0 +1,55 @@
+{
+ "args": [
+  "s1.png",
+  [
+   "HY"
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damage_note": "test mark",
+    "damaged": true,
+    "damaged_regions": [
+     "HY"
+    ],
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0
+   }
+  ],
+  "damaged": true,
+  "id": "s1.png",
+  "note": "test mark",
+  "pictures": [
+   {
+    "caption": "s1.png: marked damage regions HY shaded on the section under its current registration (left) and on the atlas (right)",
+    "id": 36
+   }
+  ],
+  "regions": [
+   "HY"
+  ],
+  "status": "ok",
+  "written": true
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "043_tools_mark_damage.0.png",
+   "mode": "RGB",
+   "size": [
+    682,
+    371
+   ]
+  }
+ ],
+ "kwargs": {
+  "note": "test mark"
+ },
+ "media_texts": [],
+ "tool": "mark_damage"
+}

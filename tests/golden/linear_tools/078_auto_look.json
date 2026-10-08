@@ -1,0 +1,33 @@
+{
+ "args": [
+  "section"
+ ],
+ "data": {
+  "pictures": [
+   {
+    "caption": "0: s0.png section, at 0.04 mm; 39.8 um/px; raw gray; percentile contrast",
+    "id": 1
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "auto",
+ "images": [
+  {
+   "file": "078_auto_look.0.png",
+   "mode": "RGB",
+   "size": [
+    200,
+    176
+   ]
+  }
+ ],
+ "kwargs": {
+  "resolution": 200,
+  "sections": [
+   "s0.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "look"
+}

@@ -1,0 +1,30 @@
+{
+ "args": [
+  "s1.png",
+  []
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0
+   }
+  ],
+  "damaged": false,
+  "id": "s1.png",
+  "note": "",
+  "regions": [],
+  "status": "ok",
+  "written": true
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "mark_damage"
+}

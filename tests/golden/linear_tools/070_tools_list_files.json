@@ -1,0 +1,16 @@
+{
+ "args": [
+  "views"
+ ],
+ "data": {
+  "status": "ok",
+  "text": "views:\nviews/000008_look_atlas/view.json  text, 1125 B\nviews/000009_look_atlas/view.json  text, 1123 B\nviews/000010_look_atlas/view.json  text, 1186 B\nviews/000011_look_atlas/view.json  text, 1137 B\nviews/000012_look_positioning/view.json  text, 2289 B\nviews/000025_grep_atlas_view_atlas/view.json  text, 1316 B\nviews/000026_grep_atlas_view_atlas/view.json  text, 1318 B\nviews/000027_position_sections_positioning/view.json  text, 2680 B\nviews/000030_look_atlas/view.json  text, 1488 B\nviews/000033_look_positioning/view.json  text, 2722 B\nviews/000034_look_positioning/view.json  text, 2333 B"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "pattern": "*.json"
+ },
+ "media_texts": [],
+ "tool": "list_files"
+}

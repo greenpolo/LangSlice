@@ -1,0 +1,128 @@
+{
+ "args": [],
+ "data": {
+  "pictures": [
+   {
+    "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 40
+   },
+   {
+    "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "id": 41
+   },
+   {
+    "caption": "2: s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 42
+   }
+  ],
+  "results": [
+   {
+    "calibration": {
+     "section_um_per_px": 31.25,
+     "source": "host"
+    },
+    "id": "s0.png",
+    "iou": 0.989,
+    "mirrored": false,
+    "physical": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": 0.341,
+     "scale_x": 1.0014,
+     "scale_y": 1.0046,
+     "shear": -0.0054,
+     "translate_x_mm": -0.02,
+     "translate_y_mm": -0.0691
+    },
+    "position_mm": 0.1,
+    "status": "ok"
+   },
+   {
+    "calibration": {
+     "section_um_per_px": 31.25,
+     "source": "host"
+    },
+    "id": "s1.png",
+    "iou": 0.992,
+    "mirrored": false,
+    "physical": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": 0.025,
+     "scale_x": 1.0049,
+     "scale_y": 1.0054,
+     "shear": 0.0013,
+     "translate_x_mm": -0.0351,
+     "translate_y_mm": -0.0579
+    },
+    "position_mm": 0.15,
+    "status": "ok"
+   },
+   {
+    "calibration": {
+     "section_um_per_px": 31.25,
+     "source": "host"
+    },
+    "id": "s2.png",
+    "iou": 0.911,
+    "mirrored": false,
+    "physical": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": -0.244,
+     "scale_x": 1.0072,
+     "scale_y": 1.0037,
+     "shear": -0.0013,
+     "translate_x_mm": -0.0033,
+     "translate_y_mm": -0.0753
+    },
+    "position_mm": 0.2,
+    "regions": {
+     "atlas_kept_fraction": 0.631,
+     "exclude": [
+      "CTX:right"
+     ],
+     "include": []
+    },
+    "status": "ok"
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "051_tools_elastix_affine.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  },
+  {
+   "file": "051_tools_elastix_affine.1.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    333
+   ]
+  },
+  {
+   "file": "051_tools_elastix_affine.2.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "elastix_affine"
+}

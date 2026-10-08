@@ -1,0 +1,102 @@
+{
+ "args": [
+  "section"
+ ],
+ "data": {
+  "not_shown": [
+   {
+    "caption": "2: long4.png section, at 0.08 mm; 62.5 um/px; raw gray; percentile contrast",
+    "how": "call again with mode='section', sections=['long4.png'] (the other arguments as before)",
+    "mode": "section",
+    "positions_mm": [],
+    "sections": [
+     "long4.png"
+    ]
+   },
+   {
+    "caption": "3: long5.png section, at 0.11 mm; 62.5 um/px; raw gray; percentile contrast",
+    "how": "call again with mode='section', sections=['long5.png'] (the other arguments as before)",
+    "mode": "section",
+    "positions_mm": [],
+    "sections": [
+     "long5.png"
+    ]
+   },
+   {
+    "caption": "5: long6.png section, at 0.17 mm; 62.5 um/px; raw gray; percentile contrast",
+    "how": "call again with mode='section', sections=['long6.png'] (the other arguments as before)",
+    "mode": "section",
+    "positions_mm": [],
+    "sections": [
+     "long6.png"
+    ]
+   },
+   {
+    "caption": "4: long7.png section, at 0.14 mm; 62.5 um/px; raw gray; percentile contrast",
+    "how": "call again with mode='section', sections=['long7.png'] (the other arguments as before)",
+    "mode": "section",
+    "positions_mm": [],
+    "sections": [
+     "long7.png"
+    ]
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "6: long0.png section, at 0.20 mm; 62.5 um/px; raw gray; percentile contrast",
+    "id": 5
+   },
+   {
+    "caption": "0: long1.png section, at 0.02 mm; 62.5 um/px; raw gray; percentile contrast",
+    "id": 6
+   },
+   {
+    "caption": "1: long2.png section, at 0.05 mm; 62.5 um/px; raw gray; percentile contrast",
+    "id": 7
+   },
+   {
+    "caption": "7: long3.png section, at 0.24 mm; 62.5 um/px; raw gray; percentile contrast",
+    "id": 8
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "long",
+ "images": [
+  {
+   "file": "096_long_look.0.png",
+   "mode": "RGB",
+   "size": [
+    127,
+    137
+   ]
+  },
+  {
+   "file": "096_long_look.1.png",
+   "mode": "RGB",
+   "size": [
+    128,
+    137
+   ]
+  },
+  {
+   "file": "096_long_look.2.png",
+   "mode": "RGB",
+   "size": [
+    128,
+    137
+   ]
+  },
+  {
+   "file": "096_long_look.3.png",
+   "mode": "RGB",
+   "size": [
+    127,
+    137
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "look"
+}

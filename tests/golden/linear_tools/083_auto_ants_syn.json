@@ -1,0 +1,80 @@
+{
+ "args": [
+  [
+   "s0.png"
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "deformation_steps": 1,
+    "delta_to_next_mm": 0.025,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0,
+    "transform": "interactive",
+    "transform_mirrored": false
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 6
+   }
+  ],
+  "results": [
+   {
+    "cached": false,
+    "displacement_mm": {
+     "max": 0.174,
+     "median": 0.076
+    },
+    "engine_settings": {
+     "correlation_radius_um": 80.0,
+     "edge_channel": true,
+     "iterations": [
+      80,
+      50,
+      25
+     ],
+     "label_map": "auto",
+     "metric": "local_correlation",
+     "total_sigma_mm": 0.02,
+     "update_sigma_mm": 0.08,
+     "working_um": 40.0
+    },
+    "flags": [],
+    "fold_fraction": 0.0,
+    "id": "s0.png",
+    "runtime_s": "<seconds>",
+    "settings": {
+     "engine": "ants",
+     "fit_atlas": "template",
+     "fit_section": "fit",
+     "stiffness": "medium"
+    },
+    "status": "ok",
+    "steps": 1,
+    "written": true
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "auto",
+ "images": [
+  {
+   "file": "083_auto_ants_syn.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    333
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "ants_syn"
+}

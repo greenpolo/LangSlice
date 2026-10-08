@@ -1,0 +1,76 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 9.0
+   }
+  ]
+ ],
+ "data": {
+  "atlas_range_mm": [
+   0.0,
+   0.25
+  ],
+  "changed": [
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s0.png",
+    "index": 2,
+    "position_mm": 0.25,
+    "rotation_deg": 0
+   }
+  ],
+  "clamped": [
+   {
+    "clamped_to_mm": 0.25,
+    "id": "s0.png",
+    "requested_mm": 9.0
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "n_sections": 3,
+  "order": [
+   "s1.png",
+   "s2.png",
+   "s0.png"
+  ],
+  "pictures": [
+   {
+    "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.25 mm",
+    "id": 28
+   }
+  ],
+  "reordered": [
+   "s1.png",
+   "s2.png",
+   "s0.png"
+  ],
+  "status": "ok",
+  "written": [
+   {
+    "id": "s0.png",
+    "position_mm": 0.25
+   }
+  ]
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "027_tools_position_sections.0.png",
+   "mode": "RGB",
+   "size": [
+    720,
+    628
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "position_sections"
+}

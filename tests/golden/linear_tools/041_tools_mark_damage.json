@@ -1,0 +1,54 @@
+{
+ "args": [
+  "s2.png",
+  [
+   "CTX:right"
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0
+   }
+  ],
+  "damaged": true,
+  "id": "s2.png",
+  "note": "right third missing",
+  "pictures": [
+   {
+    "caption": "s2.png: marked damage regions CTX:right shaded on the section under its current registration (left) and on the atlas (right)",
+    "id": 35
+   }
+  ],
+  "regions": [
+   "CTX:right"
+  ],
+  "status": "ok",
+  "written": true
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "041_tools_mark_damage.0.png",
+   "mode": "RGB",
+   "size": [
+    682,
+    371
+   ]
+  }
+ ],
+ "kwargs": {
+  "note": "right third missing"
+ },
+ "media_texts": [],
+ "tool": "mark_damage"
+}

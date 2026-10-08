@@ -1,0 +1,32 @@
+{
+ "call": {
+  "arguments": {
+   "mode": "section",
+   "resolution": 5000,
+   "sections": [
+    "s1.png"
+   ]
+  },
+  "tool": "look"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"resolution_note\": \"resolution 5000 is outside 128..2000; used 2000\", \"pictures\": [{\"id\": 2, \"caption\": \"1: s1.png section, at 0.15 mm; 31.2 um/px; raw red + green + blue; percentile contrast\"}], \"images_attached\": 1}"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg"
+  }
+ ],
+ "door": "mcp_auto",
+ "images": [
+  {
+   "file": "143_mcp_auto_look.0.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    222
+   ]
+  }
+ ]
+}

@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "list_tools"
+ },
+ "content": [
+  {
+   "text": "[\"elastix_affine\", \"grep_atlas\", \"grep_atlas_view\", \"interactive_transform\", \"list_files\", \"look\", \"mark_damage\", \"note\", \"read_file\", \"redo\", \"search_files\", \"set_channel_properties\", \"set_preprocessed_channel_properties\", \"show_stack\", \"start_job\", \"status\", \"submit\", \"undo\", \"zoom\"]"
+  }
+ ],
+ "door": "mcp",
+ "images": []
+}

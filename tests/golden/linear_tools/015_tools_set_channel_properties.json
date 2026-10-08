@@ -1,0 +1,44 @@
+{
+ "args": [
+  "red"
+ ],
+ "data": {
+  "changed": true,
+  "channel": "red",
+  "intensities": {
+   "dtype": "uint8",
+   "dtype_range": [
+    0.0,
+    255.0
+   ],
+   "percentiles": {
+    "1": 68.0,
+    "99.5": 237.0
+   }
+  },
+  "properties": {
+   "colormap": "magenta",
+   "contrast_limits": [
+    20.0,
+    200.0
+   ],
+   "gamma": 1.4
+  },
+  "sections": [
+   "s1.png"
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "colormap": "magenta",
+  "contrast_limits": [
+   20.0,
+   200.0
+  ],
+  "gamma": 1.4
+ },
+ "media_texts": [],
+ "tool": "set_channel_properties"
+}

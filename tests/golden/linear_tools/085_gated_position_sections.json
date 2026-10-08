@@ -1,0 +1,41 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   },
+   {
+    "id": "s1.png",
+    "position_mm": 0.15
+   },
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ ],
+ "data": {
+  "error": "NOT_COMPARED",
+  "rejected": [
+   {
+    "id": "s0.png",
+    "reason": "not compared since its last write; look at it in mode overlay or positioning first"
+   },
+   {
+    "id": "s1.png",
+    "reason": "not compared since its last write; look at it in mode overlay or positioning first"
+   },
+   {
+    "id": "s2.png",
+    "reason": "not compared since its last write; look at it in mode overlay or positioning first"
+   }
+  ],
+  "status": "refused"
+ },
+ "door": "gated",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "position_sections"
+}

@@ -1,0 +1,21 @@
+{
+ "args": [
+  [
+   "s0.png"
+  ]
+ ],
+ "data": {
+  "error": "UNKNOWN_REGIONS",
+  "message": "Unknown atlas structures: NOPE",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "restrict_to": [
+   "NOPE"
+  ]
+ },
+ "media_texts": [],
+ "tool": "elastix_affine"
+}

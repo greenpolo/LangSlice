@@ -1,0 +1,31 @@
+{
+ "call": {
+  "arguments": {
+   "page": 1
+  },
+  "tool": "show_stack"
+ },
+ "content": [
+  {
+   "text": "The 3 sections of the stack follow in 1 strip, in their current corrected order, left to right and strip after strip. Each section is labelled '<index>: <filename>' above it and drawn with any rotation and flip already applied. Beneath each section is the atlas at that section's current position at the stack's cutting angles, labelled 'atlas <position> mm' ('no position' where it has none)."
+  },
+  {
+   "text": "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg"
+  }
+ ],
+ "door": "resume",
+ "images": [
+  {
+   "file": "114_resume_second_show_stack.0.png",
+   "mode": "RGB",
+   "size": [
+    780,
+    429
+   ]
+  }
+ ]
+}

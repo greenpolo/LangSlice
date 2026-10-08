@@ -1,0 +1,30 @@
+{
+ "args": [],
+ "data": {
+  "changed": [],
+  "cutting_angles_deg": {
+   "pitch": 1.0,
+   "yaw": 0.5
+  },
+  "interval_breaks": [],
+  "n_sections": 3,
+  "order": [
+   "s0.png",
+   "s1.png",
+   "s2.png"
+  ],
+  "status": "ok",
+  "written": []
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "cutting_angles": {
+   "pitch_deg": 1.0,
+   "yaw_deg": 0.5
+  },
+  "view": false
+ },
+ "media_texts": [],
+ "tool": "position_sections"
+}

@@ -1,0 +1,380 @@
+{
+ "door": "state",
+ "images": [],
+ "state": {
+  "appearance": {
+   "channels": {
+    "red": {
+     "colormap": "magenta",
+     "contrast_limits": [
+      20.0,
+      200.0
+     ],
+     "gamma": 1.4
+    }
+   },
+   "preprocessed": {
+    "sections": {},
+    "stack": {
+     "channel_weights": null,
+     "clahe_clip": 6.0,
+     "clahe_tiles": 4,
+     "denoise": false,
+     "n4": false
+    }
+   }
+  },
+  "atlas": "allen_mouse_25um",
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "debrief": "",
+  "image_folder": "<ROOT>/tools",
+  "interval_breaks": [],
+  "interval_mm": 0.2,
+  "notes": [
+   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
+   "ingest: 3 section(s) given evenly spaced starting positions",
+   "Golden run: three synthetic sections.",
+   "Second trace landed.",
+   "golden",
+   "submit: Placed, aligned and deformed three sections."
+  ],
+  "plane": "coronal",
+  "slices": [
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": {
+     "inverse_source": "engine",
+     "key": "<hex>",
+     "linear_key": "<hex>",
+     "record": "sections/s0/deformable/<hex>",
+     "steps": [
+      {
+       "engine": "ants",
+       "exclude": [],
+       "fit_atlas": "borders",
+       "fit_section": "traced_borders",
+       "include": [],
+       "start": "linear",
+       "stiffness": "medium",
+       "trace": "sections/s0/image_correction/<hex>/attempt-01"
+      }
+     ],
+     "summary": {
+      "displacement_mm": {
+       "max": 0.208,
+       "median": 0.022
+      },
+      "flags": [],
+      "fold_fraction": 0.0
+     }
+    },
+    "flip": false,
+    "id": "s0.png",
+    "image_correction": {
+     "artifact_dir": "sections/s0/image_correction/<hex>/attempt-01",
+     "artifact_paths": {
+      "base_prompt": "sections/s0/image_correction/<hex>/attempt-01/base_prompt.txt",
+      "lines_on_original": "sections/s0/image_correction/<hex>/attempt-01/lines_on_original.png",
+      "original": "sections/s0/image_correction/<hex>/attempt-01/input_slice.png",
+      "prompt": "sections/s0/image_correction/<hex>/attempt-01/prompt.txt",
+      "prompt_diff": "sections/s0/image_correction/<hex>/attempt-01/prompt_diff.txt",
+      "raw_reply": "sections/s0/image_correction/<hex>/attempt-01/raw_reply.png",
+      "rough_overlay": "sections/s0/image_correction/<hex>/attempt-01/rough_border_overlay.png"
+     },
+     "attempt": 1,
+     "cached": false,
+     "fit_performed": false,
+     "geometry_fingerprint": "<hex>",
+     "id": "s0.png",
+     "model": "gpt-image-2",
+     "model_border_pixels": 7436,
+     "output_kind": "border_annotation",
+     "prompt_edited": false,
+     "provider": "openai-oauth",
+     "raw_received": true,
+     "raw_size": [
+      1434,
+      1097
+     ],
+     "route": "golden-stub",
+     "status": "ok"
+    },
+    "index_corrected": 0,
+    "index_original": 0,
+    "position_mm": 0.1,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "iou": 0.989,
+     "kind": "elastix",
+     "mirrored": false,
+     "params": [
+      1.001393692992846,
+      0.00045068498858011607,
+      -0.0032746221412246527,
+      -0.00779177774567784,
+      1.0045951285810455,
+      -0.009030841638644201
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": 0.341,
+      "scale_x": 1.0014,
+      "scale_y": 1.0046,
+      "shear": -0.0054,
+      "translate_x_mm": -0.02,
+      "translate_y_mm": -0.0691
+     }
+    }
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": {
+     "inverse_source": "composed: engine then engine then engine",
+     "key": "<hex>",
+     "linear_key": "<hex>",
+     "record": "sections/s1/deformable/<hex>",
+     "steps": [
+      {
+       "engine": "ants",
+       "exclude": [],
+       "fit_atlas": "template",
+       "fit_section": "fit",
+       "include": [],
+       "start": "linear",
+       "stiffness": "medium"
+      },
+      {
+       "engine": "ants",
+       "exclude": [],
+       "fit_atlas": "template",
+       "fit_section": "fit",
+       "include": [
+        "TH"
+       ],
+       "start": "current",
+       "stiffness": "soft"
+      },
+      {
+       "engine": "ants",
+       "exclude": [],
+       "fit_atlas": "borders",
+       "fit_section": "traced_borders",
+       "include": [
+        "TH"
+       ],
+       "start": "current",
+       "stiffness": "medium",
+       "trace": "sections/s1/image_correction/<hex>/attempt-01"
+      }
+     ],
+     "summary": {
+      "displacement_mm": {
+       "max": 0.201,
+       "median": 0.051
+      },
+      "flags": [],
+      "fold_fraction": 0.0,
+      "step_displacement_mm": {
+       "max": 0.183,
+       "median": 0.001
+      }
+     }
+    },
+    "flip": false,
+    "id": "s1.png",
+    "image_correction": {
+     "artifact_dir": "sections/s1/image_correction/<hex>/attempt-01",
+     "artifact_paths": {
+      "base_prompt": "sections/s1/image_correction/<hex>/attempt-01/base_prompt.txt",
+      "lines_on_original": "sections/s1/image_correction/<hex>/attempt-01/lines_on_original.png",
+      "original": "sections/s1/image_correction/<hex>/attempt-01/input_slice.png",
+      "prompt": "sections/s1/image_correction/<hex>/attempt-01/prompt.txt",
+      "prompt_diff": "sections/s1/image_correction/<hex>/attempt-01/prompt_diff.txt",
+      "raw_reply": "sections/s1/image_correction/<hex>/attempt-01/raw_reply.png",
+      "rough_overlay": "sections/s1/image_correction/<hex>/attempt-01/rough_border_overlay.png"
+     },
+     "attempt": 1,
+     "cached": false,
+     "fit_performed": false,
+     "geometry_fingerprint": "<hex>",
+     "id": "s1.png",
+     "include": [
+      "TH"
+     ],
+     "model": "gpt-image-2",
+     "model_border_pixels": 1200,
+     "output_kind": "border_annotation",
+     "prompt_edited": true,
+     "provider": "openai-oauth",
+     "raw_received": true,
+     "raw_size": [
+      1434,
+      1097
+     ],
+     "route": "golden-stub",
+     "status": "ok"
+    },
+    "index_corrected": 1,
+    "index_original": 1,
+    "position_mm": 0.15,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "iou": 1.0,
+     "kind": "elastix",
+     "mirrored": false,
+     "params": [
+      1.0097750761415503,
+      0.0047262741218024925,
+      -0.014345808550973106,
+      -0.02242086042173003,
+      0.9945996175475558,
+      0.010338807234242934
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": 0.973,
+      "scale_x": 1.0099,
+      "scale_y": 0.9946,
+      "shear": -0.0106,
+      "translate_x_mm": -0.0603,
+      "translate_y_mm": -0.0232
+     },
+     "regions": {
+      "exclude": [],
+      "include": [
+       "TH"
+      ]
+     }
+    }
+   },
+   {
+    "caveats": [],
+    "damage_note": "right third missing",
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "deformation": {
+     "keep_linear": "Too little tissue survives for a warp.",
+     "linear_key": "<hex>"
+    },
+    "flip": false,
+    "id": "s2.png",
+    "image_correction": null,
+    "index_corrected": 2,
+    "index_original": 2,
+    "position_mm": 0.2,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "iou": 0.911,
+     "kind": "elastix",
+     "mirrored": false,
+     "params": [
+      1.0071986487184268,
+      -0.004295060371306138,
+      -0.00183785199010385,
+      0.005619990182850775,
+      1.0036665335151937,
+      -0.01623242981682699
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": -0.244,
+      "scale_x": 1.0072,
+      "scale_y": 1.0037,
+      "shear": -0.0013,
+      "translate_x_mm": -0.0033,
+      "translate_y_mm": -0.0753
+     },
+     "regions": {
+      "exclude": [
+       "CTX:right"
+      ],
+      "include": []
+     }
+    }
+   }
+  ],
+  "spec": {
+   "agent_damage": true,
+   "agent_preprocessing": true,
+   "atlas": "allen_mouse_25um",
+   "debrief": true,
+   "facts": [],
+   "host_preprocessing": null,
+   "image_folder": "<ROOT>/tools",
+   "image_resolution": "low",
+   "inputs": {
+    "pixel_size_um": 31.25
+   },
+   "max_input_tokens": null,
+   "max_quota_percent": 25,
+   "model": "fake-model",
+   "nonlinear": {
+    "image_model": null,
+    "notes": "",
+    "provider": "openai-oauth"
+   },
+   "out": null,
+   "plane": "coronal",
+   "position": {
+    "gated": false,
+    "interval_um": 200,
+    "notes": "",
+    "playbook": false,
+    "strict_interval": false,
+    "thickness_um": 50
+   },
+   "preprocess": "none",
+   "reasoning": null,
+   "resume": true,
+   "tasks": [
+    "reorder",
+    "position",
+    "transform",
+    "nonlinear"
+   ],
+   "transform": {
+    "angles": true,
+    "automatic": true,
+    "flip": true,
+    "hemisphere_cue": "",
+    "interactive": true,
+    "max_parallel": 4,
+    "notes": ""
+   }
+  },
+  "submitted": true,
+  "thickness_mm": 0.05
+ }
+}

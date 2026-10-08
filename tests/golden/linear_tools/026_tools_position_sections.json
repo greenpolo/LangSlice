@@ -1,0 +1,94 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   },
+   {
+    "id": "s1.png",
+    "position_mm": 0.15
+   },
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0
+   },
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0
+   },
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "n_sections": 3,
+  "order": [
+   "s0.png",
+   "s1.png",
+   "s2.png"
+  ],
+  "pictures": [
+   {
+    "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+    "id": 27
+   }
+  ],
+  "status": "ok",
+  "written": [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   },
+   {
+    "id": "s1.png",
+    "position_mm": 0.15
+   },
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "026_tools_position_sections.0.png",
+   "mode": "RGB",
+   "size": [
+    1567,
+    652
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "position_sections"
+}

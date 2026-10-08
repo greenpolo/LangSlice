@@ -1,0 +1,71 @@
+{
+ "args": [
+  [
+   "s2.png"
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "deformation_steps": 1,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.911,
+    "transform_mirrored": false
+   }
+  ],
+  "results": [
+   {
+    "cached": false,
+    "displacement_mm": {
+     "max": 0.195,
+     "median": 0.023
+    },
+    "engine_settings": {
+     "correlation_radius_um": 80.0,
+     "edge_channel": true,
+     "iterations": [
+      80,
+      50,
+      25
+     ],
+     "label_map": "auto",
+     "metric": "local_correlation",
+     "total_sigma_mm": 0.02,
+     "update_sigma_mm": 0.08,
+     "working_um": 40.0
+    },
+    "flags": [],
+    "fold_fraction": 0.0,
+    "id": "s2.png",
+    "runtime_s": "<seconds>",
+    "settings": {
+     "engine": "ants",
+     "fit_atlas": "template",
+     "fit_section": "fit",
+     "stiffness": "medium"
+    },
+    "status": "ok",
+    "steps": 1,
+    "written": true
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "view": false
+ },
+ "media_texts": [],
+ "tool": "ants_syn"
+}

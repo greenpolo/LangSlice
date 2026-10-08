@@ -1,0 +1,31 @@
+{
+ "call": {
+  "arguments": {
+   "mode": "overlay",
+   "sections": [
+    "s0.png"
+   ]
+  },
+  "tool": "look"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"pictures\": [{\"id\": 2, \"caption\": \"0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders\"}], \"images_attached\": 1}"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg"
+  }
+ ],
+ "door": "mcp",
+ "images": [
+  {
+   "file": "104_mcp_look.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    333
+   ]
+  }
+ ]
+}

@@ -249,6 +249,15 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     both = _yellow(ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1]).pictures[0]).sum()
     left = _yellow(ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1]).pictures[0]).sum()
     assert 0 < left < both
+    assert not view.regions_not_in_plane
+
+
+def test_grep_atlas_view_names_a_side_with_no_pixel_as_not_in_plane(tmp_path: Path):
+    """TH lies wholly right of the midline: "TH:left" is drawn nowhere, and
+    the reply says so, as it says for a region absent from the plane."""
+    job, ws = _job(tmp_path)
+    view = ops_atlas.grep_atlas_view(job, ws, ["TH:left", "TH:right", "STR"], [0.1])
+    assert view.regions_not_in_plane == {"0.10": ["TH:left"]}
 
 
 def test_grep_atlas_view_zooms_through_its_recipe_and_names_extra_pictures(tmp_path: Path):

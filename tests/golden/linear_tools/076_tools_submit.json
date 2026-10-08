@@ -1,0 +1,76 @@
+{
+ "args": [
+  "Placed, aligned and deformed three sections.",
+  [
+   "golden"
+  ],
+  []
+ ],
+ "data": {
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "left_linear": {
+   "s2.png": "Too little tissue survives for a warp."
+  },
+  "rows": [
+   {
+    "damaged": false,
+    "deformation_steps": 1,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.989,
+    "transform_mirrored": false
+   },
+   {
+    "damaged": false,
+    "deformation_steps": 3,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 1.0,
+    "transform_mirrored": false
+   },
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "keep_linear": "Too little tissue survives for a warp.",
+    "position_mm": 0.2,
+    "rotation_deg": 0,
+    "transform": "elastix",
+    "transform_iou": 0.911,
+    "transform_mirrored": false
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "left_linear": [
+   {
+    "id": "s2.png",
+    "reason": "Too little tissue survives for a warp."
+   }
+  ]
+ },
+ "media_texts": [],
+ "tool": "submit"
+}

@@ -1,0 +1,22 @@
+{
+ "args": [
+  [
+   "s0.png",
+   "s1.png",
+   "s2.png",
+   0,
+   1
+  ]
+ ],
+ "data": {
+  "error": "BAD_ARGS",
+  "max_sections": 4,
+  "message": "One call fits at most 4 sections.",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "ants_syn"
+}

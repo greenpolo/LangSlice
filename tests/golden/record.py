@@ -6,28 +6,34 @@ text stay equal.
 
 What is recorded, per call: every picture (decoded and saved as PNG), the
 structured data the tool returned (JSON), and the text the model receives.
-Four doors are covered:
+The doors covered:
 
-- ``tools``: the tools ``build_tools`` returns, called directly (the closures
-  the later phases move). Two toolboxes: the full spec (every task, every
-  optional tool, image model stubbed, picture size ``low``) and an ``auto``
-  picture-size spec with the deformable engine fixed and no image model.
+- ``tools``: the tools ``build_tools`` returns, called directly, on a job
+  opened as the engine opens it. The full spec (every task, every optional
+  tool, the image model stubbed, picture size ``low``): every tool, every
+  ``look`` mode, ``zoom`` (of a zoom too), the channel tools, damage,
+  positions with undo/redo, the in-plane transform by hand and by elastix,
+  the background ``trace_borders`` and its notice, ``ants_syn``, the
+  job-folder files, refusals, ``submit`` with ``left_linear``. Then an
+  ``auto`` picture-size spec with no image model.
+- ``gated``: the look-before-commit gates on a ``position.gated`` toolbox:
+  a position write refused until the section was looked at in mode overlay
+  or positioning, submit refused until a positioning look of the stack.
+- ``long``: eight sections, so the positioning picture is split into parts
+  and ``look`` names the pictures past four under ``not_shown``.
 - ``engine``: ``langslice.agent.engine.run`` with a fake ADK model that
   records the first model request (the job statement, the opening strips and
   the status table, the tool declarations) and stops the session.
 - ``mcp``: the MCP server driven by an in-memory client (``start_job``,
-  ``show_stack`` pages and a few tools), as Claude hosts see it.
-- ``gated``: the look-before-commit gates and the model-delivery
-  bookkeeping on a ``position.gated`` toolbox: a write refused until the
-  placement was viewed, a picture returned in the same model round and
-  suppressed once delivered (by call id, and for direct calls by
-  ``begin_model_call``), submit refused until ``view_stack``.
+  ``show_stack`` pages and a few tools, a retired tool's name), as Claude
+  hosts see it.
 - ``resume``: a checkpoint -> reload -> continue round trip through the MCP
   door: one server writes, a second server on the same folder resumes from
   the checkpoint and carries on (including ``undo``/``redo`` across it).
-- the final stack state of the main toolbox and of the resumed job.
+- the final stack state of the main toolbox, the gated one and the resumed job.
 - ``declarations``: what each door declares per tool (ADK function
-  declarations of three toolboxes, MCP tool lists with their schemas).
+  declarations of four toolboxes, the last a host forcing the change tools'
+  pictures and requiring a deformation; MCP tool lists with their schemas).
 - ``mcp_*``: three more MCP jobs, recorded last (nonlinear with the image
   model connected and not, image resolution "auto" with the opening-read
   gate and a clamped picture size).
@@ -376,183 +382,217 @@ def tool_map(box: Any) -> dict[str, Any]:
     return {tool.__name__: tool for tool in box.tools}
 
 
-def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
+def open_toolbox(spec: Any, image_model: Any = None) -> Any:
+    """The toolbox of *spec*'s job, opened as the engine opens it
+    (``Job.open``: the job folder, the starting positions)."""
     from langslice.agent.engine import build_context
-    from langslice.job.job import ingest
     from langslice.doors.tools.toolbox import build_tools
+    from langslice.job.job import Job
 
-    spec = full_spec(folder)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
-    state = ingest(spec, ctx)
-    box = build_tools(state, ctx, spec, image_model=stub_image_model(spec))
+    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+    return build_tools(job.state, ctx, spec, job=job, image_model=image_model)
+
+
+def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
+    """Every tool of the full spec, in the order a run might call them: looking
+    (every ``look`` mode, ``zoom`` and a zoom of a zoom, the channel tools, the
+    atlas lookups), positions and cutting angles with undo/redo, damage, the
+    in-plane transform by hand and by elastix, the background trace and its
+    notice, ANTs SyN on top of the current registration, the job-folder files,
+    refusals along the way, and ``submit`` with ``left_linear``."""
+    spec = full_spec(folder)
+    box = open_toolbox(spec, stub_image_model(spec))
+    state = box.job.state
     t = tool_map(box)
     door = "tools"
 
     def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return rec.tool(door, t, name, *args, **kwargs)
 
-    # Looking before anything is placed.
+    def landed() -> None:
+        """Wait for the background work, so its notice opens the next reply."""
+        box.job.background.wait_all()
+
+    # Looking at the starting positions (evenly spaced, not yet placed).
     call("status")
-    call("view_slices", [ID0, ID1, ID2])
-    call("view_slices", [ID1], view={"mode": "channels"})
-    call("view_slices", [ID1], view={"channels": ["red", "green"], "zoom": [26, 20, 180, 160]})
-    # A picture key given at the top level is refused by the strict check.
-    call("view_slices", slices=[ID0], mode="section")
-    call("view_atlas", [0.05, 0.2])
-    call("view_atlas", [0.1], view={"atlas_channels": ["ara", "borders"],
-                                    "regions": ["STR", "TH:left"],
-                                    "border_color": "#00ffff", "border_thickness": 2.0})
-    call("view_atlas", [0.1], view={"atlas_channels": ["borders"], "outlines": "outer"})
-    call("view_atlas", [0.1], view={"atlas_channels": ["nissl"]})
+    call("look", "section")
+    call("look", "section", sections=[ID1], channels=["red", "green"])
+    # Zoom: the newest picture that is not a zoom, then a zoom of that zoom,
+    # then the first picture by its number, then a number that is not there.
+    zoomed = call("zoom", [40, 20, 200, 140])
+    call("zoom", [120, 80, 520, 380], picture=int(zoomed["pictures"][0]["id"]))
+    call("zoom", [30, 40, 150, 130], picture=1)
+    call("zoom", [0, 0, 50, 50], picture=999)
+    call("look", "atlas", positions_mm=[0.05, 0.2])
+    call("look", "atlas", positions_mm=[0.1], atlas_layers=["template", "borders"])
+    call("look", "atlas", positions_mm=[0.1], atlas_layers=["ara"])  # "ara" read as template
+    call("look", "positioning")
+    # Refusals: a mode that does not exist, a stray top-level argument (the
+    # strict check), a channel the section does not have.
+    call("look", "stack")
+    call("look", "section", sections=[ID0], view={"mode": "section"})
+    call("look", "section", sections=[ID0], channels=["purple"])
+    # Display settings: display only, they persist and every caption states them.
+    call("set_channel_properties", "red", contrast_limits=[20.0, 200.0], gamma=1.4,
+         colormap="magenta")
+    call("look", "section", sections=[ID1])
+    call("set_channel_properties", "purple")
+    # The preprocessed channel: before / after pictures, its recipe, a look at it.
+    call("set_preprocessed_channel_properties", sections=[ID1],
+         channel_weights=[1.0, 0.5, 0.0], clahe_clip=2.0)
+    call("set_preprocessed_channel_properties", clahe_clip=6.0, clahe_tiles=4)
+    call("look", "section", sections=[ID1], channels=["preprocessed"])
+    call("set_preprocessed_channel_properties", sections=[ID1], reset=True)
+    # The atlas, by text and by picture.
+    call("grep_atlas", "TH")
+    call("grep_atlas_view", ["STR", "TH:left"], [0.1, 0.4])
+    call("grep_atlas_view", ["NOPE"], [0.1])
     call("note", "Golden run: three synthetic sections.")
 
-    # Positions, clamping, undo/redo.
-    call("set_positions", [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
-                           {"id": ID2, "position_mm": 0.2}])
-    call("set_positions", [{"id": ID1, "position_mm": 0.15}], view={"mode": "overlay"})
-    call("set_positions", [{"id": ID0, "position_mm": 9.0}])
+    # Positions (the order follows them), clamping, cutting angles, undo/redo.
+    call("position_sections", [{"id": ID0, "position_mm": 0.1},
+                               {"id": ID1, "position_mm": 0.15},
+                               {"id": ID2, "position_mm": 0.2}])
+    call("position_sections", [{"id": ID0, "position_mm": 9.0}])
     call("undo")
     call("redo")
     call("undo")
+    call("position_sections", [{"id": ID2, "position_mm": 0.05}])  # reorders the stack
+    call("undo")
+    call("position_sections", cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.5}, view=False)
+    call("look", "atlas", positions_mm=[0.1])
+    call("undo")
+    call("position_sections", [{"id": ID0, "position_mm": 0.1, "mm": 1}])  # a stray key
+
+    # Every look mode on the placed stack.
+    call("look", "overlay", sections=[ID0])
+    call("look", "overlay", sections=[ID1], atlas_layers=["template", "borders"],
+         atlas_opacity=0.3)
+    call("look", "positioning", positions_mm=[0.1, 0.2])
+    call("look", "positioning", sections=[ID0, ID2])
+
+    # Damage by atlas region: shaded on the section and on the atlas.
+    call("mark_damage", ID2, ["CTX:right"], note="right third missing")
+    call("mark_damage", ID1, ["NOPE"])
+    call("mark_damage", ID1, ["HY"], note="test mark")
+    call("mark_damage", ID1, [])
+
+    # The in-plane transform by hand: absolute values, a value left out kept.
+    call("interactive_transform", [{"id": ID1, "flip": True, "rotate_quarter": 90}])
+    call("undo")
+    call("interactive_transform", [{"id": ID2, "rotation_deg": 3.0, "scale_x": 1.05,
+                                    "scale_y": 0.98, "translate_x_mm": 0.05,
+                                    "translate_y_mm": -0.02}])
+    call("interactive_transform", [{"id": ID2, "translate_x_mm": 0.0}])  # the rest kept
+    call("interactive_transform", [{"id": ID0, "rotation_deg": 1.0},
+                                   {"id": ID1, "shear": 0.02}], view=False)
+    call("interactive_transform", [{"id": ID0, "rotate_quarter": 45}])
+    # elastix: every placed section, then one by a region, with "ara" for template.
+    call("elastix_affine")
+    call("elastix_affine", [ID1], restrict_to=["TH"], atlas_image="ara")
+    call("elastix_affine", [ID0], restrict_to=["NOPE"])
     call("undo")
     call("redo")
-
-    # The placement viewer in every mode.
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}])
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}], view={"mode": "stacked"})
-    call("view_placement", [{"id": ID0, "positions_mm": [0.05, 0.1]},
-                            {"id": ID1, "positions_mm": [0.15]}],
-         view={"mode": "side_by_side"})
-    call("view_placement", [{"id": ID1, "positions_mm": [0.15]}],
-         view={"mode": "overlay", "atlas_channels": ["ara", "borders"], "atlas_opacity": 0.3,
-               "regions": ["CTX:right"],
-               "zoom": [68, 60, 270, 270]})
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}], view={"mode": "checkerboard"})
-    call("view_placement", [{"id": ID2, "positions_mm": [0.2]}],
-         view={"mode": "outlines", "atlas_channels": ["ara", "borders"]})
-    call("view_placement", [{"id": ID1, "positions_mm": [0.15]}],
-         view={"mode": "section", "channels": ["green"]})
-    call("view_stack")
-
-    # Order, damage, orientation.
-    call("reorder_slices", [ID2], after="start")
-    call("reorder_slices", [ID0, ID1, ID2])
-    call("mark_damaged", [{"id": ID2, "damaged": True, "note": "right third missing"}])
-    call("mark_damaged", [{"id": ID1, "note": "test flag"}])
-    call("mark_damaged", [{"id": ID1, "damaged": False}])
-    call("orient_slices", [{"id": ID1, "flip": True, "rotate_deg": 90}])
-    call("undo")
-
-    # Appearance.
-    call("preprocess", target="view", slices=[ID1], channel_weights=[1.0, 0.5, 0.0],
-         clahe_clip=2.0)
-    call("preprocess", target="fit", clahe_clip=6.0, clahe_tiles=4)
-    call("preprocess", target="view", slices=[ID1], reset=True)
-
-    # Cutting angles (then back), the position searches.
-    call("set_cutting_angles", 1.0, 0.5)
-    call("view_atlas", [0.1])
-    call("undo")
-    call("search_position", ID0, 0.1, False)
-
-    # The in-plane transform: fits and direct adjustments.
-    call("fit_affine", [])
-    call("fit_affine", [ID0], method="silhouette", view={"mode": "outlines"})
-    call("fit_affine", [ID1], exclude=["HY"], view={"mode": "side_by_side"})
-    # Regions wholly inside the outline cannot steer a silhouette: refused.
-    call("fit_affine", [ID0], method="silhouette", include=["TH"])
-    call("fit_affine", [ID0], method="silhouette", exclude=["CTX:right"],
-         view={"mode": "checkerboard"})
-    call("adjust_transforms", [{"id": ID2, "rotation_deg": 3.0, "scale_x": 1.05, "scale_y": 0.98,
-                                "translate_x_mm": 0.05, "translate_y_mm": -0.02,
-                                "note": "surviving left half"}])
-    call("adjust_transforms", [{"id": ID0, "rotation_deg": 1.0, "scale_x": 1.0, "scale_y": 1.01,
-                                "translate_x_mm": 0.0, "translate_y_mm": 0.01}],
-         view={"mode": "ab"})
-    call("adjust_transforms", [{"id": ID1, "rotation_deg": -1.0, "scale_x": 0.99, "scale_y": 1.0,
-                                "translate_x_mm": 0.02, "translate_y_mm": 0.0},
-                               {"id": ID0, "rotation_deg": 1.0, "scale_x": 1.0, "scale_y": 1.01,
-                                "translate_x_mm": 0.0, "translate_y_mm": 0.01}],
-         view={"mode": "checkerboard", "zoom": [0, 0, 203, 180]})
-    call("adjust_transforms", [{"id": ID2, "rotation_deg": 3.0, "scale_x": 1.05, "scale_y": 0.98,
-                                "translate_x_mm": 0.05, "translate_y_mm": -0.02,
-                                "pivot": "tissue"}], view={"mode": "side_by_side"})
-    call("adjust_transforms", [{"id": ID1, "rotation_deg": -1.0, "scale_x": 0.99, "scale_y": 1.0,
-                                "translate_x_mm": 0.02, "translate_y_mm": 0.0}],
-         view={"mode": "outlines", "atlas_channels": ["ara", "borders"],
-               "border_color": "magenta", "border_thickness": 0.5})
-    call("adjust_transforms", [{"id": ID1, "rotation_deg": -1.0, "scale_x": 0.99, "scale_y": 1.0,
-                                "translate_x_mm": 0.02, "translate_y_mm": 0.0}],
-         view={"mode": "template"})
-    call("undo")
-    call("redo")
+    # Nonlinear on: a section must be deformed or named in left_linear.
     call("submit", "Not yet.", [], [])
 
-    # Nonlinear: traces (image model stubbed), the atlas lookup, deformable fits.
+    # The packaged trace runs in the background; its notice opens the next reply.
     call("trace_borders", ID0)
-    call("grep_atlas", "TH")
-    call("grep_atlas", "ST", section=ID0)
-    call("fit_deformable", [ID0], fit_section="traced_borders", engine="ants")
-    call("fit_deformable", [ID0], candidates=[
-        {"fit_section": "traced_lines", "engine": "elastix"},
-        {"stiffness": "soft", "engine": "elastix"},
-    ])
-    call("fit_deformable", [ID0])
-    call("fit_deformable", [ID1], engine="elastix", include=["STR", "TH"], exclude=["HY"],
-         view={"mode": "ab"})
-    call("fit_deformable", [ID1], start="current", engine="elastix", stiffness="firm",
-         view={"atlas_channels": ["ara", "borders"], "atlas_opacity": 0.4})
-    call("fit_deformable", [ID2], keep_linear="Too little tissue survives for a warp.")
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}], view={"mode": "overlay"})
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}],
-         view={"mode": "overlay", "deformation": "none"})
+    landed()
     call("status")
-    call("view_stack")
-    call("trace_borders", ID1)
-    call("trace_borders", ID2, prompt="Trace only the surviving left half.")
-    call("submit", "Placed, aligned and deformed three sections.", ["golden"], [])
+    call("trace_borders", ID0)  # already fitted at this placement: nothing again
+    # ANTs SyN on top of the current registration; damage left out by itself.
+    call("ants_syn", [ID1])
+    call("ants_syn", [ID1], restrict_to=["TH"], stiffness="soft", atlas_image="ara")
+    call("ants_syn", [ID2], view=False)
+    call("undo")  # ID2 is left linear (submit's left_linear)
+    call("ants_syn", [ID0, ID1, ID2, 0, 1])
+    call("look", "overlay", sections=[ID0, ID1])
+    call("look", "overlay", sections=[ID0], warp="none")
+    call("trace_borders", ID1, prompt="Trace only the thalamus.", restrict_to=["TH"])
+    landed()
+    call("note", "Second trace landed.")
+
+    # The job folder: list, search, read, a picture's index entry, outside refused.
+    call("list_files")
+    call("list_files", "views", pattern="*.json")
+    call("search_files", "Golden run")
+    call("read_file", "views.jsonl", limit=3)
+    call("read_file", "sections/s0/views/000001_look_section/view.jpg")
+    call("read_file", "../outside.txt")
+    call("status")
+    call("submit", "Placed, aligned and deformed three sections.", ["golden"], [],
+         left_linear=[{"id": ID2, "reason": "Too little tissue survives for a warp."}])
 
     rec.raw("state", "final_main", {"state": state.to_dict()})
     return box.names, state
 
 
-# --- door 1b: the toolbox at image resolution "auto", engine fixed, no image model ----
+# --- door 1b: the toolbox at image resolution "auto", no image model -------------------
 
 
 def record_auto_toolbox(rec: Recorder, folder: Path) -> list[str]:
-    from langslice.agent.engine import build_context
-    from langslice.job.job import ingest
     from langslice.core.spec import JobSpec, NonlinearSpec
-    from langslice.doors.tools.toolbox import build_tools
 
     spec = JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none",
         tasks=["position", "transform", "nonlinear"], inputs={"pixel_size_um": PIXEL_SIZE_UM},
-        image_resolution="auto", nonlinear=NonlinearSpec(engine="elastix", provider="none"),
+        image_resolution="auto", nonlinear=NonlinearSpec(provider="none"),
     )
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
-    state = ingest(spec, ctx)
-    box = build_tools(state, ctx, spec)
+    box = open_toolbox(spec)
     t = tool_map(box)
     door = "auto"
 
     def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return rec.tool(door, t, name, *args, **kwargs)
 
-    call("view_slices", [ID0], view={"resolution": 200})
-    call("set_positions", [{"id": ID0, "position_mm": 0.1}], view={"resolution": 160})
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}],
-         view={"mode": "overlay", "resolution": 4000})
-    call("view_stack", view={"resolution": 128})
-    call("adjust_transforms", [{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-                                "translate_x_mm": 0.0, "translate_y_mm": 0.0}],
-         view={"resolution": 256})
-    call("fit_deformable", [ID0], fit_section="traced_lines")
-    call("fit_deformable", [ID0], view={"resolution": 300})
+    call("look", "section", sections=[ID0], resolution=200)
+    call("look", "section", sections=[ID0], resolution=4000)  # clamped to the lane
+    call("position_sections", [{"id": ID0, "position_mm": 0.1}])
+    call("look", "overlay", sections=[ID0], resolution=300)
+    call("interactive_transform", [{"id": ID0, "rotation_deg": 0.0}])
+    call("ants_syn", [ID0])
+    call("look", "overlay", sections=[ID0], resolution=256)
     return box.names
 
 
-# --- door 1c: the look-before-commit gates and the delivery bookkeeping ----------------
+# --- door 1c: the look-before-commit gates ---------------------------------------------
+
+
+def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
+    """Positions behind the gates: a write refused until the section was looked
+    at in mode overlay or positioning, submit refused until a positioning look
+    of the whole stack since the last write."""
+    from langslice.core.spec import JobSpec, PositionSpec
+
+    spec = JobSpec(
+        image_folder=str(folder), model="fake-model", preprocess="none",
+        tasks=["reorder", "position"], inputs={"pixel_size_um": PIXEL_SIZE_UM},
+        position=PositionSpec(gated=True),
+    )
+    box = open_toolbox(spec)
+    state = box.job.state
+    t = tool_map(box)
+    door = "gated"
+
+    def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return rec.tool(door, t, name, *args, **kwargs)
+
+    every = [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
+             {"id": ID2, "position_mm": 0.2}]
+    # Not looked at yet: refused. One overlay look lets that section's write
+    # through; a positioning look of the stack compares every section.
+    call("position_sections", every)
+    call("look", "overlay", sections=[ID0])
+    call("position_sections", every, view=False)  # ID0 written, the others rejected
+    call("look", "positioning")
+    call("position_sections", every)  # every section compared by that look
+    call("submit", "Not reviewed yet.", [], [], tool_context=ToolContext("s0"))
+    call("look", "positioning")
+    call("submit", "Placed behind the gates.", [], [], tool_context=ToolContext("s1"))
+    rec.raw("state", "final_gated", {"state": state.to_dict()})
+    return box.names
 
 
 class ToolContext:
@@ -567,64 +607,44 @@ class ToolContext:
         return f"ToolContext({self.function_call_id!r})"
 
 
-def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
-    """Positions behind the gates, with pictures promoted to seen per model round.
+# --- door 1d: a long stack, its positioning picture in parts ---------------------------
 
-    ``mark_placement_views_delivered`` is what the ADK driver calls once a
-    model request carried a call's pictures; ``begin_model_call`` promotes
-    direct calls (no tool context), as the MCP door does before every call.
-    """
-    from langslice.agent.engine import build_context
-    from langslice.job.job import ingest
-    from langslice.core.spec import JobSpec, PositionSpec
-    from langslice.doors.tools.toolbox import build_tools
+#: More sections than one positioning picture holds (``core.positioning.PER_PICTURE``).
+LONG_STACK = tuple(f"long{index}.png" for index in range(8))
 
-    spec = JobSpec(
-        image_folder=str(folder), model="fake-model", preprocess="none",
-        tasks=["reorder", "position"], inputs={"pixel_size_um": PIXEL_SIZE_UM},
-        position=PositionSpec(gated=True),
-    )
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
-    state = ingest(spec, ctx)
-    box = build_tools(state, ctx, spec)
+
+def record_long_stack(rec: Recorder, folder: Path) -> list[str]:
+    """Eight sections: ``position_sections`` and ``look`` positioning split the
+    stack into full-size parts, in position order."""
+    import cv2
+
+    from langslice.core.positioning import PER_PICTURE
+    from langslice.core.spec import JobSpec
+    from tests.deformable_synthetic import SyntheticAtlas, bump_field, render_section
+
+    if len(LONG_STACK) <= PER_PICTURE:
+        raise RuntimeError("golden recorder: the long stack no longer needs two parts")
+    folder.mkdir(parents=True, exist_ok=True)
+    atlas = SyntheticAtlas()
+    for seed, name in enumerate(LONG_STACK):
+        image, _ = render_section(atlas, bump_field([(170, 110, 30, 0.02 * (seed % 3 - 1),
+                                                      0.0)]), seed=seed)
+        plane = cv2.GaussianBlur(np.asarray(image)[..., 0], (0, 0), 1.2)
+        plane = cv2.resize(plane, (136, 104), interpolation=cv2.INTER_AREA)
+        Image.fromarray(np.stack([plane] * 3, axis=-1)).save(folder / name)
+        os.utime(folder / name, (FIXED_MTIME, FIXED_MTIME))
+    spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
+                   tasks=["position"], inputs={"pixel_size_um": 2 * PIXEL_SIZE_UM})
+    box = open_toolbox(spec)
     t = tool_map(box)
-    door = "gated"
-
-    def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return rec.tool(door, t, name, *args, **kwargs)
-
-    def delivered(*ids: str) -> None:
-        box.mark_placement_views_delivered(set(ids))
-        rec.raw(door, "delivered", {"delivery_ids": sorted(ids)})
-
-    # Not viewed yet: refused.
-    call("set_positions", [{"id": ID0, "position_mm": 0.1}], tool_context=ToolContext("w0"))
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}], tool_context=ToolContext("c1"))
-    # Same model round as the view: the write still returns its picture.
-    call("set_positions", [{"id": ID0, "position_mm": 0.1}], tool_context=ToolContext("w1"))
-    # A stale id from replayed history promotes nothing.
-    delivered("old-call")
-    delivered("c1", "w1")
-    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}, {"id": ID1, "positions_mm": [0.15]},
-                            {"id": ID2, "positions_mm": [0.2]}], tool_context=ToolContext("c2"))
-    # ID0 at 0.1 was delivered: suppressed. ID1's view is still pending: pictured.
-    call("set_positions", [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}],
-         tool_context=ToolContext("w2"))
-    # A direct call (no tool context), promoted at the next model-call boundary.
-    call("view_placement", [{"id": ID2, "positions_mm": [0.2]}])
-    box.begin_model_call()
-    rec.raw(door, "begin_model_call", {})
-    call("set_positions", [{"id": ID2, "position_mm": 0.2}])
-    call("submit", "Not reviewed yet.", [], [], tool_context=ToolContext("s0"))
-    call("view_stack")
-    # A write needs a new view of that section, and a new review.
-    call("set_positions", [{"id": ID1, "position_mm": 0.16}], tool_context=ToolContext("w3"))
-    call("view_placement", [{"id": ID1, "positions_mm": [0.16]}], tool_context=ToolContext("c3"))
-    call("set_positions", [{"id": ID1, "position_mm": 0.16}], tool_context=ToolContext("w4"))
-    call("submit", "Still not reviewed.", [], [], tool_context=ToolContext("s1"))
-    call("view_stack")
-    call("submit", "Placed behind the gates.", [], [], tool_context=ToolContext("s2"))
-    rec.raw("state", "final_gated", {"state": state.to_dict()})
+    # Positions out of file order: the picture and the stack follow position.
+    positions = [0.2, 0.02, 0.05, 0.24, 0.08, 0.11, 0.17, 0.14]
+    rec.tool("long", t, "position_sections", [
+        {"id": name, "position_mm": value} for name, value in zip(LONG_STACK, positions,
+                                                                  strict=True)])
+    rec.tool("long", t, "look", "positioning", positions_mm=[0.05, 0.15])
+    # More sections than one look shows: the rest named with the call that draws them.
+    rec.tool("long", t, "look", "section")
     return box.names
 
 
@@ -717,15 +737,14 @@ def record_mcp(rec: Recorder, folder: Path) -> None:
     server = build_server(spec_for, str(folder), atlas_loader=atlas_loader())
     calls: list[tuple[str, dict[str, Any]]] = [
         ("status", {}),
-        ("view_placement", {"entries": [{"id": ID0, "positions_mm": [0.1]}],
-                            "view": {"mode": "overlay"}}),
+        ("look", {"mode": "overlay", "sections": [ID0]}),
+        # A retired tool answers with its replacement; nothing is done.
+        ("view_slices", {"slices": [ID1]}),
+        # A stray argument is refused before the tool runs.
+        ("look", {"mode": "section", "sections": [ID0], "view": {"mode": "section"}}),
+        ("elastix_affine", {"sections": [ID1]}),
         # Claude Desktop may send a nested object as a JSON string.
-        ("view_slices", {"slices": [ID1], "view": '{"mode": "channels"}'}),
-        ("view_slices", {"slices": [ID0], "mode": "section"}),
-        ("fit_affine", {"slices": [ID1], "method": "silhouette"}),
-        ("adjust_transforms", {"entries": [{"id": ID0, "rotation_deg": 2.0, "scale_x": 1.0,
-                                            "scale_y": 1.0, "translate_x_mm": 0.0,
-                                            "translate_y_mm": 0.0}]}),
+        ("interactive_transform", {"sections": json.dumps([{"id": ID0, "rotation_deg": 2.0}])}),
         ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ]
 
@@ -760,10 +779,10 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
     """Two servers on one folder: the second resumes the first's checkpoint."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from langslice.job.checkpoint import load_checkpoint
-    from langslice.job.layout import JobLayout
     from langslice.core.spec import JobSpec
     from langslice.doors.mcp.server import build_server
+    from langslice.job.checkpoint import load_checkpoint
+    from langslice.job.layout import JobLayout
 
     positions = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
 
@@ -773,10 +792,9 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
                        inputs={"pixel_size_um": PIXEL_SIZE_UM, "positions": positions})
 
     first: list[tuple[str, dict[str, Any]]] = [
-        ("adjust_transforms", {"entries": [{"id": ID0, "rotation_deg": 2.0, "scale_x": 1.0,
-                                            "scale_y": 1.0, "translate_x_mm": 0.01,
-                                            "translate_y_mm": 0.0}]}),
-        ("fit_affine", {"slices": [ID1], "method": "silhouette"}),
+        ("interactive_transform", {"sections": [{"id": ID0, "rotation_deg": 2.0,
+                                                 "translate_x_mm": 0.01}]}),
+        ("elastix_affine", {"sections": [ID1]}),
         ("note", {"text": "First server: two sections aligned."}),
     ]
     second: list[tuple[str, dict[str, Any]]] = [
@@ -786,9 +804,7 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
         ("status", {}),
         ("undo", {}),
         ("redo", {}),
-        ("adjust_transforms", {"entries": [{"id": ID2, "rotation_deg": -1.0, "scale_x": 1.0,
-                                            "scale_y": 1.0, "translate_x_mm": 0.0,
-                                            "translate_y_mm": 0.0}]}),
+        ("interactive_transform", {"sections": [{"id": ID2, "rotation_deg": -1.0}]}),
         ("submit", {"summary": "resumed and finished", "notes": [], "interval_breaks": []}),
     ]
 
@@ -818,32 +834,36 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
 
 def record_declarations(rec: Recorder, folder: Path) -> None:
     """What each door declares, per tool: the ADK function declarations of
-    three toolboxes (the full spec, the "auto" spec with the engine fixed and
-    no image model, and a positioning-only gated spec) and the MCP tool list
-    (name, description, input schema, annotations) of a transform job and a
-    positioning job. Recorded after everything else, so no earlier entry is
-    renumbered."""
+    four toolboxes (the full spec; the "auto" spec without an image model;
+    a positioning-only gated spec; a host that forces the change tools'
+    pictures and requires a deformation on every section) and the MCP tool
+    list (name, description, input schema, annotations) of a transform job
+    and a positioning job."""
     import dataclasses
 
     from google.adk.tools import FunctionTool
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from langslice.doors.tools.media import packaged_tools
     from langslice.agent.engine import build_context
-    from langslice.job.job import ingest
     from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec
-    from langslice.doors.tools.toolbox import build_tools
     from langslice.doors.mcp.server import build_server
+    from langslice.doors.tools.media import packaged_tools
+    from langslice.doors.tools.toolbox import build_tools
+    from langslice.job.job import ingest
 
     base = {"model": "fake-model", "preprocess": "none",
             "inputs": {"pixel_size_um": PIXEL_SIZE_UM}}
     specs = {
         "full": full_spec(folder),
         "auto": JobSpec(image_folder=str(folder), tasks=["position", "transform", "nonlinear"],
-                        image_resolution="auto",
-                        nonlinear=NonlinearSpec(engine="elastix", provider="none"), **base),
+                        image_resolution="auto", nonlinear=NonlinearSpec(provider="none"),
+                        **base),
         "gated": JobSpec(image_folder=str(folder), tasks=["position"],
                          position=PositionSpec(gated=True), **base),
+        "host": JobSpec(image_folder=str(folder), tasks=["transform", "nonlinear"],
+                        force_view=True, agent_damage=False,
+                        nonlinear=NonlinearSpec(provider="none", require_deformation=True),
+                        **base),
     }
     for label, spec in specs.items():
         ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
@@ -871,13 +891,12 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
 
 
 def record_mcp_variants(rec: Recorder, root: Path) -> None:
-    """Three more MCP jobs, recorded after everything else (no earlier entry
-    is renumbered): the nonlinear task on a supplied linear placement with
-    its image model connected (the stub's lane; no image call is made) and
-    with it not connected (the statement says the tool is off), and image
-    resolution "auto" (the resolution range, a clamped request), each with
-    its tool list and start_job statement; the last also shows the
-    opening-read gate refusing a write before show_stack."""
+    """Three more MCP jobs: the nonlinear task on a supplied linear placement
+    with its image model connected (the stub's lane; no image call is made)
+    and with it not connected (no trace_borders; the statement says the tool
+    is off), and image resolution "auto" (the resolution range, a clamped
+    request), each with its tool list and start_job statement; the last also
+    shows the opening-read gate refusing a write before show_stack."""
     import dataclasses
 
     from mcp.shared.memory import create_connected_server_and_client_session
@@ -904,7 +923,7 @@ def record_mcp_variants(rec: Recorder, root: Path) -> None:
                 ("note", {"text": "Before the opening."}),
                 ("show_stack", {"page": 1}),
                 ("note", {"text": "After the opening."}),
-                ("view_slices", {"slices": [ID1], "view": {"resolution": 5000}}),
+                ("look", {"mode": "section", "sections": [ID1], "resolution": 5000}),
             ]),
     ]
     held = setup.image_model_connected
@@ -924,7 +943,7 @@ def record_mcp_variants(rec: Recorder, root: Path) -> None:
                     out.append(("list_tools", {}, [TextContent(type="text", text=json.dumps(
                         sorted(tool.name for tool in listed)))]))
                     for tool in listed:
-                        if tool.name in ("trace_borders", "fit_deformable", "view_slices"):
+                        if tool.name in ("trace_borders", "ants_syn", "look"):
                             out.append((f"declare_{tool.name}", {}, [TextContent(
                                 type="text", text=json.dumps(tool.model_dump(
                                     mode="json", exclude_none=True), sort_keys=True))]))
@@ -1039,6 +1058,7 @@ def record(out: Path) -> dict[str, Any]:
         main_names, _state = record_full_toolbox(rec, folders["tools"])
         auto_names = record_auto_toolbox(rec, folders["auto"])
         gated_names = record_gated_toolbox(rec, folders["gated"])
+        long_names = record_long_stack(rec, root / "long")
         record_engine_request(rec, folders["engine"])
         record_mcp(rec, folders["mcp"])
         record_mcp_resume(rec, folders["resume"])
@@ -1047,7 +1067,14 @@ def record(out: Path) -> dict[str, Any]:
         write_sections(declared)
         record_declarations(rec, declared)
         record_mcp_variants(rec, root / "variants")
-        built = sorted(set(main_names) | set(auto_names) | set(gated_names))
+        built = sorted(set(main_names) | set(auto_names) | set(gated_names)
+                       | set(long_names))
+        from langslice.ops.registry import VERBS
+
+        unbuilt = sorted(name for name, verb in VERBS.items()
+                         if not verb.scripting and name not in built)
+        if unbuilt:
+            raise RuntimeError(f"golden recorder: tools no toolbox here builds: {unbuilt}")
         missing = sorted(set(built) - rec.called)
         if missing:
             raise RuntimeError(

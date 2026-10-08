@@ -1,0 +1,207 @@
+{
+ "door": "state",
+ "images": [],
+ "state": {
+  "appearance": {},
+  "atlas": "allen_mouse_25um",
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "debrief": "",
+  "image_folder": "<ROOT>/resume",
+  "interval_breaks": [],
+  "interval_mm": 0.2,
+  "notes": [
+   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
+   "inputs: 3 position(s) set by the host",
+   "First server: two sections aligned.",
+   "submit: resumed and finished"
+  ],
+  "plane": "coronal",
+  "slices": [
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s0.png",
+    "image_correction": null,
+    "index_corrected": 0,
+    "index_original": 0,
+    "position_mm": 0.1,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "kind": "interactive",
+     "mirrored": false,
+     "note": "",
+     "params": [
+      0.9993908270190958,
+      0.026687850419559563,
+      -0.0118628681310924,
+      -0.04563780338019357,
+      0.9993908270190958,
+      0.023123488180548914
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": 2.0,
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "shear": 0.0,
+      "translate_x_mm": 0.01,
+      "translate_y_mm": 0.0
+     }
+    }
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s1.png",
+    "image_correction": null,
+    "index_corrected": 1,
+    "index_original": 1,
+    "position_mm": 0.15,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "iou": 0.92,
+     "kind": "elastix",
+     "mirrored": false,
+     "params": [
+      1.0191168665938428,
+      0.005324753496131722,
+      -0.015979164105269145,
+      -0.005134596255220053,
+      1.0263920417630004,
+      -0.02014529784974927
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": 0.221,
+      "scale_x": 1.0191,
+      "scale_y": 1.0264,
+      "shear": 0.003,
+      "translate_x_mm": -0.0319,
+      "translate_y_mm": -0.0619
+     }
+    }
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s2.png",
+    "image_correction": null,
+    "index_corrected": 2,
+    "index_original": 2,
+    "position_mm": 0.2,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "kind": "interactive",
+     "mirrored": false,
+     "note": "",
+     "params": [
+      0.9998476951563913,
+      -0.013345957863805038,
+      0.0067491313537069554,
+      0.022822377648755363,
+      0.9998476951563913,
+      -0.01133503640257334
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": -1.0,
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "shear": 0.0,
+      "translate_x_mm": 0.0,
+      "translate_y_mm": 0.0
+     }
+    }
+   }
+  ],
+  "spec": {
+   "agent_damage": true,
+   "agent_preprocessing": false,
+   "atlas": "allen_mouse_25um",
+   "debrief": true,
+   "facts": [],
+   "host_preprocessing": null,
+   "image_folder": "<ROOT>/resume",
+   "image_resolution": "low",
+   "inputs": {
+    "pixel_size_um": 31.25,
+    "positions": {
+     "s0.png": 0.1,
+     "s1.png": 0.15,
+     "s2.png": 0.2
+    }
+   },
+   "max_input_tokens": null,
+   "max_quota_percent": 25,
+   "model": null,
+   "nonlinear": {
+    "image_model": null,
+    "notes": "",
+    "provider": "openai-oauth"
+   },
+   "out": null,
+   "plane": "coronal",
+   "position": {
+    "gated": false,
+    "interval_um": 200,
+    "notes": "",
+    "playbook": false,
+    "strict_interval": false,
+    "thickness_um": 50
+   },
+   "preprocess": "none",
+   "reasoning": null,
+   "resume": true,
+   "tasks": [
+    "transform"
+   ],
+   "transform": {
+    "angles": false,
+    "automatic": true,
+    "flip": true,
+    "hemisphere_cue": "",
+    "interactive": true,
+    "max_parallel": 4,
+    "notes": ""
+   }
+  },
+  "submitted": true,
+  "thickness_mm": 0.05
+ }
+}

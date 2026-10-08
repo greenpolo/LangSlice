@@ -1,0 +1,118 @@
+{
+ "door": "state",
+ "images": [],
+ "state": {
+  "appearance": {},
+  "atlas": "allen_mouse_25um",
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "debrief": "",
+  "image_folder": "<ROOT>/gated",
+  "interval_breaks": [],
+  "interval_mm": 0.2,
+  "notes": [
+   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
+   "ingest: 3 section(s) given evenly spaced starting positions",
+   "submit: Placed behind the gates."
+  ],
+  "plane": "coronal",
+  "slices": [
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s0.png",
+    "image_correction": null,
+    "index_corrected": 0,
+    "index_original": 0,
+    "position_mm": 0.1,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": null
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s1.png",
+    "image_correction": null,
+    "index_corrected": 1,
+    "index_original": 1,
+    "position_mm": 0.15,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": null
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s2.png",
+    "image_correction": null,
+    "index_corrected": 2,
+    "index_original": 2,
+    "position_mm": 0.2,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": null
+   }
+  ],
+  "spec": {
+   "agent_damage": true,
+   "agent_preprocessing": false,
+   "atlas": "allen_mouse_25um",
+   "debrief": true,
+   "facts": [],
+   "host_preprocessing": null,
+   "image_folder": "<ROOT>/gated",
+   "image_resolution": "low",
+   "inputs": {
+    "pixel_size_um": 31.25
+   },
+   "max_input_tokens": null,
+   "max_quota_percent": 25,
+   "model": "fake-model",
+   "nonlinear": {
+    "image_model": null,
+    "notes": "",
+    "provider": "openai-oauth"
+   },
+   "out": null,
+   "plane": "coronal",
+   "position": {
+    "gated": true,
+    "interval_um": 200,
+    "notes": "",
+    "playbook": false,
+    "strict_interval": false,
+    "thickness_um": 50
+   },
+   "preprocess": "none",
+   "reasoning": null,
+   "resume": true,
+   "tasks": [
+    "reorder",
+    "position"
+   ],
+   "transform": {
+    "angles": false,
+    "automatic": true,
+    "flip": true,
+    "hemisphere_cue": "",
+    "interactive": true,
+    "max_parallel": 4,
+    "notes": ""
+   }
+  },
+  "submitted": true,
+  "thickness_mm": 0.05
+ }
+}

@@ -1,0 +1,32 @@
+{
+ "contents": [
+  {
+   "role": "user",
+   "text": "The 3 sections of the stack follow in 1 strip, in their current corrected order, left to right and strip after strip. Each section is labelled '<index>: <filename>' above it and drawn with any rotation and flip already applied. Beneath each section is the atlas at that section's current position at the stack's cutting angles, labelled 'atlas <position> mm' ('no position' where it has none). A label ending 'start' marks an evenly spaced starting position the job gave the section: it is not yet placed."
+  },
+  {
+   "role": "user",
+   "text": "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png"
+  },
+  {
+   "image": 0,
+   "mime": "image/jpeg",
+   "role": "user"
+  },
+  {
+   "role": "user",
+   "text": "Status table (corrected index, filename, position, spacing to the next placed section, flags):\nindex  id  position_mm  delta_to_next_mm  flags  transform(kind, iou, mirrored)\n  0  s0.png  0.042 mm (starting position)  0.083\n  1  s1.png  0.125 mm (starting position)  0.083\n  2  s2.png  0.208 mm (starting position)  -\n\nRecent run notes:\n- ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm\n- ingest: 3 section(s) given evenly spaced starting positions"
+  }
+ ],
+ "door": "engine",
+ "images": [
+  {
+   "file": "098_engine_seed_message.0.png",
+   "mode": "RGB",
+   "size": [
+    762,
+    422
+   ]
+  }
+ ]
+}

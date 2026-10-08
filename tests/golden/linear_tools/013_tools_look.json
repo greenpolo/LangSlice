@@ -1,0 +1,40 @@
+{
+ "args": [
+  "section"
+ ],
+ "data": {
+  "error": "UNKNOWN_ARGUMENTS",
+  "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, channels, atlas_layers, atlas_opacity, warp. Nothing was done.",
+  "problems": [
+   {
+    "accepted": [
+     "mode",
+     "sections",
+     "positions_mm",
+     "channels",
+     "atlas_layers",
+     "atlas_opacity",
+     "warp"
+    ],
+    "argument": "(top level)",
+    "unknown": [
+     "view"
+    ]
+   }
+  ],
+  "status": "error",
+  "tool": "look"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "sections": [
+   "s0.png"
+  ],
+  "view": {
+   "mode": "section"
+  }
+ },
+ "media_texts": [],
+ "tool": "look"
+}

@@ -1,0 +1,73 @@
+{
+ "args": [
+  [
+   {
+    "id": "s2.png",
+    "translate_x_mm": 0.0
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "damaged_regions": [
+     "CTX:right"
+    ],
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0,
+    "transform": "interactive",
+    "transform_mirrored": false
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "id": 39
+   }
+  ],
+  "results": [
+   {
+    "id": "s2.png",
+    "orientation": {
+     "changed": false,
+     "flip": false,
+     "rotate_quarter": 0
+    },
+    "status": "ok",
+    "transform": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": 3.0,
+     "scale_x": 1.05,
+     "scale_y": 0.98,
+     "shear": 0.0,
+     "translate_x_mm": 0.0,
+     "translate_y_mm": -0.02
+    },
+    "written": true
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "048_tools_interactive_transform.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    315
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "interactive_transform"
+}
