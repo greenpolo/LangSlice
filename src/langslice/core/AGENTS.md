@@ -189,8 +189,10 @@ the angles in a caption (empty for the flat plane).
   at the starting position the job gave it), `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
-  absent, for `ROW_KEYS` `rows` and `changed`; the agent CLI and the
-  library), `status_text`.
+  absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
+  status rows: rows with a field outside `ROW_FIELDS`, such as
+  `grep_atlas`'s region rows under the same `rows` key, are left as they
+  are; the agent CLI and the library), `status_text`.
 - `damage.py` — damage by atlas region (`SliceState.damaged_regions`;
   `SliceState.damaged` is read-only: the section has marked regions;
   `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the

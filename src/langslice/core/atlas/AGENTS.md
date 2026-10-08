@@ -35,7 +35,9 @@ here is a verbatim copy — edit one, mirror to the other.
   `placed_border_coverage` (antialiased placed boundaries; the image tool's
   overlay and the deformable fit's border images), `region_contours` +
   `_smooth_closed` (smoothed per-region polygons, holes included, confetti
-  dropped), `family_outlines` / `outer_outline` (one `(family color,
+  dropped; each outline runs along the pixel edges its region shares with
+  its neighbours, `_on_pixel_edges`, not through its boundary pixels'
+  centres, so a border two regions share is one line), `family_outlines` / `outer_outline` (one `(family color,
   polyline)` per family region, in atlas-native pixels), and the shade rules
   `border_color` / `is_dark_background`. Every picture draws its boundaries
   from these, so two views never disagree about where a boundary is.
