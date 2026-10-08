@@ -132,9 +132,17 @@ def with_uniform_rows(reply: Any) -> Any:
     reads (the agent CLI, the library)."""
     if not isinstance(reply, dict):
         return reply
-    return {key: uniform_rows(value) if key in ROW_KEYS and isinstance(value, list)
-            and all(isinstance(row, dict) for row in value) else value
+    return {key: uniform_rows(value) if key in ROW_KEYS and _status_rows(value) else value
             for key, value in reply.items()}
+
+
+def _status_rows(value: Any) -> bool:
+    """*value* is a list of status rows: dicts with no field outside
+    :data:`ROW_FIELDS` (``grep_atlas``'s region rows, under the same key, are
+    not)."""
+    fields = set(ROW_FIELDS)
+    return isinstance(value, list) and all(
+        isinstance(row, dict) and set(row) <= fields for row in value)
 
 
 def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

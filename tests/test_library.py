@@ -264,3 +264,29 @@ def test_a_builtin_profile_is_not_marked(images):
     assert record["status"] == "ok" and "untested" not in record and "profile" not in record
     assert stub.requests[0].prompt == langslice.default_prompt("openai-oauth")
 
+
+def test_look_draws_at_the_resolution_asked_whatever_the_jobs_level(images):
+    """The library sizes its own pictures (its toolbox works at "auto"), so
+    look's resolution is honoured on a job made at the default level."""
+    import langslice
+
+    with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
+                              pixel_size_um=PIXEL_SIZE_UM, preprocess="none") as job:
+        assert job.job.spec.image_resolution == "low"
+        default = job.look(mode="section", sections=[ID1]).images[0]
+        larger = job.look(mode="section", sections=[ID1], resolution=300).images[0]
+        smaller = job.look(mode="section", sections=[ID1], resolution=160).images[0]
+        assert larger.width > smaller.width
+        assert default.size != smaller.size
+
+
+def test_region_rows_are_not_padded_as_status_rows(images):
+    """grep_atlas answers under "rows" too; only status rows get the status fields."""
+    import langslice
+
+    with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
+                              pixel_size_um=PIXEL_SIZE_UM, preprocess="none") as job:
+        found = job.grep_atlas(query="root")
+        assert found["rows"] and all("position_mm" not in row for row in found["rows"])
+        assert all("delta_to_next_mm" in row for row in job.status()["rows"])
+
