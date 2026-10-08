@@ -30,7 +30,6 @@ CORE_MODULES = (
     "langslice.core.atlas_fetch",
     "langslice.core.opening",
     "langslice.job.job",
-    "langslice.core.nonlinear.registration_handoff",
     "langslice.core.nonlinear.registration_tool",
     "langslice.core.handoff",
     "langslice.providers.registry",
