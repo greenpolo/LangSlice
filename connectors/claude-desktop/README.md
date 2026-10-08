@@ -81,8 +81,8 @@ claude --strict-mcp-config --mcp-config connectors/claude-desktop/langslice.mcp.
 
 ## What the host gets and what it does not
 
-- **Same as the ADK run:** the same tools (picture options in one `view`
-  object; an unknown or misplaced argument is refused, not dropped),
+- **Same as the ADK run:** the same tools (an unknown or misplaced
+  argument is refused, not dropped),
   docstrings, submit gates, undo stack and checkpoint. Saved ABBA jobs also
   share the same validation, snapshot preprocessing and native update
   translation.

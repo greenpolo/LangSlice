@@ -10,6 +10,29 @@ Code: `src/langslice/core/maps.py` (the geometry), `src/langslice/job/formats.py
 (the files), `src/langslice/ops/exports.py` (the `export_maps` verb),
 `src/langslice/job/quint.py` (QuickNII / VisuAlign JSON).
 
+## The job folder
+
+```text
+<images>/langslice/
+  job.json              settings (the JobSpec) and the format version
+  state.json            the checkpoint: the truth
+  registration.json     its public rendering
+  history/              undo and redo steps
+  sections/<name>/      per section (<name>: the filename's stem): its maps,
+                        applied deformation records (deformable/),
+                        image-model traces (image_correction/), its pictures (views/)
+  views/                pictures of several sections
+  views.jsonl           the picture index: number, tool, history step, sections, caption
+  exports/              linear_results.json, quicknii.json, visualign.json
+  logs/                 the agent CLI's calls and background runs
+  AGENTS.md, CLAUDE.md  the reference card for coding agents
+  BRIEF.md              the agent CLI's brief
+```
+
+The job folder is `<images>/langslice/` unless `--job-dir` says otherwise (a
+read-only image folder falls back to `~/.langslice/jobs/<id>/`). Every path a
+job file stores is relative to it, so it moves with its images.
+
 ## Conventions
 
 - **Atlas coordinates** are BrainGlobe micrometres in the atlas's own axis
@@ -43,7 +66,7 @@ Format 1.
 | `cutting_angles_deg` | the stack's `pitch` and `yaw`; null when the sections' angles differ (a registration supplied per section), each section's `parameters.plane` then giving its own |
 | `image_folder` | the images' folder: `".."` (the job folder's parent) for the default job folder beside the images, so the file stays right when the folder moves with them; the absolute path for an explicit job folder |
 | `submitted` | whether the run was submitted |
-| `sections` | one entry per section, in corrected order (below) |
+| `sections` | one entry per section, in the stack's order (below) |
 | `exports` | relative paths of `exports/quicknii.json` and `exports/visualign.json` when written |
 
 Each section:
@@ -51,9 +74,9 @@ Each section:
 | Field | Meaning |
 |---|---|
 | `id` | the image filename |
-| `order` | its corrected index |
+| `order` | its index in the stack's order |
 | `folder` | its folder, relative to the job folder (`sections/<name>`) |
-| `parameters` | THE REGISTRATION, in public units: `atlas` (`name`, `version`); `plane` (`name`, `position_mm`, `position_um`, and the section's own `pitch_deg`, `yaw_deg`); `orientation` (`rotation_deg`: counter-clockwise quarter turns, applied first; `flip`: left-right, applied after); `affine` (null without a transform; else `kind`, `params`: the six normalized numbers `[a, b, tx, c, d, ty]` on the oriented section render, x as a fraction of its width and y of its height; `physical`: rotation, scales, shear, translations in mm, pivot; `mirrored`); `deformation` (null; `{"kind": "none", "reason"}` when the linear placement was kept; or `{"kind": "residual", "record", "key", "steps", "inverse_source"}`, `record` being the deformation record's folder relative to the job folder); `damaged`; `damaged_regions` (the atlas regions marked missing or badly displaced, which every fit leaves out; `"CTX:left"` names one side) |
+| `parameters` | THE REGISTRATION, in public units: `atlas` (`name`, `version`); `plane` (`name`, `position_mm`, `position_um`, and the section's own `pitch_deg`, `yaw_deg`); `orientation` (`rotation_deg`: counter-clockwise quarter turns, applied first; `flip`: left-right, applied after); `affine` (null without a transform; else `kind`, `params`: the six normalized numbers `[a, b, tx, c, d, ty]` on the oriented section render, x as a fraction of its width and y of its height; `physical`: rotation, scales, shear, translations in mm, pivot; `mirrored`); `deformation` (null; `{"kind": "none", "reason"}` when the linear placement was kept; or `{"kind": "residual", "record", "key", "steps", "inverse_source"}`, `record` being the deformation record's folder relative to the job folder); `damaged` (true exactly when `damaged_regions` is not empty); `damaged_regions` (the atlas regions marked lost or badly displaced with `mark_damage`, which every fit leaves out; `"CTX:left"` names one side) |
 | `image` | `file`, `size` (`[width, height]` of the file), `pixel_size_um` (of the file), `pixel_size_source` (`host`, `file`, or `estimated`: neither gives one, so the scale is the one every placement picture draws the section at, estimated from its tissue width at its current position) |
 | `pixel_to_atlas_um` | 3x3: a file pixel `[row, col, 1]` -> atlas micrometres (3 rows, the atlas axes), the LINEAR placement; null without a placement |
 | `mapping` | `linear`, `linear (identity in-plane: no transform written)`, `linear + residual` (the maps hold the complete mapping), or null |
@@ -103,12 +126,16 @@ placement picture's coordinate map and `registration.json`'s matrix agree to
 
 ## Pictures
 
-Each picture a door showed is saved under `views/` (`job/views.py`); a
-placement picture and a `fit_deformable` picture carry
+Each picture a door showed is saved as a folder `<number>_<tool>[_<mode>]/`
+under `views/` (several sections) or `sections/<name>/views/` (one;
+`job/views.py`), holding `view.jpg` (the bytes the model got) and `view.json`
+(tool, arguments, caption, history step, and the recipe `zoom` redraws it
+from), and listed in `views.jsonl`. A
+placement picture and an `ants_syn` picture carry
 `labels.tif` (the atlas id under every pixel below the caption, no tissue
 rule), `borders.png` and a frame in `view.json`.
 `langslice.coordinate_map(".../view.json")` gives every pixel's atlas
-micrometres. A `fit_deformable` picture showing its deformation adds
+micrometres. An `ants_syn` picture showing its deformation adds
 `residual.tif` (float32, `(2, rows, cols)`, `(d_row, d_col)` in picture
 pixels, zero in the caption band); its frame's `residual` names it, and
 `coordinate_map` applies it.
@@ -125,7 +152,7 @@ writes, reads nor removes either folder.
 Written with the maps. Both are QuickNII-format JSON (`name`, `target`,
 `aligner`, `slices`: `filename`, `anchoring`, `width`, `height`, `nr`,
 `markers`), one slice per placed section, `width`/`height` the image file's
-pixels and `nr` the corrected index + 1.
+pixels and `nr` that index + 1.
 
 - `quicknii.json`: the linear anchoring of every section, `markers` empty.
   The anchoring `o, u, v` is taken from the section's exact

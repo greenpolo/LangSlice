@@ -94,8 +94,9 @@ Register menu). The dialog has three tabs:
   can still move. Tick **Allow the agent to overwrite existing transforms** to let
   the agent realign them too.
 - **Preprocessing:** **Auto** usually works. **Custom** lets you weight each image
-  channel and set local contrast (CLAHE). **Let the agent drive preprocessing** lets
-  the agent adjust what it sees itself (every channel is then sent). The preview shows
+  channel and set local contrast (CLAHE). **Let the agent drive preprocessing** sends every
+  channel, so the agent's channel tools can display and blend the raw channels itself
+  (those tools exist either way). The preview shows
   each slice as exported and as the agent will see it. Try to maximize contrast
   between different regions.
 

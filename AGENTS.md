@@ -37,12 +37,17 @@ and `environment.yml` hold the worker's source installation.
 
 - Every way in goes through one job folder and its verbs: the agent run
   (`langslice linear run`), the agent CLI (`langslice-job FOLDER VERB`, `ops`,
-  `schema`), the library (`langslice.open_job`, `create_job`, `register_job`),
+  `schema`), the library (`langslice.open_job`, `create_job`),
   MCP and the Fiji worker. `trace_from_atlas` is an internal scripting verb
   (`Verb.hidden` in `ops/registry.py`) in no listing.
 - Tasks `reorder` / `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from
   `JobSpec.inputs`. Nonlinear needs a linear placement first.
+- The toolbox (`ops/registry.py`, `docs/linear_design.md`): looking and channel
+  tools shared by every run, and one distinct tool per registration method
+  (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
+  `trace_borders`); a task switches its tools on or off whole. Sections are
+  named by filename only.
 - Every write is one undo step and checkpoints `state.json`; `registration.json`,
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis

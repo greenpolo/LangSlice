@@ -41,13 +41,16 @@ Image files are never modified.
 
 1. A door fills a `JobSpec` and opens the `Job` (ingesting the folder, or
    resuming the checkpoint).
-2. Tasks switch tools on: `reorder`, `position`, `transform`, and the opt-in
-   `nonlinear`. A task that is off builds no tools and takes its answer from
-   the spec's `inputs` ([linear_design.md](linear_design.md)).
-3. The agent (or script) calls verbs: order, atlas position and cutting
-   angles, an in-plane affine per section, and with `nonlinear` a deformable
-   fit per section, optionally reading an image-model border trace
-   ([nonlinear_design.md](nonlinear_design.md)).
+2. Tasks switch whole tools on: `reorder`, `position`, `transform`, and the
+   opt-in `nonlinear`. The looking and channel tools are in every run; a task
+   that is off builds no tools and takes its answer from the spec's
+   `inputs` ([linear_design.md](linear_design.md)).
+3. The agent (or script) calls verbs: look (`look`, `zoom`, `grep_atlas`),
+   set channels, `position_sections` (positions and cutting angles), an
+   in-plane transform per section (`interactive_transform`, `elastix_affine`),
+   and with `nonlinear` a deformation per section (`ants_syn`, optionally
+   `trace_borders` with an image-model border trace;
+   [nonlinear_design.md](nonlinear_design.md)).
 4. `submit` checks the gates and writes the results: `registration.json`, each
    section's coordinate and label maps, and the QuickNII / VisuAlign exports
    ([file_formats.md](file_formats.md)).

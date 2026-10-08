@@ -21,16 +21,16 @@ The commands live in `src/langslice/doors/cli/` and `src/langslice/hosts/cli.py`
 ## The agent run
 
 ```bash
-langslice linear run sections/                       # order, position, in-plane transform
-langslice linear run sections/ --tasks nonlinear     # image-model borders + deformable fit on a saved linear placement
+langslice linear run sections/                       # positions, cutting angles, in-plane transforms
+langslice linear run sections/ --tasks nonlinear     # deformation (ants_syn, optional image-model borders) on a saved linear placement
 langslice linear run sections/ --registration quicknii.json   # import a registration made elsewhere, then nonlinear
 ```
 
 One agent session over the whole folder (a single section is a stack of
 one) ends at `submit` or at a budget. `--tasks` picks which of `reorder`,
-`position`, `transform` and `nonlinear` are on (default: the first three);
-see [linear_design.md](linear_design.md). A task that is off takes its answer
-from the host: `--order`, `--positions`, `--transforms`, `--orientation`,
+`position`, `transform` and `nonlinear` are on (default: the first three). A
+task switches its tools on or off whole ([linear_design.md](linear_design.md)),
+so a task that is off builds no tools and takes its answer from the host: `--order`, `--positions`, `--transforms`, `--orientation`,
 `--section-angles`, `--pitch`/`--yaw`, `--pixel-size-um`, `--locked`,
 `--damaged`, or a whole registration with `--registration`. Each takes a JSON
 file path or inline JSON.
@@ -41,15 +41,16 @@ Common options:
 |---|---|
 | `--atlas`, `--plane` | BrainGlobe atlas (default `allen_mouse_25um`) and slicing plane |
 | `--model`, `--reasoning` | agent model (`openai-oauth/<model>`, ...) and reasoning effort |
-| `--image-provider`, `--image-model` | image model for `trace_borders`: `openai-oauth` (default), `openai-api`, `gemini-api`, or `none` (the deformable fit then reads the stain alone) |
-| `--engine` | deformable engine: `ants`, `elastix` or `either` (the agent chooses) |
+| `--image-provider`, `--image-model` | image model for `trace_borders`: `openai-oauth` (default), `openai-api`, `gemini-api`, or `none` (no `trace_borders`; `ants_syn` reads the stain alone) |
 | `--image-resolution` | size of the pictures the agent sees: `low` (256 / 512 px long edge for opening tiles / later pictures), `medium` (384 / 768), `high` (512 / 1024), `auto` (the agent asks per call) |
 | `--preprocess auto\|none` | display preprocessing of what the agent sees; image files are never modified |
-| `--agent-preprocessing` | also offer the `preprocess` tool |
-| `--angles`, `--bayesian` | let the agent set the cutting angles; offer `search_position` |
+| `--agent-preprocessing` | a host exports every channel of its sections (the agent's channel tools exist either way) |
+| `--angles` | let the agent set the cutting angles (`position_sections` is then offered without the `position` task) |
 | `--no-flip`, `--hemisphere-cue`, `--thickness`, `--interval`, `--strict-interval`, `--fact` | facts and limits passed to the agent |
 | `--job-dir`, `--out`, `--fresh`, `--trace-dir` | where the job folder and results go; start over; trace directory |
 | `--max-quota-percent` (default 25), `--max-input-tokens`, `--gates`, `--playbook`, `--no-debrief` | budgets and run behavior |
+
+`--engine` and `--bayesian` are accepted and ignored.
 
 A run that dies resumes from its checkpoint; resuming with different supplied
 inputs is refused, naming the ones that differ. Everything a run writes goes

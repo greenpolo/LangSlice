@@ -92,9 +92,9 @@ the next reply opens with their notice. `job.close()` (or leaving the `with`
 block) waits for it and for any picture still being written; a script that
 exits without closing has every job it opened closed for it at exit.
 
-**Ending.** `job.submit(summary=..., notes=[], interval_breaks=[])` checks the
-job's gates (every section placed, aligned and, with Nonlinear, deformed or
-named in `left_linear`) and writes the maps and exports; `job.export_maps()`
+**Ending.** `job.submit(summary=..., notes=[], interval_breaks=[],
+left_linear=[])` checks the job's gates (every section placed, aligned and,
+with Nonlinear, deformed or named in `left_linear` with its reason) and writes the maps and exports; `job.export_maps()`
 writes them from the job as it stands at any time, without submitting.
 
 The handle also has `folder`, `image_model`, `imported` (the import report of
