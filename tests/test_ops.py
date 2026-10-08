@@ -43,11 +43,11 @@ def test_positions_are_clamped_written_and_one_undo_step(tmp_path: Path):
     low, high = ctx.position_range
     start = _record(job, "s1.png").position_mm
     done = positions.position_sections(job, ctx, [
-        {"id": "s0.png", "position_mm": low + 0.1}, {"id": 1, "position_mm": high + 5.0},
-        {"id": "nope.png", "position_mm": 0.2}])
+        {"id": "s0.png", "position_mm": low + 0.1}, {"id": "s1", "position_mm": high + 5.0},
+        {"id": "nope.png", "position_mm": 0.2}, {"id": 2, "position_mm": 0.3}])
     assert done.written == [("s0.png", low + 0.1), ("s1.png", high)]
     assert done.clamped == [("s1.png", high + 5.0, high)]
-    assert done.unknown == ["nope.png"] and done.touched == ["s0.png", "s1.png"]
+    assert done.unknown == ["nope.png", "2"] and done.touched == ["s0.png", "s1.png"]
     assert len(job.undo_stack) == 1
     assert job.undo() and _record(job, "s1.png").position_source == "default"
     assert _record(job, "s1.png").position_mm == start != high

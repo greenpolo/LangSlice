@@ -1,6 +1,6 @@
 {
  "args": [
-  "s1.png",
+  "s1",
   []
  ],
  "data": {
@@ -10,7 +10,6 @@
     "delta_to_next_mm": 0.05,
     "flip": false,
     "id": "s1.png",
-    "index": 1,
     "position_mm": 0.15,
     "rotation_deg": 0
    }

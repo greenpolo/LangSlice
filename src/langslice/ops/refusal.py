@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from langslice.core.state import StackState
+from langslice.core.state import unknown_sections as state_unknown_sections
+
+#: The code of a call naming a section that is not in the stack.
+UNKNOWN_SLICE_IDS = "UNKNOWN_SLICE_IDS"
+
 
 class Refused(ValueError):
     """An operation refused, with nothing written.
@@ -31,3 +37,10 @@ class Refused(ValueError):
 
     def payload(self) -> dict[str, Any]:
         return {"status": self.status, "error": self.code, **self.details}
+
+
+def unknown_sections(state: StackState, refs: Any) -> Refused:
+    """``UNKNOWN_SLICE_IDS`` for *refs* that name no section: the refs, the
+    valid filenames and the message saying sections are named by filename
+    (:func:`langslice.core.state.unknown_sections`)."""
+    return Refused(UNKNOWN_SLICE_IDS, **state_unknown_sections(state, refs))

@@ -98,7 +98,7 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
     texts = [block.text for block in pages if isinstance(block, TextContent)]
     # One strip of the three sections, each over the atlas at its starting
     # position (every section has one), so no atlas reference strip.
-    assert "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png" in texts
+    assert "Strip 1 of 1: s0.png, s1.png, s2.png" in texts
     assert not any(text.startswith("Atlas reference strip") for text in texts)
     assert len(images) == 1
     assert all(image.mimeType.startswith("image/") and image.data for image in images)
@@ -126,8 +126,8 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
     assert "images" not in looked
     # Every picture is numbered, in the order the pictures are attached.
     assert [entry["id"] for entry in looked["pictures"]] == [1, 2]
-    assert [entry["caption"].split(" ", 2)[:2] for entry in looked["pictures"]] == [
-        ["0:", "s0.png"], ["1:", "s1.png"]]
+    assert [entry["caption"].split(" ", 1)[0] for entry in looked["pictures"]] == [
+        "s0.png", "s1.png"]
     assert sum(isinstance(block, ImageContent) for block in view.content) == 2
     # The submit gates hold: nothing is positioned yet.
     assert _text(submit)["error"] == "MISSING_POSITIONS"
@@ -170,27 +170,30 @@ def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
 
 
 def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
-    """Handed-over bug 2: corrected indices as numbers in a list of sections
-    and nulls inside an object argument passed ADK but failed FastMCP's
-    schema check."""
+    """Handed-over bug 2: numbers in a list of sections and nulls inside an
+    object argument passed ADK but failed FastMCP's schema check. A number
+    now reaches the tool, which refuses it by name: sections are named by
+    filename."""
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
         return (
             await client.call_tool("look", {"mode": "section", "sections": [0, "s2.png"]}),
             await client.call_tool("interactive_transform", {"sections": [
-                {"id": 1, "flip": None, "rotation_deg": 5.0}], "view": False}),
+                {"id": "s1.png", "flip": None, "rotation_deg": 5.0}], "view": False}),
             await client.call_tool("position_sections", {
-                "sections": [{"id": 2, "position_mm": 9.8}], "cutting_angles": None,
+                "sections": [{"id": "s2", "position_mm": 9.8}], "cutting_angles": None,
                 "view": False}),
             await client.call_tool("position_sections", {
                 "cutting_angles": {"pitch_deg": None, "glow": None}}),
         )
 
     numbers, nulls, no_angles, stray = _session(server, body)
-    captions = [entry["caption"] for entry in _text(numbers)["pictures"]]
-    assert [caption.split(" ", 2)[1] for caption in captions] == ["s0.png", "s2.png"]
-    assert sum(isinstance(block, ImageContent) for block in numbers.content) == 2
+    refused = _text(numbers)
+    assert refused["error"] == "UNKNOWN_SLICE_IDS" and refused["unknown"] == ["0"]
+    assert refused["filenames"] == ["s0.png", "s1.png", "s2.png"]
+    assert "named by filename" in refused["message"]
+    assert not any(isinstance(block, ImageContent) for block in numbers.content)
     # A null inside an entry is "not given": the flip stays as it was.
     written = _text(nulls)
     assert written["status"] == "ok"
@@ -291,7 +294,7 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
     strips = [block.text for block in blocks
               if isinstance(block, TextContent) and block.text.startswith("Strip ")]
     named = [name for text in strips for name in text.split(": ", 1)[1].split(", ")]
-    assert named == [f"{record.index_corrected}: {record.id}" for record in job.state.in_order()]
+    assert named == [record.id for record in job.state.in_order()]
     assert len(strips) > 1
     # Every strip text is followed by its picture, at Claude's size and area.
     for index, block in enumerate(blocks):

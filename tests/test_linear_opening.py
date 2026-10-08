@@ -102,7 +102,7 @@ def test_a_40_section_stack_takes_more_strips_at_higher_levels(
     assert all(image.width > OPENAI_MAX_IMAGE_EDGE - tile for _text, image in found[:-1])
     # Ordered, labelled, every section once.
     named = [name for text, _ in found for name in text.split(": ", 1)[1].split(", ")]
-    assert named == [f"{r.index_corrected}: {r.id}" for r in state.in_order()]
+    assert named == [r.id for r in state.in_order()]
     # All positioned: no atlas reference.
     assert not any(p.text and p.text.startswith("Atlas reference") for p in parts)
 
@@ -187,16 +187,16 @@ def test_the_reference_is_atlas_strips_at_the_tile_size(tmp_path: Path):
     assert all(image.width <= OPENAI_MAX_IMAGE_EDGE for _text, image in atlas)
 
 
-def test_tile_labels_name_index_file_and_short_flags(tmp_path: Path):
+def test_tile_labels_name_the_file_and_short_flags(tmp_path: Path):
     state, _ctx = _stack(tmp_path / "s", 2)
     record = state.in_order()[1]
-    assert tile_label(record) == "1: s01.png"
+    assert tile_label(record) == "s01.png"
     record.rotation_deg, record.flip = 90, True
     record.damage_note = "a long note about the tear that belongs in the status table"
     # A note alone does not make a section damaged.
-    assert tile_label(record) == "1: s01.png [rot 90, flipped]"
+    assert tile_label(record) == "s01.png [rot 90, flipped]"
     record.damaged_regions = ["CTX"]
-    assert tile_label(record) == "1: s01.png [rot 90, flipped, damaged]"
+    assert tile_label(record) == "s01.png [rot 90, flipped, damaged]"
 
 
 def test_a_column_past_the_budget_starts_the_next_strip():

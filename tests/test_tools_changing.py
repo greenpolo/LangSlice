@@ -104,7 +104,7 @@ def test_the_stack_is_renumbered_by_position_after_every_write(tmp_path: Path):
     assert result["reordered"] == order  # every section changed its place
     assert [s.id for s in state.in_order()] == order
     assert [s.index_corrected for s in state.in_order()] == list(range(5))
-    assert result["changed"][0]["id"] == "s0.png" and result["changed"][0]["index"] == 4
+    assert result["changed"][0]["id"] == "s0.png" and "index" not in result["changed"][0]
     # Moving one section within its neighbours renumbers only the pair.
     swapped = _tool(box, "position_sections")([{"id": "s2.png", "position_mm": 2.4}],
                                               view=False)
@@ -374,7 +374,7 @@ def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
 def test_interactive_transform_refuses_bad_calls_without_writing(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
     tool = _tool(box, "interactive_transform")
-    duplicate = tool([{"id": "s0.png", "rotation_deg": 1}, {"id": "0", "rotation_deg": 2}])
+    duplicate = tool([{"id": "s0.png", "rotation_deg": 1}, {"id": "s0", "rotation_deg": 2}])
     assert duplicate["error"] == "DUPLICATE_SLICE_IDS"
     assert duplicate["duplicate_ids"] == ["s0.png"]
     many = tool([{"id": f"s{i}.png"} for i in range(5)])
@@ -517,21 +517,25 @@ def test_submit_accepts_a_stack_that_runs_backwards_and_emits_atlas_order(tmp_pa
     ids_before = [r.id for r in ordered]
     for record in ordered[3:]:  # a real gap between old index 2 and 3
         record.position_mm = float(record.position_mm) - 4.0
-    result = _submit(box, interval_breaks=[3])
+    result = _submit(box, interval_breaks=[ids_before[3]])
     assert result["status"] == "ok"
     after = state.in_order()
     assert [r.id for r in after] == ids_before[::-1]
     positions = [float(r.position_mm) for r in after]
     assert positions == sorted(positions)
     assert state.interval_breaks == [n - 3]  # the same physical gap
+    assert box.submission["interval_breaks"] == [after[n - 3].id]
     assert any("reversed" in note for note in state.notes)
 
 
 def test_submit_refuses_a_break_the_positions_do_not_show(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"], placed=True)
-    result = _submit(box, interval_breaks=[3])
+    result = _submit(box, interval_breaks=["s3.png"])
     assert result["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
     assert result["failures"][0]["written_interval_mm"] == 0.5
+    assert result["failures"][0]["id"] == "s3.png"
+    numbered = _submit(box, interval_breaks=[3])
+    assert numbered["error"] == "UNKNOWN_SLICE_IDS" and "filename" in numbered["message"]
     assert state.submitted is False
 
 
@@ -539,8 +543,9 @@ def test_submit_accepts_a_break_the_positions_do_show(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     for record in state.in_order()[3:]:
         record.position_mm = float(record.position_mm) + 4.0
-    assert _submit(box, interval_breaks=[3])["status"] == "ok"
+    assert _submit(box, interval_breaks=["s3"])["status"] == "ok"
     assert state.interval_breaks == [3]
+    assert box.submission["interval_breaks"] == ["s3.png"]
 
 
 def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
@@ -553,7 +558,8 @@ def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
     assert refusal["error"] == "STRICT_INTERVAL"
     assert refusal["failures"][0]["between"] == ["s3.png", "s4.png"]
     state.by_id("s4.png").position_mm = 4.0
-    assert _submit(box, interval_breaks=[2])["error"] == "STRICT_INTERVAL"
+    strict = _submit(box, interval_breaks=["s2.png"])
+    assert strict["error"] == "STRICT_INTERVAL" and strict["reported_breaks"] == ["s2.png"]
 
 
 def test_a_refused_submit_writes_nothing(tmp_path: Path):
@@ -561,7 +567,7 @@ def test_a_refused_submit_writes_nothing(tmp_path: Path):
     state.by_id("s2.png").position_mm = None
     assert _submit(box)["error"] == "MISSING_POSITIONS"
     state.by_id("s2.png").position_mm = 3.0
-    assert _submit(box, interval_breaks=[3])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
+    assert _submit(box, interval_breaks=["s3.png"])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
     assert state.submitted is False
     assert box.job.undo_stack == []
     assert load_checkpoint(ctx.checkpoint_path) is None

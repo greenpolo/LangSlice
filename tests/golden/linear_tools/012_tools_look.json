@@ -1,15 +1,29 @@
 {
  "args": [
-  "stack"
+  "section"
  ],
  "data": {
-  "error": "UNKNOWN_MODE",
-  "message": "mode must be one of section, atlas, overlay, positioning",
-  "status": "error"
+  "error": "UNKNOWN_SLICE_IDS",
+  "filenames": [
+   "s0.png",
+   "s1.png",
+   "s2.png"
+  ],
+  "message": "No section is named '0', 'nope.png'. Sections are named by filename (or the filename without its extension, when no other section shares it). Sections have no numbers to name them by. Filenames: s0.png, s1.png, s2.png.",
+  "status": "error",
+  "unknown": [
+   "0",
+   "nope.png"
+  ]
  },
  "door": "tools",
  "images": [],
- "kwargs": {},
+ "kwargs": {
+  "sections": [
+   0,
+   "nope.png"
+  ]
+ },
  "media_texts": [],
  "tool": "look"
 }

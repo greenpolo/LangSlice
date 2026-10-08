@@ -107,8 +107,8 @@ def position_sections(
 ) -> SectionsPositioned:
     """Set where sections sit and the stack's cutting angles; ONE undo step.
 
-    *sections* is a list of ``{"id", "position_mm"}`` (an id is a filename or
-    a corrected index; values are clamped into the atlas range
+    *sections* is a list of ``{"id", "position_mm"}`` (an id is a filename,
+    ``StackState.resolve``; values are clamped into the atlas range
     (``workspace.position_range``) and reported) and *cutting_angles* ``{"pitch_deg",
     "yaw_deg"}`` for the whole stack, or None. Afterwards the stack runs in
     the order of the positions (:func:`order_by_position`); the answer lists

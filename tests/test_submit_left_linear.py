@@ -55,7 +55,7 @@ def test_left_linear_covers_the_sections_it_names(tmp_path: Path):
     partial = _refused(job, left_linear=[{"id": "s0.png", "reason": "torn"}])
     assert [row["id"] for row in partial.payload()["sections"]] == ["s1.png", "s2.png"]
     done = ops_submit.submit(job, summary="done", left_linear=[
-        {"id": "s0.png", "reason": "torn"}, {"id": 1, "reason": "too faint"},
+        {"id": "s0.png", "reason": "torn"}, {"id": "s1", "reason": "too faint"},
         {"id": "s2.png", "reason": "fits already"}])
     assert done.left_linear == {"s0.png": "torn", "s1.png": "too faint",
                                 "s2.png": "fits already"}
@@ -70,8 +70,9 @@ def test_left_linear_covers_the_sections_it_names(tmp_path: Path):
     ([{"id": "s0.png", "reason": " "}], "BAD_ARGS"),
     ([{"id": "s0.png", "reason": "a", "extra": 1}], "BAD_ARGS"),
     ("s0.png", "BAD_ARGS"),
-    ([{"id": "s0.png", "reason": "a"}, {"id": "0", "reason": "b"}], "BAD_ARGS"),
+    ([{"id": "s0.png", "reason": "a"}, {"id": "s0", "reason": "b"}], "BAD_ARGS"),
     ([{"id": "nope.png", "reason": "a"}], "UNKNOWN_SLICE_IDS"),
+    ([{"id": "0", "reason": "a"}], "UNKNOWN_SLICE_IDS"),
 ])
 def test_bad_left_linear_is_refused(tmp_path: Path, entries, code):
     job = _placed(tmp_path)

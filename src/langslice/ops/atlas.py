@@ -25,7 +25,7 @@ from langslice.core.positioning import ATLAS_UPSAMPLE
 from langslice.core.sizes import picture_edge
 from langslice.core.state import Angles, StackState
 from langslice.ops.look import MAX_LOOK_PICTURES, not_shown, save_pictures
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -39,7 +39,7 @@ def grep_atlas(job: Job, workspace: Workspace, query: str, section: object = "")
     """Regions whose acronym or name matches *query*
     (:func:`langslice.core.atlas_grep.grep_structures`).
 
-    With *section* (a filename or corrected index of a section with a
+    With *section* (the filename of a section with a
     position), each row says whether the region or a descendant appears in
     the atlas plane at that placement; a section without a position gets a
     ``note`` instead. Returns ``query``, ``matches`` (the total), ``rows``
@@ -60,7 +60,7 @@ def grep_atlas(job: Job, workspace: Workspace, query: str, section: object = "")
     if section != "":
         record = state.resolve(section)
         if record is None:
-            raise Refused("UNKNOWN_SLICE_IDS", unknown=[section])
+            raise unknown_sections(state, [section])
         if record.position_mm is None:
             note = f"{record.id} has no position yet, so in_section is omitted."
         else:

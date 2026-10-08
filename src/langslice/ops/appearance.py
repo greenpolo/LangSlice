@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core import appearance as looks
 from langslice.core import channels
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -180,7 +180,7 @@ def set_preprocessed(
     if ids is not None:
         unknown = [name for name in ids if state.by_id(name) is None]
         if unknown or not ids:
-            raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+            raise unknown_sections(state, unknown)
     scope = state.in_order() if ids is None else [state.by_id(name) for name in ids]
     settings: dict[str, Any] | None = None
     if not reset:

@@ -21,7 +21,7 @@ from langslice.core.damage import exclusions
 from langslice.core.nonlinear import registration_tool
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.ops.inputs import STALE_INPUT, section_inputs
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.display import DisplayOptions
@@ -79,7 +79,8 @@ def _prepare(job: Job, workspace: Workspace, ref: object, prepare: Prepare) -> _
     (outside the job's write lock)."""
     record = job.state.resolve(ref)
     if record is None:
-        return _Prepared(id=str(ref), problem=("UNKNOWN_SLICE_IDS", {"unknown": [str(ref)]}))
+        facts = unknown_sections(job.state, [str(ref)]).details
+        return _Prepared(id=str(ref), problem=("UNKNOWN_SLICE_IDS", facts))
     refusal = job.nonlinear_refusal(record.id)
     if refusal is not None:
         return _Prepared(id=record.id, problem=(refusal[0], {"message": refusal[1]}))
@@ -227,7 +228,7 @@ def trace_borders(
     regions = region_entries(workspace, job.state, restrict_to)
     record = job.state.resolve(ref)
     if record is None:
-        raise Refused("UNKNOWN_SLICE_IDS", unknown=[str(ref)])
+        raise unknown_sections(job.state, [str(ref)])
     held = job.background.running_for(record.id, TRACE_WORK)
     if held is not None:
         return TraceStarted(id=record.id, running=True, work=held.id,

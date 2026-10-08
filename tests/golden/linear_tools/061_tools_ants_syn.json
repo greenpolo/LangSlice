@@ -12,7 +12,6 @@
     "delta_to_next_mm": 0.05,
     "flip": false,
     "id": "s1.png",
-    "index": 1,
     "position_mm": 0.15,
     "rotation_deg": 0,
     "transform": "elastix",
@@ -22,7 +21,7 @@
   ],
   "pictures": [
    {
-    "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
     "id": 47
    }
   ],

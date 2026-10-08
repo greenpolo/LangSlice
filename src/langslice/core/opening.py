@@ -114,7 +114,7 @@ def strip_layout(edge: int, tile_edge: int) -> tuple[int, int]:
 
 
 def tile_label(record: SliceState) -> str:
-    """``"<index>: <filename>"`` plus short correction flags (no damage note:
+    """The section's filename plus short correction flags (no damage note:
     the note is in the status table, and a long one would wrap the tile)."""
     flags = []
     if record.rotation_deg:
@@ -123,8 +123,7 @@ def tile_label(record: SliceState) -> str:
         flags.append("flipped")
     if record.damaged:
         flags.append("damaged")
-    label = f"{record.index_corrected}: {record.id}"
-    return label + (f" [{', '.join(flags)}]" if flags else "")
+    return record.id + (f" [{', '.join(flags)}]" if flags else "")
 
 
 def section_tile(ctx: Workspace, state: StackState, record: SliceState, tile: int
@@ -273,7 +272,7 @@ def opening_items(
         f"The {len(ordered)} sections of the stack follow in {len(strips)} "
         f"strip{'s' if len(strips) != 1 else ''}, in their current corrected order, "
         "left to right and strip after strip. Each section is labelled "
-        "'<index>: <filename>' above it and drawn with any rotation and flip "
+        "by its filename above it and drawn with any rotation and flip "
         f"already applied.{beneath}"
     )]
     bounds = [start for start, _strip in strips] + [len(ordered)]
@@ -281,7 +280,7 @@ def opening_items(
         members = ordered[start:bounds[number + 1]]
         items.append(
             f"Strip {number + 1} of {len(strips)}: "
-            + ", ".join(f"{record.index_corrected}: {record.id}" for record in members)
+            + ", ".join(record.id for record in members)
         )
         items.append(strip)
 

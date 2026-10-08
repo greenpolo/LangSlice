@@ -17,7 +17,6 @@
     ],
     "flip": false,
     "id": "s2.png",
-    "index": 2,
     "position_mm": 0.2,
     "rotation_deg": 0,
     "transform": "interactive",
@@ -26,7 +25,7 @@
   ],
   "pictures": [
    {
-    "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
     "id": 39
    }
   ],

@@ -394,8 +394,7 @@ def test_the_seed_carries_section_strips_then_the_atlas_reference(tmp_path: Path
     # No positions: one section-only strip, then the atlas reference strips.
     assert texts[0].startswith("The 3 sections of the stack follow in 1 strip,")
     assert "Beneath each section" not in texts[0]
-    assert texts[1] == "Strip 1 of 1: " + ", ".join(
-        f"{r.index_corrected}: {r.id}" for r in state.in_order())
+    assert texts[1] == "Strip 1 of 1: " + ", ".join(r.id for r in state.in_order())
     reference = next(t for t in texts if t.startswith("Atlas reference strip"))
     n_atlas = int(reference.split("the atlas at ")[1].split()[0])
     assert 1 < n_atlas <= 48

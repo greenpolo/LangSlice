@@ -24,7 +24,7 @@ from langslice.core.damage import exclusions
 from langslice.core.display import canonical_atlas_name
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.placement import Staged
@@ -130,7 +130,7 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
         for name in transforms:
             record = job.state.by_id(name)
             if record is None:
-                raise Refused("UNKNOWN_SLICE_IDS", unknown=[name])
+                raise unknown_sections(job.state, [name])
             records.append(record)
         if not records:
             return []
@@ -333,8 +333,8 @@ def interactive_transform(
             continue
         record = state.resolve(entry.get("id", ""))
         if record is None:
-            done.append(Adjustment(error={"status": "error", "error": "UNKNOWN_SLICE_IDS",
-                                          "unknown": [str(entry.get("id", ""))]}))
+            done.append(Adjustment(error=unknown_sections(
+                state, [str(entry.get("id", ""))]).payload()))
             continue
         name = record.id
         if name in job.locked:
@@ -479,8 +479,8 @@ def elastix_affine(
     """Fit an in-plane affine with Elastix, per section; ONE undo step for the fits.
 
     Each section's current placement is refined against *atlas_image* (``template`` or ``nissl``;
-    ``ara`` is still read as ``template``). *sections* are ids (filenames or
-    corrected indices); empty, every section :func:`fit_targets` names.
+    ``ara`` is still read as ``template``). *sections* are filenames
+    (``StackState.resolve``); empty, every section :func:`fit_targets` names.
     *restrict_to* fits by those atlas regions only (sides allowed; empty:
     every region). Each section's marked damage regions are left out
     automatically (:func:`langslice.core.damage.exclusions`).
@@ -502,7 +502,7 @@ def elastix_affine(
         for ref in sections:
             record = job.state.resolve(ref)
             if record is None:
-                raise Refused("UNKNOWN_SLICE_IDS", unknown=[str(ref)])
+                raise unknown_sections(job.state, [str(ref)])
             records.append(record)
     else:
         records = fit_targets(job)

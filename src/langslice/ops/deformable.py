@@ -28,7 +28,7 @@ from langslice.core import deformation
 from langslice.core.damage import exclusions
 from langslice.core.state import SliceState
 from langslice.ops.inputs import section_inputs, stale_row
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     import numpy as np
@@ -470,7 +470,7 @@ def ants_syn(
         elif all(held.id != record.id for held in records):
             records.append(record)
     if unknown:
-        raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+        raise unknown_sections(job.state, unknown)
     choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas=kind,
                                 engine="ants", stiffness=level)
     return fit_deformable(job, workspace, records, choice, restrict_to=regions,

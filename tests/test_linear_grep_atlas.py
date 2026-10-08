@@ -81,15 +81,15 @@ def test_presence_flag_follows_the_section_placement(tmp_path: Path):
     state, grep = _grep(tmp_path)
     record = state.slices[0]
     record.position_mm = 2.0  # anterior: CA1 present
-    rows = {r["acronym"]: r["in_section"] for r in grep("a", "0")["rows"]}
+    rows = {r["acronym"]: r["in_section"] for r in grep("a", record.id)["rows"]}
     assert rows["HPF"] and rows["CTX"] and rows["TH"]  # HPF and CTX via descendant CA1
     assert "in_section" not in grep("a")["rows"][0]
     record.position_mm = 15.0  # posterior: no CA1
-    rows = {r["acronym"]: r["in_section"] for r in grep("a", "0")["rows"]}
+    rows = {r["acronym"]: r["in_section"] for r in grep("a", record.id)["rows"]}
     assert not rows["HPF"] and not rows["CTX"] and rows["TH"]
     assert grep("o", "missing.png")["error"] == "UNKNOWN_SLICE_IDS"
     record.position_mm = None
-    result = grep("CTX", "0")
+    result = grep("CTX", record.id)
     assert "in_section" not in result["rows"][0] and "no position" in result["note"]
 
 

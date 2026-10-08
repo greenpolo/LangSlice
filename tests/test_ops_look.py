@@ -70,7 +70,7 @@ def _move(job: Job, section_id: str, position: float) -> None:
 
 def test_look_numbers_every_picture_and_indexes_its_recipe(tmp_path: Path):
     job, ws = _job(tmp_path)
-    first = ops_look.look(job, ws, "section", sections=[SECTIONS[0], "2"])
+    first = ops_look.look(job, ws, "section", sections=[SECTIONS[0], SECTIONS[1]])
     second = ops_look.look(job, ws, "overlay", sections=[SECTIONS[2]])
     assert [e["id"] for e in first.entries] == [1, 2]
     assert [e["id"] for e in second.entries] == [3]

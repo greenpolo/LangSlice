@@ -40,6 +40,7 @@ import typing
 from pathlib import Path
 from typing import Any
 
+from langslice.core.state import unknown_sections
 from langslice.doors.cli import background
 from langslice.doors.cli.catalog import canonical_verb
 from langslice.doors.cli.envelope import (
@@ -426,8 +427,10 @@ def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
     known = [opened.job.state.resolve(ref) for ref in refs]
     unknown = [str(ref) for ref, record in zip(refs, known, strict=True) if record is None]
     if unknown:
-        return Envelope.failure("UNKNOWN_SLICE_IDS", "No such section(s).",
-                                result={"unknown": unknown}, job=str(opened.job.folder))
+        facts = unknown_sections(opened.job.state, unknown)
+        return Envelope.failure("UNKNOWN_SLICE_IDS", facts["message"],
+                                result={"unknown": unknown, "filenames": facts["filenames"]},
+                                job=str(opened.job.folder))
     return Envelope(
         result={"dry_run": True, "simulated": False,
                 "sections": [record.id for record in known if record is not None]},

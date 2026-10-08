@@ -55,8 +55,10 @@ FIXES: dict[str, str] = {
     "UNKNOWN_ARGUMENTS": "Check the argument names with `langslice-job schema {verb}`.",
     "MISSING_ARGUMENTS": "Give every required argument; see `langslice-job schema {verb}`.",
     "BAD_JSON": "Pass --args a JSON object, or @path/to/file.json.",
-    "UNKNOWN_SLICE_IDS": "Use a filename or index from `langslice-job {job} status`.",
-    "UNKNOWN_SECTION": "Use a filename or index from `langslice-job {job} status`.",
+    "UNKNOWN_SLICE_IDS": "Name sections by filename, as `langslice-job {job} status` "
+                         "lists them.",
+    "UNKNOWN_SECTION": "Name sections by filename, as `langslice-job {job} status` "
+                       "lists them.",
     "NO_JOB": "Create the job first: `langslice-job <image folder> init`.",
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",

@@ -31,7 +31,7 @@ from langslice.core import zoom as zooms
 from langslice.core.layers import PictureNote, collecting, note_for
 from langslice.core.sizes import MAX_IMAGES_PER_CALL, MIN_RESOLUTION, picture_edge
 from langslice.job.views import PICTURE_FILE, PictureRecord, has_frame
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -162,7 +162,7 @@ def look(
 
     No argument reads the job's state: no *sections* is every section, no
     *channels* every raw channel, no *atlas_layers* the mode's default.
-    *sections* are filenames or corrected indexes. *resolution* is a picture's
+    *sections* are filenames (``StackState.resolve``). *resolution* is a picture's
     long edge (clamped up to :data:`~langslice.core.sizes.MIN_RESOLUTION`; it
     applies at image_resolution ``auto`` only, as everywhere). At most
     :data:`MAX_LOOK_PICTURES` pictures are saved and returned; the rest are
@@ -182,7 +182,7 @@ def look(
         else:
             ids.append(record.id)
     if unknown:
-        raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+        raise unknown_sections(state, [str(ref) for ref in unknown])
     try:
         positions = tuple(float(v) for v in _strings(positions_mm, "positions_mm"))
     except (TypeError, ValueError):

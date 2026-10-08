@@ -110,7 +110,7 @@ def test_mark_damage_is_one_undo_step_and_empty_regions_clear(tmp_path: Path):
     assert record.damaged_regions == ["R"] and record.damage_note == "right half missing"
     assert len(job.undo_stack) == 1
     # The same mark again writes nothing.
-    assert not damage.mark_damage(job, ctx, 0, ["R"], "right half missing").written
+    assert not damage.mark_damage(job, ctx, ID, ["R"], "right half missing").written
     assert len(job.undo_stack) == 1
     cleared = damage.mark_damage(job, ctx, ID, [], "ignored")
     assert cleared.written and not cleared.damaged and record.damage_note == ""

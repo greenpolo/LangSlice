@@ -137,8 +137,9 @@ def test_a_restricted_fit_zooms_its_picture_to_the_regions(tmp_path: Path, atlas
 def test_elastix_affine_without_a_picture_and_its_refusals(tmp_path: Path, atlas):
     state, _, box, _ = _run(tmp_path, atlas)
     fit = _tool(box, "elastix_affine")
-    assert fit(["nope.png"]) == {"status": "error", "error": "UNKNOWN_SLICE_IDS",
-                                 "unknown": ["nope.png"]}
+    nope = fit(["nope.png"])
+    assert nope["error"] == "UNKNOWN_SLICE_IDS" and nope["unknown"] == ["nope.png"]
+    assert nope["filenames"] == ["s0.png"]
     assert fit(["s0.png"], ["XYZ"])["error"] == "UNKNOWN_REGIONS"
     unavailable = fit(["s0.png"], [], "nissl")
     assert unavailable["error"] == "FIT_ATLAS_UNAVAILABLE"

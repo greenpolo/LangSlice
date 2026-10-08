@@ -11,7 +11,7 @@
  },
  "content": [
   {
-   "text": "{\"status\": \"ok\", \"resolution_note\": \"resolution 5000 is outside 128..2000; used 2000\", \"pictures\": [{\"id\": 2, \"caption\": \"1: s1.png section, at 0.15 mm; 31.2 um/px; raw red + green + blue; percentile contrast\"}], \"images_attached\": 1}"
+   "text": "{\"status\": \"ok\", \"resolution_note\": \"resolution 5000 is outside 128..2000; used 2000\", \"pictures\": [{\"id\": 2, \"caption\": \"s1.png section, at 0.15 mm; 31.2 um/px; raw red + green + blue; percentile contrast\"}], \"images_attached\": 1}"
   },
   {
    "image": 0,

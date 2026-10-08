@@ -169,7 +169,8 @@ the angles in a caption (empty for the flat plane).
   `pair_scale` sizes a pair at one position. `section_at` / `atlas_at` (and
   `display.framed_atlas(um_per_px=)`) draw at exactly that scale.
 - `status.py` — the status table, data for the doors rather than a
-  picture: `status_rows` (`position_source` "default" on a section still
+  picture, a section named by its filename alone (no index):
+  `status_rows` (`position_source` "default" on a section still
   at the starting position the job gave it), `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
@@ -220,14 +221,15 @@ the angles in a caption (empty for the flat plane).
   aside only as far as its neighbours need), the sections below in
   POSITION order (`position_order`: ties in stack order, `index_original`;
   no position last, without a line), evenly spaced, each joined by a thin
-  line to its position, so no two lines cross; each label keeps the
-  original index and filename, so a filename order that disagrees with the
+  line to its position, so no two lines cross; each label is the
+  section's filename, so a filename order that disagrees with the
   positions shows there. A stack is split, never shrunk: at most
   `PER_PICTURE` (6) sections and as many atlas thumbnails per picture
   (`split`: the fewest even consecutive runs; each atlas position goes to
   the run around it), each picture with its own ruler segment over the
   positions it holds plus a margin (`ruler_range`, at least
-  `RULER_MIN_SPAN_MM`) and a caption `part i of n: sections k-m of N ...,
+  `RULER_MIN_SPAN_MM`) and a caption `part i of n: k of the N sections
+  (first.tif to last.tif) ...,
   x-y mm` (on a stack whose sections' angles differ, `atlas at the median
   of the sections' cutting angles, ...`). One um/px for every thumbnail of every picture of a call
   (`scale.pair_um_per_px`, never finer than a section's working copy): the
