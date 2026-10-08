@@ -3,15 +3,15 @@
  "data": {
   "pictures": [
    {
-    "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
     "id": 40
    },
    {
-    "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
     "id": 41
    },
    {
-    "caption": "2: s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
     "id": 42
    }
   ],

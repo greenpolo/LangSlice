@@ -151,7 +151,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "0: s0.png section, at 0.04 mm; 39.8 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 39.8 um/px; raw gray; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000001_look_section",
@@ -210,7 +210,7 @@
     },
     {
      "call": 2,
-     "caption": "0: s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000002_look_section",
@@ -269,7 +269,7 @@
     },
     {
      "call": 3,
-     "caption": "positioning: 1 section below in position order at 0.10 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm",
+     "caption": "positioning: 1 section below in position order at 0.10 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000003_position_sections_positioning",
@@ -334,7 +334,7 @@
     },
     {
      "call": 4,
-     "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 35.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 35.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000004_look_overlay",
@@ -393,7 +393,7 @@
     },
     {
      "call": 5,
-     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000005_interactive_transform_overlay",
@@ -480,7 +480,7 @@
     },
     {
      "call": 6,
-     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000006_ants_syn_overlay",
@@ -591,7 +591,7 @@
     },
     {
      "call": 7,
-     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 41.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 41.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000007_look_overlay",
@@ -1002,7 +1002,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "0: s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000001_look_overlay",
@@ -1061,7 +1061,7 @@
     },
     {
      "call": 2,
-     "caption": "positioning: 3 sections below in position order, 0.10-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.12 mm, 2: s2.png 0.21 mm",
+     "caption": "positioning: 3 sections below in position order, 0.10-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png 0.12 mm, s2.png 0.21 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000002_look_positioning",
@@ -1156,7 +1156,7 @@
     },
     {
      "call": 3,
-     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png 0.15 mm, s2.png 0.20 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000003_position_sections_positioning",
@@ -1255,7 +1255,7 @@
     },
     {
      "call": 4,
-     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png 0.15 mm, s2.png 0.20 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000004_look_positioning",
@@ -1489,7 +1489,7 @@
     },
     {
      "call": 2,
-     "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000002_look_overlay",
@@ -1548,7 +1548,7 @@
     },
     {
      "call": 3,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000003_elastix_affine_overlay",
@@ -1635,7 +1635,7 @@
     },
     {
      "call": 4,
-     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000004_interactive_transform_overlay",
@@ -1957,7 +1957,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "0: s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000001_interactive_transform_overlay",
@@ -2044,7 +2044,7 @@
     },
     {
      "call": 2,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000002_elastix_affine_overlay",
@@ -2142,7 +2142,7 @@
     },
     {
      "call": 4,
-     "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000004_interactive_transform_overlay",
@@ -2893,7 +2893,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "0: s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000001_look_section",
@@ -2952,7 +2952,7 @@
     },
     {
      "call": 1,
-     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red + green + blue; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red + green + blue; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000002_look_section",
@@ -3011,7 +3011,7 @@
     },
     {
      "call": 1,
-     "caption": "2: s2.png section, at 0.21 mm; 31.2 um/px; raw gray; percentile contrast",
+     "caption": "s2.png section, at 0.21 mm; 31.2 um/px; raw gray; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000003_look_section",
@@ -3070,7 +3070,7 @@
     },
     {
      "call": 2,
-     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red + green; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red + green; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000004_look_section",
@@ -3132,7 +3132,7 @@
     },
     {
      "call": 3,
-     "caption": "1: s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000005_zoom_section",
@@ -3199,7 +3199,7 @@
     },
     {
      "call": 4,
-     "caption": "1: s1.png section, at 0.12 mm; 7.8 um/px; raw red + green; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 7.8 um/px; raw red + green; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000006_zoom_section",
@@ -3266,7 +3266,7 @@
     },
     {
      "call": 5,
-     "caption": "0: s0.png section, at 0.04 mm; 7.8 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 7.8 um/px; raw gray; percentile contrast",
      "layers": false,
      "mode": "section",
      "name": "000007_zoom_section",
@@ -3519,7 +3519,7 @@
     },
     {
      "call": 9,
-     "caption": "positioning: 3 sections below in position order, 0.04-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.04 mm, 1: s1.png 0.12 mm, 2: s2.png 0.21 mm",
+     "caption": "positioning: 3 sections below in position order, 0.04-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.04 mm, s1.png 0.12 mm, s2.png 0.21 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000012_look_positioning",
@@ -3614,7 +3614,7 @@
     },
     {
      "call": 10,
-     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue",
      "layers": false,
      "mode": "section",
      "name": "000013_look_section",
@@ -3684,7 +3684,7 @@
     },
     {
      "call": 11,
-     "caption": "1: s1.png preprocessed channel before this call (default appearance)",
+     "caption": "s1.png preprocessed channel before this call (default appearance)",
      "layers": false,
      "mode": "before",
      "name": "000014_set_preprocessed_channel_properties_before",
@@ -3698,7 +3698,7 @@
     },
     {
      "call": 11,
-     "caption": "1: s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
+     "caption": "s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
      "layers": false,
      "mode": "after",
      "name": "000015_set_preprocessed_channel_properties_after",
@@ -3712,7 +3712,7 @@
     },
     {
      "call": 12,
-     "caption": "0: s0.png preprocessed channel before this call (default appearance)",
+     "caption": "s0.png preprocessed channel before this call (default appearance)",
      "layers": false,
      "mode": "before",
      "name": "000016_set_preprocessed_channel_properties_before",
@@ -3726,7 +3726,7 @@
     },
     {
      "call": 12,
-     "caption": "0: s0.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+     "caption": "s0.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
      "layers": false,
      "mode": "after",
      "name": "000017_set_preprocessed_channel_properties_after",
@@ -3740,7 +3740,7 @@
     },
     {
      "call": 12,
-     "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+     "caption": "s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
      "layers": false,
      "mode": "before",
      "name": "000018_set_preprocessed_channel_properties_before",
@@ -3754,7 +3754,7 @@
     },
     {
      "call": 12,
-     "caption": "1: s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
+     "caption": "s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
      "layers": false,
      "mode": "after",
      "name": "000019_set_preprocessed_channel_properties_after",
@@ -3768,7 +3768,7 @@
     },
     {
      "call": 12,
-     "caption": "2: s2.png preprocessed channel before this call (default appearance)",
+     "caption": "s2.png preprocessed channel before this call (default appearance)",
      "layers": false,
      "mode": "before",
      "name": "000020_set_preprocessed_channel_properties_before",
@@ -3782,7 +3782,7 @@
     },
     {
      "call": 12,
-     "caption": "2: s2.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+     "caption": "s2.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
      "layers": false,
      "mode": "after",
      "name": "000021_set_preprocessed_channel_properties_after",
@@ -3796,7 +3796,7 @@
     },
     {
      "call": 13,
-     "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
      "layers": false,
      "mode": "section",
      "name": "000022_look_section",
@@ -3890,7 +3890,7 @@
     },
     {
      "call": 14,
-     "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+     "caption": "s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
      "layers": false,
      "mode": "before",
      "name": "000023_set_preprocessed_channel_properties_before",
@@ -3904,7 +3904,7 @@
     },
     {
      "call": 14,
-     "caption": "1: s1.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+     "caption": "s1.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
      "layers": false,
      "mode": "after",
      "name": "000024_set_preprocessed_channel_properties_after",
@@ -4048,7 +4048,7 @@
     },
     {
      "call": 16,
-     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 3 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png 0.15 mm, s2.png 0.20 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000027_position_sections_positioning",
@@ -4168,7 +4168,7 @@
     },
     {
      "call": 17,
-     "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.25 mm",
+     "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000028_position_sections_positioning",
@@ -4254,7 +4254,7 @@
     },
     {
      "call": 18,
-     "caption": "positioning: 1 section below in position order at 0.05 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 2: s2.png 0.05 mm",
+     "caption": "positioning: 1 section below in position order at 0.05 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s2.png 0.05 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000029_position_sections_positioning",
@@ -4407,7 +4407,7 @@
     },
     {
      "call": 20,
-     "caption": "0: s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000031_look_overlay",
@@ -4487,7 +4487,7 @@
     },
     {
      "call": 21,
-     "caption": "1: s1.png overlay, at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas template + borders (images at 0.3)",
+     "caption": "s1.png overlay, at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas template + borders (images at 0.3)",
      "layers": true,
      "mode": "overlay",
      "name": "000032_look_overlay",
@@ -4570,7 +4570,7 @@
     },
     {
      "call": 22,
-     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 2 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 1: s1.png 0.15 mm, 2: s2.png 0.20 mm",
+     "caption": "positioning: 3 sections below in position order, 0.10-0.20 mm; atlas above at 2 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png 0.15 mm, s2.png 0.20 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000033_look_positioning",
@@ -4689,7 +4689,7 @@
     },
     {
      "call": 23,
-     "caption": "positioning: 2 sections below in position order, 0.10-0.20 mm, raw gray; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.10 mm, 2: s2.png 0.20 mm",
+     "caption": "positioning: 2 sections below in position order, 0.10-0.20 mm, raw gray; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s2.png 0.20 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000034_look_positioning",
@@ -4817,7 +4817,7 @@
     },
     {
      "call": 26,
-     "caption": "1: s1.png overlay (rotated 90, flipped), at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay (rotated 90, flipped), at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000037_interactive_transform_overlay",
@@ -4897,7 +4897,7 @@
     },
     {
      "call": 27,
-     "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000038_interactive_transform_overlay",
@@ -5007,7 +5007,7 @@
     },
     {
      "call": 28,
-     "caption": "2: s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000039_interactive_transform_overlay",
@@ -5117,7 +5117,7 @@
     },
     {
      "call": 29,
-     "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000040_elastix_affine_overlay",
@@ -5225,7 +5225,7 @@
     },
     {
      "call": 29,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000041_elastix_affine_overlay",
@@ -5333,7 +5333,7 @@
     },
     {
      "call": 29,
-     "caption": "2: s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000042_elastix_affine_overlay",
@@ -5449,7 +5449,7 @@
     },
     {
      "call": 30,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000043_elastix_affine_overlay",
@@ -5594,7 +5594,7 @@
     },
     {
      "call": 32,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000046_ants_syn_overlay",
@@ -5732,7 +5732,7 @@
     },
     {
      "call": 33,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000047_ants_syn_overlay",
@@ -5890,7 +5890,7 @@
     },
     {
      "call": 34,
-     "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000048_look_overlay",
@@ -6023,7 +6023,7 @@
     },
     {
      "call": 34,
-     "caption": "1: s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000049_look_overlay",
@@ -6176,7 +6176,7 @@
     },
     {
      "call": 35,
-     "caption": "0: s0.png overlay, at 0.10 mm; elastix transform, linear placement only; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform, linear placement only; 31.2 um/px; raw gray; percentile contrast; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000050_look_overlay",

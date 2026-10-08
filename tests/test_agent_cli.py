@@ -364,7 +364,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     opening = [item for item in envelope["artifacts"] if item["kind"] == "opening"]
     assert [item["index"] for item in opening] == list(range(len(pictures)))
     assert [Path(item["path"]).read_bytes() for item in opening] == pictures
-    assert opening[0]["label"].startswith("Strip 1 of 1: 0: s0.png")
+    assert opening[0]["label"].startswith("Strip 1 of 1: s0.png")
     assert [entry.get("path") for entry in result["opening"] if "picture" in entry] == [
         item["path"] for item in opening]
     # BRIEF.md holds it all, and the card names it first.
@@ -536,9 +536,15 @@ def test_a_write_returns_its_pictures_as_artifact_paths(capsys, images):
     code, blind = cli(capsys, str(images), "interactive_transform", "--sections",
                       json.dumps([{"id": ID0, "rotation_deg": 3.0}]), "--view", "false")
     assert code == 0 and blind["artifacts"] == [] and "pictures" not in blind["result"]
-    # The flag form, a corrected index as a number, the verbose reply.
+    # A number names no section: refused with the filenames.
+    code, numbered = cli(capsys, str(images), "position_sections", "--sections",
+                         '[{"id": 1, "position_mm": 0.15}]')
+    assert code != 0 and ID1 in numbered["result"]["filenames"]
+    assert "filename" in numbered["result"]["message"]
+    # The flag form, the filename without its extension, the verbose reply.
     code, verbose = cli(capsys, str(images), "position_sections", "--sections",
-                        '[{"id": 1, "position_mm": 0.15}]', "--verbose")
+                        json.dumps([{"id": ID1.rsplit(".", 1)[0], "position_mm": 0.15}]),
+                        "--verbose")
     assert code == 0 and verbose["result"]["written"] == [{"id": ID1, "position_mm": 0.15}]
 
 
@@ -707,7 +713,7 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert code == 0, waited
     assert waited["result"]["run"] == run
     picture, = waited["result"]["pictures"]
-    assert picture["caption"].startswith(f"0: {ID0} section")
+    assert picture["caption"].startswith(f"{ID0} section")
     assert [artifact["kind"] for artifact in waited["artifacts"]] == ["view", "view_json"]
     assert Path(waited["artifacts"][0]["path"]).is_file()
     code, one = cli(capsys, str(images), "runs", run)

@@ -23,6 +23,7 @@ from langslice.core.captions import caption
 from langslice.core.channels import all_properties
 from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
+from langslice.core.state import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.door import Door, Media, as_list, pictured
 from langslice.doors.tools.view_options import clamp_resolution
@@ -140,7 +141,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if named:
             scope, unknown = door.resolve_many(named)
             if unknown or not scope:
-                return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
+                return {"status": "error", "error": "UNKNOWN_SLICE_IDS",
+                        **unknown_sections(job.state, unknown)}
             shown = scope[:MAX_LOOK_PICTURES]
             ids: list[str] | None = [record.id for record in scope]
         else:
@@ -159,13 +161,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         parts: list[Media] = []
         for pair in done.pictures:
             record = pair.record
-            label = f"{record.index_corrected}: {record.id}  preprocessed channel"
+            label = f"{record.id}  preprocessed channel"
             for when, image, settings in (("BEFORE", pair.before, pair.before_settings),
                                           ("AFTER", pair.after, pair.after_settings)):
                 parts.append(layers.note(
                     caption(image, f"{label}  {when} ({looks.describe(settings)})"),
                     sections=(record.id,), mode=when.lower(),
-                    caption=f"{record.index_corrected}: {record.id} preprocessed channel "
+                    caption=f"{record.id} preprocessed channel "
                     f"{when.lower()} this call ({looks.describe(settings)})"))
         names = {record.id: list(ctx.section_channels(record.id)[0]) for record in scope}
         distinct = {tuple(value) for value in names.values()}

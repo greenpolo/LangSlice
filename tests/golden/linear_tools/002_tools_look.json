@@ -5,15 +5,15 @@
  "data": {
   "pictures": [
    {
-    "caption": "0: s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+    "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
     "id": 1
    },
    {
-    "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; raw red + green + blue; percentile contrast",
+    "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red + green + blue; percentile contrast",
     "id": 2
    },
    {
-    "caption": "2: s2.png section, at 0.21 mm; 31.2 um/px; raw gray; percentile contrast",
+    "caption": "s2.png section, at 0.21 mm; 31.2 um/px; raw gray; percentile contrast",
     "id": 3
    }
   ],

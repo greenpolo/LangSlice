@@ -85,7 +85,8 @@ the section at the scale its overlay draws it (calibration times its stored
 transform's scale), the larger panel at the picture's long edge, so a
 section reads at its true size against the atlas. `side_by_side` sizes by
 the largest atlas plane, so one section picture serves every position of a
-call. Every picture carries its label in its pixels. The opening message shows
+call. Every picture carries its label in its pixels, naming each section by
+its filename. The opening message shows
 the stack as strips (`core/opening.py`): labelled sections in corrected order
 with the atlas at each section's current position beneath, then the status
 table. `image_resolution` sets the long edge of each strip tile and of every
@@ -119,6 +120,14 @@ arguments:
 - Nonlinear: `trace_borders` (image model; not built when the provider is
   `none`), `fit_deformable` ([nonlinear_design.md](nonlinear_design.md)).
 - Scripting only (CLI and library, never a model's tool): `export_maps`.
+
+A section is named by its image filename everywhere: every argument that
+names one (`submit`'s `interval_breaks` and `left_linear` included) takes the
+filename, or the filename without its extension when no other section's
+filename has that stem; a number names no section and is refused
+(`UNKNOWN_SLICE_IDS`) with the valid filenames listed. Picture labels,
+captions, the status table and the job statement name sections by filename
+alone; the corrected index is the state's own bookkeeping.
 
 Every write returns the picture of what it did; there is no preview-then-apply,
 every write is undoable. `fit_affine`, `fit_deformable`, `trace_borders` and

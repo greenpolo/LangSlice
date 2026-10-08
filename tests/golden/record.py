@@ -428,9 +428,10 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("look", "atlas", positions_mm=[0.1], atlas_layers=["template", "borders"])
     call("look", "atlas", positions_mm=[0.1], atlas_layers=["ara"])  # "ara" read as template
     call("look", "positioning")
-    # Refusals: a mode that does not exist, a stray top-level argument (the
+    # Refusals: sections named by a number and by a name that is no file's
+    # (sections are named by filename), a stray top-level argument (the
     # strict check), a channel the section does not have.
-    call("look", "stack")
+    call("look", "section", sections=[0, "nope.png"])
     call("look", "section", sections=[ID0], view={"mode": "section"})
     call("look", "section", sections=[ID0], channels=["purple"])
     # Display settings: display only, they persist and every caption states them.
@@ -476,7 +477,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("mark_damage", ID2, ["CTX:right"], note="right third missing")
     call("mark_damage", ID1, ["NOPE"])
     call("mark_damage", ID1, ["HY"], note="test mark")
-    call("mark_damage", ID1, [])
+    call("mark_damage", "s1", [])  # the filename without its extension
 
     # The in-plane transform by hand: absolute values, a value left out kept.
     call("interactive_transform", [{"id": ID1, "flip": True, "rotate_quarter": 90}])

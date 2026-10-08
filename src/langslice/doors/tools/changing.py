@@ -16,6 +16,7 @@ from typing import Any
 from langslice.core import layers
 from langslice.core.display import default_options
 from langslice.core.sizes import picture_edge
+from langslice.core.state import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.door import Door, as_list, pictured
 from langslice.ops import damage as ops_damage
@@ -73,9 +74,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             done = ops_positions.position_sections(job, ctx, entries, angles)
         except Refused as refusal:
             return refusal.payload()
+        unknown = unknown_sections(job.state, done.unknown) if done.unknown else None
         if not done.written and done.cutting_angles is None:
             return {"status": "error", "error": "NOTHING_WRITTEN",
-                    **({"unknown_ids": done.unknown} if done.unknown else {}),
+                    **({"unknown_ids": done.unknown, "message": unknown["message"],
+                        "filenames": unknown["filenames"]} if unknown else {}),
                     **({"rejected": rejected} if rejected else {})}
         door.forget_looks(done.touched)
         if angles is not None:
@@ -88,7 +91,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                             for name, asked, value in done.clamped],
                 "atlas_range_mm": [round(v, 3) for v in done.position_range]}
                if done.clamped else {}),
-            **({"unknown_ids": done.unknown} if done.unknown else {}),
+            **({"unknown_ids": done.unknown, "unknown_message": unknown["message"]}
+               if unknown else {}),
             **({"rejected": rejected} if rejected else {}),
             "order": done.order,
             **({"reordered": done.reordered} if done.reordered else {}),
@@ -194,7 +198,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         door.forget_looks(step.moved)
         return {"status": "ok", "redo_depth": step.depth, **door.rows()}
 
-    def submit(summary: str, notes: list[str], interval_breaks: list[int],
+    def submit(summary: str, notes: list[str], interval_breaks: list[str],
                left_linear: list[dict[str, Any]] = [],  # noqa: B006 (read only)
                tool_context: Any = None) -> dict[str, Any]:
         def look_gate() -> dict[str, Any] | None:

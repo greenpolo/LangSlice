@@ -59,7 +59,7 @@ def status_and_notes(state: StackState) -> str:
     """The status table with its header, then the recent run notes: the text
     the ADK agent's first message ends with, and every other door's statement."""
     return (
-        "Status table (corrected index, filename, position, spacing to "
+        "Status table (filename, position, spacing to "
         "the next placed section, flags):\n"
         f"{status_text(state)}\n\n"
         "Recent run notes:\n"

@@ -13,7 +13,6 @@
     "delta_to_next_mm": 0.05,
     "flip": false,
     "id": "s1.png",
-    "index": 0,
     "position_mm": 0.15,
     "rotation_deg": 0
    },
@@ -22,7 +21,6 @@
     "delta_to_next_mm": 0.05,
     "flip": false,
     "id": "s2.png",
-    "index": 1,
     "position_mm": 0.2,
     "rotation_deg": 0
    },
@@ -30,7 +28,6 @@
     "damaged": false,
     "flip": false,
     "id": "s0.png",
-    "index": 2,
     "position_mm": 0.25,
     "rotation_deg": 0
    }

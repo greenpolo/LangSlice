@@ -60,7 +60,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     held = job.state.slices[0].deformation
     assert held is not None and [step["start"] for step in held["steps"]] == ["linear"]
 
-    second = ops_deformable.ants_syn(job, ctx, ["0"], stiffness="soft", restrict_to=["TH"])
+    second = ops_deformable.ants_syn(job, ctx, ["s0.png"], stiffness="soft", restrict_to=["TH"])
     assert second.rows[0]["status"] == "ok", second.rows
     held = job.state.slices[0].deformation
     assert held is not None

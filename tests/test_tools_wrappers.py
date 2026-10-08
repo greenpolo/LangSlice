@@ -240,18 +240,19 @@ def test_host_display_targets_follow_each_tools_scope():
         assert _tool_target_ids(state, name, {}) == every
     assert _tool_target_ids(state, "look", {"mode": "positioning", "sections": []}) == every
     assert _tool_target_ids(state, "look", {"mode": "atlas", "sections": []}) == []
-    assert _tool_target_ids(state, "look", {"mode": "overlay", "sections": ["2"]}) == ["c"]
+    assert _tool_target_ids(state, "look", {"mode": "overlay", "sections": ["2"]}) == []
+    assert _tool_target_ids(state, "look", {"mode": "overlay", "sections": ["c"]}) == ["c"]
     assert _tool_target_ids(state, "position_sections",
                             {"sections": [], "cutting_angles": {"pitch_deg": 1}}) == every
     assert _tool_target_ids(state, "position_sections", {
-        "sections": [{"id": "c", "position_mm": 1.0}, {"id": "0", "position_mm": 4.0}],
+        "sections": [{"id": "c", "position_mm": 1.0}, {"id": "a", "position_mm": 4.0}],
     }) == ["c", "a"]
     assert _tool_target_ids(state, "set_preprocessed_channel_properties",
                             {"sections": []}) == every
     # elastix_affine with no sections fits the placed sections the host did not align.
     assert _tool_target_ids(state, "elastix_affine", {"sections": []}) == ["a"]
     assert _tool_target_ids(state, "interactive_transform", {
-        "sections": [{"id": "1"}, {"id": "a"}, {"id": "unknown"}, {"id": "a"}],
+        "sections": [{"id": "b"}, {"id": "a"}, {"id": "1"}, {"id": "a"}],
     }) == ["b", "a"]
     assert _tool_target_ids(state, "mark_damage", {"section": "b", "regions": []}) == ["b"]
     assert _tool_target_ids(state, "export_maps", {"slices": ["c", "nope"]}) == ["c"]

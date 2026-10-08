@@ -201,16 +201,15 @@ class StackState:
         return next((s for s in self.slices if s.id == slice_id), None)
 
     def resolve(self, ref: object) -> SliceState | None:
-        """A section by filename or by corrected index (the two addresses)."""
+        """The section *ref* names: its filename, or the filename without its
+        extension when exactly one section has that stem. Never a number:
+        sections are named by filename only (:func:`unknown_sections`)."""
         text = str(ref).strip()
         hit = self.by_id(text)
         if hit is not None:
             return hit
-        try:
-            index = int(text)
-        except (TypeError, ValueError):
-            return None
-        return next((s for s in self.slices if s.index_corrected == index), None)
+        stems = [record for record in self.slices if filename_stem(record.id) == text]
+        return stems[0] if len(stems) == 1 else None
 
     # --- cutting angles ---------------------------------------------------
     #
@@ -364,4 +363,52 @@ def normalize_to_atlas_order(state: StackState) -> bool:
         record.index_corrected = n - 1 - record.index_corrected
     state.interval_breaks = sorted(n - i for i in state.interval_breaks if 0 < i < n)
     return True
+
+
+# --- naming sections ----------------------------------------------------------------
+#
+# A section is named by its filename everywhere a model, a script or a user
+# names one (:meth:`StackState.resolve`); the stack order is internal.
+
+#: How many filenames a refusal lists before it says how many it left out.
+NAMES_LISTED = 40
+
+
+def filename_stem(name: str) -> str:
+    """*name* without its extension (``s01.tif`` -> ``s01``)."""
+    base, dot, _extension = name.rpartition(".")
+    return base if dot and base else name
+
+
+def break_ids(state: StackState) -> list[str]:
+    """The interval breaks as the filenames of the sections after each gap
+    (stored as corrected indices, ``StackState.interval_breaks``)."""
+    by_index = {record.index_corrected: record.id for record in state.slices}
+    return [by_index[index] for index in state.interval_breaks if index in by_index]
+
+
+def unknown_sections(state: StackState, refs: Any) -> dict[str, Any]:
+    """The facts of a refusal for section names *refs* that name no section:
+    ``unknown`` (the refs as text), ``filenames`` (the valid names, the
+    first :data:`NAMES_LISTED`) and ``message``, which says that sections
+    are named by filename (a number names none; a stem two files share
+    needs the whole filename)."""
+    unknown = [str(ref) for ref in (refs if isinstance(refs, (list, tuple)) else [refs])]
+    names = sorted(record.id for record in state.slices)
+    listed = names[:NAMES_LISTED]
+    numbers = [ref for ref in unknown if ref.strip().lstrip("-").isdigit()]
+    shared = [ref for ref in unknown
+              if sum(filename_stem(name) == ref.strip() for name in names) > 1]
+    words = [f"No section is named {', '.join(repr(ref) for ref in unknown)}. Sections are "
+             "named by filename (or the filename without its extension, when no other "
+             "section shares it)."]
+    if numbers:
+        words.append("Sections have no numbers to name them by.")
+    if shared:
+        words.append(f"{', '.join(repr(ref) for ref in shared)}: more than one file has "
+                     "this name without its extension; give the whole filename.")
+    words.append("Filenames: " + ", ".join(listed)
+                 + (f" and {len(names) - len(listed)} more (status lists every section)."
+                    if len(names) > len(listed) else "."))
+    return {"unknown": unknown, "filenames": listed, "message": " ".join(words)}
 

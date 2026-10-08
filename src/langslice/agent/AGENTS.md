@@ -169,8 +169,10 @@ never dropped). Tools return plain PIL pictures under
 `TOOL_MEDIA_PARTS_KEY`; the ADK driver packages them as JPEG parts
 (`doors.tools.media.packaged`), the MCP door as image blocks.
 
-Conventions: sections are addressed by filename or index (the index is the
-stack order, which follows the positions); ordinary writes answer with the
+Conventions: sections are named by filename only (`StackState.resolve`:
+the filename, or its stem when no other section shares it; a number is
+refused with the filenames listed, `core.state.unknown_sections`), in every
+argument, label, caption and status line; ordinary writes answer with the
 rows they changed (`Door.answered`) plus `n_sections`; `status`, `undo`,
 `redo` and `submit` return the whole table, and `status` also the channel
 display settings, the preprocessed channel's recipe, the background work

@@ -5,7 +5,7 @@
  "data": {
   "pictures": [
    {
-    "caption": "1: s1.png section, at 0.12 mm; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
+    "caption": "s1.png section, at 0.12 mm; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
     "id": 22
    }
   ],

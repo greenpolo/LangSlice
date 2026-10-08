@@ -159,9 +159,9 @@ def build_job_statement(
         jobs.append(
             "give every section its own position in millimetres along the "
             "slicing axis, each one inspected and checked against the atlas, "
-            "damaged sections included, and report the indices where "
-            "you conclude the interval between neighbouring sections is "
-            "genuinely broken"
+            "damaged sections included, and report, by filename, each section "
+            "after a gap where you conclude the interval between neighbouring "
+            "sections is genuinely broken"
         )
     if spec.has("transform"):
         turned = "mirrored or turned" if spec.transform.flip else "turned"
@@ -215,9 +215,9 @@ def build_job_statement(
             )
         else:
             constraints.append(
-                "- A reported interval break is accepted only at an index "
-                "where the interval between the positions you wrote exceeds "
-                "1.5x the stack's median written spacing."
+                "- A reported interval break is accepted only at a section "
+                "whose interval from the section before it, in the positions "
+                "you wrote, exceeds 1.5x the stack's median written spacing."
             )
     if spec.has("transform"):
         constraints.append(

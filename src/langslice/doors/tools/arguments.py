@@ -9,8 +9,8 @@ model sees the shape in the tool list, and the keys this module checks are
 the keys that schema shows.
 
 :func:`normalize_arguments` is the other shared rule: what the native tools
-accept as sent (a corrected index as a number where a filename or index is
-asked for, a null picture option) is made schema-valid before a door that
+accept as sent (a number where a filename is asked for, which the tools then
+refuse by name, a null picture option) is made schema-valid before a door that
 validates against the schema (FastMCP) sees it.
 
 :func:`argument_refusal` is the one strictness rule, used at every door: the
@@ -40,7 +40,7 @@ from typing_extensions import TypedDict, is_typeddict
 class SectionPosition(TypedDict, total=False):
     """One ``position_sections`` section: where it sits along the slicing axis."""
 
-    id: str | int
+    id: str
     position_mm: float
 
 
@@ -56,7 +56,7 @@ class CuttingAngles(TypedDict, total=False):
 class SectionTransform(TypedDict, total=False):
     """One ``interactive_transform`` section: absolute values, each optional."""
 
-    id: str | int
+    id: str
     flip: bool
     rotate_quarter: int
     rotation_deg: float
@@ -72,7 +72,7 @@ class LeftLinear(TypedDict, total=False):
     """One ``submit`` ``left_linear`` entry: a section left without a
     deformation, and why."""
 
-    id: str | int
+    id: str
     reason: str
 
 
@@ -148,12 +148,13 @@ def _without_nulls(value: Any) -> Any:
 def normalize_arguments(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[str, Any]:
     """*args* as the native tools read them, in a shape *func*'s schema accepts.
 
-    The tools take a section either by filename or by corrected index, and
-    ADK hands them a number as sent; a door that validates against the
-    schema first (FastMCP's pydantic check) would refuse a number where the
-    schema says text. So a whole number in a text argument (``id``,
-    ``section``) or in a list of text (``slices``) becomes its text; the
-    tools resolve ``"2"`` and ``2`` alike. A null inside a typed-dict
+    The tools take a section by filename, and ADK hands them a number as
+    sent; a door that validates against the schema first (FastMCP's pydantic
+    check) would refuse a number where the schema says text with no word on
+    how sections are named. So a whole number in a text argument (``id``,
+    ``section``) or in a list of text (``slices``) becomes its text, and the
+    tool's own refusal (``UNKNOWN_SLICE_IDS``) says that sections are named
+    by filename and lists them. A null inside a typed-dict
     argument (``cutting_angles``, each ``sections`` dict) means "not given",
     as the tools read it, and is dropped; a null object argument is its
     default. Nothing else changes: unknown keys are :func:`argument_refusal`'s.

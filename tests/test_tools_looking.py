@@ -86,7 +86,7 @@ def test_look_numbers_each_picture_and_saves_it_once(tmp_path: Path, atlas):
     assert _numbers(result) == [1, 2, 3]
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 3
     assert [entry["caption"].split(" section")[0] for entry in result["pictures"]] == [
-        "0: s0.png", "1: s1.png", "2: s2.png"]
+        "s0.png", "s1.png", "s2.png"]
     assert "25.0 um/px" in result["pictures"][0]["caption"]
     assert "not_shown" not in result
     # Saved by its operation, not again by the door.
@@ -111,13 +111,13 @@ def test_look_modes_draw_their_pictures(tmp_path: Path, atlas):
     (atlas_plane,) = look("atlas", positions_mm=[0.1])["pictures"]
     assert atlas_plane["caption"].startswith("atlas at 0.10 mm")
     (overlay,) = look("overlay", sections=["s1.png"])["pictures"]
-    assert overlay["caption"].startswith("1: s1.png overlay, at 0.15 mm")
+    assert overlay["caption"].startswith("s1.png overlay, at 0.15 mm")
     assert "identity transform" in overlay["caption"] and "atlas borders" in overlay["caption"]
     linear = look("overlay", sections=["s1.png"], warp="none")
     assert linear["status"] == "ok"
     (positioning,) = look("positioning", positions_mm=[0.1])["pictures"]
     assert positioning["caption"].startswith("positioning: 3 sections")
-    (channel,) = look("section", sections=["0"], channels=["preprocessed"])["pictures"]
+    (channel,) = look("section", sections=["s0"], channels=["preprocessed"])["pictures"]
     assert "preprocessed channel" in channel["caption"]
 
 
@@ -127,8 +127,11 @@ def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
     assert look("atlas") == {"status": "error", "error": "NO_POSITIONS",
                              "message": "atlas mode needs positions_mm"}
     assert look("sideways")["error"] == "UNKNOWN_MODE"
-    assert look("section", sections=["nope.png"]) == {
-        "status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": ["nope.png"]}
+    nope = look("section", sections=["nope.png", "0"])
+    assert nope["error"] == "UNKNOWN_SLICE_IDS" and nope["unknown"] == ["nope.png", "0"]
+    assert nope["filenames"] == ["s0.png", "s1.png", "s2.png"]
+    assert nope["message"].startswith("No section is named 'nope.png', '0'.")
+    assert "Sections have no numbers" in nope["message"]
     assert look("overlay", atlas_opacity=2.0)["error"] == "BAD_ARGS"
     assert look("section", channels=["DAPI"])["error"] == "UNKNOWN_CHANNEL"
     assert look("overlay", warp="bent")["error"] == "BAD_WARP"

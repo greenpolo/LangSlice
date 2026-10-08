@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from langslice.core.spec import JobSpec, PositionSpec, TransformSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.state import SliceState, StackState, unknown_sections
 
 
 def _stack(n: int = 3) -> StackState:
@@ -43,15 +43,29 @@ def test_spec_rejects_an_unknown_plane_and_task():
         JobSpec(image_folder="/tmp/x", tasks=["reorder", "colorize"])
 
 
-def test_state_round_trips_and_resolves_by_name_or_index():
+def test_state_round_trips_and_resolves_by_filename_only():
     state = _stack()
     state.slices[0].position_mm = 4.0
     state.slices[2].transform = {"kind": "silhouette", "params": [1, 0, 0, 0, 1, 0]}
     again = StackState.from_dict(state.to_dict())
     assert again == state
     assert again.resolve("s1.png") is again.slices[1]
-    assert again.resolve(2) is again.slices[2]
+    assert again.resolve(" s2 ") is again.slices[2]  # the stem names one file
+    assert again.resolve(2) is None and again.resolve("2") is None  # never a number
     assert again.resolve("nope.png") is None
+
+
+def test_a_stem_two_files_share_names_neither_and_the_refusal_says_why():
+    state = StackState(slices=[SliceState("a.png", 0, 0), SliceState("a.tif", 1, 1),
+                               SliceState("3.png", 2, 2)])
+    assert state.resolve("a") is None
+    assert state.resolve("a.tif") is state.slices[1]
+    assert state.resolve("3") is state.slices[2]  # a file named by a number is a name
+    facts = unknown_sections(state, ["a", "1"])
+    assert facts["unknown"] == ["a", "1"]
+    assert facts["filenames"] == ["3.png", "a.png", "a.tif"]
+    assert "named by filename" in facts["message"]
+    assert "no numbers" in facts["message"] and "whole filename" in facts["message"]
 
 
 def test_in_order_follows_the_corrected_index():

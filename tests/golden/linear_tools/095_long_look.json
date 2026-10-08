@@ -5,11 +5,11 @@
  "data": {
   "pictures": [
    {
-    "caption": "positioning part 1 of 2: sections 1-4 of 8 below in position order, 0.02-0.11 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 62.5 um/px. Sections: 1: long1.png 0.02 mm, 2: long2.png 0.05 mm, 4: long4.png 0.08 mm, 5: long5.png 0.11 mm",
+    "caption": "positioning part 1 of 2: 4 of the 8 sections (long1.png to long5.png) below in position order, 0.02-0.11 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 62.5 um/px. Sections: long1.png 0.02 mm, long2.png 0.05 mm, long4.png 0.08 mm, long5.png 0.11 mm",
     "id": 3
    },
    {
-    "caption": "positioning part 2 of 2: sections 5-8 of 8 below in position order, 0.14-0.24 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 62.5 um/px. Sections: 7: long7.png 0.14 mm, 6: long6.png 0.17 mm, 0: long0.png 0.20 mm, 3: long3.png 0.24 mm",
+    "caption": "positioning part 2 of 2: 4 of the 8 sections (long7.png to long3.png) below in position order, 0.14-0.24 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 62.5 um/px. Sections: long7.png 0.14 mm, long6.png 0.17 mm, long0.png 0.20 mm, long3.png 0.24 mm",
     "id": 4
    }
   ],

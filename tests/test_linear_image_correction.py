@@ -73,7 +73,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     monkeypatch.setattr(registration_tool, "start_correction", fake_start)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
-    result = _tool(box, "trace_borders")("0", "Edited prompt.")
+    result = _tool(box, "trace_borders")(state.slices[0].id, "Edited prompt.")
     assert result["status"] == "started" and result["work"] == "w1", result
     # The door resolved the spec's provider and model once; the operation got it.
     model = calls[0][1].pop("image_model")
@@ -85,7 +85,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     })]
     # The tool returns while the image call is still running, with no images.
     assert result["trace"]["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
-    again = _tool(box, "trace_borders")("0")
+    again = _tool(box, "trace_borders")("s0")  # the filename without its extension
     assert again["status"] == "running" and again["work"] == "w1"
     assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
@@ -102,11 +102,12 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
     assert box.job.background.running() == []
     assert _tool(box, "submit")("Done", [], [], left_linear=[
-        {"id": "0", "reason": "The placement already fits."}])["status"] == "ok"
+        {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
     assert state.slices[0].image_correction["status"] == "ok"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
     assert state.slices[0].transform == transform
-    assert _tool_target_ids(state, "trace_borders", {"section": "0"}) == ["s0.png"]
+    assert _tool_target_ids(state, "trace_borders", {"section": "s0"}) == ["s0.png"]
+    assert _tool_target_ids(state, "trace_borders", {"section": "0"}) == []
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):

@@ -6,9 +6,9 @@ neighbours need) and joined by a short line to it; below it, the sections
 in POSITION order (their current ``position_mm``, ties in stack order,
 ``index_original``; sections without a position last), evenly spaced,
 each joined by a thin line to its position. Both rows are sorted along
-the ruler, so no two lines cross; each section's label keeps
-its original index and filename, so a filename order that disagrees with
-the positions shows in the labels.
+the ruler, so no two lines cross; each section is labelled by its
+filename, so a filename order that disagrees with the positions shows in
+the labels.
 
 A stack is never drawn smaller to fit: at most :data:`PER_PICTURE` sections
 (and as many atlas thumbnails) go in one picture, and a longer stack is
@@ -55,7 +55,7 @@ from langslice.core.scale import (
     section_um_per_px,
 )
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
-from langslice.core.state import Angles, SliceState, StackState
+from langslice.core.state import Angles, SliceState, StackState, filename_stem
 from langslice.core.workspace import Workspace
 
 #: Widest positioning picture: the largest image every model lane takes in
@@ -576,9 +576,8 @@ def atlas_extent(
 
 
 def label_candidates(record: SliceState) -> tuple[str, ...]:
-    """A section's first-line labels, longest first: its original index
-    (``index_original``, the filename order) and filename with short
-    correction flags, then without the file extension, then the index alone."""
+    """A section's first-line labels, longest first: its filename with short
+    correction flags, then the filename alone, then without its extension."""
     flags = []
     if record.rotation_deg:
         flags.append(f"rot {record.rotation_deg}")
@@ -586,9 +585,8 @@ def label_candidates(record: SliceState) -> tuple[str, ...]:
         flags.append("flipped")
     if record.damaged:
         flags.append("damaged")
-    full = f"{record.index_original}: {record.id}" + (f" [{', '.join(flags)}]" if flags else "")
-    stem = record.id.rsplit(".", 1)[0] if "." in record.id else record.id
-    return (full, f"{record.index_original}: {stem}", str(record.index_original))
+    full = record.id + (f" [{', '.join(flags)}]" if flags else "")
+    return tuple(dict.fromkeys((full, record.id, filename_stem(record.id))))
 
 
 def positioning_pictures(
@@ -702,8 +700,9 @@ def positioning_caption(
     count = len(layout.sections)
     if count:
         if layout.parts > 1:
-            which = (f"section {layout.first} of {layout.total}" if count == 1 else
-                     f"sections {layout.first}-{layout.last} of {layout.total}")
+            ends = layout.sections[0].key + ("" if count == 1 else
+                                             f" to {layout.sections[-1].key}")
+            which = f"{count} of the {layout.total} sections ({ends})"
         else:
             which = f"{count} section{'s' if count != 1 else ''}"
         placed = [slot.position_mm for slot in layout.sections if slot.position_mm is not None]

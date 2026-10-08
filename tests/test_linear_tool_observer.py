@@ -13,7 +13,7 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _serialized, build_tools
 
 
-def test_execution_events_run_inside_lock_and_resolve_current_indices():
+def test_execution_events_run_inside_lock_and_name_their_targets():
     state = StackState(slices=[SliceState("a", 0, 0), SliceState("b", 1, 1)])
     lock = threading.Lock()
     events = []
@@ -34,15 +34,15 @@ def test_execution_events_run_inside_lock_and_resolve_current_indices():
     wrapped = _serialized(mark_damage, lock, state=state, on_event=observer)
     assert inspect.signature(wrapped) == inspect.signature(mark_damage)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(wrapped, "0") for _ in range(2)]
+        futures = [pool.submit(wrapped, "a") for _ in range(2)]
         for future in futures:
             future.result()
     assert [event.get("kind", "body") for event in events] == [
         "tool_start", "body", "tool_end", "tool_start", "body", "tool_end",
     ]
-    # Targets are resolved before the tool renumbers the stack.
+    # A section is named by its filename, whatever the tool does to the order.
     assert events[0]["target_ids"] == events[2]["target_ids"] == ["a"]
-    assert events[3]["target_ids"] == events[5]["target_ids"] == ["b"]
+    assert events[3]["target_ids"] == events[5]["target_ids"] == ["a"]
     assert events[0]["execution_id"] == events[2]["execution_id"]
     assert events[0]["execution_id"] != events[3]["execution_id"]
     assert events[2]["views"] == []  # no picture was saved

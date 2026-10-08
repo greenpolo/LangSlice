@@ -17,7 +17,6 @@
     "damaged": false,
     "flip": false,
     "id": "s0.png",
-    "index": 2,
     "position_mm": 0.25,
     "rotation_deg": 0
    }
@@ -42,7 +41,7 @@
   ],
   "pictures": [
    {
-    "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: 0: s0.png 0.25 mm",
+    "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
     "id": 28
    }
   ],

@@ -52,6 +52,11 @@ wording; `registry.py` lists which.
   written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
   every door answers with (`status` "refused" for a gate, `Refused.of`
   turns a job gate's payload into one).
+- A section is named by its filename (`StackState.resolve`: the filename,
+  or its stem when no other section shares it; never a number). A name
+  that is no section's is `refusal.unknown_sections(state, refs)`:
+  `UNKNOWN_SLICE_IDS` with `unknown`, `filenames` and a `message` saying
+  sections are named by filename (`core.state.unknown_sections`).
 - Layer: core and job only. Never a door (`doors/`), the agent driver
   (`agent/`), a host (`hosts/`), a provider (a type named under
   `TYPE_CHECKING` excepted: `traces.py` takes an `ImageModel`), and never
@@ -125,7 +130,9 @@ wording; `registry.py` lists which.
   background work is waited for (`Job.background.wait_all`: under the door's
   lock, a landing that needs it runs on this thread); with *traces* (the
   image model is in the run) the running traces are waited for and recorded
-  (tracing is the agent's choice: no section needs a trace); *left_linear*
+  (tracing is the agent's choice: no section needs a trace); *interval_breaks*
+  names the sections after each gap by filename (`clean_breaks`, kept as
+  corrected indices; `UNKNOWN_SLICE_IDS`); *left_linear*
   (`[{id, reason}]`, `clean_left_linear`: `BAD_ARGS` for a malformed list, a
   section named twice or a run without Nonlinear, `UNKNOWN_SLICE_IDS`,
   `DEFORMATION_REQUIRED` when the host set
@@ -139,7 +146,8 @@ wording; `registry.py` lists which.
   `submit: <summary>` note, `submitted`; then every queued picture written
   (`job.views.flush`) and, with the workspace, every placed section's maps
   and the exports (`exports.export_maps`; a failure is logged, the submit
-  stands). Returns `Submitted` (`exported`, `left_linear`). Not a long verb: the door
+  stands). Returns `Submitted` (`exported`, `left_linear`, `interval_breaks`
+  as filenames). Not a long verb: the door
   holds the job lock for the whole call, the maps included.
 - `exports.py` — `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
@@ -322,7 +330,8 @@ wording; `registry.py` lists which.
   `not_shown` with the `look` call that draws them, a failed picture
   `failed` (the write stands).
 - `views.py` — `status(job)` (`StackStatus`: the status rows, angles,
-  breaks; a row the user locked carries `locked: true`, one the user gave a
+  breaks as the filenames of the sections after each gap,
+  `core.state.break_ids`; a row the user locked carries `locked: true`, one the user gave a
   damage note `damage_by_user: true`).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/

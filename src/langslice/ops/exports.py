@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.deformable.record import DeformableRecord
@@ -97,7 +97,7 @@ def export_maps(
     if ids:
         unknown = [str(ref) for ref in ids if state.resolve(ref) is None]
         if unknown:
-            raise Refused("UNKNOWN_SLICE_IDS", unknown=unknown)
+            raise unknown_sections(state, unknown)
         wanted = {state.resolve(ref).id for ref in ids}  # type: ignore[union-attr]
         targets = [record for record in records if record.id in wanted]
     else:

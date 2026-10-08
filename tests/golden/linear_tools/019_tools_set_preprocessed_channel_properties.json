@@ -16,27 +16,27 @@
   },
   "pictures": [
    {
-    "caption": "0: s0.png preprocessed channel before this call (default appearance)",
+    "caption": "s0.png preprocessed channel before this call (default appearance)",
     "id": 16
    },
    {
-    "caption": "0: s0.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+    "caption": "s0.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
     "id": 17
    },
    {
-    "caption": "1: s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
+    "caption": "s1.png preprocessed channel before this call (weights 1/0.5/0, CLAHE 2x8)",
     "id": 18
    },
    {
-    "caption": "1: s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
+    "caption": "s1.png preprocessed channel after this call (weights 1/0.5/0, CLAHE 2x8)",
     "id": 19
    },
    {
-    "caption": "2: s2.png preprocessed channel before this call (default appearance)",
+    "caption": "s2.png preprocessed channel before this call (default appearance)",
     "id": 20
    },
    {
-    "caption": "2: s2.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
+    "caption": "s2.png preprocessed channel after this call (weights auto, CLAHE 6x4)",
     "id": 21
    }
   ],

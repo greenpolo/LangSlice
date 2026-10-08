@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.state import break_ids
 from langslice.core.status import stack_angles_entry, status_rows
 
 if TYPE_CHECKING:
@@ -19,13 +20,14 @@ if TYPE_CHECKING:
 class StackStatus:
     """The stack as it stands: one row per section in corrected order
     (:func:`langslice.core.status.status_rows`), the cutting angles and the
-    interval breaks. ``cutting_angles_deg`` is the stack's ``{"pitch",
-    "yaw"}``, or ``"per section"`` when the sections' angles differ (each
-    row then carries its own)."""
+    interval breaks (the filenames of the sections after each gap).
+    ``cutting_angles_deg`` is the stack's ``{"pitch", "yaw"}``, or ``"per
+    section"`` when the sections' angles differ (each row then carries its
+    own)."""
 
     rows: list[dict[str, Any]]
     cutting_angles_deg: dict[str, float] | str
-    interval_breaks: list[int]
+    interval_breaks: list[str]
 
 
 def status(job: Job) -> StackStatus:
@@ -41,4 +43,4 @@ def status(job: Job) -> StackStatus:
         if row["id"] in job.host_damaged:
             row["damage_by_user"] = True
     return StackStatus(rows=rows, cutting_angles_deg=stack_angles_entry(state),
-                       interval_breaks=list(state.interval_breaks))
+                       interval_breaks=break_ids(state))

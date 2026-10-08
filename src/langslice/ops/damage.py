@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from langslice.core.damage import DamagePictureError, damage_picture, normalized_entries
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.display import DisplayOptions
@@ -117,7 +117,7 @@ def mark_damage(
         state = job.state
         record = state.resolve(section)
         if record is None:
-            raise Refused("UNKNOWN_SLICE_IDS", unknown=[str(section)])
+            raise unknown_sections(state, [str(section)])
         by_user = record.id in job.host_damaged
         user = _user_note(job, record)
         agent = str(note or "").strip() if names else ""

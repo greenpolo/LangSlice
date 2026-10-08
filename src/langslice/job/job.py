@@ -484,7 +484,8 @@ def strict_interval_error(state: StackState, breaks: list[int]) -> dict[str, Any
         return {
             "status": "error",
             "error": "STRICT_INTERVAL",
-            "reported_breaks": list(breaks),
+            "reported_breaks": [record.id for record in state.in_order()
+                                if record.index_corrected in set(breaks)],
             "message": (
                 "strict_interval is on: interval_breaks must be empty, "
                 f"{len(breaks)} were reported."
@@ -524,8 +525,9 @@ def strict_interval_error(state: StackState, breaks: list[int]) -> dict[str, Any
 def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] | None:
     """Check reported interval breaks against the spacing that was WRITTEN.
 
-    A break at corrected index *i* claims the gap between *i-1* and *i* is
-    larger than the rest of the stack's; the positions on the state make that
+    A break at the section of corrected index *i* (``submit`` names it by
+    filename) claims the gap between *i-1* and *i* is larger than the rest
+    of the stack's; the positions on the state make that
     claim checkable without an image.
     """
     if not breaks:
@@ -549,11 +551,11 @@ def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] |
         if position is None or position == 0:
             failures.append(
                 {
-                    "index": index,
+                    **({"id": ordered[position].id} if position is not None else {}),
                     "error": "NOT_A_GAP",
                     "reason": (
-                        f"corrected index {index} has no section before it; a "
-                        "break index names the section AFTER the gap."
+                        "no section comes before it in the stack's order; a break "
+                        "names the section AFTER the gap."
                     ),
                 }
             )
@@ -566,7 +568,7 @@ def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] |
             continue
         failures.append(
             {
-                "index": index,
+                "id": after.id,
                 "error": "NOT_A_GAP",
                 "written_interval_mm": round(written, 3),
                 "median_interval_mm": round(median, 3),
@@ -581,7 +583,7 @@ def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] |
         "failures": failures,
         "message": (
             f"{len(failures)} reported interval break(s) are not in the "
-            "positions you wrote. A break index is accepted only where the "
+            "positions you wrote. A break is accepted only where the "
             f"written interval exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the "
             "stack's median written spacing."
         ),

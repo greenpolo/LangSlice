@@ -419,9 +419,9 @@ def _section_picture(
                         (request.zoom[3] - request.zoom[1]) * base[1]) / max(picture.size)
                     if request.zoom else 1.0)
     short, full = channel_words(state, record, names, version)
-    label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.index_corrected}: {record.id}"
+    label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
              f"{_orientation(record)}  [{short}]{enlarged}")
-    text = (f"{record.index_corrected}: {record.id} section{_orientation(record)}, "
+    text = (f"{record.id} section{_orientation(record)}, "
             f"{_where(record)}; {um:.1f} um/px; {full}")
     image = caption(picture, label)
     held = snapshot(state, [record.id])
@@ -468,7 +468,7 @@ def _overlay_picture(
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
-    text = (f"{record.index_corrected}: {record.id} overlay{_orientation(record)}, "
+    text = (f"{record.id} overlay{_orientation(record)}, "
             f"{_where(record)}; {placed.row.get('transform', 'identity')} transform, "
             f"{warp_words}; {um:.1f} um/px; {full}; atlas {atlas_words}")
     held = snapshot(state, [record.id])

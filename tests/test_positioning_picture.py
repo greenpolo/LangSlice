@@ -293,7 +293,8 @@ def test_positioning_split_into_parts_each_redrawn_by_its_recipe(
     assert [p.sections for p in pictures] == [("s0.png", "s2.png"), ("s1.png",)]
     assert [p.recipe["args"]["part"] for p in pictures] == [0, 1]
     assert [p.extra["positions_mm"] for p in pictures] == [[0.05], [0.14]]
-    assert "part 2 of 2: section 3 of 3" in pictures[1].caption
+    assert "part 2 of 2: 1 of the 3 sections (s1.png)" in pictures[1].caption
+    assert "part 1 of 2: 2 of the 3 sections (s0.png to s2.png)" in pictures[0].caption
     assert pictures[0].um_per_px == pytest.approx(pictures[1].um_per_px)
     second = pictures[1]
     width, height = second.recipe["shown"]

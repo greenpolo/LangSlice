@@ -408,7 +408,7 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
     same rule the ADK plugin and the toolbox apply) to the arguments as sent,
     after FastMCP's JSON pre-parse of string-encoded objects, then
     :func:`~langslice.doors.tools.arguments.normalize_arguments`, so what the ADK
-    agent may send (a corrected index as a number, a null picture option)
+    agent may send (a number where a filename belongs, a null picture option)
     passes FastMCP's schema check here too. A refusal is traced like any
     tool result (*trace*: the session's trace, when it keeps one).
     """

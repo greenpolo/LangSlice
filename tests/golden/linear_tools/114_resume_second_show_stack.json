@@ -7,10 +7,10 @@
  },
  "content": [
   {
-   "text": "The 3 sections of the stack follow in 1 strip, in their current corrected order, left to right and strip after strip. Each section is labelled '<index>: <filename>' above it and drawn with any rotation and flip already applied. Beneath each section is the atlas at that section's current position at the stack's cutting angles, labelled 'atlas <position> mm' ('no position' where it has none)."
+   "text": "The 3 sections of the stack follow in 1 strip, in their current corrected order, left to right and strip after strip. Each section is labelled by its filename above it and drawn with any rotation and flip already applied. Beneath each section is the atlas at that section's current position at the stack's cutting angles, labelled 'atlas <position> mm' ('no position' where it has none)."
   },
   {
-   "text": "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png"
+   "text": "Strip 1 of 1: s0.png, s1.png, s2.png"
   },
   {
    "image": 0,

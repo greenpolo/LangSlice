@@ -64,7 +64,6 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
         transform = record.transform or {}
         rows.append(
             {
-                "index": record.index_corrected,
                 "id": record.id,
                 "position_mm": round(here, 3) if here is not None else None,
                 **({"position_source": record.position_source}
@@ -93,7 +92,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 #: their null and empty fields (:func:`compact_rows`); a script or a coding
 #: agent gets every row with all of them (:func:`uniform_rows`).
 ROW_FIELDS: tuple[str, ...] = (
-    "index", "id", "position_mm", "position_source", "delta_to_next_mm", "flip",
+    "id", "position_mm", "position_source", "delta_to_next_mm", "flip",
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
     "transform_iou",
@@ -154,7 +153,7 @@ def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def status_text(state: StackState) -> str:
     """The status rows as one line per section, for a text message."""
     lines = [
-        "index  id  position_mm  delta_to_next_mm  flags  "
+        "filename  position_mm  delta_to_next_mm  flags  "
         "transform(kind, iou, mirrored)"
     ]
     for row in status_rows(state):
@@ -188,7 +187,7 @@ def status_text(state: StackState) -> str:
             angles = row["cutting_angles_deg"]
             transform += f"  angles=pitch {angles['pitch']:.2f} yaw {angles['yaw']:.2f}"
         lines.append(
-            f"{row['index']:>3}  {row['id']}  {position}  {delta}"
+            f"{row['id']}  {position}  {delta}"
             + (f"  [{'; '.join(flags)}]" if flags else "")
             + transform
         )

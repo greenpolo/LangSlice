@@ -82,7 +82,8 @@ def look(
             positions_mm above a millimetre ruler, the sections below it in
             order of position, each joined by a line to its position; a long
             stack is split into several pictures, none shrunk.
-        sections: Filenames or indices; empty is every section.
+        sections: Filenames (the extension may be left off); empty is every
+            section.
         positions_mm: Atlas positions in millimetres along the slicing axis:
             the planes "atlas" draws (at least one), and the atlas pictures
             above the ruler in "positioning" (none when empty).
@@ -181,8 +182,9 @@ def set_preprocessed_channel_properties(
     Undoable; another call replaces the recipe.
 
     Args:
-        sections: Filenames or indices that get a recipe of their own; empty
-            sets the whole stack's recipe.
+        sections: Filenames (the extension may be left off) of the sections
+            that get a recipe of their own; empty sets the whole stack's
+            recipe.
         channel_weights: One weight per raw channel, in the order the reply's
             `channels` lists them; 0 leaves a channel out. Empty: automatic
             weights by tissue coverage.
@@ -210,9 +212,10 @@ def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
     Args:
         query: Text matched case-insensitively against region acronyms and
             names (substring), or an exact acronym or numeric id.
-        section: Optional filename or index of a section with a position;
-            each row then says whether the region (or any descendant)
-            appears in the atlas plane at that section's placement.
+        section: Optional filename (the extension may be left off) of a
+            section with a position; each row then says whether the region
+            (or any descendant) appears in the atlas plane at that section's
+            placement.
 
     Returns:
         Rows of acronym, id, name, ancestry (root to parent, as acronyms)
@@ -245,7 +248,7 @@ def status() -> dict[str, Any]:
     """The stack as it stands, and what this run lets you change. Writes nothing.
 
     Returns:
-        One row per section in stack order: index, filename, position
+        One row per section in stack order: filename, position
         (position_source "default": a starting position the job gave the
         section, not yet placed), distance to the next placed section, flip
         and quarter turn, transform, damaged regions and damage note,
@@ -324,10 +327,9 @@ def position_sections(
 
     Positions are atlas millimetres along the slicing axis; a value outside
     the atlas range is clamped into it and reported. The stack's order
-    follows the positions: after every call the sections are numbered by
-    position, so indices can change; filenames never do. A changed position
-    or angle clears the deformation of each section it moves (the reply
-    lists them). One undoable write.
+    follows the positions. A changed position or angle clears the
+    deformation of each section it moves (the reply lists them). One
+    undoable write.
 
     Cutting angles tilt the atlas plane every section is cut at; every
     section gets the same angles, and every later atlas picture is drawn at
@@ -351,7 +353,8 @@ def position_sections(
     Negative angles move the edges the opposite way.
 
     Args:
-        sections: [{"id": "<filename or index>", "position_mm": <number>}].
+        sections: [{"id": "<filename>", "position_mm": <number>}]; the
+            extension may be left off.
         cutting_angles: {"pitch_deg": <number>, "yaw_deg": <number>} for the
             whole stack; empty leaves the angles as they are.
         view: True returns the picture described below; false returns none.
@@ -385,10 +388,11 @@ def interactive_transform(
     anatomy differs.
 
     Args:
-        sections: One to four objects: "id" (filename or index) and any of
-            "flip" (true mirrors the section left-right), "rotate_quarter"
-            (0, 90, 180 or 270 degrees counter-clockwise), "rotation_deg"
-            (degrees counter-clockwise about the pivot, the canvas centre),
+        sections: One to four objects: "id" (filename; the extension may be
+            left off) and any of "flip" (true mirrors the section
+            left-right), "rotate_quarter" (0, 90, 180 or 270 degrees
+            counter-clockwise), "rotation_deg" (degrees counter-clockwise
+            about the pivot, the canvas centre),
             "scale_x" and "scale_y" (multipliers about the pivot; 1.0 keeps
             the size), "shear" (a slant applied before the rotation: each
             point moves sideways by shear times its distance below the pivot,
@@ -417,7 +421,7 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
     are named by atlas region. One undoable write.
 
     Args:
-        section: Filename or index.
+        section: Filename (the extension may be left off).
         regions: Acronyms, names or ids, descendants included; "CTX:left" or
             "CTX:right" names one side, as the pictures show the section.
             They replace the section's marked regions; empty clears them.
@@ -452,8 +456,8 @@ def elastix_affine(
     section's transform, one undoable write for the call.
 
     Args:
-        sections: Filenames or indices; empty is every placed section the
-            user has not locked.
+        sections: Filenames (the extension may be left off); empty is every
+            placed section the user has not locked.
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side): only the
             atlas within 300 um of them, against the tissue the fit lays
@@ -493,7 +497,7 @@ def ants_syn(
     section's position, orientation, cutting angles or transform clears it.
 
     Args:
-        sections: One to four filenames or indices.
+        sections: One to four filenames (the extension may be left off).
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side). Empty fits by
             every region.
@@ -535,7 +539,7 @@ def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -
     lists the work still running; submit waits for it.
 
     Args:
-        section: Filename or index.
+        section: Filename (the extension may be left off).
         prompt: The full image prompt for this section: the base prompt
             below, edited for this section; empty sends the base prompt.
             Rules for any edit: the atlas borders shown to the model are the
@@ -581,7 +585,7 @@ def redo() -> dict[str, Any]:
 def submit(
     summary: str,
     notes: list[str],
-    interval_breaks: list[int],
+    interval_breaks: list[str],
     left_linear: list[LeftLinear] = [],
 ) -> dict[str, Any]:
     """End the run. Call this exactly once, last.
@@ -592,11 +596,12 @@ def submit(
     Args:
         summary: One or two sentences on what you did.
         notes: Short observations worth carrying forward.
-        interval_breaks: Indices of the sections AFTER a gap you conclude is
-            real. Empty if there are none.
+        interval_breaks: Filenames (the extension may be left off) of the
+            sections AFTER a gap you conclude is real. Empty if there are
+            none.
         left_linear: Sections left without a deformation, each with the
-            reason its linear placement stands: [{"id": "<filename or
-            index>", "reason": "..."}].
+            reason its linear placement stands: [{"id": "<filename>",
+            "reason": "..."}].
     """
     ...
 
@@ -614,8 +619,8 @@ def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
     "traced_borders"), from the section's linear transform.
 
     Args:
-        slices: Filenames or corrected indices, each with a position and
-            linear transform.
+        slices: Filenames (the extension may be left off), each with a
+            position and linear transform.
         passes: 1, or 2 for the corrective second call.
 
     Starts the image calls in the background and returns at once; the
@@ -636,7 +641,8 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
     same files; nothing in the state changes.
 
     Args:
-        slices: Filenames or corrected indices; empty is every section.
+        slices: Filenames (the extension may be left off); empty is every
+            section.
         full_resolution: Write the maps on the image file's own pixels
             instead of its working copy (what every picture is drawn from).
 
