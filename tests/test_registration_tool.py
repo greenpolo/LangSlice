@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.core.nonlinear import registration_tool as tool
-from langslice.core.nonlinear.border_refinement import border_overlay, smooth_border_overlay
-from langslice.core.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
-from langslice.core.nonlinear.registration_handoff import (
+from langslice.core.handoff import (
     LinearRegistrationInput,
     prepare_linear_registration,
 )
+from langslice.core.nonlinear import registration_tool as tool
+from langslice.core.nonlinear.border_refinement import border_overlay, smooth_border_overlay
+from langslice.core.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
 from langslice.providers.registry import ImageModel, resolve_image_model
