@@ -22,7 +22,8 @@ The method spans the layers; each package has its own guide:
 
 `langslice linear run FOLDER` is ONE agent environment over a stack of
 sections: one `StackState`, one toolbox, one job statement, one ADK session
-that ends at `submit` or the turn budget. A single section is a stack of one.
+that ends at `submit` or a configured quota/context budget. A single section
+is a stack of one.
 There is no node graph, no per-step agent, no single-section agent and no
 sub-session: looking at the whole stack once yields the information for
 every task, and splitting it re-pays for that reading.
@@ -83,8 +84,8 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
 - `session.py` — `build_agent` (the ADK `LlmAgent`; `reasoning` set on any
   resolved model exposing `reasoning_effort`), `build_plugins`,
   `run_agent_session` (the loop: nudges when the model answers without a
-  tool, the turn budget `DEFAULT_MAX_ITERATIONS` 60, the budget stops and
-  their grace call, the debrief; *background*, called in a thread when a
+  tool, no turn or tool-call limit (including ADK: `max_llm_calls=0`), the
+  budget stops and their grace call, the debrief; *background*, called in a thread when a
   turn ends without a submit, returns the next message in place of the
   nudge: the notices of background work that finished) and `TokenTally`
   (every call's usage printed and traced; `paid` is uncached input plus

@@ -172,6 +172,7 @@ over. Every write is checkpointed and undoable. Calls through different
 interfaces pick up each other's saved changes.
 
 The built-in agent prints token usage per model call.
+There is no limit on model turns or tool calls.
 `--max-quota-percent` (default 25) limits the run's share of a provider usage
 window when the provider reports it. `--max-input-tokens` limits the input
 reported by one request. A budget stop allows a final submit call and keeps

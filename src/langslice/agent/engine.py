@@ -2,7 +2,7 @@
 
 ``run(spec)`` is the whole of ``langslice linear``. There is no node graph: one
 job (:class:`langslice.job.job.Job`), one toolbox over it, one job
-statement, and a session that ends at ``submit`` or the turn budget. Every
+statement, and a session that ends at ``submit`` or a usage budget. Every
 write tool checkpoints, so a run that dies mid-way resumes from the checkpoint
 with the state it had (and its undo history) — the agent is re-seeded, not
 replayed.
@@ -24,7 +24,6 @@ from google.genai import types
 from langslice.agent.live import LiveCallback
 from langslice.agent.prompt import build_job_statement, display_facts
 from langslice.agent.session import (
-    DEFAULT_MAX_ITERATIONS,
     build_agent,
     run_agent_session,
 )
@@ -177,7 +176,6 @@ async def run_session(
     spec: JobSpec,
     box: ToolBox,
     *,
-    max_iterations: int = DEFAULT_MAX_ITERATIONS,
     on_event: LiveCallback | None = None,
 ) -> tuple[int, int]:
     """Drive the one stack session; return ``(tool_calls, turns)``."""
@@ -212,7 +210,6 @@ async def run_session(
         done=lambda: state.submitted,
         nudge_no_tool=_NUDGE_NO_TOOL,
         nudge_continue=_NUDGE_CONTINUE,
-        max_iterations=max_iterations,
         run_label=_RUN_LABEL,
         debrief=DEBRIEF_PROMPT if spec.debrief else None,
         debrief_sink=sink,
