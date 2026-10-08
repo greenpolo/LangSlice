@@ -52,7 +52,7 @@ def _section(atlas: SyntheticAtlas, truth: np.ndarray, *,
     """The atlas drawn as a brightfield stain where the TRUE transform puts it.
 
     With the identity transform, the atlas plane lands on the section as
-    ``placement`` (the canvas geometry ``fit_affine`` uses); the section here
+    ``placement`` (the canvas geometry ``elastix_affine`` uses); the section here
     shows, at pixel p, the atlas at ``truth @ p`` of that placement. Regions in
     *blank* are missing tissue (slide background).
     """

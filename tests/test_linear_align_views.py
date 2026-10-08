@@ -225,7 +225,7 @@ def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
 
     # Candidate positions: the atlas at each, the section joined to its own.
     stepped = look("positioning", sections=["s.tif"], positions_mm=[0.1, 0.2, 0.3])
-    assert stepped["status"] == "ok" and len(stepped[TOOL_MEDIA_PARTS_KEY]) >= 1
+    assert stepped["status"] == "ok" and len(stepped[TOOL_MEDIA_PARTS_KEY]) == 1
     # A look, not a write.
     assert state.slices[0].position_mm == 0.2
 

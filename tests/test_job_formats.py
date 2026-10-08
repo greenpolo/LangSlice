@@ -36,10 +36,11 @@ from tests.golden.record import (
 )
 
 
-def _fit_deformable(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
+def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
     """``ops.deformable.fit_deformable`` with one ANTs setting, applied, its
     pictures (a deformable-fit picture, with the residual layer) saved as a
-    door saves a tool's pictures (``Job.views.shown``)."""
+    door saves a tool's pictures (``Job.views.shown``), under the tool whose
+    landing draws them: ``trace_borders``."""
     from langslice.core import deformation
     from langslice.core.display import default_options
     from langslice.ops.deformable import fit_deformable
@@ -49,7 +50,7 @@ def _fit_deformable(handle: Any, ids: list[str], *, long_edge: int | None = None
     options = (default_options("overlay") if long_edge is None
                else default_options("overlay", long_edge=long_edge))
     job, workspace = handle.job, handle.workspace
-    with job.views.shown("fit_deformable", atlas_of=lambda: workspace.atlas) as shown:
+    with job.views.shown("trace_borders", atlas_of=lambda: workspace.atlas) as shown:
         done = fit_deformable(job, workspace, [job.state.by_id(name) for name in ids],
                               choice, options=options)
         shown.show(list(done.pictures), arguments={"slices": ids})
@@ -83,7 +84,7 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
         {"id": ID1, "flip": True, "rotate_quarter": 90, "rotation_deg": -4.0, "scale_x": 1.0,
          "scale_y": 1.0, "translate_x_mm": 0.0, "translate_y_mm": 0.02}],
         view=False)["status"] == "ok"
-    fitted = _fit_deformable(job, [ID0])
+    fitted = _fit_and_draw(job, [ID0])
     assert fitted.written == [ID0], fitted.rows
     with job.job.writing():  # the "linear placement stands" record submit writes
         before = job.job.snapshot()
@@ -95,7 +96,7 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     job.look(mode="overlay", sections=[ID2], resolution=300)
     job.zoom(box=[30, 25, 270, 200])
     # A picture smaller than the fit grid, so the residual is resampled.
-    again = _fit_deformable(job, [ID0], long_edge=160)
+    again = _fit_and_draw(job, [ID0], long_edge=160)
     assert again.rows[0]["status"] == "ok" and not again.written  # the same fit
     exported = job.export_maps()
     job.close()
@@ -241,7 +242,7 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
     assert checked >= 2
 
 
-def test_residual_maps_agree_with_the_fit_deformable_pictures(placed):
+def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     """A deformable-fit picture's coordinate map (its residual layer
     included) and the section's own composed map agree, up to resampling
     the field at the picture's size."""
@@ -253,7 +254,7 @@ def test_residual_maps_agree_with_the_fit_deformable_pictures(placed):
     record = job.state.by_id(ID0)
     warp = job.job.deformations.current(job.state, record)
     frame = section_frame(job.state, job.workspace, record)
-    folders = _views(root, "fit_deformable")
+    folders = _views(root, "trace_borders")
     assert folders and all((folder / "residual.tif").exists() for folder in folders)
     for folder in folders:
         picture = json.loads((folder / "view.json").read_text())["frame"]
@@ -276,7 +277,7 @@ def test_a_picture_record_without_its_folder_cannot_be_mapped(placed):
     from langslice.core.layers import coordinate_map
 
     _job, root, _exported = placed
-    folder = _views(root, "fit_deformable")[0]
+    folder = _views(root, "trace_borders")[0]
     record = json.loads((folder / "view.json").read_text())
     with pytest.raises(ValueError, match="residual"):
         coordinate_map(record)

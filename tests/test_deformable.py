@@ -31,8 +31,6 @@ from langslice.core.nonlinear.image_gen_helpers import _merge_classified
 from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
 from tests.deformable_synthetic import (
     CTX,
-    HY,
-    SECTION_MM_PER_PX,
     SMOOTH_FIELD,
     STR,
     TH,
@@ -281,6 +279,9 @@ def test_trimmed_settings_refuse_what_the_ceiling_test_dropped():
              if k not in ("stain_metric", "stain_edges")}
     loaded = FitSettings.from_dict(older)
     assert loaded.stain_metric == "mutual_information" and not loaded.stain_edges
+    # A record saved while the template was called "ara" loads as the template.
+    named = FitSettings.from_dict({**FitSettings().to_dict(), "atlas_image": "ara"})
+    assert named.atlas_image == "template" and named == FitSettings()
 
 
 def test_stain_metric_per_engine_and_pairing():
@@ -467,7 +468,3 @@ def test_the_augmented_atlas_holds_the_ccfv3_at_the_offset():
     window = augmented[start:start + allen.shape[0]]
     dice = 2 * (allen & window).sum() / (allen.sum() + window.sum())
     assert dice > 0.99
-
-
-def test_section_mm_per_px_constant_is_the_synthetic_scale():
-    assert SECTION_MM_PER_PX == 0.025 and HY == 5

@@ -119,15 +119,6 @@ def test_ants_syn_takes_sections_regions_atlas_image_and_stiffness(tmp_path: Pat
     assert JobSpec.from_dict(saved) == JobSpec(image_folder=".")
 
 
-def test_missing_ants_is_said_plainly(tmp_path: Path, atlas, monkeypatch):
-    monkeypatch.setattr(ops_deformable, "ants_ready", lambda: False)
-    state, *_, box = _setup(tmp_path, atlas)
-    refused = _tool(box, "ants_syn")([ID])
-    assert refused["error"] == "ANTS_MISSING"
-    assert "antspyx" in refused["message"]
-    assert state.slices[0].deformation is None and not box.job.undo_stack
-
-
 @needs_ants
 def test_bad_arguments_are_refused_before_any_fit(tmp_path: Path, atlas, monkeypatch):
     *_, box = _setup(tmp_path, atlas)
@@ -138,7 +129,8 @@ def test_bad_arguments_are_refused_before_any_fit(tmp_path: Path, atlas, monkeyp
     monkeypatch.setattr(deformation, "run_jobs", no_engine)
     fit = _tool(box, "ants_syn")
     assert fit([])["error"] == "BAD_ARGS"
-    assert fit([ID] * 5)["error"] == "BAD_ARGS"
+    many = fit([ID] * 5)
+    assert many["error"] == "BAD_ARGS" and many["max_sections"] == 4
     assert fit([ID], stiffness="jelly")["error"] == "BAD_ARGS"
     assert fit([ID], atlas_image="borders")["error"] == "BAD_ARGS"
     assert fit([ID], atlas_image="nissl")["error"] == "FIT_ATLAS_UNAVAILABLE"
@@ -181,17 +173,6 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation is None
     _tool(box, "redo")()
     assert state.slices[0].deformation == held
-
-
-@needs_ants
-def test_ants_syn_shows_the_section_under_its_new_registration(tmp_path: Path, atlas):
-    *_, box = _setup(tmp_path, atlas)
-    result = _ants(box)
-    media = result[TOOL_MEDIA_PARTS_KEY]
-    assert len(media) == 1 and isinstance(media[0], Image.Image)
-    assert len(result["pictures"]) == 1
-    saved = box.job.views.lookup(result["pictures"][0]["id"])
-    assert saved is not None and saved.tool == "ants_syn"
 
 
 @needs_ants
@@ -608,15 +589,6 @@ def test_submit_left_linear_records_why_the_placement_stands(tmp_path: Path, atl
     assert held["keep_linear"] == "Matches already."
     assert held["linear_key"] == deformation.linear_key(state, state.slices[0])
     assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
-
-
-@needs_ants
-def test_left_linear_is_refused_for_a_fitted_section(tmp_path: Path, atlas):
-    state, ctx, _, box = _setup(tmp_path, atlas)
-    _fit(box, ctx)
-    refused = _tool(box, "submit")("Done", [], [], left_linear=[{"id": ID, "reason": "x"}])
-    assert refused["error"] == "HAS_DEFORMATION" and refused["ids"] == [ID]
-    assert not state.submitted
 
 
 def test_left_linear_is_not_offered_when_the_user_requires_a_deformation(tmp_path: Path,

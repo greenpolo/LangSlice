@@ -62,12 +62,12 @@ def _agent(event: dict[str, Any]) -> str:
 
 
 def test_agent_events_reach_the_viewer_and_the_log_with_pictures_from_the_views(tmp_path):
-    picture = tmp_path / "views" / "000003_view_slices" / "view.jpg"
+    picture = tmp_path / "views" / "000003_look_section" / "view.jpg"
     picture.parent.mkdir(parents=True)
     picture.write_bytes(b"\xff\xd8jpeg")
     slices = {"section_0001.tif": "slice-a", "section_0002.tif": "slice-b"}
     listener, followers, logs = _listener(slices)
-    start = {"kind": "tool_start", "name": "view_slices", "execution_id": "x",
+    start = {"kind": "tool_start", "name": "look", "execution_id": "x",
              "target_ids": ["section_0002.tif"]}
     end = {**start, "kind": "tool_end", "views": [str(picture)]}
     listener.handle(_agent(start))
@@ -78,7 +78,7 @@ def test_agent_events_reach_the_viewer_and_the_log_with_pictures_from_the_views(
     assert log.events[0] == start
     [image] = log.events[1]["images"]
     assert image == {"data": b"\xff\xd8jpeg", "mime_type": "image/jpeg",
-                     "label": "000003_view_slices"}
+                     "label": "000003_look_section"}
     assert "images" not in end  # the follower's copy is untouched
 
 
@@ -111,7 +111,7 @@ def test_the_java_thread_only_queues_messages():
     """accept() returns at once; one background thread handles messages in order."""
     listener, followers, _logs = _listener({"a.tif": 1})
     for index in range(5):
-        listener.accept(_agent({"kind": "tool_start", "name": "view_slices",
+        listener.accept(_agent({"kind": "tool_start", "name": "look",
                                 "execution_id": str(index), "target_ids": ["a.tif"]}))
     listener.accept("not json")  # a bad message is logged and skipped
     listener.close()
@@ -165,7 +165,7 @@ def test_the_viewer_opens_only_when_the_run_asked_for_it_and_failures_are_logged
     listener, followers, logs = _listener({"a.tif": 1})
     listener.handle(json.dumps({"kind": "run_started", "mode": "claude", "viewer": False,
                                 "sections": {"a.tif": "slice 1"}}))
-    listener.handle(_agent({"kind": "tool_start", "name": "view_slices", "target_ids": ["a.tif"]}))
+    listener.handle(_agent({"kind": "tool_start", "name": "look", "target_ids": ["a.tif"]}))
     assert followers == []
     listener.handle(json.dumps({"kind": "applied", "applied": [], "angles": False,
                                 "failed": {"a.tif": "a newer registration"}}))

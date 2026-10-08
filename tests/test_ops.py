@@ -41,6 +41,7 @@ def _record(job: Job, name: str) -> SliceState:
 def test_positions_are_clamped_written_and_one_undo_step(tmp_path: Path):
     job, ctx = _open(tmp_path)
     low, high = ctx.position_range
+    start = _record(job, "s1.png").position_mm
     done = positions.position_sections(job, ctx, [
         {"id": "s0.png", "position_mm": low + 0.1}, {"id": 1, "position_mm": high + 5.0},
         {"id": "nope.png", "position_mm": 0.2}])
@@ -49,6 +50,7 @@ def test_positions_are_clamped_written_and_one_undo_step(tmp_path: Path):
     assert done.unknown == ["nope.png"] and done.touched == ["s0.png", "s1.png"]
     assert len(job.undo_stack) == 1
     assert job.undo() and _record(job, "s1.png").position_source == "default"
+    assert _record(job, "s1.png").position_mm == start != high
     # Nothing to write: no undo step.
     assert positions.position_sections(
         job, ctx, [{"id": "nope.png", "position_mm": 0.0}]).written == []

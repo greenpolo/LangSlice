@@ -166,7 +166,7 @@ def test_zoom_after_a_change_draws_the_picture_as_it_was(tmp_path: Path, atlas):
 # --- set_channel_properties ----------------------------------------------------------
 
 
-def test_channel_properties_are_display_only_undoable_and_captioned(tmp_path: Path, atlas):
+def test_channel_properties_persist_are_undoable_and_captioned(tmp_path: Path, atlas):
     state, _, box = _synthetic(tmp_path, atlas)
     setter = _tool(box, "set_channel_properties")
     result = setter("gray", gamma=1.5, contrast_limits=[20, 200])

@@ -100,7 +100,7 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
     # position (every section has one), so no atlas reference strip.
     assert "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png" in texts
     assert not any(text.startswith("Atlas reference strip") for text in texts)
-    assert len(images) >= 1
+    assert len(images) == 1
     assert all(image.mimeType.startswith("image/") and image.data for image in images)
     for image in images:
         with Image.open(BytesIO(base64.b64decode(image.data))) as picture:
@@ -164,7 +164,7 @@ def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
     assert applied["status"] == "ok"
     assert applied["cutting_angles_deg"] == {"pitch": 1.5, "yaw": -2.0}
     # The change shows its positioning picture.
-    assert len(applied["pictures"]) >= 1
+    assert len(applied["pictures"]) == 1
     assert sum(isinstance(block, ImageContent) for block in encoded.content) == len(
         applied["pictures"])
 

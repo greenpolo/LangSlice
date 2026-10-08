@@ -76,7 +76,7 @@ def test_notes_are_collected_per_call_and_found_by_identity():
 
 
 #: Which picture edge a positive angle puts at the larger position, per plane:
-#: what `set_cutting_angles`' description tells the model.
+#: what `position_sections`' description tells the model.
 ANGLE_EDGES = {
     "coronal": {"pitch": "top", "yaw": "right"},
     "sagittal": {"pitch": "left", "yaw": "bottom"},
@@ -102,3 +102,17 @@ def test_the_cutting_angle_directions_are_the_described_ones():
                   "left": tilted[h // 2, 0], "right": tilted[h // 2, w - 1]}
             facing = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
             assert at[edge] > at[facing[edge]], (plane, angle, edge)
+
+
+def test_the_position_sections_description_states_those_directions():
+    """The table above is what the model reads, plane by plane."""
+    import re
+
+    from langslice.doors.declarations import declaration
+
+    text = " ".join(declaration("position_sections").doc.split())
+    for plane, edges in ANGLE_EDGES.items():
+        said = re.search(rf"- {plane}: pitch puts the (\w+) edge at a larger position "
+                         rf"(?:\(mm\) )?than the \w+ edge; yaw puts the (\w+) edge", text)
+        assert said is not None, plane
+        assert said.groups() == (edges["pitch"], edges["yaw"]), plane

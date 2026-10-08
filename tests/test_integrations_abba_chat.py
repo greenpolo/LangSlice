@@ -17,7 +17,7 @@ def test_history_preserves_summary_deltas_and_ignores_private_fields():
     history.add(
         {
             "kind": "tool_start",
-            "name": "view_slices",
+            "name": "look",
             "execution_id": "one",
             "args": {"ids": [1, 2], "encrypted_content": "secret"},
         }
@@ -25,7 +25,7 @@ def test_history_preserves_summary_deltas_and_ignores_private_fields():
     history.add(
         {
             "kind": "tool_end",
-            "name": "view_slices",
+            "name": "look",
             "execution_id": "one",
             "response": {"status": "ok", "nested": {"thought_signature": "secret"}},
         }

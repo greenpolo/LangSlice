@@ -171,18 +171,8 @@ def test_ants_syn_is_refused_without_antspyx(tmp_path: Path, atlas, monkeypatch)
     monkeypatch.setattr(ops_deformable, "ants_ready", lambda: False)
     result = _tool(box, "ants_syn")(["s0.png"])
     assert result["status"] == "error" and result["error"] == "ANTS_MISSING"
+    assert "antspyx" in result["message"]
     assert state.slices[0].deformation is None and box.job.undo_stack == []
-
-
-def test_ants_syn_refuses_bad_calls(tmp_path: Path, atlas):
-    _, _, box, _ = _run(tmp_path, atlas, transformed=True)
-    fit = _tool(box, "ants_syn")
-    assert fit([])["error"] == "BAD_ARGS"
-    many = fit(["s0.png"] * 5)
-    assert many["error"] == "BAD_ARGS" and many["max_sections"] == 4
-    assert fit(["s0.png"], stiffness="rubbery")["error"] == "BAD_ARGS"
-    assert fit(["s0.png"], atlas_image="spline")["error"] == "BAD_ARGS"
-    assert box.job.undo_stack == []
 
 
 @needs_ants
@@ -198,6 +188,8 @@ def test_ants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: Path
     (picture,) = result["pictures"]
     assert "s1.png overlay" in picture["caption"] and "deformation drawn" in picture["caption"]
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
+    saved = box.job.views.lookup(picture["id"])
+    assert saved is not None and saved.tool == "ants_syn"
     # The next fit composes onto it; view=False draws nothing.
     again = fit(["s1.png"], ["TH"], view=False)
     assert again["results"][0]["steps"] == 2

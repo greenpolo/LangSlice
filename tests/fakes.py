@@ -122,6 +122,10 @@ class _StackLlm(BaseLlm):
     ) -> AsyncGenerator[LlmResponse, None]:
         del stream
         available = set(llm_request.tools_dict or {})
+        for response in _function_responses(llm_request, "position_sections"):
+            # A fake that places nothing would let a test pass on an empty stack.
+            if (response or {}).get("status") != "ok":
+                raise AssertionError(f"the fake's position_sections was refused: {response}")
         if _has_function_response(llm_request, "submit"):
             # The job is done; anything after this is the debrief question.
             part = types.Part.from_text(text="Debrief: nothing was missing.")
@@ -195,6 +199,17 @@ def _has_function_response(llm_request: LlmRequest, name: str) -> bool:
             if response is not None and getattr(response, "name", None) == name:
                 return True
     return False
+
+
+def _function_responses(llm_request: LlmRequest, name: str) -> list[dict[str, Any] | None]:
+    """The responses of tool *name* in the request history, oldest first."""
+    found: list[dict[str, Any] | None] = []
+    for content in llm_request.contents or []:
+        for part in getattr(content, "parts", None) or []:
+            response = getattr(part, "function_response", None)
+            if response is not None and getattr(response, "name", None) == name:
+                found.append(response.response)
+    return found
 
 
 def _count_function_responses(llm_request: LlmRequest) -> int:
