@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
 
 #: The tasks a stack-opening command runs without ``--tasks``.
-DEFAULT_TASKS = "reorder,position,transform"
+DEFAULT_TASKS = "position,transform"
 #: ... and with ``--registration``: only the nonlinear step, on top of the
 #: imported linear registration.
 REGISTRATION_TASKS = "nonlinear"
@@ -47,9 +47,11 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--tasks",
         default=None,
-        help="Comma-separated subset of reorder,position,transform,nonlinear; "
-        "nonlinear gives every linearly aligned slice a deformation (ants_syn), "
-        "with image-model border tracing unless --image-provider none. Default: "
+        help="Comma-separated subset of position,transform,nonlinear: position "
+        "places and orders the sections, transform aligns them in-plane, nonlinear "
+        "deforms each linearly aligned section (ants_syn, and trace_borders with an "
+        "image model). A task left out takes its answer from the flags that supply "
+        "it (--positions, --transforms ...). Default: "
         f"{DEFAULT_TASKS}; with --registration, {REGISTRATION_TASKS} (the imported "
         "linear registration kept as it is)",
     )
@@ -96,8 +98,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--agent-preprocessing",
         action="store_true",
-        help="Offer the preprocess tool: the agent may set channel weights, CLAHE, "
-        "N4 and denoising for what it views and what a fit reads",
+        help="The host exports every channel of its sections (the agent's channel "
+        "tools exist either way)",
     )
     p.add_argument(
         "--image-resolution",

@@ -5,7 +5,7 @@
  "data": {
   "not_shown": [
    {
-    "caption": "long4.png section, at 0.08 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long4.png section, at 0.08 mm; 62.5 um/px; raw gray auto",
     "how": "call again with mode='section', sections=['long4.png'] (the other arguments as before)",
     "mode": "section",
     "positions_mm": [],
@@ -14,7 +14,7 @@
     ]
    },
    {
-    "caption": "long5.png section, at 0.11 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long5.png section, at 0.11 mm; 62.5 um/px; raw gray auto",
     "how": "call again with mode='section', sections=['long5.png'] (the other arguments as before)",
     "mode": "section",
     "positions_mm": [],
@@ -23,7 +23,7 @@
     ]
    },
    {
-    "caption": "long6.png section, at 0.17 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long6.png section, at 0.17 mm; 62.5 um/px; raw gray auto",
     "how": "call again with mode='section', sections=['long6.png'] (the other arguments as before)",
     "mode": "section",
     "positions_mm": [],
@@ -32,7 +32,7 @@
     ]
    },
    {
-    "caption": "long7.png section, at 0.14 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long7.png section, at 0.14 mm; 62.5 um/px; raw gray auto",
     "how": "call again with mode='section', sections=['long7.png'] (the other arguments as before)",
     "mode": "section",
     "positions_mm": [],
@@ -43,19 +43,19 @@
   ],
   "pictures": [
    {
-    "caption": "long0.png section, at 0.20 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long0.png section, at 0.20 mm; 62.5 um/px; raw gray auto",
     "id": 5
    },
    {
-    "caption": "long1.png section, at 0.02 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long1.png section, at 0.02 mm; 62.5 um/px; raw gray auto",
     "id": 6
    },
    {
-    "caption": "long2.png section, at 0.05 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long2.png section, at 0.05 mm; 62.5 um/px; raw gray auto",
     "id": 7
    },
    {
-    "caption": "long3.png section, at 0.24 mm; 62.5 um/px; raw gray; percentile contrast",
+    "caption": "long3.png section, at 0.24 mm; 62.5 um/px; raw gray auto",
     "id": 8
    }
   ],

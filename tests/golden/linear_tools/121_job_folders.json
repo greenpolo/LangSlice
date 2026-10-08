@@ -121,7 +121,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -151,7 +151,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png section, at 0.04 mm; 39.8 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 39.8 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000001_look_section",
@@ -161,6 +161,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": 200,
        "mode": "section",
        "part": null,
@@ -210,7 +211,7 @@
     },
     {
      "call": 2,
-     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000002_look_section",
@@ -220,6 +221,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": 2048,
        "mode": "section",
        "part": null,
@@ -269,7 +271,7 @@
     },
     {
      "call": 3,
-     "caption": "positioning: 1 section below in position order at 0.10 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm",
+     "caption": "positioning: 1 section below in position order at 0.10 mm, raw gray auto; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000003_position_sections_positioning",
@@ -279,6 +281,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -334,7 +337,7 @@
     },
     {
      "call": 4,
-     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 35.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 35.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000004_look_overlay",
@@ -344,6 +347,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": 300,
        "mode": "overlay",
        "part": null,
@@ -393,7 +397,7 @@
     },
     {
      "call": 5,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000005_interactive_transform_overlay",
@@ -403,6 +407,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -480,7 +485,7 @@
     },
     {
      "call": 6,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000006_ants_syn_overlay",
@@ -490,6 +495,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -591,7 +597,7 @@
     },
     {
      "call": 7,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform, deformation drawn; 41.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn; 41.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000007_look_overlay",
@@ -601,6 +607,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": 256,
        "mode": "overlay",
        "part": null,
@@ -757,7 +764,6 @@
      "reasoning": null,
      "resume": true,
      "tasks": [
-      "reorder",
       "position",
       "transform",
       "nonlinear"
@@ -962,7 +968,6 @@
      "reasoning": null,
      "resume": true,
      "tasks": [
-      "reorder",
       "position"
      ],
      "transform": {
@@ -1002,7 +1007,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000001_look_overlay",
@@ -1012,6 +1017,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -1071,6 +1077,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -1166,6 +1173,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -1265,6 +1273,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -1455,7 +1464,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -1465,7 +1474,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -1489,7 +1498,7 @@
     },
     {
      "call": 2,
-     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000002_look_overlay",
@@ -1499,6 +1508,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -1548,7 +1558,7 @@
     },
     {
      "call": 3,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 0.2, scale 1.019/1.026, shift -0.03/-0.06 mm, shear +0.003), no deformation; 31.2 um/px; raw red, green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000003_elastix_affine_overlay",
@@ -1558,6 +1568,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -1635,7 +1646,7 @@
     },
     {
      "call": 4,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 2.0, scale 1.000/1.000, shift +0.00/+0.00 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000004_interactive_transform_overlay",
@@ -1645,6 +1656,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -1924,7 +1936,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -1934,7 +1946,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -1944,7 +1956,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -1957,7 +1969,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 2.0, scale 1.000/1.000, shift +0.01/+0.00 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000001_interactive_transform_overlay",
@@ -1967,6 +1979,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -2044,7 +2057,7 @@
     },
     {
      "call": 2,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red + green + blue; percentile contrast; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 0.2, scale 1.019/1.026, shift -0.03/-0.06 mm, shear +0.003), no deformation; 31.2 um/px; raw red, green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000002_elastix_affine_overlay",
@@ -2054,6 +2067,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -2142,7 +2156,7 @@
     },
     {
      "call": 4,
-     "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; interactive transform (rot -1.0, scale 1.000/1.000, shift +0.00/+0.00 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000004_interactive_transform_overlay",
@@ -2152,6 +2166,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -2602,7 +2617,6 @@
      "reasoning": null,
      "resume": true,
      "tasks": [
-      "reorder",
       "position",
       "transform",
       "nonlinear"
@@ -2650,7 +2664,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -2673,7 +2687,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      351
      ],
      "view_json": "<hex>"
     },
@@ -2683,7 +2697,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -2729,7 +2743,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      369
+      351
      ],
      "view_json": "<hex>"
     },
@@ -2742,7 +2756,7 @@
      "labels_dtype": "uint32",
      "size": [
       280,
-      431
+      448
      ],
      "view_json": "<hex>"
     },
@@ -2752,7 +2766,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      333
+      351
      ],
      "view_json": "<hex>"
     },
@@ -2762,7 +2776,7 @@
      "labels_dtype": "uint32",
      "size": [
       512,
-      523
+      541
      ],
      "view_json": "<hex>"
     },
@@ -2772,7 +2786,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      333
+      369
      ],
      "view_json": "<hex>"
     },
@@ -2782,7 +2796,7 @@
      "labels_dtype": "uint32",
      "size": [
       512,
-      523
+      541
      ],
      "view_json": "<hex>"
     },
@@ -2792,7 +2806,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      333
+      369
      ],
      "view_json": "<hex>"
     },
@@ -2830,7 +2844,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -2840,7 +2854,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -2850,7 +2864,7 @@
      "labels_dtype": "uint32",
      "size": [
       338,
-      315
+      333
      ],
      "view_json": "<hex>"
     },
@@ -2893,7 +2907,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray; percentile contrast",
+     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000001_look_section",
@@ -2903,6 +2917,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -2952,7 +2967,7 @@
     },
     {
      "call": 1,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red + green + blue; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red, green, blue auto",
      "layers": false,
      "mode": "section",
      "name": "000002_look_section",
@@ -2962,6 +2977,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3011,7 +3027,7 @@
     },
     {
      "call": 1,
-     "caption": "s2.png section, at 0.21 mm; 31.2 um/px; raw gray; percentile contrast",
+     "caption": "s2.png section, at 0.21 mm; 31.2 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000003_look_section",
@@ -3021,6 +3037,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3070,7 +3087,7 @@
     },
     {
      "call": 2,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red + green; percentile contrast",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red, green auto",
      "layers": false,
      "mode": "section",
      "name": "000004_look_section",
@@ -3083,6 +3100,7 @@
         "red",
         "green"
        ],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3132,7 +3150,7 @@
     },
     {
      "call": 3,
-     "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red + green; percentile contrast; from the image file",
+     "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red, green auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000005_zoom_section",
@@ -3145,6 +3163,7 @@
         "red",
         "green"
        ],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3199,7 +3218,7 @@
     },
     {
      "call": 4,
-     "caption": "s1.png section, at 0.12 mm; 7.5 um/px; raw red + green; percentile contrast; from the image file",
+     "caption": "s1.png section, at 0.12 mm; 7.5 um/px; raw red, green auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000006_zoom_section",
@@ -3212,6 +3231,7 @@
         "red",
         "green"
        ],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3266,7 +3286,7 @@
     },
     {
      "call": 5,
-     "caption": "s0.png section, at 0.04 mm; 7.3 um/px; raw gray; percentile contrast; from the image file",
+     "caption": "s0.png section, at 0.04 mm; 7.3 um/px; raw gray auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000007_zoom_section",
@@ -3276,6 +3296,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3340,6 +3361,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "atlas",
        "part": null,
@@ -3386,6 +3408,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "atlas",
        "part": null,
@@ -3435,6 +3458,7 @@
        ],
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "atlas",
        "part": null,
@@ -3483,6 +3507,7 @@
        ],
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "atlas",
        "part": null,
@@ -3529,6 +3554,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -3614,7 +3640,7 @@
     },
     {
      "call": 10,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue",
+     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto",
      "layers": false,
      "mode": "section",
      "name": "000013_look_section",
@@ -3624,6 +3650,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -3808,6 +3835,7 @@
        "channels": [
         "preprocessed"
        ],
+       "highlight": [],
        "long_edge": null,
        "mode": "section",
        "part": null,
@@ -4058,6 +4086,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -4168,7 +4197,7 @@
     },
     {
      "call": 17,
-     "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
+     "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray auto; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000028_position_sections_positioning",
@@ -4178,6 +4207,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -4254,7 +4284,7 @@
     },
     {
      "call": 18,
-     "caption": "positioning: 1 section below in position order at 0.05 mm, raw gray; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s2.png 0.05 mm",
+     "caption": "positioning: 1 section below in position order at 0.05 mm, raw gray auto; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s2.png 0.05 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000029_position_sections_positioning",
@@ -4264,6 +4294,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -4350,6 +4381,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "atlas",
        "part": null,
@@ -4407,7 +4439,7 @@
     },
     {
      "call": 20,
-     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; identity transform, no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000031_look_overlay",
@@ -4417,6 +4449,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -4487,7 +4520,7 @@
     },
     {
      "call": 21,
-     "caption": "s1.png overlay, at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas template + borders (images at 0.3)",
+     "caption": "s1.png overlay, at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas template + borders (images at 0.3)",
      "layers": true,
      "mode": "overlay",
      "name": "000032_look_overlay",
@@ -4500,6 +4533,7 @@
        ],
        "atlas_opacity": 0.3,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -4580,6 +4614,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -4689,7 +4724,7 @@
     },
     {
      "call": 23,
-     "caption": "positioning: 2 sections below in position order, 0.10-0.20 mm, raw gray; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s2.png 0.20 mm",
+     "caption": "positioning: 2 sections below in position order, 0.10-0.20 mm, raw gray auto; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s2.png 0.20 mm",
      "layers": false,
      "mode": "positioning",
      "name": "000034_look_positioning",
@@ -4699,6 +4734,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "positioning",
        "part": 0,
@@ -4817,7 +4853,7 @@
     },
     {
      "call": 26,
-     "caption": "s1.png overlay (rotated 90, flipped), at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay (rotated 90, flipped), at 0.15 mm; identity transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000037_interactive_transform_overlay",
@@ -4827,6 +4863,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -4897,7 +4934,7 @@
     },
     {
      "call": 27,
-     "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; interactive transform (rot 3.0, scale 1.050/0.980, shift +0.05/-0.02 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000038_interactive_transform_overlay",
@@ -4907,6 +4944,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5007,7 +5045,7 @@
     },
     {
      "call": 28,
-     "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; interactive transform (rot 3.0, scale 1.050/0.980, shift +0.00/-0.02 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000039_interactive_transform_overlay",
@@ -5017,6 +5055,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5117,7 +5156,7 @@
     },
     {
      "call": 29,
-     "caption": "s0.png overlay, at 0.10 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000040_elastix_affine_overlay",
@@ -5127,6 +5166,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5225,7 +5265,7 @@
     },
     {
      "call": 29,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 0.0, scale 1.005/1.005, shift -0.04/-0.06 mm, shear +0.001), no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000041_elastix_affine_overlay",
@@ -5235,6 +5275,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5333,7 +5374,7 @@
     },
     {
      "call": 29,
-     "caption": "s2.png overlay, at 0.20 mm; elastix transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s2.png overlay, at 0.20 mm; elastix transform (rot -0.2, scale 1.007/1.004, shift -0.00/-0.08 mm, shear -0.001), no deformation; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000042_elastix_affine_overlay",
@@ -5343,6 +5384,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5449,7 +5491,7 @@
     },
     {
      "call": 30,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, no deformation; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders; from the image file",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), no deformation; 6.1 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders; regions TH drawn thick, the other borders faint; from the image file",
      "layers": true,
      "mode": "overlay",
      "name": "000043_elastix_affine_overlay",
@@ -5459,6 +5501,9 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [
+        "TH"
+       ],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5568,6 +5613,7 @@
     },
     {
      "call": 31,
+     "caption": "s0.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.10 mm; the fitted atlas borders on the image the fit read; displacement median 0.022 mm, max 0.208 mm; fold fraction 0.0",
      "layers": true,
      "mode": "borders",
      "name": "000044_trace_borders_borders",
@@ -5581,6 +5627,7 @@
     },
     {
      "call": 31,
+     "caption": "s0.png trace_borders: the image model's traced lines drawn on the section, at 0.10 mm",
      "layers": false,
      "mode": "trace",
      "name": "000045_trace_borders_trace",
@@ -5594,7 +5641,7 @@
     },
     {
      "call": 32,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000046_ants_syn_overlay",
@@ -5604,6 +5651,7 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5732,7 +5780,7 @@
     },
     {
      "call": 33,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders; from the image file",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders; regions TH drawn thick, the other borders faint; from the image file",
      "layers": true,
      "mode": "overlay",
      "name": "000047_ants_syn_overlay",
@@ -5742,6 +5790,9 @@
        "atlas_layers": null,
        "atlas_opacity": null,
        "channels": [],
+       "highlight": [
+        "TH"
+       ],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -5890,7 +5941,7 @@
     },
     {
      "call": 34,
-     "caption": "s0.png overlay, at 0.10 mm; elastix transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), deformation drawn; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000048_look_overlay",
@@ -5900,6 +5951,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -6023,7 +6075,7 @@
     },
     {
      "call": 34,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000049_look_overlay",
@@ -6033,6 +6085,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -6176,7 +6229,7 @@
     },
     {
      "call": 35,
-     "caption": "s0.png overlay, at 0.10 mm; elastix transform, linear placement only; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), linear placement only; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000050_look_overlay",
@@ -6186,6 +6239,7 @@
        "atlas_layers": null,
        "atlas_opacity": 0.5,
        "channels": [],
+       "highlight": [],
        "long_edge": null,
        "mode": "overlay",
        "part": null,
@@ -6309,6 +6363,7 @@
     },
     {
      "call": 36,
+     "caption": "s1.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.15 mm; the fitted atlas borders on the image the fit read; regions TH drawn thick, the other borders faint; displacement median 0.051 mm, max 0.201 mm; fold fraction 0.0",
      "layers": true,
      "mode": "borders",
      "name": "000051_trace_borders_borders",
@@ -6322,6 +6377,7 @@
     },
     {
      "call": 36,
+     "caption": "s1.png trace_borders: the image model's traced lines drawn on the section, at 0.15 mm",
      "layers": false,
      "mode": "trace",
      "name": "000052_trace_borders_trace",

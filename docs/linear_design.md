@@ -17,7 +17,7 @@ A host (CLI, Fiji connector, MCP, library) fills one `JobSpec`
 | Field | Meaning |
 |---|---|
 | `image_folder`, `atlas`, `plane`, `job_dir` | what is registered and where the job lives |
-| `tasks` | subset of `reorder`, `position`, `transform`, `nonlinear`; default the first three. Hosts present `reorder` + `position` as Positioning, `transform` as Linear, `nonlinear` as Nonlinear |
+| `tasks` | subset of `position`, `transform`, `nonlinear`; default the first two. Hosts present `position` as Positioning, `transform` as Linear, `nonlinear` as Nonlinear |
 | `model`, `reasoning`, `image_resolution`, `preprocess`, `agent_preprocessing`, `agent_damage` | agent model and what it sees |
 | `position` | `thickness_um`, `interval_um`, `strict_interval`, `gated`, `playbook`, `notes` |
 | `transform` | `flip`, `hemisphere_cue`, `interactive` (offer `interactive_transform`), `automatic` (offer `elastix_affine`), `angles` (the agent may set the cutting angles), `max_parallel` (1 to 4), `notes` |
@@ -53,8 +53,8 @@ condition is false is not built, and the job takes that answer from `inputs`.
 - `ants_syn`: `nonlinear`. `trace_borders`: `nonlinear` and an image model
   (provider not `none`; a door that cannot reach it leaves it out).
 
-The `reorder` task builds no tool of its own: the stack's order follows the
-positions.
+The stack's order follows the positions, so `position` holds it; `reorder`,
+a task older jobs list, is read and dropped.
 
 A mirror is part of the in-plane affine (a negative determinant), so flip and
 quarter turn belong to `interactive_transform`: a job without it has no flip
@@ -94,8 +94,10 @@ becomes one undo step.
 ## Pictures
 
 Every picture a tool draws is saved in the job folder as the JPEG the model
-got, with a number and a caption (positions, cutting angles, scale and channel
-settings), indexed in `views.jsonl`; `zoom` takes the number, and
+got, with a number and a caption (positions, cutting angles, scale, the
+in-plane transform's numbers and each channel's display setting), indexed in
+`views.jsonl`; a picture background work draws comes with the work's notice,
+with its number and caption like any other; `zoom` takes the number, and
 `read_file` on a picture file answers with its index entry. Alignment pictures
 are in physical space: the section's micrometres per pixel come from the
 file's TIFF or OME metadata or the host (else estimated from the tissue width,
@@ -137,7 +139,13 @@ Looking, the same in every run:
 Channels. Raw channels are never edited.
 `set_channel_properties` sets how a raw channel is displayed (contrast
 limits, gamma, colormap) in every section that has it: display only, kept
-until changed, stated in every caption. `set_preprocessed_channel_properties`
+until changed, stated in every caption and in `status` per channel
+(`red, green auto; blue 0-70 gamma 0.8`). A channel without contrast limits
+is drawn with automatic ones (`auto`), per section: on a dark background
+(fluorescence) black at its background level and at full brightness at its
+95th percentile inside the tissue (found on the mean of the section's
+channels); on a light background between its 1st and 99.5th percentiles.
+`set_preprocessed_channel_properties`
 sets the recipe of the one preprocessed channel per section that the fits and
 the image model read (channel weights, CLAHE, N4, denoising; default weights
 by tissue coverage and CLAHE), stack-wide or per section, and returns
@@ -156,7 +164,8 @@ Changing:
 
 Fitting, one tool per method: `elastix_affine` refines each section's
 placement against an atlas image (`template` or `nissl`), optionally by
-`restrict_to` regions; `ants_syn` and `trace_borders` are in
+`restrict_to` regions (its picture then draws those regions' borders thick and
+the others faint, zoomed to their box when that magnifies at least 1.5 times); `ants_syn` and `trace_borders` are in
 [nonlinear_design.md](nonlinear_design.md).
 
 Bookkeeping: `note`, `undo`, `redo`, `submit`. The MCP door adds `start_job`

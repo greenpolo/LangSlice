@@ -130,7 +130,13 @@ the angles in a caption (empty for the flat plane).
   `with_properties` adds them to a raw look so the render cache keys them),
   applied where raw channels are drawn (`composite`: the raw pictures; a
   channel with contrast limits is not dimmed by
-  `fine_detail`) and restated in captions (`describe`, `describe_shown`);
+  `fine_detail`; one without is drawn between its automatic limits,
+  `auto_limits`, per section: on a dark background black at its background
+  median and full colour at its `TISSUE_WHITE_PERCENTILE` (95) inside the
+  tissue, Otsu on the mean of the section's channels; on a light background
+  its 1st and 99.5th percentiles) and restated in captions, each channel
+  with its own setting (`setting_words`, `display_words`: `red, green auto;
+  blue 0-70 gamma 0.8`; `stack_display` for the status reply);
   nothing a fit or the image model reads uses them. `intensity_ranges`
   (cached on `Workspace.intensity_cache`, from
   `image_prep.working_intensity_ranges`: the linear stretch each page's
@@ -207,7 +213,8 @@ the angles in a caption (empty for the flat plane).
   faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
-  atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=), store=)`
+  atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
+  highlight=), store=)`
   returns one `LookPicture` per section (`section`:
   `display.framed_section`; `overlay`: `placement.placement_pictures` mode
   `overlay`, the applied deformation unless `warp` is `none`), per position
@@ -232,7 +239,11 @@ the angles in a caption (empty for the flat plane).
   from `restored(state, snapshot)` and `stale` when `changed_since`.
   `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_CHANNEL`,
   `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
-  `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`. No picture number is burned into the pixels.
+  `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
+  `highlight` regions (a restricted fit's `restrict_to`) are drawn
+  `atlas.render.HIGHLIGHT_WIDTH` times as thick, the other borders faint,
+  and its caption says so; an overlay's caption gives the stored transform's
+  numbers (`placement.transform_words`). No picture number is burned into the pixels.
 - `positioning.py` — the positioning picture, ABBA's layout: a millimetre
   ruler, atlas thumbnails above it, each over its own millimetre (moved
   aside only as far as its neighbours need), the sections below in

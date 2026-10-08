@@ -187,7 +187,12 @@ the CLI is a process per call.
   `elastix_affine`, `ants_syn`, `trace_borders`, `trace_from_atlas`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
-  force it), `arguments.py` (the argument shapes, typed dicts with
+  force it; `interactive_transform` and `elastix_affine` drop the
+  deformations their write made stale before drawing it, so the picture
+  shows the section as it now stands; a restricted fit's picture
+  highlights its `restrict_to` regions and zooms to them only past
+  `ops.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
+  picture with its caption), `arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`,
   `LeftLinear`; `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),

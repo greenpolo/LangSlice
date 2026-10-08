@@ -429,6 +429,20 @@ def interactive_transform(
 ELASTIX_ATLAS_IMAGES: tuple[str, ...] = ("template", "nissl")
 #: Margin added round the regions' bounding box, as a fraction of the canvas.
 BOX_MARGIN = 0.05
+#: The least magnification a restricted fit's picture zooms to its regions'
+#: box for (:func:`zoom_window`); a box covering more of the canvas is drawn
+#: whole, its regions highlighted only.
+MIN_ZOOM_GAIN = 1.5
+
+
+def zoom_window(box: Sequence[float] | None) -> list[float] | None:
+    """*box* (:func:`region_box`) as the zoom of a restricted fit's picture,
+    or None when it would magnify less than :data:`MIN_ZOOM_GAIN` times
+    (its larger side over 1 / ``MIN_ZOOM_GAIN`` of the canvas's)."""
+    if not box:
+        return None
+    extent = max(float(box[2]) - float(box[0]), float(box[3]) - float(box[1]))
+    return [float(v) for v in box] if extent * MIN_ZOOM_GAIN <= 1.0 else None
 
 
 def region_box(

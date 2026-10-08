@@ -19,7 +19,7 @@ again.
 from __future__ import annotations
 
 import io
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -222,7 +222,8 @@ def _reply(
 
 def show_result(
     job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
-    positions_mm: Sequence[float] = (), zooms: dict[str, Sequence[float]] | None = None,
+    positions_mm: Sequence[float] = (), zooms: Mapping[str, Sequence[float]] | None = None,
+    highlight: Sequence[str] = (),
 ) -> Looked:
     """The picture a change tool shows of what it wrote, drawn as ``look``
     draws *mode* and saved under *tool* (so it has a number, a caption and a
@@ -230,7 +231,9 @@ def show_result(
 
     ``overlay``: one picture per section of *sections* (ids), each zoomed to
     its *zooms* window (``[x0, y0, x1, y1]`` fractions of the unzoomed
-    picture) when given. ``positioning``: *sections* and the atlas at
+    picture) when given, the *highlight* regions' borders thick and the
+    others faint (a restricted fit's ``restrict_to``). ``positioning``:
+    *sections* and the atlas at
     *positions_mm* along the slicing axis. At most :data:`MAX_LOOK_PICTURES`
     are shown; the rest are ``not_shown`` (with the ``look`` call that
     draws them), and a section whose picture fails is ``failed``.
@@ -251,7 +254,8 @@ def show_result(
         else:
             for section in sections:
                 window = tuple(float(v) for v in windows.get(section) or ())
-                request = looks.LookRequest(mode=mode, sections=(section,), zoom=window)
+                request = looks.LookRequest(mode=mode, sections=(section,), zoom=window,
+                                            highlight=tuple(str(v) for v in highlight))
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
                 except Exception as exc:  # noqa: BLE001 - the write stands; say why

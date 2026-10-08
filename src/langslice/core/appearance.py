@@ -61,8 +61,8 @@ MAX_CLAHE_TILES = 32
 
 #: A look: ``None`` (the default appearance), ``{"channel": name}`` (one raw
 #: channel, unenhanced: the `channels` strip), ``{"overlay": [names]}`` (raw
-#: channels, each stretched by percentile; one in gray, several added in their
-#: colours, :func:`channel_colors`), either with ``"properties"`` (their
+#: channels, each between its automatic contrast limits; one in gray, several
+#: added in their colours, :func:`channel_colors`), either with ``"properties"`` (their
 #: display properties, :func:`langslice.core.channels.with_properties`), or
 #: a settings dict from :func:`validate_settings`.
 Look = dict[str, Any] | None
@@ -81,7 +81,8 @@ OVERLAY_PALETTE: tuple[tuple[str, tuple[int, int, int]], ...] = (
 NAMED_COLORS: dict[str, tuple[int, int, int]] = {
     "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
 }
-#: Percentiles an overlay maps to black and white, per channel.
+#: Percentiles an overlay maps to black and white, per channel, on a light
+#: background (:func:`langslice.core.channels.auto_limits`).
 OVERLAY_STRETCH = (1.0, 99.5)
 
 

@@ -260,8 +260,8 @@ def test_checkpoints_carry_updates_since_start_and_the_result_the_final_ones(
     assert checkpoints[-1]["updates_since_start"] == result["final_updates"]
 
 
-def test_reorder_is_not_refused(snapshots, monkeypatch):
+def test_an_older_jobs_reorder_task_is_read_and_dropped(snapshots, monkeypatch):
     seen: dict[str, Any] = {}
     _fake_engine(monkeypatch, [], seen)
     run_linear({**snapshots, "spec": {"tasks": ["reorder", "position"]}}, lambda event: None)
-    assert seen["spec"].tasks == ["reorder", "position"]
+    assert seen["spec"].tasks == ["position"]

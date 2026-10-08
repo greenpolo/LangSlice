@@ -29,7 +29,7 @@
   ],
   "pictures": [
    {
-    "caption": "s2.png overlay, at 0.20 mm; interactive transform, no deformation; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s2.png overlay, at 0.20 mm; interactive transform (rot 3.0, scale 1.050/0.980, shift +0.05/-0.02 mm), no deformation; 31.2 um/px; raw gray auto; atlas borders",
     "id": 38
    }
   ],
@@ -66,7 +66,7 @@
    "mode": "RGB",
    "size": [
     338,
-    315
+    333
    ]
   }
  ],

@@ -359,7 +359,6 @@
    "reasoning": null,
    "resume": true,
    "tasks": [
-    "reorder",
     "position",
     "transform",
     "nonlinear"

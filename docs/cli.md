@@ -27,8 +27,8 @@ langslice linear run sections/ --registration quicknii.json   # import a registr
 ```
 
 One agent session over the whole folder (a single section is a stack of
-one) ends at `submit` or at a budget. `--tasks` picks which of `reorder`,
-`position`, `transform` and `nonlinear` are on (default: the first three). A
+one) ends at `submit` or at a budget. `--tasks` picks which of `position`,
+`transform` and `nonlinear` are on (default: the first two). A
 task switches its tools on or off whole ([linear_design.md](linear_design.md)),
 so a task that is off builds no tools and takes its answer from the host: `--order`, `--positions`, `--transforms`, `--orientation`,
 `--section-angles`, `--pitch`/`--yaw`, `--pixel-size-um`, `--locked`,

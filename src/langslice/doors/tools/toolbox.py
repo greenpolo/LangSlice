@@ -241,9 +241,10 @@ def with_notices(job: Job, result: dict[str, Any]) -> dict[str, Any]:
     media = list(result.get(TOOL_MEDIA_PARTS_KEY) or [])
     listed = list(result.get("pictures") or [])
     for work in finished:
-        for number, image in zip(work.pictures, work.images, strict=False):
+        captions = list(work.captions) + [""] * len(work.pictures)
+        for number, image, text in zip(work.pictures, work.images, captions, strict=False):
             media.append(image)
-            listed.append({"id": number, "work": work.id})
+            listed.append({"id": number, "work": work.id, **({"caption": text} if text else {})})
     out = {"background": [work.notice for work in finished], **result}
     if listed:
         out["pictures"] = listed

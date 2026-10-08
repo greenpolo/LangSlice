@@ -39,7 +39,7 @@ import functools
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from langslice.core import appearance as looks
 from langslice.doors.tools.arguments import (
@@ -52,17 +52,24 @@ from langslice.doors.tools.arguments import (
 # Defaults of list and object arguments are read, never mutated (ADK wants a value).
 # ruff: noqa: B006
 
+#: The choices a string argument takes, offered as an enum in every door's schema.
+LookMode = Literal["section", "atlas", "overlay", "positioning"]
+AtlasLayer = Literal["template", "nissl", "borders"]
+Warp = Literal["applied", "none"]
+FitAtlas = Literal["template", "nissl"]
+Stiffness = Literal["soft", "medium", "firm"]
+
 # --- looking ---------------------------------------------------------------------
 
 
 def look(
-    mode: str,
+    mode: LookMode,
     sections: list[str] = [],
     positions_mm: list[float] = [],
     channels: list[str] = [],
-    atlas_layers: list[str] = [],
+    atlas_layers: list[AtlasLayer] = [],
     atlas_opacity: float = 0.5,
-    warp: str = "applied",
+    warp: Warp = "applied",
     resolution: int = 0,
 ) -> dict[str, Any]:
     """Draw pictures of sections and the atlas. Writes nothing.
@@ -154,7 +161,9 @@ def set_channel_properties(
         channel: The raw channel's name.
         contrast_limits: [low, high] in the file's own intensities: low is
             drawn black, high at full brightness. Empty keeps the current
-            limits.
+            limits. Without limits a channel is drawn with automatic ones,
+            per section: black at the background, full brightness at the
+            tissue's 95th percentile.
         gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma.
         colormap: "gray", "red", "green", "blue", "magenta", "cyan" or
             "yellow"; empty keeps the current one.
@@ -260,9 +269,9 @@ def status() -> dict[str, Any]:
         section, not yet placed), distance to the next placed section, flip
         and quarter turn, transform, damaged regions and damage note,
         deformation steps. Also the cutting angles, the interval breaks, the
-        raw channels' display settings, the preprocessed channel's recipe,
-        the background work still running, and what this run lets you
-        change.
+        raw channels' display settings ("auto": automatic contrast limits),
+        the preprocessed channel's recipe, the background work still
+        running, and what this run lets you change.
     """
     ...
 
@@ -449,7 +458,7 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
 def elastix_affine(
     sections: list[str] = [],
     restrict_to: list[str] = [],
-    atlas_image: str = "template",
+    atlas_image: FitAtlas = "template",
     view: bool = True,
 ) -> dict[str, Any]:
     """Fit sections' in-plane affine transforms automatically with elastix.
@@ -479,8 +488,10 @@ def elastix_affine(
         high as a correct one) and the transform (rotation_deg, scale_x,
         scale_y, shear, translate_x_mm, translate_y_mm about the canvas
         centre); and a picture of each fitted section
-        under its new transform with the atlas borders on it, zoomed to the
-        restrict_to regions when they are given.
+        under its new transform with the atlas borders on it. With
+        restrict_to, those regions' borders are drawn thick and the others
+        faint, and the picture is zoomed to them when they cover a small
+        part of the section.
     """
     ...
 
@@ -488,8 +499,8 @@ def elastix_affine(
 def ants_syn(
     sections: list[str],
     restrict_to: list[str] = [],
-    atlas_image: str = "template",
-    stiffness: str = "medium",
+    atlas_image: FitAtlas = "template",
+    stiffness: Stiffness = "medium",
     view: bool = True,
 ) -> dict[str, Any]:
     """Fit a deformation of the atlas onto sections with ANTs SyN, on their current registration.
@@ -518,8 +529,10 @@ def ants_syn(
         the fold fraction and plausibility flags (regions compressed,
         expanded, vanished or folded beyond limits; displacement outsized
         for the section); and a picture of each section under its new
-        registration with the atlas borders on it, zoomed to the
-        restrict_to regions when they are given.
+        registration with the atlas borders on it. With restrict_to, those
+        regions' borders are drawn thick and the others faint, and the
+        picture is zoomed to them when they cover a small part of the
+        section.
     """
     ...
 
@@ -541,8 +554,9 @@ def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -
 
     Starts the work in the background and returns at once with its id, so
     you can carry on with other sections. When the work finishes, the next
-    tool reply starts with its notice: the fit's numbers and the numbers of
-    its pictures (the trace on the section, and the fitted borders). status
+    tool reply starts with its notice: the fit's numbers, then its
+    pictures (the fitted borders, and the trace on the section), each with
+    its number and caption. status
     lists the work still running; submit waits for it.
 
     Args:

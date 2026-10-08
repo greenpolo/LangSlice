@@ -5,11 +5,11 @@
  "data": {
   "pictures": [
    {
-    "caption": "s0.png overlay, at 0.10 mm; elastix transform, deformation drawn; 31.2 um/px; raw gray; percentile contrast; atlas borders",
+    "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), deformation drawn; 31.2 um/px; raw gray auto; atlas borders",
     "id": 48
    },
    {
-    "caption": "s1.png overlay, at 0.15 mm; elastix transform, deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 magenta + green + blue; percentile contrast for green, blue; atlas borders",
+    "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
     "id": 49
    }
   ],
@@ -22,7 +22,7 @@
    "mode": "RGB",
    "size": [
     338,
-    315
+    351
    ]
   },
   {
@@ -30,7 +30,7 @@
    "mode": "RGB",
    "size": [
     338,
-    333
+    369
    ]
   }
  ],

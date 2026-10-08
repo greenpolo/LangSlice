@@ -57,7 +57,7 @@ def copy_prompt(job_id: str, spec: Any) -> str:
     """The prompt the user pastes into the MCP host: the job id, its settings and
     how to begin. The user's notes are not repeated here: ``start_job``'s
     statement carries them (``job.json`` ``notes``), as every door's does."""
-    labels = {"reorder": "section order", "position": "positioning",
+    labels = {"position": "positioning",
               "transform": "linear alignment", "nonlinear": "nonlinear (deformable) alignment"}
     selected = ", ".join(labels[task] for task in spec.tasks)
     lines = [f"Use the LangSlice connector for job {job_id}.",

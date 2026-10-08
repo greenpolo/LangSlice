@@ -24,6 +24,7 @@ from langslice.core.affine import (
 )
 from langslice.core.atlas.core import get_reference_slice
 from langslice.core.atlas.render import (
+    HIGHLIGHT_WIDTH,
     annotation_slice,
     atlas_um_per_px,
     family_outlines,
@@ -577,8 +578,10 @@ def physical_views(
 
     *atlas_picture* is the atlas image on the native plane grid (None: the
     reference template), named *atlas_name* in captions. *regions*
-    (``[(name, ids)]``) are drawn at full strength in every mode, the
-    *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for context.
+    (``[(name, ids)]``) are drawn at full strength and
+    :data:`~langslice.core.atlas.render.HIGHLIGHT_WIDTH` times as thick in
+    every mode, the *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for
+    context.
     *matrix_label* names a ready matrix in the caption.
 
     *detail*, for a zoom of the ``overlay`` or ``section`` view, gives the
@@ -680,15 +683,7 @@ def physical_views(
             )
         panels = [(warped, label or "section")]
 
-    if isinstance(params, np.ndarray):
-        knobs = matrix_label
-    else:
-        knobs = (
-            f"rot {params['rotation_deg']:.1f}  "
-            f"scale {params['scale_x']:.3f}/{params['scale_y']:.3f}  "
-            f"shift {params['translate_x_mm']:+.2f}/{params['translate_y_mm']:+.2f} mm"
-            + (f"  shear {params['shear']:+.3f}" if params.get("shear") else "")
-        )
+    knobs = matrix_label if isinstance(params, np.ndarray) else knob_words(params)
 
     # The crop happens first, then the screen is sized: *long_edge*, or, for
     # the whole canvas, its own pixels when fewer (never upsampled). A zoom
@@ -718,7 +713,7 @@ def physical_views(
             )
         if highlighted:
             _draw_polys(
-                screen, highlighted, line_color, thickness=line_width,
+                screen, highlighted, line_color, thickness=line_width * HIGHLIGHT_WIDTH,
                 scale=geometry.atlas_scale, offset=geometry.atlas_offset,
                 origin=box[:2], factor=factor,
             )
@@ -755,6 +750,21 @@ def physical_views(
             ))
         images.append(labelled)
     return images
+
+
+def knob_words(params: Any, sep: str = "  ") -> str:
+    """An in-plane transform's knobs for a caption: ``rot 0.3  scale
+    0.990/1.086  shift -0.14/+0.00 mm`` (and the shear when not 0), the
+    parts joined by *sep*."""
+    parts = [
+        f"rot {float(params['rotation_deg']):.1f}",
+        f"scale {float(params['scale_x']):.3f}/{float(params['scale_y']):.3f}",
+        f"shift {float(params['translate_x_mm']):+.2f}/"
+        f"{float(params['translate_y_mm']):+.2f} mm",
+    ]
+    if params.get("shear"):
+        parts.append(f"shear {float(params['shear']):+.3f}")
+    return sep.join(parts)
 
 
 def _detailed_screen(

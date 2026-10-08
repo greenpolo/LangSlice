@@ -10,6 +10,11 @@
      "atlas_layers": {
       "default": [],
       "items": {
+       "enum": [
+        "template",
+        "nissl",
+        "borders"
+       ],
        "type": "string"
       },
       "title": "Atlas Layers",
@@ -29,6 +34,12 @@
       "type": "array"
      },
      "mode": {
+      "enum": [
+       "section",
+       "atlas",
+       "overlay",
+       "positioning"
+      ],
       "title": "Mode",
       "type": "string"
      },
@@ -50,6 +61,10 @@
      },
      "warp": {
       "default": "applied",
+      "enum": [
+       "applied",
+       "none"
+      ],
       "title": "Warp",
       "type": "string"
      }
@@ -87,7 +102,7 @@
    }
   },
   {
-   "description": "Set how a raw channel is displayed, in every section that has it.\n\nDisplay only: it changes how look draws the channel and nothing a fit\nor the image model reads; the image files are never edited. The setting\nstays until it is changed, and every caption states it. Undoable.\n\nArgs:\n    channel: The raw channel's name.\n    contrast_limits: [low, high] in the file's own intensities: low is\n        drawn black, high at full brightness. Empty keeps the current\n        limits.\n    gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma.\n    colormap: \"gray\", \"red\", \"green\", \"blue\", \"magenta\", \"cyan\" or\n        \"yellow\"; empty keeps the current one.\n    reset: True returns the channel to its default display; the other\n        arguments are then ignored.\n\nReturns:\n    The settings now in force, the sections that have the channel, and\n    its file intensities over them: the sample type and its range, and\n    the 1st and 99.5th percentiles.",
+   "description": "Set how a raw channel is displayed, in every section that has it.\n\nDisplay only: it changes how look draws the channel and nothing a fit\nor the image model reads; the image files are never edited. The setting\nstays until it is changed, and every caption states it. Undoable.\n\nArgs:\n    channel: The raw channel's name.\n    contrast_limits: [low, high] in the file's own intensities: low is\n        drawn black, high at full brightness. Empty keeps the current\n        limits. Without limits a channel is drawn with automatic ones,\n        per section: black at the background, full brightness at the\n        tissue's 95th percentile.\n    gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma.\n    colormap: \"gray\", \"red\", \"green\", \"blue\", \"magenta\", \"cyan\" or\n        \"yellow\"; empty keeps the current one.\n    reset: True returns the channel to its default display; the other\n        arguments are then ignored.\n\nReturns:\n    The settings now in force, the sections that have the channel, and\n    its file intensities over them: the sample type and its range, and\n    the 1st and 99.5th percentiles.",
    "name": "set_channel_properties",
    "parameters_json_schema": {
     "properties": {
@@ -228,7 +243,7 @@
    }
   },
   {
-   "description": "The stack as it stands, and what this run lets you change. Writes nothing.\n\nReturns:\n    One row per section in stack order: filename, position\n    (position_source \"default\": a starting position the job gave the\n    section, not yet placed), distance to the next placed section, flip\n    and quarter turn, transform, damaged regions and damage note,\n    deformation steps. Also the cutting angles, the interval breaks, the\n    raw channels' display settings, the preprocessed channel's recipe,\n    the background work still running, and what this run lets you\n    change.",
+   "description": "The stack as it stands, and what this run lets you change. Writes nothing.\n\nReturns:\n    One row per section in stack order: filename, position\n    (position_source \"default\": a starting position the job gave the\n    section, not yet placed), distance to the next placed section, flip\n    and quarter turn, transform, damaged regions and damage note,\n    deformation steps. Also the cutting angles, the interval breaks, the\n    raw channels' display settings (\"auto\": automatic contrast limits),\n    the preprocessed channel's recipe, the background work still\n    running, and what this run lets you change.",
    "name": "status"
   },
   {

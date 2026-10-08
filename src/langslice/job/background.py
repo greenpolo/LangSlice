@@ -89,6 +89,8 @@ class Work:
     pictures: list[int] = field(default_factory=list)
     #: The pictures themselves, for a door that sends them with the notice.
     images: list[Image.Image] = field(default_factory=list)
+    #: Each picture's index caption (empty when its drawing gave none).
+    captions: list[str] = field(default_factory=list)
     result: dict[str, Any] = field(default_factory=dict)
     #: Whether :meth:`BackgroundWork.notices` handed the notice out.
     delivered: bool = False
@@ -305,10 +307,12 @@ class BackgroundWork:
         if not drawn:
             return
         job = self._job
+        held = [note_for(image, notes) for image in drawn]
+        entry.work.captions = [str(note.caption or "") if note is not None else ""
+                               for note in held]
         try:
             names = job.views.save(
-                tool=entry.work.kind, pictures=[(image, note_for(image, notes))
-                                                for image in drawn],
+                tool=entry.work.kind, pictures=list(zip(drawn, held, strict=True)),
                 arguments={"work": entry.work.id, "sections": list(entry.work.sections)},
                 atlas=job.workspace.atlas if job.workspace is not None else None)
             entry.work.pictures = [int(name.split("_", 1)[0]) for name in names]

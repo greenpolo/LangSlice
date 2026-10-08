@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -333,7 +334,8 @@ def pictures(
             parts.append(deformation.picture(
                 workspace, fit.image, outcome, warped=True, style=fit_style,
                 atlas_images=shown_atlas, title=f"{heading}\n{detail_line}",
-                note={"sections": (record.id,), "mode": options.mode}))
+                note={"sections": (record.id,), "mode": options.mode,
+                      "caption": fit_caption(record, fit, row, include, exclude)}))
         except Exception as exc:
             logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
             del parts[first:]
@@ -342,6 +344,7 @@ def pictures(
         row["image_indexes"] = list(range(first, len(parts)))
     # Each traced section's trace, once per call, so it can be reviewed.
     traces: list[dict[str, Any]] = []
+    where = {fitted.fit.grid.record.id: fitted.fit.grid.record for fitted in done.fitted}
     for section_id, (image, lines) in done.traced.items():
         try:
             picture = deformation.trace_picture(
@@ -352,8 +355,42 @@ def pictures(
             failed.append({"id": section_id, "message": str(exc)})
             continue
         traces.append({"id": section_id, "image_indexes": [len(parts)]})
-        parts.append(layers.note(picture, sections=(section_id,), mode="trace"))
+        held = where.get(section_id)
+        at = (f", at {float(held.position_mm):.2f} mm"
+              if held is not None and held.position_mm is not None else "")
+        parts.append(layers.note(
+            picture, sections=(section_id,), mode="trace",
+            caption=f"{section_id} trace_borders: the image model's traced lines drawn on "
+            f"the section{at}"))
     return replace(done, pictures=parts, traces=traces, render_failed=failed)
+
+
+#: How a fit picture's caption names what of the section a fit read.
+_FIT_SECTION_WORDS = {
+    deformation.FIT_LOOK: "the preprocessed channel",
+    deformation.TRACED_BORDERS: "the image model's traced borders",
+}
+
+
+def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
+                include: Sequence[str], exclude: Sequence[str]) -> str:
+    """The index caption of a deformable fit's picture: the section, the
+    fit (engine, stiffness, what it read against which atlas image), the
+    position, the regions drawn thick or left out, and the fit's numbers."""
+    choice = fit.choice
+    read = _FIT_SECTION_WORDS.get(choice.fit_section, choice.fit_section)
+    at = (f", at {float(record.position_mm):.2f} mm"
+          if record.position_mm is not None else "")
+    numbers = row.get("displacement_mm") or {}
+    facts = (f"displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
+             f"fold fraction {row.get('fold_fraction')}") if numbers else ""
+    return (f"{record.id} deformation fit ({choice.engine} {choice.stiffness}, {read} "
+            f"against the atlas {choice.fit_atlas}){at}; the fitted atlas borders on the "
+            "image the fit read"
+            + (f"; regions {', '.join(include)} drawn thick, the other borders faint"
+               if include else "")
+            + (f"; left out (second colour): {', '.join(exclude)}" if exclude else "")
+            + (f"; {facts}" if facts else ""))
 
 
 #: The atlas images :func:`ants_syn` reads (``atlas_image``).

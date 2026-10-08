@@ -50,8 +50,9 @@ The section's marked damage regions are left out of the atlas side
 automatically. The reply gives, per section, the displacement (median and
 max, mm), the fold fraction and plausibility flags (regions compressed,
 expanded, vanished or folded beyond limits; displacement outsized for the
-section); the picture shows the section under its new registration, zoomed to
-the `restrict_to` regions when they are given.
+section); the picture shows the section under its new registration; with
+`restrict_to`, those regions' borders are drawn thick and the others faint,
+zoomed to their box when that magnifies at least 1.5 times.
 
 Masks cover the tissue (widened past its outline) minus a band along torn
 edges, and the atlas footprint minus excluded regions. The record stores a
@@ -99,8 +100,10 @@ image model is shown a colored atlas region map.
   at a time. When it finishes, ANTs fits the traced borders against the atlas
   borders (medium stiffness, on top of the section's current registration,
   by the traced regions only) and applies the result as its own undo step; the
-  next tool reply starts with a notice giving the fit's numbers and the numbers
-  of its pictures (the trace on the section, the fitted borders). `status`
+  next tool reply starts with a notice giving the fit's numbers, and its
+  pictures follow the reply's own, each with its number and caption (the
+  fitted borders, the `restrict_to` regions thick; the trace on the section).
+  `status`
   lists work still running and `submit` waits for it. A section whose
   placement changed meanwhile, or whose trace was undone, gets no fit and the
   notice says `STALE_INPUT`.

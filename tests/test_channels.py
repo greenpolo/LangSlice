@@ -131,7 +131,7 @@ def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
                         results_path=later.results_path)
     assert reopened.state.appearance["channels"]["red"]["gamma"] == 0.5
     picture = look(later, reopened.state, LookRequest("section", sections=("s0.png",)))[0]
-    assert "red gamma 0.5 magenta" in picture.caption
+    assert "red auto gamma 0.5 in magenta" in picture.caption
 
 
 def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path, atlas):
@@ -158,13 +158,13 @@ def test_raw_channel_pictures_and_captions_restate_the_properties(tmp_path: Path
     ops_appearance.set_channel_properties(job, ctx, "green", contrast_limits=[0, 100])
     after = look(ctx, state, request)[0]
     assert not np.array_equal(_pixels(after.image), before)
-    assert "green 0-100 gamma 1" in after.caption
+    assert "raw green in gray 0-100" in after.caption
     assert channels.describe("green", channels.channel_properties(state, "green")) == (
-        "green 0-100 gamma 1")
+        "green 0-100")
     overlay = default_options("section")
     tagged = type(overlay)(**{**overlay.__dict__, "channels": ("red", "green"), "version": ""})
-    assert "green 0-100 gamma 1" in tagged.section_tag(state)
-    assert tagged.section_tag() == "  [raw red + green]"
+    assert tagged.section_tag(state) == "  [raw red auto; green 0-100]"
+    assert tagged.section_tag() == "  [raw red, green auto]"
 
 
 # --- file intensities -----------------------------------------------------------
@@ -418,3 +418,26 @@ def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypa
     monkeypatch.setattr(tool, "outlined_atlas_template", lambda *a, **k: original)
     tool.start_atlas_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
     assert asked[-1]["preprocessed"] is True
+
+
+def test_automatic_limits_read_the_background_and_the_tissue():
+    """A dark background: black at the background level, full colour at the
+    tissue's 95th percentile; a light background keeps the percentiles."""
+    rng = np.random.default_rng(1)
+    plane = rng.normal(12.0, 2.0, (200, 300)).astype(np.float32)
+    plane[50:150, 60:240] = rng.uniform(30.0, 90.0, (100, 180))
+    plane[:20, :40] = 0.0  # an unscanned tile
+    ((low, high),) = channels.auto_limits([plane])
+    assert 10.0 < low < 14.0
+    assert high == pytest.approx(np.percentile(plane[50:150, 60:240], 95), abs=1.0)
+    bright = 255.0 - plane
+    ((low, high),) = channels.auto_limits([bright])
+    assert (low, high) == pytest.approx(tuple(np.percentile(bright, (1.0, 99.5))))
+
+
+def test_captions_give_each_channel_its_own_setting():
+    held = {"blue": channels.ChannelProperties(contrast_limits=(0.0, 70.0), gamma=0.8)}
+    assert channels.display_words(["red", "green", "blue"], held) == (
+        "red, green auto; blue 0-70 gamma 0.8")
+    assert channels.display_words(["DAPI", "GFP"], {}, {"DAPI": "magenta"}) == (
+        "DAPI in magenta, GFP auto")

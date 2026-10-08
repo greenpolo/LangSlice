@@ -210,8 +210,8 @@ on a 3x supersampled grid (the approach of `core.atlas.render.placed_border_cove
 which is affine-only, so the composed sampling lives here), one shared line per
 edge, antialiased, clipped to tissue. `highlight` (acronyms/ids, descendants
 included, one-sided entries drawn on that side of the record's placement)
-draws those regions' edges strongly over a faint outline of the
-colour-family regions; `marked` draws a second set (regions excluded from a
+draws those regions' edges strongly, `core.atlas.render.HIGHLIGHT_WIDTH`
+times as thick, over a faint outline of the colour-family regions; `marked` draws a second set (regions excluded from a
 fit) in `MARKED_COLOR`, and `outlines` (`all`/`outer`/`none`) limits the
 rest (`warped_border_layers` returns every layer; `drawn_border_coverage`
 the lines a call draws, as a saved picture's borders layer). `resampled_record` carries a

@@ -192,7 +192,12 @@ def damage_picture(
     from langslice.core.deformable.atlas_images import resolve_entries
     from langslice.core.display import DEFAULT_BORDER_THICKNESS, default_options
     from langslice.core.layers import note
-    from langslice.core.placement import current_warp, draw_canvas, stored_placement
+    from langslice.core.placement import (
+        current_warp,
+        draw_canvas,
+        stored_placement,
+        transform_words,
+    )
     from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
     from langslice.core.transform import calibrate
 
@@ -217,12 +222,12 @@ def damage_picture(
     shown = draw_canvas(
         ws, state, record, section, um_per_px, position, params, options, mode="overlay",
         label=f"{record.id} damage", warp=warp,
-        matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
+        matrix_label=transform_words(record, kind, warp=warp is not None),
     )
     atlas = draw_canvas(
         ws, state, record, section, um_per_px, position, params,
         replace(options, atlas_channels=("template", "borders")), mode="template",
-        label=f"{record.id} damage", matrix_label=f"{kind} transform",
+        label=f"{record.id} damage", matrix_label=transform_words(record, kind),
     )
     panels = []
     for canvas in (shown, atlas):
