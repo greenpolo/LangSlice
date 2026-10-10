@@ -242,9 +242,10 @@ the CLI is a process per call.
   `abba_worker.py` (the JVM-free snapshot worker of the Fiji connector:
   `prepare_linear` (snapshots, BrainGlobe AP positions, `angles_deg` as the
   stack-wide `inputs.angles`, `z_offset_mm` / `existing_warp` kept as the
-  job's `host.abba`, `locked`, `damaged`, `existing_warp` & `locked` ->
-  `inputs.keep_warp`, `nonlinear_skip` -> `inputs.nonlinear_skip`,
-  `channel_names`, `preprocessing`), `checkpoint_callback` (a
+  job's `host.abba`, `damaged`, `channel_names`, `preprocessing`; what the
+  agent may not change is the host's `spec.frozen`, its names checked against
+  the snapshots, and no host row is ever emitted for a property frozen on a
+  section, `_host_updates(..., frozen=spec.frozen_for)`), `checkpoint_callback` (a
   `HostCheckpoints` tracker: ABBA-world linear rows; with the `nonlinear`
   task `warp` rows from `core/abba_warp.py`, each logged with its measured
   `max_error_mm` / `p99_error_mm`; `host_angles` on a stack-wide angle
@@ -259,7 +260,7 @@ the CLI is a process per call.
   commands, `login`, `version`), `linear.py` (`linear run` and the job flags every
   stack-opening command shares: `add_linear_arguments` (`--disable
   NAME[,NAME...]`: the job's `disabled` list), `build_linear_spec`,
-  `spec_from_args`; `--tasks` defaults to `DEFAULT_TASKS`, or with
+  `spec_from_args` (`--frozen JSON`: the job's `frozen`); `--tasks` defaults to `DEFAULT_TASKS`, or with
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
   with a message), `mcp.py` (`mcp`), and the agent CLI
