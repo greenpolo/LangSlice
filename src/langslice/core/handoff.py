@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -25,6 +26,7 @@ from PIL import Image
 from langslice.core.affine import denormalized_affine
 from langslice.core.appearance import preprocessed_settings
 from langslice.core.canvas import CanvasGeometry, canvas_geometry
+from langslice.core.needs import render
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
     canvas_um_per_px,
@@ -41,12 +43,19 @@ if TYPE_CHECKING:
 #: Said when a section has no written in-plane transform and the job cannot
 #: write one (Linear off): what the caller does instead. A missing transform
 #: is the identity to the maps (``core.maps``), never to the nonlinear step.
-NO_TRANSFORM_LINEAR_OFF = (
+_NO_TRANSFORM_LINEAR_OFF = (
     "A written affine transform is required, and Linear is off for this job, so "
     "nothing here writes one. Supply the in-plane transforms with the job "
     "(inputs.transforms; --transforms on `langslice-job FOLDER init`), or switch "
-    "Linear on (task transform) and run elastix_affine on the section first."
+    "Linear on (task transform)[[?elastix_affine  and run elastix_affine on the section "
+    "first]]."
 )
+NO_TRANSFORM_LINEAR_OFF = render(_NO_TRANSFORM_LINEAR_OFF)
+
+
+def no_transform_linear_off(disabled: Collection[str] = ()) -> str:
+    """:data:`NO_TRANSFORM_LINEAR_OFF` for a job with *disabled* tools."""
+    return render(_NO_TRANSFORM_LINEAR_OFF, disabled)
 
 
 def missing_transform_message(spec: Any) -> str:
@@ -56,7 +65,7 @@ def missing_transform_message(spec: Any) -> str:
     ``interactive_transform`` are the job's own tools)."""
     has = getattr(spec, "has", None)
     if callable(has) and not has("transform"):
-        return NO_TRANSFORM_LINEAR_OFF
+        return no_transform_linear_off(getattr(spec, "disabled", ()))
     return "A written affine transform is required"
 
 

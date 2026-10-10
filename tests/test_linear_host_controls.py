@@ -66,17 +66,17 @@ def _entry(slice_id: str) -> dict[str, Any]:
 def test_new_fields_default_and_round_trip_through_from_dict(tmp_path: Path):
     spec = JobSpec(image_folder=str(tmp_path))
     assert spec.image_resolution == "low"
-    assert spec.agent_damage is True and spec.force_view is False
+    assert spec.disabled == [] and spec.force_view is False
     assert spec.transform.max_parallel == 4
     assert spec.position.notes == spec.transform.notes == spec.nonlinear.notes == ""
 
     rebuilt = JobSpec.from_dict({
-        "image_folder": str(tmp_path), "image_resolution": "high", "agent_damage": False,
-        "force_view": True,
+        "image_folder": str(tmp_path), "image_resolution": "high",
+        "disabled": ["mark_damage"], "force_view": True,
         "position": {"notes": "p"}, "transform": {"notes": "t", "max_parallel": 2},
         "nonlinear": {"notes": "n"},
     })
-    assert rebuilt.image_resolution == "high" and rebuilt.agent_damage is False
+    assert rebuilt.image_resolution == "high" and rebuilt.disabled == ["mark_damage"]
     assert rebuilt.force_view is True
     assert (rebuilt.position.notes, rebuilt.transform.notes, rebuilt.nonlinear.notes) == (
         "p", "t", "n")
@@ -86,7 +86,7 @@ def test_new_fields_default_and_round_trip_through_from_dict(tmp_path: Path):
 
 @pytest.mark.parametrize("data, message", [
     ({"image_resolution": "ultra"}, "image_resolution"),
-    ({"agent_damage": "yes"}, "agent_damage"),
+    ({"disabled": "mark_damage"}, "disabled"),
     ({"transform": {"max_parallel": 0}}, "max_parallel"),
     ({"transform": {"max_parallel": 5}}, "max_parallel"),
     ({"transform": {"max_parallel": True}}, "max_parallel"),
@@ -213,8 +213,8 @@ def test_at_four_elastix_affine_keeps_taking_any_number(tmp_path: Path, monkeypa
 # --- damage ----------------------------------------------------------------
 
 
-def test_agent_damage_off_builds_no_mark_damage(tmp_path: Path):
-    state, spec, tools = _stack(tmp_path, agent_damage=False)
+def test_disabling_mark_damage_builds_no_mark_damage(tmp_path: Path):
+    state, spec, tools = _stack(tmp_path, disabled=["mark_damage"])
     assert "mark_damage" not in tools
     assert "`mark_damage`" not in _statement(state, spec, tools)
     _state, _spec, default = _stack(tmp_path)

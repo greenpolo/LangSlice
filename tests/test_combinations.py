@@ -241,7 +241,7 @@ def tool_names(images: Path, tasks: list[str], provider: str = "none",
 # --- the tools each combination has (ADK / MCP tool building) ------------------------------
 
 
-#: The tools of every run, whatever the tasks (``mark_damage`` behind ``agent_damage``).
+#: The tools of every run, whatever the tasks (unless the job disables one).
 COMMON = {"look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
           "read_file", "mark_damage", "note", "undo", "redo", "submit"}
@@ -273,13 +273,13 @@ def test_each_combination_builds_exactly_its_tools(images, tasks, provider, extr
     # comes for the angles alone.
     (["transform"], {"transform": TransformSpec(angles=True)}, set(),
      {"position_sections"} | LINEAR),
-    (["transform"], {"transform": TransformSpec(interactive=False)},
+    (["transform"], {"disabled": ["interactive_transform"]},
      {"interactive_transform"}, {"elastix_affine"}),
-    (["transform"], {"transform": TransformSpec(automatic=False)},
+    (["transform"], {"disabled": ["elastix_affine"]},
      {"elastix_affine"}, {"interactive_transform"}),
-    (["reorder", "position"], {"agent_damage": False}, {"mark_damage"},
+    (["reorder", "position"], {"disabled": ["mark_damage"]}, {"mark_damage"},
      {"position_sections"}),
-], ids=["angles", "no-interactive", "no-automatic", "no-agent-damage"])
+], ids=["angles", "no-interactive", "no-automatic", "no-mark-damage"])
 def test_host_switches_add_and_remove_their_tools(images, tasks, fields, absent, present):
     names = set(tool_names(images, tasks, **fields))
     assert present <= names and not absent & names

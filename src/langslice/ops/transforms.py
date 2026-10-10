@@ -312,8 +312,8 @@ def interactive_transform(
     Per entry, refused (nothing written for it): ``LOCKED``,
     ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (not a mapping, a knob that is not a
     finite number, a flip that is not true/false), ``BAD_ROTATION``,
-    ``FLIP_DISABLED`` (the spec turns flipping off and the call changes the
-    flip), ``NO_POSITION`` (a transform to build on a section without a
+    ``FLIP_DISABLED`` (the job disables ``interactive_transform:flip`` and the
+    call changes the flip), ``NO_POSITION`` (a transform to build on a section without a
     position) and the stager's codes (:func:`langslice.core.placement.stage`).
     All the changed sections are written together, under the job's lock; the
     tool door draws the picture of what was written
@@ -351,7 +351,7 @@ def interactive_transform(
             if not isinstance(entry["flip"], bool):
                 refuse("BAD_ARGS", message="flip is true or false")
                 continue
-            if entry["flip"] != flip and not job.spec.transform.flip:
+            if entry["flip"] != flip and job.spec.off("interactive_transform:flip"):
                 refuse("FLIP_DISABLED")
                 continue
             flip = entry["flip"]

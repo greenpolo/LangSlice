@@ -171,9 +171,15 @@ def look(
     ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
     ``UNKNOWN_MODE``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS``,
-    ``NO_POSITION``, ``BAD_WARP``.
+    ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the
+    mode: ``look:<mode>`` in its ``disabled`` list).
     """
     state = job.state
+    if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
+        on = [name for name in looks.MODES if not job.spec.off(f"look:{name}")]
+        raise Refused("OPTION_OFF", option=f"look:{mode}", modes=on,
+                      message=f"look mode {mode} is switched off for this job; the modes "
+                      f"are {', '.join(on)}.")
     refs = _strings(sections, "sections")
     ids: list[str] = []
     unknown: list[Any] = []

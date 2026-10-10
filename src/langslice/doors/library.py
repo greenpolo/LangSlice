@@ -196,9 +196,12 @@ class JobHandle:
         from langslice.ops.registry import VERBS, retired_payload
 
         if name in VERBS:
+            spec = self._opened.spec
             raise AttributeError(f"This job's settings have no {name!r} (tasks "
-                                 f"{self._opened.spec.tasks}); see .verbs")
-        retired = retired_payload(name)
+                                 f"{spec.tasks}"
+                                 + (f", disabled {spec.disabled}" if spec.disabled else "")
+                                 + "); see .verbs")
+        retired = retired_payload(name, self._opened.spec.disabled)
         if retired is not None:  # a retired verb says what replaced it
             raise AttributeError(retired["message"])
         raise AttributeError(name)

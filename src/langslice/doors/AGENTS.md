@@ -71,7 +71,13 @@ the CLI is a process per call.
   `Variant` (`auto`, `door`, `forced_view`, `positions`, `left_linear`,
   `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=)`) is
   what of a run changes a declaration (`dropped_arguments`, each dropped
-  argument's `Args` entry cut from the description): `look`'s `resolution`
+  argument's `Args` entry cut from the description): `off` (the job's
+  disabled list): the modes it disables are out of `look`'s `mode` enum
+  (`narrowed`), the arguments only those modes served (`atlas_opacity`,
+  `warp`, `positions_mm`, `atlas_layers`, `zoom`'s `region`) are dropped,
+  `interactive_transform`'s sections lose `flip` (`SectionTransformNoFlip`),
+  and every passage of a description written with `[[?needs ...]]` marks
+  (`core/needs.py`) is dropped or swapped; `look`'s `resolution`
   only where the caller sizes pictures; the change tools' `view`
   (`VIEW_TOOLS`) not offered where the host forces their pictures on
   (`JobSpec.force_view`); `position_sections`' `sections` only with the
@@ -91,8 +97,9 @@ the CLI is a process per call.
 - `statement.py` — the job statement every door gives a registration agent:
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
   max_resolution=, image_model_off=, auto=, gates=)` (`agent.prompt.build_job_statement`
-  worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF` when
-  the image model is not connected, the user's notes, `status_and_notes`).
+  worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF`
+  (`image_model_off_text(disabled)`) when the image model is not connected,
+  the user's notes, `status_and_notes`).
   `opening_for_mcp` (the `show_stack` pages), `opening_for_cli` (the saved
   picture files, `--dry-run`, `--background` for `long_verbs()`, parallel
   calls). `status_and_notes(state)` (the status table and the newest
@@ -158,7 +165,8 @@ the CLI is a process per call.
   (the folder's files, the maps and their coordinate convention, the CLI
   with every listed verb, `long` marked and its per-call limits
   (`limits_note` of `registry.Verb.limits`; `transform_cap_line`: the job's
-  own `transform.max_parallel` when lower), `schema init` and `--help`, the
+  own `transform.max_parallel` when lower; less the verbs its `disabled` list
+  names, `disabled_names`), `schema init` and `--help`, the
   Python entry point and what a method returns, and to keep the agent's own
   files in `scripts/` and `scratch/` of the job folder, not `/tmp`; first,
   run `brief` and read `BRIEF.md`; under 85 lines, `tests/test_agent_cli.py`),
@@ -249,7 +257,8 @@ the CLI is a process per call.
   group; `langslice/cli.py` keeps the entry point `langslice.cli:main`.
   `__init__.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
   commands, `login`, `version`), `linear.py` (`linear run` and the job flags every
-  stack-opening command shares: `add_linear_arguments`, `build_linear_spec`,
+  stack-opening command shares: `add_linear_arguments` (`--disable
+  NAME[,NAME...]`: the job's `disabled` list), `build_linear_spec`,
   `spec_from_args`; `--tasks` defaults to `DEFAULT_TASKS`, or with
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
@@ -260,7 +269,10 @@ the CLI is a process per call.
     also `python -m langslice.doors.cli.jobcli`): `ops` and `schema` first
     (run inside `stdout_to_stderr`, their envelope printed after),
     anything else `FOLDER VERB`; returns the exit code.
-  - `envelope.py` — `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
+  - `envelope.py` — the `FIXES` texts are written with `[[?needs ...]]`
+    marks and rendered for the job's disabled list (`DISABLED`, set by
+    `job.call` once the job is open; `disabled_for`);
+    `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
     `next`, `error` {code, message, fix}), `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
     `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other refusal

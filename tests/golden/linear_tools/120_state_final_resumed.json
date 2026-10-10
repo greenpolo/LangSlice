@@ -151,7 +151,6 @@
    }
   ],
   "spec": {
-   "agent_damage": true,
    "agent_preprocessing": false,
    "atlas": "allen_mouse_25um",
    "debrief": true,
@@ -193,10 +192,7 @@
    ],
    "transform": {
     "angles": false,
-    "automatic": true,
-    "flip": true,
     "hemisphere_cue": "",
-    "interactive": true,
     "max_parallel": 4,
     "notes": ""
    }
