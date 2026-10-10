@@ -64,7 +64,7 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
     ({"angles_deg": {"pitch": 4.0}}, "pitch_deg"),
     ({"z_offset_mm": float("inf")}, "z_offset_mm"),
     ({"existing_warp": ["missing.tif"]}, "existing_warp"),
-    ({"locked": ["missing.tif"]}, "Locked"),
+    ({"spec": {"frozen": {"missing.tif": ["affine"]}}}, "frozen names"),
     ({"damaged": {"missing.tif": ""}}, "Damaged"),
     ({"damaged": {"section_0001.tif": 3}}, "Damaged"),
     ({"spec": {"image_resolution": "ultra"}}, "image_resolution"),
@@ -131,15 +131,16 @@ def test_no_trace_dir_means_no_trace(params, monkeypatch):
     assert "trace_files" not in run_linear(params, lambda event: None)
 
 
-@pytest.mark.parametrize(("tasks", "sent"), [(["transform"], True), (["reorder"], False)])
-def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
+@pytest.mark.parametrize(("frozen", "sent"), [
+    (frozenset(), True), (frozenset({"orientation"}), False), (frozenset({"affine"}), True)])
+def test_orientation_reaches_the_host_unless_it_is_frozen(frozen, sent):
     from langslice.doors.api.abba_worker import _host_updates
 
     before = {"slices": [{"id": "a.tif", "position_mm": 4.0, "index_corrected": 0,
                           "flip": False, "rotation_deg": 0, "transform": None}]}
     after = copy.deepcopy(before)
     after["slices"][0].update(flip=True, rotation_deg=90)
-    updates = _host_updates(after, before, tasks, {"a.tif": (100, 80)}, 10.0)
+    updates = _host_updates(after, before, {"a.tif": (100, 80)}, 10.0, lambda _name: frozen)
     assert bool(updates) is sent
     if sent:
         assert updates[0]["flip"] is True and updates[0]["rotation_deg"] == 90
@@ -251,19 +252,17 @@ def test_abba_angles_become_the_stack_wide_input_and_angle_tasks_are_allowed(par
     assert prepared.abba["angles_deg"] == {"pitch_deg": 2.5, "yaw_deg": -1.0}
 
 
-@pytest.mark.parametrize("locked, kept", [(["section_0001.tif"], True), ([], False)])
-def test_existing_warp_is_kept_unless_the_user_allows_overwriting(params, locked, kept):
-    """The dialog's overwrite option reaches the worker as `locked`: a locked
-    section with the user's warp keeps it (inputs.keep_warp); an unlocked one
-    (overwrite on) may be deformed."""
+def test_existing_warp_is_kept_with_the_job_and_frozen_through_the_spec(params):
+    """Which sections keep their own warp is the host's say, as
+    `spec.frozen`; `existing_warp` is only recorded with the job."""
     from langslice.doors.api.abba_worker import prepare_linear
 
-    params.update(locked=locked, existing_warp=["section_0001.tif"])
-    params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
+    params.update(existing_warp=["section_0001.tif"])
+    params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"},
+                      "frozen": {"section_0001.tif": ["orientation", "affine", "deformation"]}}
     prepared = prepare_linear(params)
-    assert ("keep_warp" in prepared.spec.inputs) is kept
-    if kept:
-        assert prepared.spec.inputs["keep_warp"] == ["section_0001.tif"]
+    assert prepared.spec.frozen == {
+        "section_0001.tif": ["orientation", "affine", "deformation"]}
     assert prepared.abba["existing_warp"] == ["section_0001.tif"]
 
 
@@ -489,14 +488,14 @@ def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monke
     write_sections(folder)
     spec = dataclasses.replace(
         full_spec(folder), nonlinear=NonlinearSpec(provider="none"), agent_preprocessing=False,
-        inputs={"pixel_size_um": PIXEL_SIZE_UM, "keep_warp": [ID0]})
+        inputs={"pixel_size_um": PIXEL_SIZE_UM}, frozen={ID0: ["deformation"]})
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     try:
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
         result = job.ants_syn(sections=[ID0], view=False)
-        assert "KEEPS_HOST_WARP" in json.dumps(result)
+        assert "FROZEN" in json.dumps(result)
         assert job.state.by_id(ID0).deformation is None
     finally:
         job.close()
@@ -516,9 +515,9 @@ def test_the_seed_event_carries_the_saved_opening_views():
 
 
 def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monkeypatch):
-    """`nonlinear_skip` (the dialog's "do not align these first" with
-    Positioning on) reaches the job as inputs.nonlinear_skip; the fit and
-    the image model's trace refuse those sections."""
+    """A section the dialog leaves out of Nonlinear ("do not align these
+    first" with Positioning on) reaches the job as a frozen deformation
+    (`spec.frozen`); the fit and the image model's trace refuse it."""
     import dataclasses
 
     import langslice
@@ -538,13 +537,15 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     snapshots.mkdir()
     Image.new("L", (80, 40)).save(snapshots / "a.tif")
     prepared = prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
-                               "positions_mm": {"a.tif": 4.0}, "nonlinear_skip": ["a.tif"],
+                               "positions_mm": {"a.tif": 4.0},
                                "spec": {"tasks": ["position", "nonlinear"],
-                                        "nonlinear": {"provider": "none"}}})
-    assert prepared.spec.inputs["nonlinear_skip"] == ["a.tif"]
-    with pytest.raises(ValueError, match="nonlinear_skip"):
+                                        "nonlinear": {"provider": "none"},
+                                        "frozen": {"a.tif": ["deformation"]}}})
+    assert prepared.spec.frozen == {"a.tif": ["deformation"]}
+    with pytest.raises(ValueError, match="frozen names"):
         prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
-                        "positions_mm": {"a.tif": 4.0}, "nonlinear_skip": ["b.tif"]})
+                        "positions_mm": {"a.tif": 4.0},
+                        "spec": {"frozen": {"b.tif": ["deformation"]}}})
 
     pytest.importorskip("ants", reason="ants_syn needs antspyx")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -553,14 +554,14 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     write_sections(folder)
     spec = dataclasses.replace(
         full_spec(folder), nonlinear=NonlinearSpec(provider="none"), agent_preprocessing=False,
-        inputs={"pixel_size_um": PIXEL_SIZE_UM, "nonlinear_skip": [ID0]})
+        inputs={"pixel_size_um": PIXEL_SIZE_UM}, frozen={ID0: ["deformation"]})
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     try:
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
-        assert "NONLINEAR_SKIPPED" in json.dumps(job.ants_syn(sections=[ID0], view=False))
-        assert job.job.nonlinear_refusal(ID0)[0] == "NONLINEAR_SKIPPED"
+        assert "FROZEN" in json.dumps(job.ants_syn(sections=[ID0], view=False))
+        assert job.job.frozen_refusal([ID0], "deformation")["error"] == "FROZEN"
     finally:
         job.close()
 

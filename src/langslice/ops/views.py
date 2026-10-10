@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from langslice.core import frozen as freeze
 from langslice.core.state import break_ids
 from langslice.core.status import stack_angles_entry, status_rows
 
@@ -31,15 +32,16 @@ class StackStatus:
 
 
 def status(job: Job) -> StackStatus:
-    """The status table (``status``). A section the user locked (its
-    in-plane alignment done, ``inputs.locked``) carries ``locked: true``,
-    one the user gave a damage note (``inputs.damaged``: a note, not damage)
+    """The status table (``status``). A section with properties the user froze
+    (``JobSpec.frozen``) carries them as ``frozen: [...]``, one the user gave
+    a damage note (``inputs.damaged``: a note, not damage)
     ``damage_by_user: true``; the others carry neither."""
     state = job.state
     rows = status_rows(state)
+    held = freeze.sections_of(job.spec.frozen, [row["id"] for row in rows])
     for row in rows:
-        if row["id"] in job.locked:
-            row["locked"] = True
+        if row["id"] in held:
+            row["frozen"] = held[row["id"]]
         if row["id"] in job.host_damaged:
             row["damage_by_user"] = True
     return StackStatus(rows=rows, cutting_angles_deg=stack_angles_entry(state),

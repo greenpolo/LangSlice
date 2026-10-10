@@ -461,7 +461,7 @@ class LangSliceServer(FastMCP):
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         if self._tool_manager.get_tool(name) is None:  # noqa: SLF001 — FastMCP has no hook
             session = self.traced.get("job")
-            retired = retired_payload(name, session.spec.disabled if session else ())
+            retired = retired_payload(name, session.spec.switched_off if session else ())
             if retired is not None:
                 blocks = result_blocks(retired)
                 if session is not None and session.trace is not None:

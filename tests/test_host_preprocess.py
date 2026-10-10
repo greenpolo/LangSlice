@@ -246,15 +246,16 @@ def test_checkpoints_carry_updates_since_start_and_the_result_the_final_ones(
     _fake_engine(monkeypatch, [move(4.1), move(4.3), turn_locked], seen)
     events: list[dict[str, Any]] = []
     result = run_linear(
-        {**snapshots, "locked": ["b.tif"], "damaged": {"a.tif": "torn"}}, events.append,
+        {**snapshots, "spec": {"frozen": {"b.tif": ["orientation", "affine"]}},
+         "damaged": {"a.tif": "torn"}}, events.append,
     )
-    assert seen["spec"].inputs["locked"] == ["b.tif"]
+    assert seen["spec"].frozen == {"b.tif": ["orientation", "affine"]}
     assert seen["spec"].inputs["damaged"] == {"a.tif": "torn"}
     checkpoints = [event for event in events if event["kind"] == "checkpoint"]
     assert checkpoints[0]["initial"] and checkpoints[0]["updates_since_start"] == []
     assert checkpoints[2]["host_updates"] == [{"id": "a.tif", "position_mm": 4.3}]
     assert checkpoints[2]["updates_since_start"] == [{"id": "a.tif", "position_mm": 4.3}]
-    # A locked section's transform is never sent back to the host.
+    # A section with a frozen affine: its transform is never sent back to the host.
     assert checkpoints[3]["host_updates"] == []
     assert result["final_updates"] == [{"id": "a.tif", "position_mm": 4.3}]
     assert checkpoints[-1]["updates_since_start"] == result["final_updates"]

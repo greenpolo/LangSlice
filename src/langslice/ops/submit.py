@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from langslice.core import deformation
 from langslice.core.state import break_ids, normalize_to_atlas_order
 from langslice.ops.exports import Exported
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -66,7 +66,8 @@ def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
     """``{id: reason}`` from ``[{id, reason}]`` (a list from a model: a trust
     boundary). Refused: ``BAD_ARGS`` (not a list of ``{id, reason}`` with a
     reason, a section named twice, or any entry in a run without Nonlinear),
-    ``UNKNOWN_SLICE_IDS``, ``DEFORMATION_REQUIRED`` (the host requires a
+    ``UNKNOWN_SLICE_IDS``, ``FROZEN`` (a listed section's deformation is
+    frozen, so it needs no entry), ``DEFORMATION_REQUIRED`` (the host requires a
     deformation on every section), ``HAS_DEFORMATION`` (a listed section
     carries one at its current placement: undo it first),
     ``INVALID_LINEAR_PLACEMENT`` (a listed section has no position or no
@@ -102,7 +103,8 @@ def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
             fitted.append(record.id)
     if unknown:
         raise unknown_sections(job.state, unknown)
-    unplaced = [name for name in left if (held := job.state.by_id(name)) is not None
+    check_frozen(job, list(left), "deformation")
+    unplaced =[name for name in left if (held := job.state.by_id(name)) is not None
                 and (held.position_mm is None or held.transform is None)]
     if unplaced:
         from langslice.core.handoff import no_transform_linear_off
@@ -110,7 +112,7 @@ def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
         raise Refused("INVALID_LINEAR_PLACEMENT", ids=unplaced,
                       message="A section left linear needs a position and a transform."
                       + ("" if job.spec.has("transform")
-                         else " " + no_transform_linear_off(job.spec.disabled)))
+                         else " " + no_transform_linear_off(job.spec.switched_off)))
     if fitted:
         raise Refused("HAS_DEFORMATION", ids=fitted,
                       message="These sections carry a deformation at their current "

@@ -456,16 +456,17 @@ def test_the_brief_never_names_a_hidden_verb(capsys, images, monkeypatch):
     assert "trace_from_atlas" not in brief["result"]["statement"]
 
 
-def test_status_marks_what_the_user_locked_or_marked_damaged(capsys, images):
-    init(capsys, images, "--locked", json.dumps([ID0]), "--damaged",
-         json.dumps({ID1: "torn"}))
+def test_status_marks_what_the_user_froze_or_marked_damaged(capsys, images):
+    init(capsys, images, "--frozen", json.dumps({ID0: ["orientation", "affine"]}),
+         "--damaged", json.dumps({ID1: "torn"}))
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     rows = {row["id"]: row for row in envelope["result"]["rows"]}
-    # Every row carries both fields (uniform rows): true where set, else false.
-    assert rows[ID0]["locked"] is True and rows[ID0]["damage_by_user"] is False
-    assert rows[ID1]["damage_by_user"] is True and rows[ID1]["locked"] is False
-    assert rows[ID2]["locked"] is False and rows[ID2]["damage_by_user"] is False
+    # Every row carries both fields (uniform rows): set where set, else empty.
+    assert rows[ID0]["frozen"] == ["orientation", "affine"]
+    assert rows[ID0]["damage_by_user"] is False
+    assert rows[ID1]["damage_by_user"] is True and rows[ID1]["frozen"] == []
+    assert rows[ID2]["frozen"] == [] and rows[ID2]["damage_by_user"] is False
     # The user's damage note is a note: damaged regions make a section damaged.
     assert rows[ID1]["damage_note"] == "torn" and rows[ID1]["damaged"] is False
     assert rows[ID1]["damaged_regions"] == []
