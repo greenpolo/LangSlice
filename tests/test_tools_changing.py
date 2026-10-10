@@ -8,7 +8,7 @@ import inspect
 from pathlib import Path
 
 from langslice.agent.engine import build_context
-from langslice.core.spec import JobSpec, PositionSpec, TransformSpec
+from langslice.core.spec import JobSpec, PositionSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
@@ -365,13 +365,14 @@ def test_an_orientation_change_keeps_the_values_and_says_so(tmp_path: Path):
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True, transform=TransformSpec(flip=False))
-    result = _tool(box, "interactive_transform")(
-        [{"id": "s0.png", "flip": True}, {"id": "s1.png", "rotate_quarter": 90}])
-    assert result["results"][0] == {"status": "error", "error": "FLIP_DISABLED",
-                                    "id": "s0.png"}
-    assert result["results"][1]["status"] == "ok"
-    assert state.by_id("s0.png").flip is False
+    state, _, box = _box(tmp_path, placed=True, disabled=["interactive_transform:flip"])
+    tool = _tool(box, "interactive_transform")
+    # The option is not in the tool's schema: a call that sends it is refused
+    # whole, and nothing is written.
+    result = tool([{"id": "s0.png", "flip": True}, {"id": "s1.png", "rotate_quarter": 90}])
+    assert result["error"] == "UNKNOWN_ARGUMENTS" and "flip" in result["message"]
+    assert state.by_id("s0.png").flip is False and state.by_id("s1.png").rotation_deg == 0
+    assert tool([{"id": "s1.png", "rotate_quarter": 90}])["results"][0]["status"] == "ok"
     assert state.by_id("s1.png").rotation_deg == 90
 
 

@@ -33,6 +33,7 @@ from langslice.core.jpeg import encode_jpeg
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
+from langslice.core.toolset import refusal
 from langslice.doors.api.abba_worker import (
     PreparedLinear,
     checkpoint_callback,
@@ -230,6 +231,9 @@ def open_job(
     task's image-model tool is offered only when that model is connected
     (:func:`langslice.doors.jobs.image_model_off`)."""
     off = image_model_off(spec, provider_connected(spec))
+    reason = refusal(spec, image_model=not off)
+    if reason is not None:
+        raise ValueError(f"{reason} (the job's image model is not connected here)")
     ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     write_card(job.layout)
@@ -456,10 +460,10 @@ class LangSliceServer(FastMCP):
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         if self._tool_manager.get_tool(name) is None:  # noqa: SLF001 — FastMCP has no hook
-            retired = retired_payload(name)
+            session = self.traced.get("job")
+            retired = retired_payload(name, session.spec.disabled if session else ())
             if retired is not None:
                 blocks = result_blocks(retired)
-                session = self.traced.get("job")
                 if session is not None and session.trace is not None:
                     session.trace.write("tool_result", name=name, args=arguments,
                                         content=describe_blocks(blocks))

@@ -79,11 +79,12 @@ from langslice.core.scale import framed_um_per_px
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.sizes import picture_edge
 from langslice.core.state import Angles, SliceState, StackState
+from langslice.core.toolset import LOOK_MODES
 from langslice.core.transform import calibrate
 from langslice.core.workspace import Workspace
 
 #: look's modes, in the order the docs list them.
-MODES: tuple[str, ...] = ("section", "atlas", "overlay", "positioning")
+MODES: tuple[str, ...] = LOOK_MODES
 #: The recipe's renderer name (:mod:`langslice.core.zoom` dispatches on it).
 RENDERER = "look"
 #: The ``channels`` entry that picks the section's preprocessed channel.

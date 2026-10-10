@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import time
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -127,8 +128,10 @@ class RetiredToolsPlugin(BasePlugin):
     nothing done), every time it is called; any other name is left to ADK.
     """
 
-    def __init__(self, *, name: str = "langslice_retired_tools") -> None:
+    def __init__(self, *, name: str = "langslice_retired_tools",
+                 disabled: Collection[str] = ()) -> None:
         super().__init__(name)
+        self._disabled = tuple(disabled)
 
     async def before_tool_callback(
         self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any,
@@ -138,7 +141,7 @@ class RetiredToolsPlugin(BasePlugin):
             return None
         from langslice.ops.registry import retired_payload
 
-        return retired_payload(str(getattr(tool, "name", "") or ""))
+        return retired_payload(str(getattr(tool, "name", "") or ""), self._disabled)
 
 
 class StrictArgumentsPlugin(BasePlugin):

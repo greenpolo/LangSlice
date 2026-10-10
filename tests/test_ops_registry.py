@@ -113,9 +113,8 @@ def test_the_gating_table(folder: Path):
     # Manual and automatic alignment are the transform task's, each switchable.
     assert {"interactive_transform", "elastix_affine"} <= has(tasks=["transform"])
     assert "interactive_transform" not in has(
-        tasks=["transform"], transform=TransformSpec(interactive=False))
-    assert "elastix_affine" not in has(
-        tasks=["transform"], transform=TransformSpec(automatic=False))
+        tasks=["transform"], disabled=["interactive_transform"])
+    assert "elastix_affine" not in has(tasks=["transform"], disabled=["elastix_affine"])
     assert not {"interactive_transform", "elastix_affine"} & has(tasks=["position"])
     # Nonlinear: ants_syn; trace_borders only with an image model.
     assert {"ants_syn", "trace_borders"} <= has(tasks=["nonlinear"])
@@ -126,7 +125,7 @@ def test_the_gating_table(folder: Path):
     assert not {"ants_syn", "trace_borders"} & has(tasks=["position", "transform"])
     # Damage marking is a host switch.
     assert "mark_damage" in has(tasks=["position"])
-    assert "mark_damage" not in has(tasks=["position"], agent_damage=False)
+    assert "mark_damage" not in has(tasks=["position"], disabled=["mark_damage"])
 
 
 def test_every_operation_is_an_op_and_classified():

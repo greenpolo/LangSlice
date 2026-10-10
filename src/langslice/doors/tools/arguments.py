@@ -68,6 +68,20 @@ class SectionTransform(TypedDict, total=False):
 
 
 @with_config(ConfigDict(extra="forbid"))
+class SectionTransformNoFlip(TypedDict, total=False):  # SectionTransform without ``flip``
+    """One ``interactive_transform`` section: absolute values, each optional."""
+
+    id: str
+    rotate_quarter: int
+    rotation_deg: float
+    scale_x: float
+    scale_y: float
+    shear: float
+    translate_x_mm: float
+    translate_y_mm: float
+
+
+@with_config(ConfigDict(extra="forbid"))
 class LeftLinear(TypedDict, total=False):
     """One ``submit`` ``left_linear`` entry: a section left without a
     deformation, and why."""
