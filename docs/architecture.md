@@ -27,10 +27,14 @@ setups.
 ## One job through every interface
 
 An interface creates a `JobSpec` or opens saved settings, then calls
-operations on a `Job`. `ops/registry.py` controls tool availability;
-`doors/declarations.py` supplies the common argument declarations.
-Tasks remove whole registration tools, while viewing and channel tools
-remain available. See [registration](registration.md).
+operations on a `Job`. `core/toolset.py` lists the tools, their options and
+what each needs, and `ops/registry.py` binds them to the operations and
+decides tool availability; `doors/declarations.py` supplies the common
+argument declarations. Tasks remove whole registration tools, a job's
+`disabled` list removes single tools and options, and viewing and channel
+tools remain available otherwise. Model-facing text that names a tool or an
+option is written with what it needs (`core/needs.py`) and rendered for the
+job. See [registration](registration.md).
 
 `state.json` is the checkpoint; every write creates an undo step and rewrites
 the derived `registration.json`. Source images remain immutable. Processes
@@ -58,7 +62,7 @@ The contract is `doors/api/models.py`, preparation and translation are in
 | Method | Purpose |
 |---|---|
 | `version` | Package and protocol versions |
-| `setup.status`, `setup.login`, `setup.api_key` | Offline setup status, OAuth and saved API keys |
+| `setup.status`, `setup.login`, `setup.api_key` | Offline setup status (including `tools`: what a job can switch off), OAuth and saved API keys |
 | `linear.run`, `linear.estimate` | Run the agent on snapshots; estimate cost |
 | `preprocess.preview` | Preview snapshot preprocessing |
 | `mcp.prepare` | Save a job and copy prompt for an MCP host |

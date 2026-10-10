@@ -23,9 +23,8 @@ def test_spec_round_trips_through_dict():
         image_folder="/tmp/x",
         tasks=["position"],
         position=PositionSpec(interval_um=300, strict_interval=True),
-        transform=TransformSpec(
-            angles=True, flip=False, hemisphere_cue="notch on the left"
-        ),
+        transform=TransformSpec(angles=True, hemisphere_cue="notch on the left"),
+        disabled=["interactive_transform:flip", "zoom"],
         facts=["the block was cut back to front"],
         inputs={"positions": {"s0.png": 1.0}},
     )

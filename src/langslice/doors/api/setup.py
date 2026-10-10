@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from langslice import __version__
+from langslice.core import toolset
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,7 @@ def setup_status() -> dict[str, Any]:
         "environment_prefix": sys.prefix,
         "providers": providers,
         "image_models": image_model_choices(),
+        "tools": toolset.catalog(),
         "credentials_error": error,
     }
 

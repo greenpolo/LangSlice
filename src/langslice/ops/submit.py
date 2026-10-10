@@ -105,11 +105,12 @@ def clean_left_linear(job: Job, entries: Any) -> dict[str, str]:
     unplaced = [name for name in left if (held := job.state.by_id(name)) is not None
                 and (held.position_mm is None or held.transform is None)]
     if unplaced:
-        from langslice.core.handoff import NO_TRANSFORM_LINEAR_OFF
+        from langslice.core.handoff import no_transform_linear_off
 
         raise Refused("INVALID_LINEAR_PLACEMENT", ids=unplaced,
                       message="A section left linear needs a position and a transform."
-                      + ("" if job.spec.has("transform") else " " + NO_TRANSFORM_LINEAR_OFF))
+                      + ("" if job.spec.has("transform")
+                         else " " + no_transform_linear_off(job.spec.disabled)))
     if fitted:
         raise Refused("HAS_DEFORMATION", ids=fitted,
                       message="These sections carry a deformation at their current "

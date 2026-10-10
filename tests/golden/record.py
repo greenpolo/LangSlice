@@ -862,7 +862,7 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
         "gated": JobSpec(image_folder=str(folder), tasks=["position"],
                          position=PositionSpec(gated=True), **base),
         "host": JobSpec(image_folder=str(folder), tasks=["transform", "nonlinear"],
-                        force_view=True, agent_damage=False,
+                        force_view=True, disabled=["mark_damage"],
                         nonlinear=NonlinearSpec(provider="none", require_deformation=True),
                         **base),
     }

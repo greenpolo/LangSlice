@@ -4,7 +4,8 @@ A host (CLI, ABBA connector, engine service) fills a :class:`JobSpec` and hands 
 to :func:`langslice.agent.engine.run`. Every checkbox a user sees maps to a field
 here; nothing else is user-facing. ``tasks`` switches whole capabilities on and
 off — a task that is OFF takes its answer from ``inputs`` instead of from the
-agent, and its tools are not built at all.
+agent, and its tools are not built at all. ``disabled`` takes single tools and
+tool options off on top of what the tasks give.
 
 See ``docs/registration.md`` for the design this mirrors.
 """
@@ -14,6 +15,8 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from langslice.core import toolset
 
 #: Every task, in the order they are listed everywhere else.
 DEFAULT_TASKS: tuple[str, ...] = ("position", "transform")
@@ -43,6 +46,17 @@ INPUT_KEYS: tuple[str, ...] = (
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
+
+
+#: The switches older specs had, now names in ``disabled``: ``(section of
+#: the spec or "", key, the name it became when the key is false)``. Read
+#: from a saved spec (:meth:`JobSpec.from_dict`), never written.
+LEGACY_SWITCHES: tuple[tuple[str, str, str], ...] = (
+    ("", "agent_damage", "mark_damage"),
+    ("transform", "interactive", "interactive_transform"),
+    ("transform", "automatic", "elastix_affine"),
+    ("transform", "flip", "interactive_transform:flip"),
+)
 
 
 def _degrees(value: Any, where: str) -> float:
@@ -112,7 +126,8 @@ class PositionSpec:
     #: section not looked at in mode ``overlay`` or ``positioning`` since its
     #: last write, and ``submit`` until ``look`` in mode ``positioning`` has
     #: shown every section after the last write. The refusals name what is
-    #: missing.
+    #: missing. Needs ``look:positioning`` (the spec refuses the gates where
+    #: the job disables it).
     gated: bool = False
     #: Optional positioning coaching: compare candidate planes and regions,
     #: write supported placements, revisit uncertainty and review the stack.
@@ -135,16 +150,10 @@ class PositionSpec:
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
-    #: The agent may mirror sections left-right (``interactive_transform``'s
-    #: ``flip``). A mirror is part of the in-plane alignment: the sign of the
-    #: affine.
-    flip: bool = True
-    #: User text describing what marks a hemisphere (a notch, an injection...).
+    #: User text describing what marks a hemisphere (a notch, an injection...),
+    #: shown where the agent may mirror sections (``interactive_transform``'s
+    #: ``flip``, an option of the tool that ``disabled`` can take off).
     hemisphere_cue: str = ""
-    #: Offer direct visual adjustment.
-    interactive: bool = True
-    #: Offer the automatic affine fit (``elastix_affine``).
-    automatic: bool = True
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
     #: Most sections one transform-tool call (``elastix_affine``,
@@ -253,14 +262,18 @@ class JobSpec:
     #: and stored transforms are unchanged, and the image model's inputs are
     #: untouched.
     image_resolution: str = "low"
-    #: Build ``mark_damage``: the agent may mark the atlas regions a section
-    #: has lost. Off, no section is marked; a host's ``inputs["damaged"]``
-    #: notes are shown either way.
-    agent_damage: bool = True
     #: The change tools always return their picture: their ``view`` argument
     #: is not offered, so the agent cannot switch the picture off.
     force_view: bool = False
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
+    #: Tools and tool options switched off on top of what the tasks give:
+    #: ``"zoom"`` (a tool, whole) or ``"look:positioning"`` (``tool:option``).
+    #: The valid names are :func:`langslice.core.toolset.valid_names`; a name
+    #: that is none, a tool the run cannot do without (``submit``) or a list
+    #: that cannot work is refused when the spec is made
+    #: (:func:`langslice.core.toolset.refusal`). A host's ``inputs["damaged"]``
+    #: notes are shown whatever is disabled.
+    disabled: list[str] = field(default_factory=list)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
     nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
@@ -313,8 +326,6 @@ class JobSpec:
                 f"Unsupported image_resolution {self.image_resolution!r}; "
                 f"expected one of {IMAGE_RESOLUTIONS}"
             )
-        if not isinstance(self.agent_damage, bool):
-            raise ValueError(f"agent_damage must be true or false; got {self.agent_damage!r}")
         if not isinstance(self.agent_preprocessing, bool):
             raise ValueError(
                 f"agent_preprocessing must be true or false; got {self.agent_preprocessing!r}"
@@ -336,12 +347,24 @@ class JobSpec:
                     f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
                 )
             supplied_angles(self.inputs.get("angles"))
+        if not isinstance(self.disabled, (list, tuple)) or not all(
+                isinstance(name, str) for name in self.disabled):
+            raise ValueError("disabled must be a list of tool and option names")
+        self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
+        reason = toolset.refusal(self)
+        if reason is not None:
+            raise ValueError(reason)
 
     # --- views -----------------------------------------------------------
 
     def has(self, task: str) -> bool:
         """Whether *task* is switched on for this run."""
         return task in self.tasks
+
+    def off(self, name: str) -> bool:
+        """Whether the tool or ``tool:option`` *name* is disabled (a tool's
+        options are off with it)."""
+        return toolset.is_off(self.disabled, name)
 
     @property
     def thickness_mm(self) -> float | None:
@@ -363,11 +386,15 @@ class JobSpec:
             data["nonlinear"].pop("require_deformation", None)
         if not data.get("force_view"):  # likewise
             data.pop("force_view", None)
+        if not data.get("disabled"):  # likewise
+            data.pop("disabled", None)
         return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
-        """Rebuild from :meth:`to_dict` output, ignoring unknown keys."""
+        """Rebuild from :meth:`to_dict` output, ignoring unknown keys. The
+        switches older specs had (:data:`LEGACY_SWITCHES`) are read as the
+        names they became in ``disabled``."""
         nested = {
             "position": PositionSpec,
             "transform": TransformSpec,
@@ -381,4 +408,8 @@ class JobSpec:
                 kwargs[name] = sub(**{k: v for k, v in (value or {}).items() if k in fields})
             elif name in cls.__dataclass_fields__:
                 kwargs[name] = value
+        legacy = [became for section, key, became in LEGACY_SWITCHES
+                  if ((data.get(section) or {}) if section else data).get(key) is False]
+        if legacy:
+            kwargs["disabled"] = [*(kwargs.get("disabled") or []), *legacy]
         return cls(**kwargs)

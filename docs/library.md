@@ -69,6 +69,7 @@ untouched.
 | `orientation` | Per filename: a `rotation_deg` quarter turn and `flip` boolean; rotation then left-right flip |
 | `pixel_size_um` | Source pixel size; otherwise file metadata, then a tissue-width estimate |
 | `inputs` | Other `JobSpec.inputs`, including `order`, `locked`, `damaged`, `keep_warp`, `nonlinear_skip`, `channel_names` |
+| `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](registration.md#switching-tools-and-options-off) |
 | `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one |
 
 Set `tasks` explicitly for a job that must determine positions. The library

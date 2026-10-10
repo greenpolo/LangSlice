@@ -72,14 +72,18 @@ def copy_prompt(job_id: str, spec: Any) -> str:
         lines.append(f"Positioning: section thickness {thickness}, interval {interval}.")
     if spec.has("transform"):
         lines.append(
-            f"Linear: automatic affine {'enabled' if spec.transform.automatic else 'disabled'}, "
-            f"up to {spec.transform.max_parallel} sections per interactive adjustment; "
-            f"hemisphere flipping {'enabled' if spec.transform.flip else 'disabled'}."
+            f"Linear: automatic affine {'disabled' if spec.off('elastix_affine') else 'enabled'}"
+            + ("" if spec.off("interactive_transform") else
+               f", up to {spec.transform.max_parallel} sections per interactive adjustment")
+            + f"; hemisphere flipping "
+            f"{'disabled' if spec.off('interactive_transform:flip') else 'enabled'}."
         )
     if spec.has("nonlinear"):
         if not spec.nonlinear.uses_image_model:
             lines.append("Nonlinear: deformations are fitted to the stain alone "
                          "(no image model chosen).")
+        elif spec.off("trace_borders"):
+            lines.append("Nonlinear: deformations are fitted to the stain alone.")
         elif provider_setup.image_model_connected(spec.nonlinear.provider):
             lines.append(f"Nonlinear: the image model ({spec.nonlinear.provider}) traces "
                          "region borders with trace_borders.")

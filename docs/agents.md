@@ -156,7 +156,8 @@ flag reference. The main choices are:
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
-| Constraints and context | `--no-flip`, `--hemisphere-cue`, `--locked`, `--damaged`, `--fact` |
+| Constraints and context | `--hemisphere-cue`, `--locked`, `--damaged`, `--fact` |
+| Tools and options off | `--disable NAME[,NAME...]`: a tool (`zoom`) or `tool:option` (`look:positioning`, `interactive_transform:flip`); [valid names](registration.md#switching-tools-and-options-off) |
 | Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
 | Storage | `--job-dir`, `--out`, `--trace-dir`, `--fresh` |
 

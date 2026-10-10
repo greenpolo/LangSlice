@@ -126,6 +126,7 @@ class Declared:
 
         self.folder: str | None = None
         self.variant = Variant(auto=True, door="cli", prompt=FULL.prompt)
+        self.disabled: tuple[str, ...] = ()
         found = job or _job_here()
         if found:
             self._open(found)
@@ -139,6 +140,7 @@ class Declared:
             self.folder = str(opened.job.folder)
             self.variant = Variant.of(opened.spec, auto=True, door="cli",
                                       image_model=opened.image_model_connected)
+            self.disabled = tuple(opened.spec.disabled)
         finally:
             opened.close()
 
@@ -197,6 +199,7 @@ def ops(_args: argparse.Namespace) -> Envelope:
 
 def schema(args: argparse.Namespace) -> Envelope:
     """``langslice-job schema [VERB] [--job FOLDER]``."""
+    from langslice.core.toolset import is_off
     from langslice.doors.jobs import NoJob
     from langslice.ops.registry import VERBS, listed, retired_payload
 
@@ -209,17 +212,22 @@ def schema(args: argparse.Namespace) -> Envelope:
         declared = Declared(args.job)
         if args.verb is None:  # every listed verb; a hidden one only by name
             result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, **declared.facts(),
-                                      "verbs": {name: declared.entry(name) for name in listed()}}
+                                      "verbs": {name: declared.entry(name) for name in listed()
+                                                if not is_off(declared.disabled, name)}}
             nexts: list[str] = []
         else:
             name = canonical_verb(args.verb)
-            retired = retired_payload(name)
+            retired = retired_payload(name, declared.disabled)
             if retired is not None:
                 return Envelope.failure(
                     "RETIRED_TOOL", retired["message"], verb=name,
                     result={key: retired[key] for key in ("tool", "use") if key in retired})
             if name not in VERBS:
                 return Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}.")
+            if is_off(declared.disabled, name):
+                return Envelope.failure(
+                    "VERB_OFF", f"This job disables {name} (disabled {list(declared.disabled)}).",
+                    job=declared.folder or "<folder>", verb=name)
             result = {"schema_version": SCHEMA_VERSION, "verb": name, **declared.facts(),
                       **declared.entry(name)}
             folder = declared.folder or "FOLDER"
