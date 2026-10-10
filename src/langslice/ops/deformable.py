@@ -29,7 +29,7 @@ from langslice.core import deformation
 from langslice.core.damage import exclusions
 from langslice.core.state import SliceState
 from langslice.ops.inputs import section_inputs, stale_row
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, frozen_row, unknown_sections
 
 if TYPE_CHECKING:
     import numpy as np
@@ -128,9 +128,7 @@ def fit_deformable(
     Identical inputs reuse a cached or saved result; applying a section's own
     current key again writes nothing (``written: false``). With *options*,
     every fit and every traced section's trace is then drawn (:func:`pictures`).
-    A section the host kept out of Nonlinear is refused
-    (:meth:`~langslice.job.job.Job.nonlinear_refusal`: ``KEEPS_HOST_WARP``,
-    ``NONLINEAR_SKIPPED``).
+    A section whose deformation is frozen is refused (its row ``FROZEN``).
 
     The fits run outside the job's write lock, from the state as it stood;
     applying takes the lock (:meth:`~langslice.job.job.Job.writing`) and
@@ -148,10 +146,9 @@ def fit_deformable(
     expected: dict[str, str] = {}
     starts: dict[str, str] = {}
     for record in records:
-        refusal = job.nonlinear_refusal(record.id)
-        if refusal is not None:
-            rows.append({"id": record.id, "status": "error", "error": refusal[0],
-                         "message": refusal[1]})
+        frozen = frozen_row(job, record.id, "deformation")
+        if frozen is not None:
+            rows.append(frozen)
             continue
         running = False
         if traced_choice:

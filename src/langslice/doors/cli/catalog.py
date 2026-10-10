@@ -140,7 +140,7 @@ class Declared:
             self.folder = str(opened.job.folder)
             self.variant = Variant.of(opened.spec, auto=True, door="cli",
                                       image_model=opened.image_model_connected)
-            self.disabled = tuple(opened.spec.disabled)
+            self.disabled = tuple(opened.spec.switched_off)
         finally:
             opened.close()
 

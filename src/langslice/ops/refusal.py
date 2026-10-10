@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Collection, Mapping
+from typing import TYPE_CHECKING, Any
 
 from langslice.core.state import StackState
 from langslice.core.state import unknown_sections as state_unknown_sections
+
+if TYPE_CHECKING:
+    from langslice.job.job import Job
 
 #: The code of a call naming a section that is not in the stack.
 UNKNOWN_SLICE_IDS = "UNKNOWN_SLICE_IDS"
@@ -44,3 +47,23 @@ def unknown_sections(state: StackState, refs: Any) -> Refused:
     valid filenames and the message saying sections are named by filename
     (:func:`langslice.core.state.unknown_sections`)."""
     return Refused(UNKNOWN_SLICE_IDS, **state_unknown_sections(state, refs))
+
+
+def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> None:
+    """Raise :class:`Refused` ``FROZEN`` when a write to *properties* of any of
+    *section_ids* would change what the job froze: the whole call refuses,
+    nothing written."""
+    found = job.frozen_refusal(section_ids, *properties)
+    if found is not None:
+        raise Refused(found.pop("error"), **found)
+
+
+def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | None:
+    """One section's ``FROZEN`` row (``id``, ``status`` ``error``, ``error``,
+    ``properties``, ``message``), as a per-section answer carries it, when a
+    write to *properties* would change what the job froze there, else None."""
+    found = job.frozen_refusal([section_id], *properties)
+    if found is None:
+        return None
+    return {"id": section_id, "status": "error", "error": found["error"],
+            "properties": found["properties"], "message": found["message"]}

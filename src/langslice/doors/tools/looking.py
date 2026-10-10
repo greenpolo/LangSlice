@@ -46,16 +46,21 @@ def can_change(door: Door) -> list[str]:
     def has(name: str) -> bool:
         return TOOLS[name].is_on(spec)
 
+    frozen = spec.frozen_everywhere
     out: list[str] = []
-    if spec.has("position"):
+    if spec.has("position") and "position" not in frozen:
         out.append("positions (the order follows them)")
-    if has("position_sections"):
+    if has("position_sections") and "angles" not in frozen:
         out.append("cutting angles")
     if spec.has("transform"):
         if has("interactive_transform"):
-            out.append("orientation" + ("" if spec.off("interactive_transform:flip")
-                                        else " and mirroring")
-                       + " and in-plane transforms by hand")
+            by_hand = []
+            if "orientation" not in frozen:
+                by_hand.append("orientation" + ("" if spec.off("interactive_transform:flip")
+                                                else " and mirroring"))
+            if "affine" not in frozen:
+                by_hand.append("in-plane transforms")
+            out.append(" and ".join(by_hand) + " by hand")
         if has("elastix_affine"):
             out.append("in-plane transforms by elastix_affine")
     if has("mark_damage"):

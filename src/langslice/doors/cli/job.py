@@ -342,7 +342,7 @@ def _disabled_of(folder: str) -> tuple[str, ...]:
     from langslice.doors.jobs import find, read_spec
 
     try:
-        return tuple(read_spec(find(folder)).disabled)
+        return tuple(read_spec(find(folder)).switched_off)
     except Exception:  # noqa: BLE001 - only the wording of a hint depends on it
         return ()
 
@@ -380,7 +380,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
             "answers at once.", verb=verb))
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
-    token = DISABLED.set(tuple(opened.spec.disabled))  # the fixes name what the job has
+    token = DISABLED.set(tuple(opened.spec.switched_off))  # the fixes name what the job has
     try:
         # The job's verbs as the tool door builds them (a hidden verb is
         # called by name, never listed: ``Verb.hidden``).

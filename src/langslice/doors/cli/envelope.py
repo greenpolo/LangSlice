@@ -100,9 +100,8 @@ FIXES: dict[str, str] = {
                             "trace_borders=trace_borders]])]] instead of naming it in "
                             "left_linear.",
     "HAS_DEFORMATION": "That section carries a deformation; leave it out of left_linear.",
-    "POSITIONS_SUPPLIED": "The user supplied the positions; leave sections out.",
-    "ANGLES_SUPPLIED": "The user supplied the cutting angles; leave cutting_angles out.",
-    "LOCKED": "The user locked this section's in-plane alignment; leave it out.",
+    "FROZEN": "The user froze these properties of these sections (the reply names them): "
+              "leave them out of the call.",
     "STALE_INPUT": "The section changed while this ran; run the verb again for it.",
     "JOB_BUSY": "Another writer held the job folder's lock; retry.",
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
@@ -139,10 +138,6 @@ FIXES: dict[str, str] = {
     "OPTION_OFF": "That option is switched off for this job; use one of the others the "
                   "message lists.",
     "FLIP_DISABLED": "Flipping is switched off for this job; leave flip out.",
-    "KEEPS_HOST_WARP": "The user keeps this section's own deformation; leave it out of "
-                       "the nonlinear verbs.",
-    "NONLINEAR_SKIPPED": "The user left this section out of the nonlinear task; leave it "
-                         "out.",
     "INVALID_LINEAR_PLACEMENT": "Give the section a position and a transform"
                                 "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
                                 "elastix_affine||interactive_transform=interactive_transform"

@@ -815,7 +815,7 @@ class Variant:
                    positions=bool(spec.has("position")),
                    left_linear=bool(spec.has("nonlinear")
                                     and not spec.nonlinear.require_deformation),
-                   prompt=text, off=frozenset(spec.disabled))
+                   prompt=text, off=frozenset(spec.switched_off))
 
 
 #: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and

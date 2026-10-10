@@ -99,7 +99,7 @@ def test_an_orientation_change_keeps_the_knob_values_and_says_so(tmp_path: Path)
 
 
 def test_refusals_write_nothing(tmp_path: Path):
-    job, ctx = _open(tmp_path, n=3, inputs={"locked": ["s2.png"]},
+    job, ctx = _open(tmp_path, n=3, frozen={"s2.png": ["orientation", "affine"]},
                      disabled=["interactive_transform:flip"])
     _record(job, "s1.png").position_mm = None
     done = transforms.interactive_transform(job, ctx, [
@@ -113,7 +113,7 @@ def test_refusals_write_nothing(tmp_path: Path):
         "s0.png",
     ])
     assert [entry.error["error"] for entry in done.entries if entry.error] == [
-        "LOCKED", "FLIP_DISABLED", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS", "NO_POSITION",
+        "FROZEN", "FLIP_DISABLED", "BAD_ROTATION", "BAD_ARGS", "BAD_ARGS", "NO_POSITION",
         "UNKNOWN_SLICE_IDS", "BAD_ARGS"]
     assert done.written == [] and job.undo_stack == []
     assert _record(job, "s0.png").transform is None
@@ -194,14 +194,14 @@ def test_elastix_affine_refuses_bad_arguments_and_unfittable_sections(
     assert calls == [] and job.undo_stack == []
 
 
-def test_elastix_affine_refuses_a_locked_section_and_fits_a_noted_one(
+def test_elastix_affine_refuses_a_frozen_affine_and_fits_a_noted_one(
         tmp_path: Path, calls: list[dict[str, Any]]):
-    """A section the user locked is refused; a damage note alone (no marked
+    """A section whose affine is frozen is refused; a damage note alone (no marked
     regions) is no damage, so that section is fitted whole."""
-    job, ctx = _open(tmp_path, inputs={"locked": ["s1.png"],
+    job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]}, inputs={
                                        "damaged": {"s0.png": "torn"}})
     assert [record.id for record in transforms.fit_targets(job)] == ["s0.png"]
     done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
-    assert [row.get("error") for row in done.rows] == [None, "LOCKED"]
+    assert [row.get("error") for row in done.rows] == [None, "FROZEN"]
     assert done.fitted == ["s0.png"]
     assert calls == [{"id": "s0.png", "include": (), "exclude": (), "atlas_image": "template"}]

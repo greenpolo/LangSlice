@@ -317,26 +317,26 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         for door, gates in itertools.product(DOORS, (True, False)):
             for connected in (True, False):
                 opening = (opening_for_mcp(3) if door == "mcp"
-                           else opening_for_cli("/job", 3, spec.disabled))
+                           else opening_for_cli("/job", 3, spec.switched_off))
                 texts[f"statement {door} gates={gates} connected={connected}"] = job_statement(
                     spec, state, ctx, door=door, tool_names=names, opening=opening,
                     image_model_off=not connected, auto=door == "cli", gates=gates)
         texts["statement agent"] = build_job_statement(
             spec, state, tool_names=names, species=ctx.species, pos_lo=low, pos_hi=high,
             axis_ends=ctx.axis_ends, **display_facts(ctx, state))
-        texts["image model off"] = image_model_off_text(spec.disabled)
+        texts["image model off"] = image_model_off_text(spec.switched_off)
         texts["card"] = card_text(opened.job.layout)
         status = tool_named(opened.tools(), "status")()
         texts["status"] = json.dumps(status.get("can_change", status))
         for code in FIXES:
             if code in ("NOT_COMPARED", "NOT_REVIEWED") and not spec.position.gated:
                 continue  # the viewing gates' refusals: no gates, no such refusal
-            with disabled_for(spec.disabled):
+            with disabled_for(spec.switched_off):
                 from langslice.doors.cli.envelope import Envelope
 
                 texts[f"fix {code}"] = Envelope.failure(code, fix=None).error["fix"]
         for name in RETIRED:
-            payload = retired_payload(name, spec.disabled)
+            payload = retired_payload(name, spec.switched_off)
             assert payload is not None
             texts[f"retired {name}"] = payload["message"]
         return texts

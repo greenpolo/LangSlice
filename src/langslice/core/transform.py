@@ -370,7 +370,7 @@ def fit_elastix(
                              include=include, exclude=exclude, atlas_image=atlas_image)
     except RegionTooSmall as error:
         return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
-                "message": render(str(error), ctx.spec.disabled)}
+                "message": render(str(error), ctx.spec.switched_off)}
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
     except Exception as exc:

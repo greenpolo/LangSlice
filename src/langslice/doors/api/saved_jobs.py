@@ -92,8 +92,10 @@ def copy_prompt(job_id: str, spec: Any) -> str:
                          "model is connected to LangSlice (no key or login for "
                          f"{spec.nonlinear.provider}); deformations are fitted to the stain.")
     inputs = spec.inputs or {}
-    if inputs.get("locked"):
-        lines.append("Existing alignment is locked for: " + ", ".join(inputs["locked"]) + ".")
+    if spec.frozen:
+        lines.append("Frozen by the user (the agent may not change it): " + "; ".join(
+            f"{'every section' if name == '*' else name}: {', '.join(held)}"
+            for name, held in spec.frozen.items()) + ".")
     if inputs.get("damaged"):
         lines.append("User-marked damage: " + "; ".join(
             f"{name}: {note}" for name, note in inputs["damaged"].items()
