@@ -247,9 +247,8 @@ public final class AgentRunner {
                 settings.pixelSize, damaged, !settings.overwrite);
         request.add("preprocessing", settings.preprocessing(channelNames.size()));
         if (settings.saveTraces) request.addProperty("trace_dir", settings.traceDir);
-        JsonArray skip = new JsonArray();
-        host.slices.forEach((file, slice) -> { if (nonlinearSkip.contains(slice)) skip.add(file); });
-        if (skip.size() > 0) request.add("nonlinear_skip", skip);
+        JsonObject sent = request.getAsJsonObject("spec");
+        host.slices.forEach((file, slice) -> { if (nonlinearSkip.contains(slice)) Frozen.add(sent, file, Frozen.DEFORMATION); });
         JsonObject started = new JsonObject();
         started.addProperty("mode", mode);
         started.addProperty("viewer", settings.viewer);

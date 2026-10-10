@@ -133,7 +133,7 @@ in Claude mode).
   Nonlinear is on, Linear is off and some listed slices have no ABBA registration, Run
   asks "Slices … have no linear registration. Let the agent align them first?": Yes
   switches Linear on; No leaves them out of Nonlinear (out of the run entirely when
-  Positioning is off too; otherwise listed in `nonlinear_skip`).
+  Positioning is off too; otherwise their `frozen` entry gains `deformation`).
   **Advanced: tools** (a collapsed panel, built from the service's `tools` catalog in
   `setup.status`; hidden when the service sends none) lists every tool that can be switched
   off and every tool option, grouped as the catalog groups them (Common, Positioning,
@@ -142,9 +142,9 @@ in Claude mode).
 - **Slices tab:** one row per slice with its name, the number of ABBA registrations
   and an optional note on damaged tissue (a note the agent reads, not a damage mark); **Let the agent mark damaged regions**;
   **Allow the agent to overwrite existing transforms** (off by default:
-  every listed slice that has registrations is sent as `locked`, so the agent keeps
-  its in-plane alignment while its position may still move; a slice that carries the
-  user's own spline or BigWarp step also keeps that warp).
+  every listed slice that has registrations is frozen in `spec.frozen` (orientation and
+  affine), so the agent keeps its in-plane alignment while its position may still move;
+  a slice that carries the user's own spline or BigWarp step also freezes its deformation).
 - **Preprocessing tab:** Auto or Custom; in Custom a weight from 0 to 1 per channel,
   CLAHE on/off and CLAHE strength; **Let the agent drive preprocessing**; the snapshot
   pixel size (µm); the tip "Try to maximize contrast between different regions."; and a
@@ -172,7 +172,8 @@ what the anatomy supports. There are no fixed lab protocol defaults.
 | Nonlinear | `spec.tasks` += `nonlinear`; `nonlinear.notes` |
 | Let the agent mark damaged regions (off: `spec.disabled` += `mark_damage`); note on damaged tissue | `damaged` (filename to note) |
 | Advanced: tools (each unchecked tool or option) | `spec.disabled` += its name (`tool` or `tool:option`), once |
-| Allow the agent to overwrite existing transforms (off) | off: every listed slice with registrations is in `locked` |
+| Allow the agent to overwrite existing transforms (off) | off: each listed slice with registrations gets `spec.frozen[name]` += `orientation`, `affine`; += `deformation` when it carries the user's own warp |
+| Nonlinear left out for a slice without linear registration (No) | `spec.frozen[name]` += `deformation` |
 | Let the agent drive preprocessing | `spec.agent_preprocessing`; every channel is exported |
 | Auto/Custom, weights, CLAHE, strength | `preprocessing`; Custom exports only weighted channels unless the agent drives preprocessing |
 | Snapshot pixel size (µm) | `pixel_size_um` |
