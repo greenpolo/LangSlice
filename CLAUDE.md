@@ -48,6 +48,13 @@ and `environment.yml` hold the worker's source installation.
   (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
   `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
+- Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`
+  (`tool` or `tool:option`; `core/toolset.py` lists the valid names, the
+  spec refuses an unknown name or a list that cannot work). Every sentence
+  that names a tool or an option is written with what it needs
+  (`core/needs.py`), so no model-facing text names what the job disables;
+  `tests/test_disabled_tools.py` checks it. A new tool or option is a row in
+  `core/toolset.py`, and its text carries its marks.
 - Every write is one undo step and checkpoints `state.json`; `registration.json`,
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis

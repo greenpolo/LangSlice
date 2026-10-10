@@ -9,7 +9,7 @@ A registration file can also be explicitly imported when creating a job.
 
 ```text
 <images>/langslice/
-  job.json              settings (the JobSpec) and the format version
+  job.json              settings (the JobSpec, with its `disabled` tools and options when it has any) and the format version
   state.json            the checkpoint: the truth
   registration.json     its public rendering
   history/              undo and redo steps

@@ -53,10 +53,15 @@ cutting angles left to the agent, `transform.angles`; the stack's order
 follows the positions, so there is no ordering tool);
 `interactive_transform` and `elastix_affine` with `transform` (a mirror is
 the sign of the in-plane affine, so flipping is Linear, never Positioning),
-each behind its host switch; `ants_syn` and `trace_borders` with
-`nonlinear` (`trace_borders` only with an image model); `mark_damage`
-behind `agent_damage`; everything else in every run. A retired tool's name
-answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugin`).
+each switchable alone; `ants_syn` and `trace_borders` with
+`nonlinear` (`trace_borders` only with an image model); everything else,
+`mark_damage` included, in every run. `JobSpec.disabled` takes single tools
+and tool options (`look:positioning`, `interactive_transform:flip`) off on
+top of that (`core/toolset.py` lists the names and refuses a list that cannot
+work); every line of the job statement that names a tool or an option is
+written with what it needs (`core/needs.py`) and rendered for the job. A
+retired tool's name answers with its replacement (`ops.registry.RETIRED`,
+`plugins.RetiredToolsPlugin`; the hint names only what the job has).
 
 ## Files
 
@@ -194,10 +199,11 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   `interactive_transform` and `elastix_affine` (an empty list counts every
   eligible section) refuse a call naming more sections (`Job.over_cap`)
   and the statement states the cap.
-- **`agent_damage`** (default true) builds `mark_damage`. A host's
-  `inputs["damaged"]` note is the section's `damage_note` (shown in status
-  and the statement); it does not make the section damaged, and it stays
-  first in the note whatever the agent marks.
+- **`disabled`** (default empty): tools and tool options the job does
+  without, `--disable NAME[,NAME...]`. A host's `inputs["damaged"]` note is
+  the section's `damage_note` (shown in status and the statement) whether or
+  not `mark_damage` is disabled; it does not make the section damaged, and it
+  stays first in the note whatever the agent marks.
 - **`inputs["locked"]`**: sections the user already aligned in-plane. Without
   a supplied transform each gets `job.host_transform()` (`kind` `"host"`,
   identity). `interactive_transform` and `elastix_affine` refuse them
@@ -223,11 +229,11 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   calibration and the
   image model's inputs do not depend on it. Below `auto` the sizes never appear in
   model-facing text.
-- **`TransformSpec.interactive` / `.automatic`** (default true): a host may
-  remove `interactive_transform` or `elastix_affine`; a host enabling the
-  transform task enables at least one. Flip and the hemisphere cue are
-  `transform.flip` / `transform.hemisphere_cue`; with flip off,
-  `interactive_transform` cannot mirror.
+- **A host may remove `interactive_transform` or `elastix_affine`** with
+  `disabled`; a task that is on keeps at least one tool that writes its
+  answer. Mirroring is `interactive_transform:flip` (with it off the tool's
+  sections have no `flip` key); `transform.hemisphere_cue` is shown only
+  where the agent can mirror.
 - **`agent_preprocessing`**: whether the Fiji connector exports every
   channel; the channel tools exist in every run.
 
@@ -323,6 +329,7 @@ default): data-only refusals. `position_sections` refuses a section not
 looked at (`look` in mode overlay or positioning) since its last write
 (one look is enough), and `submit` refuses until a `look` in mode
 positioning has covered every section after the last write.
+Gates need `look:positioning` (the spec refuses them without it).
 `--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
 method in the statement: compare candidate planes and distinguishing regions,
 write supported placements, revisit uncertain sections and review the stack.
