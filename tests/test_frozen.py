@@ -356,13 +356,10 @@ def test_the_carey_configuration_end_to_end(tmp_path: Path, monkeypatch: pytest.
             (3.0, False, 0, (1.5, -2.0))]
         assert not hasattr(job, "position_sections")
         # the agent may not turn a section over, and may fit its affine
-        turned = job.interactive_transform(
-            sections=[{"id": "s0.png", "rotate_quarter": 90}], view=False)
-        assert turned["results"][0]["error"] == "FROZEN"
-        assert turned["results"][0]["properties"] == ["orientation"]
-        # the mirror is not even offered: the tool's sections take no flip
-        assert job.interactive_transform(
-            sections=[{"id": "s0.png", "flip": False}], view=False)["status"] == "error"
+        # the mirror and the quarter turn are not even offered: the sections take neither
+        for key, value in (("rotate_quarter", 90), ("flip", False)):
+            assert job.interactive_transform(
+                sections=[{"id": "s0.png", key: value}], view=False)["status"] == "error"
         fitted = job.elastix_affine(sections=["s0.png", "s1.png"], view=False)
         assert [row["status"] for row in fitted["results"]] == ["ok", "ok"]
         assert state.by_id("s0.png").flip is True and state.by_id("s0.png").transform

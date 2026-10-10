@@ -38,6 +38,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | `export_maps` | the scripting verb |
 | `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
 | `interactive_transform:flip` | mirroring: the `flip` key of its sections |
+| `interactive_transform:rotate` | the quarter turn: the `rotate_quarter` key of its sections |
 
 `look`, `status`, `undo` and `submit` cannot be disabled. An unknown name is
 refused when the job is made, with the valid names listed. A list that cannot
@@ -135,8 +136,8 @@ A task whose properties are all frozen on every section is off
 properties on every section: "the host supplied this" is one rule. A tool
 that writes only properties frozen on every section is not offered
 (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`
-and `trace_borders` by what they write), `interactive_transform`'s `flip`
-goes with a frozen `orientation`, and no text names what is gone. The job
+and `trace_borders` by what they write), `interactive_transform`'s `flip` and
+`rotate_quarter` go with a frozen `orientation` on every section, and no text names what is gone. The job
 statement says what is frozen, grouping sections that share a freeze (`every
 section`, their filenames, or their count when many), and each `status` row
 of a section with something frozen carries `frozen`.

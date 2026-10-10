@@ -75,7 +75,8 @@ the CLI is a process per call.
   disabled list): the modes it disables are out of `look`'s `mode` enum
   (`narrowed`), the arguments only those modes served (`atlas_opacity`,
   `warp`, `positions_mm`, `atlas_layers`, `zoom`'s `region`) are dropped,
-  `interactive_transform`'s sections lose `flip` (`SectionTransformNoFlip`),
+  `interactive_transform`'s sections lose `flip` and `rotate_quarter`
+  (`SectionTransformNoFlip`, `NoRotate`, `NoOrientation`),
   and every passage of a description written with `[[?needs ...]]` marks
   (`core/needs.py`) is dropped or swapped; `look`'s `resolution`
   only where the caller sizes pictures; the change tools' `view`

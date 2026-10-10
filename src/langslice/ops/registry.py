@@ -193,8 +193,8 @@ RETIRED: dict[str, tuple[str, str]] = {
     "set_cutting_angles": ("position_sections", "cutting_angles={pitch_deg, yaw_deg}"),
     "reorder_slices": ("position_sections", "the stack's order follows the positions, so "
                        "writing the positions sets the order"),
-    "orient_slices": ("interactive_transform", "sections=[{id, [[?interactive_transform:flip "
-                      "flip, ]]rotate_quarter}]"),
+    "orient_slices": ("interactive_transform", "sections=[{id[[?interactive_transform:flip , flip]]"
+                      "[[?interactive_transform:rotate , rotate_quarter]]}]"),
     "adjust_transforms": ("interactive_transform",
                           "sections=[{id, rotation_deg, scale_x, scale_y, shear, "
                           "translate_x_mm, translate_y_mm}]; a value left out keeps the "

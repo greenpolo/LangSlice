@@ -369,9 +369,9 @@ wording; `registry.py` lists which.
   `JobSpec.has`; a tool that writes only properties frozen on every section,
   `ToolDef.writes`, is off: `JobSpec.switched_off`). A
   tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
-  `interactive_transform:flip` are the options) is off in every run: the
-  operations refuse a disabled `look` mode (`OPTION_OFF`) and a changed flip
-  (`FLIP_DISABLED`).
+  `interactive_transform:flip` and `:rotate` are the options) is off in every
+  run: the operations refuse a disabled `look` mode and a changed quarter
+  turn (`OPTION_OFF`) and a changed flip (`FLIP_DISABLED`).
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the
