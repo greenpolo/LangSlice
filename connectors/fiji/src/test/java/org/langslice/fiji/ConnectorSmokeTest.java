@@ -152,7 +152,9 @@ public final class ConnectorSmokeTest {
     /** Every saved checkpoint goes to the live hook as it arrives (ChatGPT mode too); listeners get events and checkpoints. */
     static void runChecks(Path prefix) throws Exception {
         JsonObject request = new JsonObject(); request.addProperty("image_folder", "x");
-        request.add("locked", JsonParser.parseString("[\"section_0002.tif\"]"));
+        JsonObject spec = new JsonObject();
+        spec.add("frozen", JsonParser.parseString("{\"section_0002.tif\":[\"orientation\",\"affine\",\"deformation\"]}"));
+        request.add("spec", spec);
         request.add("damaged", JsonParser.parseString("{\"section_0001.tif\":\"torn\"}"));
         request.add("existing_warp", JsonParser.parseString("[\"section_0002.tif\"]"));
         List<JsonObject> live = Collections.synchronizedList(new ArrayList<>());
@@ -168,9 +170,11 @@ public final class ConnectorSmokeTest {
         JsonObject applied = live.get(0);
         require(applied.getAsJsonArray("host_updates").get(0).getAsJsonObject().get("position_mm").getAsInt() == 1
                 && applied.getAsJsonObject("host_angles").get("pitch_deg").getAsDouble() == 2.0, "Live payload carries host rows and host_angles");
-        require(result.getAsJsonObject("echo").get("locked").equals(request.get("locked"))
+        require(result.getAsJsonObject("echo").getAsJsonObject("spec").get("frozen").equals(spec.get("frozen"))
+                && !result.getAsJsonObject("echo").has("locked") && !result.getAsJsonObject("echo").has("nonlinear_skip")
                 && result.getAsJsonObject("echo").get("damaged").equals(request.get("damaged"))
-                && result.getAsJsonObject("echo").get("existing_warp").equals(request.get("existing_warp")), "Locked, damaged and existing_warp reach the worker");
+                && result.getAsJsonObject("echo").get("existing_warp").equals(request.get("existing_warp")),
+                "Frozen (in spec), damaged and existing_warp reach the worker; locked and nonlinear_skip are not sent");
         require(progress.lines.contains("agent started") && progress.lines.stream().anyMatch(l -> l.contains("Saved steps: 1") && l.contains("live in ABBA")),
                 "Run log and live status reach the window");
         require(heard.stream().filter(m -> m.contains("\"kind\":\"checkpoint\"")).count() == 2, "Both checkpoints reach listeners");

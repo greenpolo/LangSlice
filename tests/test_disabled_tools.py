@@ -195,6 +195,12 @@ def test_flip_is_not_in_the_sections_schema_when_it_is_off():
 
     assert "flip" in keys(_spec(tasks=["transform"]))
     assert "flip" not in keys(_spec(tasks=["transform"], disabled=["interactive_transform:flip"]))
+    # the quarter turn is an option of its own; a frozen orientation takes both
+    assert "rotate_quarter" in keys(_spec(tasks=["transform"]))
+    only = keys(_spec(tasks=["transform"], disabled=["interactive_transform:rotate"]))
+    assert "rotate_quarter" not in only and "flip" in only
+    frozen = keys(_spec(tasks=["transform"], frozen={"*": ["orientation"]}))
+    assert not {"flip", "rotate_quarter"} & frozen and "rotation_deg" in frozen
 
 
 def test_a_call_of_a_disabled_mode_is_refused_by_the_operation(tmp_path: Path):
@@ -284,6 +290,8 @@ def _pattern(name: str) -> re.Pattern[str]:
                           + (r"|\bpositioning\b" if option == "positioning" else ""))
     if name == "interactive_transform:flip":  # a key of the sections, or the mirror itself
         return re.compile(r"\"flip\"|\{id, flip|[Mm]irroring|mirrored or turned|mirrors the")
+    if name == "interactive_transform:rotate":  # a key of the sections, or the turn itself
+        return re.compile(r"rotate_quarter|quarter turn is applied")
     raise AssertionError(f"no pattern for {name}")
 
 
@@ -317,26 +325,26 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         for door, gates in itertools.product(DOORS, (True, False)):
             for connected in (True, False):
                 opening = (opening_for_mcp(3) if door == "mcp"
-                           else opening_for_cli("/job", 3, spec.disabled))
+                           else opening_for_cli("/job", 3, spec.switched_off))
                 texts[f"statement {door} gates={gates} connected={connected}"] = job_statement(
                     spec, state, ctx, door=door, tool_names=names, opening=opening,
                     image_model_off=not connected, auto=door == "cli", gates=gates)
         texts["statement agent"] = build_job_statement(
             spec, state, tool_names=names, species=ctx.species, pos_lo=low, pos_hi=high,
             axis_ends=ctx.axis_ends, **display_facts(ctx, state))
-        texts["image model off"] = image_model_off_text(spec.disabled)
+        texts["image model off"] = image_model_off_text(spec.switched_off)
         texts["card"] = card_text(opened.job.layout)
         status = tool_named(opened.tools(), "status")()
         texts["status"] = json.dumps(status.get("can_change", status))
         for code in FIXES:
             if code in ("NOT_COMPARED", "NOT_REVIEWED") and not spec.position.gated:
                 continue  # the viewing gates' refusals: no gates, no such refusal
-            with disabled_for(spec.disabled):
+            with disabled_for(spec.switched_off):
                 from langslice.doors.cli.envelope import Envelope
 
                 texts[f"fix {code}"] = Envelope.failure(code, fix=None).error["fix"]
         for name in RETIRED:
-            payload = retired_payload(name, spec.disabled)
+            payload = retired_payload(name, spec.switched_off)
             assert payload is not None
             texts[f"retired {name}"] = payload["message"]
         return texts
@@ -475,7 +483,7 @@ def test_the_setup_status_offers_what_a_dialog_can_switch_off():
     assert by_name["look"]["disableable"] is False
     assert by_name["look"]["options"] == ["section", "atlas", "overlay", "positioning"]
     assert by_name["zoom"]["disableable"] is True and by_name["zoom"]["options"] == []
-    assert by_name["interactive_transform"]["options"] == ["flip"]
+    assert by_name["interactive_transform"]["options"] == ["flip", "rotate"]
     assert by_name["position_sections"]["needs"] == [["look:positioning", "look:overlay"]]
     json.dumps(tools)
     names = {tool["name"] for tool in tools if tool["disableable"]} | {

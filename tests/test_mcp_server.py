@@ -359,8 +359,9 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False}},
-              "locked": [f"s{i}.png" for i in range(3)], "damaged": {"s0.png": "torn"},
+              "spec": {"tasks": ["transform"], "transform": {"angles": False},
+                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}},
+              "damaged": {"s0.png": "torn"},
               "preprocessing": {"mode": "auto"}, "notes": "Keep the supplied positions."}
     prepared = saved_jobs.prepare_saved_job(params)
     path = Path(prepared["job_dir"])
@@ -481,8 +482,8 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     folder = _folder(tmp_path)
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False}},
-              "locked": [f"s{i}.png" for i in range(3)]}
+              "spec": {"tasks": ["transform"], "transform": {"angles": False},
+                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}}}
     result = handle_request(EngineRequest(id="copy", method="mcp.prepare", params=params),
                             lambda _event: None)
     job_id = result.result["job_id"]

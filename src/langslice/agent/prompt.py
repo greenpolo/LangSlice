@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
+from langslice.core import frozen as freeze
 from langslice.core.needs import render
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.core.state import StackState
@@ -159,10 +160,16 @@ def build_job_statement(
     axis are anatomically in THIS atlas.
     """
     del door  # every door reads the same statement; its own lines are added after it
-    off = spec.disabled
+    off = spec.switched_off
     gated = bool(spec.position.gated and gates)
+    held = freeze.everywhere(spec.frozen)
+    #: Positions are the agent's to write (the Positioning task is on and its
+    #: positions are not frozen): else the task, when on, is the stack's angles.
+    places = spec.has("position") and "position" not in held
     jobs: list[str] = []
-    if spec.has("position"):
+    if spec.has("position") and not places:
+        jobs.append("give the stack its cutting angles, checked against the atlas")
+    if places:
         jobs.append(
             "give every section its own position in millimetres along the "
             "slicing axis, each one inspected and checked against the atlas, "
@@ -172,10 +179,15 @@ def build_job_statement(
         )
     if spec.has("transform"):
         turned = "turned" if spec.off("interactive_transform:flip") else "mirrored or turned"
-        jobs.append(
-            "give every section one in-plane transform onto its atlas section, "
-            f"correcting the orientation of any section that is {turned}"
-        )
+        if "orientation" in held:
+            jobs.append("give every section one in-plane transform onto its atlas section")
+        elif "affine" in held:
+            jobs.append(f"correct the orientation of any section that is {turned}")
+        else:
+            jobs.append(
+                "give every section one in-plane transform onto its atlas section, "
+                f"correcting the orientation of any section that is {turned}"
+            )
     if spec.has("nonlinear"):
         jobs.append(
             "give every section a deformation onto the atlas, on top of its linear "
@@ -199,7 +211,7 @@ def build_job_statement(
              + ", ".join(f"`{name}`" for name in tool_names) + ".")
 
     constraints: list[str] = []
-    if spec.has("position"):
+    if places:
         constraints.append(
             "- `submit` is refused unless every section has a position of its own, "
             "damaged sections included."
@@ -228,7 +240,7 @@ def build_job_statement(
                 "whose interval from the section before it, in the positions "
                 "you wrote, exceeds 1.5x the stack's median written spacing."
             )
-    if spec.has("transform"):
+    if spec.has("transform") and "affine" not in held:
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
             "damaged sections included."
@@ -271,7 +283,7 @@ def build_job_statement(
     )
 
     method: list[str] = []
-    if spec.has("position") and spec.position.playbook:
+    if places and spec.position.playbook:
         # Optional coaching: use the current viewing tools and revisit
         # uncertain placements without prescribing a single batch write.
         method = [
@@ -298,7 +310,7 @@ def build_job_statement(
                    "Complete the enabled alignment and deformation tasks before "
                    "submitting.", off),
         ]
-    elif spec.has("position"):
+    elif places:
         method = [
             "",
             "Method:",
@@ -311,7 +323,7 @@ def build_job_statement(
             "- Submit when the work is complete; address any missing requirements it returns.",
         ]
 
-    if spec.has("position"):
+    if places:
         method.append(render(
             "- Positions can be revisited throughout registration. If [[?zoom zooms or ]]"
             "repeated looks suggest that a section's placement is wrong, return to atlas "
@@ -420,8 +432,7 @@ def run_facts(
     damaged = [s.id for s in ordered if s.damaged]
     inputs = spec.inputs or {}
     noted = [s.id for s in ordered if s.id in (inputs.get("damaged") or {})]
-    locked_ids = {str(name) for name in inputs.get("locked") or []}
-    locked = [s.id for s in ordered if s.id in locked_ids]
+    held = freeze.everywhere(spec.frozen)
 
     facts: list[str] = [
         f"- {len(state.slices)} sections, {state.plane} plane, atlas "
@@ -432,7 +443,7 @@ def run_facts(
         f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
         f"positions increase toward {axis_ends[1]}.",
         cutting_protocol_fact(state),
-        stack_angles_fact(state, spec.disabled),
+        stack_angles_fact(state, spec.switched_off),
     ]
     if starting:
         facts.append(
@@ -455,14 +466,9 @@ def run_facts(
             "- The user noted damage on these sections (damage_note in status; no "
             f"regions are marked from it): {', '.join(noted)}."
         )
-    if locked:
-        facts.append(
-            "- In-plane alignment of these sections was already done by the "
-            "user, so their orientation and transform are locked and count "
-            f"as done: {', '.join(locked)}."
-            + (" Their positions can still be changed." if spec.has("position") else "")
-        )
-    if spec.has("position"):
+    if frozen_line := freeze.statement(spec.frozen, [s.id for s in ordered]):
+        facts.append(frozen_line)
+    if spec.has("position") and "position" not in held:
         facts.append("- The stack's order follows the positions: writing positions "
                      "renumbers the sections, so use filenames to name them.")
     else:
@@ -475,7 +481,8 @@ def run_facts(
             else "- The orientation shown is fixed; transforms are not part of this run."
         )
     else:
-        if spec.off("interactive_transform:flip") and not spec.off("interactive_transform"):
+        if (spec.off("interactive_transform:flip") and not spec.off("interactive_transform")
+                and "orientation" not in held):
             facts.append("- Flipping sections is switched off for this run.")
         facts.append(
             "- Alignment canvas: each section is drawn at its TRUE physical size "

@@ -179,7 +179,7 @@ def job_statement(
     ]
     if opening:
         lines += ["", *opening]
-    if image_model_off and (off_text := image_model_off_text(spec.disabled)):
+    if image_model_off and (off_text := image_model_off_text(spec.switched_off)):
         lines += ["", off_text]
     lines += user_notes_lines(notes)
     lines += ["", status_and_notes(state)]

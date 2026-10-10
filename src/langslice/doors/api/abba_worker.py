@@ -68,14 +68,15 @@ def public_event(value: Any) -> Any:
 
 
 def _host_updates(
-    current: dict[str, Any], previous: dict[str, Any], tasks: list[str],
+    current: dict[str, Any], previous: dict[str, Any],
     geometry: dict[str, tuple[int, int]], pixel_size_um: float,
-    locked: frozenset[str] = frozenset(),
+    frozen: Callable[[str], frozenset[str]] = lambda _name: frozenset(),
 ) -> list[dict[str, Any]]:
     """Host rows for what changed from *previous* to *current*.
 
-    A locked section's in-plane geometry belongs to the host: no orientation
-    or transform row is ever emitted for it.
+    A property frozen on a section (*frozen*: ``JobSpec.frozen_for``, which
+    includes what a task that is off supplies) belongs to the host: no row for
+    it is ever emitted for that section.
     """
     from langslice.core.abba_affine import normalized_to_abba_affine
 
@@ -87,7 +88,8 @@ def _host_updates(
             raise ValueError("Agent checkpoint contains an unknown snapshot")
         old = prior[name]
         update: dict[str, Any] = {"id": name}
-        if "position" in tasks and (
+        held = frozen(name)
+        if "position" not in held and (
             row.get("position_mm") != old.get("position_mm")
             or row.get("index_corrected") != old.get("index_corrected")
         ):
@@ -96,14 +98,13 @@ def _host_updates(
                 raise ValueError("Agent position must be finite")
             update["position_mm"] = position
         # Mirror and quarter-turn are part of the in-plane transform task.
-        if "transform" in tasks and name not in locked and any(
+        if "orientation" not in held and any(
             row.get(key) != old.get(key) for key in ("flip", "rotation_deg")
         ):
             update.update(
                 flip=bool(row.get("flip")), rotation_deg=int(row.get("rotation_deg") or 0),
             )
-        if ("transform" in tasks and name not in locked
-                and row.get("transform") != old.get("transform")):
+        if "affine" not in held and row.get("transform") != old.get("transform"):
             transform = row.get("transform")
             if transform is None:
                 update["affine_mm"] = None
@@ -171,14 +172,13 @@ class PreparedLinear:
     spec: JobSpec
     geometry: dict[str, tuple[int, int]]
     calibration: float
-    locked: frozenset[str]
     final_updates: list[dict[str, Any]]
     trace_dir: Path | None
     #: The ABBA session's facts the job keeps for reproducibility (stored in
     #: ``job.json`` under ``host.abba`` and returned as the result's
     #: ``abba``): ``angles_deg``, ``z_offset_mm`` (the connector converts
     #: positions with it; the worker's positions are BrainGlobe AP mm),
-    #: ``existing_warp`` and ``keep_warp``.
+    #: ``existing_warp``.
     abba: dict[str, Any] = field(default_factory=dict)
     #: The stack-wide angles at the end, when they differ from the ingested
     #: ones (``{"pitch_deg", "yaw_deg"}``), else None.
@@ -215,11 +215,6 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     # host starting position; the positioning task can then move them into range.
     if not all(math.isfinite(value) for value in positions.values()):
         raise ValueError("Host positions must be finite BrainGlobe AP millimetres")
-    locked = params.get("locked") or []
-    if not isinstance(locked, list) or any(
-        not isinstance(name, str) or name not in geometry for name in locked
-    ):
-        raise ValueError("Locked slice names must identify exported snapshots")
     damaged = params.get("damaged") or {}
     if not isinstance(damaged, dict) or any(
         name not in geometry or not isinstance(note, str) for name, note in damaged.items()
@@ -230,17 +225,6 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
         not isinstance(name, str) or name not in geometry for name in existing_warp
     ):
         raise ValueError("existing_warp names must identify exported snapshots")
-    # The dialog's "Allow the agent to overwrite existing transforms" reaches
-    # the worker as `locked` (registered sections are locked unless it is
-    # ticked): a section with the user's own warp that is locked keeps it.
-    keep_warp = sorted(set(existing_warp) & set(locked))
-    # Sections the user chose not to have aligned first (no ABBA
-    # registration, Linear off, Positioning on): Nonlinear leaves them alone.
-    nonlinear_skip = params.get("nonlinear_skip") or []
-    if not isinstance(nonlinear_skip, list) or any(
-        not isinstance(name, str) or name not in geometry for name in nonlinear_skip
-    ):
-        raise ValueError("nonlinear_skip names must identify exported snapshots")
     preprocessing = _preprocessing(params.get("preprocessing"))
     channel_names = _channel_names(params.get("channel_names"))
     spec_data = dict(params.get("spec") or {})
@@ -250,12 +234,6 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
         "positions": positions, "order": sorted(positions, key=lambda name: positions[name]),
         "pixel_size_um": calibration, "angles": {"pitch": pitch, "yaw": yaw},
     }
-    if locked:
-        inputs["locked"] = sorted(set(locked))
-    if keep_warp:
-        inputs["keep_warp"] = keep_warp
-    if nonlinear_skip:
-        inputs["nonlinear_skip"] = sorted(set(nonlinear_skip))
     if damaged:
         inputs["damaged"] = dict(damaged)
     if channel_names:
@@ -263,6 +241,9 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     spec_data.update(image_folder=str(folder), resume=False, inputs=inputs)
     spec_data.setdefault("debrief", False)
     spec = JobSpec.from_dict(spec_data)
+    unknown = [name for name in spec.frozen if name != "*" and name not in geometry]
+    if unknown:
+        raise ValueError(f"frozen names must identify exported snapshots; got {unknown}")
     if spec.plane != "coronal" or spec.atlas not in _SUPPORTED_ATLASES:
         raise ValueError("The Fiji connector currently requires coronal Allen Mouse snapshots")
     if not spec.tasks:
@@ -271,9 +252,8 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     # channels stay the run's images (nothing is staged or rewritten).
     spec.host_preprocessing = _host_appearance(paths, preprocessing)
     abba: dict[str, Any] = {"angles_deg": {"pitch_deg": pitch, "yaw_deg": yaw},
-                            "z_offset_mm": z_offset, "existing_warp": sorted(set(existing_warp)),
-                            "keep_warp": keep_warp}
-    return PreparedLinear(folder, spec, geometry, calibration, frozenset(locked), [],
+                            "z_offset_mm": z_offset, "existing_warp": sorted(set(existing_warp))}
+    return PreparedLinear(folder, spec, geometry, calibration, [],
                           _trace_dir(params.get("trace_dir")), abba)
 
 
@@ -319,7 +299,7 @@ class HostCheckpoints:
     angle for the whole stack. Rows (``host_updates``, ``updates_since_start``,
     ``prepared.final_updates``) are :func:`_host_updates`' linear rows plus,
     in a job with the ``nonlinear`` task, each section's ``warp``
-    (:meth:`_warps`; locked sections included); ``host_angles`` is added
+    (:meth:`_warps`; a section whose deformation is frozen has none); ``host_angles`` is added
     when the stack-wide angles changed since the previous checkpoint.
 
     :meth:`attach` hands it the opened job and its workspace (the engine's
@@ -386,8 +366,8 @@ class HostCheckpoints:
 
     def _rows(self, current: dict[str, Any], previous: dict[str, Any]) -> list[dict[str, Any]]:
         prepared = self.prepared
-        rows = _host_updates(current, previous, prepared.spec.tasks, prepared.geometry,
-                             prepared.calibration, prepared.locked)
+        rows = _host_updates(current, previous, prepared.geometry, prepared.calibration,
+                             prepared.spec.frozen_for)
         if not self.warps:
             return rows
         by_id = {row["id"]: row for row in rows}
@@ -485,8 +465,9 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     """Run exported snapshots; positions_mm are BrainGlobe AP millimetres.
 
     Required: image_folder, pixel_size_um, positions_mm (filename -> mm).
-    Optional: spec (JobSpec fields), locked (snapshot filenames whose
-    in-plane geometry the agent may not change), damaged (filename -> note,
+    Optional: spec (JobSpec fields; ``spec.frozen`` names, per snapshot
+    filename or ``"*"``, what the agent may not change: no host row is ever
+    emitted for a frozen property), damaged (filename -> note,
     flags the agent may not clear) and preprocessing (``preprocess.preview``
     settings for multi-page snapshots: the default appearance; the pages
     stay readable as channels), channel_names (one name per exported page),
@@ -495,9 +476,7 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     "yaw_deg"}``: the job's ``inputs.angles``), z_offset_mm (ABBA's
     slicing-axis offset, kept with the job; the connector converts positions
     with it) and existing_warp (snapshot filenames already carrying the
-    user's own warp: those that are also locked keep it,
-    ``inputs.keep_warp``) and nonlinear_skip (snapshot filenames the user
-    left out of Nonlinear, ``inputs.nonlinear_skip``).
+    user's own warp, kept with the job's ABBA facts).
     The run ends with one more checkpoint of the final state (the connector
     applies its rows; it does not apply ``final_updates`` again).
     Checkpoint events carry initial=True with no mutations for ingestion.

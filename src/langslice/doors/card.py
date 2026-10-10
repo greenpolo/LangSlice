@@ -55,7 +55,7 @@ def disabled_names(layout: JobLayout) -> list[str]:
     from langslice.core.spec import JobSpec
 
     try:
-        return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {}).disabled
+        return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {}).switched_off
     except (OSError, ValueError, TypeError, AttributeError):
         return []
 
