@@ -411,6 +411,9 @@ def interactive_transform(
             if rotation not in ROTATIONS:
                 refuse("BAD_ROTATION", allowed=list(ROTATIONS))
                 continue
+            if rotation != record.rotation_deg and job.spec.off("interactive_transform:rotate"):
+                refuse("OPTION_OFF", message="rotate_quarter is switched off for this job")
+                continue
         knobs = held_knobs(record)
         given = {key: entry[key] for key in KNOB_DEFAULTS if entry.get(key) is not None}
         try:

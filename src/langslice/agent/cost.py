@@ -101,7 +101,7 @@ def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
     parsed = JobSpec.from_dict({**spec, "image_folder": spec.get("image_folder") or "."})
     every = set(parsed.frozen.get("*", ()))
     aligned = {"orientation", "affine"}
-    locked = n_slices if aligned <= every else min(n_slices, sum(
+    aligned_frozen = n_slices if aligned <= every else min(n_slices, sum(
         1 for name, held in parsed.frozen.items()
         if name != "*" and aligned <= every | set(held)))
     tasks = set(parsed.active_tasks)
@@ -130,7 +130,7 @@ def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
     low_rate, high_rate, basis = _rate(model, reasoning, transform)
     # Every measured run positioned the whole stack, so a transform-only run
     # is priced as a full run over the sections it aligns: an upper bound.
-    sections = n_slices if positioning else n_slices - locked
+    sections = n_slices if positioning else n_slices - aligned_frozen
     extra = NONLINEAR_NOT_INCLUDED if nonlinear else ""
     if sections == 0:
         return {"low": 0.0, "high": 0.0, "unit": UNIT,

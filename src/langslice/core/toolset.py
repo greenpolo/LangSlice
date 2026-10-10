@@ -13,8 +13,9 @@ tools and options off on top of what its tasks and switches give:
 - ``"zoom"``: the tool, whole;
 - ``"look:positioning"``: one option of a tool (``tool:option``): here a
   ``look`` mode, taken out of the tool's schema, its description and every
-  text that words it; ``"interactive_transform:flip"``: the mirror, a part
-  of the tool that is no enumeration.
+  text that words it; ``"interactive_transform:flip"``: the mirror, and
+  ``"interactive_transform:rotate"``: the quarter turn, parts of the tool that
+  are no enumeration.
 
 The valid names are derived from this table (:func:`valid_names`).
 :func:`refusal` says, in one line, why a list cannot work; the spec refuses
@@ -119,7 +120,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     # --- changing -------------------------------------------------------------------
     ToolDef("position_sections", "write", "Positioning", when=positions_on,
             needs=(("look:positioning", "look:overlay"),), writes=("position", "angles")),
-    ToolDef("interactive_transform", "write", "Linear", options={"flip": ""},
+    ToolDef("interactive_transform", "write", "Linear", options={"flip": "", "rotate": ""},
             when=lambda spec: spec.has("transform"), needs=_OVERLAY,
             writes=("orientation", "affine")),
     ToolDef("mark_damage", "write", "Common"),
@@ -185,8 +186,9 @@ def off_names(spec: Any) -> list[str]:
     """Every name that is off for *spec*: its ``disabled`` list, then the tools
     the run has that can change nothing because everything they write
     (:attr:`ToolDef.writes`) is frozen on every section
-    (:attr:`~langslice.core.spec.JobSpec.frozen_everywhere`), and the mirror
-    (``interactive_transform:flip``) when the orientation is. A tool a task
+    (:attr:`~langslice.core.spec.JobSpec.frozen_everywhere`), and the mirror and
+    the quarter turn (``interactive_transform:flip``, ``:rotate``) when the
+    orientation is. A tool a task
     switched off is not listed: it is not in the run at all."""
     names = list(spec.disabled)
     if not spec.frozen:
@@ -196,7 +198,8 @@ def off_names(spec: Any) -> list[str]:
         if tool.writes and set(tool.writes) <= everywhere and tool.when(spec):
             names.append(tool.name)
     if "orientation" in everywhere:
-        names.append(f"interactive_transform{OPTION_SEPARATOR}flip")
+        names.extend(f"interactive_transform{OPTION_SEPARATOR}{option}"
+                     for option in ("flip", "rotate"))
     return list(dict.fromkeys(names))
 
 

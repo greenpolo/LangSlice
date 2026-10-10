@@ -68,6 +68,33 @@ class SectionTransform(TypedDict, total=False):
 
 
 @with_config(ConfigDict(extra="forbid"))
+class SectionTransformNoRotate(TypedDict, total=False):  # without ``rotate_quarter``
+    """One ``interactive_transform`` section: absolute values, each optional."""
+
+    id: str
+    flip: bool
+    rotation_deg: float
+    scale_x: float
+    scale_y: float
+    shear: float
+    translate_x_mm: float
+    translate_y_mm: float
+
+
+@with_config(ConfigDict(extra="forbid"))
+class SectionTransformNoOrientation(TypedDict, total=False):  # without both
+    """One ``interactive_transform`` section: absolute values, each optional."""
+
+    id: str
+    rotation_deg: float
+    scale_x: float
+    scale_y: float
+    shear: float
+    translate_x_mm: float
+    translate_y_mm: float
+
+
+@with_config(ConfigDict(extra="forbid"))
 class SectionTransformNoFlip(TypedDict, total=False):  # SectionTransform without ``flip``
     """One ``interactive_transform`` section: absolute values, each optional."""
 
