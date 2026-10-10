@@ -339,17 +339,23 @@ wording; `registry.py` lists which.
   damage note `damage_by_user: true`).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", when, long, scripting, image_model, hidden, limits)`, in the
-  order every door lists them; `enabled(spec, scripting=, image_model=,
-  hidden=)`: the verbs a run of the spec has. The gating (`when`): `look`,
-  `zoom`, both channel tools, `grep_atlas`, `grep_atlas_view`, `status`, the
-  job-folder tools (`list_files`, `search_files`, `read_file`), `note`,
-  `undo`, `redo` and `submit` in every run; `position_sections` with the
-  `position` task or the stack's cutting angles left to the agent
-  (`transform.angles`, `positions_on`); `interactive_transform` with
-  `transform` and `transform.interactive`; `elastix_affine` with `transform`
-  and `transform.automatic`; `mark_damage` with `agent_damage`; `ants_syn`
-  with `nonlinear`; `trace_borders` with `nonlinear` and an image model.
+  "Nonlinear", tool, limits)`, in the order every door lists them; `tool` is
+  the verb's `core.toolset.ToolDef` (`when`, `long`, `scripting`,
+  `image_model`, `hidden`, `options`, `essential`, `needs`: the core's list of
+  what a spec can switch, which the registry binds to the operations);
+  `enabled(spec, scripting=, image_model=, hidden=)`: the verbs a run of the
+  spec has, less the ones its `disabled` list names. The gating (`when`):
+  `look`, `zoom`, both channel tools, `grep_atlas`, `grep_atlas_view`,
+  `status`, the job-folder tools (`list_files`, `search_files`, `read_file`),
+  `note`, `undo`, `redo`, `mark_damage` and `submit` in every run;
+  `position_sections` with the `position` task or the stack's cutting angles
+  left to the agent (`transform.angles`, `positions_on`);
+  `interactive_transform` and `elastix_affine` with `transform`; `ants_syn`
+  with `nonlinear`; `trace_borders` with `nonlinear` and an image model. A
+  tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
+  `interactive_transform:flip` are the options) is off in every run: the
+  operations refuse a disabled `look` mode (`OPTION_OFF`) and a changed flip
+  (`FLIP_DISABLED`).
   `image_model` False leaves out the verbs that call the image model, for a
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the
@@ -376,7 +382,7 @@ wording; `registry.py` lists which.
   `orient_slices`, `adjust_transforms` -> `interactive_transform`;
   `mark_damaged` -> `mark_damage`; `fit_affine` -> `elastix_affine`;
   `fit_deformable` -> `ants_syn`; `search_position` -> none), and every door
-  answers a call by one with `retired_payload(name)` (`RETIRED_TOOL`, `use`,
+  answers a call by one with `retired_payload(name, disabled)` (`RETIRED_TOOL`, `use`,
   a message naming the replacement and how to call it; nothing done), every
   time it is called: the ADK plugin `agent.plugins.RetiredToolsPlugin`, the
   agent CLI (`cli/job.py` `call`, `cli/catalog.py` `schema`), the MCP

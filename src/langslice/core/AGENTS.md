@@ -14,6 +14,20 @@ whose imports are core-only:
   (`atlas/CLAUDE.md`), `deformable/` (`deformable/CLAUDE.md`) and
   `nonlinear/` (the image-model border route's prompts, request and line
   extraction, `nonlinear/CLAUDE.md`);
+- `toolset.py` and `needs.py`: what a job can switch off. `toolset.py`
+  lists every tool (`TOOLS`: `ToolDef` name, kind, task group, `when`,
+  scripting / image-model / hidden, `options`, `essential`, `needs`;
+  `ops/registry.py` binds each to its operation), the `look` modes, the
+  names a `JobSpec.disabled` takes (`valid_names`: a tool, or `tool:option`;
+  `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
+  cannot work (an unknown or essential name, every `look` mode off, a task
+  with every tool that writes its answer off, a tool without the pictures it
+  needs, `position.gated` without `look:positioning`), which the spec raises
+  as a `ValueError` when it is made. `needs.py`: `render(text, off)`, text
+  written with what it needs (`[[?NAMES text||other]]`, `[[#NAMES=item||...]]`
+  lists), dropped or swapped for the disabled list; with nothing off a text
+  renders to itself without its marks, byte for byte. Neither imports
+  anything above the core;
 - the linear method's core: `state.py`, `spec.py`, `workspace.py`,
   `appearance.py`, `atlas_fetch.py`, `atlas_grep.py`, `display.py`,
   `opening.py`, `transform.py`, `deformation.py`, `discovery.py`. Their

@@ -126,7 +126,8 @@ class PositionSpec:
     #: section not looked at in mode ``overlay`` or ``positioning`` since its
     #: last write, and ``submit`` until ``look`` in mode ``positioning`` has
     #: shown every section after the last write. The refusals name what is
-    #: missing.
+    #: missing. Needs ``look:positioning`` (the spec refuses the gates where
+    #: the job disables it).
     gated: bool = False
     #: Optional positioning coaching: compare candidate planes and regions,
     #: write supported placements, revisit uncertainty and review the stack.

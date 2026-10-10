@@ -19,8 +19,45 @@ FOLDER` for exact arguments and limits.
 
 Default tasks are `position,transform`. A disabled task takes its answer
 from supplied inputs and removes its tools. `transform.angles` also enables
-`position_sections` for cutting angles when Positioning is off. Hosts can
-disable either linear method independently.
+`position_sections` for cutting angles when Positioning is off.
+
+## Switching tools and options off
+
+A job's `disabled` list removes single tools and tool options on top of what
+its tasks give (`--disable NAME[,NAME...]`, `disabled=[...]` in the library
+and in `job.json`'s spec). A name is a tool, or `tool:option`:
+
+| Name | Removes |
+|---|---|
+| `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
+| `export_maps` | the scripting verb |
+| `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
+| `interactive_transform:flip` | mirroring: the `flip` key of its sections |
+
+`look`, `status`, `undo` and `submit` cannot be disabled. An unknown name is
+refused when the job is made, with the valid names listed. A list that cannot
+work is refused with one line saying why:
+
+- a task that is on keeps at least one tool that writes its answer
+  (`position_sections`; `interactive_transform` or `elastix_affine`;
+  `ants_syn` or `trace_borders`);
+- `look` keeps at least one mode;
+- a tool needs the pictures it returns: the linear and nonlinear fitting
+  tools and `interactive_transform` need `look:overlay`, and
+  `position_sections` needs `look:positioning` or `look:overlay`;
+- `position.gated` needs `look:positioning`, which `submit` waits for.
+
+What a job disables is absent from every door: the tool is not built, an
+option is not in the tool's schema (`look`'s `mode` offers the modes that are
+on; `flip` is not a key of the sections), and a call that names one anyway is
+refused (`OPTION_OFF` from `look`). A reply that would use a disabled option
+uses another: `position_sections` returns an overlay of each written section
+when `look:positioning` is off. The job statement, tool descriptions,
+reference card, `status` reply and `error.fix` texts leave out every
+sentence that needs what is off, or word it another way. Specs saved with
+the older switches (`agent_damage`, `transform.interactive`,
+`transform.automatic`, `transform.flip` false) read as the names above.
 
 Sections are addressed by filename, or by a stem unique within the job.
 Positions are millimetres along the atlas's slicing axis; in a coronal atlas
@@ -92,8 +129,8 @@ job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 `mark_damage` records atlas regions physically lost or badly displaced,
 including one hemisphere when needed. Those regions are excluded from
 elastix, ANTs and image-model tracing. Small tears, bubbles and folds do not
-by themselves justify excluding an entire region. Hosts can disable this
-tool with `agent_damage=False`.
+by themselves justify excluding an entire region. A job can disable this tool
+with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
 
 ## Positioning and linear alignment
 
