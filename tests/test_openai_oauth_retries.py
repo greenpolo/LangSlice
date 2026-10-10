@@ -10,17 +10,24 @@ from langslice.providers import openai_oauth as oauth
 
 
 class Response:
-    def __init__(self, status=200, text="temporary failure", headers=None, broken=False):
+    def __init__(
+        self, status=200, text="temporary failure", headers=None, broken=False, events=None,
+    ):
         self.status_code = status
         self.text = text
         self.headers = headers or {}
         self.closed = False
         self.broken = broken
+        self.events = events
 
     def close(self):
         self.closed = True
 
     def iter_lines(self):
+        if self.events is not None:
+            for event in self.events:
+                yield ('data: ' + json.dumps(event)).encode()
+            return
         yield b'data: {"type":"response.output_item.done","item":{"type":"function_call"}}'
         if self.broken:
             raise requests.ConnectionError("stream interrupted")
@@ -178,3 +185,64 @@ def test_never_replays_partially_delivered_stream(transport):
         next(stream)
     assert len(calls) == 1 and not waits
     assert response.closed
+
+
+def failure(code=None, message="Our servers are currently overloaded. Please try again later."):
+    return {"type": "response.failed", "response": {"error": {"code": code, "message": message}}}
+
+
+@pytest.mark.parametrize("code", [None, "server_error", "rate_limit_exceeded"])
+def test_recovers_from_early_failure_event(transport, caplog, code):
+    outcomes, calls, waits = transport
+    failed = Response(events=[{"type": "response.created"},
+                              {"type": "response.in_progress"}, failure(code)])
+    success = Response()
+    outcomes.extend([failed, success])
+    events = list(oauth.stream_events({"input": ["original"]}, session_id="stable"))
+    assert len(calls) == 2 and calls[0] == calls[1]
+    assert waits == [2] and failed.closed and success.closed
+    assert [event['type'] for event in events] == ['langslice.quota', 'response.output_item.done']
+    assert 'early response.failed; retry 1/3' in caplog.text
+
+
+def test_http_and_early_event_failures_share_retry_budget(transport):
+    outcomes, calls, waits = transport
+    failures = [Response(503), Response(events=[failure()]),
+                Response(429), Response(events=[failure()])]
+    outcomes.extend(failures)
+    events = list(oauth.stream_events({}))
+    assert len(calls) == 4 and waits == [2, 4, 8]
+    assert events[-1]['type'] == 'response.failed'
+    assert all(response.closed for response in failures)
+
+
+@pytest.mark.parametrize('code', ['insufficient_quota', 'usage_limit_reached', 'invalid_request'])
+def test_permanent_failure_events_are_not_retried(transport, code):
+    outcomes, calls, waits = transport
+    # A hard quota code wins even when the message happens to mention overload.
+    message = 'invalid request' if code == 'invalid_request' else None
+    event = failure(code, message) if message else failure(code)
+    outcomes.append(Response(events=[event]))
+    assert list(oauth.stream_events({}))[-1] == event
+    assert len(calls) == 1 and not waits
+
+
+@pytest.mark.parametrize('output', [
+    {'type': 'response.output_text.delta', 'delta': 'partial answer'},
+    {'type': 'response.output_item.added', 'item': {'type': 'function_call'}},
+    {'type': 'response.reasoning_summary_text.delta', 'delta': 'considering'},
+])
+def test_overload_after_model_output_is_not_retried(transport, output):
+    outcomes, calls, waits = transport
+    event = failure()
+    outcomes.append(Response(events=[output, event]))
+    assert list(oauth.stream_events({}))[1:] == [output, event]
+    assert len(calls) == 1 and not waits
+
+
+def test_early_failure_respects_long_server_delay(transport):
+    outcomes, calls, waits = transport
+    event = failure()
+    outcomes.append(Response(headers={'Retry-After': '120'}, events=[event]))
+    assert list(oauth.stream_events({}))[-1] == event
+    assert len(calls) == 1 and not waits
