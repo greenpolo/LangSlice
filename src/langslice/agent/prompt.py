@@ -12,12 +12,18 @@ do not find one on their own.
 Deliberately atlas- and plane-agnostic — it names no region, no landmark and no
 absolute position, because the same text runs against every BrainGlobe atlas,
 species and plane.
+
+A line that names a tool or an option is written with what it needs
+(:mod:`langslice.core.needs`) and rendered for the job's disabled list
+(``JobSpec.disabled``); the user's own words are never rendered.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.needs import render
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.core.state import StackState
 
@@ -153,6 +159,7 @@ def build_job_statement(
     axis are anatomically in THIS atlas.
     """
     del door  # every door reads the same statement; its own lines are added after it
+    off = spec.disabled
     gated = bool(spec.position.gated and gates)
     jobs: list[str] = []
     if spec.has("position"):
@@ -164,7 +171,7 @@ def build_job_statement(
             "sections is genuinely broken"
         )
     if spec.has("transform"):
-        turned = "mirrored or turned" if spec.transform.flip else "turned"
+        turned = "turned" if spec.off("interactive_transform:flip") else "mirrored or turned"
         jobs.append(
             "give every section one in-plane transform onto its atlas section, "
             f"correcting the orientation of any section that is {turned}"
@@ -200,10 +207,11 @@ def build_job_statement(
                if any(s.position_source == STARTING_POSITION for s in state.slices) else "")
         )
         if gated:
-            constraints.append(
+            constraints.append(render(
                 "- `position_sections` is refused for a section that has not been looked "
-                "at with `look` in mode overlay or positioning since it was last written."
-            )
+                "at with `look` in mode [[?look:overlay overlay or ]]positioning since it "
+                "was last written.", off
+            ))
             constraints.append(
                 "- `submit` is refused until `look` in mode positioning has shown every "
                 "section after the last `position_sections` write."
@@ -272,17 +280,23 @@ def build_job_statement(
             "- Start from the opening stack and identify anatomical progression, "
             "possible interleaved series, missing sections and uncertain orientations. "
             "Form initial position hypotheses from the anatomy.",
-            "- Use `look` in mode positioning to compare sections with candidate "
-            "atlas positions and their neighbours. Use `grep_atlas` and "
-            "`grep_atlas_view` to locate distinguishing anatomy; use section or "
-            "atlas views and `zoom` when you need more detail.",
+            *_bullet(
+                "[[?look:positioning Use `look` in mode positioning to compare sections "
+                "with candidate atlas positions and their neighbours. ]]"
+                "[[?grep_atlas|grep_atlas_view Use [[#grep_atlas=`grep_atlas`||"
+                "grep_atlas_view=`grep_atlas_view`]] to locate distinguishing anatomy; ]]"
+                "[[?look:section|look:atlas|zoom [[?grep_atlas|grep_atlas_view u||U]]se "
+                "[[#look:section|look:atlas=section or atlas views||zoom=`zoom`]] when "
+                "you need more detail.]]", off),
             "- Write supported placements with `position_sections`, in groups "
             "that you can assess together. Revisit uncertain sections as their "
             "neighbours become clearer; the nominal interval informs the search "
             "but does not replace anatomical evidence.",
-            "- Review the whole stack in positioning mode after changes. Check "
-            "both sides of an apparent gap before reporting an interval break. "
-            "Complete the enabled alignment and deformation tasks before submitting.",
+            render("- Review the whole stack[[?look:positioning  in positioning mode]] "
+                   "after changes. Check "
+                   "both sides of an apparent gap before reporting an interval break. "
+                   "Complete the enabled alignment and deformation tasks before "
+                   "submitting.", off),
         ]
     elif spec.has("position"):
         method = [
@@ -298,13 +312,14 @@ def build_job_statement(
         ]
 
     if spec.has("position"):
-        method.append(
-            "- Positions can be revisited throughout registration. If zooms or repeated "
-            "looks suggest that a section's placement is wrong, return to atlas comparisons "
-            "and re-place it, even after beginning linear or nonlinear alignment."
-        )
+        method.append(render(
+            "- Positions can be revisited throughout registration. If [[?zoom zooms or ]]"
+            "repeated looks suggest that a section's placement is wrong, return to atlas "
+            "comparisons and re-place it, even after beginning linear or nonlinear "
+            "alignment.", off
+        ))
 
-    if spec.has("transform") and spec.transform.interactive:
+    if spec.has("transform") and not spec.off("interactive_transform"):
         if not method:
             method = ["", "Method:"]
         method.append(
@@ -356,14 +371,22 @@ def build_job_statement(
     )
 
 
-def stack_angles_fact(state: StackState) -> str:
+def _bullet(text: str, off: Collection[str]) -> list[str]:
+    """A method bullet written with what it needs, rendered; none when the
+    job disables everything it says."""
+    line = render("- " + text, off).rstrip()
+    return [line] if line.strip(" -") else []
+
+
+def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
     """The job statement's line on the cutting angles: the stack's one
     angle, or, when the sections differ (a registration supplied per
-    section), that each status row carries its own."""
+    section), that each status row carries its own. *off*: the job's
+    disabled list."""
     if state.mixed_angles:
-        return ("- Cutting angles: these differ between sections, as supplied; each "
-                "status row carries its own cutting_angles_deg. position_sections sets "
-                "one angle for every section.")
+        return render("- Cutting angles: these differ between sections, as supplied; each "
+                      "status row carries its own cutting_angles_deg.[[?position_sections "
+                      " position_sections sets one angle for every section.]]", off)
     pitch, yaw = state.stack_angles
     return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
 
@@ -409,7 +432,7 @@ def run_facts(
         f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
         f"positions increase toward {axis_ends[1]}.",
         cutting_protocol_fact(state),
-        stack_angles_fact(state),
+        stack_angles_fact(state, spec.disabled),
     ]
     if starting:
         facts.append(
@@ -452,7 +475,7 @@ def run_facts(
             else "- The orientation shown is fixed; transforms are not part of this run."
         )
     else:
-        if not spec.transform.flip:
+        if spec.off("interactive_transform:flip") and not spec.off("interactive_transform"):
             facts.append("- Flipping sections is switched off for this run.")
         facts.append(
             "- Alignment canvas: each section is drawn at its TRUE physical size "
@@ -474,7 +497,7 @@ def run_facts(
     # Mirroring belongs to in-plane alignment: the cue is shown only where the
     # agent can flip, never in a positioning-only run.
     cue = spec.transform.hemisphere_cue.strip()
-    if cue and spec.has("transform") and spec.transform.flip:
+    if cue and spec.has("transform") and not spec.off("interactive_transform:flip"):
         facts.append(f"- What marks a hemisphere, from the user: {cue}")
     facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
 

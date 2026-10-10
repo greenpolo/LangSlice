@@ -21,9 +21,12 @@ its own way.
 
 from __future__ import annotations
 
+import copy
+from collections.abc import Collection
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.needs import render
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
 from langslice.core.status import status_text
@@ -32,12 +35,21 @@ if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.layout import JobLayout
 
-#: Said when the job's image model is not connected to LangSlice here.
-IMAGE_MODEL_OFF = (
-    "The image-model tool (trace_borders) is off: no image model is connected to "
-    "LangSlice (no key or login for this job's image provider). Fit each "
-    "section's deformation to its stain with ants_syn."
+#: Said when the job's image model is not connected to LangSlice here,
+#: written with what it needs (:mod:`langslice.core.needs`).
+_IMAGE_MODEL_OFF = (
+    "[[?trace_borders The image-model tool (trace_borders) is off: no image model is "
+    "connected to LangSlice (no key or login for this job's image provider).[[?ants_syn  "
+    "Fit each section's deformation to its stain with ants_syn.]]]]"
 )
+#: ... as a job that disables nothing reads it.
+IMAGE_MODEL_OFF = render(_IMAGE_MODEL_OFF)
+
+
+def image_model_off_text(disabled: Collection[str] = ()) -> str:
+    """:data:`IMAGE_MODEL_OFF` for a job with *disabled* (empty when the job
+    has no ``trace_borders`` to be off)."""
+    return render(_IMAGE_MODEL_OFF, disabled)
 
 #: What the opening pictures show, said by every door that names them.
 OPENING_SHOWS = (
@@ -91,11 +103,12 @@ def opening_for_mcp(pages: int) -> list[str]:
     ]
 
 
-def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
+def opening_for_cli(folder: str, pictures: int | None,
+                    disabled: Collection[str] = ()) -> list[str]:
     """The agent CLI's opening paragraph and how its commands behave.
 
     *pictures* is how many opening pictures ``brief`` saved (None: not saved
-    yet; ``init`` says how to)."""
+    yet; ``init`` says how to). *disabled* is the job's disabled list."""
     if pictures is None:
         opening = (f"Opening pictures: `langslice-job {folder} brief` saves them as "
                    "picture files; open every one before any write. ")
@@ -111,9 +124,11 @@ def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
         "`--name value`); `langslice-job schema TOOL` gives its arguments and description. "
         "Pictures come back as files under `artifacts` (kind `view`, in the order the "
         "reply's `pictures` lists their numbers); open them to see them.",
-        "- `--dry-run` runs a write without writing and reports what would change; "
-        "the fits and trace_borders are only checked, not run.",
-        f"- Long tools ({', '.join(long_verbs())}) can run with `--background`, which "
+        render("- `--dry-run` runs a write without writing and reports what would change"
+               "[[?elastix_affine|ants_syn|trace_borders ; the "
+               "[[#elastix_affine|ants_syn=fits||trace_borders=trace_borders]] "
+               "are only checked, not run]].", disabled),
+        f"- Long tools ({', '.join(long_verbs(disabled))}) can run with `--background`, which "
         "answers at once with a run id; `wait ID` collects the answer.",
         "- Commands may run in parallel: each write holds the job folder's lock, and a "
         "long tool re-checks each section before it applies (STALE_INPUT when the "
@@ -121,12 +136,15 @@ def opening_for_cli(folder: str, pictures: int | None) -> list[str]:
     ]
 
 
-def long_verbs() -> list[str]:
+def long_verbs(disabled: Collection[str] = ()) -> list[str]:
     """The listed verbs that compute outside the job lock and may take long
-    (:attr:`langslice.ops.registry.Verb.long`), in registry order."""
+    (:attr:`langslice.ops.registry.Verb.long`), in registry order, less the
+    ones *disabled* names."""
+    from langslice.core.toolset import is_off
     from langslice.ops.registry import listed
 
-    return [name for name, verb in listed().items() if verb.long]
+    return [name for name, verb in listed().items()
+            if verb.long and not is_off(disabled, name)]
 
 
 def job_statement(
@@ -148,8 +166,9 @@ def job_statement(
     from langslice.agent.prompt import build_job_statement, display_facts
 
     low, high = ctx.position_range
-    if image_model_off:
-        spec = replace(spec, nonlinear=replace(spec.nonlinear, provider="none"))
+    if image_model_off:  # a copy that is not checked again: it is this door's view
+        spec = copy.copy(spec)
+        spec.nonlinear = replace(spec.nonlinear, provider="none")
     lines = [
         build_job_statement(
             spec, state, tool_names=tool_names, species=ctx.species,
@@ -160,8 +179,8 @@ def job_statement(
     ]
     if opening:
         lines += ["", *opening]
-    if image_model_off:
-        lines += ["", IMAGE_MODEL_OFF]
+    if image_model_off and (off_text := image_model_off_text(spec.disabled)):
+        lines += ["", off_text]
     lines += user_notes_lines(notes)
     lines += ["", status_and_notes(state)]
     return "\n".join(lines)
@@ -179,6 +198,7 @@ def image_model_state(spec: JobSpec, *, connected: bool) -> dict[str, Any] | Non
 
 
 __all__ = [
-    "IMAGE_MODEL_OFF", "NOTES_KEY", "OPENING_SHOWS", "image_model_state", "job_statement",
-    "opening_for_cli", "opening_for_mcp", "read_notes", "status_and_notes", "user_notes_lines",
+    "IMAGE_MODEL_OFF", "NOTES_KEY", "OPENING_SHOWS", "image_model_off_text",
+    "image_model_state", "job_statement", "opening_for_cli", "opening_for_mcp", "read_notes",
+    "status_and_notes", "user_notes_lines",
 ]

@@ -218,6 +218,7 @@ async def run_session(
         max_quota_percent=spec.max_quota_percent,
         on_event=on_event,
         background=functools.partial(background_message, box.job),
+        disabled=spec.disabled,
     )
     if sink and sink[0]:
         state.debrief = sink[0]

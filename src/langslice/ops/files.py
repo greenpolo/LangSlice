@@ -182,7 +182,8 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
     real = _resolved(job, path)
     shown = browse.relative(_folder(job), real)
     if real.is_dir():
-        raise Refused("BAD_PATH", message=f"'{shown}' is a folder; list it with list_files.")
+        raise Refused("BAD_PATH", message=f"'{shown}' is a folder"
+                      + ("." if job.spec.off("list_files") else "; list it with list_files."))
     kind = browse.kind_of(real)
     if kind == "picture":
         record = _picture_record(job, real)
@@ -192,8 +193,9 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
                             "the picture index. Pixels are not returned by this tool.")
         body = [f"{shown} is a picture file ({facts}); pixels are not returned here.",
                 *_record_text(record),
-                f"To see it again, call zoom with picture {record.seq} and a box over the "
-                "part to see (a box as large as the picture shows all of it)."]
+                *([] if job.spec.off("zoom") else [
+                    f"To see it again, call zoom with picture {record.seq} and a box over "
+                    "the part to see (a box as large as the picture shows all of it)."])]
         return FileText(shown, kind, "\n".join(body), picture=record.seq)
     if kind == "binary":
         return FileText(shown, kind, f"{shown} is a binary file ({_size(real.stat().st_size)}); "

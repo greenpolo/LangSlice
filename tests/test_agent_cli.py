@@ -957,3 +957,53 @@ def test_pictures_queued_by_a_script_are_written_when_it_exits(capsys, images):
     assert len(placed) == 3 and all(line["layers"] for line in placed)
     for line in placed:
         assert (job / line["path"] / "labels.tif").is_file()
+
+
+# --- tools and options a job disables ----------------------------------------------------
+
+
+def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
+    """``--disable``: the verb is not offered, an option is not in the schema,
+    a call of it is refused, and nothing the agent reads names either."""
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "position,transform",
+                         "--image-provider", "none", "--preprocess", "none",
+                         "--pixel-size-um", str(PIXEL_SIZE_UM), "--disable", "zoom",
+                         "--disable", "look:positioning,interactive_transform:flip")
+    assert code == 0, envelope
+    folder = Path(envelope["result"]["job_folder"])
+    assert "zoom" not in envelope["result"]["verbs"] and "look" in envelope["result"]["verbs"]
+    assert json.loads((folder / "job.json").read_text())["spec"]["disabled"] == [
+        "zoom", "look:positioning", "interactive_transform:flip"]
+    statement = envelope["result"]["statement"]
+    assert "`zoom`" not in statement and "mode positioning" not in statement
+    card = (folder / "AGENTS.md").read_text()
+    assert "- `zoom`" not in card and "- `look`" in card
+    assert (folder / "CLAUDE.md").read_text() == card
+
+    code, refused = cli(capsys, str(folder), "zoom", "--box", "[0,0,1,1]")
+    assert code == 3 and refused["error"]["code"] == "VERB_OFF"
+    assert "disabled" in refused["error"]["message"]
+    code, refused = cli(capsys, str(folder), "look", "--mode", "positioning")
+    assert code == 3 and refused["error"]["code"] == "OPTION_OFF"
+    code, schema = cli(capsys, "schema", "look", "--job", str(folder))
+    assert schema["result"]["arguments"]["properties"]["mode"]["enum"] == [
+        "section", "atlas", "overlay"]
+    code, off = cli(capsys, "schema", "zoom", "--job", str(folder))
+    assert code == 3 and off["error"]["code"] == "VERB_OFF"
+    code, everything = cli(capsys, "schema", "--job", str(folder))
+    assert "zoom" not in everything["result"]["verbs"]
+    code, sections = cli(capsys, "schema", "interactive_transform", "--job", str(folder))
+    defs = sections["result"]["arguments"]["$defs"]
+    assert all("flip" not in entry["properties"] for entry in defs.values())
+    code, retired = cli(capsys, str(folder), "view_slices")
+    assert retired["error"]["code"] == "RETIRED_TOOL" and "zoom" not in retired["error"]["message"]
+
+
+def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
+    code, envelope = cli(capsys, str(images), "init", "--disable", "zoomm")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert "unknown name 'zoomm'" in envelope["error"]["message"]
+    assert "look:positioning" in envelope["error"]["message"]
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "transform",
+                         "--disable", "elastix_affine,interactive_transform")
+    assert code == 2 and "every tool that writes its answer" in envelope["error"]["message"]

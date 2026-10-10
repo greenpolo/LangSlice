@@ -9,6 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.toolset import valid_names
+
 if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
 
@@ -114,11 +116,15 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help="Accepted and ignored: ANTs SyN (ants_syn) is the one deformable fit",
     )
     p.add_argument(
-        "--no-flip",
-        dest="flip",
-        action="store_false",
-        default=True,
-        help="Do not let the agent mirror sections across the midline",
+        "--disable",
+        dest="disabled",
+        action="append",
+        default=[],
+        metavar="NAME[,NAME...]",
+        help="Tools and tool options the agent does not get, on top of what the tasks "
+        "give (repeatable): a tool (zoom), or tool:option (look:positioning, "
+        "interactive_transform:flip, which keeps the agent from mirroring sections). "
+        "Valid names: " + ", ".join(valid_names()),
     )
     p.add_argument(
         "--hemisphere-cue",
@@ -402,8 +408,9 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
             gated=args.gates,
             playbook=args.playbook,
         ),
-        transform=TransformSpec(angles=args.angles, flip=args.flip,
-                                hemisphere_cue=args.hemisphere_cue),
+        transform=TransformSpec(angles=args.angles, hemisphere_cue=args.hemisphere_cue),
+        disabled=[name.strip() for item in getattr(args, "disabled", []) for name in item.split(",")
+                  if name.strip()],
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,

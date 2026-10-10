@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core.spec import JobSpec, TransformSpec
+from langslice.core.spec import JobSpec
 from langslice.job.job import Job
 from langslice.ops import transforms
 from langslice.ops.refusal import Refused
@@ -100,7 +100,7 @@ def test_an_orientation_change_keeps_the_knob_values_and_says_so(tmp_path: Path)
 
 def test_refusals_write_nothing(tmp_path: Path):
     job, ctx = _open(tmp_path, n=3, inputs={"locked": ["s2.png"]},
-                     transform=TransformSpec(flip=False))
+                     disabled=["interactive_transform:flip"])
     _record(job, "s1.png").position_mm = None
     done = transforms.interactive_transform(job, ctx, [
         {"id": "s2.png", "rotation_deg": 1.0},

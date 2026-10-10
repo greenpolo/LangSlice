@@ -236,6 +236,48 @@ def test_a_retired_tool_answers_with_the_tool_to_use_over_mcp(tmp_path: Path):
     assert "RETIRED_TOOL" not in unknown.content[0].text
 
 
+def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path: Path):
+    def spec_for(folder: str) -> JobSpec:
+        return JobSpec(image_folder=folder, preprocess="none", tasks=["position"],
+                       disabled=["zoom", "look:positioning", "mark_damage"])
+
+    server = build_server(spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return ((await client.list_tools()).tools,
+                await client.call_tool("view_stack", {}),
+                await client.call_tool("look", {"mode": "positioning"}))
+
+    tools, view, looked = _session(server, body)
+    by_name = {tool.name: tool for tool in tools}
+    assert "zoom" not in by_name and "mark_damage" not in by_name
+    assert by_name["look"].inputSchema["properties"]["mode"]["enum"] == [
+        "section", "atlas", "overlay"]
+    for tool in tools:
+        text = json.dumps(tool.inputSchema) + (tool.description or "")
+        assert "zoom takes" not in text and "positioning mode" not in text
+    # A retired tool whose replacement is a mode that is off says nothing replaces it.
+    answer = _text(view)
+    assert answer["error"] == "RETIRED_TOOL" and "use" not in answer
+    assert "nothing replaces it" in answer["message"] and "positioning" not in answer["message"]
+    # A mode the schema does not offer is refused before the tool runs.
+    assert looked.isError or _text(looked).get("error") in ("OPTION_OFF", "UNKNOWN_ARGUMENTS")
+
+
+def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_path: Path):
+    import pytest
+
+    from langslice.core.spec import NonlinearSpec
+    from langslice.doors.mcp.server import open_job
+
+    spec = JobSpec(image_folder=str(_folder(tmp_path)), preprocess="none",
+                   tasks=["nonlinear"], disabled=["ants_syn"],
+                   nonlinear=NonlinearSpec(provider="openai-api"))
+    # Valid with the image model; the door that cannot reach it has no writer.
+    with pytest.raises(ValueError, match="image model is not connected"):
+        open_job(spec, atlas_loader=lambda _n: _ATLAS)
+
+
 def test_normalize_arguments_only_touches_what_the_schema_would_refuse():
     def tool(sections: list[str], section: str = "",
              entries: list[SectionPosition] = [],  # noqa: B006
