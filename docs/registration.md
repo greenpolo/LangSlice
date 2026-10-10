@@ -19,7 +19,11 @@ FOLDER` for exact arguments and limits.
 
 Default tasks are `position,transform`. A disabled task takes its answer
 from supplied inputs and removes its tools. `transform.angles` also enables
-`position_sections` for cutting angles when Positioning is off.
+`position_sections` for cutting angles when Positioning is off. A disabled
+task is the same as freezing its properties on every section
+([freezing](#freezing-what-the-agent-may-not-change)): `position` writes
+position and angles, `transform` orientation and affine, `nonlinear`
+deformation.
 
 ## Switching tools and options off
 
@@ -67,11 +71,80 @@ yaw in degrees. A host can supply positions, per-section or stack-wide
 angles, orientation, transforms and pixel size, or import a
 [registration file](file_formats.md#importing-a-registration).
 
-`locked` sections keep their orientation and in-plane transform.
-`keep_warp` protects a host's deformation, and `nonlinear_skip` excludes
-sections from Nonlinear. Notes supplied through `damaged` are information
-for the agent; actual damage exclusions are atlas regions marked with
-`mark_damage`.
+Notes supplied through `damaged` are information for the agent; actual
+damage exclusions are atlas regions marked with `mark_damage`.
+
+## Freezing what the agent may not change
+
+A job is configured by three settings: what is already known
+(`inputs`, above), what is frozen, and which tools exist (`disabled`, above).
+`frozen` names, per section, the properties the agent may not change. A
+section has five:
+
+| Property | What it is | Kept when `inputs` supplies none |
+|---|---|---|
+| `position` | Where it sits along the slicing axis | Nothing: a frozen position must be supplied in `inputs.positions` |
+| `angles` | Its cutting angles (pitch, yaw) | The flat plane |
+| `orientation` | Its flip and quarter turn, together | No flip, no turn |
+| `affine` | Its continuous in-plane transform | The host's identity transform (`kind` `host`) |
+| `deformation` | The deformation on top of its linear placement | None |
+
+```json
+{"frozen": {"s_007.tif": ["orientation", "affine"], "*": ["angles"]}}
+```
+
+A filename names one section, `"*"` every section; a section's own list and
+`"*"` add up. From the command line, `--frozen JSON`; in a library call,
+`frozen=`. The properties and filenames are checked when the job is made.
+
+Three common freezes:
+
+- Positions, cutting angles and orientation known, the continuous affine and
+  the deformation left to the agent:
+  `{"*": ["position", "angles", "orientation"]}` with `inputs.positions`,
+  `inputs.angles` and `inputs.orientation` and the tasks `transform,nonlinear`.
+- A section the host already aligned and does not want touched:
+  `{"s_007.tif": ["orientation", "affine"]}` (its transform is the supplied
+  one, else the identity).
+- A section left out of Nonlinear: `{"s_007.tif": ["deformation"]}`.
+
+Every write that would change a frozen property is refused, in every door,
+with `FROZEN` naming the sections and properties; nothing is written for the
+refused section, and the others in a per-section call still are
+(`position_sections` and `set_transforms` refuse the whole call). The
+partial cases:
+
+- A fit under a frozen `orientation` keeps the section's handedness: the
+  sign of its transform's determinant stays the sign of the transform it
+  replaces (positive without one, negative for a supplied mirrored
+  transform). `elastix_affine` and `interactive_transform` refuse a fit or
+  a scale that would mirror the section.
+- A frozen `affine` is never rewritten: `elastix_affine` leaves the section
+  out of its default list and refuses it by name, `interactive_transform`
+  refuses a changed knob (the same numbers again write nothing, and the
+  orientation may change under it when it is free). A section whose
+  `deformation` is free is still deformed on its supplied transform.
+- The cutting angles are one plane for the stack, so `position_sections`
+  refuses its `cutting_angles` while any section has `angles` frozen.
+- A frozen `deformation` needs no entry in `submit`'s `left_linear` and no
+  deformation to submit; naming it there is refused.
+
+A task whose properties are all frozen on every section is off
+(`position`: position and angles; `transform`: orientation and affine;
+`nonlinear`: deformation), and a task that is switched off freezes its
+properties on every section: "the host supplied this" is one rule. A tool
+that writes only properties frozen on every section is not offered
+(`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`
+and `trace_borders` by what they write), `interactive_transform`'s `flip`
+goes with a frozen `orientation`, and no text names what is gone. The job
+statement says what is frozen, grouping sections that share a freeze (`every
+section`, their filenames, or their count when many), and each `status` row
+of a section with something frozen carries `frozen`.
+
+Saved jobs from before this setting read their `inputs.locked`,
+`inputs.keep_warp` and `inputs.nonlinear_skip` as the freezes they stood for
+(`orientation` and `affine`; `deformation`; `deformation`). A job resumed with
+a different `frozen` is refused like one resumed with other `inputs`.
 
 ## Looking and calibration
 

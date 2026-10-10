@@ -43,6 +43,12 @@ and `environment.yml` hold the worker's source installation.
 - Tasks `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from
   `JobSpec.inputs`. Nonlinear needs a linear placement first.
+- A host or benchmark only configures LangSlice, with three settings:
+  `inputs` (what is already known per section), `frozen` (which of a
+  section's `position`, `angles`, `orientation`, `affine`, `deformation` the
+  agent may not change; every write op refuses a change, `FROZEN`) and
+  `disabled` (which tools exist). A task that is off freezes its properties
+  everywhere.
 - The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,

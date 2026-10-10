@@ -40,14 +40,19 @@ wording; `registry.py` lists which.
   tool door after the write.
 - It never words anything for a model and never applies the
   look-before-commit gates (`compared`/`reviewed`): those are the tool
-  door's (`submit` takes the door's gate as a callable). Job rules (locked
-  sections, host damage marks, the spec's flip switch, the submit gates)
+  door's (`submit` takes the door's gate as a callable). Job rules (frozen
+  properties, host damage marks, the spec's flip switch, the submit gates)
   are the job's and are applied here; the transform cap (`Job.over_cap`)
   is checked by the tool door with its other arguments.
 - A model is passed in, never chosen here: `traces.trace_borders` (and
   `traces.trace_from_atlas`) takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
   (`core.handoff.correction_fingerprint`).
+- A write to a property the job froze (`JobSpec.frozen`, `core/frozen.py`) is
+  refused with the one code `FROZEN` (`ids`, `properties`, `message`):
+  `refusal.check_frozen(job, ids, *properties)` raises it for a whole call,
+  `refusal.frozen_row(job, id, *properties)` is a section's row in a
+  per-section answer.
 - A refusal is `refusal.Refused(code, status="error", **facts)`, nothing
   written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
   every door answers with (`status` "refused" for a gate, `Refused.of`
@@ -79,10 +84,11 @@ wording; `registry.py` lists which.
   the places placed sections held, an unplaced one keeps its own;
   `renumber(order)`, indices only); returns `SectionsPositioned`
   (`written`, `clamped`, `unknown`, `cutting_angles`, `order`,
-  `reordered`). Refused: `BAD_ARGS`, `POSITIONS_SUPPLIED` (the spec has no
-  `position` task: the host supplied them), `ANGLES_SUPPLIED` (neither the
-  `position` task nor `transform.angles`); angles alone are allowed under
-  supplied positions when `transform.angles` is on.
+  `reordered`). Refused: `BAD_ARGS`, `FROZEN` (a section named has its
+  position frozen, or angles are asked while any section has its cutting
+  angles frozen: they are one plane for the stack; a task that is off
+  freezes what it supplies); angles alone are allowed under frozen
+  positions, positions under frozen angles.
 - `damage.py` — `mark_damage(job, workspace, section, regions, note="",
   options=)`: the section's marked regions (checked against the atlas,
   normalized; `UNKNOWN_REGIONS`, `BAD_ARGS`, `NO_SIDES`, `UNKNOWN_SLICE_IDS`)
@@ -167,7 +173,10 @@ wording; `registry.py` lists which.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (an Elastix affine fit's record, kind `elastix`), `set_transforms(job,
-  {id: record})` (one undo step for the batch; locked sections refused).
+  {id: record})` (one undo step for the batch; a frozen affine, or a transform that turns
+  over a section whose orientation is frozen, refused whole, `FROZEN`;
+  `reverses_orientation`: the determinant's sign differs from the sign of
+  the transform it replaces, positive without one).
   The shear convention is `affine.decompose_affine`'s.
   `interactive_transform(job, workspace, sections)`: orientation
   (`flip`, `rotate_quarter` 0/90/180/270) and the knobs together, absolute
@@ -177,7 +186,10 @@ wording; `registry.py` lists which.
   call. A changed orientation keeps the knob values: the transform is
   rebuilt on the new orientation, not dropped, and the entry's `kept` and
   `message` say so; with no transform and no knob given, the orientation
-  alone is set. Per entry `LOCKED`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
+  alone is set. A frozen affine is never rewritten (even under a changed
+  orientation); a frozen orientation refuses a changed flip or quarter turn
+  and a transform that would mirror the section. Per entry `FROZEN`
+  (`properties` says which), `UNKNOWN_SLICE_IDS`, `BAD_ARGS`,
   `BAD_ROTATION`, `FLIP_DISABLED`, `NO_POSITION`, the stager's codes
   (`core.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
   `error`, `staged`, `previous`, `transform`, `written`, `id`,
@@ -187,8 +199,9 @@ wording; `registry.py` lists which.
   refining its current placement against the atlas image (`ara` read as
   `template`), by the *restrict_to* regions only, its marked damage regions
   left out on their own (`core.damage.exclusions`); the named sections, else
-  `fit_targets(job)` (every positioned section the host did not lock);
-  `LOCKED` per section; every successful fit written as ONE undo step (fits
+  `fit_targets(job)` (every positioned section whose affine is not frozen);
+  `FROZEN` per section (a frozen affine, or a fit that turns over a section
+  whose orientation is frozen); every successful fit written as ONE undo step (fits
   computed outside the lock, `STALE_INPUT` for a section that changed);
   a tiny restricted region is `REGION_TOO_SMALL` before the engine runs;
   a fit that turns a section more than `LARGE_TURN_DEG` from its previous
@@ -267,8 +280,8 @@ wording; `registry.py` lists which.
   call runs on the job's image executor and the section's
   `image_correction` record is written as one undo step when it changed.
   Prepared outside the lock, started and written under it. Refused:
-  `UNKNOWN_SLICE_IDS`, `KEEPS_HOST_WARP` / `NONLINEAR_SKIPPED`
-  (`Job.nonlinear_refusal`), `INVALID_LINEAR_PLACEMENT`,
+  `UNKNOWN_SLICE_IDS`, `FROZEN` (the section's deformation is frozen),
+  `INVALID_LINEAR_PLACEMENT`,
   `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
   `trace_from_atlas(job, workspace, refs, image_model=, passes=1,
@@ -284,7 +297,7 @@ wording; `registry.py` lists which.
   written transform. Prepared outside the lock; under it each section's
   geometry is checked again (`STALE_INPUT` row), its call started, its
   record written; every changed record ONE undo step. Per-section rows
-  (`UNKNOWN_SLICE_IDS`, `KEEPS_HOST_WARP` / `NONLINEAR_SKIPPED`,
+  (`UNKNOWN_SLICE_IDS`, `FROZEN`,
   `INVALID_LINEAR_PLACEMENT`, `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT`,
   `running`); `BAD_ARGS` for no sections or `passes` not 1/2. Returns
   `AtlasTraces` (`rows`, `written`). Both verbs share one prepare step
@@ -335,8 +348,8 @@ wording; `registry.py` lists which.
   `failed` (the write stands).
 - `views.py` — `status(job)` (`StackStatus`: the status rows, angles,
   breaks as the filenames of the sections after each gap,
-  `core.state.break_ids`; a row the user locked carries `locked: true`, one the user gave a
-  damage note `damage_by_user: true`).
+  `core.state.break_ids`; a row with properties the user froze carries
+  `frozen: [...]`, one the user gave a damage note `damage_by_user: true`).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
   "Nonlinear", tool, limits)`, in the order every door lists them; `tool` is
@@ -351,7 +364,10 @@ wording; `registry.py` lists which.
   `position_sections` with the `position` task or the stack's cutting angles
   left to the agent (`transform.angles`, `positions_on`);
   `interactive_transform` and `elastix_affine` with `transform`; `ants_syn`
-  with `nonlinear`; `trace_borders` with `nonlinear` and an image model. A
+  with `nonlinear`; `trace_borders` with `nonlinear` and an image model (a
+  task whose properties are all frozen on every section is not on,
+  `JobSpec.has`; a tool that writes only properties frozen on every section,
+  `ToolDef.writes`, is off: `JobSpec.switched_off`). A
   tool or option the job disables (`JobSpec.disabled`; `look:<mode>` and
   `interactive_transform:flip` are the options) is off in every run: the
   operations refuse a disabled `look` mode (`OPTION_OFF`) and a changed flip
