@@ -23,7 +23,14 @@ public final class DialogPreview {
                 + "\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,\"models\":[\"gpt-image-2.5-sunburst\"],\"default_model\":\"gpt-image-2.5-sunburst\"},"
                 + "{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":true,\"models\":[\"gemini-3-pro-image\"],\"default_model\":\"gemini-3-pro-image\"},"
                 + "{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":false,\"models\":[\"gpt-image-2.5-sunburst\"],\"default_model\":\"gpt-image-2.5-sunburst\"},"
-                + "{\"provider\":\"none\",\"label\":\"None\",\"connected\":true,\"models\":[],\"default_model\":null}]}").getAsJsonObject();
+                + "{\"provider\":\"none\",\"label\":\"None\",\"connected\":true,\"models\":[],\"default_model\":null}],"
+                + "\"tools\":[{\"name\":\"look\",\"group\":\"Common\",\"kind\":\"read\",\"disableable\":false,\"options\":[\"section\",\"atlas\",\"overlay\",\"positioning\"],\"needs\":[]},"
+                + "{\"name\":\"zoom\",\"group\":\"Common\",\"kind\":\"read\",\"disableable\":true,\"options\":[],\"needs\":[]},"
+                + "{\"name\":\"mark_damage\",\"group\":\"Common\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]},"
+                + "{\"name\":\"position_sections\",\"group\":\"Positioning\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:positioning\",\"look:overlay\"]]},"
+                + "{\"name\":\"interactive_transform\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[\"flip\"],\"needs\":[[\"look:overlay\"]]},"
+                + "{\"name\":\"elastix_affine\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:overlay\"]]},"
+                + "{\"name\":\"ants_syn\",\"group\":\"Nonlinear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:overlay\"]]}]}").getAsJsonObject();
         List<RegistrationDialog.SliceRow> rows = new ArrayList<>();
         for (int i = 1; i <= 12; i++) rows.add(new RegistrationDialog.SliceRow("M03_B_" + String.format("%02d", i) + ".vsi - 10x_01", i % 5 == 0 ? 2 : 0));
         List<String> channels = Arrays.asList("DAPI", "NeuN-AF488", "Iba1-AF647 (a long channel name from the scanner)");
@@ -49,6 +56,10 @@ public final class DialogPreview {
             dialog[0].setVisible(true);
         });
         settle(dialog[0]);
+        SwingUtilities.invokeAndWait(() -> { dialog[0].advanced.doClick(); dialog[0].tabs.setSelectedIndex(0); });
+        settle(dialog[0]);
+        SwingUtilities.invokeAndWait(() -> capture(dialog[0], new File(folder, "dialog_tasks_advanced.png")));
+        SwingUtilities.invokeAndWait(() -> dialog[0].advanced.doClick());
         String[] names = {"tasks", "slices", "preprocessing"};
         for (int tab = 0; tab < names.length; tab++) {
             final int index = tab;
