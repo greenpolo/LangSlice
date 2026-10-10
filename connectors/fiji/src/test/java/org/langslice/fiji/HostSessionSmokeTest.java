@@ -165,7 +165,9 @@ public final class HostSessionSmokeTest {
         require(Math.abs(request.getAsJsonObject("positions_mm").get(S1).getAsDouble() - 5.0) < 1e-9
                 && Math.abs(request.getAsJsonObject("positions_mm").get(S2).getAsDouble() - 5.4) < 1e-9, "positions_mm = toAtlasZ");
         require(request.getAsJsonArray("existing_warp").toString().equals("[\"" + S2 + "\"]"), "existing_warp names the user's warped slice only");
-        require(request.getAsJsonArray("locked").toString().equals("[\"" + S2 + "\"]"), "Registered slices are locked when overwriting is off");
+        require(!request.has("locked") && !request.has("nonlinear_skip") && !request.has("keep_warp"), "Old locked/nonlinear_skip/keep_warp keys are no longer sent");
+        require(request.getAsJsonObject("spec").getAsJsonObject("frozen").toString().equals("{\"" + S2 + "\":[\"orientation\",\"affine\",\"deformation\"]}"),
+                "Registered slices freeze orientation and affine when overwriting is off; a warped one also its deformation");
         require(request.getAsJsonArray("channel_names").toString().equals("[\"ramp\"]"), "channel_names sent");
         require(request.getAsJsonObject("damaged").get(S1).getAsString().equals("torn"), "User damage reaches the request");
         require(Files.isRegularFile(output.resolve("snapshots").resolve(S1)), "Snapshot exported");
