@@ -193,8 +193,10 @@ conversation. The agent CLI logs every call in `logs/calls.jsonl` and uses
 `LANGSLICE_TRACE_DIR` for additional tool traces.
 
 The `openai-oauth` agent transport automatically retries connection failures,
-timeouts, HTTP 408/409/429 and 5xx errors (including 507) up to three times
-before a successful response stream starts. It logs each retry and waits
+timeouts, HTTP 408/409/429 and 5xx errors (including 507), and early
+`response.failed` events reporting server overload, server errors or temporary
+rate limits. HTTP and event failures share a budget of three retries; event
+failures are retried only before any model output arrives. It logs each retry and waits
 2, 4 and 8 seconds with jitter, honoring a longer `Retry-After` up to 60
 seconds. Longer server delays, explicit quota exhaustion, certificate errors
 and other permanent failures stop the run. A 401 can refresh credentials once.

@@ -307,7 +307,8 @@ def stream_events(
     The first event is a synthetic ``langslice.quota`` carrying any quota
     headers the backend sent. *session_id* rides in the headers; keep it
     stable across one agent loop so the backend routes to a warm cache.
-    Only request establishment is retried; a delivered stream is never replayed.
+    Early transient failure events are also retried, before any model output.
+    A stream containing model output is never replayed.
     """
     creds = load_credentials()
     session_id = session_id or str(uuid.uuid4())
@@ -335,25 +336,63 @@ def stream_events(
                 refreshed = True
                 continue
             if response.status_code < 400:
-                break
-            try:
-                message = response.text
-                quota = quota_from_headers(response.headers)
+                events = iter_sse(response)
+                prefix: list[dict[str, Any]] = []
+                try:
+                    for event in events:
+                        prefix.append(event)
+                        if event.get("type") not in (
+                            "response.created", "response.queued", "response.in_progress",
+                        ):
+                            break
+                except Exception:
+                    response.close()
+                    raise
                 delay = _response_retry_delay(retries, response.headers.get("Retry-After"))
-            finally:
+                if (not prefix or not _retryable_failure(prefix[-1])
+                        or retries >= 3 or delay is None):
+                    break
                 response.close()
-            retryable = response.status_code in (408, 409, 429) or 500 <= response.status_code < 600
-            if retries >= 3 or not retryable or delay is None or _hard_quota_error(message):
-                raise RuntimeError(
-                    f"Codex Responses request failed ({response.status_code}): {message[:500]}"
-                    + (f" quota={quota}" if quota else "")
+                reason = "early response.failed"
+            else:
+                try:
+                    message = response.text
+                    quota = quota_from_headers(response.headers)
+                    delay = _response_retry_delay(retries, response.headers.get("Retry-After"))
+                finally:
+                    response.close()
+                retryable = (
+                    response.status_code in (408, 409, 429)
+                    or 500 <= response.status_code < 600
                 )
-            reason = f"HTTP {response.status_code}"
+                if retries >= 3 or not retryable or delay is None or _hard_quota_error(message):
+                    raise RuntimeError(
+                        f"Codex Responses request failed ({response.status_code}): {message[:500]}"
+                        + (f" quota={quota}" if quota else "")
+                    )
+                reason = f"HTTP {response.status_code}"
         retries += 1
         logger.warning("Codex Responses %s; retry %d/3 in %.1fs", reason, retries, delay)
         time.sleep(delay)
     quota = quota_from_headers(response.headers)
-    return itertools.chain([{"type": "langslice.quota", "quota": quota}], _closing(response))
+    return itertools.chain(
+        [{"type": "langslice.quota", "quota": quota}], prefix, _closing(response, events),
+    )
+
+
+def _retryable_failure(event: dict[str, Any]) -> bool:
+    """Only known transient failures, with no quota exhaustion, can be replayed."""
+    if event.get("type") != "response.failed":
+        return False
+    error = event.get("response", {}).get("error") or {}
+    if _hard_quota_error(json.dumps({"error": error})):
+        return False
+    return any(error.get(key) in (
+        "server_error", "service_unavailable", "overloaded", "temporarily_unavailable",
+        "rate_limit_exceeded",
+    ) for key in ("code", "type")) or (
+        "servers are currently overloaded" in str(error.get("message", "")).lower()
+    )
 
 
 def _response_retry_delay(retries: int, retry_after: str | None) -> float | None:
@@ -387,9 +426,11 @@ def _hard_quota_error(message: str) -> bool:
     )
 
 
-def _closing(response: requests.Response) -> Iterator[dict[str, Any]]:
+def _closing(
+    response: requests.Response, events: Iterator[dict[str, Any]],
+) -> Iterator[dict[str, Any]]:
     try:
-        yield from iter_sse(response)
+        yield from events
     finally:
         response.close()
 
