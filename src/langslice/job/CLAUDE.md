@@ -112,8 +112,8 @@ writes none of it.
 
 **Resuming with other inputs is refused.** `Job.open` with `spec.resume`
 on a folder whose checkpoint was made from other supplied inputs
-(`JobSpec.inputs`, compared with the checkpoint's own spec:
-`job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
+(`JobSpec.inputs` and `JobSpec.frozen`, compared with the checkpoint's own
+spec: `job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--fresh`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
@@ -236,10 +236,16 @@ longer exist be taken over by the images it is opened with.
   `wait_image_job`: timeout None waits as long as it takes; the call is
   forgotten only once its reply is recorded), `background` (above), `close`
   (the background work, then the pictures), `wire_views` (a saved
-  picture's `step` is the undo history's depth), `nonlinear_refusal`
-  (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
+  picture's `step` is the undo history's depth), `frozen_for(id)` and
+  `frozen_refusal(ids, *properties)` (the `FROZEN` payload when a write to a
+  property the job froze on one of the sections would change it: `ids`,
+  `properties`, `message`), `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
-  checked), `changed_inputs` (above). New sections remain unplaced until
+  checked; `spec.frozen` must name sections that are here, a frozen position
+  must have been supplied, and a frozen affine without a supplied transform
+  carries `host_transform()`, `kind` `"host"`), `changed_inputs` (above; the
+  saved spec read through `JobSpec.migrated`, and `frozen` counts as a
+  changed input). New sections remain unplaced until
   the caller supplies or writes positions; no positions are interpolated
   or extrapolated around supplied ones. Saved positions are preserved on
   resume. Legacy checkpoints may carry `SliceState.position_source`
@@ -253,9 +259,8 @@ longer exist be taken over by the images it is opened with.
   only for the tasks that are on: `MISSING_POSITIONS` (no position, or
   still at the starting one: `at_default`), `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
-  `MISSING_DEFORMATIONS`. The sections the host
-  kept out of Nonlinear (`keep_warp`, `nonlinear_skip`:
-  `nonlinear_exempt_ids`) need no deformation and no image correction, and
+  `MISSING_DEFORMATIONS`. The sections whose
+  deformation is frozen need no deformation and no image correction, and
   the sections `submit` leaves linear (`left_linear`) count as covered.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),

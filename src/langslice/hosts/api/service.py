@@ -80,7 +80,7 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
         wanted = LinearEstimateRequest.model_validate(request.params)
         result = LinearEstimateResult.model_validate(
-            estimate(wanted.spec, wanted.n_slices, wanted.locked),
+            estimate(wanted.spec, wanted.n_slices),
         )
         return EngineResultEnvelope(
             id=request.id, type="result", result=result.model_dump(mode="json"),

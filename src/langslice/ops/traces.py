@@ -21,7 +21,7 @@ from langslice.core.damage import exclusions
 from langslice.core.nonlinear import registration_tool
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.ops.inputs import STALE_INPUT, section_inputs
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, frozen_row, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.display import DisplayOptions
@@ -75,15 +75,16 @@ class _Prepared:
 
 
 def _prepare(job: Job, workspace: Workspace, ref: object, prepare: Prepare) -> _Prepared:
-    """Resolve *ref*, apply the job's Nonlinear refusal and prepare its edit
+    """Resolve *ref*, refuse a frozen deformation and prepare its edit
     (outside the job's write lock)."""
     record = job.state.resolve(ref)
     if record is None:
         facts = unknown_sections(job.state, [str(ref)]).details
         return _Prepared(id=str(ref), problem=("UNKNOWN_SLICE_IDS", facts))
-    refusal = job.nonlinear_refusal(record.id)
-    if refusal is not None:
-        return _Prepared(id=record.id, problem=(refusal[0], {"message": refusal[1]}))
+    frozen = frozen_row(job, record.id, "deformation")
+    if frozen is not None:
+        return _Prepared(id=record.id, problem=(frozen["error"], {
+            "properties": frozen["properties"], "message": frozen["message"]}))
     try:
         current = handoff.correction_fingerprint(job.state, workspace, record.id)
         if job.image_job_running(record.id, current):
@@ -217,9 +218,8 @@ def trace_borders(
     deformation already holds, fits nothing again (``landed``, no work).
     Refused before any image call:
     ``ANTS_MISSING``, ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES`` (a
-    bad *restrict_to*), ``UNKNOWN_SLICE_IDS``, ``KEEPS_HOST_WARP`` /
-    ``NONLINEAR_SKIPPED`` (the host kept the section out of Nonlinear),
-    ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
+    bad *restrict_to*), ``UNKNOWN_SLICE_IDS``, ``FROZEN`` (the
+    section's deformation is frozen), ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
     ``STALE_INPUT`` (the geometry changed while the call was prepared).
     """
     from langslice.ops.deformable import START_LATEST, refuse_without_ants, region_entries
@@ -377,8 +377,7 @@ def trace_from_atlas(
     started on the job's image executor and its record written; every
     changed record is ONE undo step. A call already running for a section
     at its geometry is not started again (``running``). Per-section problems
-    are rows: ``UNKNOWN_SLICE_IDS``, ``KEEPS_HOST_WARP`` /
-    ``NONLINEAR_SKIPPED``, ``INVALID_LINEAR_PLACEMENT``,
+    are rows: ``UNKNOWN_SLICE_IDS``, ``FROZEN``, ``INVALID_LINEAR_PLACEMENT``,
     ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``. Refused (nothing
     written): ``BAD_ARGS`` (no sections, or *passes* not 1 or 2).
     """
@@ -396,7 +395,8 @@ def trace_from_atlas(
         if prepared.problem is not None:
             code, facts = prepared.problem
             rows.append({"id": prepared.id, "status": "error", "error": code,
-                         **{key: value for key, value in facts.items() if key == "message"}})
+                         **{key: value for key, value in facts.items()
+                            if key in ("message", "properties")}})
         elif prepared.running:
             rows.append({"id": prepared.id, "status": "running", "started": False,
                          "message": "This section's image correction is already running."})

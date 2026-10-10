@@ -66,7 +66,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                     # One look is enough: a section is confirmed at one position.
                     rejected.append({"id": record.id, "reason": render(
                         "not compared since its last write; look at it in mode "
-                        "[[?look:overlay overlay or ]]positioning first", spec.disabled)})
+                        "[[?look:overlay overlay or ]]positioning first", spec.switched_off)})
                     continue
                 kept.append(entry)
             entries = kept

@@ -706,7 +706,7 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
     transform as the identity (``core.maps.placement_problem``), but the
     nonlinear step needs a WRITTEN one (``core.handoff.prepare_linear_registration``)
     and leaving a section linear refuses too, so with Linear off the host must
-    supply transforms (or ``locked``, which writes the ``host`` identity)."""
+    supply transforms (or freeze the affine, which writes the ``host`` identity)."""
     import langslice
 
     create(spec_for(images, ["nonlinear"], positions=dict(POSITIONS)))
@@ -717,7 +717,8 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
         message = fit["results"][0]["message"]
         assert "--transforms" in message and "inputs.transforms" in message, message
         assert "Linear on" in message, message
-    fresh = spec_for(images, ["nonlinear"], positions=dict(POSITIONS), locked=list(IDS))
+    fresh = spec_for(images, ["nonlinear"], positions=dict(POSITIONS))
+    fresh.frozen = {"*": ["orientation", "affine"]}
     fresh.resume = False  # a new job on the same images, not the one above
     create(fresh)
     with langslice.open_job(images) as job:
@@ -921,13 +922,14 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     assert positions() == moved
 
 
-def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
+def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
     damaged = images.parent / "damaged.json"
     damaged.write_text(json.dumps({ID2: "torn"}))
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-               "--locked", json.dumps(list(IDS)), "--damaged", str(damaged))
+               "--frozen", json.dumps({"*": ["orientation", "affine"]}),
+               "--damaged", str(damaged))
     spec = json.loads((job / "job.json").read_text())["spec"]
-    assert spec["inputs"]["locked"] == list(IDS)
+    assert spec["frozen"] == {"*": ["orientation", "affine"]}
     assert spec["inputs"]["damaged"] == {ID2: "torn"}
     from langslice.job.checkpoint import load_checkpoint
 
@@ -940,7 +942,7 @@ def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
     assert record.damaged_regions == []
     rows = {row["id"]: row for row in ok(capsys, images, "status")["result"]["rows"]}
     assert rows[ID2]["damage_note"] == "torn" and rows[ID2]["damaged"] is False
-    # Locked sections carry the host identity: they can be left linear and submitted.
+    # Sections with a frozen affine carry the host identity: they can be left linear and submitted.
     ok(capsys, images, "submit", *SUBMIT_FLAGS,
        "--left-linear", json.dumps(_left_linear(*IDS)))
 

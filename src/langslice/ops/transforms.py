@@ -22,9 +22,10 @@ import numpy as np
 from langslice.core.affine import normalized_physical_affine
 from langslice.core.damage import exclusions
 from langslice.core.display import canonical_atlas_name
+from langslice.core.frozen import FROZEN
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, check_frozen, frozen_row, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.placement import Staged
@@ -115,16 +116,48 @@ def _turn_deg(previous: Mapping[str, Any] | None, outcome: Mapping[str, Any]) ->
     return abs((after - before + 180.0) % 360.0 - 180.0)
 
 
+def det_sign(transform: Mapping[str, Any] | None) -> int:
+    """The sign (1, -1, or 0 for a transform with none to read) of a stored
+    transform's 2x2 determinant: positive keeps the section's handedness in
+    the frame its orientation sets, negative turns it over."""
+    params = np.asarray((transform or {}).get("params"), dtype=float)
+    if params.shape != (6,) or not np.isfinite(params).all():
+        return 0
+    det = params[0] * params[4] - params[1] * params[3]
+    return 1 if det > 0 else -1 if det < 0 else 0
+
+
+def reverses_orientation(record: SliceState, transform: Mapping[str, Any]) -> bool:
+    """Whether writing *transform* on *record* would turn the section over,
+    which its orientation, when frozen, forbids: its determinant's sign
+    differs from the sign of the transform it replaces (a supplied transform
+    may carry a mirror of its own; a section with none is unmirrored)."""
+    held = det_sign(record.transform) or 1
+    return det_sign(transform) != held
+
+
+def _mirrors(name: str) -> str:
+    return (f"This transform would mirror {name}, which changes its orientation; the "
+            "orientation is frozen there, so the transform has to keep the section's "
+            "handedness.")
+
+
 def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> list[str]:
     """Write each ``{section id: transform record}`` as ONE undo step.
 
-    The record replaces the section's transform whole. The host's locked
-    sections are refused (:class:`Refused` ``LOCKED``, nothing written).
-    Returns the ids written; nothing is committed for an empty mapping.
+    The record replaces the section's transform whole. A section whose affine
+    is frozen is refused (:class:`Refused` ``FROZEN``, nothing written), and so
+    is a transform that would turn over a section whose orientation is frozen
+    (:func:`reverses_orientation`). Returns the ids written; nothing is
+    committed for an empty mapping.
     """
-    locked = [name for name in transforms if name in job.locked]
-    if locked:
-        raise Refused("LOCKED", ids=locked)
+    check_frozen(job, list(transforms), "affine")
+    for name, transform in transforms.items():
+        record = job.state.by_id(name)
+        if (record is not None and "orientation" in job.frozen_for(name)
+                and reverses_orientation(record, transform)):
+            raise Refused(FROZEN, ids=[name], properties=["orientation"],
+                          message=_mirrors(name))
     with job.writing():
         records = []
         for name in transforms:
@@ -145,10 +178,10 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
 
 def fit_targets(job: Job) -> list[SliceState]:
     """The sections ``elastix_affine`` fits when none are named: every
-    positioned section the host did not lock, in corrected order."""
+    positioned section whose affine is not frozen, in corrected order."""
     return [
         record for record in job.state.in_order()
-        if record.position_mm is not None and record.id not in job.locked
+        if record.position_mm is not None and "affine" not in job.frozen_for(record.id)
     ]
 
 
@@ -159,7 +192,7 @@ class AffineFit:
     ``rows``: one per section asked, in order: the fit's payload (``id``,
     ``status: ok``, ``iou``, ``physical``, ``params`` (the six stored
     numbers), ``calibration``, ``mirrored``, ``regions`` when restricted)
-    or ``{"id", "status": "error", "error", ...}`` (``LOCKED``, the fitter's
+    or ``{"id", "status": "error", "error", ...}`` (``FROZEN``, the fitter's
     code, ``STALE_INPUT``). ``fitted``: the sections written.
     """
 
@@ -177,7 +210,10 @@ def _fit_elastix(
     *fit_atlas* (:func:`langslice.core.transform.fit_elastix`), by the
     *restrict_to* regions only (empty: every region); each section's marked
     regions are left out on their own (:func:`langslice.core.damage.exclusions`).
-    A locked section is refused (``LOCKED``). Every fit that succeeded is
+    A section whose affine is frozen is refused (``FROZEN``), and so is a fit
+    that turns over a section whose orientation is frozen
+    (:func:`reverses_orientation`; its row says ``FROZEN``). Every fit that
+    succeeded is
     written as ONE undo step (:func:`set_transforms`, :func:`fit_transform`
     records).
 
@@ -195,8 +231,9 @@ def _fit_elastix(
     expected: dict[str, str] = {}
     for record in records:
         expected[record.id] = section_inputs(state, record)
-        if record.id in job.locked:
-            rows.append({"id": record.id, "status": "error", "error": "LOCKED"})
+        frozen = frozen_row(job, record.id, "affine")
+        if frozen is not None:
+            rows.append(frozen)
             continue
         kept, dropped = exclusions(record, restrict_to, ())
         try:
@@ -222,8 +259,13 @@ def _fit_elastix(
                 outcome.clear()
                 outcome.update(stale_row(record.id))
                 continue
-            records_out[record.id] = fit_transform(outcome, include=kept, exclude=dropped,
-                                                   fit_atlas=fit_atlas)
+            made = fit_transform(outcome, include=kept, exclude=dropped, fit_atlas=fit_atlas)
+            if "orientation" in job.frozen_for(record.id) and reverses_orientation(now, made):
+                outcome.clear()
+                outcome.update(frozen_row(job, record.id, "orientation") or {},
+                               message=_mirrors(record.id))
+                continue
+            records_out[record.id] = made
         written = set_transforms(job, records_out)
     return AffineFit(rows=rows, fitted=written)
 
@@ -235,7 +277,7 @@ class Adjustment:
     """One ``interactive_transform`` entry: what it set, or why not."""
 
     #: ``{"status": "error", "error", ...}`` when the entry was refused
-    #: (``BAD_ARGS``, ``LOCKED``, ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``,
+    #: (``BAD_ARGS``, ``FROZEN``, ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``,
     #: ``ATLAS_RENDER_FAILED``, ``BAD_PIVOT``, ...); else None.
     error: dict[str, Any] | None = None
     #: The section, its working frame, canvas and pivot
@@ -309,9 +351,16 @@ def interactive_transform(
     A changed orientation of a section with no transform, and no knob given,
     sets the orientation alone.
 
-    Per entry, refused (nothing written for it): ``LOCKED``,
-    ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (not a mapping, a knob that is not a
-    finite number, a flip that is not true/false), ``BAD_ROTATION``,
+    A section whose affine is frozen keeps its stored transform whatever the
+    orientation does (its numbers are never rewritten), and the same numbers
+    again write nothing, so it can still be looked at.
+
+    Per entry, refused (nothing written for it): ``FROZEN`` (the entry would
+    change a frozen orientation, change the knobs of a frozen affine, or,
+    under a frozen orientation, turn the section over: a transform whose
+    determinant changes sign), ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (not a
+    mapping, a knob that is not a finite number, a flip that is not
+    true/false), ``BAD_ROTATION``,
     ``FLIP_DISABLED`` (the job disables ``interactive_transform:flip`` and the
     call changes the flip), ``NO_POSITION`` (a transform to build on a section without a
     position) and the stager's codes (:func:`langslice.core.placement.stage`).
@@ -337,10 +386,7 @@ def interactive_transform(
                 state, [str(entry.get("id", ""))]).payload()))
             continue
         name = record.id
-        if name in job.locked:
-            done.append(Adjustment(error={"status": "error", "error": "LOCKED", "id": name},
-                                   id=name))
-            continue
+        frozen_now = job.frozen_for(name)
 
         def refuse(error: str, name: str = name, **facts: Any) -> None:
             done.append(Adjustment(error={"status": "error", "error": error, "id": name,
@@ -365,6 +411,9 @@ def interactive_transform(
             if rotation not in ROTATIONS:
                 refuse("BAD_ROTATION", allowed=list(ROTATIONS))
                 continue
+            if rotation != record.rotation_deg and job.spec.off("interactive_transform:rotate"):
+                refuse("OPTION_OFF", message="rotate_quarter is switched off for this job")
+                continue
         knobs = held_knobs(record)
         given = {key: entry[key] for key in KNOB_DEFAULTS if entry.get(key) is not None}
         try:
@@ -376,8 +425,18 @@ def interactive_transform(
             refuse("BAD_ARGS", message="every transform number must be finite")
             continue
         changed = (flip, rotation) != (record.flip, record.rotation_deg)
-        orientation = {"flip": flip, "rotate_quarter": rotation, "changed": changed}
         held = record.transform
+        hit: list[str] = []
+        if frozen_now:
+            if changed:
+                hit.append("orientation")
+            if any(knobs[key] != value for key, value in held_knobs(record).items()):
+                hit.append("affine")
+        row = frozen_row(job, name, *hit) if hit else None
+        if row is not None:
+            done.append(Adjustment(error=row, id=name))
+            continue
+        orientation = {"flip": flip, "rotate_quarter": rotation, "changed": changed}
         if held is None and not given:
             # No transform and none asked for: the orientation alone.
             if changed:
@@ -401,9 +460,18 @@ def interactive_transform(
             pivot_frac=staged.pivot_frac, knobs=staged.params,
             note=str(entry.get("note", "")),
         )
-        wrote = changed or not same_transform(held, transform)
+        if "affine" in frozen_now:
+            wrote, written_transform = changed, held  # nothing of the affine moves
+        elif "orientation" in frozen_now and reverses_orientation(record, transform):
+            done.append(Adjustment(error={
+                **(frozen_row(job, name, "orientation") or {}), "message": _mirrors(name)},
+                id=name))
+            continue
+        else:
+            wrote = changed or not same_transform(held, transform)
+            written_transform = transform
         if wrote:
-            pending[name] = (flip, rotation, transform)
+            pending[name] = (flip, rotation, written_transform)
         done.append(Adjustment(
             staged=staged, previous=held, transform=transform, written=wrote,
             id=name, orientation=orientation,

@@ -201,7 +201,7 @@ class JobHandle:
                                  f"{spec.tasks}"
                                  + (f", disabled {spec.disabled}" if spec.disabled else "")
                                  + "); see .verbs")
-        retired = retired_payload(name, self._opened.spec.disabled)
+        retired = retired_payload(name, self._opened.spec.switched_off)
         if retired is not None:  # a retired verb says what replaced it
             raise AttributeError(retired["message"])
         raise AttributeError(name)

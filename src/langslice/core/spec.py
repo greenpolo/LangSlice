@@ -16,6 +16,7 @@ import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from langslice.core import frozen as freeze
 from langslice.core import toolset
 
 #: Every task, in the order they are listed everywhere else.
@@ -40,8 +41,8 @@ MAX_PARALLEL_TRANSFORMS = 4
 #: The keys :attr:`JobSpec.inputs` takes; any other is refused (a misspelled
 #: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
-    "order", "positions", "angles", "orientation", "transforms", "damaged", "locked",
-    "keep_warp", "nonlinear_skip", "pixel_size_um", "channel_names",
+    "order", "positions", "angles", "orientation", "transforms", "damaged",
+    "pixel_size_um", "channel_names",
 )
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
@@ -274,6 +275,15 @@ class JobSpec:
     #: (:func:`langslice.core.toolset.refusal`). A host's ``inputs["damaged"]``
     #: notes are shown whatever is disabled.
     disabled: list[str] = field(default_factory=list)
+    #: What the agent may not change, per section: ``{"<filename>":
+    #: ["orientation", "affine"], "*": ["angles"]}`` (``"*"``: every section;
+    #: the properties are :data:`langslice.core.frozen.PROPERTIES`). A frozen
+    #: property keeps the value ``inputs`` supplies for it, or its "none"
+    #: (:mod:`langslice.core.frozen`); the ops refuse a write that would
+    #: change it (``FROZEN``), a tool that writes only properties frozen on
+    #: every section is not offered (:attr:`switched_off`) and a task whose
+    #: properties are all frozen on every section is off (:meth:`has`).
+    frozen: dict[str, list[str]] = field(default_factory=dict)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
     nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
@@ -285,7 +295,7 @@ class JobSpec:
     #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
     #: "orientation": {filename: {"flip": bool, "rotation_deg": 0|90|180|270}},
     #: "transforms": {filename: transform_dict},
-    #: "damaged": {filename: note}, "locked": [filename, ...]}``.
+    #: "damaged": {filename: note}}``.
     #: A supplied transform may be mirrored (negative determinant, as a
     #: host's own alignment carries a flip); it is kept as supplied. A
     #: supplied ``orientation`` is the section's flip and quarter turn (a
@@ -295,16 +305,9 @@ class JobSpec:
     #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
     #: ``channel_names`` (one name per page of a host's multi-page snapshot)
     #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
-    #: ``damaged`` supplies notes, not region exclusions. ``locked`` sections
-    #: were aligned in-plane by the user: the agent cannot change their flip,
-    #: rotation or transform (a ``"host"`` identity transform unless
-    #: ``transforms`` supplies one), but their positions still move.
-    #: ``keep_warp`` sections (a list of filenames) carry the user's own
-    #: deformation in the host: ``ants_syn`` and ``trace_borders`` refuse
-    #: them (``KEEPS_HOST_WARP``). ``nonlinear_skip`` sections (a list of
-    #: filenames) the user left out of Nonlinear (no linear registration and
-    #: not to be aligned first): ``ants_syn`` and ``trace_borders`` refuse
-    #: them (``NONLINEAR_SKIPPED``).
+    #: ``damaged`` supplies notes, not region exclusions. What is supplied
+    #: is a starting point: the agent may change it unless ``frozen`` says
+    #: it may not.
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True
@@ -351,6 +354,15 @@ class JobSpec:
                 isinstance(name, str) for name in self.disabled):
             raise ValueError("disabled must be a list of tool and option names")
         self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
+        self.frozen = freeze.clean(self.frozen)
+        supplied = (self.inputs or {}).get("positions") or {}
+        unsupplied = sorted(name for name, held in self.frozen.items()
+                            if name != freeze.EVERY and "position" in held
+                            and name not in supplied)
+        if unsupplied:
+            raise ValueError(
+                f"frozen: the position of {unsupplied} is frozen, and a position has no "
+                "default: supply it in inputs.positions")
         reason = toolset.refusal(self)
         if reason is not None:
             raise ValueError(reason)
@@ -358,13 +370,44 @@ class JobSpec:
     # --- views -----------------------------------------------------------
 
     def has(self, task: str) -> bool:
-        """Whether *task* is switched on for this run."""
-        return task in self.tasks
+        """Whether *task* is on for this run: in ``tasks``, and not every one
+        of its properties frozen on every section (``frozen["*"]``): a task
+        with nothing left to write is off."""
+        return task in self.tasks and not (
+            set(freeze.TASK_PROPERTIES[task]) <= freeze.everywhere(self.frozen))
+
+    @property
+    def active_tasks(self) -> list[str]:
+        """The tasks that are on (:meth:`has`), in :data:`ALL_TASKS` order."""
+        return [task for task in ALL_TASKS if self.has(task)]
+
+    @property
+    def frozen_everywhere(self) -> frozenset[str]:
+        """The properties no section may change: ``frozen["*"]`` and the
+        properties of every task that is off (the host supplied them). The
+        cutting angles stay free in a run whose Linear task may set them
+        (``transform.angles``)."""
+        return freeze.everywhere(self.frozen) | freeze.derived(
+            self.active_tasks, angles_free=bool(self.has("transform") and self.transform.angles))
+
+    def frozen_for(self, section_id: str) -> frozenset[str]:
+        """The properties frozen on one section: its own, ``frozen["*"]``
+        and what the tasks that are off supply."""
+        return freeze.for_section(self.frozen, section_id) | self.frozen_everywhere
 
     def off(self, name: str) -> bool:
-        """Whether the tool or ``tool:option`` *name* is disabled (a tool's
-        options are off with it)."""
-        return toolset.is_off(self.disabled, name)
+        """Whether the tool or ``tool:option`` *name* is off: disabled, or
+        taken off by what is frozen (a tool's options are off with it)."""
+        return toolset.is_off(self.switched_off, name)
+
+    @property
+    def switched_off(self) -> list[str]:
+        """Every name that is off for this run: ``disabled`` and, after it,
+        the tools and options that can change nothing because everything
+        they write is frozen on every section
+        (:func:`langslice.core.toolset.frozen_off`). What every door and
+        every text renders by."""
+        return toolset.off_names(self)
 
     @property
     def thickness_mm(self) -> float | None:
@@ -388,13 +431,33 @@ class JobSpec:
             data.pop("force_view", None)
         if not data.get("disabled"):  # likewise
             data.pop("disabled", None)
+        if not data.get("frozen"):  # likewise
+            data.pop("frozen", None)
+        return data
+
+    @staticmethod
+    def migrated(data: dict[str, Any]) -> dict[str, Any]:
+        """A saved spec's dict as today's spec has it: the switches older
+        specs had (:data:`LEGACY_SWITCHES`) as names in ``disabled``, and the
+        ``inputs`` keys that were freezes (:data:`langslice.core.frozen.LEGACY_INPUTS`:
+        ``locked``, ``keep_warp``, ``nonlinear_skip``) as ``frozen``."""
+        data = dict(data)
+        legacy = [became for section, key, became in LEGACY_SWITCHES
+                  if ((data.get(section) or {}) if section else data).get(key) is False]
+        if legacy:
+            data["disabled"] = [*(data.get("disabled") or []), *legacy]
+        if isinstance(data.get("inputs"), dict) and any(
+                key in data["inputs"] for key in freeze.LEGACY_INPUTS):
+            inputs, older = freeze.from_legacy(data["inputs"])
+            data["inputs"] = inputs
+            data["frozen"] = freeze.merge(data.get("frozen") or {}, older)
         return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
-        """Rebuild from :meth:`to_dict` output, ignoring unknown keys. The
-        switches older specs had (:data:`LEGACY_SWITCHES`) are read as the
-        names they became in ``disabled``."""
+        """Rebuild from :meth:`to_dict` output, ignoring unknown keys, after
+        :meth:`migrated` has read what older specs held."""
+        data = cls.migrated(data)
         nested = {
             "position": PositionSpec,
             "transform": TransformSpec,
@@ -408,8 +471,4 @@ class JobSpec:
                 kwargs[name] = sub(**{k: v for k, v in (value or {}).items() if k in fields})
             elif name in cls.__dataclass_fields__:
                 kwargs[name] = value
-        legacy = [became for section, key, became in LEGACY_SWITCHES
-                  if ((data.get(section) or {}) if section else data).get(key) is False]
-        if legacy:
-            kwargs["disabled"] = [*(kwargs.get("disabled") or []), *legacy]
         return cls(**kwargs)

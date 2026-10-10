@@ -144,16 +144,16 @@ def test_submit_needs_no_completed_correction(tmp_path, monkeypatch, result):
     assert state.submitted
 
 
-@pytest.mark.parametrize("key,code", [("keep_warp", "KEEPS_HOST_WARP"),
-                                      ("nonlinear_skip", "NONLINEAR_SKIPPED")])
-def test_sections_kept_out_of_nonlinear_need_no_trace_and_no_deformation(
-        tmp_path, monkeypatch, key, code):
-    """A section the host keeps out of Nonlinear is refused by the traces and
+def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
+        tmp_path, monkeypatch):
+    """A section whose deformation is frozen is refused by the traces and
     skipped by both submit gates, so the run can still submit."""
+    code = "FROZEN"
     from langslice.ops import traces
 
     state, ctx, spec = _stack(
-        tmp_path, n=2, placed=True, tasks=["nonlinear"], inputs={key: ["s1.png"]},
+        tmp_path, n=2, placed=True, tasks=["nonlinear"],
+        frozen={"s1.png": ["deformation"]},
         nonlinear=NonlinearSpec(provider="openai-api", image_model="test-model"))
     apply_host_inputs(state, spec)
     for record in state.slices:

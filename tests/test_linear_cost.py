@@ -40,12 +40,18 @@ def test_default_reasoning_is_priced_as_medium():
     assert estimate(unset, 38) == estimate(FULL, 38)
 
 
-def test_locked_sections_cost_nothing_without_positioning():
+def test_frozen_sections_cost_nothing_without_positioning():
     transform_only = {**FULL, "tasks": ["transform"]}
-    assert estimate(transform_only, 10, locked=4)["high"] < estimate(transform_only, 10)["high"]
-    assert estimate(transform_only, 3, locked=3)["high"] == 0.0
+    four = {name: ["orientation", "affine"] for name in "abcd"}
+    assert estimate({**transform_only, "frozen": four}, 10)["high"] < estimate(
+        transform_only, 10)["high"]
+    every = {"*": ["orientation", "affine"]}
+    assert estimate({**transform_only, "frozen": every}, 3)["available"] is False
+    # Only the orientation frozen leaves the affine to fit: the full price.
+    assert estimate({**transform_only, "frozen": {"*": ["orientation"]}}, 3) == estimate(
+        transform_only, 3)
     # With positioning on every section is still positioned.
-    assert estimate(FULL, 10, locked=4) == estimate(FULL, 10)
+    assert estimate({**FULL, "frozen": four}, 10) == estimate(FULL, 10)
 
 
 @pytest.mark.parametrize("resolution", ["medium", "high", "auto"])
@@ -84,7 +90,7 @@ def _request(line: dict[str, object]) -> dict[str, object]:
 
 def test_the_worker_method_returns_the_estimate():
     message = _request({"id": "e", "method": "linear.estimate",
-                        "params": {"spec": FULL, "n_slices": 10, "locked": 0}})
+                        "params": {"spec": FULL, "n_slices": 10}})
     assert message["result"] == estimate(FULL, 10)
 
 

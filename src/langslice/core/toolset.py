@@ -13,8 +13,9 @@ tools and options off on top of what its tasks and switches give:
 - ``"zoom"``: the tool, whole;
 - ``"look:positioning"``: one option of a tool (``tool:option``): here a
   ``look`` mode, taken out of the tool's schema, its description and every
-  text that words it; ``"interactive_transform:flip"``: the mirror, a part
-  of the tool that is no enumeration.
+  text that words it; ``"interactive_transform:flip"``: the mirror, and
+  ``"interactive_transform:rotate"``: the quarter turn, parts of the tool that
+  are no enumeration.
 
 The valid names are derived from this table (:func:`valid_names`).
 :func:`refusal` says, in one line, why a list cannot work; the spec refuses
@@ -81,11 +82,15 @@ class ToolDef:
     #: What the tool needs while it is on: groups of names, one of each group
     #: on (a tool, or a ``tool:option``). The reason is the tool's picture.
     needs: tuple[tuple[str, ...], ...] = ()
+    #: The section properties the tool writes (:data:`langslice.core.frozen.PROPERTIES`):
+    #: with every one of them frozen on every section the tool can change
+    #: nothing and is off (:func:`off_names`).
+    writes: tuple[str, ...] = ()
 
     def is_on(self, spec: Any) -> bool:
         """Whether a run of *spec* has this tool: its ``when`` and not
-        switched off."""
-        return bool(self.when(spec)) and not is_off(spec.disabled, self.name)
+        switched off (disabled, or with all it writes frozen)."""
+        return bool(self.when(spec)) and not is_off(spec.switched_off, self.name)
 
 
 #: What a task needs written for its answer: it is refused, when it is on,
@@ -114,22 +119,24 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("read_file", "read", "Common"),
     # --- changing -------------------------------------------------------------------
     ToolDef("position_sections", "write", "Positioning", when=positions_on,
-            needs=(("look:positioning", "look:overlay"),)),
-    ToolDef("interactive_transform", "write", "Linear", options={"flip": ""},
-            when=lambda spec: spec.has("transform"), needs=_OVERLAY),
+            needs=(("look:positioning", "look:overlay"),), writes=("position", "angles")),
+    ToolDef("interactive_transform", "write", "Linear", options={"flip": "", "rotate": ""},
+            when=lambda spec: spec.has("transform"), needs=_OVERLAY,
+            writes=("orientation", "affine")),
     ToolDef("mark_damage", "write", "Common"),
     # --- fitting ----------------------------------------------------------------------
     ToolDef("elastix_affine", "write", "Linear", long=True,
-            when=lambda spec: spec.has("transform"), needs=_OVERLAY),
+            when=lambda spec: spec.has("transform"), needs=_OVERLAY, writes=("affine",)),
     ToolDef("ants_syn", "write", "Nonlinear", long=True,
-            when=lambda spec: spec.has("nonlinear"), needs=_OVERLAY),
+            when=lambda spec: spec.has("nonlinear"), needs=_OVERLAY,
+            writes=("deformation",)),
     ToolDef("trace_borders", "write", "Nonlinear", long=True, image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
-            needs=_OVERLAY),
+            needs=_OVERLAY, writes=("deformation",)),
     # The placement-free trace (route "atlas"): kept for experiments, called
     # by name from the agent CLI and the library, listed nowhere.
     ToolDef("trace_from_atlas", "write", "Nonlinear", long=True, image_model=True,
-            scripting=True, hidden=True,
+            scripting=True, hidden=True, writes=("deformation",),
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
     # --- bookkeeping (every run) --------------------------------------------------------
     ToolDef("note", "write", "Common"),
@@ -173,6 +180,27 @@ def catalog() -> list[dict[str, Any]]:
 def accepted_names() -> set[str]:
     """Every name :func:`valid_names` lists, and the hidden verbs."""
     return {*valid_names(), *(tool.name for tool in TOOLS.values() if tool.hidden)}
+
+
+def off_names(spec: Any) -> list[str]:
+    """Every name that is off for *spec*: its ``disabled`` list, then the tools
+    the run has that can change nothing because everything they write
+    (:attr:`ToolDef.writes`) is frozen on every section
+    (:attr:`~langslice.core.spec.JobSpec.frozen_everywhere`), and the mirror and
+    the quarter turn (``interactive_transform:flip``, ``:rotate``) when the
+    orientation is. A tool a task
+    switched off is not listed: it is not in the run at all."""
+    names = list(spec.disabled)
+    if not spec.frozen:
+        return names
+    everywhere = spec.frozen_everywhere
+    for tool in TOOLS.values():
+        if tool.writes and set(tool.writes) <= everywhere and tool.when(spec):
+            names.append(tool.name)
+    if "orientation" in everywhere:
+        names.extend(f"interactive_transform{OPTION_SEPARATOR}{option}"
+                     for option in ("flip", "rotate"))
+    return list(dict.fromkeys(names))
 
 
 def is_off(disabled: Collection[str], name: str) -> bool:
@@ -222,7 +250,7 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
     if not options_on(disabled, "look"):
         return "disabled: every look mode is off; look keeps at least one of " \
                + ", ".join(option_names("look"))
-    for task in spec.tasks:
+    for task in spec.active_tasks:
         writers = TASK_WRITERS.get(task, ())
         if writers and not any(TOOLS[name].is_on(spec)
                                and (image_model or not TOOLS[name].image_model)

@@ -105,7 +105,8 @@ retired tool's name answers with its replacement (`ops.registry.RETIRED`,
   the range, the optional protocol (`cutting_protocol_fact`: unknown values
   stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections
   (legacy default positions remain unconfirmed), the damaged sections and the user's
-  damage notes, the locked sections, that the order follows the positions;
+  damage notes, what is frozen (`core.frozen.statement`: sections sharing a
+  freeze are one clause), that the order follows the positions;
   `channel_facts`: the raw channels, the atlas layers here, and where the
   caller sizes pictures, `look`'s `resolution` range), the tools BY NAME
   ONLY (each tool's own description, `doors/declarations.py`, is its only
@@ -147,7 +148,8 @@ retired tool's name answers with its replacement (`ops.registry.RETIRED`,
   unique execution id and, on `tool_end`, `views` (the pictures the call
   saved); these events never enter model context. `plain` copies JSON
   content without media bytes.
-- `cost.py` — `estimate(spec, n_slices, locked)`: the pre-run usage-window
+- `cost.py` — `estimate(spec, n_slices)` (the sections whose orientation and
+  affine are frozen cost no transform work): the pre-run usage-window
   estimate the worker's `linear.estimate` serves, from measured runs only
   (`_RATES`; a single run or a neighbouring setting gets a widened band).
   Medium, high and auto picture sizes and a Nonlinear-only run get no
@@ -204,15 +206,20 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   the section's `damage_note` (shown in status and the statement) whether or
   not `mark_damage` is disabled; it does not make the section damaged, and it
   stays first in the note whatever the agent marks.
-- **`inputs["locked"]`**: sections the user already aligned in-plane. Without
-  a supplied transform each gets `job.host_transform()` (`kind` `"host"`,
-  identity). `interactive_transform` and `elastix_affine` refuse them
-  (`LOCKED`); `elastix_affine`'s default list skips them; their positions
-  still move. The host transform satisfies `MISSING_TRANSFORMS`.
-- **`inputs["keep_warp"]`** / **`inputs["nonlinear_skip"]`**: sections kept
-  out of the Nonlinear task (the user's own warp kept, or left out by the
-  user). `ants_syn` refuses them per section and `trace_borders` refuses the
-  call (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`; `Job.nonlinear_refusal`).
+- **`frozen`** (`--frozen JSON`; `core/frozen.py`, `docs/registration.md`):
+  per section, which of `position`, `angles`, `orientation`, `affine`,
+  `deformation` the agent may not change; `"*"` is every section. A frozen
+  property keeps the value `inputs` supplies, else its "none" (a frozen
+  affine without a supplied transform gets `job.host_transform()`, `kind`
+  `"host"`, identity, which satisfies `MISSING_TRANSFORMS`; a frozen
+  deformation needs no deformation at `submit`). The ops refuse a write that
+  would change one, `FROZEN` (`Job.frozen_refusal`); a fit under a frozen
+  orientation keeps the section's handedness; a task whose properties are all
+  frozen everywhere is off and a task that is off freezes its properties
+  everywhere; a tool that writes only frozen properties is not built
+  (`JobSpec.switched_off`). The statement's frozen line and each status row's
+  `frozen` tell the agent. Replaces the older `inputs.locked`, `keep_warp`
+  and `nonlinear_skip`, which a saved spec still reads as freezes.
 - **`nonlinear.require_deformation`**: every section needs a deformation;
   `submit` takes no `left_linear` (not declared, refused when sent).
 - **`force_view`**: the change tools always return their picture (their

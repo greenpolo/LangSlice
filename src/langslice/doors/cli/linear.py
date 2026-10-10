@@ -196,9 +196,11 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         '{"flip": true|false, "rotation_deg": 0|90|180|270}',
     )
     p.add_argument(
-        "--locked", default=None, metavar="JSON",
-        help="Sections already aligned in-plane by the user: JSON file or inline list "
-        "of filenames; their flip, rotation and transform cannot change",
+        "--frozen", default=None, metavar="JSON",
+        help='What the agent may not change: JSON file or inline mapping of a filename '
+        '(or "*" for every section) to a list of properties, any of position, angles, '
+        'orientation, affine, deformation; a frozen property keeps the value the '
+        'supplied inputs give it',
     )
     p.add_argument(
         "--damaged", default=None, metavar="JSON",
@@ -370,8 +372,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     transforms = load_json_arg(args.transforms, "--transforms")
     if transforms is not None:
         inputs["transforms"] = transforms
-    for key, flag in (("orientation", "--orientation"), ("locked", "--locked"),
-                      ("damaged", "--damaged")):
+    for key, flag in (("orientation", "--orientation"), ("damaged", "--damaged")):
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value
@@ -390,6 +391,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
                              '"yaw": deg}')
         inputs["angles"] = section_angles
 
+    frozen: Any = load_json_arg(getattr(args, "frozen", None), "--frozen")
     return JobSpec(
         image_folder=image_folder,
         atlas=args.atlas,
@@ -418,6 +420,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),
         inputs=inputs,
+        frozen=frozen or {},
         resume=args.resume,
         debrief=args.debrief,
         **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),

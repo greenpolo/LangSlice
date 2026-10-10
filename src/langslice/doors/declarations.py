@@ -56,6 +56,8 @@ from langslice.doors.tools.arguments import (
     SectionPosition,
     SectionTransform,
     SectionTransformNoFlip,
+    SectionTransformNoOrientation,
+    SectionTransformNoRotate,
 )
 
 # Defaults of list and object arguments are read, never mutated (ADK wants a value).
@@ -441,15 +443,17 @@ def interactive_transform(
     sections: list[SectionTransform],
     view: bool = True,
 ) -> dict[str, Any]:
-    """Set sections' orientation and in-plane transform by hand, and show the result.
+    """Set sections' [[?interactive_transform:flip|interactive_transform:rotate ~
+    orientation and ]]in-plane transform by hand, and show the result.
 
     For a few sections at a time, in a look-and-adjust loop. Values are
     absolute: a value given replaces the section's current one, and a value
     left out keeps it (a section without a transform starts from the
-    identity). The quarter turn is applied first~
-    [[?interactive_transform:flip , then the flip]]. A changed
+    identity). [[?interactive_transform:rotate The quarter turn is applied first~
+    [[?interactive_transform:flip , then the flip]]. ]]~
+    [[?interactive_transform:flip|interactive_transform:rotate A changed
     orientation keeps the other values: the transform is rebuilt on the new
-    orientation, and the reply says so. One undoable write; the image files
+    orientation, and the reply says so. ]]One undoable write; the image files
     are never modified.
 
     [[?interactive_transform:flip ~
@@ -460,8 +464,9 @@ def interactive_transform(
     ]]Args:
         sections: One to four objects: "id" (filename; the extension may be
             left off) and any of [[?interactive_transform:flip "flip" (true mirrors the section
-            left-right), ]]"rotate_quarter" (0, 90, 180 or 270 degrees
-            counter-clockwise), "rotation_deg" (degrees counter-clockwise
+            left-right), ]]~
+            [[?interactive_transform:rotate "rotate_quarter" (0, 90, 180 or 270 degrees
+            counter-clockwise), ]]"rotation_deg" (degrees counter-clockwise
             about the pivot, the canvas centre),
             "scale_x" and "scale_y" (multipliers about the pivot; 1.0 keeps
             the size), "shear" (a slant applied before the rotation: each
@@ -471,7 +476,8 @@ def interactive_transform(
         view: True returns the picture described below; false returns none.
 
     Returns:
-        Per section its orientation, its transform as the values above,
+        Per section [[?interactive_transform:flip|interactive_transform:rotate ~
+        its orientation, ]]its transform as the values above,
         and whether anything was written; and a picture of each section
         under its new transform with the atlas borders on it.
     """
@@ -538,7 +544,7 @@ def elastix_affine(
 
     Args:
         sections: Filenames (the extension may be left off); empty is every
-            placed section the user has not locked.
+            placed section whose affine is not frozen.
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side): only the
             atlas within 300 um of them, against the tissue the fit lays
@@ -815,7 +821,7 @@ class Variant:
                    positions=bool(spec.has("position")),
                    left_linear=bool(spec.has("nonlinear")
                                     and not spec.nonlinear.require_deformation),
-                   prompt=text, off=frozenset(spec.disabled))
+                   prompt=text, off=frozenset(spec.switched_off))
 
 
 #: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and
@@ -945,15 +951,21 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
 def narrowed(name: str, argument: str, annotation: Any, off: Collection[str]) -> Any:
     """*annotation* of verb *name*'s *argument* without the options the job
     disables: the values of an enumeration (``look``'s ``mode``), the
-    ``flip`` key of ``interactive_transform``'s sections."""
+    ``flip`` and ``rotate_quarter`` keys of ``interactive_transform``'s sections."""
     options = TOOLS[name].options
     if argument in options.values():
         values = typing.get_args(annotation)
         return Literal[tuple(value for value in values
                              if not is_off(off, f"{name}{OPTION_SEPARATOR}{value}"))]
-    if (name, argument) == ("interactive_transform", "sections") and is_off(
-            off, "interactive_transform:flip"):
-        return list[SectionTransformNoFlip]
+    if (name, argument) == ("interactive_transform", "sections"):
+        no_flip = is_off(off, "interactive_transform:flip")
+        no_rotate = is_off(off, "interactive_transform:rotate")
+        if no_flip and no_rotate:
+            return list[SectionTransformNoOrientation]
+        if no_flip:
+            return list[SectionTransformNoFlip]
+        if no_rotate:
+            return list[SectionTransformNoRotate]
     return annotation
 
 

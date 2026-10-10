@@ -567,10 +567,11 @@ final class RegistrationDialog extends JDialog {
         String problem = s.problem(channelNames.size());
         if (problem != null) { cost.setText("Estimated cost: " + problem); return; }
         if (estimateBusy) { estimateAgain = true; return; }
+        JsonObject spec = s.spec();
+        if (!s.overwrite) freezeRegistered(spec, rows);
         JsonObject params = new JsonObject();
-        params.add("spec", s.spec());
+        params.add("spec", spec);
         params.addProperty("n_slices", rows.size());
-        params.addProperty("locked", s.overwrite ? 0 : rows.stream().filter(r -> r.registrations > 0).count());
         estimateBusy = true;
         new SwingWorker<JsonObject, Void>() {
             @Override protected JsonObject doInBackground() throws Exception { return host.estimate(params); }
@@ -589,6 +590,15 @@ final class RegistrationDialog extends JDialog {
                 if (estimateAgain) { estimateAgain = false; refreshEstimate(); }
             }
         }.execute();
+    }
+
+    /**
+     * The freeze the run sends for registered rows when overwriting is off. Rows are named as the run names its
+     * snapshots (atlas order, section_NNNN.tif); a warp the user made is not known here, so only the affine is.
+     */
+    static void freezeRegistered(JsonObject spec, List<SliceRow> rows) {
+        for (int r = 0; r < rows.size(); r++)
+            if (rows.get(r).registrations > 0) Frozen.registered(spec, String.format(Locale.ROOT, "section_%04d.tif", r + 1), false);
     }
 
     /**
