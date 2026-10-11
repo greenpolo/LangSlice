@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.ops.refusal import Refused
+from langslice.ops.refusal import Refused, check_frozen
 
 if TYPE_CHECKING:
     from langslice.core.state import SliceState
@@ -116,16 +116,17 @@ def position_sections(
 
     Refused, nothing written: ``BAD_ARGS`` (an entry that is not an id with a
     finite number, angles that are not two finite numbers, nothing asked),
-    ``POSITIONS_SUPPLIED`` (the host supplies the positions: the spec has no
-    ``position`` task) and ``ANGLES_SUPPLIED`` (angles asked while neither the
-    ``position`` task nor ``transform.angles`` is on). A supplied position
-    does not stop the angles when ``transform.angles`` is on. Unknown ids are
-    reported (``unknown``), the rest written. The tool door draws the
+    and ``FROZEN`` (a section named has its position frozen, or the angles are
+    asked while any section has its cutting angles frozen: the angles are one
+    plane for the whole stack; a task that is off freezes what it supplies,
+    the positions without Positioning, the angles without Positioning or
+    ``transform.angles``). A frozen position does not stop the angles, nor
+    frozen angles the positions. Unknown ids are reported (``unknown``), the
+    rest written. The tool door draws the
     picture of what was written (:func:`langslice.ops.look.show_result`).
     """
     import math
 
-    spec = job.spec
     pairs: list[tuple[object, float]] = []
     entries = list(sections) if sections is not None else []
     for entry in entries:
@@ -148,12 +149,12 @@ def position_sections(
             raise Refused("BAD_ARGS", message="cutting angles must be finite")
     if not pairs and angles is None:
         raise Refused("BAD_ARGS", message="give sections or cutting_angles")
-    if pairs and not spec.has("position"):
-        raise Refused("POSITIONS_SUPPLIED", message="The positions were supplied by the "
-                      "host; they cannot be changed here.")
-    if angles is not None and not (spec.has("position") or spec.transform.angles):
-        raise Refused("ANGLES_SUPPLIED", message="The cutting angles were supplied by the "
-                      "host; they cannot be changed here.")
+    if pairs:
+        named = [record.id for ref, _value in pairs
+                 if (record := job.state.resolve(ref)) is not None]
+        check_frozen(job, named, "position")
+    if angles is not None:
+        check_frozen(job, [record.id for record in job.state.slices], "angles")
 
     low, high = workspace.position_range
     before = job.snapshot()

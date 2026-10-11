@@ -19,8 +19,54 @@ FOLDER` for exact arguments and limits.
 
 Default tasks are `position,transform`. A disabled task takes its answer
 from supplied inputs and removes its tools. `transform.angles` also enables
-`position_sections` for cutting angles when Positioning is off. Hosts can
-disable either linear method independently.
+`position_sections` for cutting angles when Positioning is off. A disabled
+task is the same as freezing its properties on every section
+([freezing](#freezing-what-the-agent-may-not-change)): `position` writes
+position and angles, `transform` orientation and affine, `nonlinear`
+deformation.
+
+## Switching tools and options off
+
+A job's `disabled` list removes single tools and tool options on top of what
+its tasks give (`--disable NAME[,NAME...]`, `disabled=[...]` in the library
+and in `job.json`'s spec). A name is a tool, or `tool:option`:
+
+| Name | Removes |
+|---|---|
+| `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
+| `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
+| `export_maps` | the scripting verb |
+| `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
+| `interactive_transform:flip` | mirroring: the `flip` key of its sections |
+| `interactive_transform:rotate` | the quarter turn: the `rotate_quarter` key of its sections |
+
+`look`, `status`, `undo` and `submit` cannot be disabled. An unknown name is
+refused when the job is made, with the valid names listed. A list that cannot
+work is refused with one line saying why:
+
+- a task that is on keeps at least one tool that writes its answer
+  (`position_sections`; `interactive_transform` or `elastix_affine`;
+  `ants_syn`, `landmark_triangulation` or `trace_borders`);
+- `look` keeps at least one mode;
+- `set_landmarks` and `landmark_triangulation` need each other; the first
+  also needs a way to see atlas points (`look:atlas` or `look:overlay`) and
+  section points (`look:section` or `look:overlay`), the second `look:overlay`;
+- a tool needs the pictures it returns: the linear and nonlinear fitting
+  tools and `interactive_transform` need `look:overlay`, and
+  `position_sections` needs `look:positioning` or `look:overlay`;
+- `position.gated` needs `look:positioning`, which `submit` waits for.
+
+What a job disables is absent from every door: the tool is not built, an
+option is not in the tool's schema (`look`'s `mode` offers the modes that are
+on; `flip` is not a key of the sections), and a call that names one anyway is
+refused (`OPTION_OFF` from `look`). A reply that would use a disabled option
+uses another: `position_sections` returns an overlay of each written section
+when `look:positioning` is off. The job statement, tool descriptions,
+reference card, `status` reply and `error.fix` texts leave out every
+sentence that needs what is off, or word it another way. Specs saved with
+the older switches (`agent_damage`, `transform.interactive`,
+`transform.automatic`, `transform.flip` false) read as the names above.
 
 Sections are addressed by filename, or by a stem unique within the job.
 Positions are millimetres along the atlas's slicing axis; in a coronal atlas
@@ -30,11 +76,81 @@ yaw in degrees. A host can supply positions, per-section or stack-wide
 angles, orientation, transforms and pixel size, or import a
 [registration file](file_formats.md#importing-a-registration).
 
-`locked` sections keep their orientation and in-plane transform.
-`keep_warp` protects a host's deformation, and `nonlinear_skip` excludes
-sections from Nonlinear. Notes supplied through `damaged` are information
-for the agent; actual damage exclusions are atlas regions marked with
-`mark_damage`.
+Notes supplied through `damaged` are information for the agent; actual
+damage exclusions are atlas regions marked with `mark_damage`.
+
+## Freezing what the agent may not change
+
+A job is configured by three settings: what is already known
+(`inputs`, above), what is frozen, and which tools exist (`disabled`, above).
+`frozen` names, per section, the properties the agent may not change. A
+section has five:
+
+| Property | What it is | Kept when `inputs` supplies none |
+|---|---|---|
+| `position` | Where it sits along the slicing axis | Nothing: a frozen position must be supplied in `inputs.positions` |
+| `angles` | Its cutting angles (pitch, yaw) | The flat plane |
+| `orientation` | Its flip and quarter turn, together | No flip, no turn |
+| `affine` | Its continuous in-plane transform | The host's identity transform (`kind` `host`) |
+| `deformation` | The deformation on top of its linear placement | None |
+
+```json
+{"frozen": {"s_007.tif": ["orientation", "affine"], "*": ["angles"]}}
+```
+
+A filename names one section, `"*"` every section; a section's own list and
+`"*"` add up. From the command line, `--frozen JSON`; in a library call,
+`frozen=`. The properties and filenames are checked when the job is made.
+
+Three common freezes:
+
+- Positions, cutting angles and orientation known, the continuous affine and
+  the deformation left to the agent:
+  `{"*": ["position", "angles", "orientation"]}` with `inputs.positions`,
+  `inputs.angles` and `inputs.orientation` and the tasks `transform,nonlinear`.
+- A section the host already aligned and does not want touched:
+  `{"s_007.tif": ["orientation", "affine"]}` (its transform is the supplied
+  one, else the identity).
+- A section left out of Nonlinear: `{"s_007.tif": ["deformation"]}`.
+
+Every write that would change a frozen property is refused, in every door,
+with `FROZEN` naming the sections and properties; nothing is written for the
+refused section, and the others in a per-section call still are
+(`position_sections` and `set_transforms` refuse the whole call). The
+partial cases:
+
+- A fit under a frozen `orientation` keeps the section's handedness: the
+  sign of its transform's determinant stays the sign of the transform it
+  replaces (positive without one, negative for a supplied mirrored
+  transform). `elastix_affine` and `interactive_transform` refuse a fit or
+  a scale that would mirror the section.
+- A frozen `affine` is never rewritten: `elastix_affine` leaves the section
+  out of its default list and refuses it by name, `interactive_transform`
+  refuses a changed knob (the same numbers again write nothing, and the
+  orientation may change under it when it is free). A section whose
+  `deformation` is free is still deformed on its supplied transform.
+- The cutting angles are one plane for the stack, so `position_sections`
+  refuses its `cutting_angles` while any section has `angles` frozen.
+- A frozen `deformation` needs no entry in `submit`'s `left_linear` and no
+  deformation to submit; naming it there is refused.
+
+A task whose properties are all frozen on every section is off
+(`position`: position and angles; `transform`: orientation and affine;
+`nonlinear`: deformation), and a task that is switched off freezes its
+properties on every section: "the host supplied this" is one rule. A tool
+that writes only properties frozen on every section is not offered
+(`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
+`landmark_triangulation` and `trace_borders` by what they write; `set_landmarks`
+goes with `landmark_triangulation`, whose deformation its pairs serve), `interactive_transform`'s `flip` and
+`rotate_quarter` go with a frozen `orientation` on every section, and no text names what is gone. The job
+statement says what is frozen, grouping sections that share a freeze (`every
+section`, their filenames, or their count when many), and each `status` row
+of a section with something frozen carries `frozen`.
+
+Saved jobs from before this setting read their `inputs.locked`,
+`inputs.keep_warp` and `inputs.nonlinear_skip` as the freezes they stood for
+(`orientation` and `affine`; `deformation`; `deformation`). A job resumed with
+a different `frozen` is refused like one resumed with other `inputs`.
 
 ## Looking and calibration
 
@@ -59,9 +175,16 @@ one acronym or numeric id, including descendants, optionally `:left` or
 settings. The region must occur in that plane; `region` and `box` are
 mutually exclusive.
 
+New jobs leave sections without supplied positions unplaced. The opening
+shows those sections alongside a separate overview of the atlas. No positions
+are inferred from filename order or the nominal interval. In positioning
+mode, unplaced sections appear at the right, labelled "no position", with
+no line to the ruler; `positions_mm` selects candidate atlas planes above it.
+Supplied positions and saved registrations are preserved.
+
 Section scale comes from supplied calibration or TIFF/OME metadata, else an
-estimate from tissue width (reported as `estimated`). Positioning and
-opening pictures use the same micrometres per pixel for section and atlas
+estimate from tissue width (reported as `estimated`). Positioning pictures and paired
+opening tiles use the same micrometres per pixel for section and atlas
 panels. Tissue can therefore appear smaller than the atlas. The stored
 affine contributes its isotropic scale, `sqrt(abs(det))`; each thumbnail
 is framed around its anatomy without being stretched to fill the tile.
@@ -85,15 +208,15 @@ job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 `mark_damage` records atlas regions physically lost or badly displaced,
 including one hemisphere when needed. Those regions are excluded from
 elastix, ANTs and image-model tracing. Small tears, bubbles and folds do not
-by themselves justify excluding an entire region. Hosts can disable this
-tool with `agent_damage=False`.
+by themselves justify excluding an entire region. A job can disable this tool
+with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
 
 ## Positioning and linear alignment
 
-`position_sections` writes positions and cutting angles. New jobs with
-Positioning enabled give unsupplied sections provisional positions based on
-the interval and atlas range. Status marks them `position_source="default"`;
-the agent must write its own positions before submitting.
+`position_sections` writes positions and cutting angles. Sections without
+supplied positions stay unplaced until the agent writes them. The agent can
+revisit placement after inspecting linear or nonlinear fits; changing a
+section's position clears its deformation.
 
 `interactive_transform` sets flip, quarter turn, rotation, scales, shear and
 shifts for up to four sections. Values are absolute; omitted values keep
@@ -191,6 +314,9 @@ view before applying them. Appearance changes leave correspondences valid;
 section endpoints are stored in the original image's normalized frame and
 survive orientation changes. Linear transform changes retain both endpoints.
 
+A section whose `deformation` is frozen takes neither tool: both refuse it
+with `FROZEN`.
+
 `landmark_triangulation` requires at least three pairs and a written linear
 placement. The agent is responsible for anatomical coverage. It uses a
 Delaunay triangulation of the section points in their pixel aspect ratio,
@@ -242,7 +368,8 @@ Custom models and prompts are described in the [library guide](library.md#image-
 
 Writes checkpoint the job and form undo steps; `undo` and `redo` persist
 across sessions. Change tools return review pictures unless `view=False`;
-a host's `force_view` setting removes that choice. Long fits compute outside
+a host's `force_view=True` forces `view=True`. It defaults to false, so
+the agent may suppress a picture. Long fits compute outside
 the write lock and recheck inputs before applying. A conflicting edit
 produces `STALE_INPUT` for that section; unaffected results still apply.
 
@@ -258,9 +385,20 @@ produces `STALE_INPUT` for that section; unaffected results still apply.
   Host-excluded sections are exempt. An image-model trace is never required.
 
 Optional `position.gated` (`--gates`) requires agents to inspect a section
-in overlay or positioning mode before changing its position, and review
+in overlay or positioning mode before changing its position (positioning
+mode also accepts unplaced sections), and review
 every section in positioning mode after the last write before submitting.
 These viewing gates apply to native agent and MCP tools; CLI and Python
 calls still enforce the registration requirements above.
 
 Results are [coordinate maps, labels and registration exports](file_formats.md).
+
+`--playbook` adds optional positioning guidance using candidate planes,
+region lookup, incremental placement and stack review. It defaults off and
+adds no gates. Thickness and nominal interval are optional protocol facts,
+with no lab-specific defaults. When either is omitted, the prompt marks it
+as not supplied and asks the agent to infer positions and spacing from
+anatomy, estimate missing protocol values where evidence supports them,
+and record estimates or uncertainty in its notes. Omission does not block
+a run or require a question to the user. Spacing is enforced only when
+`strict_interval` is enabled, which requires a supplied interval.

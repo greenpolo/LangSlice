@@ -1,5 +1,5 @@
 """``submit``'s ``left_linear`` and the host's ``require_deformation``; the
-job's starting positions and the gates that read them."""
+unplaced sections and legacy starting-position gates."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from PIL import Image
 
 from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec, NonlinearSpec
-from langslice.job.job import DEFAULT_POSITION, Job, default_positions
+from langslice.job.job import DEFAULT_POSITION, Job
 from langslice.ops import submit as ops_submit
 from langslice.ops.refusal import Refused
 from tests.fakes import SlabAtlas
@@ -97,38 +97,36 @@ def test_left_linear_is_for_nonlinear_runs(tmp_path: Path):
     assert _refused(job, left_linear=[{"id": "s0.png", "reason": "a"}]).code == "BAD_ARGS"
 
 
-def test_ingest_gives_starting_positions_that_submit_refuses(tmp_path: Path):
-    job, ctx = _open(tmp_path, tasks=["position"])
-    low, high = ctx.position_range
-    positions = [record.position_mm for record in job.state.in_order()]
-    assert all(position is not None and low <= position <= high for position in positions)
-    steps = np.diff(np.asarray(positions, dtype=float))
-    assert np.allclose(steps, job.state.interval_mm)  # evenly spaced, in stack order
-    assert all(record.position_source == DEFAULT_POSITION for record in job.state.slices)
+def test_ingest_leaves_sections_unplaced_and_submit_refuses(tmp_path: Path):
+    job, _ = _open(tmp_path, tasks=["position"])
+    assert all(record.position_mm is None for record in job.state.slices)
+    assert all(record.position_source == "" for record in job.state.slices)
     refused = _refused(job)
     assert refused.code == "MISSING_POSITIONS"
-    assert refused.payload()["at_default"] == ["s0.png", "s1.png", "s2.png"]
-    with job.writing():  # a written position is the writer's own
+    assert refused.payload()["missing_ids"] == ["s0.png", "s1.png", "s2.png"]
+
+
+def test_supplied_positions_do_not_place_other_sections(tmp_path: Path):
+    job, _ = _open(tmp_path, n=5, tasks=["position"],
+                   inputs={"positions": {"s1.png": 2.0, "s3.png": 3.0}})
+    assert [record.position_mm for record in sorted(
+        job.state.slices, key=lambda record: record.index_original)] == [None, 2.0, None, 3.0, None]
+    assert all(record.position_source == "" for record in job.state.slices)
+
+
+def test_legacy_starting_positions_remain_unconfirmed(tmp_path: Path):
+    job, _ = _open(tmp_path, tasks=["position"])
+    for record in job.state.slices:
+        record.position_mm, record.position_source = 2.0, DEFAULT_POSITION
+    assert _refused(job).payload()["at_default"] == ["s0.png", "s1.png", "s2.png"]
+    with job.writing():
         before = job.snapshot()
-        job.state.by_id("s1.png").position_mm = 5.0  # type: ignore[union-attr]
+        job.state.by_id("s1.png").position_mm = 5.0
         job.commit(before)
-    assert job.state.by_id("s1.png").position_source == ""  # type: ignore[union-attr]
+    assert job.state.by_id("s1.png").position_source == ""
     assert _refused(job).payload()["at_default"] == ["s0.png", "s2.png"]
     assert job.undo()
-    assert job.state.by_id("s1.png").position_source == DEFAULT_POSITION  # type: ignore[union-attr]
-
-
-def test_starting_positions_fill_in_around_supplied_ones(tmp_path: Path):
-    job, ctx = _open(tmp_path, n=5, tasks=["position"],
-                     inputs={"positions": {"s1.png": 2.0, "s3.png": 3.0}})
-    by = {record.id: record for record in job.state.slices}
-    assert by["s1.png"].position_mm == 2.0 and by["s1.png"].position_source == ""
-    assert by["s2.png"].position_mm == pytest.approx(2.5)
-    assert by["s0.png"].position_mm == pytest.approx(2.0 - job.state.interval_mm)
-    assert by["s4.png"].position_mm == pytest.approx(3.0 + job.state.interval_mm)
-    assert {name for name, record in by.items() if record.position_source} == {
-        "s0.png", "s2.png", "s4.png"}
-    assert default_positions(job.state, ctx) == []  # nothing left without one
+    assert job.state.by_id("s1.png").position_source == DEFAULT_POSITION
 
 
 def test_without_positioning_no_starting_positions(tmp_path: Path):

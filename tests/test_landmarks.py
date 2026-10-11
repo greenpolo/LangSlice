@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from langslice.core import deformation
 from langslice.core import landmarks as geometry
 from langslice.core.landmark_views import pair_picture
 from langslice.core.layers import collecting
+from langslice.core.spec import NonlinearSpec
 from langslice.core.state import StackState
 from langslice.job.job import Job
 from langslice.ops import landmarks, look
@@ -21,6 +23,8 @@ from tests.test_ops_look import _job
 
 def setup(tmp_path: Path):
     job, ws = _job(tmp_path)
+    # The landmark tools belong to the nonlinear task: without it the deformation is frozen.
+    job.spec = replace(job.spec, tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"))
     record = job.state.by_id("s0.png")
     assert record is not None
     record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
@@ -339,9 +343,6 @@ def test_batch_zoom_reports_each_failure_without_losing_successful_pictures(tmp_
 
 
 def test_doors_have_typed_landmarks_and_apply_through_normal_tools(tmp_path):
-    from dataclasses import replace
-
-    from langslice.core.spec import NonlinearSpec
     from langslice.doors.declarations import arguments_schema
     from langslice.doors.tools.toolbox import build_tools
     from langslice.ops.exports import export_maps
@@ -425,5 +426,21 @@ def test_mcp_shrinking_saves_delivered_geometry_without_changing_old_picture(tmp
         zoomed = look.zoom(job, ws, picture=new_id, box=[x-10, y-10, x+10, y+10])
         assert zoomed.redrawn
         assert server.result_blocks({TOOL_MEDIA_PARTS_KEY: [original]}, job=job)
+    finally:
+        job.close()
+
+
+def test_a_frozen_deformation_refuses_pairs_and_triangulation_alike(tmp_path):
+    job, ws, record = setup(tmp_path)
+    try:
+        edits = saved_pairs(job, ws, record)
+        job.spec = replace(job.spec, frozen={record.id: ["deformation"]})
+        depth = len(job.undo_stack)
+        for call in (lambda: landmarks.set_landmarks(job, ws, record.id, edits),
+                     lambda: landmarks.landmark_triangulation(job, ws, record.id)):
+            with pytest.raises(Refused) as refused:
+                call()
+            assert refused.value.code == "FROZEN"
+        assert len(job.undo_stack) == depth and not record.landmarks
     finally:
         job.close()

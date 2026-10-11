@@ -352,7 +352,7 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
                                   + ", ".join(f"`{name}`" for name in verbs) + ".")
         assert expected != native and statement.startswith(expected + "\n\n")
         tail = statement[len(expected):]
-        assert "Opening pictures: `brief` saved 1 picture files" in tail
+        assert "Opening pictures: `brief` saved 2 picture files" in tail
         assert "User notes:\nSection 2 is torn." in tail
         assert "trace_from_atlas" not in statement  # a hidden verb is listed nowhere
         from langslice.doors.statement import status_and_notes
@@ -456,16 +456,17 @@ def test_the_brief_never_names_a_hidden_verb(capsys, images, monkeypatch):
     assert "trace_from_atlas" not in brief["result"]["statement"]
 
 
-def test_status_marks_what_the_user_locked_or_marked_damaged(capsys, images):
-    init(capsys, images, "--locked", json.dumps([ID0]), "--damaged",
-         json.dumps({ID1: "torn"}))
+def test_status_marks_what_the_user_froze_or_marked_damaged(capsys, images):
+    init(capsys, images, "--frozen", json.dumps({ID0: ["orientation", "affine"]}),
+         "--damaged", json.dumps({ID1: "torn"}))
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     rows = {row["id"]: row for row in envelope["result"]["rows"]}
-    # Every row carries both fields (uniform rows): true where set, else false.
-    assert rows[ID0]["locked"] is True and rows[ID0]["damage_by_user"] is False
-    assert rows[ID1]["damage_by_user"] is True and rows[ID1]["locked"] is False
-    assert rows[ID2]["locked"] is False and rows[ID2]["damage_by_user"] is False
+    # Every row carries both fields (uniform rows): set where set, else empty.
+    assert rows[ID0]["frozen"] == ["orientation", "affine"]
+    assert rows[ID0]["damage_by_user"] is False
+    assert rows[ID1]["damage_by_user"] is True and rows[ID1]["frozen"] == []
+    assert rows[ID2]["frozen"] == [] and rows[ID2]["damage_by_user"] is False
     # The user's damage note is a note: damaged regions make a section damaged.
     assert rows[ID1]["damage_note"] == "torn" and rows[ID1]["damaged"] is False
     assert rows[ID1]["damaged_regions"] == []
@@ -598,7 +599,7 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert code == 0, envelope
     assert envelope["result"]["dry_run"] is True
     assert envelope["result"]["would_change"] == {
-        "sections": {ID1: ["position_mm", "position_source"]}, "stack": []}
+        "sections": {ID1: ["position_mm"]}, "stack": []}
     assert envelope["artifacts"] == []
     assert envelope["next"] and "--dry-run" not in envelope["next"][0]
     assert (job / "state.json").read_bytes() == state_before
@@ -672,6 +673,9 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
     monkeypatch.setattr(toolbox, "resolve_image_model", lambda provider, model: stub_image_model(
         SimpleNamespace(nonlinear=SimpleNamespace(provider=provider, image_model=model))))
     job = init(capsys, images, "--image-provider", "openai-oauth")
+    code, placed = cli(capsys, str(images), "position_sections", "--sections",
+                       json.dumps([{"id": ID0, "position_mm": 0.05}]), "--view", "false")
+    assert code == 0, placed
     code, envelope = cli(capsys, str(images), "interactive_transform", "--sections",
                          json.dumps([{"id": ID0, "rotation_deg": 0.0}]), "--view", "false")
     assert code == 0, envelope
@@ -927,6 +931,8 @@ apply_patches()
 install(atlas_loader())
 import langslice
 job = langslice.open_job(sys.argv[1])
+job.position_sections(sections=[{"id": name, "position_mm": 0.05 + index * 0.05}
+                                for index, name in enumerate([ID0, ID1, ID2])], view=False)
 raw = {tool.__name__: tool for tool in job._opened.tools().tools}
 # The tool itself, which only queues its pictures: the writer is still busy
 # when the script ends, and no one calls close().
@@ -952,3 +958,53 @@ def test_pictures_queued_by_a_script_are_written_when_it_exits(capsys, images):
     assert len(placed) == 3 and all(line["layers"] for line in placed)
     for line in placed:
         assert (job / line["path"] / "labels.tif").is_file()
+
+
+# --- tools and options a job disables ----------------------------------------------------
+
+
+def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
+    """``--disable``: the verb is not offered, an option is not in the schema,
+    a call of it is refused, and nothing the agent reads names either."""
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "position,transform",
+                         "--image-provider", "none", "--preprocess", "none",
+                         "--pixel-size-um", str(PIXEL_SIZE_UM), "--disable", "zoom",
+                         "--disable", "look:positioning,interactive_transform:flip")
+    assert code == 0, envelope
+    folder = Path(envelope["result"]["job_folder"])
+    assert "zoom" not in envelope["result"]["verbs"] and "look" in envelope["result"]["verbs"]
+    assert json.loads((folder / "job.json").read_text())["spec"]["disabled"] == [
+        "zoom", "look:positioning", "interactive_transform:flip"]
+    statement = envelope["result"]["statement"]
+    assert "`zoom`" not in statement and "mode positioning" not in statement
+    card = (folder / "AGENTS.md").read_text()
+    assert "- `zoom`" not in card and "- `look`" in card
+    assert (folder / "CLAUDE.md").read_text() == card
+
+    code, refused = cli(capsys, str(folder), "zoom", "--box", "[0,0,1,1]")
+    assert code == 3 and refused["error"]["code"] == "VERB_OFF"
+    assert "disabled" in refused["error"]["message"]
+    code, refused = cli(capsys, str(folder), "look", "--mode", "positioning")
+    assert code == 3 and refused["error"]["code"] == "OPTION_OFF"
+    code, schema = cli(capsys, "schema", "look", "--job", str(folder))
+    assert schema["result"]["arguments"]["properties"]["mode"]["enum"] == [
+        "section", "atlas", "overlay"]
+    code, off = cli(capsys, "schema", "zoom", "--job", str(folder))
+    assert code == 3 and off["error"]["code"] == "VERB_OFF"
+    code, everything = cli(capsys, "schema", "--job", str(folder))
+    assert "zoom" not in everything["result"]["verbs"]
+    code, sections = cli(capsys, "schema", "interactive_transform", "--job", str(folder))
+    defs = sections["result"]["arguments"]["$defs"]
+    assert all("flip" not in entry["properties"] for entry in defs.values())
+    code, retired = cli(capsys, str(folder), "view_slices")
+    assert retired["error"]["code"] == "RETIRED_TOOL" and "zoom" not in retired["error"]["message"]
+
+
+def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):
+    code, envelope = cli(capsys, str(images), "init", "--disable", "zoomm")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    assert "unknown name 'zoomm'" in envelope["error"]["message"]
+    assert "look:positioning" in envelope["error"]["message"]
+    code, envelope = cli(capsys, str(images), "init", "--tasks", "transform",
+                         "--disable", "elastix_affine,interactive_transform")
+    assert code == 2 and "every tool that writes its answer" in envelope["error"]["message"]

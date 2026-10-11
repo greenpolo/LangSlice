@@ -314,3 +314,25 @@ def test_positioning_sections_ordered_by_position_not_index(tmp_path: Path):
         record.index_corrected = len(state.slices) - 1 - record.index_original
     picture = look(ws, state, LookRequest("positioning", sections=("s1.png", "s0.png")))[0]
     assert picture.sections == ("s0.png", "s1.png")
+
+
+@pytest.mark.parametrize("placed", [False, True])
+def test_unplaced_sections_can_compare_candidates_without_writing(tmp_path: Path, placed: bool):
+    ws, state = stack(tmp_path)
+    for record in state.slices:
+        record.position_mm = None
+    if placed:
+        state.slices[1].position_mm = 0.15
+    before = state.to_dict()
+    pictures = look(ws, state, LookRequest("positioning", positions_mm=(0.05, 0.2)))
+    assert state.to_dict() == before
+    assert len(pictures) == 1
+    picture = pictures[0]
+    assert picture.extra["positions_mm"] == [0.05, 0.2]
+    assert f"{2 if placed else 3} without a position" in picture.caption
+    expected = ("s1.png", "s0.png", "s2.png") if placed else SECTIONS
+    assert picture.sections == expected
+    width, height = picture.recipe["shown"]
+    zoomed = redraw(picture.recipe, [0, 0, width, height], ws, state=state)
+    assert zoomed.sections == expected
+    assert state.to_dict() == before

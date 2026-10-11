@@ -55,7 +55,7 @@ def test_ingest_discovers_the_folder_in_natural_order(tmp_path: Path):
     assert [s.id for s in state.slices] == names
     assert [s.index_corrected for s in state.slices] == [0, 1, 2, 3, 4]
     assert all(s.position_mm is None and not s.flip for s in state.slices)
-    assert state.interval_mm == 0.2 and state.thickness_mm == 0.05
+    assert state.interval_mm is None and state.thickness_mm is None
     assert state.spec["atlas"] == "allen_mouse_25um"
     assert "0.00-19.00 mm" in state.notes[0]
 
@@ -180,7 +180,8 @@ def test_mirroring_is_part_of_linear_never_of_positioning(tmp_path: Path):
 
     no_flip = _statement(_spec(
         tmp_path, tasks=["transform"],
-        transform=TransformSpec(flip=False, hemisphere_cue="ink on the right"),
+        transform=TransformSpec(hemisphere_cue="ink on the right"),
+        disabled=["interactive_transform:flip"],
     ))
     assert "Flipping sections is switched off" in no_flip
     assert "mirrored or turned" not in no_flip and "ink on the right" not in no_flip
@@ -243,6 +244,52 @@ def test_a_tools_plain_pictures_reach_the_model_as_message_images(
     assert len(pictures) == 1 and all(data[:2] == b"\xff\xd8" for data in pictures)
 
 
+def test_a_run_with_disabled_tools_shows_the_model_neither_the_tools_nor_the_options(
+    tmp_path: Path, monkeypatch
+):
+    """The system instruction and the tools of every request name nothing the
+    job disables; position_sections draws one overlay per written section
+    where the positioning look is off."""
+    names = _make_stack(tmp_path, n=2)
+    install_fake_adk_model_stack(monkeypatch, positions={names[0]: 2.0, names[1]: 3.0})
+    requests: list = []
+    generate = fakes._StackLlm.generate_content_async
+
+    def recording(self, llm_request, stream=False):
+        requests.append(llm_request.model_copy(deep=True))
+        return generate(self, llm_request, stream)
+
+    monkeypatch.setattr(fakes._StackLlm, "generate_content_async", recording)
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(playbook=True),
+                 disabled=["look:positioning", "zoom", "grep_atlas_view"])
+    state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
+    assert state.submitted is True
+
+    first = requests[0]
+    instruction = str(first.config.system_instruction)
+    tools = first.config.tools[0].function_declarations
+    declared = {tool.name: tool for tool in tools}
+    assert "zoom" not in declared and "grep_atlas_view" not in declared
+    text = instruction + " ".join(tool.description for tool in tools)
+    for gone in ("`zoom`", "grep_atlas_view", "mode positioning", "positioning mode",
+                 "zoom takes"):
+        assert gone not in text
+    mode = declared["look"].parameters_json_schema["properties"]["mode"]
+    assert mode["enum"] == ["section", "atlas", "overlay"]
+
+    def images(request) -> list[bytes]:
+        found = []
+        for content in request.contents or []:
+            for part in content.parts or []:
+                response = part.function_response
+                if response is not None and response.name == "position_sections":
+                    found += [item.inline_data.data for item in response.parts or []
+                              if item.inline_data is not None]
+        return found
+
+    assert len(images(requests[1])) == 2  # an overlay for each written section
+
+
 def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
     tmp_path: Path, monkeypatch
 ):
@@ -285,9 +332,10 @@ def test_run_resumes_from_the_checkpoint(tmp_path: Path, monkeypatch):
 def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypatch):
     names = _make_stack(tmp_path, n=3)
     positions = {names[0]: 4.0}  # incomplete: submit is refused every turn
-    install_fake_adk_model_stack(monkeypatch, positions=positions)
+    install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
 
-    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500),
+                 max_input_tokens=999)
     state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
 
     assert state.submitted is False
@@ -300,7 +348,7 @@ def test_one_request_over_the_input_context_limit_stops_with_grace(
     tmp_path: Path, monkeypatch
 ):
     names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: it would loop to max_iterations
+    positions = {names[0]: 4.0}  # incomplete: submit keeps being refused
     install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
     lines: list[str] = []
 
@@ -362,7 +410,7 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
     """The window was at 40% before the run; the run may spend 25 points of
     it, not reach 25%."""
     names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: it would loop to max_iterations
+    positions = {names[0]: 4.0}  # incomplete: submit keeps being refused
     install_fake_adk_model_stack(monkeypatch, positions=positions, quota_percent_per_call=10)
     lines: list[str] = []
 

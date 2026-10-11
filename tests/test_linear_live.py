@@ -118,12 +118,13 @@ def test_session_streaming_counts_final_calls_once_and_debrief_once(monkeypatch)
         agent=cast(Any, NS(model='test', instruction='job')),
         seed_message=types.Content(role='user', parts=[types.Part.from_text(text='seed')]),
         done=lambda: submitted[0], nudge_no_tool='continue', nudge_continue='continue',
-        max_iterations=2, run_label='test', debrief='debrief', debrief_sink=sink,
+        run_label='test', debrief='debrief', debrief_sink=sink,
         on_event=records.append,
     ))
     assert result == (1, 1)
     assert sink == ['Debrief']
     assert all(v['run_config'].streaming_mode == session.StreamingMode.SSE for v in options)
+    assert all(v['run_config'].max_llm_calls == 0 for v in options)
     assert records[-1]['kind'] == 'complete'
     assert records[-1]['submitted'] is True
 
@@ -179,7 +180,7 @@ def test_session_closes_runner_in_original_context_before_debrief(monkeypatch):
             agent=cast(Any, NS(model='test', instruction='job')),
             seed_message=types.Content(role='user', parts=[]),
             done=lambda: submitted[0], nudge_no_tool='continue', nudge_continue='continue',
-            max_iterations=2, run_label='test-close', debrief='debrief',
+            run_label='test-close', debrief='debrief',
             on_event=observe,
         )
         assert closed == [1, 2], 'runner cleanup was deferred past session return'

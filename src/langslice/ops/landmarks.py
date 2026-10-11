@@ -19,7 +19,7 @@ from langslice.core.deformable.engines import EngineResult
 from langslice.core.deformable.geometry import WorkingGrid
 from langslice.core.handoff import digest
 from langslice.core.triangulation import visualign_mesh
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.state import SliceState
@@ -31,9 +31,9 @@ def _section(job: Job, section: str) -> SliceState:
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [section])
-    refusal = job.nonlinear_refusal(record.id)
-    if refusal:
-        raise Refused(refusal[0], message=refusal[1])
+    # The pairs only serve a deformation: a section whose deformation is frozen
+    # takes neither pairs nor a triangulation (FROZEN).
+    check_frozen(job, [record.id], "deformation")
     return record
 
 
@@ -65,7 +65,8 @@ def _endpoint(job: Job, record: SliceState, point: dict[str, Any], role: str) ->
             picture=seq,
             message=(
                 f"Picture {seq} has no exact {role} geometry for {record.id}; "
-                "use look section/overlay, or look atlas with this section."
+                + ("draw the atlas plane of this section with look." if role == "atlas"
+                   else "draw this section with look.")
             ),
         )
     eligible = [

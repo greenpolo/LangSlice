@@ -114,7 +114,6 @@ class PreprocessPreviewRequest(EngineBaseModel):
 class LinearEstimateRequest(EngineBaseModel):
     spec: dict[str, Any] = Field(default_factory=dict)
     n_slices: int = Field(ge=1)
-    locked: int = Field(default=0, ge=0)
 
 
 class LinearEstimateResult(EngineBaseModel):

@@ -4,7 +4,8 @@ A host (CLI, ABBA connector, engine service) fills a :class:`JobSpec` and hands 
 to :func:`langslice.agent.engine.run`. Every checkbox a user sees maps to a field
 here; nothing else is user-facing. ``tasks`` switches whole capabilities on and
 off — a task that is OFF takes its answer from ``inputs`` instead of from the
-agent, and its tools are not built at all.
+agent, and its tools are not built at all. ``disabled`` takes single tools and
+tool options off on top of what the tasks give.
 
 See ``docs/registration.md`` for the design this mirrors.
 """
@@ -14,6 +15,9 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from langslice.core import frozen as freeze
+from langslice.core import toolset
 
 #: Every task, in the order they are listed everywhere else.
 DEFAULT_TASKS: tuple[str, ...] = ("position", "transform")
@@ -37,12 +41,23 @@ MAX_PARALLEL_TRANSFORMS = 4
 #: The keys :attr:`JobSpec.inputs` takes; any other is refused (a misspelled
 #: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
-    "order", "positions", "angles", "orientation", "transforms", "damaged", "locked",
-    "keep_warp", "nonlinear_skip", "pixel_size_um", "channel_names",
+    "order", "positions", "angles", "orientation", "transforms", "damaged",
+    "pixel_size_um", "channel_names",
 )
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
+
+
+#: The switches older specs had, now names in ``disabled``: ``(section of
+#: the spec or "", key, the name it became when the key is false)``. Read
+#: from a saved spec (:meth:`JobSpec.from_dict`), never written.
+LEGACY_SWITCHES: tuple[tuple[str, str, str], ...] = (
+    ("", "agent_damage", "mark_damage"),
+    ("transform", "interactive", "interactive_transform"),
+    ("transform", "automatic", "elastix_affine"),
+    ("transform", "flip", "interactive_transform:flip"),
+)
 
 
 def _degrees(value: Any, where: str) -> float:
@@ -103,39 +118,43 @@ def supplied_angles(
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""
 
-    thickness_um: int = 50
-    interval_um: int = 200
+    #: None means not supplied; the agent infers what the anatomy supports.
+    thickness_um: int | None = None
+    interval_um: int | None = None
     #: Sections must sit exactly one interval apart (gated at submit).
     strict_interval: bool = False
     #: Look-before-you-write gates: ``position_sections`` is refused for a
     #: section not looked at in mode ``overlay`` or ``positioning`` since its
     #: last write, and ``submit`` until ``look`` in mode ``positioning`` has
     #: shown every section after the last write. The refusals name what is
-    #: missing.
+    #: missing. Needs ``look:positioning`` (the spec refuses the gates where
+    #: the job disables it).
     gated: bool = False
-    #: A suggested method written into the job statement: hypothesise order
-    #: and every position from the opening images, confirm each section at that
-    #: position four per call, write, re-check the doubtful, review, submit.
-    #: Coaching text, off by default.
+    #: Optional positioning coaching: compare candidate planes and regions,
+    #: write supported placements, revisit uncertainty and review the stack.
+    #: Guidance only, off by default.
     playbook: bool = False
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("thickness_um", "interval_um"):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                      or value <= 0):
+                raise ValueError(f"{name} must be a positive integer in micrometres or null")
+        if self.strict_interval and self.interval_um is None:
+            raise ValueError("strict_interval requires a supplied interval_um")
 
 
 @dataclass
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
-    #: The agent may mirror sections left-right (``interactive_transform``'s
-    #: ``flip``). A mirror is part of the in-plane alignment: the sign of the
-    #: affine.
-    flip: bool = True
-    #: User text describing what marks a hemisphere (a notch, an injection...).
+    #: User text describing what marks a hemisphere (a notch, an injection...),
+    #: shown where the agent may mirror sections (``interactive_transform``'s
+    #: ``flip``, an option of the tool that ``disabled`` can take off).
     hemisphere_cue: str = ""
-    #: Offer direct visual adjustment.
-    interactive: bool = True
-    #: Offer the automatic affine fit (``elastix_affine``).
-    automatic: bool = True
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
     #: Most sections one transform-tool call (``elastix_affine``,
@@ -244,14 +263,27 @@ class JobSpec:
     #: and stored transforms are unchanged, and the image model's inputs are
     #: untouched.
     image_resolution: str = "low"
-    #: Build ``mark_damage``: the agent may mark the atlas regions a section
-    #: has lost. Off, no section is marked; a host's ``inputs["damaged"]``
-    #: notes are shown either way.
-    agent_damage: bool = True
     #: The change tools always return their picture: their ``view`` argument
     #: is not offered, so the agent cannot switch the picture off.
     force_view: bool = False
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
+    #: Tools and tool options switched off on top of what the tasks give:
+    #: ``"zoom"`` (a tool, whole) or ``"look:positioning"`` (``tool:option``).
+    #: The valid names are :func:`langslice.core.toolset.valid_names`; a name
+    #: that is none, a tool the run cannot do without (``submit``) or a list
+    #: that cannot work is refused when the spec is made
+    #: (:func:`langslice.core.toolset.refusal`). A host's ``inputs["damaged"]``
+    #: notes are shown whatever is disabled.
+    disabled: list[str] = field(default_factory=list)
+    #: What the agent may not change, per section: ``{"<filename>":
+    #: ["orientation", "affine"], "*": ["angles"]}`` (``"*"``: every section;
+    #: the properties are :data:`langslice.core.frozen.PROPERTIES`). A frozen
+    #: property keeps the value ``inputs`` supplies for it, or its "none"
+    #: (:mod:`langslice.core.frozen`); the ops refuse a write that would
+    #: change it (``FROZEN``), a tool that writes only properties frozen on
+    #: every section is not offered (:attr:`switched_off`) and a task whose
+    #: properties are all frozen on every section is off (:meth:`has`).
+    frozen: dict[str, list[str]] = field(default_factory=dict)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
     nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
@@ -263,7 +295,7 @@ class JobSpec:
     #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
     #: "orientation": {filename: {"flip": bool, "rotation_deg": 0|90|180|270}},
     #: "transforms": {filename: transform_dict},
-    #: "damaged": {filename: note}, "locked": [filename, ...]}``.
+    #: "damaged": {filename: note}}``.
     #: A supplied transform may be mirrored (negative determinant, as a
     #: host's own alignment carries a flip); it is kept as supplied. A
     #: supplied ``orientation`` is the section's flip and quarter turn (a
@@ -273,16 +305,9 @@ class JobSpec:
     #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
     #: ``channel_names`` (one name per page of a host's multi-page snapshot)
     #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
-    #: ``damaged`` supplies notes, not region exclusions. ``locked`` sections
-    #: were aligned in-plane by the user: the agent cannot change their flip,
-    #: rotation or transform (a ``"host"`` identity transform unless
-    #: ``transforms`` supplies one), but their positions still move.
-    #: ``keep_warp`` sections (a list of filenames) carry the user's own
-    #: deformation in the host: ``ants_syn`` and ``trace_borders`` refuse
-    #: them (``KEEPS_HOST_WARP``). ``nonlinear_skip`` sections (a list of
-    #: filenames) the user left out of Nonlinear (no linear registration and
-    #: not to be aligned first): ``ants_syn`` and ``trace_borders`` refuse
-    #: them (``NONLINEAR_SKIPPED``).
+    #: ``damaged`` supplies notes, not region exclusions. What is supplied
+    #: is a starting point: the agent may change it unless ``frozen`` says
+    #: it may not.
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True
@@ -304,8 +329,6 @@ class JobSpec:
                 f"Unsupported image_resolution {self.image_resolution!r}; "
                 f"expected one of {IMAGE_RESOLUTIONS}"
             )
-        if not isinstance(self.agent_damage, bool):
-            raise ValueError(f"agent_damage must be true or false; got {self.agent_damage!r}")
         if not isinstance(self.agent_preprocessing, bool):
             raise ValueError(
                 f"agent_preprocessing must be true or false; got {self.agent_preprocessing!r}"
@@ -327,20 +350,74 @@ class JobSpec:
                     f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
                 )
             supplied_angles(self.inputs.get("angles"))
+        if not isinstance(self.disabled, (list, tuple)) or not all(
+                isinstance(name, str) for name in self.disabled):
+            raise ValueError("disabled must be a list of tool and option names")
+        self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
+        self.frozen = freeze.clean(self.frozen)
+        supplied = (self.inputs or {}).get("positions") or {}
+        unsupplied = sorted(name for name, held in self.frozen.items()
+                            if name != freeze.EVERY and "position" in held
+                            and name not in supplied)
+        if unsupplied:
+            raise ValueError(
+                f"frozen: the position of {unsupplied} is frozen, and a position has no "
+                "default: supply it in inputs.positions")
+        reason = toolset.refusal(self)
+        if reason is not None:
+            raise ValueError(reason)
 
     # --- views -----------------------------------------------------------
 
     def has(self, task: str) -> bool:
-        """Whether *task* is switched on for this run."""
-        return task in self.tasks
+        """Whether *task* is on for this run: in ``tasks``, and not every one
+        of its properties frozen on every section (``frozen["*"]``): a task
+        with nothing left to write is off."""
+        return task in self.tasks and not (
+            set(freeze.TASK_PROPERTIES[task]) <= freeze.everywhere(self.frozen))
 
     @property
-    def thickness_mm(self) -> float:
-        return self.position.thickness_um / 1000.0
+    def active_tasks(self) -> list[str]:
+        """The tasks that are on (:meth:`has`), in :data:`ALL_TASKS` order."""
+        return [task for task in ALL_TASKS if self.has(task)]
 
     @property
-    def interval_mm(self) -> float:
-        return self.position.interval_um / 1000.0
+    def frozen_everywhere(self) -> frozenset[str]:
+        """The properties no section may change: ``frozen["*"]`` and the
+        properties of every task that is off (the host supplied them). The
+        cutting angles stay free in a run whose Linear task may set them
+        (``transform.angles``)."""
+        return freeze.everywhere(self.frozen) | freeze.derived(
+            self.active_tasks, angles_free=bool(self.has("transform") and self.transform.angles))
+
+    def frozen_for(self, section_id: str) -> frozenset[str]:
+        """The properties frozen on one section: its own, ``frozen["*"]``
+        and what the tasks that are off supply."""
+        return freeze.for_section(self.frozen, section_id) | self.frozen_everywhere
+
+    def off(self, name: str) -> bool:
+        """Whether the tool or ``tool:option`` *name* is off: disabled, or
+        taken off by what is frozen (a tool's options are off with it)."""
+        return toolset.is_off(self.switched_off, name)
+
+    @property
+    def switched_off(self) -> list[str]:
+        """Every name that is off for this run: ``disabled`` and, after it,
+        the tools and options that can change nothing because everything
+        they write is frozen on every section
+        (:func:`langslice.core.toolset.frozen_off`). What every door and
+        every text renders by."""
+        return toolset.off_names(self)
+
+    @property
+    def thickness_mm(self) -> float | None:
+        value = self.position.thickness_um
+        return value / 1000.0 if value is not None else None
+
+    @property
+    def interval_mm(self) -> float | None:
+        value = self.position.interval_um
+        return value / 1000.0 if value is not None else None
 
     # --- (de)serialization ----------------------------------------------
 
@@ -352,11 +429,35 @@ class JobSpec:
             data["nonlinear"].pop("require_deformation", None)
         if not data.get("force_view"):  # likewise
             data.pop("force_view", None)
+        if not data.get("disabled"):  # likewise
+            data.pop("disabled", None)
+        if not data.get("frozen"):  # likewise
+            data.pop("frozen", None)
+        return data
+
+    @staticmethod
+    def migrated(data: dict[str, Any]) -> dict[str, Any]:
+        """A saved spec's dict as today's spec has it: the switches older
+        specs had (:data:`LEGACY_SWITCHES`) as names in ``disabled``, and the
+        ``inputs`` keys that were freezes (:data:`langslice.core.frozen.LEGACY_INPUTS`:
+        ``locked``, ``keep_warp``, ``nonlinear_skip``) as ``frozen``."""
+        data = dict(data)
+        legacy = [became for section, key, became in LEGACY_SWITCHES
+                  if ((data.get(section) or {}) if section else data).get(key) is False]
+        if legacy:
+            data["disabled"] = [*(data.get("disabled") or []), *legacy]
+        if isinstance(data.get("inputs"), dict) and any(
+                key in data["inputs"] for key in freeze.LEGACY_INPUTS):
+            inputs, older = freeze.from_legacy(data["inputs"])
+            data["inputs"] = inputs
+            data["frozen"] = freeze.merge(data.get("frozen") or {}, older)
         return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
-        """Rebuild from :meth:`to_dict` output, ignoring unknown keys."""
+        """Rebuild from :meth:`to_dict` output, ignoring unknown keys, after
+        :meth:`migrated` has read what older specs held."""
+        data = cls.migrated(data)
         nested = {
             "position": PositionSpec,
             "transform": TransformSpec,

@@ -24,6 +24,7 @@ from langslice.core.channels import stack_display
 from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.core.state import unknown_sections
+from langslice.core.toolset import TOOLS
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.door import Door, Media, as_list, pictured
 from langslice.doors.tools.view_options import clamp_resolution
@@ -33,7 +34,6 @@ from langslice.ops import files as ops_files
 from langslice.ops import look as ops_look
 from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
-from langslice.ops.registry import positions_on
 
 #: look modes a gate counts as comparing a section with the atlas.
 COMPARING_MODES = ("overlay", "positioning")
@@ -42,23 +42,38 @@ COMPARING_MODES = ("overlay", "positioning")
 def can_change(door: Door) -> list[str]:
     """What this run lets the agent change, in words (``status``)."""
     spec = door.spec
+
+    def has(name: str) -> bool:
+        return TOOLS[name].is_on(spec)
+
+    frozen = spec.frozen_everywhere
     out: list[str] = []
-    if spec.has("position"):
+    if spec.has("position") and "position" not in frozen:
         out.append("positions (the order follows them)")
-    if positions_on(door.spec):
+    if has("position_sections") and "angles" not in frozen:
         out.append("cutting angles")
     if spec.has("transform"):
-        if spec.transform.interactive:
-            out.append("orientation" + (" and mirroring" if spec.transform.flip else "")
-                       + " and in-plane transforms by hand")
-        if spec.transform.automatic:
+        if has("interactive_transform"):
+            by_hand = []
+            if "orientation" not in frozen:
+                by_hand.append("orientation" + ("" if spec.off("interactive_transform:flip")
+                                                else " and mirroring"))
+            if "affine" not in frozen:
+                by_hand.append("in-plane transforms")
+            out.append(" and ".join(by_hand) + " by hand")
+        if has("elastix_affine"):
             out.append("in-plane transforms by elastix_affine")
-    if spec.agent_damage:
+    if has("mark_damage"):
         out.append("damaged regions")
     if spec.has("nonlinear"):
-        out.append("deformations" + (" (ants_syn, trace_borders)" if door.traces_on
-                                     else " (ants_syn)"))
-    out.append("channel display and the preprocessed channel")
+        fits = [name for name in ("ants_syn", "trace_borders")
+                if has(name) and (name != "trace_borders" or door.traces_on)]
+        out.append("deformations" + (f" ({', '.join(fits)})" if fits else ""))
+    channels = [words for tool, words in (("set_channel_properties", "channel display"),
+                                          ("set_preprocessed_channel_properties",
+                                           "the preprocessed channel")) if has(tool)]
+    if channels:
+        out.append(" and ".join(channels))
     return out
 
 
@@ -66,8 +81,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     """The looking tools' bodies over *door*."""
     job, ctx = door.job, door.ctx
 
-    def look(mode: str, sections: list[str], positions_mm: list[float], channels: list[str],
-             atlas_layers: list[str], atlas_opacity: float, warp: str,
+    def look(mode: str, sections: list[str], channels: list[str],
+             positions_mm: list[float] | None = None, atlas_layers: list[str] | None = None,
+             atlas_opacity: float = 0.5, warp: str = "applied",
              resolution: int = 0) -> dict[str, Any]:
         note = ""
         edge: int | None = None
@@ -90,9 +106,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             named, _unknown = door.resolve_many(as_list(sections))
             drawn = named or job.state.in_order()
             for record in drawn:
-                if record.position_mm is not None:
-                    door.box.compared.setdefault(record.id, set()).add(
-                        round(float(record.position_mm), 2))
+                door.box.compared.setdefault(record.id, set()).add(
+                    round(float(record.position_mm), 2) if record.position_mm is not None else None)
             if (str(mode).strip().lower() == "positioning"
                     and len(drawn) == len(job.state.slices)):
                 door.box.reviewed = True
@@ -101,11 +116,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["resolution_note"] = note
         return pictured(result, done)
 
-    def zoom(box: list[float], picture: int, region: str,
-             requests: list[dict[str, Any]]) -> dict[str, Any]:
+    def zoom(box: list[float], picture: int, region: str = "",
+             requests: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         try:
             done = ops_look.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
-                                 region=region, requests=requests)
+                                 region=region, requests=requests or [])
         except Refused as refusal:
             return refusal.payload()
         except (TypeError, ValueError):

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from contextlib import aclosing
 from typing import Any, cast
 
@@ -46,12 +46,10 @@ logger = logging.getLogger(__name__)
 _APP_NAME = "langslice"
 _USER_ID = "langslice-user"
 
-#: Model turns one main stack session may spend.
-DEFAULT_MAX_ITERATIONS = 60
 
-
-def build_plugins(run_label: str) -> list[BasePlugin]:
-    """The ADK plugins every LangSlice session runs with."""
+def build_plugins(run_label: str, disabled: Collection[str] = ()) -> list[BasePlugin]:
+    """The ADK plugins every LangSlice session runs with; *disabled* is the
+    job's disabled list (what a retired tool's answer may name)."""
     plugins: list[BasePlugin] = [
         # One working set per session: the instance remembers its cut.
         ContextFilterPlugin(custom_filter=WorkingSetImages()),
@@ -63,7 +61,7 @@ def build_plugins(run_label: str) -> list[BasePlugin]:
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
     # A retired tool's name answers with the tool to use instead.
-    plugins.append(RetiredToolsPlugin())
+    plugins.append(RetiredToolsPlugin(disabled=disabled))
     # Unknown or misplaced arguments are refused, never silently dropped.
     plugins.append(StrictArgumentsPlugin())
     return plugins
@@ -196,7 +194,6 @@ async def run_agent_session(
     done: Callable[[], bool],
     nudge_no_tool: str,
     nudge_continue: str,
-    max_iterations: int,
     run_label: str,
     debrief: str | None = None,
     debrief_sink: list[str] | None = None,
@@ -205,13 +202,14 @@ async def run_agent_session(
     max_quota_percent: int | None = None,
     on_event: LiveCallback | None = None,
     background: Callable[[], list[Any] | None] | None = None,
+    disabled: Collection[str] = (),
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
-    Ends when *done* reports the session's submit tool has fired, or when the
-    turn/tool-call budget runs out, or when a single request's reported input
-    tokens exceed *max_input_tokens*. Cached input still occupies context.
-    This optional check happens after the response, not before sending it;
+    Ends when *done* reports the session's submit tool has fired, or a configured
+    quota/input-context budget is reached. There is no turn or tool-call limit.
+    Cached input still occupies context. Budget checks happen after the
+    response, not before sending it;
     cumulative usage remains available separately for cost accounting.
 
     *background*, when the model ends its turn without submitting: waits
@@ -221,14 +219,17 @@ async def run_agent_session(
     nudge.
     """
     live = LiveEvents(on_event) if on_event is not None else None
-    run_config = RunConfig(streaming_mode=StreamingMode.SSE) if live else None
+    run_config = RunConfig(
+        max_llm_calls=0,
+        streaming_mode=StreamingMode.SSE if live else StreamingMode.NONE,
+    )
     trace = open_trace(run_label, agent=agent)
     if trace is not None and hasattr(agent.model, "capture_usage_details"):
         cast(Any, agent.model).capture_usage_details = True
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=build_plugins(run_label),
+        plugins=build_plugins(run_label, disabled),
     )
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None
@@ -252,7 +253,7 @@ async def run_agent_session(
     # A budget stop gets ONE more call, to submit: a run stopped one call
     # short of its submit loses all its work for a few hundred tokens.
     grace_left = 1
-    while turns < max_iterations and not done() and (stopped is None or grace_left):
+    while not done() and (stopped is None or grace_left):
         turns += 1
         if stopped is not None:
             grace_left -= 1
@@ -330,7 +331,7 @@ async def run_agent_session(
                         [getattr(call, "name", "?") for call in calls],
                         tool_calls,
                     )
-                if done() or tool_calls > max_iterations:
+                if done():
                     break
                 if stopped is not None and (event.get_function_responses() or not calls):
                     # ADK runs the WHOLE tool loop inside one run_async: a model
@@ -338,11 +339,6 @@ async def run_agent_session(
                     # own. Leave once the budget-tripping call is answered.
                     break
         if done():
-            break
-        if tool_calls > max_iterations:
-            logger.warning(
-                "%s hit max_iterations=%d; ending pass", run_label, max_iterations
-            )
             break
         if background is not None and stopped is None:
             # Work still running when the turn ended: wait for it, and its

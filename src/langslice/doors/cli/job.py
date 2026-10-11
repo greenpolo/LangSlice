@@ -44,6 +44,7 @@ from langslice.core.state import unknown_sections
 from langslice.doors.cli import background
 from langslice.doors.cli.catalog import canonical_verb
 from langslice.doors.cli.envelope import (
+    DISABLED,
     EXIT_ARGUMENTS,
     EXIT_INTERNAL,
     EXIT_OK,
@@ -335,6 +336,17 @@ def arguments_for(tool: Any, options: dict[str, Any],
 # --- one verb ---------------------------------------------------------------------
 
 
+def _disabled_of(folder: str) -> tuple[str, ...]:
+    """The tools and options the job at *folder* disables; none when it has no
+    readable settings (the call then fails on its own)."""
+    from langslice.doors.jobs import find, read_spec
+
+    try:
+        return tuple(read_spec(find(folder)).switched_off)
+    except Exception:  # noqa: BLE001 - only the wording of a hint depends on it
+        return ()
+
+
 def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
     from langslice.doors.jobs import NoJob, open_folder
 
@@ -353,7 +365,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     """Run *verb* on the job *folder* names (see the module text)."""
     from langslice.ops.registry import VERBS, retired_payload
 
-    retired = retired_payload(verb)
+    retired = retired_payload(verb, _disabled_of(folder))
     if retired is not None:
         raise _Refusal(Envelope.failure(
             "RETIRED_TOOL", retired["message"], verb=verb,
@@ -368,6 +380,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
             "answers at once.", verb=verb))
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
+    token = DISABLED.set(tuple(opened.spec.switched_off))  # the fixes name what the job has
     try:
         # The job's verbs as the tool door builds them (a hidden verb is
         # called by name, never listed: ``Verb.hidden``).
@@ -382,7 +395,9 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
                     f"({spec.nonlinear.provider}), which is not connected to LangSlice here "
                     "(no key or login).", result={"verbs": offered}, job=job_folder, verb=verb))
             raise _Refusal(Envelope.failure(
-                "VERB_OFF", f"This job's settings (tasks {spec.tasks}) have no {verb}.",
+                "VERB_OFF", f"This job's settings (tasks {spec.tasks}"
+                + (f", disabled {spec.disabled}" if spec.disabled else "")
+                + f") have no {verb}.",
                 result={"verbs": offered}, job=job_folder, verb=verb))
         tool = tools[verb]
         arguments = arguments_for(tool, options, flags, verb)
@@ -406,6 +421,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         envelope.call = arguments
         return envelope
     finally:
+        DISABLED.reset(token)
         opened.close()
 
 

@@ -49,7 +49,7 @@ def test_positions_are_clamped_written_and_one_undo_step(tmp_path: Path):
     assert done.clamped == [("s1.png", high + 5.0, high)]
     assert done.unknown == ["nope.png", "2"] and done.touched == ["s0.png", "s1.png"]
     assert len(job.undo_stack) == 1
-    assert job.undo() and _record(job, "s1.png").position_source == "default"
+    assert job.undo() and _record(job, "s1.png").position_source == ""
     assert _record(job, "s1.png").position_mm == start != high
     # Nothing to write: no undo step.
     assert positions.position_sections(
@@ -104,7 +104,7 @@ def test_appearance_plan_matches_the_write(tmp_path: Path):
 
 
 def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
-    job, _ = _open(tmp_path, inputs={"locked": ["s2.png"]})
+    job, _ = _open(tmp_path, frozen={"s2.png": ["orientation", "affine"]})
     knobs = {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
              "translate_x_mm": 0.0, "translate_y_mm": 0.0}
     record = transforms.transform_record(
@@ -127,7 +127,9 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
         "s0.png", "s1.png"]
     assert len(job.undo_stack) == 1
     assert job.undo() and _record(job, "s1.png").transform is None
-    with pytest.raises(Refused) as locked:
+    with pytest.raises(Refused) as frozen:
         transforms.set_transforms(job, {"s0.png": record, "s2.png": record})
-    assert locked.value.code == "LOCKED" and _record(job, "s0.png").transform is None
+    assert frozen.value.code == "FROZEN" and frozen.value.details["ids"] == ["s2.png"]
+    assert frozen.value.details["properties"] == ["affine"]
+    assert _record(job, "s0.png").transform is None
     assert transforms.set_transforms(job, {}) == []

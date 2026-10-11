@@ -152,13 +152,19 @@ flag reference. The main choices are:
 |---|---|
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent | `--model`, `--reasoning` |
+| Agent | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`) |
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
-| Constraints and context | `--no-flip`, `--hemisphere-cue`, `--locked`, `--damaged`, `--fact` |
+| Constraints and context | `--hemisphere-cue`, `--frozen`, `--damaged`, `--fact` |
+| Tools and options off | `--disable NAME[,NAME...]`: a tool (`zoom`) or `tool:option` (`look:positioning`, `interactive_transform:flip`); [valid names](registration.md#switching-tools-and-options-off) |
 | Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
 | Storage | `--job-dir`, `--out`, `--trace-dir`, `--fresh` |
+
+`--thickness` and `--interval` are optional, in micrometres. Omit unknown
+values: the agent infers positions and spacing from anatomy and records
+estimates or uncertainty. Supplied values are advisory unless
+`--strict-interval` is enabled; that option requires `--interval`.
 
 Structured placement inputs take inline JSON or a JSON file. `--angles`
 lets the agent adjust cutting angles. A disabled task keeps the supplied
@@ -172,6 +178,7 @@ over. Every write is checkpointed and undoable. Calls through different
 interfaces pick up each other's saved changes.
 
 The built-in agent prints token usage per model call.
+There is no limit on model turns or tool calls.
 `--max-quota-percent` (default 25) limits the run's share of a provider usage
 window when the provider reports it. `--max-input-tokens` limits the input
 reported by one request. A budget stop allows a final submit call and keeps
@@ -185,6 +192,17 @@ tool events; images are described by type, size and byte count rather than
 embedded. MCP traces record calls and results, not the host model's private
 conversation. The agent CLI logs every call in `logs/calls.jsonl` and uses
 `LANGSLICE_TRACE_DIR` for additional tool traces.
+
+The `openai-oauth` agent transport automatically retries connection failures,
+timeouts, HTTP 408/409/429 and 5xx errors (including 507), and early
+`response.failed` events reporting server overload, server errors or temporary
+rate limits. HTTP and event failures share a budget of three retries; event
+failures are retried only before any model output arrives. It logs each retry and waits
+2, 4 and 8 seconds with jitter, honoring a longer `Retry-After` up to 60
+seconds. Longer server delays, explicit quota exhaustion, certificate errors
+and other permanent failures stop the run. A 401 can refresh credentials once.
+Stream failures are surfaced without replaying partially delivered tool calls;
+image edits are not covered by these request retries.
 
 `langslice login` stores OAuth credentials in
 `~/.langslice/openai_auth.json`; `LANGSLICE_OPENAI_AUTH` overrides that path.

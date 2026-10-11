@@ -9,17 +9,13 @@
   "rows": [
    {
     "damaged": false,
-    "delta_to_next_mm": 0.058,
     "flip": false,
     "id": "s0.png",
-    "position_mm": 0.042,
-    "position_source": "default",
     "rotation_deg": 0
    },
    {
     "damaged": false,
     "deformation_steps": 1,
-    "delta_to_next_mm": 0.108,
     "flip": false,
     "id": "s1.png",
     "position_mm": 0.1,
@@ -31,8 +27,6 @@
     "damaged": false,
     "flip": false,
     "id": "s2.png",
-    "position_mm": 0.208,
-    "position_source": "default",
     "rotation_deg": 0
    }
   ],

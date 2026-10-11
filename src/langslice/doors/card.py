@@ -6,7 +6,8 @@ the truth and which are derived, how to get atlas coordinates for a
 picture, the CLI verbs, their per-call limits, the Python import path and
 what a method returns, and where the agent keeps its own files. Generated
 from code (the listed verbs, :func:`langslice.ops.registry.listed`, their
-declarations and ``Verb.limits``, the job's own transform cap), so it
+declarations and ``Verb.limits``, the job's own transform cap, less the tools
+its ``disabled`` list names), so it
 cannot drift from what the doors offer; written when a job folder is
 created and rewritten whenever a LangSlice that would word it differently
 opens the folder (:func:`write_card`). One screen: the details are one
@@ -20,6 +21,8 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import langslice
+from langslice.core.needs import render
+from langslice.core.toolset import is_off
 from langslice.doors.declarations import summary
 from langslice.job.layout import JobLayout, read_job_file
 from langslice.ops.registry import listed
@@ -45,6 +48,18 @@ def limits_note(limits: Mapping[str, int]) -> str:
                                     for what, most in limits.items()) + " per call"
 
 
+def disabled_names(layout: JobLayout) -> list[str]:
+    """The tools and options the job disables (``JobSpec.disabled``, older
+    switches read as they became), as its settings hold them; none when the
+    folder holds no readable settings."""
+    from langslice.core.spec import JobSpec
+
+    try:
+        return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {}).switched_off
+    except (OSError, ValueError, TypeError, AttributeError):
+        return []
+
+
 def transform_cap_line(layout: JobLayout) -> str:
     """The job's own lower cap on the transform verbs
     (``transform.max_parallel``), when its settings set one."""
@@ -57,18 +72,26 @@ def transform_cap_line(layout: JobLayout) -> str:
         return ""
     if cap >= MAX_PARALLEL_TRANSFORMS:
         return ""
-    return (f"\nThis job: at most {cap} sections per `elastix_affine` or `interactive_transform` "
-            "call.")
+    return render(f"\nThis job: at most {cap} sections per [[?elastix_affine `elastix_affine`"
+                  "[[?interactive_transform  or ]]]][[?interactive_transform "
+                  "`interactive_transform`]] call.", disabled_names(layout))
 
 
 def card_text(layout: JobLayout) -> str:
     """The card for the job folder *layout* (see the module text)."""
     images = str(layout.image_folder) if layout.image_folder is not None else "the images"
+    disabled = disabled_names(layout)
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): {summary(name)}"
-        for name, verb in listed().items()
+        for name, verb in listed().items() if not is_off(disabled, name)
     ) + transform_cap_line(layout)
+    example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
+                     'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)
+    history = render("[[?redo undo/redo||undo]]", disabled)
+    exported = render("[[?export_maps  or by `export_maps`]]", disabled)
+    background = render("[[?trace_borders `trace_borders` lands in the background: "
+                        "`job.close()`\n(or a `with` block) waits for it. ]]", disabled)
     return f"""# LangSlice job folder
 
 One registration job: the sections in `{images}` placed in a BrainGlobe atlas.
@@ -85,10 +108,10 @@ written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
 - `registration.json`: the same registrations in public units (read only,
   rewritten on every change): per section its parameters and `pixel_to_atlas_um`
   (image file pixel [row, col, 1] -> atlas um).
-- `job.json`: settings (tasks, atlas, plane); `history/`: undo/redo, a file per step.
+- `job.json`: settings (tasks, atlas, plane); `history/`: {history}, a file per step.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
   records), `image_correction/<key>/` (image-model traces), `views/`, and the
-  maps written at submit or by `export_maps` (on the image's working copy):
+  maps written at submit{exported} (on the image's working copy):
   - `coords.tif`: float32 (3, rows, cols) atlas um per pixel over the section's filled
     outline, NaN outside it; `tissue.png`: the tissue estimate (0/255), to mask with.
   - `labels.tif`: uint32 atlas ids per pixel (0 outside the outline); `labels_fiji.tif`
@@ -123,12 +146,10 @@ that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` 
 
 ## Python
 `import langslice; job = langslice.open_job("{layout.folder}")`; the verbs are methods
-with the same arguments (`job.status()`,
-`job.position_sections(sections=[{{"id": "<file>", "position_mm": 5.2}}])`). Each returns, once
+with the same arguments {example}. Each returns, once
 its pictures are on disk, a JSON-safe dict: the CLI's `result` in full (status rows with
 every field, null where unset) plus `artifacts` as the CLI lists them; `reply.images`
-holds the pictures as PIL images. `trace_borders` lands in the background: `job.close()`
-(or a `with` block) waits for it. Atlases: `langslice.load_atlas("allen_mouse_25um")`.
+holds the pictures as PIL images. {background}Atlases: `langslice.load_atlas("allen_mouse_25um")`.
 Keep your own files here, never in /tmp: scripts in `scripts/`, the rest (montages,
 tables) in `scratch/`; LangSlice never reads them. Every picture a verb shows is saved here.
 """

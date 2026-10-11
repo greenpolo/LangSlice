@@ -5,15 +5,15 @@
  "data": {
   "pictures": [
    {
-    "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray auto",
+    "caption": "s0.png section, no position; 31.2 um/px; raw gray auto",
     "id": 1
    },
    {
-    "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red, green, blue auto",
+    "caption": "s1.png section, no position; 31.2 um/px; raw red, green, blue auto",
     "id": 2
    },
    {
-    "caption": "s2.png section, at 0.21 mm; 31.2 um/px; raw gray auto",
+    "caption": "s2.png section, no position; 31.2 um/px; raw gray auto",
     "id": 3
    }
   ],

@@ -85,11 +85,12 @@ def unavailable(reason: str) -> dict[str, Any]:
     return {"low": None, "high": None, "unit": UNIT, "basis": reason, "available": False}
 
 
-def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, Any]:
+def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
     """Estimated usage-window share for *n_slices* sections under *spec*.
 
-    *spec* uses JobSpec field names. *locked* sections need no transform
-    work; when positioning is off they need no work at all. Where no
+    *spec* uses JobSpec field names. A section whose orientation and affine
+    are frozen (``spec["frozen"]``) needs no transform work; when
+    positioning is off they need no work at all. Where no
     estimate can honestly be given, :func:`unavailable` with the reason
     (module text); ``ValueError`` only for malformed inputs.
     """
@@ -97,10 +98,13 @@ def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, 
 
     if n_slices < 1:
         raise ValueError("n_slices must be at least 1")
-    if not 0 <= locked <= n_slices:
-        raise ValueError("locked must be between 0 and n_slices")
     parsed = JobSpec.from_dict({**spec, "image_folder": spec.get("image_folder") or "."})
-    tasks = set(parsed.tasks)
+    every = set(parsed.frozen.get("*", ()))
+    aligned = {"orientation", "affine"}
+    aligned_frozen = n_slices if aligned <= every else min(n_slices, sum(
+        1 for name, held in parsed.frozen.items()
+        if name != "*" and aligned <= every | set(held)))
+    tasks = set(parsed.active_tasks)
     positioning = "position" in tasks
     transform = "transform" in tasks
     nonlinear = "nonlinear" in tasks
@@ -126,11 +130,11 @@ def estimate(spec: dict[str, Any], n_slices: int, locked: int = 0) -> dict[str, 
     low_rate, high_rate, basis = _rate(model, reasoning, transform)
     # Every measured run positioned the whole stack, so a transform-only run
     # is priced as a full run over the sections it aligns: an upper bound.
-    sections = n_slices if positioning else n_slices - locked
+    sections = n_slices if positioning else n_slices - aligned_frozen
     extra = NONLINEAR_NOT_INCLUDED if nonlinear else ""
     if sections == 0:
         return {"low": 0.0, "high": 0.0, "unit": UNIT,
-                "basis": "every section is locked" + extra, "available": True}
+                "basis": "every section is frozen" + extra, "available": True}
     low, high = low_rate * sections, high_rate * sections
     cap = float(spec.get("max_quota_percent", DEFAULT_MAX_QUOTA_PERCENT))
     if high > cap:

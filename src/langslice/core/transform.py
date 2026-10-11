@@ -35,6 +35,7 @@ from langslice.core.affine import (
 )
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.canvas import canvas_geometry, estimate_um_per_px
+from langslice.core.needs import render
 from langslice.core.sections import PREVIEW_LONG_EDGE, canvas_um_per_px, render_slice
 from langslice.core.space import Plane
 from langslice.core.state import SliceState, StackState
@@ -165,8 +166,8 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
     span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
     if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN ** 2:
         raise RegionTooSmall(
-            "Region is too small for elastix. Select a larger region or use "
-            "interactive_transform; no fit was run. "
+            "Region is too small for elastix. Select a larger region"
+            "[[?interactive_transform  or use interactive_transform]]; no fit was run. "
             f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.")
 
 
@@ -369,7 +370,7 @@ def fit_elastix(
                              include=include, exclude=exclude, atlas_image=atlas_image)
     except RegionTooSmall as error:
         return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
-                "message": str(error)}
+                "message": render(str(error), ctx.spec.switched_off)}
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
     except Exception as exc:

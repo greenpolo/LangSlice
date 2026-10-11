@@ -13,6 +13,10 @@ final class RegistrationSettings {
     static final String[] REASONING = {"default", "low", "medium", "high", "xhigh", "max"};
     static final String[] LEVELS = {"low", "medium", "high"};
     static final String[] RESOLUTIONS = {"low", "medium", "high", "auto"};
+    /** The tools the simple checkboxes switch off (spec.disabled names); the Advanced list mirrors them. */
+    static final String MARK_DAMAGE = "mark_damage", ELASTIX_AFFINE = "elastix_affine", FLIP = "interactive_transform:flip";
+    static final List<String> SIMPLE = Arrays.asList(MARK_DAMAGE, ELASTIX_AFFINE, FLIP);
+    static final String[] GROUPS = {"Common", "Positioning", "Linear", "Nonlinear"};
     static final Preferences PREFS = Preferences.userNodeForPackage(RegistrationSettings.class).node("registration");
 
     boolean claude = false;
@@ -23,10 +27,12 @@ final class RegistrationSettings {
     boolean showLog = true, viewer = false, positioning = true, flip = true, linear = true, affine = true, angles = false;
     boolean nonlinear = false, overwrite = false, agentDamage = true, custom = false, clahe = true, saveTraces = false;
     boolean agentPreprocessing = false;
+    /** Tools and options switched off in the Advanced list, as spec.disabled names (SIMPLE names excluded: their checkboxes own them). */
+    Set<String> disabled = new LinkedHashSet<>();
     /** Where full agent traces go when saving is on. */
     String traceDir = java.nio.file.Paths.get(System.getProperty("user.home"), "LangSlice", "traces").toString();
     String cue = "", positionNotes = "", linearNotes = "", nonlinearNotes = "", strength = "medium";
-    int thickness = 50, interval = 200, maxParallel = 4;
+    int thickness = 0, interval = 0, maxParallel = 4;
     double pixelSize = 25;
     double[] weights = {};
     /** No saved run yet: the dialog takes the worker's default models. */
@@ -48,6 +54,7 @@ final class RegistrationSettings {
         s.overwrite = p.getBoolean("overwrite", s.overwrite); s.agentDamage = p.getBoolean("agentDamage", s.agentDamage);
         s.custom = p.getBoolean("custom", s.custom); s.clahe = p.getBoolean("clahe", s.clahe);
         s.agentPreprocessing = p.getBoolean("agentPreprocessing", s.agentPreprocessing);
+        for (String name : p.get("disabled", "").split(",")) if (!name.isEmpty()) s.disabled.add(name);
         s.cue = p.get("cue", s.cue); s.positionNotes = p.get("positionNotes", s.positionNotes);
         s.linearNotes = p.get("linearNotes", s.linearNotes); s.nonlinearNotes = p.get("nonlinearNotes", s.nonlinearNotes);
         s.strength = p.get("strength", s.strength);
@@ -70,6 +77,7 @@ final class RegistrationSettings {
         p.putBoolean("overwrite", overwrite);
         p.putBoolean("agentDamage", agentDamage); p.putBoolean("custom", custom); p.putBoolean("clahe", clahe);
         p.putBoolean("agentPreprocessing", agentPreprocessing);
+        p.put("disabled", String.join(",", disabled));
         p.put("cue", cue); p.put("positionNotes", positionNotes); p.put("linearNotes", linearNotes);
         p.put("nonlinearNotes", nonlinearNotes); p.put("strength", strength);
         p.putBoolean("saveTraces", saveTraces); p.put("traceDir", traceDir);
@@ -117,6 +125,21 @@ final class RegistrationSettings {
         return value;
     }
 
+    /**
+     * spec.disabled: the simple checkboxes' tools (damage marks, the affine tool, the mirror) first, then the
+     * Advanced list's names, each once.
+     */
+    JsonArray disabledNames() {
+        Set<String> names = new LinkedHashSet<>();
+        if (!agentDamage) names.add(MARK_DAMAGE);
+        if (!affine) names.add(ELASTIX_AFFINE);
+        if (!flip) names.add(FLIP);
+        for (String name : disabled) if (!SIMPLE.contains(name)) names.add(name);
+        JsonArray list = new JsonArray();
+        for (String name : names) list.add(name);
+        return list;
+    }
+
     boolean usesImageModel() { return nonlinear && !NO_IMAGE_MODEL.equals(imageProvider); }
 
     /** Null when runnable; otherwise a message for the user. */
@@ -141,15 +164,15 @@ final class RegistrationSettings {
         spec.addProperty("model", modelId(model));
         if (!"default".equals(reasoning)) spec.addProperty("reasoning", reasoning);
         spec.addProperty("image_resolution", resolution);
-        spec.addProperty("agent_damage", agentDamage);
         spec.addProperty("agent_preprocessing", agentPreprocessing);
+        spec.add("disabled", disabledNames());
         JsonObject position = new JsonObject();
-        position.addProperty("thickness_um", thickness); position.addProperty("interval_um", interval);
+        if (thickness > 0) position.addProperty("thickness_um", thickness);
+        if (interval > 0) position.addProperty("interval_um", interval);
         position.addProperty("notes", positionNotes.trim());
         spec.add("position", position);
         JsonObject transform = new JsonObject();
-        transform.addProperty("flip", flip); transform.addProperty("hemisphere_cue", cue.trim());
-        transform.addProperty("automatic", affine); transform.addProperty("interactive", true);
+        transform.addProperty("hemisphere_cue", cue.trim());
         transform.addProperty("angles", angles);
         transform.addProperty("max_parallel", maxParallel); transform.addProperty("notes", linearNotes.trim());
         spec.add("transform", transform);
@@ -163,6 +186,40 @@ final class RegistrationSettings {
     }
 
     // ---- what setup.status offers ----------------------------------------------------------------
+
+    /** One entry of setup.status "tools": a tool (when disableable) and its options ("tool:option" names). */
+    static final class Tool {
+        final String name, group;
+        final boolean disableable;
+        final List<String> options;
+        /** What the tool needs while on: groups of names, one of each group on. */
+        final List<List<String>> needs;
+        Tool(String name, String group, boolean disableable, List<String> options, List<List<String>> needs) {
+            this.name = name; this.group = group; this.disableable = disableable; this.options = options; this.needs = needs;
+        }
+    }
+
+    /** The tool catalog from setup.status ("tools", from langslice.core.toolset.catalog()); empty when the service sends none. */
+    static List<Tool> toolCatalog(JsonObject status) {
+        List<Tool> tools = new ArrayList<>();
+        if (status == null || !status.has("tools") || !status.get("tools").isJsonArray()) return tools;
+        for (JsonElement item : status.getAsJsonArray("tools")) {
+            if (!item.isJsonObject()) continue;
+            JsonObject entry = item.getAsJsonObject();
+            String name = text(entry, "name", null), group = text(entry, "group", "Common");
+            if (name == null) continue;
+            boolean disableable = entry.has("disableable") && entry.get("disableable").isJsonPrimitive() && entry.get("disableable").getAsBoolean();
+            List<List<String>> needs = new ArrayList<>();
+            if (entry.has("needs") && entry.get("needs").isJsonArray())
+                for (JsonElement alternatives : entry.getAsJsonArray("needs")) if (alternatives.isJsonArray()) {
+                    List<String> names = new ArrayList<>();
+                    for (JsonElement n : alternatives.getAsJsonArray()) if (n.isJsonPrimitive()) names.add(n.getAsString());
+                    needs.add(names);
+                }
+            tools.add(new Tool(name, group, disableable, list(entry, "options"), needs));
+        }
+        return tools;
+    }
 
     /** One entry of the image-model list: a provider and a model (null = the provider's default). */
     static final class ImageChoice {

@@ -290,3 +290,18 @@ def test_region_rows_are_not_padded_as_status_rows(images):
         assert found["rows"] and all("position_mm" not in row for row in found["rows"])
         assert all("delta_to_next_mm" in row for row in job.status()["rows"])
 
+
+
+def test_a_job_made_with_a_disabled_list_has_neither_the_tools_nor_the_options(images: Path):
+    import langslice
+
+    with langslice.create_job(images, tasks=["position", "transform"], pixel_size_um=PIXEL_SIZE_UM,
+                              disabled=["zoom", "look:positioning"]) as job:
+        assert "zoom" not in job.verbs and "look" in job.verbs
+        with pytest.raises(AttributeError, match="no 'zoom'.*disabled"):
+            _ = job.zoom
+        refused = job.look(mode="positioning")
+        assert refused["error"] == "OPTION_OFF"
+        assert job.look(mode="section", sections=[ID0])["status"] == "ok"
+    with pytest.raises(ValueError, match="unknown name 'zomm'"):
+        langslice.create_job(images, disabled=["zomm"])

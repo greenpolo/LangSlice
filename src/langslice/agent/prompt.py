@@ -12,12 +12,19 @@ do not find one on their own.
 Deliberately atlas- and plane-agnostic — it names no region, no landmark and no
 absolute position, because the same text runs against every BrainGlobe atlas,
 species and plane.
+
+A line that names a tool or an option is written with what it needs
+(:mod:`langslice.core.needs`) and rendered for the job's disabled list
+(``JobSpec.disabled``); the user's own words are never rendered.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
+from langslice.core import frozen as freeze
+from langslice.core.needs import render
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.core.state import StackState
 
@@ -153,9 +160,16 @@ def build_job_statement(
     axis are anatomically in THIS atlas.
     """
     del door  # every door reads the same statement; its own lines are added after it
+    off = spec.switched_off
     gated = bool(spec.position.gated and gates)
+    held = freeze.everywhere(spec.frozen)
+    #: Positions are the agent's to write (the Positioning task is on and its
+    #: positions are not frozen): else the task, when on, is the stack's angles.
+    places = spec.has("position") and "position" not in held
     jobs: list[str] = []
-    if spec.has("position"):
+    if spec.has("position") and not places:
+        jobs.append("give the stack its cutting angles, checked against the atlas")
+    if places:
         jobs.append(
             "give every section its own position in millimetres along the "
             "slicing axis, each one inspected and checked against the atlas, "
@@ -164,11 +178,16 @@ def build_job_statement(
             "sections is genuinely broken"
         )
     if spec.has("transform"):
-        turned = "mirrored or turned" if spec.transform.flip else "turned"
-        jobs.append(
-            "give every section one in-plane transform onto its atlas section, "
-            f"correcting the orientation of any section that is {turned}"
-        )
+        turned = "turned" if spec.off("interactive_transform:flip") else "mirrored or turned"
+        if "orientation" in held:
+            jobs.append("give every section one in-plane transform onto its atlas section")
+        elif "affine" in held:
+            jobs.append(f"correct the orientation of any section that is {turned}")
+        else:
+            jobs.append(
+                "give every section one in-plane transform onto its atlas section, "
+                f"correcting the orientation of any section that is {turned}"
+            )
     if spec.has("nonlinear"):
         jobs.append(
             "give every section a deformation onto the atlas, on top of its linear "
@@ -192,17 +211,19 @@ def build_job_statement(
              + ", ".join(f"`{name}`" for name in tool_names) + ".")
 
     constraints: list[str] = []
-    if spec.has("position"):
+    if places:
         constraints.append(
             "- `submit` is refused unless every section has a position of its own, "
-            "damaged sections included; a starting position the job gave a section "
-            "does not count."
+            "damaged sections included."
+            + (" An unconfirmed starting position from a saved job does not count."
+               if any(s.position_source == STARTING_POSITION for s in state.slices) else "")
         )
         if gated:
-            constraints.append(
+            constraints.append(render(
                 "- `position_sections` is refused for a section that has not been looked "
-                "at with `look` in mode overlay or positioning since it was last written."
-            )
+                "at with `look` in mode [[?look:overlay overlay or ]]positioning since it "
+                "was last written.", off
+            ))
             constraints.append(
                 "- `submit` is refused until `look` in mode positioning has shown every "
                 "section after the last `position_sections` write."
@@ -219,7 +240,7 @@ def build_job_statement(
                 "whose interval from the section before it, in the positions "
                 "you wrote, exceeds 1.5x the stack's median written spacing."
             )
-    if spec.has("transform"):
+    if spec.has("transform") and "affine" not in held:
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
             "damaged sections included."
@@ -262,27 +283,34 @@ def build_job_statement(
     )
 
     method: list[str] = []
-    if spec.has("position") and spec.position.playbook:
-        # A complete hypothesis first, then one confirmation sweep, one
-        # write, targeted re-checks, a review: coaching, only for the models
-        # that do not find this method on their own.
+    if places and spec.position.playbook:
+        # Optional coaching: use the current viewing tools and revisit
+        # uncertain placements without prescribing a single batch write.
         method = [
             "",
             "Method:",
-            "- First, from the opening images alone — every section and the "
-            "atlas beneath it — form a complete hypothesis: a position for every "
-            "section. Look for the structure of how the sections were cut (series "
-            "that interleave, missing sections) and use it.",
-            "- Then confirm the hypothesis: `look` in mode positioning at each "
-            "section with the atlas at its hypothesised position and its neighbours, "
-            "walking the stack in order; where the atlas at that position does not "
-            "match the section, change the position.",
-            "- Write every position in one `position_sections`, then re-check the "
-            "sections you were unsure about and correct them.",
-            "- Mark damaged sections' lost regions, run `look` in mode positioning "
-            "over the whole stack, look again at anything mis-spaced, then `submit`.",
+            "- Start from the opening stack and identify anatomical progression, "
+            "possible interleaved series, missing sections and uncertain orientations. "
+            "Form initial position hypotheses from the anatomy.",
+            *_bullet(
+                "[[?look:positioning Use `look` in mode positioning to compare sections "
+                "with candidate atlas positions and their neighbours. ]]"
+                "[[?grep_atlas|grep_atlas_view Use [[#grep_atlas=`grep_atlas`||"
+                "grep_atlas_view=`grep_atlas_view`]] to locate distinguishing anatomy; ]]"
+                "[[?look:section|look:atlas|zoom [[?grep_atlas|grep_atlas_view u||U]]se "
+                "[[#look:section|look:atlas=section or atlas views||zoom=`zoom`]] when "
+                "you need more detail.]]", off),
+            "- Write supported placements with `position_sections`, in groups "
+            "that you can assess together. Revisit uncertain sections as their "
+            "neighbours become clearer; the nominal interval informs the search "
+            "but does not replace anatomical evidence.",
+            render("- Review the whole stack[[?look:positioning  in positioning mode]] "
+                   "after changes. Check "
+                   "both sides of an apparent gap before reporting an interval break. "
+                   "Complete the enabled alignment and deformation tasks before "
+                   "submitting.", off),
         ]
-    elif spec.has("position"):
+    elif places:
         method = [
             "",
             "Method:",
@@ -295,7 +323,15 @@ def build_job_statement(
             "- Submit when the work is complete; address any missing requirements it returns.",
         ]
 
-    if spec.has("transform") and spec.transform.interactive:
+    if places:
+        method.append(render(
+            "- Positions can be revisited throughout registration. If [[?zoom zooms or ]]"
+            "repeated looks suggest that a section's placement is wrong, return to atlas "
+            "comparisons and re-place it, even after beginning linear or nonlinear "
+            "alignment.", off
+        ))
+
+    if spec.has("transform") and not spec.off("interactive_transform"):
         if not method:
             method = ["", "Method:"]
         method.append(
@@ -347,16 +383,41 @@ def build_job_statement(
     )
 
 
-def stack_angles_fact(state: StackState) -> str:
+def _bullet(text: str, off: Collection[str]) -> list[str]:
+    """A method bullet written with what it needs, rendered; none when the
+    job disables everything it says."""
+    line = render("- " + text, off).rstrip()
+    return [line] if line.strip(" -") else []
+
+
+def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
     """The job statement's line on the cutting angles: the stack's one
     angle, or, when the sections differ (a registration supplied per
-    section), that each status row carries its own."""
+    section), that each status row carries its own. *off*: the job's
+    disabled list."""
     if state.mixed_angles:
-        return ("- Cutting angles: these differ between sections, as supplied; each "
-                "status row carries its own cutting_angles_deg. position_sections sets "
-                "one angle for every section.")
+        return render("- Cutting angles: these differ between sections, as supplied; each "
+                      "status row carries its own cutting_angles_deg.[[?position_sections "
+                      " position_sections sets one angle for every section.]]", off)
     pitch, yaw = state.stack_angles
     return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
+
+
+def cutting_protocol_fact(state: StackState) -> str:
+    """Supplied protocol values, with unknowns explicit (legacy zero also means unknown)."""
+    interval = state.interval_mm
+    thickness = state.thickness_mm
+    known_interval = interval is not None and interval > 0
+    known_thickness = thickness is not None and thickness > 0
+    interval_text = f"{interval:.3f} mm center-to-center" if known_interval else "not supplied"
+    thickness_text = f"{thickness:.3f} mm" if known_thickness else "not supplied"
+    text = (f"- Cutting protocol: nominal section interval {interval_text}, "
+            f"section thickness {thickness_text}. ")
+    if known_interval and known_thickness:
+        return text + "These are protocol values; spacing may vary where sections are missing."
+    return (text + "Infer positions and spacing from anatomy. Estimate missing protocol "
+            "values where the evidence supports them, and record estimates or unresolved "
+            "uncertainty in your notes. Spacing may vary where sections are missing.")
 
 
 def run_facts(
@@ -371,8 +432,7 @@ def run_facts(
     damaged = [s.id for s in ordered if s.damaged]
     inputs = spec.inputs or {}
     noted = [s.id for s in ordered if s.id in (inputs.get("damaged") or {})]
-    locked_ids = {str(name) for name in inputs.get("locked") or []}
-    locked = [s.id for s in ordered if s.id in locked_ids]
+    held = freeze.everywhere(spec.frozen)
 
     facts: list[str] = [
         f"- {len(state.slices)} sections, {state.plane} plane, atlas "
@@ -382,12 +442,8 @@ def run_facts(
         f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last).",
         f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
         f"positions increase toward {axis_ends[1]}.",
-        f"- Cutting protocol: nominal section interval {state.interval_mm:.3f} "
-        f"mm center-to-center, section thickness {state.thickness_mm:.3f} mm. "
-        f"The nominal interval is a protocol value, not a measurement: sections "
-        f"can be missing anywhere in the stack, so the spacing between "
-        f"neighbours may differ from it.",
-        stack_angles_fact(state),
+        cutting_protocol_fact(state),
+        stack_angles_fact(state, spec.switched_off),
     ]
     if starting:
         facts.append(
@@ -410,14 +466,9 @@ def run_facts(
             "- The user noted damage on these sections (damage_note in status; no "
             f"regions are marked from it): {', '.join(noted)}."
         )
-    if locked:
-        facts.append(
-            "- In-plane alignment of these sections was already done by the "
-            "user, so their orientation and transform are locked and count "
-            f"as done: {', '.join(locked)}."
-            + (" Their positions can still be changed." if spec.has("position") else "")
-        )
-    if spec.has("position"):
+    if frozen_line := freeze.statement(spec.frozen, [s.id for s in ordered]):
+        facts.append(frozen_line)
+    if spec.has("position") and "position" not in held:
         facts.append("- The stack's order follows the positions: writing positions "
                      "renumbers the sections, so use filenames to name them.")
     else:
@@ -430,7 +481,8 @@ def run_facts(
             else "- The orientation shown is fixed; transforms are not part of this run."
         )
     else:
-        if not spec.transform.flip:
+        if (spec.off("interactive_transform:flip") and not spec.off("interactive_transform")
+                and "orientation" not in held):
             facts.append("- Flipping sections is switched off for this run.")
         facts.append(
             "- Alignment canvas: each section is drawn at its TRUE physical size "
@@ -452,7 +504,7 @@ def run_facts(
     # Mirroring belongs to in-plane alignment: the cue is shown only where the
     # agent can flip, never in a positioning-only run.
     cue = spec.transform.hemisphere_cue.strip()
-    if cue and spec.has("transform") and spec.transform.flip:
+    if cue and spec.has("transform") and not spec.off("interactive_transform:flip"):
         facts.append(f"- What marks a hemisphere, from the user: {cue}")
     facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
 
