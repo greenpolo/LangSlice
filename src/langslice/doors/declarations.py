@@ -19,10 +19,11 @@ none. Every continuation line a model reads is indented eight spaces;
 :func:`model_doc` adds the four this module level lacks (the goldens pin the
 bytes).
 
-A run varies a declaration in the ways a :class:`Variant` names: ``look``'s
-``resolution`` exists only where the agent chooses the picture size (image
-resolution "auto"; the CLI always); the change tools' ``view`` is not
-offered where the host forces their pictures on (``JobSpec.force_view``);
+A run varies a declaration in the ways a :class:`Variant` names: ``look``'s and
+``landmark_triangulation``'s ``resolution`` exist only where the agent chooses
+the picture size (image resolution "auto"; the CLI always); the change tools'
+``view`` is not offered
+where the host forces their pictures on (``JobSpec.force_view``);
 ``position_sections`` takes ``sections`` only with the Positioning task;
 ``submit`` takes ``left_linear`` only with Nonlinear on and no deformation
 required on every section; ``trace_borders`` carries the run's base image
@@ -135,7 +136,8 @@ def look(
         warp: "applied" draws each section with its deformation, "none" with
             its linear placement only.
         resolution: The long edge of each picture in pixels; 0 is the
-            default size. A picture is never drawn larger than its source.
+            default size. A section picture is never drawn larger than its
+            source, an atlas plane at most four times larger.
 
     Returns:
         Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -186,7 +188,9 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "",
             empty when using region.
 
     Returns:
-        One picture with its number and caption, and `redrawn`: false when
+        One picture with its number, caption and `content_box` [x0, y0, x1,
+        y1], where the drawing lies in the image (a narrow box is padded with
+        black beside it, the caption below), and `redrawn`: false when
         the picture could not be drawn again, so the box was cut from the
         saved picture and enlarged, with no more detail than it had.
     """
@@ -682,12 +686,20 @@ def note(text: str) -> dict[str, Any]:
 
 
 def undo() -> dict[str, Any]:
-    """Undo the last write. A tool call, or a finished piece of background work, is one step."""
+    """Undo the last write. A tool call, or a finished piece of background work, is one step.
+
+    Returns:
+        The tool and sections undone, and the rows of those sections.
+    """
     ...
 
 
 def redo() -> dict[str, Any]:
-    """Redo the write that ``undo`` reversed."""
+    """Redo the write that ``undo`` reversed.
+
+    Returns:
+        The tool and sections redone, and the rows of those sections.
+    """
     ...
 
 
@@ -769,7 +781,7 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     """Add, update or delete persistent corresponding landmarks. Does not apply a warp.
 
     Build corresponding pairs across the full section and atlas before calling
-    landmark_triangulation to submit the set. Pair IDs are stable. Every batch
+    landmark_triangulation to apply the set. Pair IDs are stable. Every batch
     is one undo step. Atlas and section endpoints are explicitly named.
     Coordinates are x,y PIXELS from the top-left of the whole returned picture,
     including panel offsets; no fractions or atlas coordinates are accepted.
@@ -779,39 +791,57 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     with look(mode="atlas", sections=[section]); generic atlas browsing has no
     section context. ]]Plane changes retain pairs
     but flag their atlas correspondences stale; update those atlas endpoints.
+    [[?look:overlay Prefer both endpoints on the same overlay[[?zoom , or a zoom of it]]: the
+    atlas point where an atlas border is drawn, the section point where that
+    border belongs in the tissue. You point at what you see; a point on a warped
+    overlay is mapped back to the section itself. ]]Spread pairs over the outline and
+    the internal anatomy. With no pairs and no delete, nothing is written and
+    the reply lists the pairs.
 
     Args:
         section: Section filename (the extension may be left off).
         pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.
             Updates add id and either or both endpoints; omitted endpoints stay.
             At most four added/edited pairs with view true.
-        delete: Stable pair IDs to delete from this section.
+        delete: Stable pair IDs to delete from this section, or ["all"] to
+            delete every pair of this section.
         view: Show one contextual side-by-side crop for each added/edited pair:
             atlas TEMPLATE and section PREPROCESSED. False shows no pictures.
 
     Returns:
-        The complete saved set, stable IDs, changed/deleted IDs and staleness.
+        The changed and deleted IDs and every pair of the section, one record
+        each: id, atlas and section as {picture, x, y}, and state: applied (in
+        the landmark warp applied now), pending (saved, not applied) or stale
+        (placed against an earlier atlas plane); with the count of each.
     """
     ...
 
 
-def landmark_triangulation(section: str, view: bool = True) -> dict[str, Any]:
-    """Submit this section's accumulated landmark set and apply its piecewise affine warp.
+def landmark_triangulation(
+    section: str, view: bool = True, resolution: int = 0
+) -> dict[str, Any]:
+    """Apply this section's saved landmark set as a piecewise affine warp.
 
     Requires at least three corresponding pairs, with coverage across the full
     section; the tool cannot assess anatomical coverage. Uses VisuAlign's
     section-domain Delaunay mesh in pixels and four fixed corners 10% outside
-    the section. Degenerate/folded triangles and stale atlas planes are refused.
-    The inverse uses the same triangles. Composes a correction onto the current
-    deformation; undo removes the application. Editing pairs alone never warps.
-    This submits the landmark method for one section; submit ends the whole job.
+    the section. Repeated section points, zero-area triangles and stale atlas
+    planes are refused. Folded triangles are applied, as VisuAlign does: the
+    reply gives the share of the section they cover and the pairs at their
+    corners, and the picture outlines them in magenta. The inverse uses the
+    same triangles (unfolded ones first where folded ones overlap). Composes a
+    correction onto the current deformation; undo removes the application.
+    Editing pairs alone never warps.
 
     Args:
         section: Section filename (the extension may be left off).
         view: Show the resulting registration under atlas borders.
+        resolution: The long edge of the picture in pixels, as for look; 0 is
+            the default size.
 
     Returns:
-        Landmark count, whether applied/composed, displacement and diagnostics.
+        Landmark count, whether applied/composed, displacement, diagnostics
+        and any folds. The picture's number is under `pictures`.
     """
     ...
 
@@ -988,7 +1018,7 @@ class Declaration:
 def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
     """The arguments of verb *name* a run of *variant* does not offer."""
     dropped: list[str] = []
-    if name == "look" and not variant.auto:
+    if name in ("look", "landmark_triangulation") and not variant.auto:
         dropped.append("resolution")
     if name in VIEW_TOOLS and variant.forced_view:
         dropped.append("view")

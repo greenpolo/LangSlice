@@ -225,7 +225,9 @@ Appearance does not enter the correspondence's staleness test.
 every checkpoint, including undo and redo. It has `format_version: 1`,
 `section`, `next_id`, and `pairs`. Editing this file does not change the job.
 A landmark application records its revision in the section's deformation
-reference; the saved `DeformableRecord` includes its source/target vertices
+reference, with `landmark_pairs` (each applied pair id with a digest of its two
+endpoints, what `applied` / `pending` is read from) and `landmark_folds`
+(`area_fraction` and the pair ids of each folded triangle, empty when none); the saved `DeformableRecord` includes its source/target vertices
 and mesh connectivity in `engine.native_parameters`, and its full pair set
 in `provenance`. `landmark_baseline_key` and `landmark_baseline_steps` in the
 section's deformation reference identify the registration before the current

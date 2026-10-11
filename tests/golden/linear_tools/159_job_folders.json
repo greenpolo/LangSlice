@@ -3712,6 +3712,12 @@
           "key": "<hex>",
           "landmark_baseline_key": null,
           "landmark_baseline_steps": [],
+          "landmark_folds": {},
+          "landmark_pairs": {
+           "L1": "<hex>",
+           "L2": "<hex>",
+           "L3": "<hex>"
+          },
           "landmark_revision": "<hex>",
           "linear_key": "<hex>",
           "record": "sections/s1/deformable/<hex>",
@@ -4335,6 +4341,12 @@
           "key": "<hex>",
           "landmark_baseline_key": null,
           "landmark_baseline_steps": [],
+          "landmark_folds": {},
+          "landmark_pairs": {
+           "L1": "<hex>",
+           "L2": "<hex>",
+           "L3": "<hex>"
+          },
           "landmark_revision": "<hex>",
           "linear_key": "<hex>",
           "record": "sections/s1/deformable/<hex>",

@@ -166,7 +166,10 @@ a different `frozen` is refused like one resumed with other `inputs`.
 Every picture is numbered, captioned and saved. `zoom(picture=N,
 box=[x0,y0,x1,y1])` redraws its selected area; omitting `picture` uses the
 latest non-zoom picture. Section and overlay zooms reread the source image
-at its native resolution; positioning zooms use the working copies.
+at its native resolution; positioning zooms use the working copies. A zoom
+of a tall or narrow box is padded with black beside its picture and
+captioned below; the reply's `content_box` `[x0, y0, x1, y1]` is where the
+picture itself lies.
 
 For an overlay, `zoom(region="CA1:left")` crops to the entire selected
 region with a small margin and shows only that region's border. It accepts
@@ -190,8 +193,10 @@ affine contributes its isotropic scale, `sqrt(abs(det))`; each thumbnail
 is framed around its anatomy without being stretched to fill the tile.
 
 Overlay pictures show the applied deformation unless `warp="none"`.
-Picture resolution affects display only, never fit geometry or stored
-transforms. Source image files are never modified.
+Where the agent chooses the picture size, `resolution` applies to every mode:
+a section is never drawn past its source pixels, an atlas plane at most four
+times past its voxels (as an atlas zoom is). Picture resolution affects
+display only, never fit geometry or stored transforms. Source image files are never modified.
 
 ## Channels and damage
 
@@ -261,8 +266,7 @@ transform clears its deformation; the reply lists affected sections.
 updates and deletes a batch as one undo step and leaves the registration
 unchanged. Accumulate correspondences across the whole section, including
 its outline and internal anatomy, then call `landmark_triangulation` to apply
-the complete set. This submits one section's landmark method; `submit` still
-ends the whole job.
+the complete set.
 
 When MCP shrinks pictures to fit its reply budget, it assigns new saved picture
 numbers to the delivered sizes and preserves their exact coordinate geometry.
@@ -288,10 +292,30 @@ job.set_landmarks(section="s01.tif", delete=["L2"], view=False)
 job.landmark_triangulation(section="s01.tif")
 ```
 
-Pair IDs persist through edits. Omitted endpoints of an update stay as they
-were. The default `view=True` shows one contextual side-by-side crop per
+Pair IDs persist through edits and are never reused. Omitted endpoints of an
+update stay as they were. `delete=["all"]` clears the section's pairs as one
+step. Every reply lists the section's pairs, one compact record each (`id`,
+`atlas` and `section` as `{picture, x, y}`, and a `state`) with their counts:
+`applied` (in the landmark warp applied now), `pending` (saved, not applied) or
+`stale` (placed against an atlas plane the section has left; `stale` wins over
+the other two). A call with no pairs and no `delete` writes nothing and returns
+this listing. `status` rows carry `landmarks: {total, pending, stale}` for a
+section with pairs.
+
+Place both endpoints of a pair on the same overlay (or a zoom of it) where you
+can: the atlas point where a border is drawn, the section point where that
+border belongs in the tissue. After a warp, overlays show the section warped
+onto the fixed atlas borders and a point placed there is read through the
+warp. Spread the pairs over the outline and the internal anatomy.
+
+A refused endpoint names the pair (its index in the call and id), the
+endpoint role, the picture number and the x,y, and says what to do: a point
+outside the image content gives the picture's content box ("image content is
+x 0-1399, y 0-1089 in picture 29"), a picture without geometry for the section
+or one drawn at an earlier atlas plane says which picture to draw again. The default `view=True` shows one contextual side-by-side crop per
 added/edited pair: atlas **template** at left, **preprocessed** section at
-right, with the selected ID labeled. At most four pairs can be inspected
+right, with the selected ID labeled. The atlas panel carries the atlas region
+borders as `look` draws them, so the border an atlas point sits on is visible. At most four pairs can be inspected
 this way per call; `view=False` permits larger batches and independent
 `look`/`zoom` inspection. `zoom(requests=[{"picture": 12, "box": [100, 80,
 260, 220]}, {"picture": 13, "box": [110, 85, 270, 225]}])` inspects several
@@ -306,7 +330,10 @@ clamping. Subsequent section views show open-centre circles, atlas views
 show diamonds, and overlays show both with matching IDs. White and black
 outlines and backed labels keep them visible across channel colors. Markers
 are drawn after compositing and never enter fit images or image-model inputs.
-Old pictures and zooms retain their original marker set.
+Old pictures and zooms retain their original marker set. Markers are
+annotations: editing pairs alone does not make an older picture or zoom read
+as drawn from a changed stack (`stale`); a change to the placement or the
+registration does.
 
 Changing the atlas position or cutting plane keeps the pairs and marks their
 atlas correspondences stale. Update those atlas endpoints from a current
@@ -322,9 +349,24 @@ placement. The agent is responsible for anatomical coverage. It uses a
 Delaunay triangulation of the section points in their pixel aspect ratio,
 with VisuAlign's four fixed corners 10% outside the frame, and a piecewise
 affine pull-back to the matching atlas points. Its inverse uses the same
-triangle connectivity. Repeated source points, collapsed triangles and
-folds are refused as invalid geometry. Displacement and existing biological
-plausibility diagnostics are reported for review. The first application
+triangle connectivity. Repeated section points (the reply names the pairs) and
+zero-area source triangles are refused as invalid geometry.
+
+Folds are accepted, as VisuAlign accepts them (expert registrations contain
+them): a triangle whose atlas points wind the other way from its section
+points is applied, and the forward map is unchanged. Where target triangles
+overlap, the inverse takes the unfolded triangles first and then the folded
+ones, each in mesh order, so the result is deterministic and a fold never
+overrides sound anatomy. The reply reports `folds`: `area_fraction` (the share
+of the section frame covered by folded triangles), `pairs` (the pair IDs at
+their corners, so they can be fixed), the first triangles with their pair
+IDs, and `triangle_count`. The result picture outlines each folded triangle in
+magenta between its pairs' section endpoints (a triangle at the frame's edge
+shows only its pair-to-pair edges). Displacement and existing biological
+plausibility diagnostics (which flag a fold fraction past a threshold) are
+reported for review. The result picture is `look`'s overlay at the job's
+picture size; where the agent chooses the size, `resolution` works as for
+`look`. The first application
 composes the landmark correction onto the current deformation. Consecutive
 landmark applications replace that landmark correction using the same
 earlier baseline, so editing or deleting a pair removes its prior influence.
@@ -367,7 +409,11 @@ Custom models and prompts are described in the [library guide](library.md#image-
 ## Writes, review and submission
 
 Writes checkpoint the job and form undo steps; `undo` and `redo` persist
-across sessions. Change tools return review pictures unless `view=False`;
+across sessions. Their reply says which step it took back or forward: `undone`
+(or `redone`) holds the `tool` that wrote it and the `sections` it touched
+(the tool is read off what the step changed, so it holds after a reload and
+for background work; `null` with the changed `fields` when no tool fits),
+then the status rows of those sections and the remaining depth. Change tools return review pictures unless `view=False`;
 a host's `force_view=True` forces `view=True`. It defaults to false, so
 the agent may suppress a picture. Long fits compute outside
 the write lock and recheck inputs before applying. A conflicting edit

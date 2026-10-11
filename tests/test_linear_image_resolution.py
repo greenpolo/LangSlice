@@ -159,14 +159,16 @@ def test_resolution_exists_only_at_auto(tmp_path: Path, level: str):
         tmp_path / level, level, tasks=("reorder", "position", "transform", "nonlinear"))
     tools = {tool.__name__: tool for tool in build_tools(state, ctx, spec).tools}
     auto = level == "auto"
-    # look is the one tool that takes a picture size.
+    # look and landmark_triangulation are the tools that take a picture size.
     assert ("resolution" in inspect.signature(tools["look"]).parameters) is auto
     schema = _json_schema_dict(FunctionTool(tools["look"])._get_declaration())
     assert ("resolution" in schema["properties"]) is auto
     assert ("resolution:" in (tools["look"].__doc__ or "")) is auto
     for name, tool in tools.items():
-        if name != "look":
+        if name not in ("look", "landmark_triangulation"):
             assert "resolution" not in inspect.signature(tool).parameters, name
+        elif name == "landmark_triangulation":
+            assert ("resolution" in inspect.signature(tool).parameters) is auto
     # The change tools' `view` is a switch for their picture, not picture options.
     for name in ("position_sections", "interactive_transform", "elastix_affine", "ants_syn"):
         assert inspect.signature(tools[name]).parameters["view"].annotation in (bool, "bool")

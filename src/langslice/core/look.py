@@ -247,12 +247,35 @@ def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False
     return _plain(data)
 
 
+#: The section fields that only annotate a picture (landmark markers): an
+#: edit to them redraws an old picture with the markers it then had, but does
+#: not make it stale.
+ANNOTATION_FIELDS: tuple[str, ...] = ("landmarks",)
+
+
+def _without_annotations(data: dict[str, Any]) -> dict[str, Any]:
+    sections = {
+        section_id: {k: v for k, v in fields.items() if k not in ANNOTATION_FIELDS}
+        for section_id, fields in (data.get("sections") or {}).items()
+    }
+    return {**data, "sections": sections}
+
+
+def differs_since(state: StackState, held: dict[str, Any]) -> bool:
+    """Whether *state* differs from the snapshot *held* at all, landmark
+    markers included: then an old picture is drawn from the restored snapshot."""
+    ids = list((held.get("sections") or {}).keys())
+    return snapshot(state, ids, view_angles="view_angles" in held) != _plain(held)
+
+
 def changed_since(state: StackState, held: dict[str, Any]) -> bool:
     """Whether *state* differs from the snapshot *held* in anything the
-    picture depends on (a section gone included)."""
+    picture depends on (a section gone included). Landmark markers are
+    annotations (:data:`ANNOTATION_FIELDS`): editing pairs alone changes
+    nothing a picture shows of the stack."""
     ids = list((held.get("sections") or {}).keys())
     now = snapshot(state, ids, view_angles="view_angles" in held)
-    return now != _plain(held)
+    return _without_annotations(now) != _without_annotations(_plain(held))
 
 
 def restored(state: StackState, held: dict[str, Any]) -> StackState:
@@ -609,6 +632,7 @@ def _atlas_picture(
     layers = _atlas_layers(ws, request)
     options = _options(request, names=(), version="", layers=layers, long_edge=long_edge)
     voxel = atlas_um_per_px(ws.atlas)
+    measured = base is None or base_um is None
     if base is None or base_um is None:
         whole = framed_atlas(ws, state, position_mm, options, angles=angles)
         native = atlas_section(ws, state, position_mm, frame=True, angles=angles)
@@ -623,6 +647,17 @@ def _atlas_picture(
     else:
         picture = framed_atlas(ws, state, position_mm, options, angles=angles)
         um = base_um
+        # A resolution asked for is honoured past the plane's voxels, as a zoom
+        # is: at most ATLAS_UPSAMPLE times, the lines drawn at that size. A
+        # redrawn picture keeps the scale it was drawn at.
+        if request.long_edge:
+            wanted = (max(base_um * max(picture.size) / int(request.long_edge),
+                          voxel / ATLAS_UPSAMPLE) if measured else base_um)
+            if wanted < voxel * 0.99:
+                um = wanted
+                picture = framed_atlas(ws, state, position_mm, options, angles=angles,
+                                       um_per_px=um)
+                base = picture.size
     section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
     median = state.drawn_at_median(angles) if section is None else False
     label = _zoom_tag(request.zoom, base, picture.size) + atlas_caption(
@@ -776,7 +811,8 @@ def redraw(
                       zoom=tuple(float(v) for v in window))
     held = recipe.get("state") or {}
     stale = bool(held) and changed_since(state, held)
-    drawn = restored(state, held) if stale else state
+    # Landmark markers come back as they were even when nothing else changed.
+    drawn = restored(state, held) if bool(held) and differs_since(state, held) else state
     angles = held.get("view_angles")
     base = recipe.get("base")
     pictures = look(
@@ -804,6 +840,6 @@ def _base_um(recipe: dict[str, Any]) -> float | None:
 
 __all__ = [
     "ATLAS_LAYER_DEFAULTS", "LookError", "LookPicture", "LookRequest", "MODES",
-    "PREPROCESSED_CHANNEL", "RENDERER", "changed_since", "channel_words", "look", "redraw",
-    "restored", "snapshot",
+    "PREPROCESSED_CHANNEL", "RENDERER", "changed_since", "channel_words", "differs_since",
+    "look", "redraw", "restored", "snapshot",
 ]

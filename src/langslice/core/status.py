@@ -42,8 +42,13 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     ``damage_note`` may stand alone (a host's note). When the sections'
     cutting angles differ (a registration supplied per section), each row
     also carries its own ``cutting_angles_deg``; a single-angle stack's rows
-    do not (the stack's angle is reported once, beside them).
+    do not (the stack's angle is reported once, beside them). A section with
+    landmark pairs carries ``landmarks``: their ``total``, ``pending`` (not in
+    the landmark warp applied now) and ``stale`` (placed against another atlas
+    plane) counts.
     """
+    from langslice.core.landmarks import landmark_counts
+
     ordered = state.in_order()
     mixed = state.mixed_angles
     rows: list[dict[str, Any]] = []
@@ -82,6 +87,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                    if record.deformation and "keep_linear" in record.deformation
                    else {"deformation_steps": len(record.deformation.get("steps") or [])}
                    if record.deformation else {}),
+                **({"landmarks": counts} if (counts := landmark_counts(state, record)) else {}),
                 "caveats": list(record.caveats),
             }
         )
@@ -96,7 +102,7 @@ ROW_FIELDS: tuple[str, ...] = (
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
     "transform_iou",
-    "transform_mirrored", "keep_linear", "deformation_steps", "caveats",
+    "transform_mirrored", "keep_linear", "deformation_steps", "landmarks", "caveats",
     "frozen", "damage_by_user",
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):

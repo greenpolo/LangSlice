@@ -194,19 +194,35 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         except Refused as refusal:
             return refusal.payload()
 
+    def stepped(word: str, depth_key: str, step: Any) -> dict[str, Any]:
+        """The reply to an undo or redo: which step it took back or forward
+        (its tool and sections), the rows of those sections and the depth."""
+        info = step.step
+        what: dict[str, Any] = {"tool": info.get("tool"), "sections": info.get("sections", [])}
+        if info.get("tool") is None:
+            what["fields"] = info.get("fields", [])
+        result: dict[str, Any] = {"status": "ok", word: what, depth_key: step.depth}
+        if what["sections"]:
+            rows = door.changed(what["sections"])
+            result["changed"] = rows["changed"]
+            if "placement" in info.get("fields", []):
+                result["cutting_angles_deg"] = rows["cutting_angles_deg"]
+                result["interval_breaks"] = rows["interval_breaks"]
+        return result
+
     def undo() -> dict[str, Any]:
         step = ops_history.undo(job)
         if not step.done:
             return {"status": "error", "error": "NOTHING_TO_UNDO"}
         door.forget_looks(step.moved)
-        return {"status": "ok", "undo_depth": step.depth, **door.rows()}
+        return stepped("undone", "undo_depth", step)
 
     def redo() -> dict[str, Any]:
         step = ops_history.redo(job)
         if not step.done:
             return {"status": "error", "error": "NOTHING_TO_REDO"}
         door.forget_looks(step.moved)
-        return {"status": "ok", "redo_depth": step.depth, **door.rows()}
+        return stepped("redone", "redo_depth", step)
 
     def submit(summary: str, notes: list[str], interval_breaks: list[str],
                left_linear: list[dict[str, Any]] = [],  # noqa: B006 (read only)

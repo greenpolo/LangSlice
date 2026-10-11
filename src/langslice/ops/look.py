@@ -230,7 +230,7 @@ def _reply(
 def show_result(
     job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
     positions_mm: Sequence[float] = (), zooms: Mapping[str, Sequence[float]] | None = None,
-    highlight: Sequence[str] = (),
+    highlight: Sequence[str] = (), resolution: int | None = None,
 ) -> Looked:
     """The picture a change tool shows of what it wrote, drawn as ``look``
     draws *mode* and saved under *tool* (so it has a number, a caption and a
@@ -243,12 +243,14 @@ def show_result(
     *sections* and the atlas at
     *positions_mm* along the slicing axis. At most :data:`MAX_LOOK_PICTURES`
     are shown; the rest are ``not_shown`` (with the ``look`` call that
-    draws them), and a section whose picture fails is ``failed``.
+    draws them), and a section whose picture fails is ``failed``. *resolution*
+    is the long edge of each picture, as ``look``'s (None: the job's level).
     """
     state = job.state
     drawn: list[looks.LookPicture] = []
     failed: list[dict[str, Any]] = []
     windows = zooms or {}
+    edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
     with collecting() as notes:
         if mode == "positioning":
             request = looks.LookRequest(mode=mode, sections=tuple(sections),
@@ -262,7 +264,8 @@ def show_result(
             for section in sections:
                 window = tuple(float(v) for v in windows.get(section) or ())
                 request = looks.LookRequest(mode=mode, sections=(section,), zoom=window,
-                                            highlight=tuple(str(v) for v in highlight))
+                                            highlight=tuple(str(v) for v in highlight),
+                                            long_edge=edge)
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
                 except Exception as exc:  # noqa: BLE001 - the write stands; say why
@@ -318,6 +321,23 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
         raise Refused("UNKNOWN_PICTURE", picture=number,
                       message=f"There is no picture {number}.")
     return found
+
+
+def _content_box(recipe: dict[str, Any] | None, image: Image.Image) -> list[int] | None:
+    """``[x0, y0, x1, y1]``: the real picture inside a zoom's image, which a
+    caption band below it and black padding beside a narrow box surround (the
+    union of its endpoint panels, else its ``shown`` size from the corner)."""
+    panels = (recipe or {}).get("endpoint_panels") or []
+    if panels:
+        bounds = [p["bounds"] for p in panels]
+        box = [min(b[0] for b in bounds), min(b[1] for b in bounds),
+               max(b[2] for b in bounds), max(b[3] for b in bounds)]
+    elif (recipe or {}).get("shown"):
+        box = [0, 0, *(recipe or {})["shown"]]
+    else:
+        return None
+    return [int(round(box[0])), int(round(box[1])),
+            min(int(round(box[2])), image.width), min(int(round(box[3])), image.height)]
 
 
 def zoom(
@@ -404,6 +424,10 @@ def zoom(
     entries = save_pictures(job, workspace, ZOOM_TOOL, [made], notes,
                             {"box": [float(v) for v in box], "picture": target.seq,
                              **({"region": region} if region else {})})
+    content = _content_box(made.recipe, made.image)
+    if content is not None:
+        for entry in entries:
+            entry["content_box"] = content
     return Zoomed(pictures=[made.image], entries=entries, picture=target.seq,
                   redrawn=made.redrawn, stale=made.stale)
 

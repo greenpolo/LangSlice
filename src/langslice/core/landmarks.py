@@ -47,6 +47,43 @@ def stale(state: StackState, record: SliceState, pair: dict[str, Any]) -> bool:
     return pair.get("plane") != plane_context(state, record)
 
 
+def pair_key(pair: dict[str, Any]) -> str:
+    """What of a pair the landmark warp is made from: its two endpoints."""
+    from langslice.core.handoff import digest
+
+    return digest({"atlas": pair["atlas_native_xy"], "section": pair["section_fraction_xy"]})
+
+
+def pair_states(state: StackState, record: SliceState) -> dict[str, str]:
+    """Each pair's state: ``stale`` (placed against another atlas plane than
+    the section's now), ``applied`` (an endpoint-for-endpoint member of the
+    landmark warp that is the section's current deformation) or ``pending``."""
+    applied: dict[str, str] = {}
+    held = record.deformation or {}
+    if held.get("landmark_revision"):
+        applied = held.get("landmark_pairs") or {}
+        if not applied:  # a record from before the pairs were listed in it
+            from langslice.core.handoff import digest
+
+            pairs = record.landmarks.get("pairs", [])
+            if digest(pairs) == held["landmark_revision"]:
+                applied = {pair["id"]: pair_key(pair) for pair in pairs}
+    return {
+        pair["id"]: "stale" if stale(state, record, pair)
+        else "applied" if applied.get(pair["id"]) == pair_key(pair) else "pending"
+        for pair in record.landmarks.get("pairs", [])
+    }
+
+
+def landmark_counts(state: StackState, record: SliceState) -> dict[str, int]:
+    """``{"total", "pending", "stale"}`` of the section's pairs; empty when it has none."""
+    states = list(pair_states(state, record).values())
+    if not states:
+        return {}
+    return {"total": len(states), "pending": states.count("pending"),
+            "stale": states.count("stale")}
+
+
 def section_panel(
     record: SliceState,
     size: tuple[int, int],
@@ -131,6 +168,31 @@ def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = Fal
     draw.text((x + 10, y - 7), text, fill="white")
 
 
+#: The colour folded triangles are outlined in on a warped overlay.
+FOLD_COLOUR = "#ff2bd6"
+
+
+def draw_folds(
+    image: Image.Image, panel: dict[str, Any], record: SliceState, *, warp: Any = None
+) -> None:
+    """Outline the folded triangles of the applied landmark warp, between the
+    section endpoints of their pairs (a fixed corner vertex has none)."""
+    folds = (record.deformation or {}).get("landmark_folds") or {}
+    by_id = {pair["id"]: pair for pair in record.landmarks.get("pairs", [])}
+    draw = ImageDraw.Draw(image)
+    for ids in folds.get("triangles", []):
+        points = [
+            tuple(float(v) for v in section_picture_point(
+                panel, by_id[i]["section_fraction_xy"], warp))
+            for i in ids if i in by_id
+        ]
+        if len(points) < 2:
+            continue
+        path = points + ([points[0]] if len(points) > 2 else [])
+        draw.line(path, fill="black", width=5)
+        draw.line(path, fill=FOLD_COLOUR, width=3)
+
+
 def draw_landmarks(
     image: Image.Image,
     panels: list[dict[str, Any]],
@@ -139,6 +201,9 @@ def draw_landmarks(
     *,
     warp: Any = None,
 ) -> None:
+    for panel in panels:
+        if panel["role"] == "section" and panel.get("warp_key"):
+            draw_folds(image, panel, record, warp=warp)
     for pair in record.landmarks.get("pairs", []):
         for panel in panels:
             role = panel["role"]
