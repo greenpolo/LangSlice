@@ -1,22 +1,28 @@
 {
  "args": [
   [
-   120,
    80,
-   520,
-   380
+   40,
+   160,
+   100
   ]
  ],
  "data": {
   "picture": 5,
   "pictures": [
    {
-    "caption": "s1.png section, no position; 7.5 um/px; raw red, green auto; from the image file",
+    "caption": "s1.png section, no position; 4.9 um/px; raw red, green auto; from the image file",
     "content_box": [
      0,
      0,
      512,
-     392
+     384
+    ],
+    "covers": [
+     80,
+     40,
+     159,
+     99
     ],
     "id": 6
    }
@@ -31,7 +37,7 @@
    "mode": "RGB",
    "size": [
     512,
-    429
+    421
    ]
   }
  ],

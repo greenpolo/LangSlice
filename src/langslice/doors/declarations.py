@@ -60,7 +60,6 @@ from langslice.doors.tools.arguments import (
     SectionTransformNoFlip,
     SectionTransformNoOrientation,
     SectionTransformNoRotate,
-    ZoomRequest,
 )
 
 # Defaults of list and object arguments are read, never mutated (ADK wants a value).
@@ -147,8 +146,7 @@ def look(
     ...
 
 
-def zoom(box: list[float] = [], picture: int = 0, region: str = "",
-         requests: list[ZoomRequest] = []) -> dict[str, Any]:
+def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str, Any]:
     """Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 
     The new picture is as large as the earlier one. In a picture of a
@@ -160,7 +158,10 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "",
     working copies (the file reduced to at most 3072 pixels), and the atlas
     from its voxels. ]]The box is drawn as the picture was, even if the stack
     has changed since (the reply then says `stale`). The new picture has its
-    own number, so it can be zoomed again.
+    own number, so it can be zoomed again. A dashed green grid on it is
+    labelled with the pixel numbers of the whole picture the zoom was cut
+    from, and those numbers are the coordinates of a further zoom's box[[?set_landmarks  and
+    of a set_landmarks endpoint, on the zoom or on the whole picture alike]].
 
     [[?look:overlay After a linear or nonlinear fit, use region on its overlay to inspect
     a particular structure closely, with only that region's border shown.
@@ -175,11 +176,10 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "",
 
     Args:
         box: [x0, y0, x1, y1] in pixels of that picture as it was shown,
-            from its top-left corner.[[?look:overlay  Give either box or region, not both.]]
+            from its top-left corner (on a zoom, the numbers its grid prints).~
+            [[?look:overlay  Give either box or region, not both.]]
         picture: The picture's number; 0 is the newest picture that is not
             itself a zoom.
-        requests: Up to four {picture, box}[[?look:overlay  or {picture, region}]] inspections
-            in one call. Leave the single arguments empty.
         region: One atlas acronym or numeric id, descendants included;
             "CTX:left" or "CTX:right" selects one displayed side. Overlay
             pictures only. Crops to the entire region with a small margin
@@ -188,7 +188,8 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "",
             empty when using region.
 
     Returns:
-        One picture with its number, caption and `content_box` [x0, y0, x1,
+        One picture with its number, caption, `covers` [x0, y0, x1, y1] (the
+        whole picture's pixels it shows) and `content_box` [x0, y0, x1,
         y1], where the drawing lies in the image (a narrow box is padded with
         black beside it, the caption below), and `redrawn`: false when
         the picture could not be drawn again, so the box was cut from the
@@ -785,18 +786,25 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     is one undo step. Atlas and section endpoints are explicitly named.
     Coordinates are x,y PIXELS from the top-left of the whole returned picture,
     including panel offsets; no fractions or atlas coordinates are accepted.
-    Saved geometry resolves the exact referenced view, including old zooms,
-    orientation and an applied warp. Caption/gutter/out-of-image points are
-    refused. [[?look:atlas A picture of the atlas alone supplies atlas points only when drawn
-    with look(mode="atlas", sections=[section]); generic atlas browsing has no
-    section context. ]]Plane changes retain pairs
-    but flag their atlas correspondences stale; update those atlas endpoints.
+    [[?zoom On a zoom, x,y are the numbers its grid prints (pixels of the whole
+    picture it was cut from), so a number read off any grid works whether you
+    name the zoom's picture or the whole picture. ]]Saved geometry resolves the
+    exact referenced view, including old zooms, orientation and an applied warp.
+    Caption/gutter/out-of-image points are refused. [[?look:atlas A picture of the
+    atlas alone supplies atlas points only when drawn with
+    look(mode="atlas", sections=[section]); generic atlas browsing has no
+    section context. ]]Plane changes retain pairs but flag their atlas
+    correspondences stale; update those atlas endpoints.
     [[?look:overlay Prefer both endpoints on the same overlay[[?zoom , or a zoom of it]]: the
     atlas point where an atlas border is drawn, the section point where that
     border belongs in the tissue. You point at what you see; a point on a warped
     overlay is mapped back to the section itself. ]]Spread pairs over the outline and
-    the internal anatomy. With no pairs and no delete, nothing is written and
-    the reply lists the pairs.
+    the internal anatomy. A pair whose section point and atlas point are at the
+    same spot holds that spot at its current (linear) placement; tissue far
+    from every pair follows the nearest pairs and the four fixed corners of the
+    frame.[[?mark_damage  An atlas region with no tissue on the section (torn
+    or missing) takes no pair: mark it with mark_damage.]] With no pairs and
+    no delete, nothing is written and the reply lists the pairs.
 
     Args:
         section: Section filename (the extension may be left off).
@@ -811,8 +819,12 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     Returns:
         The changed and deleted IDs and every pair of the section, one record
         each: id, atlas and section as {picture, x, y}, and state: applied (in
-        the landmark warp applied now), pending (saved, not applied) or stale
-        (placed against an earlier atlas plane); with the count of each.
+        the landmark warp applied now, as they are), moved (in it, but at other
+        endpoints now), pending (saved, not in it) or stale (placed against an
+        earlier atlas plane); with the count of each; and `warp`: the pairs the
+        current warp was built from, those not in it, those deleted but still
+        shaping it, and that landmark_triangulation must run again to apply the
+        set as it stands.
     """
     ...
 
@@ -823,15 +835,18 @@ def landmark_triangulation(
     """Apply this section's saved landmark set as a piecewise affine warp.
 
     Requires at least three corresponding pairs, with coverage across the full
-    section; the tool cannot assess anatomical coverage. Uses VisuAlign's
-    section-domain Delaunay mesh in pixels and four fixed corners 10% outside
+    section; the tool cannot assess anatomical coverage. A pair at the same
+    spot on both holds that spot at its current (linear) placement; tissue far
+    from every pair follows the nearest pairs and the fixed frame corners. Uses
+    VisuAlign's section-domain Delaunay mesh in pixels and four fixed corners 10% outside
     the section. Repeated section points, zero-area triangles and stale atlas
     planes are refused. Folded triangles are applied, as VisuAlign does: the
     reply gives the share of the section they cover and the pairs at their
     corners, and the picture outlines them in magenta. The inverse uses the
     same triangles (unfolded ones first where folded ones overlap). Composes a
     correction onto the current deformation; undo removes the application.
-    Editing pairs alone never warps.
+    Editing pairs alone never warps: pairs added, moved or deleted after an
+    application change nothing until this runs again.
 
     Args:
         section: Section filename (the extension may be left off).
@@ -840,8 +855,11 @@ def landmark_triangulation(
             the default size.
 
     Returns:
-        Landmark count, whether applied/composed, displacement, diagnostics
-        and any folds. The picture's number is under `pictures`.
+        Landmark count, `built_from` (the pair IDs the warp was made of),
+        whether applied/composed, displacement_mm (the whole deformation now
+        applied) and step_displacement_mm (only the change this application made
+        over the warp it replaced), diagnostics and any folds. The picture's
+        number is under `pictures`.
     """
     ...
 

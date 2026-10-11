@@ -54,34 +54,101 @@ def pair_key(pair: dict[str, Any]) -> str:
     return digest({"atlas": pair["atlas_native_xy"], "section": pair["section_fraction_xy"]})
 
 
+def applied_pairs(record: SliceState) -> dict[str, str] | None:
+    """The pairs the landmark warp that is the section's current deformation
+    was built from (pair id -> :func:`pair_key`); None when the current
+    deformation is not a landmark warp."""
+    held = record.deformation or {}
+    if not held.get("landmark_revision"):
+        return None
+    built = held.get("landmark_pairs") or {}
+    if not built:  # a record from before the pairs were listed in it
+        from langslice.core.handoff import digest
+
+        pairs = record.landmarks.get("pairs", [])
+        if digest(pairs) == held["landmark_revision"]:
+            built = {pair["id"]: pair_key(pair) for pair in pairs}
+    return dict(built)
+
+
 def pair_states(state: StackState, record: SliceState) -> dict[str, str]:
     """Each pair's state: ``stale`` (placed against another atlas plane than
     the section's now), ``applied`` (an endpoint-for-endpoint member of the
-    landmark warp that is the section's current deformation) or ``pending``."""
-    applied: dict[str, str] = {}
-    held = record.deformation or {}
-    if held.get("landmark_revision"):
-        applied = held.get("landmark_pairs") or {}
-        if not applied:  # a record from before the pairs were listed in it
-            from langslice.core.handoff import digest
-
-            pairs = record.landmarks.get("pairs", [])
-            if digest(pairs) == held["landmark_revision"]:
-                applied = {pair["id"]: pair_key(pair) for pair in pairs}
-    return {
-        pair["id"]: "stale" if stale(state, record, pair)
-        else "applied" if applied.get(pair["id"]) == pair_key(pair) else "pending"
-        for pair in record.landmarks.get("pairs", [])
-    }
+    landmark warp that is the section's current deformation), ``moved`` (in
+    that warp, but with other endpoints now) or ``pending`` (not in it)."""
+    built = applied_pairs(record) or {}
+    out: dict[str, str] = {}
+    for pair in record.landmarks.get("pairs", []):
+        if stale(state, record, pair):
+            out[pair["id"]] = "stale"
+        elif pair["id"] not in built:
+            out[pair["id"]] = "pending"
+        else:
+            out[pair["id"]] = "applied" if built[pair["id"]] == pair_key(pair) else "moved"
+    return out
 
 
-def landmark_counts(state: StackState, record: SliceState) -> dict[str, int]:
-    """``{"total", "pending", "stale"}`` of the section's pairs; empty when it has none."""
+def warp_report(state: StackState, record: SliceState) -> dict[str, Any]:
+    """Which pairs the section's current deformation was built from
+    (``built_from``), which pairs are not in it as they are now
+    (``not_applied``), which were deleted but still shape it
+    (``deleted_still_in_warp``), in a ``note``; empty when the section has no
+    pairs and no landmark warp."""
+    pairs = [pair["id"] for pair in record.landmarks.get("pairs", [])]
+    built = applied_pairs(record)
+    if built is None:
+        if not pairs:
+            return {}
+        return {"built_from": [], "not_applied": pairs,
+                "note": "No landmark warp is applied to this section yet; "
+                        "landmark_triangulation applies the pairs."}
+    states = pair_states(state, record)
+    new = [i for i in pairs if states[i] == "pending"]
+    moved = [i for i in pairs if states[i] == "moved"]
+    stale_ids = [i for i in pairs if states[i] == "stale"]
+    gone = [i for i in built if i not in pairs]
+    made_of = sorted(built, key=_order)
+    report: dict[str, Any] = {"built_from": made_of}
+    if not (new or moved or stale_ids or gone):
+        report["note"] = "The current warp was built from exactly these pairs."
+        return report
+    report["not_applied"] = [*new, *moved, *stale_ids]
+    if gone:
+        report["deleted_still_in_warp"] = gone
+    parts = [f"The current warp was built from {', '.join(made_of) or 'no pair'}."]
+    if new:
+        parts.append(f"Added, not in it yet: {', '.join(new)}.")
+    if moved:
+        parts.append(f"Moved since, so it still holds their earlier endpoints: "
+                     f"{', '.join(moved)}.")
+    if stale_ids:
+        parts.append(f"Placed against an earlier atlas plane: {', '.join(stale_ids)}.")
+    if gone:
+        parts.append(f"Deleted, but still shaping it: {', '.join(gone)}.")
+    parts.append("Run landmark_triangulation again to apply the set as it stands now.")
+    report["note"] = " ".join(parts)
+    return report
+
+
+def _order(pair_id: str) -> tuple[int, str]:
+    return (len(pair_id), pair_id)
+
+
+def landmark_counts(state: StackState, record: SliceState) -> dict[str, Any]:
+    """``{"total", "pending", "stale", "warp"}`` of the section's pairs
+    (``pending``: not in the applied landmark warp as they are now; ``warp``
+    in words: whether that warp matches the pairs); empty when it has none."""
     states = list(pair_states(state, record).values())
-    if not states:
+    if not states and applied_pairs(record) is None:
         return {}
-    return {"total": len(states), "pending": states.count("pending"),
-            "stale": states.count("stale")}
+    report = warp_report(state, record)
+    matches = bool(report) and "not_applied" not in report
+    return {"total": len(states),
+            "pending": states.count("pending") + states.count("moved"),
+            "stale": states.count("stale"),
+            "warp": "matches the pairs" if matches else
+            "none applied" if applied_pairs(record) is None
+            else "differs from the pairs; run landmark_triangulation again"}
 
 
 def section_panel(

@@ -155,6 +155,23 @@ FIXES: dict[str, str] = {
     "PICTURE_NOT_SAVED": "This job keeps no pictures between calls; draw it again with look"
                          "[[?zoom  and zoom]] in the same process.",
     "EMPTY_BOX": "Give a box with area inside the picture: [x0, y0, x1, y1] in its pixels.",
+    "TOO_MANY_LANDMARK_VIEWS": "Nothing was written. Send the same pairs with `--view false`, "
+                               "or in calls of four pairs or fewer.",
+    "BAD_LANDMARK_POINT": "Give x,y inside the image content the message states[[?zoom  (on a "
+                          "zoom, numbers its grid prints)]].",
+    "BAD_LANDMARK_PICTURE": "Draw this section with look (sections=[its filename]) and give "
+                            "that picture's number; the message says which sections the "
+                            "picture you named covers.",
+    "STALE_LANDMARK_PLANE": "Draw the section's current atlas plane with look, then re-place "
+                            "the pairs the message names (their atlas endpoints), or delete "
+                            "them.",
+    "UNKNOWN_LANDMARK": "Use a pair id the message lists[[?set_landmarks : set_landmarks "
+                        "with only the section lists the pairs]].",
+    "INSUFFICIENT_LANDMARKS": "Add pairs[[?set_landmarks  with set_landmarks]] until the "
+                              "section has at least three, then apply again.",
+    "LANDMARK_TRIANGULATION_FAILED": "Move or delete the pairs the message names"
+                                     "[[?set_landmarks  with set_landmarks]], then apply "
+                                     "again.",
     "NOTHING_EXPORTED": "Each skipped section's reason is under result.skipped; place it "
                         "first.",
 }

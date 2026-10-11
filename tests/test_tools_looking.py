@@ -320,7 +320,8 @@ def test_status_names_the_deformation_tools_of_a_nonlinear_run(tmp_path: Path, a
     _, _, box = _synthetic(tmp_path, atlas, tasks=["nonlinear"],
                            nonlinear=NonlinearSpec(provider="none"))
     assert _tool(box, "status")()["can_change"] == [
-        "damaged regions", "deformations (ants_syn)",
+        "damaged regions", "deformations (ants_syn, landmark pairs by set_landmarks, "
+        "applied by landmark_triangulation)",
         "channel display and the preprocessed channel"]
 
 

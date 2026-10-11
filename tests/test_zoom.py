@@ -127,7 +127,7 @@ def test_no_recipe_is_cropped_and_a_crop_of_a_crop_maps_back(tmp_path: Path):
     again = redraw(crop.recipe, [width / 2, height / 2, width, height], ws, state=state,
                    picture=source)
     assert again.recipe["args"]["box"] == [300.0, 100.0, 400.0, 200.0]
-    assert _content(again).mean() > 250
+    assert np.median(_content(again)) > 250  # the grid's lines are a few pixels
     with pytest.raises(ZoomError) as caught:
         redraw(None, [0, 0, 10, 10], ws, state=state)
     assert caught.value.code == "NO_PICTURE"

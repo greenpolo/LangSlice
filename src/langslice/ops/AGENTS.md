@@ -435,16 +435,21 @@ triangles are applied and reported (`folds`: area fraction, pair ids; stored as
 without it is `applied` when its `landmark_revision` matches the pairs). A
 refused endpoint says the pair (call index and id), role, picture, x,y and the
 picture's content box. `set_landmarks` replies with one compact record per pair
-(`id`, `atlas`, `section`, `state`: applied/pending/stale) and counts, and with
-no pairs and no delete writes nothing; `delete=["all"]` clears the section.
+(`id`, `atlas`, `section`, `state`: applied/moved/pending/stale) and counts and
+a `warp` block (the pairs the current warp was built from, those not in it, those
+deleted but still shaping it, and that `landmark_triangulation` must run again),
+and with no pairs and no delete writes nothing; the apply reply lists
+`built_from` and says which displacement figure is the whole deformation; `delete=["all"]` clears the section.
 `history.undo/redo` report `step` (`describe_step`: the tool read off the
 changed field groups, the sections touched). `look.show_result` takes
-`resolution`; `look.zoom`'s entries carry `content_box`. Both verbs belong to
+`resolution`; `look.zoom`'s entries carry `content_box` and `covers` (the whole
+picture's pixels a zoom shows). Every zoom carries a coordinate grid
+(`core/zoom_grid.py`) labelled in the whole picture's pixels; on a zoom,
+`zoom`'s box and `set_landmarks` endpoints are read in those numbers
+(`core.picture_geometry.source_frame`), so they are the same on the zoom and on
+its source picture. Both verbs belong to
 Nonlinear. Both refuse a section whose `deformation` is frozen (`FROZEN`,
 the whole call; `core/toolset.py` offers neither tool when it is frozen on every
 section, and they need each other). Pair edits leave the current registration applied until another
 explicit application or undo. An unchanged application is a no-op.
 
-`look.zoom` also accepts `requests`, up to four saved-picture inspections;
-the single `box` / `picture` / `region` call remains available. Each returned
-zoom has its own picture number and per-request facts.

@@ -135,15 +135,6 @@ class LandmarkPair(TypedDict, total=False):
     section: LandmarkPoint
 
 
-@with_config(ConfigDict(extra="forbid"))
-class ZoomRequest(TypedDict, total=False):
-    """One saved-picture inspection in a batched zoom call."""
-
-    picture: int
-    box: list[float]
-    region: str
-
-
 # --- the check --------------------------------------------------------------
 
 

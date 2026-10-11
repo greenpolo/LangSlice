@@ -422,7 +422,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     # Zoom: the newest picture that is not a zoom, then a zoom of that zoom,
     # then the first picture by its number, then a number that is not there.
     zoomed = call("zoom", [40, 20, 200, 140])
-    call("zoom", [120, 80, 520, 380], picture=int(zoomed["pictures"][0]["id"]))
+    call("zoom", [80, 40, 160, 100], picture=int(zoomed["pictures"][0]["id"]))
     call("zoom", [30, 40, 150, 130], picture=1)
     call("zoom", [0, 0, 50, 50], picture=999)
     call("look", "atlas", positions_mm=[0.05, 0.2])
@@ -1073,8 +1073,8 @@ def record_landmarks(rec: Recorder, folder: Path) -> None:
                       "section": {"picture": section_id, "x": float(b[0]), "y": float(b[1])}})
     added = call("set_landmarks", section=ID1, pairs=pairs)
     pair_id = added["pictures"][0]["id"]
-    call("zoom", requests=[{"picture": pair_id, "box": [0, 0, 150, 130]},
-                            {"picture": pair_id, "box": [530, 100, 730, 260]}])
+    call("zoom", box=[0, 0, 150, 130], picture=pair_id)
+    call("zoom", box=[530, 100, 730, 260], picture=pair_id)
     call("landmark_triangulation", section=ID1)
     call("look", "overlay", sections=[ID1], channels=["red"])
     call("set_landmarks", section=ID1, delete=["L2"], view=False)

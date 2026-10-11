@@ -1,11 +1,17 @@
 {
  "args": [],
  "data": {
+  "built_from": [
+   "L1",
+   "L2",
+   "L3"
+  ],
   "composed": false,
   "displacement_mm": {
    "max": 0.07,
    "median": 0.055
   },
+  "displacement_note": "displacement_mm is the whole deformation now applied to the section (every step since its linear placement, the landmark warp included); step_displacement_mm, when present, is only the change this application made over the warp it replaced or was applied onto.",
   "flags": [],
   "fold_fraction": 0.0,
   "landmark_count": 3,
@@ -23,7 +29,7 @@
  "door": "landmarks",
  "images": [
   {
-   "file": "154_landmarks_landmark_triangulation.0.png",
+   "file": "155_landmarks_landmark_triangulation.0.png",
    "mode": "RGB",
    "size": [
     338,

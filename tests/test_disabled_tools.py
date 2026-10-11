@@ -516,10 +516,9 @@ def test_the_landmark_tools_go_off_together_and_leave_no_mention(tmp_path: Path)
         assert not re.search(r"set_landmarks|landmark_triangulation|\blandmark pairs?\b", text), (
             text[:200])
     assert any("set_landmarks" in text for text in _model_texts(folder, on).values())
-    assert "requests" in arguments_schema("zoom", Variant.of(off, auto=True))["properties"]
 
 
-def test_zoom_requests_can_be_switched_off_with_zoom(tmp_path: Path):
+def test_zoom_can_be_switched_off(tmp_path: Path):
     spec = _spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"),
                  disabled=["zoom"])
     assert "zoom" not in enabled(spec)

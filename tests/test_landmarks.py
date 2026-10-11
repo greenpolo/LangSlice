@@ -13,6 +13,7 @@ from langslice.core import deformation
 from langslice.core import landmarks as geometry
 from langslice.core.landmark_views import pair_picture
 from langslice.core.layers import collecting
+from langslice.core.picture_geometry import source_frame
 from langslice.core.spec import NonlinearSpec
 from langslice.core.state import StackState
 from langslice.job.job import Job
@@ -126,7 +127,6 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         entry = look.save_pictures(job, ws, "set_landmarks", [picture], notes, {})[0]
         job.views.flush()
         panels = picture.recipe["endpoint_panels"]
-        a = geometry.transform(np.linalg.inv(panels[0]["pixel_to_native"]), pair["atlas_native_xy"])
         b = geometry.section_picture_point(panels[1], pair["section_fraction_xy"])
         assert b[0] > panels[0]["bounds"][2]
         landmarks.set_landmarks(
@@ -158,7 +158,10 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         zoom_record = job.views.lookup(zoom.entries[0]["id"])
         assert zoom_record.recipe["args"]["box"] == [round(v, 2) for v in box]
         zp = zoom_record.recipe["endpoint_panels"][0]
-        point = geometry.section_picture_point(zp, pair["section_fraction_xy"])
+        # On a zoom, endpoints (and further boxes) are the grid's numbers: the
+        # pixels of the picture the zoom was cut from.
+        point = source_frame(zoom_record.recipe).to_source(
+            geometry.section_picture_point(zp, pair["section_fraction_xy"]))
         landmarks.set_landmarks(
             job,
             ws,
@@ -181,7 +184,8 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         )
         job.views.flush()
         again_panel = job.views.lookup(again.entries[0]["id"]).recipe["endpoint_panels"][0]
-        again_point = geometry.section_picture_point(again_panel, pair["section_fraction_xy"])
+        again_point = source_frame(job.views.lookup(again.entries[0]["id"]).recipe).to_source(
+            geometry.section_picture_point(again_panel, pair["section_fraction_xy"]))
         landmarks.set_landmarks(
             job,
             ws,
@@ -200,16 +204,6 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         assert record.landmarks["pairs"][0]["section_fraction_xy"] == pytest.approx(
             pair["section_fraction_xy"]
         )
-        # A batch can inspect each endpoint, and all pictures get their own IDs.
-        batch = look.zoom(
-            job,
-            ws,
-            requests=[
-                {"picture": entry["id"], "box": box},
-                {"picture": entry["id"], "box": [a[0] - 20, a[1] - 20, a[0] + 20, a[1] + 20]},
-            ],
-        )
-        assert len(batch.entries) == 2 and len(batch.results) == 2
     finally:
         job.close()
 
@@ -318,26 +312,6 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         result = job.deformations.current(job.state, record)
         np.testing.assert_array_equal(result.parent.field_mm, intervening.field_mm)
         assert record.deformation["landmark_baseline_key"] == "intervening-method"
-    finally:
-        job.close()
-
-
-def test_batch_zoom_reports_each_failure_without_losing_successful_pictures(tmp_path):
-    job, ws, record = setup(tmp_path)
-    try:
-        source = look.look(job, ws, "section", sections=[record.id])
-        job.views.flush()
-        done = look.zoom(
-            job,
-            ws,
-            requests=[
-                {"picture": source.entries[0]["id"], "box": [20, 20, 70, 70]},
-                {"picture": 100000, "box": [0, 0, 20, 20]},
-            ],
-        )
-        assert len(done.entries) == 1
-        assert done.results[0]["status"] == "ok"
-        assert done.results[1]["error"] == "UNKNOWN_PICTURE"
     finally:
         job.close()
 

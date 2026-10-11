@@ -157,7 +157,7 @@ a different `frozen` is refused like one resumed with other `inputs`.
 | Tool | Use |
 |---|---|
 | `look` | `section`: tissue alone; `atlas`: atlas planes; `overlay`: tissue with registered atlas borders; `positioning`: sections and atlas along the slicing axis |
-| `zoom` | Redraw a saved picture's pixel box, or an overlay's single atlas region; `requests` batches up to four inspections |
+| `zoom` | Redraw a saved picture's pixel box, or an overlay's single atlas region |
 | `grep_atlas` | Find region acronyms, names and ids |
 | `grep_atlas_view` | Show the atlas with only the selected regions' borders |
 | `status` | Read placements, settings, constraints and pending work |
@@ -169,7 +169,13 @@ latest non-zoom picture. Section and overlay zooms reread the source image
 at its native resolution; positioning zooms use the working copies. A zoom
 of a tall or narrow box is padded with black beside its picture and
 captioned below; the reply's `content_box` `[x0, y0, x1, y1]` is where the
-picture itself lies.
+picture itself lies. Every zoom carries a thin dashed green coordinate grid
+whose labels are the pixel numbers of the whole picture the zoom was cut from
+(a round step, 1 to 5000 px, that gives at most twelve lines along the longer
+side; labels at every edge), and the reply's `covers` `[x0, y0, x1, y1]` is the
+part of that picture it shows. Those numbers are also the coordinates of a
+further zoom's box on the zoom and of a `set_landmarks` endpoint on the zoom or
+on the whole picture alike.
 
 For an overlay, `zoom(region="CA1:left")` crops to the entire selected
 region with a small margin and shows only that region's border. It accepts
@@ -192,7 +198,7 @@ panels. Tissue can therefore appear smaller than the atlas. The stored
 affine contributes its isotropic scale, `sqrt(abs(det))`; each thumbnail
 is framed around its anatomy without being stretched to fill the tile.
 
-Overlay pictures show the applied deformation unless `warp="none"`.
+Overlay pictures show the applied deformation unless `warp="none"`. The footer of a picture drawn at other than canvas pixels gives both scales: `canvas` (micrometres per canvas pixel) and `view` (micrometres per picture pixel, the number the reply's caption calls um/px).
 Where the agent chooses the picture size, `resolution` applies to every mode:
 a section is never drawn past its source pixels, an atlas plane at most four
 times past its voxels (as an atlas zoom is). Picture resolution affects
@@ -273,7 +279,11 @@ numbers to the delivered sizes and preserves their exact coordinate geometry.
 Earlier picture numbers still refer to their original images.
 
 Both endpoints use **x,y pixels of an explicitly numbered returned picture**,
-from the top-left of the whole image. Panel offsets are included. `look` in
+from the top-left of the whole image. Panel offsets are included. On a zoom, x,y
+are the numbers its grid prints (pixels of the whole picture it was cut from),
+so a number read off any grid works whether the call names the zoom or the whole
+picture; a point the zoom does not show is refused with the range it covers in
+those numbers. `look` in
 `section` or `overlay` mode provides section points; `overlay` also provides
 atlas points. For an atlas-only view tied to a section, use
 `look(mode="atlas", sections=["s01.tif"])`: it draws that section's own
@@ -296,31 +306,40 @@ Pair IDs persist through edits and are never reused. Omitted endpoints of an
 update stay as they were. `delete=["all"]` clears the section's pairs as one
 step. Every reply lists the section's pairs, one compact record each (`id`,
 `atlas` and `section` as `{picture, x, y}`, and a `state`) with their counts:
-`applied` (in the landmark warp applied now), `pending` (saved, not applied) or
-`stale` (placed against an atlas plane the section has left; `stale` wins over
-the other two). A call with no pairs and no `delete` writes nothing and returns
-this listing. `status` rows carry `landmarks: {total, pending, stale}` for a
-section with pairs.
+`applied` (in the landmark warp applied now, with these endpoints), `moved` (in
+it, but with other endpoints now), `pending` (saved, not in it) or `stale`
+(placed against an atlas plane the section has left; `stale` wins over the
+others). A `warp` block says which pairs the current warp was built from
+(`built_from`), which pairs are not in it as they are (`not_applied`), which
+were deleted but still shape it (`deleted_still_in_warp`), and in a `note` that
+`landmark_triangulation` must run again to apply the set. A call with no pairs
+and no `delete` writes nothing and returns this listing. `status` rows carry
+`landmarks: {total, pending, stale, warp}` for a section with pairs (`pending`
+counts `moved` too; `warp` says in words whether the applied warp matches the
+pairs), and `can_change` names the landmark tools when they are on.
 
 Place both endpoints of a pair on the same overlay (or a zoom of it) where you
 can: the atlas point where a border is drawn, the section point where that
 border belongs in the tissue. After a warp, overlays show the section warped
 onto the fixed atlas borders and a point placed there is read through the
-warp. Spread the pairs over the outline and the internal anatomy.
+warp. Spread the pairs over the outline and the internal anatomy. A pair whose
+section point and atlas point are at the same spot holds that spot at its
+current (linear) placement; tissue far from every pair follows the nearest pairs
+and the four fixed frame corners. An atlas region with no tissue on the section
+(torn or missing) takes no pair; `mark_damage` records it.
 
 A refused endpoint names the pair (its index in the call and id), the
 endpoint role, the picture number and the x,y, and says what to do: a point
 outside the image content gives the picture's content box ("image content is
 x 0-1399, y 0-1089 in picture 29"), a picture without geometry for the section
-or one drawn at an earlier atlas plane says which picture to draw again. The default `view=True` shows one contextual side-by-side crop per
+or one drawn at an earlier atlas plane says which picture to draw again, and
+`TOO_MANY_LANDMARK_VIEWS` says how many pairs were sent and to resend them with
+`view=false` or in calls of four. The default `view=True` shows one contextual side-by-side crop per
 added/edited pair: atlas **template** at left, **preprocessed** section at
 right, with the selected ID labeled. The atlas panel carries the atlas region
 borders as `look` draws them, so the border an atlas point sits on is visible. At most four pairs can be inspected
 this way per call; `view=False` permits larger batches and independent
-`look`/`zoom` inspection. `zoom(requests=[{"picture": 12, "box": [100, 80,
-260, 220]}, {"picture": 13, "box": [110, 85, 270, 225]}])` inspects several
-saved pictures in one call. The existing single-picture zoom arguments also
-work. A zoom of a contextual pair is a saved-image crop and reports
+`look`/`zoom` inspection. A zoom of a contextual pair is a saved-image crop and reports
 `redrawn=False`.
 
 The exact saved geometry resolves cropping, resizing, rotation, flips,
@@ -364,7 +383,11 @@ IDs, and `triangle_count`. The result picture outlines each folded triangle in
 magenta between its pairs' section endpoints (a triangle at the frame's edge
 shows only its pair-to-pair edges). Displacement and existing biological
 plausibility diagnostics (which flag a fold fraction past a threshold) are
-reported for review. The result picture is `look`'s overlay at the job's
+reported for review. The reply lists `built_from` (the pair IDs the warp was made
+of) and, since `displacement_mm` is the whole deformation now applied (every step
+since the linear placement, this one included), `step_displacement_mm` is only
+the change this application made over the warp it replaced or was applied onto
+(`displacement_note` says so). The result picture is `look`'s overlay at the job's
 picture size; where the agent chooses the size, `resolution` works as for
 `look`. The first application
 composes the landmark correction onto the current deformation. Consecutive

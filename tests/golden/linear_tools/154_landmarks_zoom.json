@@ -1,0 +1,48 @@
+{
+ "args": [],
+ "data": {
+  "picture": 5,
+  "pictures": [
+   {
+    "caption": "crop of an earlier picture, not redrawn: box [530, 100, 730, 260], enlarged x2.6",
+    "content_box": [
+     0,
+     0,
+     512,
+     410
+    ],
+    "covers": [
+     530,
+     100,
+     729,
+     259
+    ],
+    "id": 9
+   }
+  ],
+  "redrawn": false,
+  "status": "ok"
+ },
+ "door": "landmarks",
+ "images": [
+  {
+   "file": "154_landmarks_zoom.0.png",
+   "mode": "RGB",
+   "size": [
+    512,
+    431
+   ]
+  }
+ ],
+ "kwargs": {
+  "box": [
+   530,
+   100,
+   730,
+   260
+  ],
+  "picture": 5
+ },
+ "media_texts": [],
+ "tool": "zoom"
+}

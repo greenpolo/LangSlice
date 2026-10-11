@@ -10,7 +10,8 @@
     "landmarks": {
      "pending": 0,
      "stale": 0,
-     "total": 3
+     "total": 3,
+     "warp": "matches the pairs"
     },
     "position_mm": 0.1,
     "rotation_deg": 0,

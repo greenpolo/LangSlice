@@ -86,9 +86,9 @@ def test_the_descriptions_say_what_the_design_asks():
 def test_declare_binds_the_declared_defaults_and_refuses_a_body_without_an_argument():
     seen: dict[str, Any] = {}
 
-    def body(box: list[float], picture: int, region: str, requests: list,
+    def body(box: list[float], picture: int, region: str,
              tool_context: Any = None) -> dict[str, Any]:
-        seen.update(box=box, picture=picture, region=region, requests=requests,
+        seen.update(box=box, picture=picture, region=region,
                     tool_context=tool_context)
         return {"status": "ok"}
 
@@ -96,12 +96,12 @@ def test_declare_binds_the_declared_defaults_and_refuses_a_body_without_an_argum
     assert tool.__name__ == "zoom"
     assert tool.__doc__ == declaration("zoom").doc
     assert list(inspect.signature(tool).parameters) == [
-        "box", "picture", "region", "requests", "tool_context"]
+        "box", "picture", "region", "tool_context"]
     assert tool([0, 0, 10, 10]) == {"status": "ok"}
     assert seen == {"box": [0, 0, 10, 10], "picture": 0, "region": "",
-                    "requests": [], "tool_context": None}
+                    "tool_context": None}
     assert tool(region="CA1") == {"status": "ok"}
-    assert seen == {"box": [], "picture": 0, "region": "CA1", "requests": [], "tool_context": None}
+    assert seen == {"box": [], "picture": 0, "region": "CA1", "tool_context": None}
 
     def lacking(box: list[float]) -> dict[str, Any]:
         return {}

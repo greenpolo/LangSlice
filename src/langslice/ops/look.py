@@ -29,6 +29,7 @@ from PIL import Image
 from langslice.core import look as looks
 from langslice.core import zoom as zooms
 from langslice.core.layers import PictureNote, collecting, note_for
+from langslice.core.picture_geometry import source_frame
 from langslice.core.sizes import MAX_IMAGES_PER_CALL, MIN_RESOLUTION
 from langslice.job.views import PICTURE_FILE, PictureRecord, has_frame
 from langslice.ops.refusal import Refused, unknown_sections
@@ -74,7 +75,6 @@ class Zoomed:
     redrawn: bool = True
     #: The stack has changed since the source picture; it was redrawn as it was.
     stale: bool = False
-    results: list[dict[str, Any]] = field(default_factory=list)
 
 
 # --- saving ------------------------------------------------------------------------------
@@ -340,10 +340,13 @@ def _content_box(recipe: dict[str, Any] | None, image: Image.Image) -> list[int]
             min(int(round(box[2])), image.width), min(int(round(box[3])), image.height)]
 
 
+def _covers_words(covers: Sequence[float]) -> str:
+    return f"x {round(covers[0])}-{round(covers[2])}, y {round(covers[1])}-{round(covers[3])}"
+
+
 def zoom(
     job: Job, workspace: Workspace, box: Sequence[float] = (), picture: int | None = None,
-    region: str = "", requests: Sequence[dict[str, Any]] = (),
-) -> Zoomed:
+    region: str = "") -> Zoomed:
     """*box* (``[x0, y0, x1, y1]``, pixels of picture *picture* above its
     caption band) drawn again at more detail, saved as a picture of its own
     (tool ``zoom``).
@@ -354,7 +357,8 @@ def zoom(
     *picture* defaults to the newest picture that is not itself a zoom. The
     box is redrawn from the picture's recipe, from the stack as it was then
     (``stale`` when it has changed since). A box on a zoom is read in the
-    zoom's pixels and maps back onto the picture it came from. A picture
+    numbers its grid prints (the whole picture's pixels), so it maps back onto
+    the picture it came from unchanged. A picture
     that cannot be redrawn (no recipe, or its sections are gone) is cropped
     from its saved image and enlarged (``redrawn`` False); a crop's recipe
     names its ``source`` picture, so a crop of a crop is cut from the
@@ -364,34 +368,6 @@ def zoom(
     """
     from langslice.ops import atlas as _atlas  # noqa: F401  (registers its recipe renderer)
 
-    if requests:
-        if box or picture or region:
-            raise Refused("BAD_ARGS",
-                          message="Use requests or the single box/picture/region arguments.")
-        if len(requests) > MAX_LOOK_PICTURES:
-            raise Refused("TOO_MANY_ZOOMS", message="At most four zoom requests per call.")
-        if isinstance(requests, (str, bytes)) or any(not isinstance(one, Mapping)
-                                                   for one in requests):
-            raise Refused("BAD_ARGS", message="requests must be a list of zoom objects.")
-        results: list[dict[str, Any]] = []
-        completed: list[Zoomed] = []
-        for index, one in enumerate(requests):
-            try:
-                if set(one) - {"picture", "box", "region"}:
-                    raise Refused("BAD_ARGS",
-                                  message="Zoom requests accept picture, box and region.")
-                result = zoom(job, workspace, box=one.get("box", ()),
-                              picture=one.get("picture") or None, region=one.get("region", ""))
-                completed.append(result)
-                results.append({"request": index, "status": "ok", "picture": result.picture,
-                                "redrawn": result.redrawn, "stale": result.stale,
-                                "pictures": result.entries})
-            except Refused as refusal:
-                results.append({"request": index, **refusal.payload()})
-        return Zoomed(pictures=[p for result in completed for p in result.pictures],
-                      entries=[e for result in completed for e in result.entries],
-                      stale=any(result.stale for result in completed),
-                      redrawn=all(result.redrawn for result in completed), results=results)
     target = _target(job, picture)
     recipe = target.recipe
     renderer = (recipe or {}).get("renderer")
@@ -411,12 +387,25 @@ def zoom(
         if saved is None and renderer not in zooms.RENDERERS:
             raise Refused("PICTURE_NOT_SAVED", picture=target.seq,
                           message=f"Picture {target.seq} is not saved and cannot be redrawn.")
+    frame = source_frame(recipe)
+    asked = list(box)
+    if frame is not None and len(asked) == 4 and not region:
+        # On a zoom, a box is in the grid's numbers: the whole picture's pixels.
+        try:
+            asked = [*frame.edge_to_picture(asked[:2]), *frame.edge_to_picture(asked[2:])]
+        except (TypeError, ValueError):
+            asked = list(box)
     try:
         with collecting() as notes:
-            made = zooms.redraw(recipe, box, workspace, state=job.state, store=job.deformations,
+            made = zooms.redraw(recipe, asked, workspace, state=job.state, store=job.deformations,
                                 picture=saved, region=region)
     except zooms.ZoomError as exc:
-        raise Refused(exc.code, message=str(exc)) from exc
+        text = str(exc)
+        if frame is not None and exc.code in ("EMPTY_BOX", "BAD_BOX"):
+            text = (f"{exc.code}: the box {[float(v) for v in box]} is outside this zoom or "
+                    f"too thin; picture {target.seq} covers {_covers_words(frame.covers())} "
+                    "(the grid's numbers).")
+        raise Refused(exc.code, message=text) from exc
     except looks.LookError as exc:
         raise Refused(exc.code, message=str(exc)) from exc
     if not made.redrawn:
@@ -428,6 +417,10 @@ def zoom(
     if content is not None:
         for entry in entries:
             entry["content_box"] = content
+    grid = source_frame(made.recipe)
+    if grid is not None:
+        for entry in entries:
+            entry["covers"] = [round(v) for v in grid.covers()]
     return Zoomed(pictures=[made.image], entries=entries, picture=target.seq,
                   redrawn=made.redrawn, stale=made.stale)
 

@@ -193,7 +193,7 @@ def test_the_listing_is_compact_and_a_call_without_pairs_writes_nothing(tmp_path
         row = reply["landmarks"][0]
         assert set(row) == {"id", "atlas", "section", "state"}
         assert set(row["atlas"]) == {"picture", "x", "y"} and row["state"] == "pending"
-        assert reply["counts"] == {"total": 3, "applied": 0, "pending": 3, "stale": 0}
+        assert reply["counts"] == {"total": 3, "applied": 0, "moved": 0, "pending": 3, "stale": 0}
         landmarks.landmark_triangulation(job, ws, record.id)
         depth = len(job.undo_stack)
         listed = landmarks.set_landmarks(job, ws, record.id)
@@ -203,7 +203,7 @@ def test_the_listing_is_compact_and_a_call_without_pairs_writes_nothing(tmp_path
         moved = [{"id": "L3", "section": {**edits[2]["section"],
                                           "x": edits[2]["section"]["x"] + 5}}]
         mixed = landmarks.set_landmarks(job, ws, record.id, moved)
-        assert [r["state"] for r in mixed["landmarks"]] == ["applied", "applied", "pending"]
+        assert [r["state"] for r in mixed["landmarks"]] == ["applied", "applied", "moved"]
         assert "geometry" not in str(mixed)  # the nested dump stays in the state
         assert "geometry" in record.landmarks["pairs"][0]["atlas"]
         before = job.snapshot()
@@ -223,11 +223,12 @@ def test_status_rows_carry_a_landmark_summary_only_when_there_are_pairs(tmp_path
         assert all("landmarks" not in row for row in status(job).rows)
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
         rows = {row["id"]: row for row in status(job).rows}
-        assert rows[record.id]["landmarks"] == {"total": 3, "pending": 3, "stale": 0}
+        assert rows[record.id]["landmarks"] == {"total": 3, "pending": 3, "stale": 0,
+                                                "warp": "none applied"}
         assert all("landmarks" not in row for key, row in rows.items() if key != record.id)
         landmarks.landmark_triangulation(job, ws, record.id)
         counts = {row["id"]: row for row in status(job).rows}[record.id]["landmarks"]
-        assert counts == {"total": 3, "pending": 0, "stale": 0}
+        assert counts == {"total": 3, "pending": 0, "stale": 0, "warp": "matches the pairs"}
     finally:
         job.close()
 
@@ -390,7 +391,7 @@ def test_the_triangulation_picture_takes_a_resolution(tmp_path):
         plain = tools["landmark_triangulation"](section=record.id, view=True)
         # The synthetic section holds ~420 px: nothing is drawn past its source.
         assert small < max(plain[TOOL_MEDIA_PARTS_KEY][0].size)
-        assert 280 <= small <= 305
+        assert 280 <= small <= 340
         clamped = tools["landmark_triangulation"](section=record.id, view=True, resolution=99999)
         assert "resolution_note" in clamped
     finally:

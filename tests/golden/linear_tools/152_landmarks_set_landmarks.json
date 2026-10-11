@@ -8,6 +8,7 @@
   ],
   "counts": {
    "applied": 0,
+   "moved": 0,
    "pending": 3,
    "stale": 0,
    "total": 3
@@ -73,6 +74,15 @@
   ],
   "section": "s1.png",
   "status": "ok",
+  "warp": {
+   "built_from": [],
+   "not_applied": [
+    "L1",
+    "L2",
+    "L3"
+   ],
+   "note": "No landmark warp is applied to this section yet; landmark_triangulation applies the pairs."
+  },
   "written": true
  },
  "door": "landmarks",

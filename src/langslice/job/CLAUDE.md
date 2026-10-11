@@ -333,9 +333,10 @@ longer exist be taken over by the images it is opened with.
   (`flush_all` runs once more from `atexit`, for a picture a still-running
   thread queued after the first flush). A failed write is logged and skipped; only the numbering and
   queueing run on the tool's thread. `DiscardedViews` writes nothing (a
-  dry run) but keeps the same index in memory (its `save`
-  returns the names a saved picture would have), with the newest
-  pictures' images, for `lookup` / `latest`. `captured()` collects every
+  dry run) but reads the pictures the job folder already holds and keeps the
+  index of its own in memory after them (its `save` returns the names a saved
+  picture would have), with the newest of its own pictures' images, for `lookup`
+  / `latest`, so a dry run resolves the picture numbers a real call would. `captured()` collects every
   picture any store queues inside the block (`Saved`: its folder,
   whether it gets layers and a residual, its note's sections and mode, its
   index among the call's pictures; `files()` lists `view.jpg`,
