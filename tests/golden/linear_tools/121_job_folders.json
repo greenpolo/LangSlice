@@ -47,7 +47,6 @@
     "format_version": 1,
     "image_folder": "..",
     "spec": {
-     "agent_damage": true,
      "agent_preprocessing": false,
      "atlas": "allen_mouse_25um",
      "debrief": true,
@@ -70,11 +69,11 @@
      "plane": "coronal",
      "position": {
       "gated": false,
-      "interval_um": 200,
+      "interval_um": null,
       "notes": "",
       "playbook": false,
       "strict_interval": false,
-      "thickness_um": 50
+      "thickness_um": null
      },
      "preprocess": "none",
      "reasoning": null,
@@ -86,10 +85,7 @@
      ],
      "transform": {
       "angles": false,
-      "automatic": true,
-      "flip": true,
       "hemisphere_cue": "",
-      "interactive": true,
       "max_parallel": 4,
       "notes": ""
      }
@@ -151,7 +147,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png section, at 0.04 mm; 39.8 um/px; raw gray auto",
+     "caption": "s0.png section, no position; 39.8 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000001_look_section",
@@ -219,7 +215,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.0417
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -241,7 +237,7 @@
          "index_corrected": 0,
          "index_original": 0,
          "landmarks": {},
-         "position_mm": 0.0417,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -258,7 +254,7 @@
     },
     {
      "call": 2,
-     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray auto",
+     "caption": "s0.png section, no position; 31.2 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000002_look_section",
@@ -326,7 +322,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.0417
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -348,7 +344,7 @@
          "index_corrected": 0,
          "index_original": 0,
          "landmarks": {},
-         "position_mm": 0.0417,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -1220,13 +1216,14 @@
     "views.seq",
     "views.seq.lock",
     "views/000001_opening/view.jpg",
-    "views/000001_opening/view.json"
+    "views/000001_opening/view.json",
+    "views/000002_opening/view.jpg",
+    "views/000002_opening/view.json"
    ],
    "job_file": {
     "format_version": 1,
     "image_folder": "..",
     "spec": {
-     "agent_damage": true,
      "agent_preprocessing": true,
      "atlas": "allen_mouse_25um",
      "debrief": true,
@@ -1249,11 +1246,11 @@
      "plane": "coronal",
      "position": {
       "gated": false,
-      "interval_um": 200,
+      "interval_um": null,
       "notes": "",
       "playbook": false,
       "strict_interval": false,
-      "thickness_um": 50
+      "thickness_um": null
      },
      "preprocess": "none",
      "reasoning": null,
@@ -1265,10 +1262,7 @@
      ],
      "transform": {
       "angles": true,
-      "automatic": true,
-      "flip": true,
       "hemisphere_cue": "",
-      "interactive": true,
       "max_parallel": 4,
       "notes": ""
      }
@@ -1277,9 +1271,12 @@
    "layers": {
     "views/000001_opening": {
      "view_json": "<hex>"
+    },
+    "views/000002_opening": {
+     "view_json": "<hex>"
     }
    },
-   "pictures_sent": 1,
+   "pictures_sent": 2,
    "saved_jpegs_equal_sent": true,
    "views_index": [
     {
@@ -1290,6 +1287,17 @@
      "path": "views/000001_opening",
      "sections": [],
      "seq": 1,
+     "step": 0,
+     "tool": "opening"
+    },
+    {
+     "call": 1,
+     "layers": false,
+     "mode": null,
+     "name": "000002_opening",
+     "path": "views/000002_opening",
+     "sections": [],
+     "seq": 2,
      "step": 0,
      "tool": "opening"
     }
@@ -1399,10 +1407,8 @@
     "sections/s0/labels_fiji.tif",
     "sections/s0/maps.json",
     "sections/s0/tissue.png",
-    "sections/s0/views/000001_look_overlay/borders.png",
-    "sections/s0/views/000001_look_overlay/labels.tif",
-    "sections/s0/views/000001_look_overlay/view.jpg",
-    "sections/s0/views/000001_look_overlay/view.json",
+    "sections/s0/views/000001_look_positioning/view.jpg",
+    "sections/s0/views/000001_look_positioning/view.json",
     "sections/s1/coords.tif",
     "sections/s1/labels.csv",
     "sections/s1/labels.tif",
@@ -1430,7 +1436,6 @@
     "format_version": 1,
     "image_folder": "..",
     "spec": {
-     "agent_damage": true,
      "agent_preprocessing": false,
      "atlas": "allen_mouse_25um",
      "debrief": true,
@@ -1453,11 +1458,11 @@
      "plane": "coronal",
      "position": {
       "gated": true,
-      "interval_um": 200,
+      "interval_um": null,
       "notes": "",
       "playbook": false,
       "strict_interval": false,
-      "thickness_um": 50
+      "thickness_um": null
      },
      "preprocess": "none",
      "reasoning": null,
@@ -1467,24 +1472,14 @@
      ],
      "transform": {
       "angles": false,
-      "automatic": true,
-      "flip": true,
       "hemisphere_cue": "",
-      "interactive": true,
       "max_parallel": 4,
       "notes": ""
      }
     }
    },
    "layers": {
-    "sections/s0/views/000001_look_overlay": {
-     "borders": "<hex>",
-     "labels": "<hex>",
-     "labels_dtype": "uint32",
-     "size": [
-      338,
-      333
-     ],
+    "sections/s0/views/000001_look_positioning": {
      "view_json": "<hex>"
     },
     "views/000002_look_positioning": {
@@ -1502,11 +1497,11 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray auto; atlas borders",
-     "layers": true,
-     "mode": "overlay",
-     "name": "000001_look_overlay",
-     "path": "sections/s0/views/000001_look_overlay",
+     "caption": "positioning: 1 section below in position order, 1 without a position at the right, raw gray auto; atlas above at 2 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png no position",
+     "layers": false,
+     "mode": "positioning",
+     "name": "000001_look_positioning",
+     "path": "sections/s0/views/000001_look_positioning",
      "recipe": {
       "args": {
        "atlas_layers": null,
@@ -1514,9 +1509,12 @@
        "channels": [],
        "highlight": [],
        "long_edge": null,
-       "mode": "overlay",
-       "part": null,
-       "positions_mm": [],
+       "mode": "positioning",
+       "part": 0,
+       "positions_mm": [
+        0.05,
+        0.1
+       ],
        "sections": [
         "s0.png"
        ],
@@ -1524,112 +1522,13 @@
        "zoom": []
       },
       "base": [
-       338,
-       258
+       1090,
+       601
       ],
-      "endpoint_panels": [
-       {
-        "bounds": [
-         0,
-         0,
-         338,
-         258
-        ],
-        "orientation": [
-         [
-          1.0,
-          0.0,
-          0.0
-         ],
-         [
-          0.0,
-          1.0,
-          0.0
-         ],
-         [
-          0.0,
-          0.0,
-          1.0
-         ]
-        ],
-        "pixel_to_render": [
-         [
-          1.0,
-          0.0,
-          -33.0
-         ],
-         [
-          0.0,
-          1.0,
-          -25.0
-         ],
-         [
-          0.0,
-          0.0,
-          1.0
-         ]
-        ],
-        "render_size": [
-         272,
-         208
-        ],
-        "role": "section",
-        "section": "s0.png",
-        "warp_key": null
-       },
-       {
-        "bounds": [
-         0,
-         0,
-         338,
-         258
-        ],
-        "native_size": [
-         160,
-         120
-        ],
-        "pixel_to_native": [
-         [
-          0.625,
-          0.0,
-          -25.124999999999993
-         ],
-         [
-          0.0,
-          0.625,
-          -18.125
-         ],
-         [
-          0.0,
-          0.0,
-          1.0
-         ]
-        ],
-        "role": "atlas",
-        "section": "s0.png"
-       }
-      ],
-      "registration_context": {
-       "deformation_key": null,
-       "linear_key": "<hex>",
-       "orientation": {
-        "flip": false,
-        "rotate_quarter": 0
-       },
-       "plane": {
-        "angles": [
-         0.0,
-         0.0
-        ],
-        "atlas": "allen_mouse_25um",
-        "plane": "coronal",
-        "position_mm": 0.0417
-       }
-      },
       "renderer": "look",
       "shown": [
-       338,
-       258
+       1090,
+       601
       ],
       "state": {
        "appearance": {},
@@ -1645,11 +1544,15 @@
          "index_corrected": 0,
          "index_original": 0,
          "landmarks": {},
-         "position_mm": 0.0417,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
-       }
+       },
+       "view_angles": [
+        0.0,
+        0.0
+       ]
       },
       "um_per_px": 31.25
      },
@@ -1662,7 +1565,7 @@
     },
     {
      "call": 2,
-     "caption": "positioning: 3 sections below in position order, 0.10-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png 0.12 mm, s2.png 0.21 mm",
+     "caption": "positioning: 3 sections below in position order at 0.10 mm, 2 without a position at the right; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm, s1.png no position, s2.png no position",
      "layers": false,
      "mode": "positioning",
      "name": "000002_look_positioning",
@@ -1723,7 +1626,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         },
@@ -1738,7 +1641,7 @@
          "index_corrected": 2,
          "index_original": 2,
          "landmarks": {},
-         "position_mm": 0.2083,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -2000,7 +1903,6 @@
     "format_version": 1,
     "image_folder": "..",
     "spec": {
-     "agent_damage": true,
      "agent_preprocessing": false,
      "atlas": "allen_mouse_25um",
      "debrief": true,
@@ -2028,11 +1930,11 @@
      "plane": "coronal",
      "position": {
       "gated": false,
-      "interval_um": 200,
+      "interval_um": null,
       "notes": "",
       "playbook": false,
       "strict_interval": false,
-      "thickness_um": 50
+      "thickness_um": null
      },
      "preprocess": "none",
      "reasoning": null,
@@ -2042,10 +1944,7 @@
      ],
      "transform": {
       "angles": false,
-      "automatic": true,
-      "flip": true,
       "hemisphere_cue": "",
-      "interactive": true,
       "max_parallel": 4,
       "notes": ""
      }
@@ -2782,7 +2681,6 @@
     "format_version": 1,
     "image_folder": "..",
     "spec": {
-     "agent_damage": true,
      "agent_preprocessing": false,
      "atlas": "allen_mouse_25um",
      "debrief": true,
@@ -2810,11 +2708,11 @@
      "plane": "coronal",
      "position": {
       "gated": false,
-      "interval_um": 200,
+      "interval_um": null,
       "notes": "",
       "playbook": false,
       "strict_interval": false,
-      "thickness_um": 50
+      "thickness_um": null
      },
      "preprocess": "none",
      "reasoning": null,
@@ -2824,10 +2722,7 @@
      ],
      "transform": {
       "angles": false,
-      "automatic": true,
-      "flip": true,
       "hemisphere_cue": "",
-      "interactive": true,
       "max_parallel": 4,
       "notes": ""
      }
@@ -3788,7 +3683,6 @@
     "format_version": 1,
     "image_folder": "..",
     "spec": {
-     "agent_damage": true,
      "agent_preprocessing": true,
      "atlas": "allen_mouse_25um",
      "debrief": true,
@@ -3811,11 +3705,11 @@
      "plane": "coronal",
      "position": {
       "gated": false,
-      "interval_um": 200,
+      "interval_um": null,
       "notes": "",
       "playbook": false,
       "strict_interval": false,
-      "thickness_um": 50
+      "thickness_um": null
      },
      "preprocess": "none",
      "reasoning": null,
@@ -3827,10 +3721,7 @@
      ],
      "transform": {
       "angles": true,
-      "automatic": true,
-      "flip": true,
       "hemisphere_cue": "",
-      "interactive": true,
       "max_parallel": 4,
       "notes": ""
      }
@@ -4111,7 +4002,7 @@
    "views_index": [
     {
      "call": 1,
-     "caption": "s0.png section, at 0.04 mm; 31.2 um/px; raw gray auto",
+     "caption": "s0.png section, no position; 31.2 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000001_look_section",
@@ -4179,7 +4070,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.0417
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4201,7 +4092,7 @@
          "index_corrected": 0,
          "index_original": 0,
          "landmarks": {},
-         "position_mm": 0.0417,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -4218,7 +4109,7 @@
     },
     {
      "call": 1,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red, green, blue auto",
+     "caption": "s1.png section, no position; 31.2 um/px; raw red, green, blue auto",
      "layers": false,
      "mode": "section",
      "name": "000002_look_section",
@@ -4286,7 +4177,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.125
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4308,7 +4199,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -4325,7 +4216,7 @@
     },
     {
      "call": 1,
-     "caption": "s2.png section, at 0.21 mm; 31.2 um/px; raw gray auto",
+     "caption": "s2.png section, no position; 31.2 um/px; raw gray auto",
      "layers": false,
      "mode": "section",
      "name": "000003_look_section",
@@ -4393,7 +4284,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.2083
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4415,7 +4306,7 @@
          "index_corrected": 2,
          "index_original": 2,
          "landmarks": {},
-         "position_mm": 0.2083,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -4432,7 +4323,7 @@
     },
     {
      "call": 2,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red, green auto",
+     "caption": "s1.png section, no position; 31.2 um/px; raw red, green auto",
      "layers": false,
      "mode": "section",
      "name": "000004_look_section",
@@ -4503,7 +4394,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.125
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4525,7 +4416,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -4542,7 +4433,7 @@
     },
     {
      "call": 3,
-     "caption": "s1.png section, at 0.12 mm; 9.8 um/px; raw red, green auto; from the image file",
+     "caption": "s1.png section, no position; 9.8 um/px; raw red, green auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000005_zoom_section",
@@ -4618,7 +4509,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.125
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4640,7 +4531,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -4657,7 +4548,7 @@
     },
     {
      "call": 4,
-     "caption": "s1.png section, at 0.12 mm; 7.5 um/px; raw red, green auto; from the image file",
+     "caption": "s1.png section, no position; 7.5 um/px; raw red, green auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000006_zoom_section",
@@ -4733,7 +4624,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.125
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4755,7 +4646,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -4772,7 +4663,7 @@
     },
     {
      "call": 5,
-     "caption": "s0.png section, at 0.04 mm; 7.3 um/px; raw gray auto; from the image file",
+     "caption": "s0.png section, no position; 7.3 um/px; raw gray auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000007_zoom_section",
@@ -4845,7 +4736,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.0417
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -4867,7 +4758,7 @@
          "index_corrected": 0,
          "index_original": 0,
          "landmarks": {},
-         "position_mm": 0.0417,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -5081,7 +4972,7 @@
     },
     {
      "call": 9,
-     "caption": "positioning: 3 sections below in position order, 0.04-0.21 mm; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.04 mm, s1.png 0.12 mm, s2.png 0.21 mm",
+     "caption": "positioning: 3 sections below in position order, 3 without a position at the right; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png no position, s1.png no position, s2.png no position",
      "layers": false,
      "mode": "positioning",
      "name": "000012_look_positioning",
@@ -5127,7 +5018,7 @@
          "index_corrected": 0,
          "index_original": 0,
          "landmarks": {},
-         "position_mm": 0.0417,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         },
@@ -5142,7 +5033,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         },
@@ -5157,7 +5048,7 @@
          "index_corrected": 2,
          "index_original": 2,
          "landmarks": {},
-         "position_mm": 0.2083,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -5180,7 +5071,7 @@
     },
     {
      "call": 10,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto",
+     "caption": "s1.png section, no position; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto",
      "layers": false,
      "mode": "section",
      "name": "000013_look_section",
@@ -5248,7 +5139,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.125
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -5281,7 +5172,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }
@@ -5410,7 +5301,7 @@
     },
     {
      "call": 13,
-     "caption": "s1.png section, at 0.12 mm; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
+     "caption": "s1.png section, no position; 31.2 um/px; preprocessed channel (weights 1/0.5/0, CLAHE 2x8)",
      "layers": false,
      "mode": "section",
      "name": "000022_look_section",
@@ -5480,7 +5371,7 @@
         ],
         "atlas": "allen_mouse_25um",
         "plane": "coronal",
-        "position_mm": 0.125
+        "position_mm": null
        }
       },
       "renderer": "look",
@@ -5535,7 +5426,7 @@
          "index_corrected": 1,
          "index_original": 1,
          "landmarks": {},
-         "position_mm": 0.125,
+         "position_mm": null,
          "rotation_deg": 0,
          "transform": null
         }

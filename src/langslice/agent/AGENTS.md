@@ -22,7 +22,8 @@ The method spans the layers; each package has its own guide:
 
 `langslice linear run FOLDER` is ONE agent environment over a stack of
 sections: one `StackState`, one toolbox, one job statement, one ADK session
-that ends at `submit` or the turn budget. A single section is a stack of one.
+that ends at `submit` or a configured quota/context budget. A single section
+is a stack of one.
 There is no node graph, no per-step agent, no single-section agent and no
 sub-session: looking at the whole stack once yields the information for
 every task, and splitting it re-pays for that reading.
@@ -52,10 +53,15 @@ cutting angles left to the agent, `transform.angles`; the stack's order
 follows the positions, so there is no ordering tool);
 `interactive_transform` and `elastix_affine` with `transform` (a mirror is
 the sign of the in-plane affine, so flipping is Linear, never Positioning),
-each behind its host switch; `ants_syn` and `trace_borders` with
-`nonlinear` (`trace_borders` only with an image model); `mark_damage`
-behind `agent_damage`; everything else in every run. A retired tool's name
-answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugin`).
+each switchable alone; `ants_syn` and `trace_borders` with
+`nonlinear` (`trace_borders` only with an image model); everything else,
+`mark_damage` included, in every run. `JobSpec.disabled` takes single tools
+and tool options (`look:positioning`, `interactive_transform:flip`) off on
+top of that (`core/toolset.py` lists the names and refuses a list that cannot
+work); every line of the job statement that names a tool or an option is
+written with what it needs (`core/needs.py`) and rendered for the job. A
+retired tool's name answers with its replacement (`ops.registry.RETIRED`,
+`plugins.RetiredToolsPlugin`; the hint names only what the job has).
 
 ## Files
 
@@ -83,8 +89,8 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
 - `session.py` — `build_agent` (the ADK `LlmAgent`; `reasoning` set on any
   resolved model exposing `reasoning_effort`), `build_plugins`,
   `run_agent_session` (the loop: nudges when the model answers without a
-  tool, the turn budget `DEFAULT_MAX_ITERATIONS` 60, the budget stops and
-  their grace call, the debrief; *background*, called in a thread when a
+  tool, no turn or tool-call limit (including ADK: `max_llm_calls=0`), the
+  budget stops and their grace call, the debrief; *background*, called in a thread when a
   turn ends without a submit, returns the next message in place of the
   nudge: the notices of background work that finished) and `TokenTally`
   (every call's usage printed and traced; `paid` is uncached input plus
@@ -96,9 +102,11 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
   `_CONTEXT_GRACE`); a stop never breaks out of a turn, so the pending tool
   call is answered first and the history stays well formed.
 - `prompt.py` — `build_job_statement`: the job, the run facts (`run_facts`:
-  the range, the protocol, the cutting angles, the sections still at their
-  starting positions (not yet placed), the damaged sections and the user's
-  damage notes, the locked sections, that the order follows the positions;
+  the range, the optional protocol (`cutting_protocol_fact`: unknown values
+  stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections
+  (legacy default positions remain unconfirmed), the damaged sections and the user's
+  damage notes, what is frozen (`core.frozen.statement`: sections sharing a
+  freeze are one clause), that the order follows the positions;
   `channel_facts`: the raw channels, the atlas layers here, and where the
   caller sizes pictures, `look`'s `resolution` range), the tools BY NAME
   ONLY (each tool's own description, `doors/declarations.py`, is its only
@@ -140,7 +148,8 @@ answers with its replacement (`ops.registry.RETIRED`, `plugins.RetiredToolsPlugi
   unique execution id and, on `tool_end`, `views` (the pictures the call
   saved); these events never enter model context. `plain` copies JSON
   content without media bytes.
-- `cost.py` — `estimate(spec, n_slices, locked)`: the pre-run usage-window
+- `cost.py` — `estimate(spec, n_slices)` (the sections whose orientation and
+  affine are frozen cost no transform work): the pre-run usage-window
   estimate the worker's `linear.estimate` serves, from measured runs only
   (`_RATES`; a single run or a neighbouring setting gets a widened band).
   Medium, high and auto picture sizes and a Nonlinear-only run get no
@@ -192,19 +201,25 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   `interactive_transform` and `elastix_affine` (an empty list counts every
   eligible section) refuse a call naming more sections (`Job.over_cap`)
   and the statement states the cap.
-- **`agent_damage`** (default true) builds `mark_damage`. A host's
-  `inputs["damaged"]` note is the section's `damage_note` (shown in status
-  and the statement); it does not make the section damaged, and it stays
-  first in the note whatever the agent marks.
-- **`inputs["locked"]`**: sections the user already aligned in-plane. Without
-  a supplied transform each gets `job.host_transform()` (`kind` `"host"`,
-  identity). `interactive_transform` and `elastix_affine` refuse them
-  (`LOCKED`); `elastix_affine`'s default list skips them; their positions
-  still move. The host transform satisfies `MISSING_TRANSFORMS`.
-- **`inputs["keep_warp"]`** / **`inputs["nonlinear_skip"]`**: sections kept
-  out of the Nonlinear task (the user's own warp kept, or left out by the
-  user). `ants_syn` refuses them per section and `trace_borders` refuses the
-  call (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`; `Job.nonlinear_refusal`).
+- **`disabled`** (default empty): tools and tool options the job does
+  without, `--disable NAME[,NAME...]`. A host's `inputs["damaged"]` note is
+  the section's `damage_note` (shown in status and the statement) whether or
+  not `mark_damage` is disabled; it does not make the section damaged, and it
+  stays first in the note whatever the agent marks.
+- **`frozen`** (`--frozen JSON`; `core/frozen.py`, `docs/registration.md`):
+  per section, which of `position`, `angles`, `orientation`, `affine`,
+  `deformation` the agent may not change; `"*"` is every section. A frozen
+  property keeps the value `inputs` supplies, else its "none" (a frozen
+  affine without a supplied transform gets `job.host_transform()`, `kind`
+  `"host"`, identity, which satisfies `MISSING_TRANSFORMS`; a frozen
+  deformation needs no deformation at `submit`). The ops refuse a write that
+  would change one, `FROZEN` (`Job.frozen_refusal`); a fit under a frozen
+  orientation keeps the section's handedness; a task whose properties are all
+  frozen everywhere is off and a task that is off freezes its properties
+  everywhere; a tool that writes only frozen properties is not built
+  (`JobSpec.switched_off`). The statement's frozen line and each status row's
+  `frozen` tell the agent. Replaces the older `inputs.locked`, `keep_warp`
+  and `nonlinear_skip`, which a saved spec still reads as freezes.
 - **`nonlinear.require_deformation`**: every section needs a deformation;
   `submit` takes no `left_linear` (not declared, refused when sent).
 - **`force_view`**: the change tools always return their picture (their
@@ -221,11 +236,11 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   calibration and the
   image model's inputs do not depend on it. Below `auto` the sizes never appear in
   model-facing text.
-- **`TransformSpec.interactive` / `.automatic`** (default true): a host may
-  remove `interactive_transform` or `elastix_affine`; a host enabling the
-  transform task enables at least one. Flip and the hemisphere cue are
-  `transform.flip` / `transform.hemisphere_cue`; with flip off,
-  `interactive_transform` cannot mirror.
+- **A host may remove `interactive_transform` or `elastix_affine`** with
+  `disabled`; a task that is on keeps at least one tool that writes its
+  answer. Mirroring is `interactive_transform:flip` (with it off the tool's
+  sections have no `flip` key); `transform.hemisphere_cue` is shown only
+  where the agent can mirror.
 - **`agent_preprocessing`**: whether the Fiji connector exports every
   channel; the channel tools exist in every run.
 
@@ -259,8 +274,10 @@ run's cost. The rules that follow:
   unchanged history prefix may be cached; a byte-identical copy appended
   later is new input. Never budget a re-sent picture as a cache hit.
 - **The opening** is ABBA-style strips (`core/opening.py`): the sections in
-  corrected order with the atlas at each one's current position beneath it
-  (labelled `start` while that is the job's starting position), every tile
+  current order. Unplaced sections have no paired atlas plane; a separate
+  atlas overview follows whenever any section is unplaced. Placed sections
+  have the atlas at their current position beneath them (legacy default
+  positions are labelled `start`). Every tile is
   labelled in its pixels, each strip at the model lane's largest image
   (`doors.tools.view_options.image_limit`) and within its patch budget.
 
@@ -319,10 +336,12 @@ default): data-only refusals. `position_sections` refuses a section not
 looked at (`look` in mode overlay or positioning) since its last write
 (one look is enough), and `submit` refuses until a `look` in mode
 positioning has covered every section after the last write.
+Gates need `look:positioning` (the spec refuses them without it).
 `--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
-method in the statement: a complete hypothesis from the opening, one
-confirmation sweep, one write, targeted re-checks, a review. Both are
-tool-door only: a script, the library or the agent CLI is never gated.
+method in the statement: compare candidate planes and distinguishing regions,
+write supported placements, revisit uncertain sections and review the stack.
+This is guidance, not enforcement. Viewing gates are tool-door only: a
+script, the library or the agent CLI is never gated.
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
 caused it; a failed `submit` neither writes nor ends the run. `submit`

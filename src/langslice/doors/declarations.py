@@ -26,8 +26,13 @@ offered where the host forces their pictures on (``JobSpec.force_view``);
 ``position_sections`` takes ``sections`` only with the Positioning task;
 ``submit`` takes ``left_linear`` only with Nonlinear on and no deformation
 required on every section; ``trace_borders`` carries the run's base image
-prompt; and each door words where its answers come from (``_DOOR_DOCS``).
-An argument a run drops leaves the description with its entry.
+prompt; each door words where its answers come from (``_DOOR_DOCS``); and
+what the job disables (``JobSpec.disabled``) is gone: an option from the
+argument's enum (``look``'s ``mode``), the arguments only it served
+(:func:`dropped_arguments`), and every passage that needs it. A passage
+that names a tool or an option is written with what it needs
+(``[[?look:positioning ...]]``, :mod:`langslice.core.needs`) and rendered
+for the run. An argument a run drops leaves the description with its entry.
 
 Door-only parameters (ADK's ``tool_context``) are the tool body's, never
 declared. Nothing here imports ``google.*``, ``litellm`` or ``openai``.
@@ -37,17 +42,23 @@ from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import Callable
+import typing
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from langslice.core import appearance as looks
+from langslice.core.needs import render
+from langslice.core.toolset import OPTION_SEPARATOR, TOOLS, is_off, options_on
 from langslice.doors.tools.arguments import (
     CuttingAngles,
     LandmarkPair,
     LeftLinear,
     SectionPosition,
     SectionTransform,
+    SectionTransformNoFlip,
+    SectionTransformNoOrientation,
+    SectionTransformNoRotate,
     ZoomRequest,
 )
 
@@ -79,31 +90,46 @@ def look(
     The same request draws the same kind of picture at every stage of the
     run: no default depends on the stack's state. Each picture gets a number
     and a caption stating the positions, cutting angles, scale and channel
-    settings it was drawn with; zoom takes the number.
+    settings it was drawn with[[?zoom ; zoom takes the number]].
+
+    [[?look:positioning Use positioning mode to compare sections with candidate atlas planes
+    along the slicing axis. ]][[?look:overlay Use overlays to assess in-plane alignment and
+    deformation against internal anatomy.]]
 
     Args:
-        mode: "section": each section alone, as oriented, framed to its
-            tissue. "atlas": the atlas plane alone at each of positions_mm,
+        mode: [[?look:section "section": each section alone, as oriented, framed to its
+            tissue. ]][[?look:atlas "atlas": the atlas plane alone at each of positions_mm,
             at the stack's cutting angles, or with one section at that
-            section's own plane (positions_mm may be empty). "overlay": each section under its
+            section's own plane (positions_mm may be empty). ]]~
+            [[?look:overlay "overlay": each section under its
             current registration, with the atlas borders and any other
-            atlas_layers on it. "positioning": the sections and the atlas
+            atlas_layers on it. ]][[?look:positioning "positioning": the sections and the atlas
             along the slicing axis as ABBA lays them out: the atlas at
             positions_mm above a millimetre ruler, the sections below it in
-            order of position, each joined by a line to its position; a long
-            stack is split into several pictures, none shrunk.
+            order of position, each placed section joined by a line to its
+            position. Unplaced sections appear at the right, labelled "no
+            position", without a line to the ruler. A long stack is split
+            into several pictures, none shrunk.]]
         sections: Filenames (the extension may be left off); empty is every
             section.
         positions_mm: Atlas positions in millimetres along the slicing axis:
-            the planes "atlas" draws (at least one), and the atlas pictures
-            above the ruler in "positioning" (none when empty).
+            [[?look:atlas the planes "atlas" draws (at least one)~
+            [[?look:positioning , and ]]]]~
+            [[?look:positioning the atlas pictures
+            above the ruler in "positioning" (none when empty)]].
         channels: The raw channels of each section to draw, by name (several
             are blended in distinct colours, at most 6), or ["preprocessed"]
             for the channel the fits and the image model read. Empty is every
             raw channel, each with its display settings.
         atlas_layers: Any of "template", "nissl" (Allen mouse atlases only)
-            and "borders". Empty is the mode's default: borders in "overlay",
-            template in "atlas" and "positioning". "section" draws no atlas.
+            and "borders". Empty is the mode's default: ~
+            [[?look:overlay borders in "overlay"]]~
+            [[?look:overlay,look:atlas|look:positioning ,
+            ]]~
+            [[?look:atlas,look:positioning template in "atlas" and "positioning"||~
+            [[?look:atlas template in "atlas"]]~
+            [[?look:positioning template in "positioning"]]]].~
+            [[?look:section  "section" draws no atlas.]]
         atlas_opacity: 0 to 1: how strongly an atlas image (template or
             nissl) shows under the section in "overlay".
         warp: "applied" draws each section with its deformation, "none" with
@@ -128,19 +154,30 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "",
     from its original image file at the file's own resolution, only inside
     the box, and drawn with the same channels, display settings and atlas
     borders; the caption says when the file holds fewer pixels than the
-    picture. A positioning picture's sections are drawn again from their
+    picture. [[?look:positioning A positioning picture's sections are drawn again from their
     working copies (the file reduced to at most 3072 pixels), and the atlas
-    from its voxels. The box is drawn as the picture was, even if the stack
+    from its voxels. ]]The box is drawn as the picture was, even if the stack
     has changed since (the reply then says `stale`). The new picture has its
     own number, so it can be zoomed again.
 
+    [[?look:overlay After a linear or nonlinear fit, use region on its overlay to inspect
+    a particular structure closely, with only that region's border shown.
+    This can reveal internal mismatches hidden at whole-section scale and
+    help you decide whether to adjust the linear alignment, refine that
+    region nonlinearly, or revisit the section's position.
+
+    ]]Earlier pictures remain available by number. [[?look:overlay Reopen or zoom a saved
+    overlay to compare an intermediate registration with the current result;
+    its saved placement is preserved. ]]Use undo when the latest change makes
+    the alignment worse.
+
     Args:
         box: [x0, y0, x1, y1] in pixels of that picture as it was shown,
-            from its top-left corner. Give either box or region, not both.
+            from its top-left corner.[[?look:overlay  Give either box or region, not both.]]
         picture: The picture's number; 0 is the newest picture that is not
             itself a zoom.
-        requests: Up to four {picture, box} or {picture, region} inspections
-            in one call. Leave the single box/picture/region arguments empty.
+        requests: Up to four {picture, box}[[?look:overlay  or {picture, region}]] inspections
+            in one call. Leave the single arguments empty.
         region: One atlas acronym or numeric id, descendants included;
             "CTX:left" or "CTX:right" selects one displayed side. Overlay
             pictures only. Crops to the entire region with a small margin
@@ -209,6 +246,11 @@ def set_preprocessed_channel_properties(
     never changed; look draws this channel with channels ["preprocessed"].
     Undoable; another call replaces the recipe.
 
+    Tune channel weights and preprocessing to make the internal anatomy
+    useful for registration stand out. Inspect the before-and-after pictures
+    and compare with the raw channels before fitting. Raw-channel display
+    adjustments alone do not change what the fitting algorithms receive.
+
     Args:
         sections: Filenames (the extension may be left off) of the sections
             that get a recipe of their own; empty sets the whole stack's
@@ -235,7 +277,10 @@ def set_preprocessed_channel_properties(
 def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
     """Look regions up in the atlas hierarchy by acronym, name or id. Text only.
 
-    To see a region's borders on the atlas, use grep_atlas_view.
+    When you recognize a structure in the tissue, find its atlas name here[[?grep_atlas_view ,
+    then use grep_atlas_view to check its shape and location at candidate
+    positions. Confirm the region visually before using it to guide a fit
+    [[?mark_damage or mark damage]]]].
 
     Args:
         query: Text matched case-insensitively against region acronyms and
@@ -258,6 +303,10 @@ def grep_atlas_view(regions: list[str], positions_mm: list[float]) -> dict[str, 
     Only the named regions' borders are drawn, at the stack's cutting
     angles. Look highlights no regions; this tool does.
 
+    [[?grep_atlas After finding a region with grep_atlas, compare its shape and location
+    here with the structure you recognize in the tissue, before using it
+    to guide a fit[[?mark_damage  or mark damage]].]]
+
     Args:
         regions: Acronyms, names or ids, descendants included; "CTX:left" or
             "CTX:right" names one side, as the pictures show it.
@@ -276,8 +325,8 @@ def status() -> dict[str, Any]:
 
     Returns:
         One row per section in stack order: filename, position
-        (position_source "default": a starting position the job gave the
-        section, not yet placed), distance to the next placed section, flip
+        (position_source "default": an unconfirmed starting position
+        from a saved job), distance to the next placed section, flip
         and quarter turn, transform, damaged regions and damage note,
         deformation steps. Also the cutting angles, the interval breaks, the
         raw channels' display settings ("auto": automatic contrast limits),
@@ -327,8 +376,8 @@ def read_file(path: str, offset: int = 0, limit: int = 400) -> dict[str, Any]:
     """Read a text file of the job folder, with line numbers. Writes nothing.
 
     A picture file is answered with its entry in the picture index (its
-    number, tool, sections and caption), never its pixels: zoom shows it
-    again by that number.
+    number, tool, sections and caption), never its pixels[[?zoom : zoom shows it
+    again by that number]].
 
     Args:
         path: The file, relative to the job folder.
@@ -388,10 +437,11 @@ def position_sections(
 
     Returns:
         What was written and what was clamped, the stack's order after the
-        call, the rows that changed, and a positioning picture of the
+        call, the rows that changed, and [[?look:positioning a positioning picture of the
         written sections: the atlas at their new positions above a
         millimetre ruler, the sections below it, each joined by a line to
-        its position.
+        its position.||a picture of each written section with the atlas
+        borders of its new position on it.]]
     """
     ...
 
@@ -400,25 +450,30 @@ def interactive_transform(
     sections: list[SectionTransform],
     view: bool = True,
 ) -> dict[str, Any]:
-    """Set sections' orientation and in-plane transform by hand, and show the result.
+    """Set sections' [[?interactive_transform:flip|interactive_transform:rotate ~
+    orientation and ]]in-plane transform by hand, and show the result.
 
     For a few sections at a time, in a look-and-adjust loop. Values are
     absolute: a value given replaces the section's current one, and a value
     left out keeps it (a section without a transform starts from the
-    identity). The quarter turn is applied first, then the flip. A changed
+    identity). [[?interactive_transform:rotate The quarter turn is applied first~
+    [[?interactive_transform:flip , then the flip]]. ]]~
+    [[?interactive_transform:flip|interactive_transform:rotate A changed
     orientation keeps the other values: the transform is rebuilt on the new
-    orientation, and the reply says so. One undoable write; the image files
+    orientation, and the reply says so. ]]One undoable write; the image files
     are never modified.
 
+    [[?interactive_transform:flip ~
     Whether a section is mirrored can only be decided from a visible notch,
     or from a cutting angle oblique enough that the two hemispheres'
     anatomy differs.
 
-    Args:
+    ]]Args:
         sections: One to four objects: "id" (filename; the extension may be
-            left off) and any of "flip" (true mirrors the section
-            left-right), "rotate_quarter" (0, 90, 180 or 270 degrees
-            counter-clockwise), "rotation_deg" (degrees counter-clockwise
+            left off) and any of [[?interactive_transform:flip "flip" (true mirrors the section
+            left-right), ]]~
+            [[?interactive_transform:rotate "rotate_quarter" (0, 90, 180 or 270 degrees
+            counter-clockwise), ]]"rotation_deg" (degrees counter-clockwise
             about the pivot, the canvas centre),
             "scale_x" and "scale_y" (multipliers about the pivot; 1.0 keeps
             the size), "shear" (a slant applied before the rotation: each
@@ -428,7 +483,8 @@ def interactive_transform(
         view: True returns the picture described below; false returns none.
 
     Returns:
-        Per section its orientation, its transform as the values above,
+        Per section [[?interactive_transform:flip|interactive_transform:rotate ~
+        its orientation, ]]its transform as the values above,
         and whether anything was written; and a picture of each section
         under its new transform with the atlas borders on it.
     """
@@ -442,9 +498,12 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
     displaced that it would wreck a fit, such as a whole hemisphere, the
     olfactory bulb or the cortex. Small tears, bubbles, stains, low contrast
     and folds within an intact outline are not damage and are not marked.
-    A section is damaged exactly when it has marked regions. The marked
-    regions are left out of elastix_affine, ants_syn and the image model's
-    trace automatically, and they move with the registration because they
+    A section is damaged exactly when it has marked regions. ~
+    [[?elastix_affine|ants_syn|trace_borders The marked
+    regions are left out of ~
+    [[#elastix_affine=elastix_affine||ants_syn=ants_syn||~
+    trace_borders=the image model's
+    trace]] automatically, and they||The marked regions]] move with the registration because they
     are named by atlas region. One undoable write.
 
     Args:
@@ -482,12 +541,17 @@ def elastix_affine(
     regions are left out automatically. Each fit is written as the
     section's transform, one undoable write for the call.
 
+    Use restrict_to when a few clearly recognizable, surviving regions
+    provide better registration evidence than the whole section. Those
+    regions guide a whole-section affine transform. Review the wider
+    overlay afterward as well.
+
     A region too small for elastix is skipped with REGION_TOO_SMALL; use
-    a larger region or interactive_transform. No fit is written for it.
+    a larger region[[?interactive_transform  or interactive_transform]]. No fit is written for it.
 
     Args:
         sections: Filenames (the extension may be left off); empty is every
-            placed section the user has not locked.
+            placed section whose affine is not frozen.
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side): only the
             atlas within 300 um of them, against the tissue the fit lays
@@ -528,6 +592,11 @@ def ants_syn(
     section's deformation, one undoable write; a later change to the
     section's position, orientation, cutting angles or transform clears it.
 
+    Use restrict_to when a few clearly recognizable, surviving regions
+    provide better registration evidence than the whole section, to refine
+    the existing registration locally. Review the wider overlay afterward
+    as well.
+
     Args:
         sections: One to four filenames (the extension may be left off).
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
@@ -565,6 +634,11 @@ def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -
     placement and region choice is saved and reused, whatever the prompt;
     when its fit is already applied, nothing is fitted again. Every prompt
     sent is saved in the job folder.
+
+    A focused trace can address one difficult region without tracing the
+    whole section. Use restrict_to to select it and, when helpful, tailor
+    the full image prompt to that section while preserving the stated
+    border-drawing rules. The tool handles both tracing and fitting the result.
 
     Starts the work in the background and returns at once with its id, so
     you can carry on with other sections. When the work finishes, the next
@@ -649,7 +723,7 @@ def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
 
     The model sees each clean section and the outlined atlas plane at its
     position and cutting angles; passes=2 adds a corrective second call. The
-    reply is recorded as trace_borders records its own; a script fits it
+    reply is recorded[[?trace_borders  as trace_borders records its own]]; a script fits it
     with langslice.ops.deformable.fit_deformable (fit_section
     "traced_borders"), from the section's linear transform.
 
@@ -679,7 +753,7 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
         slices: Filenames (the extension may be left off); empty is every
             section.
         full_resolution: Write the maps on the image file's own pixels
-            instead of its working copy (what every picture but a zoom is
+            instead of its working copy (what every picture[[?zoom  but a zoom]] is
             drawn from).
 
     Returns:
@@ -701,8 +775,9 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     including panel offsets; no fractions or atlas coordinates are accepted.
     Saved geometry resolves the exact referenced view, including old zooms,
     orientation and an applied warp. Caption/gutter/out-of-image points are
-    refused. Atlas pictures require look(mode="atlas", sections=[section]);
-    generic atlas browsing has no section context. Plane changes retain pairs
+    refused. [[?look:atlas A picture of the atlas alone supplies atlas points only when drawn
+    with look(mode="atlas", sections=[section]); generic atlas browsing has no
+    section context. ]]Plane changes retain pairs
     but flag their atlas correspondences stale; update those atlas endpoints.
 
     Args:
@@ -788,6 +863,8 @@ class Variant:
     left_linear: bool = True
     #: The base image prompt ``trace_borders`` carries.
     prompt: str = ""
+    #: What the job disables (``JobSpec.disabled``).
+    off: frozenset[str] = frozenset()
 
     @classmethod
     def of(cls, spec: Any, *, auto: bool, image_model: bool = True, door: str = "agent",
@@ -805,7 +882,7 @@ class Variant:
                    positions=bool(spec.has("position")),
                    left_linear=bool(spec.has("nonlinear")
                                     and not spec.nonlinear.require_deformation),
-                   prompt=text)
+                   prompt=text, off=frozenset(spec.switched_off))
 
 
 #: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and
@@ -919,7 +996,38 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
         dropped.append("sections")
     if name == "submit" and not variant.left_linear:
         dropped.append("left_linear")
+    if name == "look":
+        modes = set(options_on(variant.off, "look"))
+        if "overlay" not in modes:  # what only an overlay uses
+            dropped += ["atlas_opacity", "warp"]
+        if not modes & {"atlas", "positioning"}:  # the atlas planes drawn
+            dropped.append("positions_mm")
+        if not modes & {"overlay", "atlas", "positioning"}:  # an atlas to layer
+            dropped.append("atlas_layers")
+    if name == "zoom" and is_off(variant.off, "look:overlay"):
+        dropped.append("region")  # a region is zoomed on an overlay only
     return tuple(dropped)
+
+
+def narrowed(name: str, argument: str, annotation: Any, off: Collection[str]) -> Any:
+    """*annotation* of verb *name*'s *argument* without the options the job
+    disables: the values of an enumeration (``look``'s ``mode``), the
+    ``flip`` and ``rotate_quarter`` keys of ``interactive_transform``'s sections."""
+    options = TOOLS[name].options
+    if argument in options.values():
+        values = typing.get_args(annotation)
+        return Literal[tuple(value for value in values
+                             if not is_off(off, f"{name}{OPTION_SEPARATOR}{value}"))]
+    if (name, argument) == ("interactive_transform", "sections"):
+        no_flip = is_off(off, "interactive_transform:flip")
+        no_rotate = is_off(off, "interactive_transform:rotate")
+        if no_flip and no_rotate:
+            return list[SectionTransformNoOrientation]
+        if no_flip:
+            return list[SectionTransformNoFlip]
+        if no_rotate:
+            return list[SectionTransformNoRotate]
+    return annotation
 
 
 @functools.cache
@@ -928,14 +1036,18 @@ def declaration(name: str, variant: Variant = FULL) -> Declaration:
     stub = STUBS[name]
     signature = inspect.signature(stub, eval_str=True)
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
-    doc = _door_doc(name, model_doc(stub), variant.door)
+    doc = render(_door_doc(name, model_doc(stub), variant.door), variant.off)
     if name == "trace_borders":
         doc = _with_prompt(doc, variant.prompt)
     dropped = dropped_arguments(name, variant)
     for argument in dropped:
         doc = _without_argument(doc, argument)
         annotations.pop(argument, None)
-    parameters = [p for p in signature.parameters.values() if p.name not in dropped]
+    if variant.off:
+        annotations = {argument: narrowed(name, argument, annotation, variant.off)
+                       for argument, annotation in annotations.items()}
+    parameters = [p.replace(annotation=annotations.get(p.name, p.annotation))
+                  for p in signature.parameters.values() if p.name not in dropped]
     return Declaration(name, doc, signature.replace(parameters=parameters), annotations)
 
 

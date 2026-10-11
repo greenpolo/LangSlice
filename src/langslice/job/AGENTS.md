@@ -112,8 +112,8 @@ writes none of it.
 
 **Resuming with other inputs is refused.** `Job.open` with `spec.resume`
 on a folder whose checkpoint was made from other supplied inputs
-(`JobSpec.inputs`, compared with the checkpoint's own spec:
-`job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
+(`JobSpec.inputs` and `JobSpec.frozen`, compared with the checkpoint's own
+spec: `job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--fresh`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
@@ -236,28 +236,31 @@ longer exist be taken over by the images it is opened with.
   `wait_image_job`: timeout None waits as long as it takes; the call is
   forgotten only once its reply is recorded), `background` (above), `close`
   (the background work, then the pictures), `wire_views` (a saved
-  picture's `step` is the undo history's depth), `nonlinear_refusal`
-  (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`), `emit_results` (atomic).
+  picture's `step` is the undo history's depth), `frozen_for(id)` and
+  `frozen_refusal(ids, *properties)` (the `FROZEN` payload when a write to a
+  property the job froze on one of the sections would change it: `ids`,
+  `properties`, `message`), `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
-  checked), `changed_inputs` (above). With `position` on, `Job.open` gives a
-  new job's sections without a supplied position a starting one
-  (`default_positions`, `SliceState.position_source` `DEFAULT_POSITION`
-  "default"): in `index_original` order, at the stack's interval centred in
-  the atlas's range (evenly over the whole range when the stack does not
-  fit at it), or interpolated between supplied positions and continued at
-  the interval beyond them, always inside the range. `commit` drops the
-  mark of every section whose position the step changed
-  (`clear_default_marks`), whatever wrote it (and `ops.positions` drops it
-  on every written position, the same value included); undo restores it.
+  checked; `spec.frozen` must name sections that are here, a frozen position
+  must have been supplied, and a frozen affine without a supplied transform
+  carries `host_transform()`, `kind` `"host"`), `changed_inputs` (above; the
+  saved spec read through `JobSpec.migrated`, and `frozen` counts as a
+  changed input). New sections remain unplaced until
+  the caller supplies or writes positions; no positions are interpolated
+  or extrapolated around supplied ones. Saved positions are preserved on
+  resume. Legacy checkpoints may carry `SliceState.position_source`
+  `DEFAULT_POSITION` ("default"); these are unconfirmed. `commit` drops
+  that mark when the position changes (`clear_default_marks`), and
+  `ops.positions` drops it on every explicit write, the same value included;
+  undo restores it.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
   gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and
   only for the tasks that are on: `MISSING_POSITIONS` (no position, or
   still at the starting one: `at_default`), `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
-  `MISSING_DEFORMATIONS`. The sections the host
-  kept out of Nonlinear (`keep_warp`, `nonlinear_skip`:
-  `nonlinear_exempt_ids`) need no deformation and no image correction, and
+  `MISSING_DEFORMATIONS`. The sections whose
+  deformation is frozen need no deformation and no image correction, and
   the sections `submit` leaves linear (`left_linear`) count as covered.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),

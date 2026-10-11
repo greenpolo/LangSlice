@@ -37,7 +37,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     ``transform_mirrored`` come off the recorded transform. Data only: no
     comparison against the nominal interval, no verdict. ``position_source``
     ``"default"``: the section still holds the starting position the job gave
-    it (``job.job.default_positions``). ``damaged_regions``
+    it in a legacy checkpoint. ``damaged_regions``
     are the section's marked regions (``damaged``: it has some); a
     ``damage_note`` may stand alone (a host's note). When the sections'
     cutting angles differ (a registration supplied per section), each row
@@ -97,12 +97,12 @@ ROW_FIELDS: tuple[str, ...] = (
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
     "transform_iou",
     "transform_mirrored", "keep_linear", "deformation_steps", "caveats",
-    "locked", "damage_by_user",
+    "frozen", "damage_by_user",
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):
-#: ``locked`` and ``damage_by_user`` (``ops.views.status``) are set only
-#: when true.
-ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "locked": False,
+#: ``frozen`` (the properties the user froze on the section) and
+#: ``damage_by_user`` (``ops.views.status``) are set only when there are any.
+ROW_DEFAULTS: dict[str, Any] = {"caveats": [], "damaged_regions": [], "frozen": [],
                                 "damage_by_user": False}
 #: The reply keys that hold status rows (``status``: the whole table; a
 #: write: the rows it changed).

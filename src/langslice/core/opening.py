@@ -270,7 +270,7 @@ def opening_items(
     )
     items: list[str | Image.Image] = [(
         f"The {len(ordered)} sections of the stack follow in {len(strips)} "
-        f"strip{'s' if len(strips) != 1 else ''}, in their current corrected order, "
+        f"strip{'s' if len(strips) != 1 else ''}, in their current order, "
         "left to right and strip after strip. Each section is labelled "
         "by its filename above it and drawn with any rotation and flip "
         f"already applied.{beneath}"

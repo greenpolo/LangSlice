@@ -67,8 +67,15 @@ the angles survive.
 `DialogPreview OUTPUT_FOLDER` (needs a display, no ABBA) renders the Registration
 dialog's three tabs and both run windows from fake slices and a fake worker, as
 `dialog_tasks.png`, `dialog_slices.png`, `dialog_preprocessing.png`,
-`dialog_run_log.png` and `dialog_run_compact.png`. `SetupPreview` does the same for
+`dialog_run_log.png` and `dialog_run_compact.png` (and `dialog_tasks_advanced.png`, the
+Tasks tab with the Advanced list open). `SetupPreview` does the same for
 Setup.
+
+`DialogWiringCheck` (needs a display, no ABBA) asserts the Advanced list in the real
+dialog: each simple checkbox and its list entry move together, a catalog checkbox
+reaches `spec.disabled`, the choices persist between dialogs, and the section is hidden
+when the service sends no tool catalog. It prints "Dialog wiring checks passed." and
+exits non-zero on failure.
 
 Copy `target/langslice-fiji-0.2.0.jar` into your Fiji `jars` folder and restart
 Fiji. Install the connector by copying this JAR. Do not copy the Maven dependency jars into Fiji.
@@ -126,13 +133,18 @@ in Claude mode).
   Nonlinear is on, Linear is off and some listed slices have no ABBA registration, Run
   asks "Slices … have no linear registration. Let the agent align them first?": Yes
   switches Linear on; No leaves them out of Nonlinear (out of the run entirely when
-  Positioning is off too; otherwise listed in `nonlinear_skip`).
+  Positioning is off too; otherwise their `frozen` entry gains `deformation`).
+  **Advanced: tools** (a collapsed panel, built from the service's `tools` catalog in
+  `setup.status`; hidden when the service sends none) lists every tool that can be switched
+  off and every tool option, grouped as the catalog groups them (Common, Positioning,
+  Linear, Nonlinear), each checked when it runs. The Linear and Slices checkboxes for the
+  affine tool, hemisphere flipping and damage marks mirror the same choice in this panel.
 - **Slices tab:** one row per slice with its name, the number of ABBA registrations
   and an optional note on damaged tissue (a note the agent reads, not a damage mark); **Let the agent mark damaged regions**;
   **Allow the agent to overwrite existing transforms** (off by default:
-  every listed slice that has registrations is sent as `locked`, so the agent keeps
-  its in-plane alignment while its position may still move; a slice that carries the
-  user's own spline or BigWarp step also keeps that warp).
+  every listed slice that has registrations is frozen in `spec.frozen` (orientation and
+  affine), so the agent keeps its in-plane alignment while its position may still move;
+  a slice that carries the user's own spline or BigWarp step also freezes its deformation).
 - **Preprocessing tab:** Auto or Custom; in Custom a weight from 0 to 1 per channel,
   CLAHE on/off and CLAHE strength; **Let the agent drive preprocessing**; the snapshot
   pixel size (µm); the tip "Try to maximize contrast between different regions."; and a
@@ -143,9 +155,12 @@ in Claude mode).
   number, its plain reason ("Estimated cost: no estimate (…)"). **Setup…**, **Cancel**
   and **Run**.
 
-Dialog settings are saved; per-slice damage notes are not. Settings are stored (Java preferences, node
+Dialog settings are saved, the Advanced list's unchecked names included; per-slice damage notes are not. Settings are stored (Java preferences, node
 `org/langslice/fiji/registration`) when a run starts, and restored next time; section
 thickness and interval come from ABBA whenever ABBA's slices give them.
+Otherwise saved user settings are used; a new dialog leaves them at zero
+(unspecified). Zero omits the value from the job, allowing the agent to infer
+what the anatomy supports. There are no fixed lab protocol defaults.
 
 | Control | Request |
 | --- | --- |
@@ -153,10 +168,12 @@ thickness and interval come from ABBA whenever ABBA's slices give them.
 | Image model | `spec.nonlinear.provider` (`none` for None) and `spec.nonlinear.image_model` (null for None or the provider's default) |
 | Image resolution | `spec.image_resolution` |
 | Positioning | `spec.tasks` += `position`; `position.thickness_um`, `position.interval_um`, `position.notes` |
-| Linear | `spec.tasks` += `transform`; `transform.flip`, `transform.hemisphere_cue`, `transform.automatic` (affine tool), `transform.interactive` true, `transform.angles`, `transform.max_parallel`, `transform.notes` |
+| Linear | `spec.tasks` += `transform`; `transform.hemisphere_cue`, `transform.angles`, `transform.max_parallel`, `transform.notes`; affine tool off: `spec.disabled` += `elastix_affine`; flipping off: `spec.disabled` += `interactive_transform:flip` |
 | Nonlinear | `spec.tasks` += `nonlinear`; `nonlinear.notes` |
-| Let the agent mark damaged regions; note on damaged tissue | `spec.agent_damage`; `damaged` (filename to note) |
-| Allow the agent to overwrite existing transforms (off) | off: every listed slice with registrations is in `locked` |
+| Let the agent mark damaged regions (off: `spec.disabled` += `mark_damage`); note on damaged tissue | `damaged` (filename to note) |
+| Advanced: tools (each unchecked tool or option) | `spec.disabled` += its name (`tool` or `tool:option`), once |
+| Allow the agent to overwrite existing transforms (off) | off: each listed slice with registrations gets `spec.frozen[name]` += `orientation`, `affine`; += `deformation` when it carries the user's own warp |
+| Nonlinear left out for a slice without linear registration (No) | `spec.frozen[name]` += `deformation` |
 | Let the agent drive preprocessing | `spec.agent_preprocessing`; every channel is exported |
 | Auto/Custom, weights, CLAHE, strength | `preprocessing`; Custom exports only weighted channels unless the agent drives preprocessing |
 | Snapshot pixel size (µm) | `pixel_size_um` |

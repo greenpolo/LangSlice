@@ -241,7 +241,7 @@ def tool_names(images: Path, tasks: list[str], provider: str = "none",
 # --- the tools each combination has (ADK / MCP tool building) ------------------------------
 
 
-#: The tools of every run, whatever the tasks (``mark_damage`` behind ``agent_damage``).
+#: The tools of every run, whatever the tasks (unless the job disables one).
 COMMON = {"look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
           "read_file", "mark_damage", "note", "undo", "redo", "submit"}
@@ -274,13 +274,13 @@ def test_each_combination_builds_exactly_its_tools(images, tasks, provider, extr
     # comes for the angles alone.
     (["transform"], {"transform": TransformSpec(angles=True)}, set(),
      {"position_sections"} | LINEAR),
-    (["transform"], {"transform": TransformSpec(interactive=False)},
+    (["transform"], {"disabled": ["interactive_transform"]},
      {"interactive_transform"}, {"elastix_affine"}),
-    (["transform"], {"transform": TransformSpec(automatic=False)},
+    (["transform"], {"disabled": ["elastix_affine"]},
      {"elastix_affine"}, {"interactive_transform"}),
-    (["reorder", "position"], {"agent_damage": False}, {"mark_damage"},
+    (["reorder", "position"], {"disabled": ["mark_damage"]}, {"mark_damage"},
      {"position_sections"}),
-], ids=["angles", "no-interactive", "no-automatic", "no-agent-damage"])
+], ids=["angles", "no-interactive", "no-automatic", "no-mark-damage"])
 def test_host_switches_add_and_remove_their_tools(images, tasks, fields, absent, present):
     names = set(tool_names(images, tasks, **fields))
     assert present <= names and not absent & names
@@ -292,7 +292,7 @@ def test_host_switches_add_and_remove_their_tools(images, tasks, fields, absent,
 def _statement(images: Path, tasks: list[str], provider: str = "none",
                **inputs: Any) -> tuple[str, list[str]]:
     """The ADK job statement of a run of this combination, whitespace-normalized,
-    on the job as opened (its starting positions included), and its tools."""
+    on the job as opened (including supplied positions), and its tools."""
     from langslice.agent.engine import build_context
     from langslice.agent.prompt import build_job_statement
     from langslice.doors.tools.toolbox import build_tools
@@ -315,11 +315,8 @@ def _said(text: str, *sentences: str) -> list[str]:
 
 #: Sentences of the statement, verbatim from ``agent/prompt.py``.
 POSITION_SUBMIT = ("- `submit` is refused unless every section has a position of its own, "
-                   "damaged sections included; a starting position the job gave a section "
-                   "does not count.")
-STARTING = ("- 3 of 3 sections are at evenly spaced starting positions the job gave them, in "
-            "file order; they are not placed yet (status shows position_source \"default\", "
-            "the opening labels their atlas \"start\").")
+                   "damaged sections included.")
+UNPLACED = "- No section carries a position yet."
 ORDER = ("- The stack's order follows the positions: writing positions renumbers the "
          "sections, so use filenames to name them.")
 GIVEN = "- The positions shown are given; this run does not change them."
@@ -353,13 +350,13 @@ FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this ru
 
 @pytest.mark.parametrize(("tasks", "provider", "inputs", "said", "unsaid"), [
     (["reorder", "position"], "none", {},
-     (POSITION_SUBMIT, STARTING, ORDER, POSITION_METHOD),
+     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD),
      (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, LEFT_LINEAR, GIVEN, MARK_FIRST)),
     (["transform"], "none", {"positions": dict(POSITIONS)},
      (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, TRANSFORM_METHOD, GIVEN),
-     (POSITION_SUBMIT, STARTING, ORDER, POSITION_METHOD, LEFT_LINEAR)),
+     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD, LEFT_LINEAR)),
     (["reorder", "position", "transform"], "none", {},
-     (POSITION_SUBMIT, STARTING, ORDER, TRANSFORM_SUBMIT, DAMAGED_TRANSFORM,
+     (POSITION_SUBMIT, UNPLACED, ORDER, TRANSFORM_SUBMIT, DAMAGED_TRANSFORM,
       POSITION_METHOD, TRANSFORM_METHOD),
      (LEFT_LINEAR, GIVEN)),
     (["reorder", "position", "transform", "nonlinear"], "openai-oauth", {},
@@ -369,7 +366,7 @@ FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this ru
     (["nonlinear"], "none", "external",
      (LEFT_LINEAR, MARK_FIRST, FIT_METHOD, FIXED_LINEAR, GIVEN,
       "Inspect each fit's borders against the section's internal anatomy" + FIT_ENDING),
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, STARTING, "where traced")),
+     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, UNPLACED, "where traced")),
     (["nonlinear"], "openai-oauth", "external",
      (LEFT_LINEAR, TRACE_OPTIONAL, MARK_FIRST, FIXED_LINEAR, GIVEN),
      (POSITION_SUBMIT, TRANSFORM_SUBMIT)),
@@ -456,20 +453,19 @@ def test_1_positioning_only_through_the_library(images):
             for entry in document["sections"]] == [False] * 3
 
 
-def test_1_a_starting_position_is_not_a_position_until_it_is_written(images):
+def test_1_sections_stay_unplaced_until_positions_are_written(images):
     import langslice
 
     create(spec_for(images, ["reorder", "position"]))
     with langslice.open_job(images) as job:
         refused = job.submit(summary="placed", notes=[], interval_breaks=[])
         assert refused["error"] == "MISSING_POSITIONS", refused
-        start = {name: job.state.by_id(name).position_mm for name in IDS}
-        assert all(job.state.by_id(name).position_source == "default" for name in IDS)
+        assert all(job.state.by_id(name).position_mm is None for name in IDS)
+        assert all(job.state.by_id(name).position_source == "" for name in IDS)
         document = json.loads((images / "langslice" / "registration.json").read_text())
         assert [entry["parameters"]["plane"]["starting_position"]
-                for entry in document["sections"]] == [True] * 3
-        # The same value written again is a position of the section's own.
-        assert job.position_sections(sections=_sections(start))["status"] == "ok"
+                for entry in document["sections"]] == [False] * 3
+        assert job.position_sections(sections=_sections(POSITIONS))["status"] == "ok"
         assert all(job.state.by_id(name).position_source != "default" for name in IDS)
         assert job.submit(summary="placed", notes=[], interval_breaks=[])["status"] == "ok"
 
@@ -711,7 +707,7 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
     transform as the identity (``core.maps.placement_problem``), but the
     nonlinear step needs a WRITTEN one (``core.handoff.prepare_linear_registration``)
     and leaving a section linear refuses too, so with Linear off the host must
-    supply transforms (or ``locked``, which writes the ``host`` identity)."""
+    supply transforms (or freeze the affine, which writes the ``host`` identity)."""
     import langslice
 
     create(spec_for(images, ["nonlinear"], positions=dict(POSITIONS)))
@@ -722,7 +718,8 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
         message = fit["results"][0]["message"]
         assert "--transforms" in message and "inputs.transforms" in message, message
         assert "Linear on" in message, message
-    fresh = spec_for(images, ["nonlinear"], positions=dict(POSITIONS), locked=list(IDS))
+    fresh = spec_for(images, ["nonlinear"], positions=dict(POSITIONS))
+    fresh.frozen = {"*": ["orientation", "affine"]}
     fresh.resume = False  # a new job on the same images, not the one above
     create(fresh)
     with langslice.open_job(images) as job:
@@ -926,13 +923,14 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     assert positions() == moved
 
 
-def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
+def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
     damaged = images.parent / "damaged.json"
     damaged.write_text(json.dumps({ID2: "torn"}))
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-               "--locked", json.dumps(list(IDS)), "--damaged", str(damaged))
+               "--frozen", json.dumps({"*": ["orientation", "affine"]}),
+               "--damaged", str(damaged))
     spec = json.loads((job / "job.json").read_text())["spec"]
-    assert spec["inputs"]["locked"] == list(IDS)
+    assert spec["frozen"] == {"*": ["orientation", "affine"]}
     assert spec["inputs"]["damaged"] == {ID2: "torn"}
     from langslice.job.checkpoint import load_checkpoint
 
@@ -945,7 +943,7 @@ def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
     assert record.damaged_regions == []
     rows = {row["id"]: row for row in ok(capsys, images, "status")["result"]["rows"]}
     assert rows[ID2]["damage_note"] == "torn" and rows[ID2]["damaged"] is False
-    # Locked sections carry the host identity: they can be left linear and submitted.
+    # Sections with a frozen affine carry the host identity: they can be left linear and submitted.
     ok(capsys, images, "submit", *SUBMIT_FLAGS,
        "--left-linear", json.dumps(_left_linear(*IDS)))
 

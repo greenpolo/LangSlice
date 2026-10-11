@@ -1,5 +1,5 @@
-"""Host dialog controls on the job spec: notes, parallel cap, damage, locked,
-the host's deformations, forced pictures and the picture size."""
+"""Host dialog controls on the job spec: notes, parallel cap, damage, frozen
+properties, forced pictures and the picture size."""
 
 from __future__ import annotations
 
@@ -66,17 +66,17 @@ def _entry(slice_id: str) -> dict[str, Any]:
 def test_new_fields_default_and_round_trip_through_from_dict(tmp_path: Path):
     spec = JobSpec(image_folder=str(tmp_path))
     assert spec.image_resolution == "low"
-    assert spec.agent_damage is True and spec.force_view is False
+    assert spec.disabled == [] and spec.force_view is False
     assert spec.transform.max_parallel == 4
     assert spec.position.notes == spec.transform.notes == spec.nonlinear.notes == ""
 
     rebuilt = JobSpec.from_dict({
-        "image_folder": str(tmp_path), "image_resolution": "high", "agent_damage": False,
-        "force_view": True,
+        "image_folder": str(tmp_path), "image_resolution": "high",
+        "disabled": ["mark_damage"], "force_view": True,
         "position": {"notes": "p"}, "transform": {"notes": "t", "max_parallel": 2},
         "nonlinear": {"notes": "n"},
     })
-    assert rebuilt.image_resolution == "high" and rebuilt.agent_damage is False
+    assert rebuilt.image_resolution == "high" and rebuilt.disabled == ["mark_damage"]
     assert rebuilt.force_view is True
     assert (rebuilt.position.notes, rebuilt.transform.notes, rebuilt.nonlinear.notes) == (
         "p", "t", "n")
@@ -86,7 +86,7 @@ def test_new_fields_default_and_round_trip_through_from_dict(tmp_path: Path):
 
 @pytest.mark.parametrize("data, message", [
     ({"image_resolution": "ultra"}, "image_resolution"),
-    ({"agent_damage": "yes"}, "agent_damage"),
+    ({"disabled": "mark_damage"}, "disabled"),
     ({"transform": {"max_parallel": 0}}, "max_parallel"),
     ({"transform": {"max_parallel": 5}}, "max_parallel"),
     ({"transform": {"max_parallel": True}}, "max_parallel"),
@@ -135,11 +135,12 @@ def test_the_playbook_puts_a_method_in_the_job_statement(tmp_path: Path):
     state, spec, tools = _stack(tmp_path, tasks=["position"],
                                 position=PositionSpec(playbook=True))
     text = " ".join(_statement(state, spec, tools).split())
-    assert "form a complete hypothesis" in text
-    assert "Write every position in one `position_sections`" in text
+    assert "initial position hypotheses from the anatomy" in text
+    assert "`grep_atlas_view`" in text
+    assert "Write supported placements with `position_sections`" in text
     spec.position.playbook = False
     plain = " ".join(_statement(state, spec, tools).split())
-    assert "complete hypothesis" not in plain and "Method:" in plain
+    assert "initial position hypotheses from the anatomy" not in plain and "Method:" in plain
     method = plain.split("Method:", 1)[1]
     assert "batch" not in method.lower()
     assert "candidate atlas positions before writing" in method
@@ -212,8 +213,8 @@ def test_at_four_elastix_affine_keeps_taking_any_number(tmp_path: Path, monkeypa
 # --- damage ----------------------------------------------------------------
 
 
-def test_agent_damage_off_builds_no_mark_damage(tmp_path: Path):
-    state, spec, tools = _stack(tmp_path, agent_damage=False)
+def test_disabling_mark_damage_builds_no_mark_damage(tmp_path: Path):
+    state, spec, tools = _stack(tmp_path, disabled=["mark_damage"])
     assert "mark_damage" not in tools
     assert "`mark_damage`" not in _statement(state, spec, tools)
     _state, _spec, default = _stack(tmp_path)
@@ -234,28 +235,32 @@ def test_a_host_damage_note_is_a_note_not_damage(tmp_path: Path):
     assert state.by_id("s1.png").damage_note == "torn"
 
 
-# --- locked ----------------------------------------------------------------
+# --- frozen ----------------------------------------------------------------
 
 
-def test_locked_sections_carry_the_host_identity(tmp_path: Path):
-    state, _spec, _tools = _stack(tmp_path, inputs={"locked": ["s1.png"]})
+ALIGNED = ["orientation", "affine"]
+
+
+def test_a_frozen_affine_carries_the_host_identity(tmp_path: Path):
+    state, _spec, _tools = _stack(tmp_path, frozen={"s1.png": ALIGNED})
     transform = state.by_id("s1.png").transform
     assert transform["kind"] == HOST_TRANSFORM_KIND
     assert transform["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     assert state.by_id("s0.png").transform is None
-    with pytest.raises(ValueError, match="unknown section"):
-        _stack(tmp_path, inputs={"locked": ["nope.png"]})
+    with pytest.raises(ValueError, match="not here"):
+        _stack(tmp_path, frozen={"nope.png": ALIGNED})
 
 
-def test_locked_geometry_is_refused_per_section_and_positions_still_move(tmp_path: Path):
-    state, _spec, tools = _stack(tmp_path, inputs={"locked": ["s1.png"]})
+def test_frozen_geometry_is_refused_per_section_and_positions_still_move(tmp_path: Path):
+    state, _spec, tools = _stack(tmp_path, frozen={"s1.png": ALIGNED})
     held = dict(state.by_id("s1.png").transform)
 
     turned = tools["interactive_transform"]([
         {"id": "s1.png", "flip": True}, {"id": "s2.png", "rotate_quarter": 90},
         _entry("s0.png"),
     ])
-    assert turned["results"][0] == {"status": "error", "error": "LOCKED", "id": "s1.png"}
+    assert turned["results"][0]["error"] == "FROZEN" and turned["results"][0]["id"] == "s1.png"
+    assert turned["results"][0]["properties"] == ["orientation"]
     assert turned["results"][1]["status"] == "ok" and turned["results"][2]["status"] == "ok"
     assert state.by_id("s1.png").flip is False
     assert state.by_id("s2.png").rotation_deg == 90
@@ -263,24 +268,25 @@ def test_locked_geometry_is_refused_per_section_and_positions_still_move(tmp_pat
     # Elastix leaves it out: by name it is refused, and it is no default target.
     fitted = tools["elastix_affine"](["s1.png"])
     assert fitted["status"] == "error"
-    assert fitted["results"] == [{"id": "s1.png", "status": "error", "error": "LOCKED"}]
+    assert [(row["id"], row["error"], row["properties"]) for row in fitted["results"]] == [
+        ("s1.png", "FROZEN", ["affine"])]
     assert state.by_id("s1.png").transform == held
 
     moved = tools["position_sections"]([{"id": "s1.png", "position_mm": 2.6}], view=False)
     assert moved["written"] == [{"id": "s1.png", "position_mm": 2.6}]
 
 
-def test_the_default_fit_targets_leave_out_locked_sections(tmp_path: Path, monkeypatch):
+def test_the_default_fit_targets_leave_out_frozen_affines(tmp_path: Path, monkeypatch):
     asked = _no_fit(monkeypatch)
-    _state, _spec, tools = _stack(tmp_path, inputs={"locked": ["s1.png"]})
+    _state, _spec, tools = _stack(tmp_path, frozen={"s1.png": ALIGNED})
     tools["elastix_affine"]([])
     assert asked == [["s0.png", "s2.png", "s3.png", "s4.png"]]
 
 
-def test_locked_transforms_count_at_submit(tmp_path: Path):
+def test_frozen_transforms_count_at_submit(tmp_path: Path):
     state, spec, _tools = _stack(
         tmp_path, n=2, tasks=["position", "transform"],
-        inputs={"locked": ["s0.png", "s1.png"], "damaged": {"s0.png": ""}},
+        frozen={"s0.png": ALIGNED, "s1.png": ALIGNED}, inputs={"damaged": {"s0.png": ""}},
     )
     assert submit_errors(state, spec, []) is None
     unlocked_state, unlocked, _ = _stack(tmp_path, n=2, tasks=["position", "transform"])
@@ -288,15 +294,14 @@ def test_locked_transforms_count_at_submit(tmp_path: Path):
     assert refusal is not None and refusal["error"] == "MISSING_TRANSFORMS"
 
 
-def test_the_job_statement_names_locked_sections_and_why(tmp_path: Path):
-    state, spec, tools = _stack(tmp_path, inputs={"locked": ["s3.png", "s1.png"]})
+def test_the_job_statement_names_frozen_sections_and_what_is_frozen(tmp_path: Path):
+    state, spec, tools = _stack(tmp_path, frozen={"s3.png": ALIGNED, "s1.png": ALIGNED})
     text = _statement(state, spec, tools)
-    assert "already done by the user" in text
-    assert "s1.png, s3.png" in text
-    assert "Their positions can still be changed." in text
+    assert ("- Frozen by the user: orientation (flip and quarter turn) and affine "
+            "(in-plane transform) of s1.png, s3.png.") in text
 
 
-def test_the_worker_never_emits_geometry_for_locked_sections():
+def test_the_worker_never_emits_geometry_for_frozen_properties():
     from langslice.doors.api.abba_worker import _host_updates
 
     def row(transform, flip=False, position=4.0):
@@ -305,14 +310,16 @@ def test_the_worker_never_emits_geometry_for_locked_sections():
 
     before = {"slices": [row(None)]}
     after = {"slices": [row({"params": [1, 0, .1, 0, 1, 0]}, flip=True, position=4.5)]}
-    args = (["reorder", "position", "transform"], {"a.tif": (80, 40)}, 25.0)
+    args = ({"a.tif": (80, 40)}, 25.0)
     assert set(_host_updates(after, before, *args)[0]) == {
         "id", "position_mm", "flip", "rotation_deg", "affine_mm"}
-    locked = _host_updates(after, before, *args, frozenset({"a.tif"}))
-    assert locked == [{"id": "a.tif", "position_mm": 4.5}]
+    frozen = _host_updates(after, before, *args, lambda _name: frozenset(ALIGNED))
+    assert frozen == [{"id": "a.tif", "position_mm": 4.5}]
+    nothing = _host_updates(after, before, *args, lambda _name: frozenset({"position", *ALIGNED}))
+    assert nothing == []
 
 
-# --- the host's deformations: keep_warp and nonlinear_skip ---------------------------
+# --- a frozen deformation ---------------------------------------------------------
 
 
 class _NeverCalled:
@@ -329,13 +336,13 @@ class _NeverCalled:
 
 
 @needs_ants
-@pytest.mark.parametrize("key, code", [("keep_warp", "KEEPS_HOST_WARP"),
-                                       ("nonlinear_skip", "NONLINEAR_SKIPPED")])
-def test_sections_the_host_kept_out_of_nonlinear_are_refused(tmp_path: Path, key, code):
+def test_sections_with_a_frozen_deformation_are_refused(tmp_path: Path):
+    code = "FROZEN"
     state, _spec, tools = _stack(
         tmp_path, n=2, tasks=["nonlinear"], image_model=_NeverCalled().model,
         nonlinear=NonlinearSpec(provider="openai-oauth"),
-        inputs={key: ["s0.png"],
+        frozen={"s0.png": ["deformation"]},
+        inputs={
                 "transforms": {"s0.png": {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]},
                                "s1.png": {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]}}},
     )
@@ -375,3 +382,26 @@ def test_image_resolution_auto_gives_look_a_resolution(tmp_path: Path):
     assert clamped["status"] == "ok"
     assert clamped["resolution_note"].startswith("resolution 1000000 is outside")
     assert auto["look"]("section", resolution="big")["error"] == "BAD_ARGS"
+
+
+@pytest.mark.parametrize("interval,thickness", [(None, None), (0.2, None),
+                                               (None, 0.05), (0.2, 0.05)])
+def test_prompt_distinguishes_known_protocol_from_inferred_spacing(interval, thickness):
+    from langslice.agent.prompt import cutting_protocol_fact
+    from langslice.core.state import StackState
+
+    text = cutting_protocol_fact(StackState(interval_mm=interval, thickness_mm=thickness))
+    assert ("0.200 mm center-to-center" in text) == (interval is not None)
+    assert ("0.050 mm" in text) == (thickness is not None)
+    unknown = interval is None or thickness is None
+    assert ("not supplied" in text) == unknown
+    assert ("Infer positions and spacing from anatomy" in text) == unknown
+    assert ("uncertainty in your notes" in text) == unknown
+
+
+def test_legacy_zero_protocol_is_unknown():
+    from langslice.agent.prompt import cutting_protocol_fact
+    from langslice.core.state import StackState
+
+    text = cutting_protocol_fact(StackState(interval_mm=0.0, thickness_mm=0.0))
+    assert text.count("not supplied") == 2 and "0.000" not in text

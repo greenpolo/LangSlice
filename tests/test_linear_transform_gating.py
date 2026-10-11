@@ -20,10 +20,13 @@ from tests.linear_tool_helpers import tool_named as _tool
 def test_transform_controls_independently_gate_tools(
     tmp_path: Path, interactive: bool, automatic: bool,
 ):
-    _, _, box = _box(
-        tmp_path, tasks=["transform"],
-        transform=TransformSpec(interactive=interactive, automatic=automatic),
-    )
+    off = [name for name, on in (("interactive_transform", interactive),
+                                 ("elastix_affine", automatic)) if not on]
+    if len(off) == 2:  # a task with every tool that writes its answer off is refused
+        with pytest.raises(ValueError, match="every tool that writes its answer"):
+            _box(tmp_path, tasks=["transform"], disabled=off)
+        return
+    _, _, box = _box(tmp_path, tasks=["transform"], disabled=off)
     names = set(box.names)
     assert ("interactive_transform" in names) is interactive
     assert ("elastix_affine" in names) is automatic
@@ -34,7 +37,7 @@ def test_transform_controls_independently_gate_tools(
 def test_disabled_transform_task_overrides_enabled_fitting_switches(tmp_path: Path):
     _, _, box = _box(
         tmp_path, tasks=["position"],
-        transform=TransformSpec(interactive=True, automatic=True, angles=True),
+        transform=TransformSpec(angles=True),
     )
     names = set(box.names)
     assert not names & {"interactive_transform", "elastix_affine"}

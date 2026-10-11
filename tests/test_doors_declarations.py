@@ -134,7 +134,7 @@ _BOOKKEEPING = ["note", "undo", "redo", "submit"]
 @pytest.mark.parametrize(("spec", "names"), [
     (_spec(), [*_EVERY_RUN, "position_sections", "interactive_transform", "mark_damage",
                "elastix_affine", *_BOOKKEEPING]),
-    (_spec(tasks=["transform"], transform=TransformSpec(automatic=False), agent_damage=False),
+    (_spec(tasks=["transform"], disabled=["elastix_affine", "mark_damage"]),
      [*_EVERY_RUN, "interactive_transform", *_BOOKKEEPING]),
     (_spec(tasks=["position"], agent_preprocessing=True),
      [*_EVERY_RUN, "position_sections", "mark_damage", *_BOOKKEEPING]),

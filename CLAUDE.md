@@ -43,11 +43,24 @@ and `environment.yml` hold the worker's source installation.
 - Tasks `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from
   `JobSpec.inputs`. Nonlinear needs a linear placement first.
+- A host or benchmark only configures LangSlice, with three settings:
+  `inputs` (what is already known per section), `frozen` (which of a
+  section's `position`, `angles`, `orientation`, `affine`, `deformation` the
+  agent may not change; every write op refuses a change, `FROZEN`) and
+  `disabled` (which tools exist). A task that is off freezes its properties
+  everywhere.
 - The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
   `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
+- Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`
+  (`tool` or `tool:option`; `core/toolset.py` lists the valid names, the
+  spec refuses an unknown name or a list that cannot work). Every sentence
+  that names a tool or an option is written with what it needs
+  (`core/needs.py`), so no model-facing text names what the job disables;
+  `tests/test_disabled_tools.py` checks it. A new tool or option is a row in
+  `core/toolset.py`, and its text carries its marks.
 - Every write is one undo step and checkpoints `state.json`; `registration.json`,
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis

@@ -3,11 +3,12 @@
 A :class:`Job` owns the :class:`~langslice.core.state.StackState` and the
 :class:`~langslice.core.spec.JobSpec`, its job folder
 (:class:`langslice.job.layout.JobLayout`: ``<images>/langslice/``), the
-host's locked and damaged sections, undo/redo (persisted in the job folder),
-the checkpoint and its observers (:meth:`Job.observe`), the submit gates,
-the stale-deformation rule, the deformation record store, the store of the
-pictures the model was shown (:class:`langslice.job.views.ViewStore`), the
-transform-count cap, the background image-correction jobs and the background
+sections' frozen properties and the host's damage notes, undo/redo
+(persisted in the job folder), the checkpoint and its observers
+(:meth:`Job.observe`), the submit gates, the stale-deformation rule, the
+deformation record store, the store of the pictures the model was shown
+(:class:`langslice.job.views.ViewStore`), the transform-count cap, the
+background image-correction jobs and the background
 work built on them (:class:`langslice.job.background.BackgroundWork`). ``ingest``,
 ``apply_host_inputs`` and ``emit_results`` open and close it. It imports the
 core and the job folder package (``langslice.job``) only: no agent
@@ -52,10 +53,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from langslice.core import deformation
+from langslice.core import frozen as freeze
 from langslice.core.discovery import discover_slices
+from langslice.core.frozen import FROZEN
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
 from langslice.job import formats
@@ -88,9 +89,10 @@ INTERVAL_BREAK_MIN_RATIO = 1.5
 #: With ``strict_interval``, every spacing within this fraction of the interval.
 STRICT_INTERVAL_TOLERANCE = 0.10
 
-#: The transform a locked section carries: the host's snapshot is already
-#: registered in-plane, so the identity IS its alignment. ``kind`` ``"host"``
-#: counts as a transform at submit and is never written back to the host.
+#: The transform a section with a frozen affine and none supplied carries: the
+#: host's snapshot is already registered in-plane, so the identity IS its
+#: alignment. ``kind`` ``"host"`` counts as a transform at submit and is never
+#: written back to the host.
 HOST_TRANSFORM_KIND = "host"
 
 #: A file's identity on disk: inode, size and modification time. An atomic
@@ -112,34 +114,6 @@ def _named(spec: JobSpec, key: str) -> set[str]:
     return {str(name) for name in (spec.inputs or {}).get(key) or []}
 
 
-def locked_ids(spec: JobSpec) -> set[str]:
-    """Sections whose flip, rotation and transform the host locked."""
-    return _named(spec, "locked")
-
-
-def keep_warp_ids(spec: JobSpec) -> set[str]:
-    """Sections whose own deformation in the host the agent may not replace."""
-    return _named(spec, "keep_warp")
-
-
-def nonlinear_skip_ids(spec: JobSpec) -> set[str]:
-    """Sections the user left out of the Nonlinear task."""
-    return _named(spec, "nonlinear_skip")
-
-
-def nonlinear_exempt_ids(spec: JobSpec) -> set[str]:
-    """Sections the host kept out of the Nonlinear task (``keep_warp`` and
-    ``nonlinear_skip``): its verbs refuse them and its submit gates skip them."""
-    return keep_warp_ids(spec) | nonlinear_skip_ids(spec)
-
-
-#: Why Nonlinear refuses a section the host kept out of it: code, message.
-KEEPS_HOST_WARP = ("KEEPS_HOST_WARP", "This section carries the user's own deformation in the "
-                   "host, which the user did not let the agent overwrite.")
-NONLINEAR_SKIPPED = ("NONLINEAR_SKIPPED", "The user chose not to have this section aligned "
-                     "first, so the Nonlinear task leaves it alone.")
-
-
 def host_damaged_ids(spec: JobSpec) -> set[str]:
     """Sections the host gave a damage note (``inputs.damaged``); the note
     stays first in the section's ``damage_note``."""
@@ -147,7 +121,8 @@ def host_damaged_ids(spec: JobSpec) -> set[str]:
 
 
 def host_transform() -> dict[str, Any]:
-    """The identity transform a locked section carries."""
+    """The identity transform a section with a frozen affine and none supplied
+    carries: the host's snapshot is already aligned in-plane."""
     return {
         "kind": HOST_TRANSFORM_KIND,
         "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
@@ -211,11 +186,13 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     a starting point, not a constraint. A ``damaged`` note becomes the
     section's ``damage_note`` (shown in status, so the agent can mark the
     regions it names); it does not make the section damaged, and it stays
-    first in the note whatever the agent marks. ``locked`` sections (a
-    list of filenames) are a constraint: the agent cannot change their flip,
-    rotation or transform; a locked section
-    without a supplied transform carries the ``"host"`` identity
-    (:func:`host_transform`), because its snapshot is already aligned.
+    first in the note whatever the agent marks. ``spec.frozen`` is the
+    constraint (:mod:`langslice.core.frozen`): it must name sections that are
+    here, a frozen position must have been supplied, and a section with a
+    frozen affine and no supplied transform carries the ``"host"`` identity
+    (:func:`host_transform`), because its snapshot is already aligned. The
+    other "none" values (the flat plane, no flip and no turn, no
+    deformation) are what a section starts with.
     """
     inputs = spec.inputs or {}
 
@@ -297,92 +274,31 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             record.damage_note = str(note or "")
         state.notes.append(f"inputs: {len(damaged)} damage note(s) from the host")
 
-    locked = inputs.get("locked") or []
-    if locked:
-        if not isinstance(locked, (list, tuple)):
-            raise ValueError("inputs.locked must be a list of section filenames")
-        for name in locked:
-            record = _section(state, "locked", name)
-            if record.transform is None:
+    frozen = spec.frozen
+    if frozen:
+        unknown = freeze.unknown_names(frozen, {record.id for record in state.slices})
+        if unknown:
+            raise ValueError(f"frozen names sections that are not here: {unknown}")
+        held = freeze.sections_of(frozen, [record.id for record in state.in_order()])
+        unplaced = [name for name, props in held.items()
+                    if "position" in props and (rec := state.by_id(name)) is not None
+                    and rec.position_mm is None]
+        if unplaced:
+            raise ValueError(
+                f"frozen: the position of {unplaced} is frozen, and a position has no "
+                "default: supply it in inputs.positions")
+        for name, props in held.items():
+            record = _section(state, "frozen", name)
+            if "affine" in props and record.transform is None:
                 record.transform = host_transform()
         state.notes.append(
-            f"inputs: {len(locked)} section(s) locked by the host (in-plane alignment done)"
-        )
-
-    for key, note in (("keep_warp", "keep their own deformation in the host"),
-                      ("nonlinear_skip", "left out of the Nonlinear task by the host")):
-        names = inputs.get(key) or []
-        if not names:
-            continue
-        if not isinstance(names, (list, tuple)):
-            raise ValueError(f"inputs.{key} must be a list of section filenames")
-        for name in names:
-            _section(state, key, name)
-        state.notes.append(f"inputs: {len(names)} section(s) {note}")
+            f"inputs: {len(held)} section(s) with a frozen property "
+            "(the agent may not change it)")
 
 
-#: ``SliceState.position_source`` of a starting position LangSlice gave a
-#: section at ingest (:func:`default_positions`): the submit gate
-#: ``MISSING_POSITIONS`` refuses a section still there.
+#: Legacy checkpoints may carry automatically assigned positions with this
+#: mark. They remain unconfirmed until explicitly written by the caller.
 DEFAULT_POSITION = "default"
-
-
-def default_positions(state: StackState, workspace: Workspace) -> list[str]:
-    """Give every section without a position a starting one, marked
-    :data:`DEFAULT_POSITION`; return their ids.
-
-    Stack order is the order the images were found (``index_original``).
-    With no position supplied, the sections are spread across the atlas's
-    range in that order: at the stack's interval, centred, when the stack
-    fits in the range at it, else evenly over the whole range. Between
-    supplied positions a section gets the linear interpolation by stack
-    order; beyond them, the nearest supplied one continued at the stack's
-    interval (the median supplied step when no interval is set) in the
-    direction the supplied ones run. Every starting position lies in the
-    atlas's range.
-    """
-    ordered = sorted(state.slices, key=lambda record: record.index_original)
-    missing = [index for index, record in enumerate(ordered) if record.position_mm is None]
-    if not missing:
-        return []
-    low, high = (float(value) for value in workspace.position_range)
-    count = len(ordered)
-    interval = float(state.interval_mm)
-    known = [(index, float(record.position_mm)) for index, record in enumerate(ordered)
-             if record.position_mm is not None]
-    values: dict[int, float] = {}
-    if not known:
-        if interval > 0 and interval * (count - 1) <= high - low:
-            first = (low + high) / 2 - interval * (count - 1) / 2
-            values = {index: first + interval * index for index in range(count)}
-        else:
-            values = {index: low + (high - low) * (index + 0.5) / count for index in range(count)}
-    else:
-        steps = [(b - a) / (j - i) for (i, a), (j, b) in zip(known, known[1:], strict=False)]
-        trend = float(np.median(steps)) if steps else 0.0
-        step = interval if interval > 0 else abs(trend)
-        step = step if trend >= 0 else -step
-        for index in missing:
-            before = [(i, v) for i, v in known if i < index]
-            after = [(i, v) for i, v in known if i > index]
-            if before and after:
-                (i, a), (j, b) = before[-1], after[0]
-                values[index] = a + (b - a) * (index - i) / (j - i)
-            elif before:
-                i, a = before[-1]
-                values[index] = a + step * (index - i)
-            else:
-                j, b = after[0]
-                values[index] = b - step * (j - index)
-    placed: list[str] = []
-    for index in missing:
-        record = ordered[index]
-        record.position_mm = round(min(high, max(low, values[index])), 4)
-        record.position_source = DEFAULT_POSITION
-        placed.append(record.id)
-    state.notes.append(f"ingest: {len(placed)} section(s) given evenly spaced starting "
-                       "positions")
-    return placed
 
 
 def clear_default_marks(before: dict[str, Any], state: StackState) -> list[str]:
@@ -410,17 +326,22 @@ START_FRESH = "start a fresh job instead (`--fresh` on the command line, resume=
 
 
 def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
-    """The ``inputs`` keys whose values differ between a checkpoint's spec
-    (*saved_spec*, the dict it stores) and *spec*; none when the checkpoint
-    records no spec inputs."""
+    """The ``inputs`` keys, and ``frozen``, whose values differ between a
+    checkpoint's spec (*saved_spec*, the dict it stores, older keys read as
+    today's: :meth:`~langslice.core.spec.JobSpec.migrated`) and *spec*; none
+    when the checkpoint records no spec inputs."""
     if not isinstance(saved_spec, dict) or "inputs" not in saved_spec:
         return []
 
     def plain(value: Any) -> dict[str, Any]:
         return json.loads(json.dumps(value or {}, sort_keys=True, default=str))
 
-    old, new = plain(saved_spec.get("inputs")), plain(spec.inputs)
-    return sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
+    saved = JobSpec.migrated(saved_spec)
+    old, new = plain(saved.get("inputs")), plain(spec.inputs)
+    changed = [key for key in set(old) | set(new) if old.get(key) != new.get(key)]
+    if freeze.clean(saved.get("frozen")) != freeze.clean(spec.frozen):
+        changed.append("frozen")
+    return sorted(changed)
 
 
 def inputs_changed(folder: str | os.PathLike[str], changed: list[str]) -> InputsChanged:
@@ -484,7 +405,7 @@ def strict_interval_error(state: StackState, breaks: list[int]) -> dict[str, Any
                 f"{len(breaks)} were reported."
             ),
         }
-    interval = float(state.interval_mm)
+    interval = float(state.interval_mm or 0.0)
     if interval <= 0:
         return None
     placed = [s for s in state.in_order() if s.position_mm is not None]
@@ -605,8 +526,7 @@ def missing_deformations(
 ) -> dict[str, Any] | None:
     """``None`` when every section carries a deformation, or a keep_linear
     reason, at its current linear placement; else the rejection. The
-    sections in *exempt* (kept out of Nonlinear by the host,
-    :func:`nonlinear_exempt_ids`) need neither, and the sections in
+    sections in *exempt* (their deformation frozen) need neither, and the sections in
     *left_linear* (``submit``'s ``left_linear``: left without a deformation,
     each with its reason) count as covered."""
     missing: list[dict[str, str]] = []
@@ -654,7 +574,9 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("nonlinear"):
-        return missing_deformations(state, nonlinear_exempt_ids(spec), left_linear)
+        frozen = {record.id for record in state.slices
+                  if "deformation" in spec.frozen_for(record.id)}
+        return missing_deformations(state, frozen, left_linear)
     return None
 
 
@@ -726,14 +648,6 @@ class Job:
         self.views: ViewStore = ViewStore(layout)
         #: The job folder's write lock (:meth:`writing`), across processes.
         self.lock = FolderLock(layout.folder)
-        #: Sections whose flip, rotation and transform the host locked.
-        self.locked = frozenset(locked_ids(spec))
-        #: Sections whose own deformation in the host stays (``ants_syn``
-        #: refuses them, ``KEEPS_HOST_WARP``).
-        self.keep_warp = frozenset(keep_warp_ids(spec))
-        #: Sections the user left out of Nonlinear (``ants_syn`` and
-        #: ``trace_borders`` refuse them, ``NONLINEAR_SKIPPED``).
-        self.nonlinear_skip = frozenset(nonlinear_skip_ids(spec))
         #: Sections the host gave a damage note (``inputs.damaged``); the note
         #: stays first in the section's ``damage_note``.
         self.host_damaged = frozenset(host_damaged_ids(spec))
@@ -823,8 +737,6 @@ class Job:
             else:
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
-                if spec.has("position"):
-                    default_positions(state, workspace)
                 if history.exists():
                     history.load()  # read before it is emptied: never delete unread steps
             if history.problem is not None:
@@ -1068,15 +980,26 @@ class Job:
         """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
         return submit_errors(self.state, self.spec, breaks, left_linear)
 
-    def nonlinear_refusal(self, section_id: str) -> tuple[str, str] | None:
-        """``(code, message)`` when the host kept *section_id* out of the
-        Nonlinear task (:data:`KEEPS_HOST_WARP`, :data:`NONLINEAR_SKIPPED`),
-        else None."""
-        if section_id in self.keep_warp:
-            return KEEPS_HOST_WARP
-        if section_id in self.nonlinear_skip:
-            return NONLINEAR_SKIPPED
-        return None
+    def frozen_for(self, section_id: str) -> frozenset[str]:
+        """The properties frozen on one section (:meth:`JobSpec.frozen_for`)."""
+        return self.spec.frozen_for(section_id)
+
+    def frozen_refusal(self, section_ids: Collection[str], *properties: str,
+                       ) -> dict[str, Any] | None:
+        """``{"error": "FROZEN", "ids", "properties", "message"}`` when a write
+        to any of *properties* of any of *section_ids* would change what the
+        job froze there (the sections and the properties it names are the
+        frozen ones), else None."""
+        hit: dict[str, list[str]] = {}
+        for section_id in section_ids:
+            held = [name for name in properties if name in self.frozen_for(section_id)]
+            if held:
+                hit[section_id] = held
+        if not hit:
+            return None
+        named = [name for name in freeze.PROPERTIES if any(name in held for held in hit.values())]
+        return {"error": FROZEN, "ids": list(hit), "properties": named,
+                "message": freeze.message(named, list(hit), len(self.state.slices))}
 
     def clear_stale_deformations(self) -> list[str]:
         """Drop deformations whose linear placement changed; checkpoint; their ids.

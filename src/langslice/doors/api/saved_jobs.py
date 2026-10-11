@@ -65,20 +65,25 @@ def copy_prompt(job_id: str, spec: Any) -> str:
              f"Selected tasks: {selected}; atlas: {spec.atlas}; plane: {spec.plane}.",
              "Use only the LangSlice tools and finish with submit."]
     if spec.has("position"):
-        lines.append(
-            f"Positioning: section thickness {spec.position.thickness_um:g} µm, "
-            f"interval {spec.position.interval_um:g} µm."
-        )
+        thickness = (f"{spec.position.thickness_um:g} µm"
+                     if spec.position.thickness_um is not None else "not supplied")
+        interval = (f"{spec.position.interval_um:g} µm"
+                    if spec.position.interval_um is not None else "not supplied")
+        lines.append(f"Positioning: section thickness {thickness}, interval {interval}.")
     if spec.has("transform"):
         lines.append(
-            f"Linear: automatic affine {'enabled' if spec.transform.automatic else 'disabled'}, "
-            f"up to {spec.transform.max_parallel} sections per interactive adjustment; "
-            f"hemisphere flipping {'enabled' if spec.transform.flip else 'disabled'}."
+            f"Linear: automatic affine {'disabled' if spec.off('elastix_affine') else 'enabled'}"
+            + ("" if spec.off("interactive_transform") else
+               f", up to {spec.transform.max_parallel} sections per interactive adjustment")
+            + f"; hemisphere flipping "
+            f"{'disabled' if spec.off('interactive_transform:flip') else 'enabled'}."
         )
     if spec.has("nonlinear"):
         if not spec.nonlinear.uses_image_model:
             lines.append("Nonlinear: deformations are fitted to the stain alone "
                          "(no image model chosen).")
+        elif spec.off("trace_borders"):
+            lines.append("Nonlinear: deformations are fitted to the stain alone.")
         elif provider_setup.image_model_connected(spec.nonlinear.provider):
             lines.append(f"Nonlinear: the image model ({spec.nonlinear.provider}) traces "
                          "region borders with trace_borders.")
@@ -87,8 +92,10 @@ def copy_prompt(job_id: str, spec: Any) -> str:
                          "model is connected to LangSlice (no key or login for "
                          f"{spec.nonlinear.provider}); deformations are fitted to the stain.")
     inputs = spec.inputs or {}
-    if inputs.get("locked"):
-        lines.append("Existing alignment is locked for: " + ", ".join(inputs["locked"]) + ".")
+    if spec.frozen:
+        lines.append("Frozen by the user (the agent may not change it): " + "; ".join(
+            f"{'every section' if name == '*' else name}: {', '.join(held)}"
+            for name, held in spec.frozen.items()) + ".")
     if inputs.get("damaged"):
         lines.append("User-marked damage: " + "; ".join(
             f"{name}: {note}" for name, note in inputs["damaged"].items()

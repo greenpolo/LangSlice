@@ -23,13 +23,16 @@ reference card).
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import io
 import json
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass, field
 from typing import Any
+
+from langslice.core.needs import render
 
 EXIT_OK = 0
 EXIT_ARGUMENTS = 2
@@ -44,8 +47,25 @@ ARGUMENT_CODES = frozenset({
     "NO_IMAGES", "RETIRED_TOOL",
 })
 
-#: What to do about a code (the envelope's ``error.fix``); ``{job}`` is the
-#: job folder, ``{verb}`` the verb.
+#: The disabled list of the job the call is about, once it is open
+#: (:func:`disabled_for`): the fixes name no tool the job disables.
+DISABLED: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
+    "langslice_disabled", default=())
+
+
+@contextlib.contextmanager
+def disabled_for(disabled: Collection[str]) -> Iterator[None]:
+    """Fixes rendered for a job that disables *disabled*, in the block."""
+    token = DISABLED.set(tuple(disabled))
+    try:
+        yield
+    finally:
+        DISABLED.reset(token)
+
+
+#: What to do about a code (the envelope's ``error.fix``), written with what
+#: it needs (:mod:`langslice.core.needs`); ``{job}`` is the job folder,
+#: ``{verb}`` the verb.
 FIXES: dict[str, str] = {
     "UNKNOWN_VERB": "List the verbs with `langslice-job ops`.",
     "RETIRED_TOOL": "Call the verb named under result.use instead (see the message); "
@@ -63,21 +83,25 @@ FIXES: dict[str, str] = {
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
     "NOTHING_TO_REDO": "Redo follows an undo only.",
-    "NO_POSITION": "Write the section's position first (position_sections).",
-    "MISSING_POSITIONS": "Write every section's own position first (position_sections); "
+    "NO_POSITION": "Write the section's position first[[?position_sections  "
+                   "(position_sections)]].",
+    "MISSING_POSITIONS": "Write every section's own position first[[?position_sections  "
+                         "(position_sections)]]; "
                          "a starting position the job gave a section does not count.",
-    "MISSING_TRANSFORMS": "Give every section a transform (elastix_affine or "
-                          "interactive_transform).",
-    "MISSING_DEFORMATIONS": "Give every section a deformation (ants_syn or trace_borders), "
+    "MISSING_TRANSFORMS": "Give every section a transform[[?elastix_affine|"
+                          "interactive_transform  ([[%elastix_affine=elastix_affine||"
+                          "interactive_transform=interactive_transform]])]].",
+    "MISSING_DEFORMATIONS": "Give every section a deformation[[?ants_syn|trace_borders  "
+                            "([[%ants_syn=ants_syn||trace_borders=trace_borders]])]], "
                             "or name it in submit's left_linear with the reason its linear "
                             "placement stands.",
-    "DEFORMATION_REQUIRED": "The user requires a deformation on every section: fit one "
-                            "(ants_syn or trace_borders) instead of naming it in "
+    "DEFORMATION_REQUIRED": "The user requires a deformation on every section: fit one"
+                            "[[?ants_syn|trace_borders  ([[%ants_syn=ants_syn||"
+                            "trace_borders=trace_borders]])]] instead of naming it in "
                             "left_linear.",
     "HAS_DEFORMATION": "That section carries a deformation; leave it out of left_linear.",
-    "POSITIONS_SUPPLIED": "The user supplied the positions; leave sections out.",
-    "ANGLES_SUPPLIED": "The user supplied the cutting angles; leave cutting_angles out.",
-    "LOCKED": "The user locked this section's in-plane alignment; leave it out.",
+    "FROZEN": "The user froze these properties of these sections (the reply names them): "
+              "leave them out of the call.",
     "STALE_INPUT": "The section changed while this ran; run the verb again for it.",
     "JOB_BUSY": "Another writer held the job folder's lock; retry.",
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
@@ -94,13 +118,16 @@ FIXES: dict[str, str] = {
                       "from these inputs (the old one's work is replaced), or with the "
                       "inputs the job was made from (job.json, spec.inputs) to continue it.",
     "IMAGE_MODEL_OFF": "Connect the job's image model to LangSlice (`langslice login` for "
-                       "openai-oauth, or its API key) and call it again; without it, fit "
-                       "each section's deformation to its stain with ants_syn.",
-    "NOTHING_TRACED": "Each section's row under result.results names its problem; a "
-                      "section needs a position and a transform (elastix_affine or "
-                      "interactive_transform) before trace_borders.",
-    "NOT_COMPARED": "Look at each section in mode overlay or positioning since its last "
-                    "write, then write its position again.",
+                       "openai-oauth, or its API key) and call it again[[?ants_syn ; "
+                       "without it, fit each section's deformation to its stain with "
+                       "ants_syn]].",
+    "NOTHING_TRACED": "Each section's row under result.results names its problem"
+                      "[[?trace_borders ; a section needs a position and a transform"
+                      "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
+                      "elastix_affine||interactive_transform=interactive_transform]])]] "
+                      "before trace_borders]].",
+    "NOT_COMPARED": "Look at each section in mode [[?look:overlay overlay or ]]positioning "
+                    "since its last write, then write its position again.",
     "NOT_REVIEWED": "Run look in mode positioning over every section after the last "
                     "position_sections write, then submit again.",
     "INTERVAL_BREAKS_UNSUPPORTED": "Report a break only where the written spacing exceeds "
@@ -108,13 +135,13 @@ FIXES: dict[str, str] = {
                                    "on both sides first.",
     "STRICT_INTERVAL": "Make every spacing within 10% of the nominal interval and report "
                        "no break (the user asked for a strict interval).",
+    "OPTION_OFF": "That option is switched off for this job; use one of the others the "
+                  "message lists.",
     "FLIP_DISABLED": "Flipping is switched off for this job; leave flip out.",
-    "KEEPS_HOST_WARP": "The user keeps this section's own deformation; leave it out of "
-                       "the nonlinear verbs.",
-    "NONLINEAR_SKIPPED": "The user left this section out of the nonlinear task; leave it "
-                         "out.",
-    "INVALID_LINEAR_PLACEMENT": "Give the section a position and a transform "
-                                "(elastix_affine or interactive_transform) first.",
+    "INVALID_LINEAR_PLACEMENT": "Give the section a position and a transform"
+                                "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
+                                "elastix_affine||interactive_transform=interactive_transform"
+                                "]])]] first.",
     "ANTS_MISSING": "ANTs (antspyx) does not import on this host; reinstall LangSlice "
                     "there (see the message), or name the sections in submit's "
                     "left_linear.",
@@ -123,10 +150,10 @@ FIXES: dict[str, str] = {
     "UNAVAILABLE": "Not installed on this host (see the message); use what the job "
                    "statement offers instead.",
     "FIT_ATLAS_UNAVAILABLE": "Use atlas_image \"template\" (the reference template).",
-    "NO_PICTURE": "Look first: zoom takes a box on a picture already drawn.",
+    "NO_PICTURE": "Look first[[?zoom : zoom takes a box on a picture already drawn]].",
     "UNKNOWN_PICTURE": "Use a picture number from a reply's `pictures`, or views.jsonl.",
-    "PICTURE_NOT_SAVED": "This job keeps no pictures between calls; draw it again with look "
-                         "and zoom in the same process.",
+    "PICTURE_NOT_SAVED": "This job keeps no pictures between calls; draw it again with look"
+                         "[[?zoom  and zoom]] in the same process.",
     "EMPTY_BOX": "Give a box with area inside the picture: [x0, y0, x1, y1] in its pixels.",
     "NOTHING_EXPORTED": "Each skipped section's reason is under result.skipped; place it "
                         "first.",
@@ -173,7 +200,7 @@ class Envelope:
             f"See `langslice-job schema {verb}` for the arguments." if status == EXIT_ARGUMENTS
             else f"See the stack with `langslice-job {job} status`, then retry."
             if status == EXIT_REFUSED else "Report it; the log is on stderr."))
-        hint = hint.replace("{job}", job).replace("{verb}", verb)
+        hint = render(hint, DISABLED.get()).replace("{job}", job).replace("{verb}", verb)
         return cls(ok=False, result=result, exit=status,
                    error={"code": code, "message": message, "fix": hint},
                    next=[])

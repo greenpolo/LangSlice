@@ -9,6 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.toolset import valid_names
+
 if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
 
@@ -114,11 +116,15 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help="Accepted and ignored: ANTs SyN (ants_syn) is the one deformable fit",
     )
     p.add_argument(
-        "--no-flip",
-        dest="flip",
-        action="store_false",
-        default=True,
-        help="Do not let the agent mirror sections across the midline",
+        "--disable",
+        dest="disabled",
+        action="append",
+        default=[],
+        metavar="NAME[,NAME...]",
+        help="Tools and tool options the agent does not get, on top of what the tasks "
+        "give (repeatable): a tool (zoom), or tool:option (look:positioning, "
+        "interactive_transform:flip, which keeps the agent from mirroring sections). "
+        "Valid names: " + ", ".join(valid_names()),
     )
     p.add_argument(
         "--hemisphere-cue",
@@ -126,8 +132,10 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         metavar="TEXT",
         help="What marks a hemisphere in these sections (a notch, an injection...)",
     )
-    p.add_argument("--thickness", type=int, default=50, help="Section thickness in microns")
-    p.add_argument("--interval", type=int, default=200, help="Section interval in microns")
+    p.add_argument("--thickness", type=int,
+                   help="Known section thickness in microns; omit if unknown")
+    p.add_argument("--interval", type=int,
+                   help="Known section interval in microns; omit to infer spacing")
     p.add_argument(
         "--strict-interval",
         action="store_true",
@@ -188,9 +196,11 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         '{"flip": true|false, "rotation_deg": 0|90|180|270}',
     )
     p.add_argument(
-        "--locked", default=None, metavar="JSON",
-        help="Sections already aligned in-plane by the user: JSON file or inline list "
-        "of filenames; their flip, rotation and transform cannot change",
+        "--frozen", default=None, metavar="JSON",
+        help='What the agent may not change: JSON file or inline mapping of a filename '
+        '(or "*" for every section) to a list of properties, any of position, angles, '
+        'orientation, affine, deformation; a frozen property keeps the value the '
+        'supplied inputs give it',
     )
     p.add_argument(
         "--damaged", default=None, metavar="JSON",
@@ -241,8 +251,8 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--playbook",
         action="store_true",
-        help="Put a working method in the job statement (hypothesise everything, "
-        "confirm, write, re-check, review); for the cheaper models",
+        help="Add optional positioning guidance: compare candidate planes and regions, "
+        "write supported placements, revisit uncertainty and review the stack",
     )
     p.add_argument(
         "--max-quota-percent",
@@ -362,8 +372,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     transforms = load_json_arg(args.transforms, "--transforms")
     if transforms is not None:
         inputs["transforms"] = transforms
-    for key, flag in (("orientation", "--orientation"), ("locked", "--locked"),
-                      ("damaged", "--damaged")):
+    for key, flag in (("orientation", "--orientation"), ("damaged", "--damaged")):
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value
@@ -382,6 +391,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
                              '"yaw": deg}')
         inputs["angles"] = section_angles
 
+    frozen: Any = load_json_arg(getattr(args, "frozen", None), "--frozen")
     return JobSpec(
         image_folder=image_folder,
         atlas=args.atlas,
@@ -400,8 +410,9 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
             gated=args.gates,
             playbook=args.playbook,
         ),
-        transform=TransformSpec(angles=args.angles, flip=args.flip,
-                                hemisphere_cue=args.hemisphere_cue),
+        transform=TransformSpec(angles=args.angles, hemisphere_cue=args.hemisphere_cue),
+        disabled=[name.strip() for item in getattr(args, "disabled", []) for name in item.split(",")
+                  if name.strip()],
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,
@@ -409,6 +420,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),
         inputs=inputs,
+        frozen=frozen or {},
         resume=args.resume,
         debrief=args.debrief,
         **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
@@ -437,8 +449,11 @@ def run_linear(args: argparse.Namespace) -> None:
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
-    print(f"Interval: {spec.position.interval_um}um  "
-          f"Thickness: {spec.position.thickness_um}um")
+    interval = (f"{spec.position.interval_um}um"
+                if spec.position.interval_um is not None else "not supplied")
+    thickness = (f"{spec.position.thickness_um}um"
+                 if spec.position.thickness_um is not None else "not supplied")
+    print(f"Interval: {interval}  Thickness: {thickness}")
     print(f"Folder: {spec.image_folder}  Resume: {spec.resume}")
     if os.environ.get(TRACE_DIR_ENV):
         print(f"Agent traces: {os.environ[TRACE_DIR_ENV]}")

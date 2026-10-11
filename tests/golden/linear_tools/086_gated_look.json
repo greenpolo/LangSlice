@@ -1,11 +1,11 @@
 {
  "args": [
-  "overlay"
+  "positioning"
  ],
  "data": {
   "pictures": [
    {
-    "caption": "s0.png overlay, at 0.04 mm; identity transform, no deformation; 31.2 um/px; raw gray auto; atlas borders",
+    "caption": "positioning: 1 section below in position order, 1 without a position at the right, raw gray auto; atlas above at 2 positions; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png no position",
     "id": 1
    }
   ],
@@ -17,12 +17,16 @@
    "file": "086_gated_look.0.png",
    "mode": "RGB",
    "size": [
-    338,
-    333
+    1090,
+    640
    ]
   }
  ],
  "kwargs": {
+  "positions_mm": [
+   0.05,
+   0.1
+  ],
   "sections": [
    "s0.png"
   ]

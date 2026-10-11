@@ -57,7 +57,7 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     assert job.state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
     assert len(job.undo_stack) == 1
     assert job.undo()
-    assert job.state.by_id("s0.png").position_source == "default"  # type: ignore[union-attr]
+    assert job.state.by_id("s0.png").position_source == ""  # type: ignore[union-attr]
     assert _position(job, "s0.png") == start != middle
     assert job.state.cutting_angles_deg == before_angles
 
@@ -83,7 +83,7 @@ def test_angles_alone_and_nothing_to_write(tmp_path: Path):
 def test_order_follows_position(tmp_path: Path):
     job, ctx = _open(tmp_path)
     low, high = ctx.position_range
-    unplaced = job.state.by_id("s2.png")  # as a section without a starting position
+    unplaced = job.state.by_id("s2.png")  # an unplaced section
     assert unplaced is not None
     unplaced.position_mm, unplaced.position_source = None, ""
     step = (high - low) / 10
@@ -110,10 +110,10 @@ def test_supplied_positions_are_refused_and_so_are_supplied_angles(tmp_path: Pat
     job, ctx = _open(tmp_path, tasks=["transform"], inputs={"positions": supplied})
     with pytest.raises(Refused) as refused:
         positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0}])
-    assert refused.value.code == "POSITIONS_SUPPLIED"
+    assert refused.value.code == "FROZEN" and refused.value.details["properties"] == ["position"]
     with pytest.raises(Refused) as angles:
         positions.position_sections(job, ctx, [], {"pitch_deg": 1.0, "yaw_deg": 1.0})
-    assert angles.value.code == "ANGLES_SUPPLIED"
+    assert angles.value.code == "FROZEN" and angles.value.details["properties"] == ["angles"]
     assert job.undo_stack == [] and _position(job, "s0.png") == 1.0
 
 
@@ -125,7 +125,7 @@ def test_supplied_positions_still_allow_angles_when_the_transform_task_sets_them
     with pytest.raises(Refused) as refused:
         positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0}],
                                     {"pitch_deg": 1.0, "yaw_deg": 1.0})
-    assert refused.value.code == "POSITIONS_SUPPLIED" and job.undo_stack == []
+    assert refused.value.code == "FROZEN" and job.undo_stack == []
     done = positions.position_sections(job, ctx, [], {"pitch_deg": 1.0, "yaw_deg": 2.0})
     assert done.cutting_angles == {"pitch": 1.0, "yaw": 2.0} and done.written == []
     assert _position(job, "s0.png") == 1.0 and len(job.undo_stack) == 1

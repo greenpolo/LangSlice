@@ -50,7 +50,9 @@ means all), and open **Register > LangSlice Registration…**.
 | Slices | Notes on damaged tissue, permission to mark damaged regions, and permission to overwrite existing transforms. |
 | Preprocessing | Automatic or custom channel blending and contrast, snapshot pixel size, and a before/after preview. |
 
-Check section thickness and interval, prefilled from ABBA. Nonlinear needs
+Section thickness and interval are prefilled from ABBA when available, or
+from saved settings. Zero means unspecified: the agent infers what the
+anatomy supports. There are no fixed lab protocol defaults. Nonlinear needs
 a linear placement; when Linear is off and some sections have none, the
 dialog offers to align them first or exclude them from Nonlinear.
 

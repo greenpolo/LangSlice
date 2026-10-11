@@ -8,7 +8,7 @@ import inspect
 from pathlib import Path
 
 from langslice.agent.engine import build_context
-from langslice.core.spec import JobSpec, PositionSpec, TransformSpec
+from langslice.core.spec import JobSpec, PositionSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import load_checkpoint
@@ -138,6 +138,10 @@ def test_an_exact_rewrite_of_a_starting_position_makes_it_the_agents(tmp_path: P
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: SLAB)
     job = Job.open(spec, ctx)
     box = build_tools(job.state, ctx, spec, job=job)
+    # A checkpoint from a version that assigned starting positions.
+    for record in job.state.slices:
+        record.position_mm, record.position_source = 2.0, "default"
+    job.checkpoint()
     rows = {row["id"]: row for row in _tool(box, "status")()["rows"]}
     assert all(row["position_source"] == "default" for row in rows.values())
     start = rows["s1.png"]["position_mm"]
@@ -361,13 +365,14 @@ def test_an_orientation_change_keeps_the_values_and_says_so(tmp_path: Path):
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True, transform=TransformSpec(flip=False))
-    result = _tool(box, "interactive_transform")(
-        [{"id": "s0.png", "flip": True}, {"id": "s1.png", "rotate_quarter": 90}])
-    assert result["results"][0] == {"status": "error", "error": "FLIP_DISABLED",
-                                    "id": "s0.png"}
-    assert result["results"][1]["status"] == "ok"
-    assert state.by_id("s0.png").flip is False
+    state, _, box = _box(tmp_path, placed=True, disabled=["interactive_transform:flip"])
+    tool = _tool(box, "interactive_transform")
+    # The option is not in the tool's schema: a call that sends it is refused
+    # whole, and nothing is written.
+    result = tool([{"id": "s0.png", "flip": True}, {"id": "s1.png", "rotate_quarter": 90}])
+    assert result["error"] == "UNKNOWN_ARGUMENTS" and "flip" in result["message"]
+    assert state.by_id("s0.png").flip is False and state.by_id("s1.png").rotation_deg == 0
+    assert tool([{"id": "s1.png", "rotate_quarter": 90}])["results"][0]["status"] == "ok"
     assert state.by_id("s1.png").rotation_deg == 90
 
 
@@ -598,3 +603,19 @@ def test_left_linear_belongs_to_runs_with_nonlinear(tmp_path: Path):
         {"id": "s0.png", "reason": "no deformation needed"}])
     assert refused["error"] == "UNKNOWN_ARGUMENTS"
     assert state.submitted is False
+
+
+def test_gated_positioning_can_start_with_no_positions(tmp_path: Path):
+    state, _, box = _gated(tmp_path)
+    for record in state.slices:
+        record.position_mm = None
+    box.job.checkpoint()
+    write = _tool(box, "position_sections")
+    sections = [{"id": "s0.png", "position_mm": 3.0}]
+    assert write(sections, view=False)["error"] == "NOT_COMPARED"
+    assert _tool(box, "look")("positioning", sections=["s0.png"],
+                               positions_mm=[2.5, 3.0])["status"] == "ok"
+    assert state.by_id("s0.png").position_mm is None
+    assert write(sections, view=False)["status"] == "ok"
+    assert state.by_id("s0.png").position_mm == 3.0
+    assert write(sections, view=False)["error"] == "NOT_COMPARED"

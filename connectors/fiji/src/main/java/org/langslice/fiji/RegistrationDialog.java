@@ -54,8 +54,8 @@ final class RegistrationDialog extends JDialog {
 
     final JCheckBox positioning = header("Positioning"), flip = new JCheckBox("Enable hemisphere flipping");
     final JTextField cue = new JTextField(16);
-    final JSpinner thickness = new JSpinner(new SpinnerNumberModel(50, 1, 100000, 10));
-    final JSpinner interval = new JSpinner(new SpinnerNumberModel(200, 1, 100000, 10));
+    final JSpinner thickness = new JSpinner(new SpinnerNumberModel(0, 0, 100000, 10));
+    final JSpinner interval = new JSpinner(new SpinnerNumberModel(0, 0, 100000, 10));
     final JTextArea positionNotes = notes();
     final JCheckBox linear = header("Linear"), affine = new JCheckBox("Enable affine tool");
     final JCheckBox angles = new JCheckBox("Enable slice angle estimation");
@@ -63,6 +63,15 @@ final class RegistrationDialog extends JDialog {
     final JTextArea linearNotes = notes();
     final JCheckBox nonlinear = header("Nonlinear");
     final JTextArea nonlinearNotes = notes();
+    /** Collapsed by default; hidden when the service sends no tool catalog. */
+    final JToggleButton advanced = new JToggleButton("Advanced: tools");
+    final JPanel advancedPanel = new JPanel(new GridBagLayout());
+    /** Advanced checkboxes by name, except the three simple checkboxes' names (their mirrors are in mirrors). */
+    private final Map<String, JCheckBox> toolBoxes = new LinkedHashMap<>();
+    /** Advanced checkboxes that mirror a simple checkbox (same state, same list entry). */
+    private final Map<String, JCheckBox> mirrors = new LinkedHashMap<>();
+    /** Advanced names from settings that no catalog checkbox shows (kept when the service sends no catalog). */
+    private Set<String> keptOff = new LinkedHashSet<>();
 
     final DefaultTableModel table;
     final JCheckBox agentDamage = new JCheckBox("Let the agent mark damaged regions");
@@ -101,6 +110,7 @@ final class RegistrationDialog extends JDialog {
             @Override public boolean isCellEditable(int row, int column) { return column == 2; }
         };
         for (SliceRow row : rows) { table.addRow(new Object[]{row.name, row.registrations, ""}); previewSlice.addItem(row.name); }
+        buildAdvanced(settings);
         fill(settings);
 
         tabs.addTab("Tasks", tasksTab());
@@ -171,8 +181,8 @@ final class RegistrationDialog extends JDialog {
         JPanel grid = new JPanel(new GridBagLayout());
         int y = 0;
         cell(grid, positioning, 0, y++, 4, true);
-        cell(grid, indent(label("Section thickness (µm)")), 0, y, 1, false); cell(grid, left(thickness), 1, y, 1, false);
-        cell(grid, label("Section interval (µm)"), 2, y, 1, false); cell(grid, left(interval), 3, y++, 1, false);
+        cell(grid, indent(label("Section thickness (µm; 0 = infer)")), 0, y, 1, false); cell(grid, left(thickness), 1, y, 1, false);
+        cell(grid, label("Section interval (µm; 0 = infer)"), 2, y, 1, false); cell(grid, left(interval), 3, y++, 1, false);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(positionNotes), 1, y++, 3, true);
         cell(grid, new JSeparator(), 0, y++, 4, true);
 
@@ -191,6 +201,9 @@ final class RegistrationDialog extends JDialog {
         cell(grid, nonlinear, 0, y++, 4, true);
         cell(grid, indent(label("Notes for the agent")), 0, y, 1, false); cell(grid, scroll(nonlinearNotes), 1, y++, 3, true);
         nonlinear.setToolTipText("A deformation per slice on top of its linear placement, added to ABBA as a BigWarp step.");
+        cell(grid, new JSeparator(), 0, y++, 4, true);
+        cell(grid, advanced, 0, y++, 4, false);
+        cell(grid, advancedPanel, 0, y++, 4, true);
         return padded(grid);
     }
 
@@ -276,7 +289,79 @@ final class RegistrationDialog extends JDialog {
         clahe.setSelected(s.clahe);
         strength.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.LEVELS).indexOf(s.strength)));
         pixel.setValue(s.pixelSize);
+        for (Map.Entry<String, JCheckBox> entry : toolBoxes.entrySet()) entry.getValue().setSelected(!s.disabled.contains(entry.getKey()));
+        syncMirrors();
         updateAccount();
+    }
+
+    /** The Advanced list from setup.status's tool catalog: a checkbox per disableable tool and per option, grouped. */
+    private void buildAdvanced(RegistrationSettings settings) {
+        keptOff = settings.disabled;
+        List<RegistrationSettings.Tool> catalog = RegistrationSettings.toolCatalog(status);
+        advanced.setVisible(!catalog.isEmpty());
+        advanced.setToolTipText("Switch single tools and options off for this run.");
+        advancedPanel.setVisible(false);
+        advanced.addActionListener(e -> { advancedPanel.setVisible(advanced.isSelected()); pack(); });
+        if (catalog.isEmpty()) return;
+        cell(advancedPanel, wrap("Checked tools and options run; unchecked ones are switched off for this run. "
+                + "The affine, flipping and damage checkboxes on the Linear and Slices tabs show the same choice."), 0, 0, 1, true);
+        Map<String, List<RegistrationSettings.Tool>> groups = new LinkedHashMap<>();
+        for (RegistrationSettings.Tool tool : catalog) groups.computeIfAbsent(tool.group, g -> new ArrayList<>()).add(tool);
+        int y = 1;
+        for (Map.Entry<String, List<RegistrationSettings.Tool>> group : groups.entrySet()) {
+            JLabel heading = new JLabel(group.getKey());
+            heading.setFont(heading.getFont().deriveFont(Font.BOLD));
+            cell(advancedPanel, heading, 0, y++, 1, true);
+            JPanel boxes = new JPanel(new GridLayout(0, 2, 18, 2));
+            for (RegistrationSettings.Tool tool : group.getValue()) {
+                if (tool.disableable) boxes.add(toolBox(tool.name, humanize(tool.name), needsText(tool.needs)));
+                for (String option : tool.options)
+                    boxes.add(toolBox(tool.name + ":" + option, humanize(tool.name) + ": " + option, ""));
+            }
+            cell(advancedPanel, indent(boxes), 0, y++, 1, true);
+        }
+    }
+
+    private JCheckBox toolBox(String name, String label, String tip) {
+        JCheckBox box = new JCheckBox(label);
+        if (!tip.isEmpty()) box.setToolTipText(tip);
+        JCheckBox simple = simpleBox(name);
+        if (simple != null) {
+            box.setSelected(simple.isSelected());
+            box.setToolTipText("Same as \"" + simple.getText() + "\".");
+            simple.addActionListener(e -> box.setSelected(simple.isSelected()));
+            box.addActionListener(e -> { if (simple.isSelected() != box.isSelected()) simple.doClick(); });
+            mirrors.put(name, box);
+        } else {
+            toolBoxes.put(name, box);
+            box.addActionListener(e -> estimateTimer.restart());
+        }
+        return box;
+    }
+
+    /** The simple checkbox that owns a list name, or null. */
+    private JCheckBox simpleBox(String name) {
+        switch (name) {
+            case RegistrationSettings.MARK_DAMAGE: return agentDamage;
+            case RegistrationSettings.ELASTIX_AFFINE: return affine;
+            case RegistrationSettings.FLIP: return flip;
+            default: return null;
+        }
+    }
+
+    private void syncMirrors() {
+        for (Map.Entry<String, JCheckBox> entry : mirrors.entrySet()) entry.getValue().setSelected(simpleBox(entry.getKey()).isSelected());
+    }
+
+    private static String humanize(String name) {
+        String text = name.replace('_', ' ');
+        return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
+    }
+
+    private static String needsText(List<List<String>> needs) {
+        List<String> parts = new ArrayList<>();
+        for (List<String> alternatives : needs) parts.add(String.join(" or ", alternatives));
+        return parts.isEmpty() ? "" : "Needs: " + String.join("; ", parts) + ".";
     }
 
     RegistrationSettings read() {
@@ -296,6 +381,9 @@ final class RegistrationDialog extends JDialog {
         s.maxParallel = (Integer) parallel.getValue(); s.linearNotes = linearNotes.getText();
         s.nonlinear = nonlinear.isSelected(); s.nonlinearNotes = nonlinearNotes.getText();
         s.agentDamage = agentDamage.isSelected(); s.overwrite = overwrite.isSelected();
+        s.disabled = new LinkedHashSet<>();
+        if (toolBoxes.isEmpty() && mirrors.isEmpty()) s.disabled.addAll(keptOff);
+        else for (Map.Entry<String, JCheckBox> entry : toolBoxes.entrySet()) if (!entry.getValue().isSelected()) s.disabled.add(entry.getKey());
         s.custom = custom.isSelected(); s.clahe = clahe.isSelected(); s.agentPreprocessing = agentPreprocessing.isSelected();
         s.strength = RegistrationSettings.LEVELS[strength.getSelectedIndex()];
         s.pixelSize = ((Number) pixel.getValue()).doubleValue();
@@ -479,10 +567,11 @@ final class RegistrationDialog extends JDialog {
         String problem = s.problem(channelNames.size());
         if (problem != null) { cost.setText("Estimated cost: " + problem); return; }
         if (estimateBusy) { estimateAgain = true; return; }
+        JsonObject spec = s.spec();
+        if (!s.overwrite) freezeRegistered(spec, rows);
         JsonObject params = new JsonObject();
-        params.add("spec", s.spec());
+        params.add("spec", spec);
         params.addProperty("n_slices", rows.size());
-        params.addProperty("locked", s.overwrite ? 0 : rows.stream().filter(r -> r.registrations > 0).count());
         estimateBusy = true;
         new SwingWorker<JsonObject, Void>() {
             @Override protected JsonObject doInBackground() throws Exception { return host.estimate(params); }
@@ -501,6 +590,15 @@ final class RegistrationDialog extends JDialog {
                 if (estimateAgain) { estimateAgain = false; refreshEstimate(); }
             }
         }.execute();
+    }
+
+    /**
+     * The freeze the run sends for registered rows when overwriting is off. Rows are named as the run names its
+     * snapshots (atlas order, section_NNNN.tif); a warp the user made is not known here, so only the affine is.
+     */
+    static void freezeRegistered(JsonObject spec, List<SliceRow> rows) {
+        for (int r = 0; r < rows.size(); r++)
+            if (rows.get(r).registrations > 0) Frozen.registered(spec, String.format(Locale.ROOT, "section_%04d.tif", r + 1), false);
     }
 
     /**

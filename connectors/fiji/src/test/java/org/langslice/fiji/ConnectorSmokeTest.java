@@ -152,7 +152,9 @@ public final class ConnectorSmokeTest {
     /** Every saved checkpoint goes to the live hook as it arrives (ChatGPT mode too); listeners get events and checkpoints. */
     static void runChecks(Path prefix) throws Exception {
         JsonObject request = new JsonObject(); request.addProperty("image_folder", "x");
-        request.add("locked", JsonParser.parseString("[\"section_0002.tif\"]"));
+        JsonObject spec = new JsonObject();
+        spec.add("frozen", JsonParser.parseString("{\"section_0002.tif\":[\"orientation\",\"affine\",\"deformation\"]}"));
+        request.add("spec", spec);
         request.add("damaged", JsonParser.parseString("{\"section_0001.tif\":\"torn\"}"));
         request.add("existing_warp", JsonParser.parseString("[\"section_0002.tif\"]"));
         List<JsonObject> live = Collections.synchronizedList(new ArrayList<>());
@@ -168,9 +170,11 @@ public final class ConnectorSmokeTest {
         JsonObject applied = live.get(0);
         require(applied.getAsJsonArray("host_updates").get(0).getAsJsonObject().get("position_mm").getAsInt() == 1
                 && applied.getAsJsonObject("host_angles").get("pitch_deg").getAsDouble() == 2.0, "Live payload carries host rows and host_angles");
-        require(result.getAsJsonObject("echo").get("locked").equals(request.get("locked"))
+        require(result.getAsJsonObject("echo").getAsJsonObject("spec").get("frozen").equals(spec.get("frozen"))
+                && !result.getAsJsonObject("echo").has("locked") && !result.getAsJsonObject("echo").has("nonlinear_skip")
                 && result.getAsJsonObject("echo").get("damaged").equals(request.get("damaged"))
-                && result.getAsJsonObject("echo").get("existing_warp").equals(request.get("existing_warp")), "Locked, damaged and existing_warp reach the worker");
+                && result.getAsJsonObject("echo").get("existing_warp").equals(request.get("existing_warp")),
+                "Frozen (in spec), damaged and existing_warp reach the worker; locked and nonlinear_skip are not sent");
         require(progress.lines.contains("agent started") && progress.lines.stream().anyMatch(l -> l.contains("Saved steps: 1") && l.contains("live in ABBA")),
                 "Run log and live status reach the window");
         require(heard.stream().filter(m -> m.contains("\"kind\":\"checkpoint\"")).count() == 2, "Both checkpoints reach listeners");
@@ -233,18 +237,47 @@ public final class ConnectorSmokeTest {
     /** Dialog choices become the contract's spec, preprocessing and exported channel order, and persist. */
     static void settingsChecks() throws Exception {
         RegistrationSettings s = new RegistrationSettings();
+        JsonObject unknownProtocol = s.spec().getAsJsonObject("position");
+        require(!unknownProtocol.has("thickness_um") && !unknownProtocol.has("interval_um"),
+                "Unspecified protocol has no lab-specific defaults");
+        s.thickness = 50; s.interval = 200;
+        JsonObject knownProtocol = s.spec().getAsJsonObject("position");
+        require(knownProtocol.get("thickness_um").getAsInt() == 50
+                && knownProtocol.get("interval_um").getAsInt() == 200, "Supplied lab protocol survives");
+        s.thickness = 0; s.interval = 0;
+
         s.model = RegistrationSettings.modelId("gpt-6-luna"); s.reasoning = "high"; s.resolution = "medium";
         s.positioning = true; s.linear = true; s.affine = false; s.maxParallel = 2; s.agentDamage = false;
         s.positionNotes = " thick sections "; s.linearNotes = "tears ventral"; s.cue = "ink right";
         JsonObject spec = s.spec();
         require(spec.getAsJsonArray("tasks").toString().equals("[\"position\",\"transform\"]"), "Positioning = position, Linear = transform");
         require(spec.get("model").getAsString().equals("openai-oauth/gpt-6-luna") && spec.get("reasoning").getAsString().equals("high"), "Model id and reasoning");
-        require(spec.get("image_resolution").getAsString().equals("medium") && !spec.get("agent_damage").getAsBoolean(), "Resolution and agent damage flag");
+        require(spec.get("image_resolution").getAsString().equals("medium"), "Resolution");
+        // The four old switches are gone; their simple checkboxes now name tools in spec.disabled.
+        require(!spec.has("agent_damage") && spec.getAsJsonArray("disabled").toString().equals("[\"mark_damage\",\"elastix_affine\"]"),
+                "Agent damage off and affine off are names in disabled, and agent_damage is not sent");
         JsonObject transform = spec.getAsJsonObject("transform");
-        require(!transform.get("automatic").getAsBoolean() && transform.get("interactive").getAsBoolean() && !transform.has("elastix")
+        require(!transform.has("automatic") && !transform.has("interactive") && !transform.has("flip") && !transform.has("elastix")
                 && !transform.get("angles").getAsBoolean() && transform.get("max_parallel").getAsInt() == 2 && transform.get("notes").getAsString().equals("tears ventral"), "Linear block");
-        require(transform.get("flip").getAsBoolean() && transform.get("hemisphere_cue").getAsString().equals("ink right") && !spec.has("reorder"),
-                "Flip and hemisphere cue belong to Linear (transform.*), never reorder.*");
+        require(transform.get("hemisphere_cue").getAsString().equals("ink right") && !spec.has("reorder"),
+                "Hemisphere cue belongs to Linear (transform.*), never reorder.*");
+        s.flip = false;
+        require(s.spec().getAsJsonArray("disabled").toString().equals("[\"mark_damage\",\"elastix_affine\",\"interactive_transform:flip\"]"),
+                "Flip off is interactive_transform:flip in disabled");
+        s.flip = true;
+        s.disabled.add("zoom"); s.disabled.add("look:positioning"); s.disabled.add("zoom");
+        require(s.spec().getAsJsonArray("disabled").toString().equals("[\"mark_damage\",\"elastix_affine\",\"zoom\",\"look:positioning\"]"),
+                "Advanced-list names are added once, after the simple checkboxes' names");
+        s.disabled.clear();
+        JsonObject catalog = JsonParser.parseString("{\"tools\":[{\"name\":\"look\",\"group\":\"Common\",\"kind\":\"read\",\"disableable\":false,"
+                + "\"options\":[\"section\",\"atlas\"],\"needs\":[]},{\"name\":\"zoom\",\"group\":\"Common\",\"kind\":\"read\",\"disableable\":true,"
+                + "\"options\":[],\"needs\":[]},{\"name\":\"elastix_affine\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,"
+                + "\"options\":[],\"needs\":[[\"look:overlay\"]]}]}").getAsJsonObject();
+        List<RegistrationSettings.Tool> tools = RegistrationSettings.toolCatalog(catalog);
+        require(tools.size() == 3 && !tools.get(0).disableable && tools.get(0).options.equals(Arrays.asList("section", "atlas"))
+                && tools.get(2).needs.get(0).get(0).equals("look:overlay") && tools.get(1).disableable && !tools.get(1).group.equals("Linear"),
+                "The tool catalog parses; a service without one gives none");
+        require(RegistrationSettings.toolCatalog(new JsonObject()).isEmpty(), "No catalog from an older service");
         require(spec.getAsJsonObject("position").get("notes").getAsString().equals("thick sections"), "Positioning block");
         require(!spec.has("inputs"), "Damaged slices travel as a request parameter, never in the spec");
         require(!spec.get("agent_preprocessing").getAsBoolean() && !spec.getAsJsonArray("tasks").toString().contains("nonlinear"), "Off by default");
@@ -285,6 +318,7 @@ public final class ConnectorSmokeTest {
         s.nonlinear = true; s.angles = true; s.agentPreprocessing = true; s.viewer = true;
         s.imageProvider = "none"; s.imageModel = null; s.nonlinearNotes = "notes";
         s.saveTraces = true; s.traceDir = " ";
+        s.disabled.add("zoom");
         require(s.problem(3) != null, "Saving traces needs a folder");
         s.traceDir = "/tmp/langslice traces";
         require(s.problem(3) == null, "A trace folder with a space is accepted");
@@ -294,7 +328,9 @@ public final class ConnectorSmokeTest {
         require(!back.fresh && back.spec().equals(s.spec()) && back.preprocessing(3).equals(s.preprocessing(3)) && back.pixelSize == s.pixelSize
                 && back.overwrite == s.overwrite && back.showLog == s.showLog && back.viewer
                 && back.imageProvider.equals("none") && back.imageModel == null 
-                && back.saveTraces && back.traceDir.equals(s.traceDir), "Every choice persists between runs");
+                && back.saveTraces && back.traceDir.equals(s.traceDir) && back.disabled.equals(s.disabled)
+                && back.spec().getAsJsonArray("disabled").toString().equals(s.spec().getAsJsonArray("disabled").toString()),
+                "Every choice persists between runs, the Advanced list included");
         node.removeNode();
         JsonObject status = JsonParser.parseString("{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],"
                 + "\"default_agent_model\":\"openai-oauth/gpt-6-sol\",\"default_image_model\":\"gpt-image-2.5-sunburst\"}}}").getAsJsonObject();

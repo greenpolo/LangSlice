@@ -3,8 +3,9 @@
 ``position_sections`` and ``interactive_transform`` write, then show their
 opinionated picture (:func:`langslice.ops.look.show_result`: the
 positioning picture, or the section under its new transform with the atlas
-borders on it) unless the call's ``view`` is false and the host does not
-force it (``JobSpec.force_view``). ``mark_damage`` always shows the marked
+borders on it; where the job disables ``look:positioning``, the overlay of
+each section ``position_sections`` wrote) unless the call's ``view`` is false
+and the host does not force it (``JobSpec.force_view``). ``mark_damage`` always shows the marked
 regions. ``note``, ``undo``, ``redo`` and ``submit`` answer with rows.
 """
 
@@ -15,6 +16,7 @@ from typing import Any
 
 from langslice.core import layers
 from langslice.core.display import default_options
+from langslice.core.needs import render
 from langslice.core.sizes import picture_edge
 from langslice.core.state import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
@@ -62,9 +64,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                     else None
                 if record is not None and not door.box.compared.get(record.id):
                     # One look is enough: a section is confirmed at one position.
-                    rejected.append({"id": record.id, "reason": "not compared since its "
-                                     "last write; look at it in mode overlay or positioning "
-                                     "first"})
+                    rejected.append({"id": record.id, "reason": render(
+                        "not compared since its last write; look at it in mode "
+                        "[[?look:overlay overlay or ]]positioning first", spec.switched_off)})
                     continue
                 kept.append(entry)
             entries = kept
@@ -104,7 +106,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         records = [job.state.by_id(name) for name in pictured_ids]
         positions = _positions([float(record.position_mm) for record in records
                                 if record is not None and record.position_mm is not None])
-        shown = ops_look.show_result(job, ctx, "position_sections", "positioning",
+        # The positioning picture, or, where the job disables that look, the
+        # sections' overlays.
+        mode = "overlay" if spec.off("look:positioning") else "positioning"
+        shown = ops_look.show_result(job, ctx, "position_sections", mode,
                                      pictured_ids, positions_mm=positions)
         return pictured(result, shown)
 

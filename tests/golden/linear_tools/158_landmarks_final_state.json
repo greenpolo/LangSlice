@@ -11,10 +11,9 @@
   "debrief": "",
   "image_folder": "<ROOT>/landmarks",
   "interval_breaks": [],
-  "interval_mm": 0.2,
+  "interval_mm": null,
   "notes": [
-   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
-   "ingest: 3 section(s) given evenly spaced starting positions"
+   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm"
   ],
   "plane": "coronal",
   "slices": [
@@ -29,8 +28,8 @@
     "index_corrected": 0,
     "index_original": 0,
     "landmarks": {},
-    "position_mm": 0.0417,
-    "position_source": "default",
+    "position_mm": null,
+    "position_source": "",
     "rotation_deg": 0,
     "transform": null
    },
@@ -522,14 +521,13 @@
     "index_corrected": 2,
     "index_original": 2,
     "landmarks": {},
-    "position_mm": 0.2083,
-    "position_source": "default",
+    "position_mm": null,
+    "position_source": "",
     "rotation_deg": 0,
     "transform": null
    }
   ],
   "spec": {
-   "agent_damage": true,
    "agent_preprocessing": true,
    "atlas": "allen_mouse_25um",
    "debrief": true,
@@ -552,11 +550,11 @@
    "plane": "coronal",
    "position": {
     "gated": false,
-    "interval_um": 200,
+    "interval_um": null,
     "notes": "",
     "playbook": false,
     "strict_interval": false,
-    "thickness_um": 50
+    "thickness_um": null
    },
    "preprocess": "none",
    "reasoning": null,
@@ -568,15 +566,12 @@
    ],
    "transform": {
     "angles": true,
-    "automatic": true,
-    "flip": true,
     "hemisphere_cue": "",
-    "interactive": true,
     "max_parallel": 4,
     "notes": ""
    }
   },
   "submitted": false,
-  "thickness_mm": 0.05
+  "thickness_mm": null
  }
 }

@@ -96,11 +96,10 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
     assert not any(isinstance(block, ImageContent) for block in result.content)
     images = [block for block in pages if isinstance(block, ImageContent)]
     texts = [block.text for block in pages if isinstance(block, TextContent)]
-    # One strip of the three sections, each over the atlas at its starting
-    # position (every section has one), so no atlas reference strip.
+    # Unplaced sections and an independent atlas reference.
     assert "Strip 1 of 1: s0.png, s1.png, s2.png" in texts
-    assert not any(text.startswith("Atlas reference strip") for text in texts)
-    assert len(images) == 1
+    assert any(text.startswith("Atlas reference strip") for text in texts)
+    assert len(images) > 1
     assert all(image.mimeType.startswith("image/") and image.data for image in images)
     for image in images:
         with Image.open(BytesIO(base64.b64decode(image.data))) as picture:
@@ -177,6 +176,8 @@ def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
     async def body(client: Any) -> Any:
+        await client.call_tool("position_sections", {
+            "sections": [{"id": "s1.png", "position_mm": 2.0}], "view": False})
         return (
             await client.call_tool("look", {"mode": "section", "sections": [0, "s2.png"]}),
             await client.call_tool("interactive_transform", {"sections": [
@@ -233,6 +234,49 @@ def test_a_retired_tool_answers_with_the_tool_to_use_over_mcp(tmp_path: Path):
     # A name that never was a tool is still FastMCP's unknown tool.
     assert unknown.isError
     assert "RETIRED_TOOL" not in unknown.content[0].text
+
+
+def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path: Path):
+    def spec_for(folder: str) -> JobSpec:
+        return JobSpec(image_folder=folder, preprocess="none", tasks=["position"],
+                       disabled=["zoom", "look:positioning", "mark_damage"])
+
+    server = build_server(spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return ((await client.list_tools()).tools,
+                await client.call_tool("view_stack", {}),
+                await client.call_tool("look", {"mode": "positioning"}))
+
+    tools, view, looked = _session(server, body)
+    by_name = {tool.name: tool for tool in tools}
+    assert "zoom" not in by_name and "mark_damage" not in by_name
+    assert by_name["look"].inputSchema["properties"]["mode"]["enum"] == [
+        "section", "atlas", "overlay"]
+    for tool in tools:
+        text = json.dumps(tool.inputSchema) + (tool.description or "")
+        assert "zoom takes" not in text and "positioning mode" not in text
+    # A retired tool whose replacement is a mode that is off says nothing replaces it.
+    answer = _text(view)
+    assert answer["error"] == "RETIRED_TOOL" and "use" not in answer
+    assert "nothing replaces it" in answer["message"] and "positioning" not in answer["message"]
+    # A mode the schema does not offer is refused before the tool runs.
+    assert looked.isError or _text(looked).get("error") in ("OPTION_OFF", "UNKNOWN_ARGUMENTS")
+
+
+def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_path: Path):
+    import pytest
+
+    from langslice.core.spec import NonlinearSpec
+    from langslice.doors.mcp.server import open_job
+
+    spec = JobSpec(image_folder=str(_folder(tmp_path)), preprocess="none",
+                   tasks=["nonlinear"],
+                   disabled=["ants_syn", "set_landmarks", "landmark_triangulation"],
+                   nonlinear=NonlinearSpec(provider="openai-api"))
+    # Valid with the image model; the door that cannot reach it has no writer.
+    with pytest.raises(ValueError, match="image model is not connected"):
+        open_job(spec, atlas_loader=lambda _n: _ATLAS)
 
 
 def test_normalize_arguments_only_touches_what_the_schema_would_refuse():
@@ -304,7 +348,7 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
             with Image.open(BytesIO(base64.b64decode(picture.data))) as image:
                 assert max(image.size) <= CLAUDE_MAX_IMAGE_EDGE
                 assert patches(image.size) <= CLAUDE_MAX_IMAGE_PATCHES
-    assert not any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
+    assert any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
                    for page in job.pages for block in page)
 
 
@@ -316,8 +360,9 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False}},
-              "locked": [f"s{i}.png" for i in range(3)], "damaged": {"s0.png": "torn"},
+              "spec": {"tasks": ["transform"], "transform": {"angles": False},
+                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}},
+              "damaged": {"s0.png": "torn"},
               "preprocessing": {"mode": "auto"}, "notes": "Keep the supplied positions."}
     prepared = saved_jobs.prepare_saved_job(params)
     path = Path(prepared["job_dir"])
@@ -438,8 +483,8 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     folder = _folder(tmp_path)
     params = {"image_folder": str(folder), "pixel_size_um": 25,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
-              "spec": {"tasks": ["transform"], "transform": {"angles": False}},
-              "locked": [f"s{i}.png" for i in range(3)]}
+              "spec": {"tasks": ["transform"], "transform": {"angles": False},
+                       "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}}}
     result = handle_request(EngineRequest(id="copy", method="mcp.prepare", params=params),
                             lambda _event: None)
     job_id = result.result["job_id"]

@@ -8,9 +8,8 @@ product name. Canonical names:
   ``OPENAI_BASE_URL``) via an API key.
 - ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login
   (``langslice login``; transport lives in ``providers/openai_oauth.py``).
-- ``none``: no model at all. Registration's model-free backbone registers
-  the silhouette prior itself (see ``core/nonlinear/prior.py``); there is nothing
-  to authenticate, so it needs no transport module.
+- ``none``: no image model; ANTs fits to the stain directly. There is
+  nothing to authenticate for tracing, so it needs no transport module.
 
 A new provider gets its canonical name in the provider-free table
 :mod:`langslice.core.provider_names` (re-exported here, so the core compares
@@ -38,12 +37,12 @@ if TYPE_CHECKING:
 OPENAI_OAUTH_AGENT_MODELS: tuple[str, ...] = tuple(
     f"openai-oauth/{name}"
     for name in (
-        "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+        "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
         "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
     )
 )
 #: Default agent/review model on the ``openai-oauth`` lane.
-OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-5.6-sol"
+OPENAI_OAUTH_DEFAULT_AGENT_MODEL = "openai-oauth/gpt-6.1-sol"
 #: Image models on the ``openai-oauth`` lane (GPT Image 2.5: ``sunburst``
 #: the most capable, ``flare`` the fastest), and the default. The Codex
 #: backend serves its own current image model whatever the request names.

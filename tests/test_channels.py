@@ -55,6 +55,7 @@ def _open(tmp_path: Path, atlas: SyntheticAtlas, n: int = 2) -> tuple[Job, Any]:
     for index in range(n):
         _rgb_section(index).save(tmp_path / f"s{index}.png")
     spec = JobSpec(image_folder=str(tmp_path), model="fake-model", preprocess="none",
+                   tasks=["position", "transform", "nonlinear"],
                    inputs={"pixel_size_um": UM})
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
