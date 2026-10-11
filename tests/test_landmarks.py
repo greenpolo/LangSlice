@@ -76,7 +76,7 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         job.commit(before)
         assert all(p["stale"] for p in record.landmarks["pairs"])
         assert all(p["stale"] for p in json.loads(derived.read_text())["pairs"])
-        with pytest.raises(Refused, match="Update the stale"):
+        with pytest.raises(Refused, match="re-place their atlas endpoints"):
             landmarks.landmark_triangulation(job, ws, record.id)
         assert job.undo()
         record = job.state.by_id(record.id)
@@ -182,7 +182,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
         job.views.flush()
         again_panel = job.views.lookup(again.entries[0]["id"]).recipe["endpoint_panels"][0]
         again_point = geometry.section_picture_point(again_panel, pair["section_fraction_xy"])
-        updated = landmarks.set_landmarks(
+        landmarks.set_landmarks(
             job,
             ws,
             record.id,
@@ -197,7 +197,7 @@ def test_side_by_side_zoom_preserves_offsets_gutters_and_old_landmarks(tmp_path)
                 }
             ],
         )
-        assert updated["landmarks"][0]["section_fraction_xy"] == pytest.approx(
+        assert record.landmarks["pairs"][0]["section_fraction_xy"] == pytest.approx(
             pair["section_fraction_xy"]
         )
         # A batch can inspect each endpoint, and all pictures get their own IDs.

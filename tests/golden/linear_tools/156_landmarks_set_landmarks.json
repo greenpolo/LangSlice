@@ -2,6 +2,12 @@
  "args": [],
  "data": {
   "changed": [],
+  "counts": {
+   "applied": 2,
+   "pending": 0,
+   "stale": 0,
+   "total": 2
+  },
   "deleted": [
    "L2"
   ],
@@ -9,38 +15,30 @@
    {
     "atlas": {
      "picture": 3,
-     "pixel_xy": [
-      46.43750000000001,
-      35.8125
-     ]
+     "x": 46.4,
+     "y": 35.8
     },
     "id": "L1",
     "section": {
      "picture": 4,
-     "pixel_xy": [
-      74.1,
-      56.9
-     ]
+     "x": 74.1,
+     "y": 56.9
     },
-    "stale": false
+    "state": "applied"
    },
    {
     "atlas": {
      "picture": 3,
-     "pixel_xy": [
-      80.4375,
-      87.8125
-     ]
+     "x": 80.4,
+     "y": 87.8
     },
     "id": "L3",
     "section": {
      "picture": 4,
-     "pixel_xy": [
-      128.5,
-      140.1
-     ]
+     "x": 128.5,
+     "y": 140.1
     },
-    "stale": false
+    "state": "applied"
    }
   ],
   "section": "s1.png",

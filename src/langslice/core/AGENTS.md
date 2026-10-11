@@ -514,13 +514,23 @@ exactly one section use that section's own plane and map to native atlas
 pixels; overlays map through the actual saved inverse warp. Generic atlas
 browsing and positioning thumbnails do not supply correspondence geometry.
 Annotations are drawn only on final composite pictures. Look snapshots include
-the landmark set, so old zooms preserve its original markers. Positioning index
+the landmark set, so old zooms preserve its original markers; `ANNOTATION_FIELDS`
+(`landmarks`) leave `changed_since` alone, so a pair edit never makes a picture
+`stale` (`differs_since` still restores the old markers). `pair_states` /
+`landmark_counts` give a pair's `applied` / `pending` / `stale` state and the
+status row's counts; `draw_folds` outlines the applied warp's folded
+triangles (`landmark_folds` in the deformation reference) on a warped
+overlay. An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
+times past its voxels. Positioning index
 captions include per-section landmark counts without cluttering thumbnails.
 
 `triangulation.py` implements `PiecewiseAffine` and `visualign_mesh`: Delaunay
 on section-domain pixels (preserving original aspect ratio), fixed 10% outside
 corners, and inverse evaluation on the same mesh connectivity. Repeated
-sources, collapsed triangles and folds are invalid correspondence geometry.
+sources and zero-area source triangles are `DegenerateMesh` (with the vertex
+indices); folds (a target triangle winding the other way) are accepted:
+`folded` marks them, the forward map is the source Delaunay's, and the inverse
+tries unfolded triangles before folded ones, each in simplex order.
 `landmark_views.py` draws each edited pair as a contextual template/preprocessed
-section crop, retains a 60% anatomical window and panel geometry, and labels
+section crop (the atlas panel with the region borders), retains a 60% anatomical window and panel geometry, and labels
 the selected pair. Crop zooms preserve exact panel mappings and refuse gutters.

@@ -127,8 +127,14 @@ def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
     assert result["interval_breaks"] == []
     assert "rows" not in result  # the whole table is `status`, one call away
     assert len(_tool(box, "status")()["rows"]) == 5
-    assert len(_tool(box, "undo")()["rows"]) == 5
-    assert len(_tool(box, "redo")()["rows"]) == 5
+    undone = _tool(box, "undo")()
+    assert undone["undone"]["tool"] == "position_sections"
+    assert {"s0.png", "s3.png"} <= set(undone["undone"]["sections"])
+    assert sorted(row["id"] for row in undone["changed"]) == sorted(undone["undone"]["sections"])
+    assert "rows" not in undone  # only what the step touched
+    redone = _tool(box, "redo")()
+    assert redone["redone"]["tool"] == "position_sections"
+    assert {"s0.png", "s3.png"} <= {row["id"] for row in redone["changed"]}
 
 
 def test_an_exact_rewrite_of_a_starting_position_makes_it_the_agents(tmp_path: Path):

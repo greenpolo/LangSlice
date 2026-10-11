@@ -427,9 +427,20 @@ baseline (`current.parent`), retaining its key and steps in state; a different
 intervening method establishes a new baseline. The VisuAlign mesh supplies dense
 forward and same-connectivity inverse fields to the usual record composition
 and diagnostic machinery without running ANTs. Unreadable current records,
-missing inverses, collapsed/folded mesh triangles and stale atlas endpoints
-are refused. Both verbs belong to Nonlinear; the method's submission does not
-end the job. Both refuse a section whose `deformation` is frozen (`FROZEN`,
+missing inverses, repeated section points, zero-area source triangles (named by
+pair id) and stale atlas endpoints (named by pair id) are refused. Folded
+triangles are applied and reported (`folds`: area fraction, pair ids; stored as
+`landmark_folds` in the deformation reference, which also holds
+`landmark_pairs`, the pair-to-geometry digest `applied` is read from; a record
+without it is `applied` when its `landmark_revision` matches the pairs). A
+refused endpoint says the pair (call index and id), role, picture, x,y and the
+picture's content box. `set_landmarks` replies with one compact record per pair
+(`id`, `atlas`, `section`, `state`: applied/pending/stale) and counts, and with
+no pairs and no delete writes nothing; `delete=["all"]` clears the section.
+`history.undo/redo` report `step` (`describe_step`: the tool read off the
+changed field groups, the sections touched). `look.show_result` takes
+`resolution`; `look.zoom`'s entries carry `content_box`. Both verbs belong to
+Nonlinear. Both refuse a section whose `deformation` is frozen (`FROZEN`,
 the whole call; `core/toolset.py` offers neither tool when it is frozen on every
 section, and they need each other). Pair edits leave the current registration applied until another
 explicit application or undo. An unchanged application is a no-op.

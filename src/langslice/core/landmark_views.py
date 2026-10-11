@@ -25,7 +25,7 @@ def pair_picture(
             mode=mode,
             sections=(record.id,),
             channels=("preprocessed",) if role == "section" else (),
-            atlas_layers=("template",),
+            atlas_layers=("template", "borders") if role == "atlas" else ("template",),
             long_edge=512,
         )
         whole = look.look(ws, state, request, store=store)[0]

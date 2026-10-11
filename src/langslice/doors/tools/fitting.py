@@ -18,8 +18,9 @@ from collections.abc import Callable
 from typing import Any
 
 from langslice.core.display import available_atlas_channels, canonical_atlas_name, default_options
-from langslice.core.sizes import picture_edge
+from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.doors.tools.door import Door, as_list, pictured
+from langslice.doors.tools.view_options import clamp_resolution
 from langslice.ops import deformable as ops_deformable
 from langslice.ops import exports as ops_exports
 from langslice.ops import landmarks as ops_landmarks
@@ -192,13 +193,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete)
         except Refused as refusal:
             return refusal.payload()
-        full_pairs = result["landmarks"]
-        result["landmarks"] = [{"id": pair["id"],
-                                "atlas": {"picture": pair["atlas"]["picture"],
-                                          "pixel_xy": pair["atlas"]["pixel_xy"]},
-                                "section": {"picture": pair["section"]["picture"],
-                                            "pixel_xy": pair["section"]["pixel_xy"]},
-                                "stale": pair["stale"]} for pair in full_pairs]
         if not shows(view) or not result["changed"]:
             return result
         from langslice.core.landmark_views import pair_picture
@@ -206,6 +200,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
         record = job.state.by_id(result["section"])
         assert record is not None
+        full_pairs = record.landmarks.get("pairs", [])
         try:
             with collecting() as notes:
                 pictures = [pair_picture(ctx, job.state, record, pair, store=job.deformations)
@@ -217,14 +212,26 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["render_failed"] = str(exc)
             return result
 
-    def landmark_triangulation(section: str, view: bool = True) -> dict[str, Any]:
+    def landmark_triangulation(section: str, view: bool = True,
+                               resolution: int = 0) -> dict[str, Any]:
+        edge: int | None = None
+        if resolution and door.level == AUTO_RESOLUTION:
+            try:
+                edge, note = clamp_resolution(resolution, door.box.max_view_edge)
+            except (TypeError, ValueError):
+                return {"status": "error", "error": "BAD_ARGS",
+                        "message": "resolution is a whole number of pixels."}
+        else:
+            note = ""
         try:
             result = ops_landmarks.landmark_triangulation(job, ctx, section)
         except Refused as refusal:
             return refusal.payload()
+        if note:
+            result["resolution_note"] = note
         if shows(view):
             shown = ops_look.show_result(job, ctx, "landmark_triangulation",
-                                         "overlay", [result["section"]])
+                                         "overlay", [result["section"]], resolution=edge)
             return pictured(result, shown)
         return result
 

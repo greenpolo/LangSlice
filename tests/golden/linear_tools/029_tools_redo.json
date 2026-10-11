@@ -1,13 +1,7 @@
 {
  "args": [],
  "data": {
-  "cutting_angles_deg": {
-   "pitch": 0.0,
-   "yaw": 0.0
-  },
-  "interval_breaks": [],
-  "redo_depth": 0,
-  "rows": [
+  "changed": [
    {
     "damaged": false,
     "delta_to_next_mm": 0.05,
@@ -32,6 +26,20 @@
     "rotation_deg": 0
    }
   ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "redo_depth": 0,
+  "redone": {
+   "sections": [
+    "s0.png",
+    "s1.png",
+    "s2.png"
+   ],
+   "tool": "position_sections"
+  },
   "status": "ok"
  },
  "door": "tools",

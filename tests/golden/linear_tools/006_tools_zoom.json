@@ -12,6 +12,12 @@
   "pictures": [
    {
     "caption": "s0.png section, no position; 7.3 um/px; raw gray auto; from the image file",
+    "content_box": [
+     0,
+     0,
+     512,
+     384
+    ],
     "id": 7
    }
   ],

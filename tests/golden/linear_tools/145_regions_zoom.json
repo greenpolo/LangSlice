@@ -5,6 +5,12 @@
   "pictures": [
    {
     "caption": "s1.png overlay, at 0.12 mm; identity transform, no deformation; 4.8 um/px; raw red, green, blue auto; atlas borders; regions STR only; from the image file",
+    "content_box": [
+     0,
+     0,
+     512,
+     376
+    ],
     "id": 2
    }
   ],
