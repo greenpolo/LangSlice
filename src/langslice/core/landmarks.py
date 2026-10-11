@@ -207,8 +207,12 @@ def section_picture_point(panel: dict[str, Any], fractions: Any, warp: Any = Non
     return transform(np.linalg.inv(panel["pixel_to_render"]), p)
 
 
-def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = False) -> None:
-    """Open-centre circle (section) / diamond (atlas), dual contrast outlines."""
+def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = False,
+          taken: list[tuple[float, float, float, float]] | None = None) -> None:
+    """Open-centre circle (section) / diamond (atlas), dual contrast outlines.
+
+    *taken* lists the label boxes already drawn on the picture: a label that
+    would cover one is moved down until it is free, and its box is added."""
     x, y = (float(v) for v in xy)
     draw = ImageDraw.Draw(image)
     radius = 7
@@ -229,10 +233,29 @@ def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = Fal
             draw.ellipse(
                 (x - radius, y - radius, x + radius, y + radius), outline=colour, width=width
             )
+    if not label:
+        return
     text = label + (" stale" if old else "")
-    box = draw.textbbox((x + 10, y - 7), text)
-    draw.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), fill="black", outline="white")
-    draw.text((x + 10, y - 7), text, fill="white")
+    top = y - 7
+    box = draw.textbbox((x + 10, top), text)
+    for _ in range(12):
+        padded = (box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2)
+        if taken is None or not any(
+            padded[0] < t[2] and t[0] < padded[2] and padded[1] < t[3] and t[1] < padded[3]
+            for t in taken
+        ):
+            break
+        top += box[3] - box[1] + 4
+        box = draw.textbbox((x + 10, top), text)
+    padded = (box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2)
+    if taken is not None:
+        taken.append(padded)
+    draw.rectangle(padded, fill="black", outline="white")
+    draw.text((x + 10, top), text, fill="white")
+
+
+#: Markers of one kind closer than this (picture pixels) share one label.
+MERGE_PX = 12.0
 
 
 #: The colour folded triangles are outlined in on a warped overlay.
@@ -271,6 +294,7 @@ def draw_landmarks(
     for panel in panels:
         if panel["role"] == "section" and panel.get("warp_key"):
             draw_folds(image, panel, record, warp=warp)
+    placed: list[tuple[str, np.ndarray, str, bool]] = []
     for pair in record.landmarks.get("pairs", []):
         for panel in panels:
             role = panel["role"]
@@ -283,7 +307,28 @@ def draw_landmarks(
             )
             x0, y0, x1, y1 = panel["bounds"]
             if x0 <= xy[0] < x1 and y0 <= xy[1] < y1:
-                glyph(image, xy, pair["id"], role, old=stale(state, record, pair))
+                placed.append((role, np.asarray(xy, dtype=float), pair["id"],
+                               stale(state, record, pair)))
+    # Markers of one kind at the same spot, or near enough for their labels to
+    # collide, are one group with one label naming every id; labels of
+    # different groups never cover each other.
+    groups: list[list[tuple[str, np.ndarray, str, bool]]] = []
+    for item in placed:
+        for group in groups:
+            if group[0][0] == item[0] and any(
+                np.hypot(*(member[1] - item[1])) <= MERGE_PX for member in group
+            ):
+                group.append(item)
+                break
+        else:
+            groups.append([item])
+    taken: list[tuple[float, float, float, float]] = []
+    for group in groups:
+        first = group[0]
+        label = ", ".join(member[2] for member in group)
+        for member in group[1:]:
+            glyph(image, member[1], "", member[0], old=member[3])
+        glyph(image, first[1], label, first[0], old=all(m[3] for m in group), taken=taken)
 
 
 def context(state: StackState, record: SliceState) -> dict[str, Any]:

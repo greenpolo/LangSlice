@@ -252,3 +252,44 @@ def test_too_many_landmark_views_says_what_to_send(tmp_path):
         assert "Nothing was written" in reply["message"]
     finally:
         job.close()
+
+
+def test_markers_at_one_spot_show_every_id_and_labels_do_not_cover_each_other():
+    from langslice.core.landmarks import glyph
+
+    taken: list = []
+    image = Image.new("RGB", (200, 120), (90, 60, 30))
+    glyph(image, (50, 50), "L4", "atlas", taken=taken)
+    glyph(image, (50, 50), "L12", "section", taken=taken)  # a different kind, same spot
+    first, second = taken
+    assert not (first[0] < second[2] and second[0] < first[2]
+                and first[1] < second[3] and second[1] < first[3])
+
+
+def test_same_kind_markers_close_together_share_one_label_naming_all(tmp_path):
+    from langslice.core.landmarks import draw_landmarks
+
+    job, ws, record = setup(tmp_path)
+    try:
+        edits = saved_pairs(job, ws, record)
+        landmarks.set_landmarks(job, ws, record.id, edits[:1])
+        landmarks.set_landmarks(job, ws, record.id, [{"atlas": edits[0]["atlas"],
+                                                      "section": edits[0]["section"]}])
+        shown = look.look(job, ws, "atlas", sections=[record.id])
+        job.views.flush()
+        panel = job.views.lookup(shown.entries[0]["id"]).recipe["endpoint_panels"]
+        image = shown.pictures[0].copy()
+        draw_landmarks(image, panel, job.state, record)
+        # one white-on-black chip: the two pairs sit at one atlas point
+        import langslice.core.landmarks as lm
+
+        calls: list[str] = []
+        original = lm.glyph
+        lm.glyph = lambda *a, **k: (calls.append(a[2]), original(*a, **k))[1]
+        try:
+            draw_landmarks(shown.pictures[0].copy(), panel, job.state, record)
+        finally:
+            lm.glyph = original
+        assert [c for c in calls if c] == ["L1, L2"]
+    finally:
+        job.close()
