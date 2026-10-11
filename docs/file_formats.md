@@ -14,6 +14,7 @@ A registration file can also be explicitly imported when creating a job.
   registration.json     its public rendering
   history/              undo and redo steps
   sections/<name>/      per section (<name>: the filename's stem): its maps,
+                        landmarks.json (readable corresponding pairs),
                         applied deformation records (deformable/),
                         image-model traces (image_correction/), its pictures (views/)
   views/                pictures of several sections
@@ -206,3 +207,47 @@ slab, up to half a voxel from the stored continuous position.
 transforms, angles or orientation. Only the linear placement is imported:
 VisuAlign markers and saved LangSlice residual deformations are not applied
 as a new job's deformation. VisuAlign markers produce a warning.
+
+
+## Landmarks
+
+`state.json` stores each section's authoritative `landmarks` object:
+`next_id` and a list of `pairs`. Every pair has a stable `id`,
+`section_fraction_xy` (edge fractions of the original, unrotated, unflipped
+image) and `atlas_native_xy` (pixel centres in that section's native atlas
+plane). `plane` records atlas, plane, position and cutting angles; `stale`
+compares it with the section's current plane. The endpoint records `section`
+and `atlas` include `canonical_xy`, input `picture` number, input `pixel_xy`,
+its `registration_context` and the exact saved `geometry` used to resolve it.
+Appearance does not enter the correspondence's staleness test.
+
+`sections/<stem>/landmarks.json` is a readable derived copy, regenerated on
+every checkpoint, including undo and redo. It has `format_version: 1`,
+`section`, `next_id`, and `pairs`. Editing this file does not change the job.
+A landmark application records its revision in the section's deformation
+reference; the saved `DeformableRecord` includes its source/target vertices
+and mesh connectivity in `engine.native_parameters`, and its full pair set
+in `provenance`. `landmark_baseline_key` and `landmark_baseline_steps` in the
+section's deformation reference identify the registration before the current
+landmark method; its record's `parent` holds that baseline. Consecutive landmark
+applications replace the landmark method on that baseline. Undo history
+separately preserves the previously applied landmark result. Maps and exports
+consume the composed residual field through
+the same path as other applied deformations.
+
+Saved look/zoom recipes carry `endpoint_panels`: role (`atlas` or `section`),
+section filename, content `bounds`, and exact pixel maps. Framed section
+pictures use `pixel_to_file_fraction`; overlays carry `pixel_to_render`,
+render size, orientation and the saved warp key; atlas panels carry
+`pixel_to_native` and native size. All of these matrices act on `[x, y, 1]`;
+they are separate from the `[row, col, 1]` convention of public atlas maps.
+`registration_context` identifies the atlas plane and registration drawn.
+Side-by-side crops preserve their panel offsets and each panel's caption
+exclusion. Repeated saved-image crops preserve the original panel geometry
+under `source_endpoint_panels` and carry the adjusted `endpoint_panels`.
+
+When MCP shrinks a numbered picture to fit its reply budget, the delivered
+JPEG gets a new picture number and geometry at its delivered size. The
+original picture remains unchanged; `extra.transport_source_picture` names
+it. Look pictures retain their native-detail redraw recipe. Other resized
+pictures use `transport_snapshot` and subsequent zooms crop that snapshot.

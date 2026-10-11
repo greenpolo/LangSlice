@@ -47,16 +47,16 @@ def folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def test_the_seventeen_tools_and_the_file_tools():
+def test_the_nineteen_tools_and_the_file_tools():
     assert MODEL_VERBS == [
         "look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
         "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files", "read_file",
         "position_sections", "interactive_transform", "mark_damage",
-        "elastix_affine", "ants_syn", "trace_borders",
+        "elastix_affine", "ants_syn", "set_landmarks", "landmark_triangulation", "trace_borders",
         "note", "undo", "redo", "submit",
     ]
     files = {"list_files", "search_files", "read_file"}
-    assert len([name for name in MODEL_VERBS if name not in files]) == 17
+    assert len([name for name in MODEL_VERBS if name not in files]) == 19
 
 
 def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, monkeypatch):

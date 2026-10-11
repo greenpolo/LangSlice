@@ -362,3 +362,14 @@ longer exist be taken over by the images it is opened with.
 
 The frame record and the on-demand coordinate map are the core's
 (`core/layers.py`, `core/CLAUDE.md`).
+
+## Landmark state and derived file
+
+Each `SliceState.landmarks` holds its authoritative `next_id` and `pairs`.
+Checkpoint refreshes plane-stale flags independently of appearance; the same
+write regenerates `sections/<stem>/landmarks.json` through
+`formats.write_landmarks`. That JSON is derived and never read back, including
+on undo/redo. Pair IDs, both canonical endpoints, original picture numbers and
+pixel coordinates, exact endpoint geometry and registration context stay in
+state. Landmark applications use normal saved `DeformableRecord`s, so the job's
+maps, QUINT exports and ABBA consumers follow the existing residual-field path.

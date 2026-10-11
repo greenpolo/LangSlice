@@ -132,6 +132,8 @@ class SliceState:
     #: placement it was fitted at (``linear_key``); any change to position,
     #: orientation, cutting angles or transform clears it.
     deformation: dict[str, Any] | None = None
+    #: Authoritative stable landmark pairs and the next never-reused pair number.
+    landmarks: dict[str, Any] = field(default_factory=dict)
     caveats: list[str] = field(default_factory=list)
     #: This section's own cutting angles, ``{"pitch": deg, "yaw": deg}``:
     #: the atlas plane every picture, fit and map of it is drawn at. Equal

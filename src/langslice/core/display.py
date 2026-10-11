@@ -352,8 +352,10 @@ def regions_in_plane(
 
 def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
     from langslice.core.canvas import zoom_box
+    from langslice.core.picture_geometry import cropped_geometry
 
-    return image.crop(zoom_box(list(zoom), image.size))
+    box = zoom_box(list(zoom), image.size)
+    return cropped_geometry(image.crop(box), image, box)
 
 
 # --- tissue-framed pictures ----------------------------------------------
@@ -416,7 +418,10 @@ def framed_atlas(
 
     pitch, yaw = plane_angles(state, angles)
     if options.atlas_images == ("template",) and not options.lines and options.full_view:
-        return sized(atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw)))
+        from langslice.core.picture_geometry import cropped_geometry
+
+        whole = atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw))
+        return cropped_geometry(sized(whole), whole)
     plane = cast(Plane, state.plane)
     labels = np.asarray(annotation_slice(
         ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
@@ -446,6 +451,10 @@ def framed_atlas(
         box = (box[0] + inner[0], box[1] + inner[1], box[0] + inner[2], box[1] + inner[3])
     cropped = picture.crop(box)
     shown = sized(cropped).convert("RGB")
+    from langslice.core.picture_geometry import cropped_geometry
+
+    picture.info["pixel_to_native"] = np.eye(3).tolist()
+    cropped_geometry(shown, picture, box)
     if not options.lines:
         return shown
     factor = shown.width / float(cropped.width)
@@ -468,7 +477,9 @@ def framed_atlas(
         _draw_polys(canvas, region_polys(labels, options.regions, left), rgb,
                     thickness=options.border_thickness * HIGHLIGHT_WIDTH, origin=origin,
                     factor=factor)
-    return Image.fromarray(canvas, mode="RGB")
+    result = Image.fromarray(canvas, mode="RGB")
+    result.info["pixel_to_native"] = shown.info["pixel_to_native"]
+    return result
 
 
 def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions,

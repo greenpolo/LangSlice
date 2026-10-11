@@ -177,7 +177,7 @@ def test_region_zoom_crops_only_selected_border_and_preserves_saved_state(tmp_pa
 @pytest.mark.parametrize("mode", ["section", "atlas", "positioning"])
 def test_region_zoom_refuses_other_picture_modes(tmp_path: Path, mode: str):
     ws, state = stack(tmp_path)
-    first = look(ws, state, LookRequest(mode, sections=("s1.png",), positions_mm=(0.1,)))[0]
+    first = look(ws, state, LookRequest(mode, sections=("s1.png",), positions_mm=(0.15,)))[0]
     with pytest.raises(ZoomError) as caught:
         redraw(first.recipe, [], ws, state=state, region="STR")
     assert caught.value.code == "BAD_REGION_PICTURE"

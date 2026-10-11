@@ -388,3 +388,28 @@ wording; `registry.py` lists which.
 The pictures are drawn by the core (`src/langslice/core/`, its own
 `CLAUDE.md`), and the job saves every one a door shows, with its layers, in
 the job folder through one hook (`Job.views.shown`, `src/langslice/job/`).
+
+## Landmark verbs
+
+`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=)` atomically
+adds/updates/deletes stable corresponding pairs, ONE undo step for the batch,
+and applies no deformation. It resolves the exact saved picture recipe and
+explicit atlas/section roles; it refuses captions, gutters, out-of-image
+coordinates, missing geometry and stale atlas planes. Section endpoints are
+original-image edge fractions; atlas endpoints are native plane pixels.
+`landmark_triangulation(job, workspace, section)` explicitly applies the full
+set, at least three pairs, on its written linear placement. The first application
+composes onto the current deformation via its stored inverse. Consecutive
+landmark applications replace the landmark method against that original
+baseline (`current.parent`), retaining its key and steps in state; a different
+intervening method establishes a new baseline. The VisuAlign mesh supplies dense
+forward and same-connectivity inverse fields to the usual record composition
+and diagnostic machinery without running ANTs. Unreadable current records,
+missing inverses, collapsed/folded mesh triangles and stale atlas endpoints
+are refused. Both verbs belong to Nonlinear; the method's submission does not
+end the job. Pair edits leave the current registration applied until another
+explicit application or undo. An unchanged application is a no-op.
+
+`look.zoom` also accepts `requests`, up to four saved-picture inspections;
+the single `box` / `picture` / `region` call remains available. Each returned
+zoom has its own picture number and per-request facts.

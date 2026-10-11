@@ -431,7 +431,16 @@ def framed_window(
     grid_x, grid_y = np.meshgrid(fx, fy)
     ux, uy = unoriented_fractions(grid_x, grid_y, record.rotation_deg, record.flip)
     found = section_pixels(ws, record, look, bx0 + ux * box_w - 0.5, by0 + uy * box_h - 0.5)
-    return Image.fromarray(found.rgb), found.enlarged
+    from langslice.core.landmarks import orientation
+
+    image = Image.fromarray(found.rgb)
+    crop_to_file = np.array([[box_w/width, 0, bx0/width],
+                             [0, box_h/height, by0/height], [0, 0, 1]])
+    pixel_to_window = np.array([[(x1-x0)/cols, 0, x0+.5*(x1-x0)/cols],
+                                [0, (y1-y0)/rows, y0+.5*(y1-y0)/rows], [0, 0, 1]])
+    image.info["pixel_to_file_fraction"] = (crop_to_file @ orientation(record)
+                                            @ pixel_to_window).tolist()
+    return image, found.enlarged
 
 
 def _at_size(plane: np.ndarray, size: tuple[int, int]) -> np.ndarray:

@@ -101,10 +101,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["resolution_note"] = note
         return pictured(result, done)
 
-    def zoom(box: list[float], picture: int, region: str) -> dict[str, Any]:
+    def zoom(box: list[float], picture: int, region: str,
+             requests: list[dict[str, Any]]) -> dict[str, Any]:
         try:
             done = ops_look.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
-                                 region=region)
+                                 region=region, requests=requests)
         except Refused as refusal:
             return refusal.payload()
         except (TypeError, ValueError):
@@ -114,6 +115,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                   "redrawn": done.redrawn}
         if done.stale:
             result["stale"] = True
+        if done.results:
+            result["results"] = done.results
+            if not done.pictures:
+                result.update(status="error", error="NOTHING_ZOOMED")
         result["pictures"] = list(done.entries)
         result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
         return result

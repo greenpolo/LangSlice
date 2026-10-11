@@ -1,0 +1,163 @@
+"""Persistent landmark geometry and display annotations, independent of appearance."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+from langslice.core.deformation import linear_key
+from langslice.core.native import unoriented_fractions
+from langslice.core.state import SliceState, StackState
+
+
+def affine_from_points(points: np.ndarray) -> np.ndarray:
+    """Affine whose images of (0,0), (1,0), (0,1) are *points*."""
+    return np.array(
+        [[*(points[1] - points[0]), 0], [*(points[2] - points[0]), 0], [*points[0], 1]], dtype=float
+    ).T
+
+
+def transform(matrix: Any, points: Any) -> np.ndarray:
+    p = np.asarray(points, dtype=float)
+    return (
+        np.concatenate([p, np.ones((*p.shape[:-1], 1))], axis=-1)
+        @ np.asarray(matrix, dtype=float).T
+    )[..., :2]
+
+
+def orientation(record: SliceState) -> np.ndarray:
+    """Oriented edge fractions -> acquisition edge fractions."""
+    p = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    x, y = unoriented_fractions(p[:, 0], p[:, 1], record.rotation_deg, record.flip)
+    return affine_from_points(np.stack([x, y], -1))
+
+
+def plane_context(state: StackState, record: SliceState) -> dict[str, Any]:
+    return {
+        "atlas": state.atlas,
+        "plane": state.plane,
+        "position_mm": record.position_mm,
+        "angles": list(record.angles),
+    }
+
+
+def stale(state: StackState, record: SliceState, pair: dict[str, Any]) -> bool:
+    return pair.get("plane") != plane_context(state, record)
+
+
+def section_panel(
+    record: SliceState,
+    size: tuple[int, int],
+    *,
+    pixel_to_render: Any,
+    bounds: Any,
+    warp_key: str | None = None,
+    role: str = "section",
+) -> dict[str, Any]:
+    return {
+        "role": role,
+        "section": record.id,
+        "bounds": list(bounds),
+        "render_size": list(size),
+        "pixel_to_render": np.asarray(pixel_to_render).tolist(),
+        "orientation": orientation(record).tolist(),
+        "warp_key": warp_key,
+    }
+
+
+def section_point(panel: dict[str, Any], xy: Any, warp: Any = None) -> np.ndarray:
+    if "pixel_to_file_fraction" in panel:
+        return transform(panel["pixel_to_file_fraction"], xy)
+    p = transform(panel["pixel_to_render"], xy)
+    width, height = panel["render_size"]
+    if warp is not None:
+        from langslice.core.deformable.render import warp_source_points
+
+        x, y = warp_source_points(warp, (width, height), np.array([[p[0]]]), np.array([[p[1]]]))
+        p = np.array([x.item(), y.item()])
+    fractions = (p + 0.5) / np.array([width, height])
+    return transform(panel["orientation"], fractions)
+
+
+def section_picture_point(panel: dict[str, Any], fractions: Any, warp: Any = None) -> np.ndarray:
+    if "pixel_to_file_fraction" in panel:
+        return transform(np.linalg.inv(panel["pixel_to_file_fraction"]), fractions)
+    oriented = transform(np.linalg.inv(panel["orientation"]), fractions)
+    size = np.asarray(panel["render_size"])
+    p = oriented * size - 0.5
+    if warp is not None:
+        from scipy.ndimage import map_coordinates
+
+        wp = (p + 0.5) * np.asarray(warp.section_size) / size - 0.5
+        shift = np.array(
+            [
+                map_coordinates(
+                    warp.field_mm[..., k], [[wp[1]], [wp[0]]], order=1, mode="nearest"
+                ).item()
+                for k in range(2)
+            ]
+        )
+        p += shift / warp.mm_per_px * size / np.asarray(warp.section_size)
+    return transform(np.linalg.inv(panel["pixel_to_render"]), p)
+
+
+def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = False) -> None:
+    """Open-centre circle (section) / diamond (atlas), dual contrast outlines."""
+    x, y = (float(v) for v in xy)
+    draw = ImageDraw.Draw(image)
+    radius = 7
+    for colour, width in (("black", 5), ("white", 3), ("#ffaa00" if old else "#00ffff", 1)):
+        if role == "atlas":
+            draw.line(
+                [
+                    (x, y - radius),
+                    (x + radius, y),
+                    (x, y + radius),
+                    (x - radius, y),
+                    (x, y - radius),
+                ],
+                fill=colour,
+                width=width,
+            )
+        else:
+            draw.ellipse(
+                (x - radius, y - radius, x + radius, y + radius), outline=colour, width=width
+            )
+    text = label + (" stale" if old else "")
+    box = draw.textbbox((x + 10, y - 7), text)
+    draw.rectangle((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2), fill="black", outline="white")
+    draw.text((x + 10, y - 7), text, fill="white")
+
+
+def draw_landmarks(
+    image: Image.Image,
+    panels: list[dict[str, Any]],
+    state: StackState,
+    record: SliceState,
+    *,
+    warp: Any = None,
+) -> None:
+    for pair in record.landmarks.get("pairs", []):
+        for panel in panels:
+            role = panel["role"]
+            xy = (
+                transform(np.linalg.inv(panel["pixel_to_native"]), pair["atlas_native_xy"])
+                if role == "atlas"
+                else section_picture_point(
+                    panel, pair["section_fraction_xy"], warp if panel.get("warp_key") else None
+                )
+            )
+            x0, y0, x1, y1 = panel["bounds"]
+            if x0 <= xy[0] < x1 and y0 <= xy[1] < y1:
+                glyph(image, xy, pair["id"], role, old=stale(state, record, pair))
+
+
+def context(state: StackState, record: SliceState) -> dict[str, Any]:
+    return {
+        "plane": plane_context(state, record),
+        "linear_key": linear_key(state, record),
+        "orientation": {"rotate_quarter": record.rotation_deg, "flip": record.flip},
+        "deformation_key": (record.deformation or {}).get("key"),
+    }

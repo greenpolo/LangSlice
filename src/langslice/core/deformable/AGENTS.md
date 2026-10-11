@@ -237,3 +237,20 @@ covers most of the outline on heavily damaged sections; pass `torn_band` or
 placed ventricles (none at caudal levels). Named model regions inherit the
 linear placement's naming. Composed sequential inverses carry each step's
 approximation.
+
+## Landmark record adapter
+
+`ops.landmarks.landmark_triangulation` uses `prepare_fit` and `finish_fit` to
+build the same residual-field record and report as other nonlinear methods,
+but supplies fields from `core.triangulation` instead of running an engine.
+Its record settings and engine name are `landmark_triangulation`; source/target
+vertices and connectivity are saved in `engine.native_parameters`. A
+composition converts each atlas endpoint through the baseline's stored inverse,
+then composes the resulting correction with its field. On the first application,
+the current record becomes the baseline `parent`. Consecutive landmark
+applications reuse that parent and replace the landmark result; an intervening
+other method becomes a new baseline. The state reference keeps the baseline
+key and steps, while job undo history preserves each previously applied result.
+Degenerate/folded mesh triangles are rejected before
+application; biological plausibility diagnostics retain their reporting-only
+semantics.

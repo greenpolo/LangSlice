@@ -329,3 +329,21 @@ section whose inputs changed (`ops.inputs`, `STALE_INPUT`); the lock timing
 out is `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write
 during a fit survives, a moved section is refused, concurrent CLI processes
 all land.
+
+## Landmark tool declarations
+
+`set_landmarks` and `landmark_triangulation` are ordinary Nonlinear write verbs
+on all doors. Typed `LandmarkPair` and `LandmarkPoint` arguments expose explicit
+atlas/section endpoints and x,y PIXELS in a referenced picture; nested unknown
+keys are checked recursively. `set_landmarks` defaults to one contextual
+side-by-side template/preprocessed crop for each edited pair (at most four
+with `view=True`; larger batches can set `view=False`); application shows the
+resulting overlay. Both honor forced views and undo/checkpoint normally.
+`ZoomRequest` declares the optional `zoom.requests` batch of up to four boxes
+or regions while retaining the single-picture arguments.
+
+MCP reply-budget shrinking saves each delivered JPEG with a distinct immutable
+picture number and resized endpoint geometry. `extra.transport_source_picture`
+names the original. Look recipes retain native redraw; other pictures become
+`transport_snapshot` recipes. Returned picture lists (including batch results)
+refer to the delivered IDs; landmark input provenance retains its original IDs.

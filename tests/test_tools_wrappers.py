@@ -86,7 +86,6 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
     for tool in box.tools:
         schema = _json_schema_dict(FunctionTool(tool)._get_declaration())
         assert "$ref" not in str(schema), tool.__name__
-        assert "landmark" not in str(schema).lower(), tool.__name__
     schemas = {tool.__name__: _json_schema_dict(FunctionTool(tool)._get_declaration())
                for tool in box.tools}
     placed = schemas["position_sections"]["properties"]
@@ -99,6 +98,14 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
         "translate_x_mm", "translate_y_mm"}
     left = schemas["submit"]["properties"]["left_linear"]["items"]
     assert set(left["properties"]) == {"id", "reason"}
+    pair = schemas["set_landmarks"]["properties"]["pairs"]["items"]
+    assert pair["additionalProperties"] is False
+    assert set(pair["properties"]) == {"id", "atlas", "section"}
+    for role in ("atlas", "section"):
+        endpoint = pair["properties"][role]
+        assert endpoint["additionalProperties"] is False
+        assert set(endpoint["required"]) == {"picture", "x", "y"}
+        assert set(endpoint["properties"]) == {"picture", "x", "y"}
 
 
 # --- _strict -----------------------------------------------------------------------------

@@ -46,7 +46,7 @@ and `environment.yml` hold the worker's source installation.
 - The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
-  `trace_borders`); a task switches its tools on or off whole. Sections are
+  `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
 - Every write is one undo step and checkpoints `state.json`; `registration.json`,
   pictures and maps are derived from it and never read back.

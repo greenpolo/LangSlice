@@ -76,6 +76,33 @@ class LeftLinear(TypedDict, total=False):
     reason: str
 
 
+@with_config(ConfigDict(extra="forbid"))
+class LandmarkPoint(TypedDict):
+    """Pixel centre of a returned saved picture (whole image's top-left)."""
+
+    picture: int
+    x: float
+    y: float
+
+
+@with_config(ConfigDict(extra="forbid"))
+class LandmarkPair(TypedDict, total=False):
+    """New pair or partial endpoint update of a stable pair ID."""
+
+    id: str
+    atlas: LandmarkPoint
+    section: LandmarkPoint
+
+
+@with_config(ConfigDict(extra="forbid"))
+class ZoomRequest(TypedDict, total=False):
+    """One saved-picture inspection in a batched zoom call."""
+
+    picture: int
+    box: list[float]
+    region: str
+
+
 # --- the check --------------------------------------------------------------
 
 
@@ -196,30 +223,34 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[
         notes = [text for key in stray if (text := _note(key, None, params, top_level=True))]
         problems.append({"argument": "(top level)", "unknown": stray,
                          "accepted": list(params), **({"notes": notes} if notes else {})})
-    for name, annotation in params.items():
-        if name not in args:
-            continue
+    def check_value(name: str, annotation: Any, values: Any) -> None:
         found = _typed_dict(annotation)
         if found is None:
-            continue
+            return
         typed, many = found
         accepted = _keys(typed)
-        values = args[name]
         items = (list(enumerate(values)) if many and isinstance(values, (list, tuple))
                  else [(None, values)] if not many else [])
         for index, value in items:
             if not isinstance(value, Mapping):
                 continue
+            location = name if index is None else f"{name}[{index}]"
+            for key, child in typing.get_type_hints(typed).items():
+                if key in value:
+                    check_value(f"{location}.{key}", child, value[key])
             unknown = [key for key in value if key not in accepted]
             if not unknown:
                 continue
             notes = [text for key in unknown
                      if (text := _note(key, typed, params, top_level=False))]
             problems.append({
-                "argument": name if index is None else f"{name}[{index}]",
+                "argument": location,
                 "unknown": unknown, "accepted": accepted,
                 **({"notes": notes} if notes else {}),
             })
+    for name, annotation in params.items():
+        if name in args:
+            check_value(name, annotation, args[name])
     if not problems:
         return None
     name = getattr(func, "__name__", "this tool")

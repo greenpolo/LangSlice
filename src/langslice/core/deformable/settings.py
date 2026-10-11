@@ -15,7 +15,7 @@ from typing import Any, Literal, cast, get_args
 
 from langslice.core.display import canonical_atlas_name
 
-Engine = Literal["ants", "elastix"]
+Engine = Literal["ants", "elastix", "landmark_triangulation"]
 #: There is no ``stiff``: it never gave the best-looking fit and left
 #: enlarged ventricles unfilled.
 Stiffness = Literal["soft", "medium", "firm"]

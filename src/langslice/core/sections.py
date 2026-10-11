@@ -105,6 +105,15 @@ def render_slice(
         prepped = prepped.transpose(rotate)
     if record.flip:
         prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    from langslice.core.landmarks import orientation
+
+    x0, y0, x1, y1 = box or (0, 0, *working_size)
+    crop_to_file = np.array([[(x1-x0)/working_size[0], 0, x0/working_size[0]],
+                             [0, (y1-y0)/working_size[1], y0/working_size[1]], [0, 0, 1]])
+    to_fraction = np.array([[1/prepped.width, 0, .5/prepped.width],
+                            [0, 1/prepped.height, .5/prepped.height], [0, 0, 1]])
+    prepped.info["pixel_to_file_fraction"] = (crop_to_file @ orientation(record)
+                                                @ to_fraction).tolist()
     ctx.render_cache[key] = prepped
     return prepped
 

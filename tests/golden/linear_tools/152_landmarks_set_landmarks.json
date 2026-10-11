@@ -1,0 +1,154 @@
+{
+ "args": [],
+ "data": {
+  "changed": [
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "deleted": [],
+  "landmarks": [
+   {
+    "atlas": {
+     "picture": 3,
+     "pixel_xy": [
+      46.43750000000001,
+      35.8125
+     ]
+    },
+    "id": "L1",
+    "section": {
+     "picture": 4,
+     "pixel_xy": [
+      74.1,
+      56.9
+     ]
+    },
+    "stale": false
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "pixel_xy": [
+      114.4375,
+      35.8125
+     ]
+    },
+    "id": "L2",
+    "section": {
+     "picture": 4,
+     "pixel_xy": [
+      182.89999999999998,
+      56.9
+     ]
+    },
+    "stale": false
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "pixel_xy": [
+      80.4375,
+      87.8125
+     ]
+    },
+    "id": "L3",
+    "section": {
+     "picture": 4,
+     "pixel_xy": [
+      128.5,
+      140.1
+     ]
+    },
+    "stale": false
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "s1.png L1: atlas template (diamond), preprocessed section (circle)",
+    "id": 5
+   },
+   {
+    "caption": "s1.png L2: atlas template (diamond), preprocessed section (circle)",
+    "id": 6
+   },
+   {
+    "caption": "s1.png L3: atlas template (diamond), preprocessed section (circle)",
+    "id": 7
+   }
+  ],
+  "section": "s1.png",
+  "status": "ok",
+  "written": true
+ },
+ "door": "landmarks",
+ "images": [
+  {
+   "file": "152_landmarks_set_landmarks.0.png",
+   "mode": "RGB",
+   "size": [
+    916,
+    441
+   ]
+  },
+  {
+   "file": "152_landmarks_set_landmarks.1.png",
+   "mode": "RGB",
+   "size": [
+    916,
+    441
+   ]
+  },
+  {
+   "file": "152_landmarks_set_landmarks.2.png",
+   "mode": "RGB",
+   "size": [
+    916,
+    441
+   ]
+  }
+ ],
+ "kwargs": {
+  "pairs": [
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 46.43750000000001,
+     "y": 35.8125
+    },
+    "section": {
+     "picture": 4,
+     "x": 74.1,
+     "y": 56.9
+    }
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 114.4375,
+     "y": 35.8125
+    },
+    "section": {
+     "picture": 4,
+     "x": 182.89999999999998,
+     "y": 56.9
+    }
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 80.4375,
+     "y": 87.8125
+    },
+    "section": {
+     "picture": 4,
+     "x": 128.5,
+     "y": 140.1
+    }
+   }
+  ],
+  "section": "s1.png"
+ },
+ "media_texts": [],
+ "tool": "set_landmarks"
+}

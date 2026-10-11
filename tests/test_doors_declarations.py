@@ -86,19 +86,22 @@ def test_the_descriptions_say_what_the_design_asks():
 def test_declare_binds_the_declared_defaults_and_refuses_a_body_without_an_argument():
     seen: dict[str, Any] = {}
 
-    def body(box: list[float], picture: int, region: str,
+    def body(box: list[float], picture: int, region: str, requests: list,
              tool_context: Any = None) -> dict[str, Any]:
-        seen.update(box=box, picture=picture, region=region, tool_context=tool_context)
+        seen.update(box=box, picture=picture, region=region, requests=requests,
+                    tool_context=tool_context)
         return {"status": "ok"}
 
     tool = declare("zoom", body, FULL)
     assert tool.__name__ == "zoom"
     assert tool.__doc__ == declaration("zoom").doc
-    assert list(inspect.signature(tool).parameters) == ["box", "picture", "region", "tool_context"]
+    assert list(inspect.signature(tool).parameters) == [
+        "box", "picture", "region", "requests", "tool_context"]
     assert tool([0, 0, 10, 10]) == {"status": "ok"}
-    assert seen == {"box": [0, 0, 10, 10], "picture": 0, "region": "", "tool_context": None}
+    assert seen == {"box": [0, 0, 10, 10], "picture": 0, "region": "",
+                    "requests": [], "tool_context": None}
     assert tool(region="CA1") == {"status": "ok"}
-    assert seen == {"box": [], "picture": 0, "region": "CA1", "tool_context": None}
+    assert seen == {"box": [], "picture": 0, "region": "CA1", "requests": [], "tool_context": None}
 
     def lacking(box: list[float]) -> dict[str, Any]:
         return {}
@@ -136,10 +139,12 @@ _BOOKKEEPING = ["note", "undo", "redo", "submit"]
     (_spec(tasks=["position"], agent_preprocessing=True),
      [*_EVERY_RUN, "position_sections", "mark_damage", *_BOOKKEEPING]),
     (_spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none")),
-     [*_EVERY_RUN, "mark_damage", "ants_syn", *_BOOKKEEPING]),
+     [*_EVERY_RUN, "mark_damage", "ants_syn", "set_landmarks",
+      "landmark_triangulation", *_BOOKKEEPING]),
     (_spec(tasks=["nonlinear", "transform"], transform=TransformSpec(angles=True)),
      [*_EVERY_RUN, "position_sections", "interactive_transform", "mark_damage",
-      "elastix_affine", "ants_syn", "trace_borders", *_BOOKKEEPING]),
+      "elastix_affine", "ants_syn", "set_landmarks", "landmark_triangulation",
+      "trace_borders", *_BOOKKEEPING]),
 ])
 def test_the_registry_switches_verbs_on_per_spec(spec: JobSpec, names: list[str]):
     assert enabled(spec) == names

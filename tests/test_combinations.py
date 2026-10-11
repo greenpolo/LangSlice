@@ -246,6 +246,7 @@ COMMON = {"look", "zoom", "set_channel_properties", "set_preprocessed_channel_pr
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
           "read_file", "mark_damage", "note", "undo", "redo", "submit"}
 LINEAR = {"interactive_transform", "elastix_affine"}
+NONLINEAR = {"ants_syn", "set_landmarks", "landmark_triangulation"}
 
 
 @pytest.mark.parametrize(("tasks", "provider", "extra"), [
@@ -253,11 +254,11 @@ LINEAR = {"interactive_transform", "elastix_affine"}
     (["transform"], "none", LINEAR),
     (["reorder", "position", "transform"], "none", {"position_sections"} | LINEAR),
     (["reorder", "position", "transform", "nonlinear"], "openai-oauth",
-     {"position_sections", "ants_syn", "trace_borders"} | LINEAR),
-    (["nonlinear"], "none", {"ants_syn"}),
-    (["nonlinear"], "openai-oauth", {"ants_syn", "trace_borders"}),
+     {"position_sections", "trace_borders"} | LINEAR | NONLINEAR),
+    (["nonlinear"], "none", NONLINEAR),
+    (["nonlinear"], "openai-oauth", {"trace_borders"} | NONLINEAR),
     (["reorder", "position", "transform", "nonlinear"], "none",
-     {"position_sections", "ants_syn"} | LINEAR),
+     {"position_sections"} | LINEAR | NONLINEAR),
 ], ids=["1-positioning", "2-linear", "3-positioning+linear", "4-all+image",
         "5-nonlinear-no-image", "6-nonlinear+image", "7-all-no-image"])
 def test_each_combination_builds_exactly_its_tools(images, tasks, provider, extra):

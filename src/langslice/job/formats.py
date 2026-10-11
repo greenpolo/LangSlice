@@ -433,3 +433,17 @@ def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]
         found += [(folder / name, kind) for kind, name in SECTION_FILES.items()
                   if (folder / name).exists()]
     return found
+
+
+def write_landmarks(layout: JobLayout, state: StackState) -> None:
+    """Derived readable pairs; always regenerated from state, never read back."""
+    from langslice.core.landmarks import stale
+
+    for record in state.slices:
+        path = layout.section_dir(record.id) / "landmarks.json"
+        if not record.landmarks and not path.exists():
+            continue
+        write_json_atomic(str(path), {"format_version": 1, "section": record.id, "next_id": 1,
+                                **record.landmarks,
+                                "pairs": [{**pair, "stale": stale(state, record, pair)}
+                                          for pair in record.landmarks.get("pairs", [])]})

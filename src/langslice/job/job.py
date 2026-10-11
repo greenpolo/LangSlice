@@ -898,12 +898,18 @@ class Job:
         """Write the state (atomically, versioned) and its public rendering,
         ``registration.json`` (:func:`langslice.job.formats.write_registration`;
         a failure there is logged, never raised), then tell every observer."""
+        from langslice.core.landmarks import stale
+
+        for record in self.state.slices:
+            for pair in record.landmarks.get("pairs", []):
+                pair["stale"] = stale(self.state, record, pair)
         if not self.persist:
             return
         with self.lock.held():
             write_checkpoint(self.state, self.checkpoint_path)
             self._state_stamp = _stamp(self.checkpoint_path)
             formats.write_registration(self.layout, self.state, self.workspace)
+            formats.write_landmarks(self.layout, self.state)
         self._notify()
 
     @contextlib.contextmanager

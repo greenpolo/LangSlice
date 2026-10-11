@@ -17,7 +17,7 @@ from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from functools import partial
-from io import TextIOWrapper
+from io import BytesIO, TextIOWrapper
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +30,9 @@ from PIL import Image
 
 from langslice.agent.engine import EngineContext, build_context
 from langslice.core.jpeg import encode_jpeg
+from langslice.core.layers import PictureNote
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
+from langslice.core.picture_geometry import resized_recipe
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
 from langslice.doors.api.abba_worker import (
@@ -168,7 +170,7 @@ def blocks_of(items: list[Item]) -> list[ContentBlock]:
             for item in items]
 
 
-def result_blocks(result: Any) -> list[ContentBlock]:
+def result_blocks(result: Any, *, job: Job | None = None) -> list[ContentBlock]:
     """A toolbox result as MCP content: its JSON, then its media in order.
 
     The tools return plain pictures (PIL images, captions burned in) and
@@ -196,6 +198,37 @@ def result_blocks(result: Any) -> list[ContentBlock]:
               for item in media if not isinstance(item, str) or item]
     fitted, shrunk = fit_reply(items)
     if shrunk is not None:
+        if job is not None and isinstance(body, dict):
+            # Each delivered size gets its own immutable picture number. The
+            # old saved picture remains valid for callers who already saw it.
+            refs = body.get("pictures") or []
+            indexes = [i for i, item in enumerate(fitted) if isinstance(item, bytes)]
+            replacements: dict[int, int] = {}
+            for ref, index in zip(refs, indexes, strict=False):
+                old = job.views.lookup(ref["id"])
+                if old is None:
+                    raise ValueError(f"Returned picture {ref['id']} is not saved")
+                original, delivered = items[index], fitted[index]
+                assert isinstance(original, bytes) and isinstance(delivered, bytes)
+                with (Image.open(BytesIO(original)) as source,
+                      Image.open(BytesIO(delivered)) as target):
+                    recipe = resized_recipe(old.recipe, source.size, target.size)
+                held = PictureNote(sections=old.sections, mode=old.mode, recipe=recipe,
+                                   caption=old.caption, extra={"transport_source_picture": old.seq})
+                names = job.views.save(tool=old.tool, pictures=[(delivered, held)],
+                                       arguments={"transport_source_picture": old.seq})
+                replacements[old.seq] = int(names[0].split("_", 1)[0])
+
+            def picture_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                return [{**entry, "id": replacements.get(entry["id"], entry["id"])}
+                        for entry in entries]
+
+            if refs:
+                body["pictures"] = picture_entries(refs)
+            if body.get("results"):
+                body["results"] = [{**one, "pictures": picture_entries(one["pictures"])}
+                                   if one.get("pictures") else one for one in body["results"]]
+            fitted[0] = json.dumps(body, default=str)
         fitted.append(shrunk_note(sum(isinstance(item, bytes) for item in fitted), shrunk))
     return blocks_of(fitted)
 
@@ -383,7 +416,7 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
         except Exception as exc:
             logger.exception("Tool %s failed", tool.__name__)
             result = {"status": "error", "error": type(exc).__name__, "message": str(exc)}
-        blocks = result_blocks(result)
+        blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
             session.trace.write("tool_result", name=tool.__name__, args=kwargs,
                             content=describe_blocks(blocks))

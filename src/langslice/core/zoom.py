@@ -24,12 +24,14 @@ maps back the same way, given the source picture again.
 
 from __future__ import annotations
 
+import copy
 import io
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from langslice.core import look as looks
@@ -201,8 +203,11 @@ def redraw(
     if source is None:
         raise ZoomError("NO_PICTURE", "this picture cannot be redrawn and no saved copy was "
                         "given to crop")
-    return _crop(recipe if renderer == CROP_RENDERER else None, box, source,
-                 long_edge or picture_edge(workspace))
+    return _crop(recipe, box, source,
+                 long_edge or picture_edge(workspace),
+                 stale=bool(recipe and state and recipe.get("state")
+                            and looks.changed_since(state, recipe["state"])),
+                 note_text=STALE_NOTE)
 
 
 def _crop(
@@ -212,7 +217,8 @@ def _crop(
     """*box* cropped from *source* and enlarged towards *long_edge* (at
     most :data:`MAX_CROP_ENLARGE`, never shrunk); *recipe* a ``crop``
     recipe when *source* is the picture an earlier crop was cut from."""
-    parent = (recipe or {}).get("args", {}).get("box")
+    parent = ((recipe or {}).get("args", {}).get("box")
+              if (recipe or {}).get("renderer") == CROP_RENDERER else None)
     shown = _shown(recipe, source)
     inner = box_fractions(box, shown)
     if parent:
@@ -220,8 +226,8 @@ def _crop(
         on_source = (px0 + inner[0] * (px1 - px0), py0 + inner[1] * (py1 - py0),
                      px0 + inner[2] * (px1 - px0), py0 + inner[3] * (py1 - py0))
     else:
-        on_source = (inner[0] * source.width, inner[1] * source.height,
-                     inner[2] * source.width, inner[3] * source.height)
+        on_source = (inner[0] * shown[0], inner[1] * shown[1],
+                     inner[2] * shown[0], inner[3] * shown[1])
     left, top, right, bottom = (round(v) for v in on_source)
     cut = source.crop((left, top, right, bottom))
     target = float(long_edge)
@@ -240,6 +246,23 @@ def _crop(
                   "renderer": CROP_RENDERER,
                   "args": {"box": [round(v, 2) for v in on_source]},
                   "shown": [cut.width, cut.height]}
+    source_panels = (recipe or {}).get("source_endpoint_panels",
+                                           (recipe or {}).get("endpoint_panels", []))
+    out_recipe["source_endpoint_panels"] = copy.deepcopy(source_panels)
+    panels = []
+    sx, sy = (right-left)/cut.width, (bottom-top)/cut.height
+    to_source = np.array([[sx, 0, left+(sx-1)/2], [0, sy, top+(sy-1)/2], [0, 0, 1.]])
+    for panel in copy.deepcopy(source_panels):
+        x0, y0, x1, y1 = panel["bounds"]
+        lower, upper = np.maximum([x0, y0], [left, top]), np.minimum([x1, y1], [right, bottom])
+        if np.any(lower >= upper):
+            continue
+        panel["bounds"] = [*(lower-[left, top])/[sx, sy], *(upper-[left, top])/[sx, sy]]
+        for key in ("pixel_to_file_fraction", "pixel_to_native", "pixel_to_render"):
+            if key in panel:
+                panel[key] = (np.asarray(panel[key]) @ to_source).tolist()
+        panels.append(panel)
+    out_recipe["endpoint_panels"] = panels
     note(image, mode="zoom", recipe=out_recipe, caption=label)
     return Zoomed(image=image, caption=label, recipe=out_recipe, redrawn=False, stale=stale,
                   mode="zoom")

@@ -74,6 +74,7 @@ class Zoomed:
     redrawn: bool = True
     #: The stack has changed since the source picture; it was redrawn as it was.
     stale: bool = False
+    results: list[dict[str, Any]] = field(default_factory=list)
 
 
 # --- saving ------------------------------------------------------------------------------
@@ -315,7 +316,7 @@ def _target(job: Job, picture: int | None) -> PictureRecord:
 
 def zoom(
     job: Job, workspace: Workspace, box: Sequence[float] = (), picture: int | None = None,
-    region: str = "",
+    region: str = "", requests: Sequence[dict[str, Any]] = (),
 ) -> Zoomed:
     """*box* (``[x0, y0, x1, y1]``, pixels of picture *picture* above its
     caption band) drawn again at more detail, saved as a picture of its own
@@ -337,6 +338,34 @@ def zoom(
     """
     from langslice.ops import atlas as _atlas  # noqa: F401  (registers its recipe renderer)
 
+    if requests:
+        if box or picture or region:
+            raise Refused("BAD_ARGS",
+                          message="Use requests or the single box/picture/region arguments.")
+        if len(requests) > MAX_LOOK_PICTURES:
+            raise Refused("TOO_MANY_ZOOMS", message="At most four zoom requests per call.")
+        if isinstance(requests, (str, bytes)) or any(not isinstance(one, Mapping)
+                                                   for one in requests):
+            raise Refused("BAD_ARGS", message="requests must be a list of zoom objects.")
+        results: list[dict[str, Any]] = []
+        completed: list[Zoomed] = []
+        for index, one in enumerate(requests):
+            try:
+                if set(one) - {"picture", "box", "region"}:
+                    raise Refused("BAD_ARGS",
+                                  message="Zoom requests accept picture, box and region.")
+                result = zoom(job, workspace, box=one.get("box", ()),
+                              picture=one.get("picture") or None, region=one.get("region", ""))
+                completed.append(result)
+                results.append({"request": index, "status": "ok", "picture": result.picture,
+                                "redrawn": result.redrawn, "stale": result.stale,
+                                "pictures": result.entries})
+            except Refused as refusal:
+                results.append({"request": index, **refusal.payload()})
+        return Zoomed(pictures=[p for result in completed for p in result.pictures],
+                      entries=[e for result in completed for e in result.entries],
+                      stale=any(result.stale for result in completed),
+                      redrawn=all(result.redrawn for result in completed), results=results)
     target = _target(job, picture)
     recipe = target.recipe
     renderer = (recipe or {}).get("renderer")
