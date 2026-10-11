@@ -127,6 +127,15 @@ class LandmarkPoint(TypedDict):
 
 
 @with_config(ConfigDict(extra="forbid"))
+class PicturePoint(TypedDict):
+    """A point of a saved picture: its number and x, y in pixels."""
+
+    picture: int
+    x: float
+    y: float
+
+
+@with_config(ConfigDict(extra="forbid"))
 class LandmarkPair(TypedDict, total=False):
     """New pair or partial endpoint update of a stable pair ID."""
 

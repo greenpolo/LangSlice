@@ -524,14 +524,17 @@ pixels; overlays map through the actual saved inverse warp. Generic atlas
 browsing and positioning thumbnails do not supply correspondence geometry.
 Annotations are drawn only on final composite pictures. Look snapshots include
 the landmark set, so old zooms preserve its original markers; `ANNOTATION_FIELDS`
-(`landmarks`) leave `changed_since` alone, so a pair edit never makes a picture
+(`landmarks`, `damaged_regions`: only fits read the damage marks) leave
+`changed_since` alone, so a pair edit or a damage mark never makes a picture
 `stale` (`differs_since` still restores the old markers). `pair_states` /
 `landmark_counts` give a pair's `applied` / `moved` / `pending` / `stale` state
 and the status row's counts (`warp` in words), `applied_pairs` the pairs the
 current landmark warp was built from and `warp_report` which pairs are in it,
 not in it, or deleted but still shaping it; `draw_folds` outlines the applied warp's folded
 triangles (`landmark_folds` in the deformation reference) on a warped
-overlay. An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
+overlay, and `draw_holds` draws the applied warp's automatic holds
+(`landmark_holds`: edge fractions) as small unlabeled dots there (a fold's
+hold vertex is `~K` in `landmark_folds`). An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
 times past its voxels. Positioning index
 captions include per-section landmark counts without cluttering thumbnails.
 
@@ -541,7 +544,9 @@ corners, and inverse evaluation on the same mesh connectivity. Repeated
 sources and zero-area source triangles are `DegenerateMesh` (with the vertex
 indices); folds (a target triangle winding the other way) are accepted:
 `folded` marks them, the forward map is the source Delaunay's, and the inverse
-tries unfolded triangles before folded ones, each in simplex order.
+tries unfolded triangles before folded ones, each in simplex order. The
+module knows nothing of automatic holds: `ops/landmarks.py` adds them to the
+point set it passes in, so VisuAlign parity holds for any set given.
 `landmark_views.py` draws each edited pair as a contextual template/preprocessed
 section crop (the atlas panel with the region borders), retains a 60% anatomical window and panel geometry, and labels
 the selected pair. Crop zooms preserve exact panel mappings and refuse gutters.

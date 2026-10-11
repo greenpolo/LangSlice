@@ -111,7 +111,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("zoom", "read", "Common"),
     ToolDef("set_channel_properties", "write", "Common"),
     ToolDef("set_preprocessed_channel_properties", "write", "Common"),
-    ToolDef("grep_atlas", "read", "Common"),
+    ToolDef("grep_atlas", "read", "Common", options={"points": ""}),
     ToolDef("grep_atlas_view", "read", "Common"),
     ToolDef("status", "read", "Common", essential=True),
     ToolDef("list_files", "read", "Common"),

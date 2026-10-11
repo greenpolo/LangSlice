@@ -355,7 +355,10 @@ with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`
 where `look` does: `dropped_arguments` drops both together; `TOO_MANY_LANDMARK_VIEWS`
 says how many pairs were sent and what to resend; the landmark codes' `FIXES`
-are specific, written with needs marks). `status`' `can_change` names the
+are specific, written with needs marks). `grep_atlas`'s `points` (`PicturePoint`) is
+the option `grep_atlas:points`. The CLI reads a list of numbers from one
+comma-separated flag (`--box 960,230,1300,940`) and returns `grep_atlas`'s rows
+unshortened (`ROW_VERBS`). `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /
 `redone` (tool, sections), the rows of those sections and the depth, not the

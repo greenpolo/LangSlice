@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from PIL import Image
 
 from langslice.core import look as looks
@@ -35,7 +36,14 @@ if TYPE_CHECKING:
 REGIONS_RENDERER = "grep_atlas_view"
 
 
-def grep_atlas(job: Job, workspace: Workspace, query: str, section: object = "") -> dict[str, Any]:
+#: Points one ``grep_atlas`` call looks up (as many as it lists region rows).
+MAX_POINTS = GREP_ATLAS_LIMIT
+#: Containing regions named per point, nearest first (the root is left out).
+MAX_CHAIN = 6
+
+
+def grep_atlas(job: Job, workspace: Workspace, query: str = "", section: object = "",
+               points: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:
     """Regions whose acronym or name matches *query*
     (:func:`langslice.core.atlas_grep.grep_structures`).
 
@@ -46,10 +54,25 @@ def grep_atlas(job: Job, workspace: Workspace, query: str, section: object = "")
     (at most :data:`~langslice.core.atlas_grep.GREP_ATLAS_LIMIT`), ``more``
     when some were left out. Refused: ``BAD_ARGS`` (empty query),
     ``NO_STRUCTURES``, ``UNKNOWN_SLICE_IDS``.
+
+    With *points* (``{picture, x, y}`` of saved pictures; x, y as everywhere:
+    on a zoom, the numbers its grid prints), ``points`` in the result says, per
+    point, the region drawn there and the regions containing it
+    (:func:`region_at_points`); *query* may then be empty.
     """
     text = str(query).strip()
+    if not text and not points:
+        raise Refused("BAD_ARGS", message="Empty query: give a query, points, or both.")
+    found = region_at_points(job, workspace, points) if points else None
     if not text:
-        raise Refused("BAD_ARGS", message="Empty query.")
+        return {"points": found}
+    result = _grep_regions(job, workspace, text, section)
+    if found is not None:
+        result["points"] = found
+    return result
+
+
+def _grep_regions(job: Job, workspace: Workspace, text: str, section: object) -> dict[str, Any]:
     structures = getattr(workspace.atlas, "structures", None)
     entries = list(structures.values()) if structures else []
     if not entries:
@@ -73,6 +96,148 @@ def grep_atlas(job: Job, workspace: Workspace, query: str, section: object = "")
     if note:
         result["note"] = note
     return result
+
+
+def _label_layer(job: Job, record: Any) -> Any:
+    """The atlas ids a saved picture drew, per picture pixel (its ``labels.tif``),
+    or None when it saved none."""
+    import tifffile
+
+    if not record.layers or not record.path:
+        return None
+    path = job.layout.resolve(record.path) / "labels.tif"
+    try:
+        return tifffile.imread(path)
+    except (OSError, ValueError):
+        return None
+
+
+def _chain(structures: Any, region_id: int) -> list[str]:
+    """The regions containing *region_id*, nearest first, as ``acronym (name)``."""
+    entry = structures.get(region_id)
+    if entry is None:
+        return []
+    out = []
+    for parent in reversed([int(v) for v in entry["structure_id_path"][:-1]]):
+        held = structures.get(parent)
+        if held is None or len(held["structure_id_path"]) <= 1:
+            continue  # the root says nothing
+        out.append(f"{held['acronym']} ({held['name']})")
+    return out[:MAX_CHAIN]
+
+
+def region_at_points(job: Job, workspace: Workspace, points: Sequence[dict[str, Any]]
+                     ) -> list[dict[str, Any]]:
+    """The atlas region drawn at each of *points* (``{picture, x, y}``) of saved
+    pictures, one row each: ``region`` (acronym, name, id) and ``within`` (the
+    regions containing it, nearest first), or ``region`` null with the reason
+    (outside the atlas, or outside the picture's image). Reads what the
+    picture drew: its saved ``labels.tif`` for a section on its atlas (the
+    drawn atlas, whatever deformation the section carries), the section's atlas
+    plane for an atlas picture drawn for a section, the source picture of a crop.
+    Refused: ``BAD_ARGS``, ``UNKNOWN_PICTURE``, ``NO_STRUCTURES``,
+    ``NO_ATLAS_IN_PICTURE`` (a picture that draws no atlas)."""
+    from langslice.core.picture_geometry import source_frame
+
+    structures = getattr(workspace.atlas, "structures", None)
+    if not structures:
+        raise Refused("NO_STRUCTURES", message="This atlas has no region hierarchy.")
+    if (isinstance(points, (str, bytes)) or not isinstance(points, Sequence)
+            or any(not isinstance(p, dict) for p in points)):
+        raise Refused("BAD_ARGS", message="points is a list of {picture, x, y} objects.")
+    if len(points) > MAX_POINTS:
+        raise Refused("BAD_ARGS", message=f"At most {MAX_POINTS} points per call; you sent "
+                      f"{len(points)}. Send them in calls of {MAX_POINTS} or fewer.")
+    job.views.flush()
+    layers: dict[int, Any] = {}
+    rows: list[dict[str, Any]] = []
+    for index, point in enumerate(points):
+        here = f"points[{index}]"
+        try:
+            seq, x, y = int(point["picture"]), float(point["x"]), float(point["y"])
+        except (KeyError, TypeError, ValueError):
+            raise Refused("BAD_ARGS", message=f"{here}: a point needs picture (a saved picture "
+                          "number), x and y in pixels.") from None
+        if set(point) - {"picture", "x", "y"} or isinstance(point["picture"], bool):
+            raise Refused("BAD_ARGS", message=f"{here}: a point is picture, x and y only.")
+        record = job.views.lookup(seq)
+        if record is None:
+            raise Refused("UNKNOWN_PICTURE", picture=seq,
+                          message=f"{here}: there is no saved picture {seq}. Use the picture "
+                          "number a look or zoom reply gave.")
+        recipe = record.recipe or {}
+        row: dict[str, Any] = {"picture": seq, "x": x, "y": y}
+        if recipe.get("renderer") == zooms.CROP_RENDERER:
+            # A crop of a saved image: its grid numbers are the source picture's pixels.
+            source = job.views.lookup(int(recipe.get("source") or 0))
+            if source is not None:
+                record, recipe = source, source.recipe or {}
+        frame = source_frame(recipe)
+        px, py = (float(v) for v in frame.to_picture([x, y])) if frame is not None else (x, y)
+        panels = recipe.get("endpoint_panels") or []
+        if record.seq not in layers:
+            layers[record.seq] = _label_layer(job, record)
+        labels = layers[record.seq]
+        label = None
+        if labels is not None:
+            r, c = int(np.rint(py)), int(np.rint(px))
+            on_image = 0 <= r < labels.shape[0] and 0 <= c < labels.shape[1] and (
+                not panels or any(b[0] <= px < b[2] and b[1] <= py < b[3]
+                                  for b in (p["bounds"] for p in panels)))
+            label = int(labels[r, c]) if on_image else None
+            if not on_image:
+                row["region"] = None
+                row["note"] = (f"({x:g}, {y:g}) is outside the image content of picture {seq} "
+                               "(a caption, a margin or off the picture).")
+        else:
+            label = _plane_label(workspace, recipe, px, py, seq, record.mode)
+        if "region" not in row:
+            entry = structures.get(label) if label else None
+            if not label:
+                row["region"] = None
+                row["note"] = "Outside the atlas: no brain is drawn there."
+            elif entry is None:
+                row["region"] = {"id": label}
+            else:
+                row["region"] = {"acronym": str(entry["acronym"]), "name": str(entry["name"]),
+                                 "id": int(label)}
+                row["within"] = _chain(structures, int(label))
+        rows.append(row)
+    return rows
+
+
+def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: float,
+                 seq: int, mode: str | None) -> int | None:
+    """The annotation id at picture pixel (*px*, *py*) of an atlas picture drawn
+    for a section (its endpoint panel gives the plane's pixels); refused for a
+    picture that draws no atlas or no section's plane."""
+    from langslice.core.atlas.render import annotation_slice
+    from langslice.core.landmarks import transform
+
+    panels = [p for p in recipe.get("endpoint_panels") or [] if p.get("role") == "atlas"]
+    held = (recipe.get("registration_context") or {}).get("plane")
+    if not panels or not held:
+        sectionless = mode == "section"
+        raise Refused(
+            "NO_ATLAS_IN_PICTURE", picture=seq,
+            message=(
+                f"Picture {seq} shows the section alone, with no atlas drawn on it, so no "
+                "region is drawn at its points. Use an overlay picture of the section (its "
+                "atlas is drawn on it), or an atlas picture drawn for the section."
+                if sectionless else
+                f"Picture {seq} has no atlas plane tied to a section, so no region is drawn "
+                "at its points. Use an overlay picture of the section, or an atlas picture "
+                "drawn for the section."))
+    panel = panels[0]
+    native = transform(panel["pixel_to_native"], [px, py])
+    angles = held.get("angles") or [0, 0]
+    annotation = annotation_slice(workspace.atlas, float(held["position_mm"]),
+                                  plane=held["plane"], pitch_deg=float(angles[0]),
+                                  yaw_deg=float(angles[1]))
+    c, r = int(np.rint(native[0])), int(np.rint(native[1]))
+    inside = 0 <= r < annotation.shape[0] and 0 <= c < annotation.shape[1]
+    inside = inside and all(b[0] <= px < b[2] and b[1] <= py < b[3] for b in [panel["bounds"]])
+    return int(annotation[r, c]) if inside else None
 
 
 # --- grep_atlas_view ---------------------------------------------------------------------

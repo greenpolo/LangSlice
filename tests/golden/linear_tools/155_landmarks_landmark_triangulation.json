@@ -1,6 +1,7 @@
 {
  "args": [],
  "data": {
+  "automatic_holds": 30,
   "built_from": [
    "L1",
    "L2",
@@ -9,11 +10,12 @@
   "composed": false,
   "displacement_mm": {
    "max": 0.07,
-   "median": 0.055
+   "median": 0.0
   },
   "displacement_note": "displacement_mm is the whole deformation now applied to the section (every step since its linear placement, the landmark warp included); step_displacement_mm, when present, is only the change this application made over the warp it replaced or was applied onto.",
   "flags": [],
   "fold_fraction": 0.0,
+  "holds_note": "30 automatic holds were added between the pairs: spots that keep their current place, so a pair moves its neighbourhood up to the holds near it and the tissue between the pairs stays put. They are not pairs and cannot be edited; they are recomputed from the pairs on every application.",
   "landmark_count": 3,
   "pictures": [
    {

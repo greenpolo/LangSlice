@@ -38,6 +38,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
 | `export_maps` | the scripting verb |
 | `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
+| `grep_atlas:points` | the region lookup at points of saved pictures: the `points` argument of `grep_atlas` |
 | `interactive_transform:flip` | mirroring: the `flip` key of its sections |
 | `interactive_transform:rotate` | the quarter turn: the `rotate_quarter` key of its sections |
 
@@ -158,7 +159,7 @@ a different `frozen` is refused like one resumed with other `inputs`.
 |---|---|
 | `look` | `section`: tissue alone; `atlas`: atlas planes; `overlay`: tissue with registered atlas borders; `positioning`: sections and atlas along the slicing axis |
 | `zoom` | Redraw a saved picture's pixel box, or an overlay's single atlas region |
-| `grep_atlas` | Find region acronyms, names and ids |
+| `grep_atlas` | Find region acronyms, names and ids; with `points`, the region drawn at given points of saved pictures |
 | `grep_atlas_view` | Show the atlas with only the selected regions' borders |
 | `status` | Read placements, settings, constraints and pending work |
 | `list_files`, `search_files`, `read_file` | Inspect the job folder |
@@ -176,6 +177,20 @@ side; labels at every edge), and the reply's `covers` `[x0, y0, x1, y1]` is the
 part of that picture it shows. Those numbers are also the coordinates of a
 further zoom's box on the zoom and of a `set_landmarks` endpoint on the zoom or
 on the whole picture alike.
+
+`grep_atlas(points=[{"picture": N, "x": 640, "y": 410}])` (at most 40 points;
+text only, nothing written; `query` may then be left empty) says which atlas
+region is drawn at each point: its acronym, name and id, and `within`, the
+regions containing it, nearest first (the root left out, at most six), or
+`region: null` with a note when the point is outside the atlas or outside the
+picture's image content. x and y are read as everywhere else, so on a zoom they
+are the numbers its grid prints and give the same answer as on the whole
+picture. It reads what the picture drew: the saved `labels.tif` of an overlay
+or a zoom of one (the fixed atlas the section is warped onto), the section's
+atlas plane for an atlas picture drawn with `look(mode="atlas",
+sections=[...])`, and the source picture of a crop. A picture of the section
+alone draws no atlas and is refused with `NO_ATLAS_IN_PICTURE`, as is an atlas
+picture not tied to a section. `grep_atlas:points` switches the argument off.
 
 For an overlay, `zoom(region="CA1:left")` crops to the entire selected
 region with a small margin and shows only that region's border. It accepts
@@ -322,11 +337,24 @@ Place both endpoints of a pair on the same overlay (or a zoom of it) where you
 can: the atlas point where a border is drawn, the section point where that
 border belongs in the tissue. After a warp, overlays show the section warped
 onto the fixed atlas borders and a point placed there is read through the
-warp. Spread the pairs over the outline and the internal anatomy. A pair whose
-section point and atlas point are at the same spot holds that spot at its
-current (linear) placement; tissue far from every pair follows the nearest pairs
-and the four fixed frame corners. An atlas region with no tissue on the section
-(torn or missing) takes no pair; `mark_damage` records it.
+warp. Spread the pairs over the outline and the internal anatomy: a pair on
+the outline moves the outline, and a pair on an internal landmark (the midline,
+a ventricle, a fibre tract) moves the anatomy inside. No pair is needed to keep
+a spot where it is: `landmark_triangulation` adds automatic holds between the
+pairs. An atlas region with no tissue on the section (torn or missing) takes no
+pair; `mark_damage` records it. `mark_damage` marks whole regions, so mark a
+region only when it is missing; a region only partly present keeps its pairs on
+the part that is present.
+
+On the command line a list of objects such as `pairs` goes through `--args`,
+as a JSON object or a file, and a list of four numbers such as a zoom's box
+is one flag:
+
+```bash
+langslice-job JOB set_landmarks --args @pairs.json     # {"section": "s01.tif", "pairs": [...]}
+langslice-job JOB set_landmarks --args '{"section": "s01.tif", "delete": ["L2"]}'
+langslice-job JOB zoom --picture 12 --box 960,230,1300,940   # or --box '[960,230,1300,940]'
+```
 
 A refused endpoint names the pair (its index in the call and id), the
 endpoint role, the picture number and the x,y, and says what to do: a point
@@ -351,8 +379,8 @@ outlines and backed labels keep them visible across channel colors. Markers
 are drawn after compositing and never enter fit images or image-model inputs.
 Old pictures and zooms retain their original marker set. Markers are
 annotations: editing pairs alone does not make an older picture or zoom read
-as drawn from a changed stack (`stale`); a change to the placement or the
-registration does.
+as drawn from a changed stack (`stale`), and neither does marking damage, which
+only fits read; a change to the placement or the registration does.
 
 Changing the atlas position or cutting plane keeps the pairs and marks their
 atlas correspondences stale. Update those atlas endpoints from a current
@@ -364,10 +392,25 @@ A section whose `deformation` is frozen takes neither tool: both refuse it
 with `FROZEN`.
 
 `landmark_triangulation` requires at least three pairs and a written linear
-placement. The agent is responsible for anatomical coverage. It uses a
-Delaunay triangulation of the section points in their pixel aspect ratio,
-with VisuAlign's four fixed corners 10% outside the frame, and a piecewise
-affine pull-back to the matching atlas points. Its inverse uses the same
+placement. The agent is responsible for anatomical coverage. Before the mesh is
+built it adds **automatic holds** between the pairs: a regular lattice over the
+section frame, spaced one seventh of its longer side (about 35 points on a
+typical section), leaving out every lattice point within 0.7 spacings of the
+section point of any pair, so a pair moves its own neighbourhood freely and the
+holds fill only the gaps between pairs. Each hold corresponds to itself against
+the baseline the warp is applied on (the linear placement, or the earlier
+deformation it composes onto): it keeps that spot where it is. Without them a
+pair on the outline would drag distant anatomy through the large triangles that
+reach the four fixed corners. Holds are recomputed from the current pairs on
+every application; they are not pairs, are listed nowhere and cannot be edited.
+The reply says in words that holds were added, with their count
+(`automatic_holds`, `holds_note`), and the result picture draws them as small
+white dots with a black ring and no label. The mesh is a Delaunay
+triangulation of the pairs' and holds' section points in their pixel aspect
+ratio, with VisuAlign's four fixed corners 10% outside the frame, and a
+piecewise affine pull-back to the matching atlas points. Only this tool adds
+holds: the VisuAlign mesh itself (`core/triangulation.py`) is exact for any
+point set it is given. Its inverse uses the same
 triangle connectivity. Repeated section points (the reply names the pairs) and
 zero-area source triangles are refused as invalid geometry.
 
@@ -379,9 +422,10 @@ ones, each in mesh order, so the result is deterministic and a fold never
 overrides sound anatomy. The reply reports `folds`: `area_fraction` (the share
 of the section frame covered by folded triangles), `pairs` (the pair IDs at
 their corners, so they can be fixed), the first triangles with their pair
-IDs, and `triangle_count`. The result picture outlines each folded triangle in
-magenta between its pairs' section endpoints (a triangle at the frame's edge
-shows only its pair-to-pair edges). Displacement and existing biological
+IDs (an automatic hold at a corner is named `automatic hold`, with no id), and
+`triangle_count`. The result picture outlines each folded triangle in
+magenta between its vertices' section points, holds included (a triangle at the frame's edge
+shows only its non-corner edges). Displacement and existing biological
 plausibility diagnostics (which flag a fold fraction past a threshold) are
 reported for review. The reply lists `built_from` (the pair IDs the warp was made
 of) and, since `displacement_mm` is the whole deformation now applied (every step
