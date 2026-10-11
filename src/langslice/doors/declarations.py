@@ -55,6 +55,7 @@ from langslice.doors.tools.arguments import (
     CuttingAngles,
     LandmarkPair,
     LeftLinear,
+    PicturePoint,
     SectionPosition,
     SectionTransform,
     SectionTransformNoFlip,
@@ -279,7 +280,8 @@ def set_preprocessed_channel_properties(
     ...
 
 
-def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
+def grep_atlas(query: str = "", section: str = "",
+               points: list[PicturePoint] = []) -> dict[str, Any]:
     """Look regions up in the atlas hierarchy by acronym, name or id. Text only.
 
     When you recognize a structure in the tissue, find its atlas name here[[?grep_atlas_view ,
@@ -287,17 +289,28 @@ def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
     positions. Confirm the region visually before using it to guide a fit
     [[?mark_damage or mark damage]]]].
 
+    [[?grep_atlas:points With points, it also says which atlas region is drawn at given points of
+    saved pictures: the region (acronym, name, id) and the regions containing it,
+    or that the point is outside the atlas. A picture that draws the atlas gives a
+    region[[?look:overlay : an overlay of a section[[?zoom  or a zoom of one]], or an
+    atlas picture drawn for a section]]; a picture of the section alone does not.]]
+
     Args:
         query: Text matched case-insensitively against region acronyms and
-            names (substring), or an exact acronym or numeric id.
+            names (substring), or an exact acronym or numeric id[[?grep_atlas:points ;
+            empty when only points are given]].
         section: Optional filename (the extension may be left off) of a
             section with a position; each row then says whether the region
             (or any descendant) appears in the atlas plane at that section's
             placement.
+        points: [[?grep_atlas:points Points to look the region up at: {picture, x, y}, at
+            most 40, x and y in pixels from the top-left of the whole picture~
+            [[?zoom  (on a zoom, the numbers its grid prints)]].]]
 
     Returns:
         Rows of acronym, id, name, ancestry (root to parent, as acronyms)
-        and descendant count, at most 40, with the number left over.
+        and descendant count, at most 40, with the number left over[[?grep_atlas:points ; and,
+        per point, its region and containing regions]].
     """
     ...
 
@@ -799,11 +812,14 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     atlas point where an atlas border is drawn, the section point where that
     border belongs in the tissue. You point at what you see; a point on a warped
     overlay is mapped back to the section itself. ]]Spread pairs over the outline and
-    the internal anatomy. A pair whose section point and atlas point are at the
-    same spot holds that spot at its current (linear) placement; tissue far
-    from every pair follows the nearest pairs and the four fixed corners of the
-    frame.[[?mark_damage  An atlas region with no tissue on the section (torn
-    or missing) takes no pair: mark it with mark_damage.]] With no pairs and
+    the internal anatomy: a pair on the outline moves the outline, and a pair
+    on an internal landmark (the midline, a ventricle, a fibre tract) moves the
+    anatomy inside. Place no pair on a spot just to keep it where it is:
+    landmark_triangulation adds automatic holds between the pairs, so a pair
+    moves its neighbourhood up to the nearby holds and tissue far from every pair
+    stays where it was. [[?mark_damage  An atlas region with no tissue on the
+    section (torn or missing) takes no pair: mark it with mark_damage; a region
+    only partly missing keeps its pairs on the part that is present. ]]With no pairs and
     no delete, nothing is written and the reply lists the pairs.
 
     Args:
@@ -835,14 +851,20 @@ def landmark_triangulation(
     """Apply this section's saved landmark set as a piecewise affine warp.
 
     Requires at least three corresponding pairs, with coverage across the full
-    section; the tool cannot assess anatomical coverage. A pair at the same
-    spot on both holds that spot at its current (linear) placement; tissue far
-    from every pair follows the nearest pairs and the fixed frame corners. Uses
-    VisuAlign's section-domain Delaunay mesh in pixels and four fixed corners 10% outside
-    the section. Repeated section points, zero-area triangles and stale atlas
-    planes are refused. Folded triangles are applied, as VisuAlign does: the
-    reply gives the share of the section they cover and the pairs at their
-    corners, and the picture outlines them in magenta. The inverse uses the
+    section; the tool cannot assess anatomical coverage. Before it builds the
+    mesh it adds automatic holds between the pairs: a regular lattice of spots over
+    the section, left out near any pair, each kept where it currently is (its
+    current placement: linear, or the earlier deformation this composes onto). A
+    pair therefore moves its neighbourhood up to the nearby holds, and tissue far
+    from every pair stays where it was. Holds are not pairs: they are listed
+    nowhere, cannot be edited, and are recomputed from the pairs on every
+    application; the picture draws them as small unlabeled dots. Uses
+    VisuAlign's section-domain Delaunay mesh in pixels over the pairs and holds, and
+    four fixed corners 10% outside the section. Repeated section points,
+    zero-area triangles and stale atlas planes are refused. Folded triangles are
+    applied, as VisuAlign does: the reply gives the share of the section they
+    cover and the pairs at their corners (an automatic hold at a corner is named
+    as such), and the picture outlines them in magenta. The inverse uses the
     same triangles (unfolded ones first where folded ones overlap). Composes a
     correction onto the current deformation; undo removes the application.
     Editing pairs alone never warps: pairs added, moved or deleted after an
@@ -855,10 +877,11 @@ def landmark_triangulation(
             the default size.
 
     Returns:
-        Landmark count, `built_from` (the pair IDs the warp was made of),
-        whether applied/composed, displacement_mm (the whole deformation now
-        applied) and step_displacement_mm (only the change this application made
-        over the warp it replaced), diagnostics and any folds. The picture's
+        Landmark count, `built_from` (the pair IDs the warp was made of), how
+        many automatic holds were added, whether applied/composed,
+        displacement_mm (the whole deformation now applied) and
+        step_displacement_mm (only the change this application made over the
+        warp it replaced), diagnostics and any folds. The picture's
         number is under `pictures`.
     """
     ...
@@ -1052,6 +1075,8 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
             dropped.append("positions_mm")
         if not modes & {"overlay", "atlas", "positioning"}:  # an atlas to layer
             dropped.append("atlas_layers")
+    if name == "grep_atlas" and is_off(variant.off, "grep_atlas:points"):
+        dropped.append("points")
     if name == "zoom" and is_off(variant.off, "look:overlay"):
         dropped.append("region")  # a region is zoomed on an overlay only
     return tuple(dropped)

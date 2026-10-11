@@ -300,6 +300,9 @@ def _pattern(name: str) -> re.Pattern[str]:
         return re.compile(r"\"flip\"|\{id, flip|[Mm]irroring|mirrored or turned|mirrors the")
     if name == "interactive_transform:rotate":  # a key of the sections, or the turn itself
         return re.compile(r"rotate_quarter|quarter turn is applied")
+    if name == "grep_atlas:points":  # the argument, or what the tool says of its points
+        return re.compile(r"\"points\"|region is drawn at|only points are given"
+                          r"|look the region up at|its region and containing")
     raise AssertionError(f"no pattern for {name}")
 
 

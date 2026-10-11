@@ -196,11 +196,47 @@
    }
   },
   {
-   "description": "Look regions up in the atlas hierarchy by acronym, name or id. Text only.\n\nWhen you recognize a structure in the tissue, find its atlas name here,\nthen use grep_atlas_view to check its shape and location at candidate\npositions. Confirm the region visually before using it to guide a fit\nor mark damage.\n\nArgs:\n    query: Text matched case-insensitively against region acronyms and\n        names (substring), or an exact acronym or numeric id.\n    section: Optional filename (the extension may be left off) of a\n        section with a position; each row then says whether the region\n        (or any descendant) appears in the atlas plane at that section's\n        placement.\n\nReturns:\n    Rows of acronym, id, name, ancestry (root to parent, as acronyms)\n    and descendant count, at most 40, with the number left over.",
+   "description": "Look regions up in the atlas hierarchy by acronym, name or id. Text only.\n\nWhen you recognize a structure in the tissue, find its atlas name here,\nthen use grep_atlas_view to check its shape and location at candidate\npositions. Confirm the region visually before using it to guide a fit\nor mark damage.\n\nWith points, it also says which atlas region is drawn at given points of\nsaved pictures: the region (acronym, name, id) and the regions containing it,\nor that the point is outside the atlas. A picture that draws the atlas gives a\nregion: an overlay of a section or a zoom of one, or an\natlas picture drawn for a section; a picture of the section alone does not.\n\nArgs:\n    query: Text matched case-insensitively against region acronyms and\n        names (substring), or an exact acronym or numeric id;\n        empty when only points are given.\n    section: Optional filename (the extension may be left off) of a\n        section with a position; each row then says whether the region\n        (or any descendant) appears in the atlas plane at that section's\n        placement.\n    points: Points to look the region up at: {picture, x, y}, at\n        most 40, x and y in pixels from the top-left of the whole picture (on a zoom, the numbers its grid prints).\n\nReturns:\n    Rows of acronym, id, name, ancestry (root to parent, as acronyms)\n    and descendant count, at most 40, with the number left over; and,\n    per point, its region and containing regions.",
    "name": "grep_atlas",
    "parameters_json_schema": {
+    "$defs": {
+     "PicturePoint": {
+      "additionalProperties": false,
+      "description": "A point of a saved picture: its number and x, y in pixels.",
+      "properties": {
+       "picture": {
+        "title": "Picture",
+        "type": "integer"
+       },
+       "x": {
+        "title": "X",
+        "type": "number"
+       },
+       "y": {
+        "title": "Y",
+        "type": "number"
+       }
+      },
+      "required": [
+       "picture",
+       "x",
+       "y"
+      ],
+      "title": "PicturePoint",
+      "type": "object"
+     }
+    },
     "properties": {
+     "points": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/PicturePoint"
+      },
+      "title": "Points",
+      "type": "array"
+     },
      "query": {
+      "default": "",
       "title": "Query",
       "type": "string"
      },
@@ -210,9 +246,6 @@
       "type": "string"
      }
     },
-    "required": [
-     "query"
-    ],
     "title": "grep_atlasParams",
     "type": "object"
    }
@@ -578,7 +611,7 @@
    }
   },
   {
-   "description": "Add, update or delete persistent corresponding landmarks. Does not apply a warp.\n\nBuild corresponding pairs across the full section and atlas before calling\nlandmark_triangulation to apply the set. Pair IDs are stable. Every batch\nis one undo step. Atlas and section endpoints are explicitly named.\nCoordinates are x,y PIXELS from the top-left of the whole returned picture,\nincluding panel offsets; no fractions or atlas coordinates are accepted.\nOn a zoom, x,y are the numbers its grid prints (pixels of the whole\npicture it was cut from), so a number read off any grid works whether you\nname the zoom's picture or the whole picture. Saved geometry resolves the\nexact referenced view, including old zooms, orientation and an applied warp.\nCaption/gutter/out-of-image points are refused. A picture of the\natlas alone supplies atlas points only when drawn with\nlook(mode=\"atlas\", sections=[section]); generic atlas browsing has no\nsection context. Plane changes retain pairs but flag their atlas\ncorrespondences stale; update those atlas endpoints.\nPrefer both endpoints on the same overlay, or a zoom of it: the\natlas point where an atlas border is drawn, the section point where that\nborder belongs in the tissue. You point at what you see; a point on a warped\noverlay is mapped back to the section itself. Spread pairs over the outline and\nthe internal anatomy. A pair whose section point and atlas point are at the\nsame spot holds that spot at its current (linear) placement; tissue far\nfrom every pair follows the nearest pairs and the four fixed corners of the\nframe. An atlas region with no tissue on the section (torn\nor missing) takes no pair: mark it with mark_damage. With no pairs and\nno delete, nothing is written and the reply lists the pairs.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.\n        Updates add id and either or both endpoints; omitted endpoints stay.\n        At most four added/edited pairs with view true.\n    delete: Stable pair IDs to delete from this section, or [\"all\"] to\n        delete every pair of this section.\n    view: Show one contextual side-by-side crop for each added/edited pair:\n        atlas TEMPLATE and section PREPROCESSED. False shows no pictures.\n\nReturns:\n    The changed and deleted IDs and every pair of the section, one record\n    each: id, atlas and section as {picture, x, y}, and state: applied (in\n    the landmark warp applied now, as they are), moved (in it, but at other\n    endpoints now), pending (saved, not in it) or stale (placed against an\n    earlier atlas plane); with the count of each; and `warp`: the pairs the\n    current warp was built from, those not in it, those deleted but still\n    shaping it, and that landmark_triangulation must run again to apply the\n    set as it stands.",
+   "description": "Add, update or delete persistent corresponding landmarks. Does not apply a warp.\n\nBuild corresponding pairs across the full section and atlas before calling\nlandmark_triangulation to apply the set. Pair IDs are stable. Every batch\nis one undo step. Atlas and section endpoints are explicitly named.\nCoordinates are x,y PIXELS from the top-left of the whole returned picture,\nincluding panel offsets; no fractions or atlas coordinates are accepted.\nOn a zoom, x,y are the numbers its grid prints (pixels of the whole\npicture it was cut from), so a number read off any grid works whether you\nname the zoom's picture or the whole picture. Saved geometry resolves the\nexact referenced view, including old zooms, orientation and an applied warp.\nCaption/gutter/out-of-image points are refused. A picture of the\natlas alone supplies atlas points only when drawn with\nlook(mode=\"atlas\", sections=[section]); generic atlas browsing has no\nsection context. Plane changes retain pairs but flag their atlas\ncorrespondences stale; update those atlas endpoints.\nPrefer both endpoints on the same overlay, or a zoom of it: the\natlas point where an atlas border is drawn, the section point where that\nborder belongs in the tissue. You point at what you see; a point on a warped\noverlay is mapped back to the section itself. Spread pairs over the outline and\nthe internal anatomy: a pair on the outline moves the outline, and a pair\non an internal landmark (the midline, a ventricle, a fibre tract) moves the\nanatomy inside. Place no pair on a spot just to keep it where it is:\nlandmark_triangulation adds automatic holds between the pairs, so a pair\nmoves its neighbourhood up to the nearby holds and tissue far from every pair\nstays where it was.  An atlas region with no tissue on the\nsection (torn or missing) takes no pair: mark it with mark_damage; a region\nonly partly missing keeps its pairs on the part that is present. With no pairs and\nno delete, nothing is written and the reply lists the pairs.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.\n        Updates add id and either or both endpoints; omitted endpoints stay.\n        At most four added/edited pairs with view true.\n    delete: Stable pair IDs to delete from this section, or [\"all\"] to\n        delete every pair of this section.\n    view: Show one contextual side-by-side crop for each added/edited pair:\n        atlas TEMPLATE and section PREPROCESSED. False shows no pictures.\n\nReturns:\n    The changed and deleted IDs and every pair of the section, one record\n    each: id, atlas and section as {picture, x, y}, and state: applied (in\n    the landmark warp applied now, as they are), moved (in it, but at other\n    endpoints now), pending (saved, not in it) or stale (placed against an\n    earlier atlas plane); with the count of each; and `warp`: the pairs the\n    current warp was built from, those not in it, those deleted but still\n    shaping it, and that landmark_triangulation must run again to apply the\n    set as it stands.",
    "name": "set_landmarks",
    "parameters_json_schema": {
     "$defs": {
@@ -661,7 +694,7 @@
    }
   },
   {
-   "description": "Apply this section's saved landmark set as a piecewise affine warp.\n\nRequires at least three corresponding pairs, with coverage across the full\nsection; the tool cannot assess anatomical coverage. A pair at the same\nspot on both holds that spot at its current (linear) placement; tissue far\nfrom every pair follows the nearest pairs and the fixed frame corners. Uses\nVisuAlign's section-domain Delaunay mesh in pixels and four fixed corners 10% outside\nthe section. Repeated section points, zero-area triangles and stale atlas\nplanes are refused. Folded triangles are applied, as VisuAlign does: the\nreply gives the share of the section they cover and the pairs at their\ncorners, and the picture outlines them in magenta. The inverse uses the\nsame triangles (unfolded ones first where folded ones overlap). Composes a\ncorrection onto the current deformation; undo removes the application.\nEditing pairs alone never warps: pairs added, moved or deleted after an\napplication change nothing until this runs again.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    view: Show the resulting registration under atlas borders.\n\nReturns:\n    Landmark count, `built_from` (the pair IDs the warp was made of),\n    whether applied/composed, displacement_mm (the whole deformation now\n    applied) and step_displacement_mm (only the change this application made\n    over the warp it replaced), diagnostics and any folds. The picture's\n    number is under `pictures`.",
+   "description": "Apply this section's saved landmark set as a piecewise affine warp.\n\nRequires at least three corresponding pairs, with coverage across the full\nsection; the tool cannot assess anatomical coverage. Before it builds the\nmesh it adds automatic holds between the pairs: a regular lattice of spots over\nthe section, left out near any pair, each kept where it currently is (its\ncurrent placement: linear, or the earlier deformation this composes onto). A\npair therefore moves its neighbourhood up to the nearby holds, and tissue far\nfrom every pair stays where it was. Holds are not pairs: they are listed\nnowhere, cannot be edited, and are recomputed from the pairs on every\napplication; the picture draws them as small unlabeled dots. Uses\nVisuAlign's section-domain Delaunay mesh in pixels over the pairs and holds, and\nfour fixed corners 10% outside the section. Repeated section points,\nzero-area triangles and stale atlas planes are refused. Folded triangles are\napplied, as VisuAlign does: the reply gives the share of the section they\ncover and the pairs at their corners (an automatic hold at a corner is named\nas such), and the picture outlines them in magenta. The inverse uses the\nsame triangles (unfolded ones first where folded ones overlap). Composes a\ncorrection onto the current deformation; undo removes the application.\nEditing pairs alone never warps: pairs added, moved or deleted after an\napplication change nothing until this runs again.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    view: Show the resulting registration under atlas borders.\n\nReturns:\n    Landmark count, `built_from` (the pair IDs the warp was made of), how\n    many automatic holds were added, whether applied/composed,\n    displacement_mm (the whole deformation now applied) and\n    step_displacement_mm (only the change this application made over the\n    warp it replaced), diagnostics and any folds. The picture's\n    number is under `pictures`.",
    "name": "landmark_triangulation",
    "parameters_json_schema": {
     "properties": {

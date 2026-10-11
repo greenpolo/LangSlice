@@ -307,7 +307,7 @@ wording; `registry.py` lists which.
   position, plane, angles, flip, rotation, transform; its fit appearance;
   damage: marked regions and a mark naming none; with `deformation` the applied deformation's key, with `trace`
   its image correction), `STALE_INPUT`, `stale_row`.
-- `atlas.py` — `grep_atlas(job, workspace, query, section="")`: the region
+- `atlas.py` — `grep_atlas(job, workspace, query="", section="", points=())`: with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
   hierarchy searched like text (`core/atlas_grep.py`), with `in_section`
   per row for a placed section. `grep_atlas_view(job, workspace, regions,
   positions_mm)`: the atlas template at each position (clamped into the
@@ -424,7 +424,17 @@ set, at least three pairs, on its written linear placement. The first applicatio
 composes onto the current deformation via its stored inverse. Consecutive
 landmark applications replace the landmark method against that original
 baseline (`current.parent`), retaining its key and steps in state; a different
-intervening method establishes a new baseline. The VisuAlign mesh supplies dense
+intervening method establishes a new baseline. Before the mesh is built it adds
+automatic holds (`automatic_holds`: a lattice at `HOLD_SPACING` of the section's
+longer side, without the points within `HOLD_CLEARANCE` spacings of a pair's
+section point; shifted a little (`HOLD_SHIFTS`) when a hold makes the mesh
+degenerate), each corresponding to itself against the baseline (target = source,
+the pair targets being in the baseline's section coordinates); the vertex order
+is four corners, pairs, holds. Holds are recomputed on every application, kept in
+`native_parameters` (`pair_count`, `hold_count`), the provenance
+(`automatic_holds_xy`) and the deformation reference (`landmark_holds`), never
+listed as pairs; the reply carries `automatic_holds` and `holds_note`, and a fold
+through a hold names it `automatic hold` (pair ids only). The VisuAlign mesh supplies dense
 forward and same-connectivity inverse fields to the usual record composition
 and diagnostic machinery without running ANTs. Unreadable current records,
 missing inverses, repeated section points, zero-area source triangles (named by

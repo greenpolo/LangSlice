@@ -229,7 +229,14 @@ reference, with `landmark_pairs` (each applied pair id with a digest of its two
 endpoints, what `applied` / `pending` is read from) and `landmark_folds`
 (`area_fraction` and the pair ids of each folded triangle, empty when none); the saved `DeformableRecord` includes its source/target vertices
 and mesh connectivity in `engine.native_parameters`, and its full pair set
-in `provenance`. `landmark_baseline_key` and `landmark_baseline_steps` in the
+in `provenance`, with `automatic_holds_xy` (the automatic holds' section pixels
+on the working grid), `hold_spacing_px` and `hold_clearance_spacings`; the
+mesh vertices of `native_parameters` are the four fixed corners, then the
+pairs, then the holds (`pair_count`, `hold_count`), each hold's target equal to its
+source. The section's deformation reference lists the holds as `landmark_holds`
+(edge fractions of the original image, like a pair's `section_fraction_xy`), which
+the result picture draws; `landmark_folds` names a hold vertex of a fold `~K`
+(the K-th hold). `landmark_baseline_key` and `landmark_baseline_steps` in the
 section's deformation reference identify the registration before the current
 landmark method; its record's `parent` holds that baseline. Consecutive landmark
 applications replace the landmark method on that baseline. Undo history

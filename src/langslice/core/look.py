@@ -247,10 +247,11 @@ def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False
     return _plain(data)
 
 
-#: The section fields that only annotate a picture (landmark markers): an
-#: edit to them redraws an old picture with the markers it then had, but does
-#: not make it stale.
-ANNOTATION_FIELDS: tuple[str, ...] = ("landmarks",)
+#: The section fields that change nothing a picture of the stack shows: the
+#: landmark markers (an edit redraws an old picture with the markers it then
+#: had) and the damage marks (only fits read them). An edit to them does not
+#: make a picture stale.
+ANNOTATION_FIELDS: tuple[str, ...] = ("landmarks", "damaged_regions")
 
 
 def _without_annotations(data: dict[str, Any]) -> dict[str, Any]:
@@ -270,9 +271,9 @@ def differs_since(state: StackState, held: dict[str, Any]) -> bool:
 
 def changed_since(state: StackState, held: dict[str, Any]) -> bool:
     """Whether *state* differs from the snapshot *held* in anything the
-    picture depends on (a section gone included). Landmark markers are
-    annotations (:data:`ANNOTATION_FIELDS`): editing pairs alone changes
-    nothing a picture shows of the stack."""
+    picture depends on (a section gone included). Landmark markers and
+    damage marks are not part of it (:data:`ANNOTATION_FIELDS`): editing pairs
+    or marking damage changes nothing a picture shows of the stack."""
     ids = list((held.get("sections") or {}).keys())
     now = snapshot(state, ids, view_angles="view_angles" in held)
     return _without_annotations(now) != _without_annotations(_plain(held))

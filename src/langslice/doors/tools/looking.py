@@ -198,9 +198,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
-    def grep_atlas(query: str, section: str) -> dict[str, Any]:
+    def grep_atlas(query: str, section: str, points: list[dict[str, Any]]) -> dict[str, Any]:
         try:
-            return {"status": "ok", **ops_atlas.grep_atlas(job, ctx, query, section)}
+            return {"status": "ok", **ops_atlas.grep_atlas(job, ctx, query, section,
+                                                          as_list(points))}
         except Refused as refusal:
             return refusal.payload()
 

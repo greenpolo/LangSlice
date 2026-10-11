@@ -66,8 +66,9 @@ WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
 #: A call with one of these answers with the verb's (or command's) schema,
 #: as ``langslice-job schema NAME`` does, and runs nothing.
 HELP_FLAGS = frozenset({"--help", "-h"})
-#: Verbs whose whole-stack ``rows`` are their answer (kept when concise).
-ROW_VERBS = frozenset({"status"})
+#: Verbs whose ``rows`` are their answer (kept when concise): the status rows, the
+#: regions a grep_atlas query found.
+ROW_VERBS = frozenset({"status", "grep_atlas"})
 
 
 def progress(message: str) -> None:
@@ -287,11 +288,17 @@ def _flag_value(annotation: Any, values: list[str]) -> Any:
         return values[-1]
     if origin in (list, tuple):
         items: list[Any] = []
+        numbers = typing.get_args(annotation)[:1] in ((float,), (int,))
         for value in values:
             try:
                 loaded = json.loads(value)
             except ValueError:
                 loaded = value
+                if numbers and "," in value:  # a list of numbers: 960,230,1300,940
+                    try:
+                        loaded = [float(v) for v in value.strip("[]() ").split(",")]
+                    except ValueError:
+                        pass
             if isinstance(loaded, list):
                 items.extend(loaded)
             else:

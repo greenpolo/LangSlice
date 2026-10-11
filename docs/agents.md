@@ -47,12 +47,16 @@ by image filename (a unique stem also works), never by number.
 langslice-job sections/ position_sections --sections '[{"id":"s01.tif","position_mm":5.2}]'
 langslice-job sections/ look --mode overlay --sections s01.tif --resolution 1200
 langslice-job sections/ zoom --region CA1:left
+langslice-job sections/ zoom --picture 12 --box 960,230,1300,940
 ```
 
 Arguments can be separate flags, a JSON object with `--args '{...}'`, or a
 file with `--args @arguments.json`. Separate flags override `--args`.
-List arguments accept repeated flags or a JSON list; a boolean flag alone
-means true. Kebab-case and snake_case are accepted.
+List arguments accept repeated flags or a JSON list; a list of numbers also
+takes one comma-separated flag (`zoom --box 960,230,1300,940`); a list of
+objects (`set_landmarks` pairs) goes through `--args '{...}'` or
+`--args @pairs.json`. A boolean flag alone means true. Kebab-case and
+snake_case are accepted. `grep_atlas` returns its rows by default.
 
 Long calls can run detached:
 

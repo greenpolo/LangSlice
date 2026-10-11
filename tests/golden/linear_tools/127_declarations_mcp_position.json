@@ -231,10 +231,46 @@
    "annotations": {
     "readOnlyHint": true
    },
-   "description": "Look regions up in the atlas hierarchy by acronym, name or id. Text only.\n\n        When you recognize a structure in the tissue, find its atlas name here,\n        then use grep_atlas_view to check its shape and location at candidate\n        positions. Confirm the region visually before using it to guide a fit\n        or mark damage.\n\n        Args:\n            query: Text matched case-insensitively against region acronyms and\n                names (substring), or an exact acronym or numeric id.\n            section: Optional filename (the extension may be left off) of a\n                section with a position; each row then says whether the region\n                (or any descendant) appears in the atlas plane at that section's\n                placement.\n\n        Returns:\n            Rows of acronym, id, name, ancestry (root to parent, as acronyms)\n            and descendant count, at most 40, with the number left over.\n        ",
+   "description": "Look regions up in the atlas hierarchy by acronym, name or id. Text only.\n\n        When you recognize a structure in the tissue, find its atlas name here,\n        then use grep_atlas_view to check its shape and location at candidate\n        positions. Confirm the region visually before using it to guide a fit\n        or mark damage.\n\n        With points, it also says which atlas region is drawn at given points of\n        saved pictures: the region (acronym, name, id) and the regions containing it,\n        or that the point is outside the atlas. A picture that draws the atlas gives a\n        region: an overlay of a section or a zoom of one, or an\n        atlas picture drawn for a section; a picture of the section alone does not.\n\n        Args:\n            query: Text matched case-insensitively against region acronyms and\n                names (substring), or an exact acronym or numeric id;\n                empty when only points are given.\n            section: Optional filename (the extension may be left off) of a\n                section with a position; each row then says whether the region\n                (or any descendant) appears in the atlas plane at that section's\n                placement.\n            points: Points to look the region up at: {picture, x, y}, at\n                most 40, x and y in pixels from the top-left of the whole picture (on a zoom, the numbers its grid prints).\n\n        Returns:\n            Rows of acronym, id, name, ancestry (root to parent, as acronyms)\n            and descendant count, at most 40, with the number left over; and,\n            per point, its region and containing regions.\n        ",
    "inputSchema": {
+    "$defs": {
+     "PicturePoint": {
+      "additionalProperties": false,
+      "description": "A point of a saved picture: its number and x, y in pixels.",
+      "properties": {
+       "picture": {
+        "title": "Picture",
+        "type": "integer"
+       },
+       "x": {
+        "title": "X",
+        "type": "number"
+       },
+       "y": {
+        "title": "Y",
+        "type": "number"
+       }
+      },
+      "required": [
+       "picture",
+       "x",
+       "y"
+      ],
+      "title": "PicturePoint",
+      "type": "object"
+     }
+    },
     "properties": {
+     "points": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/PicturePoint"
+      },
+      "title": "Points",
+      "type": "array"
+     },
      "query": {
+      "default": "",
       "title": "Query",
       "type": "string"
      },
@@ -244,9 +280,6 @@
       "type": "string"
      }
     },
-    "required": [
-     "query"
-    ],
     "title": "grep_atlasArguments",
     "type": "object"
    },

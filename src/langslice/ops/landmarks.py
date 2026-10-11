@@ -344,9 +344,56 @@ DISPLACEMENT_NOTE = (
 MAX_FOLDS_LISTED = 8
 
 
+#: The automatic holds' lattice spacing, as a fraction of the section's longer side.
+HOLD_SPACING = 1 / 7
+#: A lattice point closer than this many spacings to a pair's section point is
+#: dropped: the pair moves its own neighbourhood freely.
+HOLD_CLEARANCE = 0.7
+#: Fractions of a spacing the lattice is shifted by when a mesh with holds is
+#: degenerate (a hold collinear with pair points), tried in turn.
+HOLD_SHIFTS = (0.0, 0.11, 0.23, 0.37)
+#: How a fold reply names a hold vertex.
+HOLD_WORDS = "automatic hold"
+_HOLD_PREFIX = "~"
+
+
+def automatic_holds(
+    pair_points: np.ndarray, size: tuple[int, int], shift: float = 0.0
+) -> np.ndarray:
+    """Section points (pixels) of the automatic holds: a regular lattice over
+    the section frame, spaced :data:`HOLD_SPACING` of its longer side, without
+    the points within :data:`HOLD_CLEARANCE` spacings of any of *pair_points*.
+
+    Each hold corresponds to itself (it keeps its spot where the baseline
+    placement puts it); the pairs are never changed."""
+    width, height = size
+    spacing = max(width, height) * HOLD_SPACING
+    columns, rows = max(1, round(width / spacing)), max(1, round(height / spacing))
+    xs = (np.arange(columns) + 0.5) * width / columns - 0.5 + shift * spacing
+    ys = (np.arange(rows) + 0.5) * height / rows - 0.5 + shift * spacing
+    lattice = np.stack(np.meshgrid(xs, ys), -1).reshape(-1, 2)
+    inside = (lattice[:, 0] < width - 0.5) & (lattice[:, 1] < height - 0.5)
+    lattice = lattice[inside]
+    points = np.asarray(pair_points, dtype=float).reshape(-1, 2)
+    if not len(points) or not len(lattice):
+        return lattice
+    gap = np.hypot(*(lattice[:, None, :] - points[None, :, :]).transpose(2, 0, 1))
+    return lattice[gap.min(axis=1) > HOLD_CLEARANCE * spacing]
+
+
+def _vertex_name(index: int, names: Sequence[str]) -> str:
+    """The name of mesh vertex *index* (the four fixed corners come first,
+    then the pairs, then the holds): a pair id, or a hold marked by its number."""
+    k = index - 4
+    return names[k] if k < len(names) else f"{_HOLD_PREFIX}{k - len(names)}"
+
+
 def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
     def ids(group: Sequence[int]) -> str:
-        return ", ".join(names[i - 4] if i >= 4 else "a fixed corner" for i in group)
+        return ", ".join(
+            "a fixed corner" if i < 4
+            else HOLD_WORDS if i - 4 >= len(names) else names[i - 4]
+            for i in group)
 
     groups = "; ".join(ids(group) for group in exc.vertices[:6])
     if "Repeated" in str(exc):
@@ -358,9 +405,11 @@ def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
 
 def _folds(mesh: Any, points: np.ndarray, names: Sequence[str]) -> dict[str, Any]:
     """The warp's folded triangles: the share of the section frame they cover
-    and their pair ids (a fixed corner vertex has none, so a triangle at the
-    frame's edge lists fewer than three)."""
-    triangles = [[names[i - 4] for i in sorted(tri) if i >= 4] for tri in mesh.folded_triangles()]
+    and their vertices (a pair id, or ``~K`` for the K-th automatic hold; a
+    fixed corner vertex has none, so a triangle at the frame's edge lists
+    fewer than three)."""
+    triangles = [[_vertex_name(i, names) for i in sorted(tri) if i >= 4]
+                 for tri in mesh.folded_triangles()]
     if not triangles:
         return {}
     return {"area_fraction": round(mesh.folded_fraction(points), 5), "triangles": triangles}
@@ -371,19 +420,42 @@ def _folds_reply(folds: dict[str, Any] | None) -> dict[str, Any]:
     if not folds:
         return {}
     triangles = folds["triangles"]
-    ids = sorted({i for tri in triangles for i in tri}, key=lambda s: (len(s), s))
+    ids = sorted({i for tri in triangles for i in tri if not i.startswith(_HOLD_PREFIX)},
+                 key=lambda s: (len(s), s))
+    shown = [[HOLD_WORDS if i.startswith(_HOLD_PREFIX) else i for i in tri]
+             for tri in triangles[:MAX_FOLDS_LISTED]]
+    with_holds = any(i.startswith(_HOLD_PREFIX) for tri in triangles for i in tri)
     return {
         "folds": {
             "area_fraction": folds["area_fraction"],
             "pairs": ids,
-            "triangles": triangles[:MAX_FOLDS_LISTED],
+            "triangles": shown,
             "triangle_count": len(triangles),
             "note": (
                 "Folded triangles are applied as VisuAlign does (outlined in magenta on the "
                 "picture). A fold means the section points of these pairs are ordered "
                 "differently from their atlas points; fix those pairs' endpoints if it is wrong."
+                + (" An automatic hold in a triangle is a spot kept where it was: the "
+                   "fold comes from the pairs beside it, and a pair placed far from its "
+                   "neighbours' atlas points drags that spot." if with_holds else "")
             ),
         }
+    }
+
+
+def _holds_reply(count: int) -> dict[str, Any]:
+    """The reply's words on the automatic holds."""
+    return {
+        "automatic_holds": count,
+        "holds_note": (
+            f"{count} automatic hold{'s were' if count != 1 else ' was'} added between the "
+            "pairs: spots that keep "
+            "their current place, so a pair moves its neighbourhood up to the holds "
+            "near it and the tissue between the pairs stays put. They are not pairs "
+            "and cannot be edited; they are recomputed from the pairs on every application."
+            if count else
+            "No automatic holds were added: every spot of the hold lattice is near a pair."
+        ),
     }
 
 
@@ -417,6 +489,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             "written": False,
             "landmark_count": len(pairs),
             "built_from": [p["id"] for p in pairs],
+            **_holds_reply(len(held.get("landmark_holds", []))),
             **held.get("summary", {}),
             DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
             **_folds_reply(held.get("landmark_folds")),
@@ -458,15 +531,26 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             assert previous.inverse_field_mm is not None
             target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
         names = [p["id"] for p in pairs]
-        try:
-            mesh = visualign_mesh(source, target, size=size)
-        except DegenerateMesh as exc:
-            # The mesh's first four vertices are the fixed corners.
-            raise Refused(
-                "LANDMARK_TRIANGULATION_FAILED",
-                pairs=sorted({names[i - 4] for group in exc.vertices for i in group if i >= 4}),
-                message=_degenerate_words(exc, names),
-            ) from exc
+        # Automatic holds between the pairs, each corresponding to itself against
+        # the baseline (the pair targets above are already in the baseline's
+        # section coordinates, so a hold's target is its own spot). Only this verb
+        # adds them: the VisuAlign mesh below is exact for any point set.
+        for shift in HOLD_SHIFTS:
+            holds = automatic_holds(source, size, shift)
+            try:
+                mesh = visualign_mesh(
+                    np.vstack([source, holds]), np.vstack([target, holds]), size=size)
+                break
+            except DegenerateMesh as exc:
+                bare = {i for group in exc.vertices for i in group if i >= 4 + len(names)}
+                if not bare or shift == HOLD_SHIFTS[-1]:
+                    # The mesh's first four vertices are the fixed corners.
+                    raise Refused(
+                        "LANDMARK_TRIANGULATION_FAILED",
+                        pairs=sorted({names[i - 4] for group in exc.vertices
+                                      for i in group if 4 <= i < 4 + len(names)}),
+                        message=_degenerate_words(exc, names),
+                    ) from exc
         yy, xx = np.indices((size[1], size[0]), dtype=float)
         points = np.stack([xx, yy], -1)
         mm = grid.placement.section_mm_per_px
@@ -490,6 +574,9 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
                     "target_xy": mesh.target.tolist(),
                     "simplices": mesh.simplices.tolist(),
                     "margin": 0.1,
+                    # vertices: 4 fixed corners, then the pairs, then the holds
+                    "pair_count": len(names),
+                    "hold_count": len(holds),
                 },
                 runtime_s=time.monotonic() - started,
                 engine_version=scipy.__version__,
@@ -514,11 +601,18 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "landmark_revision": revision,
         "landmark_baseline_key": baseline_key,
         "pairs": copy.deepcopy(pairs),
+        "automatic_holds_xy": holds.tolist(),
+        "hold_spacing_px": max(size) * HOLD_SPACING,
+        "hold_clearance_spacings": HOLD_CLEARANCE,
     }
     job.deformations.put(key, result)
     folder = job.deformations.save(record.id, key, result)
     numbers = deformation.summary(result, current)
     before = job.snapshot()
+    # The holds in the section file's edge fractions, as the pairs' section
+    # points are, so a picture of any orientation can place them.
+    hold_fractions = geometry.transform(
+        geometry.orientation(record), (holds + 0.5) / np.asarray(size)).tolist()
     record.deformation = {
         "key": key,
         "record": job.layout.relative(folder),
@@ -528,6 +622,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "landmark_revision": revision,
         "landmark_pairs": {p["id"]: geometry.pair_key(p) for p in pairs},
         "landmark_folds": folds,
+        "landmark_holds": hold_fractions,
         "landmark_baseline_key": baseline_key,
         "landmark_baseline_steps": baseline_steps,
         "steps": [
@@ -549,6 +644,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "built_from": [p["id"] for p in pairs],
         "composed": previous is not None,
         "replaced": replacing,
+        **_holds_reply(len(holds)),
         **numbers,
         DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
         **_folds_reply(folds),
