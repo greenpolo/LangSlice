@@ -15,7 +15,7 @@ FOLDER` for exact arguments and limits.
 |---|---|---|
 | `position` | `position_sections` | Atlas positions, section order and cutting angles |
 | `transform` | `interactive_transform`, `elastix_affine` | In-plane alignment of each section |
-| `nonlinear` | `ants_syn`, optionally `trace_borders` | Deformation on top of a linear placement |
+| `nonlinear` | `ants_syn`, `set_landmarks`, `landmark_triangulation`, optionally `trace_borders` | Deformation on top of a linear placement |
 
 Default tasks are `position,transform`. A disabled task takes its answer
 from supplied inputs and removes its tools. `transform.angles` also enables
@@ -41,7 +41,7 @@ for the agent; actual damage exclusions are atlas regions marked with
 | Tool | Use |
 |---|---|
 | `look` | `section`: tissue alone; `atlas`: atlas planes; `overlay`: tissue with registered atlas borders; `positioning`: sections and atlas along the slicing axis |
-| `zoom` | Redraw a saved picture's pixel box, or an overlay's single atlas region |
+| `zoom` | Redraw a saved picture's pixel box, or an overlay's single atlas region; `requests` batches up to four inspections |
 | `grep_atlas` | Find region acronyms, names and ids |
 | `grep_atlas_view` | Show the atlas with only the selected regions' borders |
 | `status` | Read placements, settings, constraints and pending work |
@@ -132,6 +132,82 @@ rejecting fits. Judge the overlay against internal tissue anatomy.
 Changing a section's position, orientation, cutting angles or linear
 transform clears its deformation; the reply lists affected sections.
 
+## Landmark triangulation
+
+`set_landmarks` saves explicit atlas/section corresponding pairs. It adds,
+updates and deletes a batch as one undo step and leaves the registration
+unchanged. Accumulate correspondences across the whole section, including
+its outline and internal anatomy, then call `landmark_triangulation` to apply
+the complete set. This submits one section's landmark method; `submit` still
+ends the whole job.
+
+When MCP shrinks pictures to fit its reply budget, it assigns new saved picture
+numbers to the delivered sizes and preserves their exact coordinate geometry.
+Earlier picture numbers still refer to their original images.
+
+Both endpoints use **x,y pixels of an explicitly numbered returned picture**,
+from the top-left of the whole image. Panel offsets are included. `look` in
+`section` or `overlay` mode provides section points; `overlay` also provides
+atlas points. For an atlas-only view tied to a section, use
+`look(mode="atlas", sections=["s01.tif"])`: it draws that section's own
+position and cutting angles. Generic atlas browsing with `positions_mm`
+has no section context and cannot supply landmark endpoints.
+
+```python
+job.set_landmarks(
+    section="s01.tif",
+    pairs=[{"atlas": {"picture": 12, "x": 180, "y": 140},
+            "section": {"picture": 13, "x": 190, "y": 145}}],
+)
+job.set_landmarks(section="s01.tif", pairs=[
+    {"id": "L1", "section": {"picture": 15, "x": 215, "y": 160}}], view=False)
+job.set_landmarks(section="s01.tif", delete=["L2"], view=False)
+job.landmark_triangulation(section="s01.tif")
+```
+
+Pair IDs persist through edits. Omitted endpoints of an update stay as they
+were. The default `view=True` shows one contextual side-by-side crop per
+added/edited pair: atlas **template** at left, **preprocessed** section at
+right, with the selected ID labeled. At most four pairs can be inspected
+this way per call; `view=False` permits larger batches and independent
+`look`/`zoom` inspection. `zoom(requests=[{"picture": 12, "box": [100, 80,
+260, 220]}, {"picture": 13, "box": [110, 85, 270, 225]}])` inspects several
+saved pictures in one call. The existing single-picture zoom arguments also
+work. A zoom of a contextual pair is a saved-image crop and reports
+`redrawn=False`.
+
+The exact saved geometry resolves cropping, resizing, rotation, flips,
+multiple panels and the inverse of a deformation drawn on an overlay.
+Caption bands, gutters and points outside either image are refused without
+clamping. Subsequent section views show open-centre circles, atlas views
+show diamonds, and overlays show both with matching IDs. White and black
+outlines and backed labels keep them visible across channel colors. Markers
+are drawn after compositing and never enter fit images or image-model inputs.
+Old pictures and zooms retain their original marker set.
+
+Changing the atlas position or cutting plane keeps the pairs and marks their
+atlas correspondences stale. Update those atlas endpoints from a current
+view before applying them. Appearance changes leave correspondences valid;
+section endpoints are stored in the original image's normalized frame and
+survive orientation changes. Linear transform changes retain both endpoints.
+
+`landmark_triangulation` requires at least three pairs and a written linear
+placement. The agent is responsible for anatomical coverage. It uses a
+Delaunay triangulation of the section points in their pixel aspect ratio,
+with VisuAlign's four fixed corners 10% outside the frame, and a piecewise
+affine pull-back to the matching atlas points. Its inverse uses the same
+triangle connectivity. Repeated source points, collapsed triangles and
+folds are refused as invalid geometry. Displacement and existing biological
+plausibility diagnostics are reported for review. The first application
+composes the landmark correction onto the current deformation. Consecutive
+landmark applications replace that landmark correction using the same
+earlier baseline, so editing or deleting a pair removes its prior influence.
+An intervening ANTs or trace fit becomes the baseline for the next landmark
+application. A missing baseline inverse or unreadable current deformation is
+refused. Reapplying an unchanged set writes nothing. Editing or deleting
+points leaves the current registration in force until explicit application;
+undo restores the registration before that application.
+
 ## Optional image-model traces
 
 `trace_borders(section="s01.tif", restrict_to=["CA1"], prompt="")` asks an
@@ -159,7 +235,7 @@ fit metrics do not certify region identity or topology. The job saves the
 attachments, prompts, raw reply, extracted lines and fit separately.
 
 `trace_borders` is offered only with Nonlinear enabled and an image model
-connected. `provider="none"` disables it while keeping `ants_syn`.
+connected. `provider="none"` disables it while keeping ANTs and landmark tools.
 Custom models and prompts are described in the [library guide](library.md#image-models).
 
 ## Writes, review and submission

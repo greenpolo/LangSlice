@@ -46,7 +46,8 @@ The doors covered:
   and normalised JSON hashed, ``labels.csv`` as text).
 
 Everything goes through public entry points (``build_tools``, ``engine.run``,
-``doors.mcp.server.build_server``). The few internals touched are listed in
+``doors.mcp.server.build_server``). The landmark scenario reads its saved endpoint panels and core placement
+geometry to choose deterministic corresponding picture pixels. Other internals touched are listed in
 :data:`PATCHES`; each is checked to exist, so a phase that moves one fails
 here loudly instead of silently recording something else. The image model is
 injected (:func:`stub_image_model`, given to ``build_tools``).
@@ -1039,6 +1040,50 @@ def snapshot_job_folders(rec: Recorder, folders: dict[str, Path]) -> None:
     rec.raw("job", "folders", {"folders": summary})
 
 
+def record_landmarks(rec: Recorder, folder: Path) -> None:
+    """An independent landmark-method session: pixels, pairs, application and zooms."""
+    from langslice.core import deformation
+    from langslice.core import landmarks as geometry
+
+    write_sections(folder)
+    spec = full_spec(folder)
+    box = open_toolbox(spec, stub_image_model(spec))
+    tools = tool_map(box)
+
+    def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return rec.tool("landmarks", tools, name, *args, **kwargs)
+
+    call("position_sections", sections=[{"id": ID1, "position_mm": .1}])
+    call("interactive_transform", sections=[{"id": ID1, "scale_x": 1., "scale_y": 1.}])
+    atlas = call("look", "atlas", sections=[ID1])
+    section = call("look", "section", sections=[ID1], channels=["blue"])
+    atlas_id, section_id = atlas["pictures"][0]["id"], section["pictures"][0]["id"]
+    atlas_panel = box.job.views.lookup(atlas_id).recipe["endpoint_panels"][0]
+    section_panel = box.job.views.lookup(section_id).recipe["endpoint_panels"][0]
+    record = box.job.state.by_id(ID1)
+    grid = deformation.fit_grid(box.job.state, box.job.workspace, record)
+    pairs = []
+    for fraction in [[.3, .3], [.7, .3], [.5, .7]]:
+        section_point = np.asarray(fraction)*grid.image.size-.5
+        native = geometry.transform(np.linalg.inv(grid.placement.atlas_to_section),
+                                    section_point + [2., 1.])
+        a = geometry.transform(np.linalg.inv(atlas_panel["pixel_to_native"]), native)
+        b = geometry.section_picture_point(section_panel, fraction)
+        pairs.append({"atlas": {"picture": atlas_id, "x": float(a[0]), "y": float(a[1])},
+                      "section": {"picture": section_id, "x": float(b[0]), "y": float(b[1])}})
+    added = call("set_landmarks", section=ID1, pairs=pairs)
+    pair_id = added["pictures"][0]["id"]
+    call("zoom", requests=[{"picture": pair_id, "box": [0, 0, 150, 130]},
+                            {"picture": pair_id, "box": [530, 100, 730, 260]}])
+    call("landmark_triangulation", section=ID1)
+    call("look", "overlay", sections=[ID1], channels=["red"])
+    call("set_landmarks", section=ID1, delete=["L2"], view=False)
+    call("undo")
+    box.job.close()
+    rec.raw("landmarks", "final_state", {"state": rec.norm.data(box.job.state.to_dict())})
+    snapshot_job_folders(rec, {"landmarks": folder})
+
+
 # --- everything -------------------------------------------------------------------------
 
 
@@ -1077,6 +1122,7 @@ def record(out: Path) -> dict[str, Any]:
         rec.tool("regions", region_tools, "zoom", region="STR")
         rec.tool("regions", region_tools, "zoom", region="TH:left")
         rec.tool("regions", region_tools, "zoom", box=[0, 0, 50, 50], region="STR")
+        record_landmarks(rec, root / "landmarks")
         built = sorted(set(main_names) | set(auto_names) | set(gated_names)
                        | set(long_names))
         from langslice.ops.registry import VERBS

@@ -106,7 +106,7 @@ FROM_FILE = " from the image file"
 #: The section fields a picture of it depends on (:func:`snapshot`).
 SECTION_FIELDS: tuple[str, ...] = (
     "index_original", "index_corrected", "position_mm", "cutting_angles_deg", "flip",
-    "rotation_deg", "transform", "deformation", "damaged_regions",
+    "rotation_deg", "transform", "deformation", "damaged_regions", "landmarks",
 )
 #: The appearance entries a picture depends on (display properties and the
 #: preprocessed channel's recipe).
@@ -446,8 +446,11 @@ def _section_picture(
         # larger, and said so (no detail is added).
         factor = min(long_edge / max(picture.size), ATLAS_UPSAMPLE)
         if factor > 1.05:
-            picture = picture.resize((round(picture.width * factor),
-                                      round(picture.height * factor)), Image.Resampling.LANCZOS)
+            from langslice.core.picture_geometry import cropped_geometry
+
+            picture = cropped_geometry(picture.resize(
+                (round(picture.width * factor), round(picture.height * factor)),
+                Image.Resampling.LANCZOS), picture)
             enlarged = f" (source pixels enlarged x{factor:.1f})"
     um = base_um * (max((request.zoom[2] - request.zoom[0]) * base[0],
                         (request.zoom[3] - request.zoom[1]) * base[1]) / max(picture.size)
@@ -458,10 +461,19 @@ def _section_picture(
     text = (f"{record.id} section{_orientation(record)}, "
             f"{_where(record)}; {um:.1f} um/px; {full}"
             + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else ""))
+    from langslice.core.landmarks import draw_landmarks
+
+    panel = {"role": "section", "section": record.id, "bounds": [0, 0, *picture.size],
+             "pixel_to_file_fraction": picture.info["pixel_to_file_fraction"]}
+    panels = [panel]
+    picture = picture.copy()
+    draw_landmarks(picture, panels, state, record)
     image = caption(picture, label, min_width=long_edge if request.zoom else 0)
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
     recipe = _recipe(one, held, base=base, shown=picture.size, um_per_px=um)
+    recipe["endpoint_panels"] = panels
+    recipe["registration_context"] = _landmark_context(state, record)
     note(image, sections=(record.id,), mode="section", recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
                        mode="section", um_per_px=um)
@@ -516,6 +528,24 @@ def _overlay_picture(
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
     recipe = _recipe(one, held, base=base, shown=shown, um_per_px=um)
+    from langslice.core.landmarks import draw_landmarks, section_panel
+    from langslice.core.layers import picture_to_native, section_to_picture
+
+    panels = []
+    if placed.canvas is not None and placed.canvas.panels:
+        panel = placed.canvas.panels[0]
+        swap = np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+        to_section = np.linalg.inv(swap @ section_to_picture(panel) @ swap)
+        warp_key = str((record.deformation or {}).get("key", "")) if drawn else None
+        panels = [section_panel(record, placed.canvas.frame.section.size,
+                                pixel_to_render=to_section, bounds=panel.content_box,
+                                warp_key=warp_key),
+                  {"role": "atlas", "section": record.id, "bounds": list(panel.content_box),
+                   "pixel_to_native": (swap @ picture_to_native(panel) @ swap).tolist(),
+                   "native_size": list(panel.geometry.annotation.shape[::-1])}]
+        draw_landmarks(image, panels, state, record, warp=placed.canvas.frame.warp)
+    recipe["endpoint_panels"] = panels
+    recipe["registration_context"] = _landmark_context(state, record)
     annotate(image, recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
                        mode="overlay", um_per_px=um, extra=dict(placed.row))
@@ -565,6 +595,12 @@ def overlay_region_window(
     return {**recipe, "args": request.args()}, window
 
 
+def _landmark_context(state: StackState, record: SliceState) -> dict[str, Any]:
+    from langslice.core.landmarks import context
+
+    return context(state, record)
+
+
 def _atlas_picture(
     ws: Workspace, state: StackState, position_mm: float, request: LookRequest, long_edge: int,
     base: tuple[int, int] | None, base_um: float | None, angles: Angles,
@@ -586,20 +622,39 @@ def _atlas_picture(
     else:
         picture = framed_atlas(ws, state, position_mm, options, angles=angles)
         um = base_um
-    median = state.drawn_at_median(angles)
+    section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
+    median = state.drawn_at_median(angles) if section is None else False
     label = _zoom_tag(request.zoom, base, picture.size) + atlas_caption(
         state, position_mm, options, angles=angles, median=median)
     layers_words = " + ".join(layers) or "none"
     plane = (view_angles_label(angles, median=True) if median
              else f"{angles_label(angles)} (the stack's cutting angles)")
+    if section:
+        plane = f"{angles_label(angles)} ({section.id}'s cutting angles)"
     text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}"
+    panels = []
+    section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
+    if section is not None:
+        from langslice.core.landmarks import draw_landmarks
+
+        panel = {"role": "atlas", "section": section.id, "bounds": [0, 0, *picture.size],
+                 "pixel_to_native": picture.info["pixel_to_native"],
+                 "native_size": list(atlas_section(ws, state, position_mm, angles=angles).size)}
+        panels = [panel]
+        picture = picture.copy()
+        draw_landmarks(picture, panels, state, section)
     image = caption(picture, label)
-    held = snapshot(state, [], view_angles=True)
-    one = replace(request, sections=(), positions_mm=(float(position_mm),))
+    held = snapshot(state, [section.id] if section else [], view_angles=True)
+    one = replace(request, positions_mm=(float(position_mm),))
     recipe = _recipe(one, held, base=base, shown=picture.size, um_per_px=um)
-    note(image, mode="atlas", recipe=recipe, caption=text,
+    recipe["endpoint_panels"] = panels
+    if section:
+        recipe["registration_context"] = _landmark_context(state, section)
+    note(image, sections=(section.id,) if section else (), mode="atlas",
+         recipe=recipe, caption=text,
          extra={"position_mm": float(position_mm)})
-    return LookPicture(image=image, caption=text, recipe=recipe, sections=(), mode="atlas",
+    return LookPicture(image=image, caption=text, recipe=recipe,
+                       sections=(section.id,) if section else (), mode="atlas",
                        um_per_px=um, extra={"position_mm": float(position_mm)})
 
 
@@ -640,6 +695,11 @@ def _positioning(
                          if slot.position_mm is not None else f"{slot.label[0]} no position"
                          for slot in layout.sections)
         text = one.caption + (f". Sections: {rows}" if rows else "")
+        counts = [f"{section.id}: {len(section.landmarks.get('pairs', []))}"
+                  for section in records if section.id in ids and section.landmarks.get("pairs")]
+        if counts:
+            counts_text = "landmarks " + ", ".join(counts)
+            text += f"; {counts_text}"
         recipe = _recipe(replace(whole, part=layout.part), held,
                          base=(layout.width, layout.height), shown=one.content,
                          um_per_px=one.um_per_px)
@@ -679,8 +739,19 @@ def look(
     if request.mode == "positioning":
         return _positioning(ws, state, request, long_edge, plane, zoom_edge)
     if request.mode == "atlas":
+        if request.sections:
+            records = _records(state, request.sections)
+            if len(records) != 1:
+                raise LookError("BAD_ARGS", "Atlas landmark context needs exactly one section")
+            record = records[0]
+            if record.position_mm is None:
+                raise LookError("NO_POSITION", f"{record.id} has no atlas plane")
+            if request.positions_mm and request.positions_mm != (record.position_mm,):
+                raise LookError("BAD_ARGS", "Atlas section context uses that section's own plane")
+            request = replace(request, positions_mm=(float(record.position_mm),))
+            plane = record.angles
         if not request.positions_mm:
-            raise LookError("NO_POSITIONS", "atlas mode needs positions_mm")
+            raise LookError("NO_POSITIONS", "atlas mode needs positions_mm or one section")
         return [_atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
                 for mm in request.positions_mm]
     records = _records(state, request.sections)

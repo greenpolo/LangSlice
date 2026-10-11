@@ -1,0 +1,61 @@
+{
+ "args": [],
+ "data": {
+  "changed": [],
+  "deleted": [
+   "L2"
+  ],
+  "landmarks": [
+   {
+    "atlas": {
+     "picture": 3,
+     "pixel_xy": [
+      46.43750000000001,
+      35.8125
+     ]
+    },
+    "id": "L1",
+    "section": {
+     "picture": 4,
+     "pixel_xy": [
+      74.1,
+      56.9
+     ]
+    },
+    "stale": false
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "pixel_xy": [
+      80.4375,
+      87.8125
+     ]
+    },
+    "id": "L3",
+    "section": {
+     "picture": 4,
+     "pixel_xy": [
+      128.5,
+      140.1
+     ]
+    },
+    "stale": false
+   }
+  ],
+  "section": "s1.png",
+  "status": "ok",
+  "written": true
+ },
+ "door": "landmarks",
+ "images": [],
+ "kwargs": {
+  "delete": [
+   "L2"
+  ],
+  "section": "s1.png",
+  "view": false
+ },
+ "media_texts": [],
+ "tool": "set_landmarks"
+}

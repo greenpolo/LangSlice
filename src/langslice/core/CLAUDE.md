@@ -463,3 +463,25 @@ nothing collecting, a note costs nothing. The job saves the pictures
 `jpeg.py` — `encode_jpeg` (`JPEG_QUALITY` 85): the one encoding every
 picture a model receives goes through; `doors.tools.media` re-exports it, the MCP
 door and the job's view store call it, so the saved bytes are the sent ones.
+
+## Landmark correspondences
+
+`landmarks.py` holds appearance-independent endpoint geometry, plane staleness,
+and open-centre circle/diamond annotations. `picture_geometry.py` carries exact
+pixel-centre affine maps alongside the raw renderer images through cropping
+and resizing. `look.py` saves endpoint panels and registration context in each
+recipe: section views map to original-file edge fractions; atlas views with
+exactly one section use that section's own plane and map to native atlas
+pixels; overlays map through the actual saved inverse warp. Generic atlas
+browsing and positioning thumbnails do not supply correspondence geometry.
+Annotations are drawn only on final composite pictures. Look snapshots include
+the landmark set, so old zooms preserve its original markers. Positioning index
+captions include per-section landmark counts without cluttering thumbnails.
+
+`triangulation.py` implements `PiecewiseAffine` and `visualign_mesh`: Delaunay
+on section-domain pixels (preserving original aspect ratio), fixed 10% outside
+corners, and inverse evaluation on the same mesh connectivity. Repeated
+sources, collapsed triangles and folds are invalid correspondence geometry.
+`landmark_views.py` draws each edited pair as a contextual template/preprocessed
+section crop, retains a 60% anatomical window and panel geometry, and labels
+the selected pair. Crop zooms preserve exact panel mappings and refuse gutters.

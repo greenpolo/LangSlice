@@ -22,6 +22,7 @@ from langslice.core.sizes import picture_edge
 from langslice.doors.tools.door import Door, as_list, pictured
 from langslice.ops import deformable as ops_deformable
 from langslice.ops import exports as ops_exports
+from langslice.ops import landmarks as ops_landmarks
 from langslice.ops import look as ops_look
 from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
@@ -181,7 +182,54 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             "seconds": round(done.seconds, 2),
         }
 
+    def set_landmarks(section: str, pairs: list[dict[str, Any]], delete: list[str],
+                      view: bool = True) -> dict[str, Any]:
+        if shows(view) and len(pairs) > 4:
+            return {"status": "error", "error": "TOO_MANY_LANDMARK_VIEWS",
+                    "message": "At most four pairs with view true; "
+                               "use view false for a larger batch."}
+        try:
+            result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete)
+        except Refused as refusal:
+            return refusal.payload()
+        full_pairs = result["landmarks"]
+        result["landmarks"] = [{"id": pair["id"],
+                                "atlas": {"picture": pair["atlas"]["picture"],
+                                          "pixel_xy": pair["atlas"]["pixel_xy"]},
+                                "section": {"picture": pair["section"]["picture"],
+                                            "pixel_xy": pair["section"]["pixel_xy"]},
+                                "stale": pair["stale"]} for pair in full_pairs]
+        if not shows(view) or not result["changed"]:
+            return result
+        from langslice.core.landmark_views import pair_picture
+        from langslice.core.layers import collecting
+
+        record = job.state.by_id(result["section"])
+        assert record is not None
+        try:
+            with collecting() as notes:
+                pictures = [pair_picture(ctx, job.state, record, pair, store=job.deformations)
+                            for pair in full_pairs if pair["id"] in result["changed"]]
+            entries = ops_look.save_pictures(job, ctx, "set_landmarks", pictures, notes, {})
+            return pictured(result, ops_look.Looked(
+                pictures=[p.image for p in pictures], entries=entries))
+        except Exception as exc:  # noqa: BLE001 - the write stands
+            result["render_failed"] = str(exc)
+            return result
+
+    def landmark_triangulation(section: str, view: bool = True) -> dict[str, Any]:
+        try:
+            result = ops_landmarks.landmark_triangulation(job, ctx, section)
+        except Refused as refusal:
+            return refusal.payload()
+        if shows(view):
+            shown = ops_look.show_result(job, ctx, "landmark_triangulation",
+                                         "overlay", [result["section"]])
+            return pictured(result, shown)
+        return result
+
     return {
+        "set_landmarks": set_landmarks, "landmark_triangulation": landmark_triangulation,
         "elastix_affine": elastix_affine, "ants_syn": ants_syn,
         "trace_borders": trace_borders, "trace_from_atlas": trace_from_atlas,
         "export_maps": export_maps,

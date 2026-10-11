@@ -1,0 +1,582 @@
+{
+ "door": "landmarks",
+ "images": [],
+ "state": {
+  "appearance": {},
+  "atlas": "allen_mouse_25um",
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "debrief": "",
+  "image_folder": "<ROOT>/landmarks",
+  "interval_breaks": [],
+  "interval_mm": 0.2,
+  "notes": [
+   "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
+   "ingest: 3 section(s) given evenly spaced starting positions"
+  ],
+  "plane": "coronal",
+  "slices": [
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s0.png",
+    "image_correction": null,
+    "index_corrected": 0,
+    "index_original": 0,
+    "landmarks": {},
+    "position_mm": 0.0417,
+    "position_source": "default",
+    "rotation_deg": 0,
+    "transform": null
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": {
+     "inverse_source": "exact inverse on the same landmark triangles",
+     "key": "<hex>",
+     "landmark_baseline_key": null,
+     "landmark_baseline_steps": [],
+     "landmark_revision": "<hex>",
+     "linear_key": "<hex>",
+     "record": "sections/s1/deformable/<hex>",
+     "steps": [
+      {
+       "landmark_count": 3,
+       "landmark_revision": "<hex>",
+       "method": "landmark_triangulation",
+       "start": "linear"
+      }
+     ],
+     "summary": {
+      "displacement_mm": {
+       "max": 0.07,
+       "median": 0.055
+      },
+      "flags": [],
+      "fold_fraction": 0.0
+     }
+    },
+    "flip": false,
+    "id": "s1.png",
+    "image_correction": null,
+    "index_corrected": 1,
+    "index_original": 1,
+    "landmarks": {
+     "next_id": 4,
+     "pairs": [
+      {
+       "atlas": {
+        "canonical_xy": [
+         47.43750000000001,
+         36.8125
+        ],
+        "geometry": {
+         "bounds": [
+          0,
+          0,
+          158,
+          119
+         ],
+         "native_size": [
+          160,
+          120
+         ],
+         "pixel_to_native": [
+          [
+           1.0,
+           0.0,
+           1.0
+          ],
+          [
+           0.0,
+           1.0,
+           1.0
+          ],
+          [
+           0.0,
+           0.0,
+           1.0
+          ]
+         ],
+         "role": "atlas",
+         "section": "s1.png"
+        },
+        "picture": 3,
+        "pixel_xy": [
+         46.43750000000001,
+         35.8125
+        ],
+        "registration_context": {
+         "deformation_key": null,
+         "linear_key": "<hex>",
+         "orientation": {
+          "flip": false,
+          "rotate_quarter": 0
+         },
+         "plane": {
+          "angles": [
+           0.0,
+           0.0
+          ],
+          "atlas": "allen_mouse_25um",
+          "plane": "coronal",
+          "position_mm": 0.1
+         }
+        }
+       },
+       "atlas_native_xy": [
+        47.43750000000001,
+        36.8125
+       ],
+       "id": "L1",
+       "plane": {
+        "angles": [
+         0.0,
+         0.0
+        ],
+        "atlas": "allen_mouse_25um",
+        "plane": "coronal",
+        "position_mm": 0.1
+       },
+       "section": {
+        "canonical_xy": [
+         0.3,
+         0.30000000000000004
+        ],
+        "geometry": {
+         "bounds": [
+          0,
+          0,
+          258,
+          201
+         ],
+         "pixel_to_file_fraction": [
+          [
+           0.003676470588235294,
+           0.0,
+           0.027573529411764705
+          ],
+          [
+           0.0,
+           0.004807692307692308,
+           0.026442307692307696
+          ],
+          [
+           0.0,
+           0.0,
+           1.0
+          ]
+         ],
+         "role": "section",
+         "section": "s1.png"
+        },
+        "picture": 4,
+        "pixel_xy": [
+         74.1,
+         56.9
+        ],
+        "registration_context": {
+         "deformation_key": null,
+         "linear_key": "<hex>",
+         "orientation": {
+          "flip": false,
+          "rotate_quarter": 0
+         },
+         "plane": {
+          "angles": [
+           0.0,
+           0.0
+          ],
+          "atlas": "allen_mouse_25um",
+          "plane": "coronal",
+          "position_mm": 0.1
+         }
+        }
+       },
+       "section_fraction_xy": [
+        0.3,
+        0.30000000000000004
+       ],
+       "stale": false
+      },
+      {
+       "atlas": {
+        "canonical_xy": [
+         115.4375,
+         36.8125
+        ],
+        "geometry": {
+         "bounds": [
+          0,
+          0,
+          158,
+          119
+         ],
+         "native_size": [
+          160,
+          120
+         ],
+         "pixel_to_native": [
+          [
+           1.0,
+           0.0,
+           1.0
+          ],
+          [
+           0.0,
+           1.0,
+           1.0
+          ],
+          [
+           0.0,
+           0.0,
+           1.0
+          ]
+         ],
+         "role": "atlas",
+         "section": "s1.png"
+        },
+        "picture": 3,
+        "pixel_xy": [
+         114.4375,
+         35.8125
+        ],
+        "registration_context": {
+         "deformation_key": null,
+         "linear_key": "<hex>",
+         "orientation": {
+          "flip": false,
+          "rotate_quarter": 0
+         },
+         "plane": {
+          "angles": [
+           0.0,
+           0.0
+          ],
+          "atlas": "allen_mouse_25um",
+          "plane": "coronal",
+          "position_mm": 0.1
+         }
+        }
+       },
+       "atlas_native_xy": [
+        115.4375,
+        36.8125
+       ],
+       "id": "L2",
+       "plane": {
+        "angles": [
+         0.0,
+         0.0
+        ],
+        "atlas": "allen_mouse_25um",
+        "plane": "coronal",
+        "position_mm": 0.1
+       },
+       "section": {
+        "canonical_xy": [
+         0.7,
+         0.30000000000000004
+        ],
+        "geometry": {
+         "bounds": [
+          0,
+          0,
+          258,
+          201
+         ],
+         "pixel_to_file_fraction": [
+          [
+           0.003676470588235294,
+           0.0,
+           0.027573529411764705
+          ],
+          [
+           0.0,
+           0.004807692307692308,
+           0.026442307692307696
+          ],
+          [
+           0.0,
+           0.0,
+           1.0
+          ]
+         ],
+         "role": "section",
+         "section": "s1.png"
+        },
+        "picture": 4,
+        "pixel_xy": [
+         182.89999999999998,
+         56.9
+        ],
+        "registration_context": {
+         "deformation_key": null,
+         "linear_key": "<hex>",
+         "orientation": {
+          "flip": false,
+          "rotate_quarter": 0
+         },
+         "plane": {
+          "angles": [
+           0.0,
+           0.0
+          ],
+          "atlas": "allen_mouse_25um",
+          "plane": "coronal",
+          "position_mm": 0.1
+         }
+        }
+       },
+       "section_fraction_xy": [
+        0.7,
+        0.30000000000000004
+       ],
+       "stale": false
+      },
+      {
+       "atlas": {
+        "canonical_xy": [
+         81.4375,
+         88.8125
+        ],
+        "geometry": {
+         "bounds": [
+          0,
+          0,
+          158,
+          119
+         ],
+         "native_size": [
+          160,
+          120
+         ],
+         "pixel_to_native": [
+          [
+           1.0,
+           0.0,
+           1.0
+          ],
+          [
+           0.0,
+           1.0,
+           1.0
+          ],
+          [
+           0.0,
+           0.0,
+           1.0
+          ]
+         ],
+         "role": "atlas",
+         "section": "s1.png"
+        },
+        "picture": 3,
+        "pixel_xy": [
+         80.4375,
+         87.8125
+        ],
+        "registration_context": {
+         "deformation_key": null,
+         "linear_key": "<hex>",
+         "orientation": {
+          "flip": false,
+          "rotate_quarter": 0
+         },
+         "plane": {
+          "angles": [
+           0.0,
+           0.0
+          ],
+          "atlas": "allen_mouse_25um",
+          "plane": "coronal",
+          "position_mm": 0.1
+         }
+        }
+       },
+       "atlas_native_xy": [
+        81.4375,
+        88.8125
+       ],
+       "id": "L3",
+       "plane": {
+        "angles": [
+         0.0,
+         0.0
+        ],
+        "atlas": "allen_mouse_25um",
+        "plane": "coronal",
+        "position_mm": 0.1
+       },
+       "section": {
+        "canonical_xy": [
+         0.5,
+         0.7000000000000001
+        ],
+        "geometry": {
+         "bounds": [
+          0,
+          0,
+          258,
+          201
+         ],
+         "pixel_to_file_fraction": [
+          [
+           0.003676470588235294,
+           0.0,
+           0.027573529411764705
+          ],
+          [
+           0.0,
+           0.004807692307692308,
+           0.026442307692307696
+          ],
+          [
+           0.0,
+           0.0,
+           1.0
+          ]
+         ],
+         "role": "section",
+         "section": "s1.png"
+        },
+        "picture": 4,
+        "pixel_xy": [
+         128.5,
+         140.1
+        ],
+        "registration_context": {
+         "deformation_key": null,
+         "linear_key": "<hex>",
+         "orientation": {
+          "flip": false,
+          "rotate_quarter": 0
+         },
+         "plane": {
+          "angles": [
+           0.0,
+           0.0
+          ],
+          "atlas": "allen_mouse_25um",
+          "plane": "coronal",
+          "position_mm": 0.1
+         }
+        }
+       },
+       "section_fraction_xy": [
+        0.5,
+        0.7000000000000001
+       ],
+       "stale": false
+      }
+     ]
+    },
+    "position_mm": 0.1,
+    "position_source": "",
+    "rotation_deg": 0,
+    "transform": {
+     "calibration": {
+      "section_um_per_px": 31.25,
+      "source": "host"
+     },
+     "kind": "interactive",
+     "mirrored": false,
+     "note": "",
+     "params": [
+      1.0,
+      0.0,
+      0.0,
+      -0.0,
+      1.0,
+      0.0
+     ],
+     "physical": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": 0.0,
+      "scale_x": 1.0,
+      "scale_y": 1.0,
+      "shear": 0.0,
+      "translate_x_mm": 0.0,
+      "translate_y_mm": 0.0
+     }
+    }
+   },
+   {
+    "caveats": [],
+    "damage_note": "",
+    "damaged_regions": [],
+    "deformation": null,
+    "flip": false,
+    "id": "s2.png",
+    "image_correction": null,
+    "index_corrected": 2,
+    "index_original": 2,
+    "landmarks": {},
+    "position_mm": 0.2083,
+    "position_source": "default",
+    "rotation_deg": 0,
+    "transform": null
+   }
+  ],
+  "spec": {
+   "agent_damage": true,
+   "agent_preprocessing": true,
+   "atlas": "allen_mouse_25um",
+   "debrief": true,
+   "facts": [],
+   "host_preprocessing": null,
+   "image_folder": "<ROOT>/landmarks",
+   "image_resolution": "low",
+   "inputs": {
+    "pixel_size_um": 31.25
+   },
+   "max_input_tokens": null,
+   "max_quota_percent": 25,
+   "model": "fake-model",
+   "nonlinear": {
+    "image_model": null,
+    "notes": "",
+    "provider": "openai-oauth"
+   },
+   "out": null,
+   "plane": "coronal",
+   "position": {
+    "gated": false,
+    "interval_um": 200,
+    "notes": "",
+    "playbook": false,
+    "strict_interval": false,
+    "thickness_um": 50
+   },
+   "preprocess": "none",
+   "reasoning": null,
+   "resume": true,
+   "tasks": [
+    "position",
+    "transform",
+    "nonlinear"
+   ],
+   "transform": {
+    "angles": true,
+    "automatic": true,
+    "flip": true,
+    "hemisphere_cue": "",
+    "interactive": true,
+    "max_parallel": 4,
+    "notes": ""
+   }
+  },
+  "submitted": false,
+  "thickness_mm": 0.05
+ }
+}

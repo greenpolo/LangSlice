@@ -3,7 +3,7 @@
  "images": [],
  "tools": [
   {
-   "description": "Draw pictures of sections and the atlas. Writes nothing.\n\nThe same request draws the same kind of picture at every stage of the\nrun: no default depends on the stack's state. Each picture gets a number\nand a caption stating the positions, cutting angles, scale and channel\nsettings it was drawn with; zoom takes the number.\n\nArgs:\n    mode: \"section\": each section alone, as oriented, framed to its\n        tissue. \"atlas\": the atlas plane alone at each of positions_mm,\n        at the stack's cutting angles. \"overlay\": each section under its\n        current registration, with the atlas borders and any other\n        atlas_layers on it. \"positioning\": the sections and the atlas\n        along the slicing axis as ABBA lays them out: the atlas at\n        positions_mm above a millimetre ruler, the sections below it in\n        order of position, each joined by a line to its position; a long\n        stack is split into several pictures, none shrunk.\n    sections: Filenames (the extension may be left off); empty is every\n        section.\n    positions_mm: Atlas positions in millimetres along the slicing axis:\n        the planes \"atlas\" draws (at least one), and the atlas pictures\n        above the ruler in \"positioning\" (none when empty).\n    channels: The raw channels of each section to draw, by name (several\n        are blended in distinct colours, at most 6), or [\"preprocessed\"]\n        for the channel the fits and the image model read. Empty is every\n        raw channel, each with its display settings.\n    atlas_layers: Any of \"template\", \"nissl\" (Allen mouse atlases only)\n        and \"borders\". Empty is the mode's default: borders in \"overlay\",\n        template in \"atlas\" and \"positioning\". \"section\" draws no atlas.\n    atlas_opacity: 0 to 1: how strongly an atlas image (template or\n        nissl) shows under the section in \"overlay\".\n    warp: \"applied\" draws each section with its deformation, \"none\" with\n        its linear placement only.\n\nReturns:\n    Up to 4 pictures, attached in the order `pictures` lists them, each\n    with its number and caption. Pictures past 4 are listed under\n    `not_shown` with the call that draws them.",
+   "description": "Draw pictures of sections and the atlas. Writes nothing.\n\nThe same request draws the same kind of picture at every stage of the\nrun: no default depends on the stack's state. Each picture gets a number\nand a caption stating the positions, cutting angles, scale and channel\nsettings it was drawn with; zoom takes the number.\n\nArgs:\n    mode: \"section\": each section alone, as oriented, framed to its\n        tissue. \"atlas\": the atlas plane alone at each of positions_mm,\n        at the stack's cutting angles, or with one section at that\n        section's own plane (positions_mm may be empty). \"overlay\": each section under its\n        current registration, with the atlas borders and any other\n        atlas_layers on it. \"positioning\": the sections and the atlas\n        along the slicing axis as ABBA lays them out: the atlas at\n        positions_mm above a millimetre ruler, the sections below it in\n        order of position, each joined by a line to its position; a long\n        stack is split into several pictures, none shrunk.\n    sections: Filenames (the extension may be left off); empty is every\n        section.\n    positions_mm: Atlas positions in millimetres along the slicing axis:\n        the planes \"atlas\" draws (at least one), and the atlas pictures\n        above the ruler in \"positioning\" (none when empty).\n    channels: The raw channels of each section to draw, by name (several\n        are blended in distinct colours, at most 6), or [\"preprocessed\"]\n        for the channel the fits and the image model read. Empty is every\n        raw channel, each with its display settings.\n    atlas_layers: Any of \"template\", \"nissl\" (Allen mouse atlases only)\n        and \"borders\". Empty is the mode's default: borders in \"overlay\",\n        template in \"atlas\" and \"positioning\". \"section\" draws no atlas.\n    atlas_opacity: 0 to 1: how strongly an atlas image (template or\n        nissl) shows under the section in \"overlay\".\n    warp: \"applied\" draws each section with its deformation, \"none\" with\n        its linear placement only.\n\nReturns:\n    Up to 4 pictures, attached in the order `pictures` lists them, each\n    with its number and caption. Pictures past 4 are listed under\n    `not_shown` with the call that draws them.",
    "name": "look",
    "parameters_json_schema": {
     "properties": {
@@ -77,9 +77,34 @@
    }
   },
   {
-   "description": "Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.\n\nThe new picture is as large as the earlier one. In a picture of a\nsection or of a section with the atlas on it, the section is read again\nfrom its original image file at the file's own resolution, only inside\nthe box, and drawn with the same channels, display settings and atlas\nborders; the caption says when the file holds fewer pixels than the\npicture. A positioning picture's sections are drawn again from their\nworking copies (the file reduced to at most 3072 pixels), and the atlas\nfrom its voxels. The box is drawn as the picture was, even if the stack\nhas changed since (the reply then says `stale`). The new picture has its\nown number, so it can be zoomed again.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner. Give either box or region, not both.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n    region: One atlas acronym or numeric id, descendants included;\n        \"CTX:left\" or \"CTX:right\" selects one displayed side. Overlay\n        pictures only. Crops to the entire region with a small margin\n        and draws only its border, preserving the saved registration\n        and display settings. An absent region is reported. Leave box\n        empty when using region.\n\nReturns:\n    One picture with its number and caption, and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
+   "description": "Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.\n\nThe new picture is as large as the earlier one. In a picture of a\nsection or of a section with the atlas on it, the section is read again\nfrom its original image file at the file's own resolution, only inside\nthe box, and drawn with the same channels, display settings and atlas\nborders; the caption says when the file holds fewer pixels than the\npicture. A positioning picture's sections are drawn again from their\nworking copies (the file reduced to at most 3072 pixels), and the atlas\nfrom its voxels. The box is drawn as the picture was, even if the stack\nhas changed since (the reply then says `stale`). The new picture has its\nown number, so it can be zoomed again.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner. Give either box or region, not both.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n    requests: Up to four {picture, box} or {picture, region} inspections\n        in one call. Leave the single box/picture/region arguments empty.\n    region: One atlas acronym or numeric id, descendants included;\n        \"CTX:left\" or \"CTX:right\" selects one displayed side. Overlay\n        pictures only. Crops to the entire region with a small margin\n        and draws only its border, preserving the saved registration\n        and display settings. An absent region is reported. Leave box\n        empty when using region.\n\nReturns:\n    One picture with its number and caption, and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
    "name": "zoom",
    "parameters_json_schema": {
+    "$defs": {
+     "ZoomRequest": {
+      "additionalProperties": false,
+      "description": "One saved-picture inspection in a batched zoom call.",
+      "properties": {
+       "box": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Box",
+        "type": "array"
+       },
+       "picture": {
+        "title": "Picture",
+        "type": "integer"
+       },
+       "region": {
+        "title": "Region",
+        "type": "string"
+       }
+      },
+      "title": "ZoomRequest",
+      "type": "object"
+     }
+    },
     "properties": {
      "box": {
       "default": [],
@@ -98,6 +123,14 @@
       "default": "",
       "title": "Region",
       "type": "string"
+     },
+     "requests": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/ZoomRequest"
+      },
+      "title": "Requests",
+      "type": "array"
      }
     },
     "title": "zoomParams",
@@ -468,6 +501,101 @@
      "sections"
     ],
     "title": "ants_synParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Add, update or delete persistent corresponding landmarks. Does not apply a warp.\n\nBuild corresponding pairs across the full section and atlas before calling\nlandmark_triangulation to submit the set. Pair IDs are stable. Every batch\nis one undo step. Atlas and section endpoints are explicitly named.\nCoordinates are x,y PIXELS from the top-left of the whole returned picture,\nincluding panel offsets; no fractions or atlas coordinates are accepted.\nSaved geometry resolves the exact referenced view, including old zooms,\norientation and an applied warp. Caption/gutter/out-of-image points are\nrefused. Atlas pictures require look(mode=\"atlas\", sections=[section]);\ngeneric atlas browsing has no section context. Plane changes retain pairs\nbut flag their atlas correspondences stale; update those atlas endpoints.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.\n        Updates add id and either or both endpoints; omitted endpoints stay.\n        At most four added/edited pairs with view true.\n    delete: Stable pair IDs to delete from this section.\n\nReturns:\n    The complete saved set, stable IDs, changed/deleted IDs and staleness.",
+   "name": "set_landmarks",
+   "parameters_json_schema": {
+    "$defs": {
+     "LandmarkPair": {
+      "additionalProperties": false,
+      "description": "New pair or partial endpoint update of a stable pair ID.",
+      "properties": {
+       "atlas": {
+        "$ref": "#/$defs/LandmarkPoint"
+       },
+       "id": {
+        "title": "Id",
+        "type": "string"
+       },
+       "section": {
+        "$ref": "#/$defs/LandmarkPoint"
+       }
+      },
+      "title": "LandmarkPair",
+      "type": "object"
+     },
+     "LandmarkPoint": {
+      "additionalProperties": false,
+      "description": "Pixel centre of a returned saved picture (whole image's top-left).",
+      "properties": {
+       "picture": {
+        "title": "Picture",
+        "type": "integer"
+       },
+       "x": {
+        "title": "X",
+        "type": "number"
+       },
+       "y": {
+        "title": "Y",
+        "type": "number"
+       }
+      },
+      "required": [
+       "picture",
+       "x",
+       "y"
+      ],
+      "title": "LandmarkPoint",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "delete": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Delete",
+      "type": "array"
+     },
+     "pairs": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/LandmarkPair"
+      },
+      "title": "Pairs",
+      "type": "array"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "section"
+    ],
+    "title": "set_landmarksParams",
+    "type": "object"
+   }
+  },
+  {
+   "description": "Submit this section's accumulated landmark set and apply its piecewise affine warp.\n\nRequires at least three corresponding pairs, with coverage across the full\nsection; the tool cannot assess anatomical coverage. Uses VisuAlign's\nsection-domain Delaunay mesh in pixels and four fixed corners 10% outside\nthe section. Degenerate/folded triangles and stale atlas planes are refused.\nThe inverse uses the same triangles. Composes a correction onto the current\ndeformation; undo removes the application. Editing pairs alone never warps.\nThis submits the landmark method for one section; submit ends the whole job.\n\nArgs:\n    section: Section filename (the extension may be left off).\n\nReturns:\n    Landmark count, whether applied/composed, displacement and diagnostics.",
+   "name": "landmark_triangulation",
+   "parameters_json_schema": {
+    "properties": {
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "section"
+    ],
+    "title": "landmark_triangulationParams",
     "type": "object"
    }
   },

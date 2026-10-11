@@ -44,9 +44,11 @@ from typing import Any, Literal
 from langslice.core import appearance as looks
 from langslice.doors.tools.arguments import (
     CuttingAngles,
+    LandmarkPair,
     LeftLinear,
     SectionPosition,
     SectionTransform,
+    ZoomRequest,
 )
 
 # Defaults of list and object arguments are read, never mutated (ADK wants a value).
@@ -82,7 +84,8 @@ def look(
     Args:
         mode: "section": each section alone, as oriented, framed to its
             tissue. "atlas": the atlas plane alone at each of positions_mm,
-            at the stack's cutting angles. "overlay": each section under its
+            at the stack's cutting angles, or with one section at that
+            section's own plane (positions_mm may be empty). "overlay": each section under its
             current registration, with the atlas borders and any other
             atlas_layers on it. "positioning": the sections and the atlas
             along the slicing axis as ABBA lays them out: the atlas at
@@ -116,7 +119,8 @@ def look(
     ...
 
 
-def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str, Any]:
+def zoom(box: list[float] = [], picture: int = 0, region: str = "",
+         requests: list[ZoomRequest] = []) -> dict[str, Any]:
     """Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 
     The new picture is as large as the earlier one. In a picture of a
@@ -135,6 +139,8 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str,
             from its top-left corner. Give either box or region, not both.
         picture: The picture's number; 0 is the newest picture that is not
             itself a zoom.
+        requests: Up to four {picture, box} or {picture, region} inspections
+            in one call. Leave the single box/picture/region arguments empty.
         region: One atlas acronym or numeric id, descendants included;
             "CTX:left" or "CTX:right" selects one displayed side. Overlay
             pictures only. Crops to the entire region with a small margin
@@ -683,13 +689,65 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
     ...
 
 
+
+def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
+                  delete: list[str] = [], view: bool = True) -> dict[str, Any]:
+    """Add, update or delete persistent corresponding landmarks. Does not apply a warp.
+
+    Build corresponding pairs across the full section and atlas before calling
+    landmark_triangulation to submit the set. Pair IDs are stable. Every batch
+    is one undo step. Atlas and section endpoints are explicitly named.
+    Coordinates are x,y PIXELS from the top-left of the whole returned picture,
+    including panel offsets; no fractions or atlas coordinates are accepted.
+    Saved geometry resolves the exact referenced view, including old zooms,
+    orientation and an applied warp. Caption/gutter/out-of-image points are
+    refused. Atlas pictures require look(mode="atlas", sections=[section]);
+    generic atlas browsing has no section context. Plane changes retain pairs
+    but flag their atlas correspondences stale; update those atlas endpoints.
+
+    Args:
+        section: Section filename (the extension may be left off).
+        pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.
+            Updates add id and either or both endpoints; omitted endpoints stay.
+            At most four added/edited pairs with view true.
+        delete: Stable pair IDs to delete from this section.
+        view: Show one contextual side-by-side crop for each added/edited pair:
+            atlas TEMPLATE and section PREPROCESSED. False shows no pictures.
+
+    Returns:
+        The complete saved set, stable IDs, changed/deleted IDs and staleness.
+    """
+    ...
+
+
+def landmark_triangulation(section: str, view: bool = True) -> dict[str, Any]:
+    """Submit this section's accumulated landmark set and apply its piecewise affine warp.
+
+    Requires at least three corresponding pairs, with coverage across the full
+    section; the tool cannot assess anatomical coverage. Uses VisuAlign's
+    section-domain Delaunay mesh in pixels and four fixed corners 10% outside
+    the section. Degenerate/folded triangles and stale atlas planes are refused.
+    The inverse uses the same triangles. Composes a correction onto the current
+    deformation; undo removes the application. Editing pairs alone never warps.
+    This submits the landmark method for one section; submit ends the whole job.
+
+    Args:
+        section: Section filename (the extension may be left off).
+        view: Show the resulting registration under atlas borders.
+
+    Returns:
+        Landmark count, whether applied/composed, displacement and diagnostics.
+    """
+    ...
+
 #: Every declared verb, in :data:`langslice.ops.registry.VERBS` order.
 STUBS: dict[str, Callable[..., Any]] = {
     stub.__name__: stub for stub in (
         look, zoom, set_channel_properties, set_preprocessed_channel_properties,
         grep_atlas, grep_atlas_view, status, list_files, search_files, read_file,
         position_sections, interactive_transform, mark_damage,
-        elastix_affine, ants_syn, trace_borders, trace_from_atlas,
+        elastix_affine, ants_syn, set_landmarks, landmark_triangulation,
+        trace_borders, trace_from_atlas,
         note, undo, redo, submit, export_maps,
     )
 }
@@ -697,6 +755,7 @@ STUBS: dict[str, Callable[..., Any]] = {
 #: The change tools: each returns its picture unless ``view`` is false.
 VIEW_TOOLS: tuple[str, ...] = (
     "position_sections", "interactive_transform", "elastix_affine", "ants_syn",
+    "set_landmarks", "landmark_triangulation",
 )
 
 # --- the run's variant ------------------------------------------------------------

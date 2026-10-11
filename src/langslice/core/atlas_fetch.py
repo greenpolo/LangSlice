@@ -21,7 +21,8 @@ from PIL import Image
 
 from langslice.core.affine import resize_long_edge
 from langslice.core.atlas.core import get_reference_slice, get_root_mask
-from langslice.core.image_prep import crop_to_mask
+from langslice.core.image_prep import mask_box
+from langslice.core.picture_geometry import cropped_geometry
 from langslice.core.sizes import opening_edge
 from langslice.core.space import Plane
 from langslice.core.state import Angles, StackState, plane_angles
@@ -68,6 +69,7 @@ def atlas_section(
         pitch_deg=pitch,
         yaw_deg=yaw,
     )
+    image.info["pixel_to_native"] = np.eye(3).tolist()
     if not frame:
         return image
     try:
@@ -75,7 +77,8 @@ def atlas_section(
     except Exception as exc:
         logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)", position_mm, exc)
         return image
-    return crop_to_mask(image, mask > 0)
+    box = mask_box(image.size, mask > 0)
+    return cropped_geometry(image.crop(box), image, box) if box else image
 
 
 def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
@@ -87,7 +90,7 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
     """
     if max(picture.size) <= int(long_edge):
         return picture
-    return resize_long_edge(picture, int(long_edge))
+    return cropped_geometry(resize_long_edge(picture, int(long_edge)), picture)
 
 
 def reference_atlas(
