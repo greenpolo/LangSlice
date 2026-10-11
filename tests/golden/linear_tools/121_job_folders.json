@@ -107,7 +107,7 @@
      "labels_dtype": "uint32",
      "size": [
       300,
-      304
+      322
      ],
      "view_json": "<hex>"
     },
@@ -137,7 +137,7 @@
      "labels_dtype": "uint32",
      "size": [
       256,
-      288
+      306
      ],
      "view_json": "<hex>"
     }
@@ -4548,7 +4548,7 @@
     },
     {
      "call": 4,
-     "caption": "s1.png section, no position; 7.5 um/px; raw red, green auto; from the image file",
+     "caption": "s1.png section, no position; 4.9 um/px; raw red, green auto; from the image file",
      "layers": false,
      "mode": "section",
      "name": "000006_zoom_section",
@@ -4571,10 +4571,10 @@
        ],
        "warp": "applied",
        "zoom": [
-        0.3003875968992248,
-        0.2238805970149254,
-        0.7751937984496124,
-        0.6902985074626866
+        0.31007751937984496,
+        0.19900497512437812,
+        0.6201550387596899,
+        0.4975124378109453
        ]
       },
       "base": [
@@ -4587,18 +4587,18 @@
          0,
          0,
          512,
-         392
+         384
         ],
         "pixel_to_file_fraction": [
          [
-          0.0008796243106617648,
+          0.0005744485294117647,
           0.0,
-          0.3111015768612132
+          0.32014016544117646
          ],
          [
           0.0,
-          0.0011497988618524332,
-          0.24095951481554165
+          0.000751201923076923,
+          0.21672175480769232
          ],
          [
           0.0,
@@ -4630,7 +4630,7 @@
       "renderer": "look",
       "shown": [
        512,
-       392
+       384
       ],
       "state": {
        "appearance": {},
@@ -4652,7 +4652,7 @@
         }
        }
       },
-      "um_per_px": 7.4768
+      "um_per_px": 4.8828
      },
      "sections": [
       "s1.png"

@@ -68,6 +68,8 @@ def can_change(door: Door) -> list[str]:
     if spec.has("nonlinear"):
         fits = [name for name in ("ants_syn", "trace_borders")
                 if has(name) and (name != "trace_borders" or door.traces_on)]
+        if has("set_landmarks") and has("landmark_triangulation"):
+            fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")
         out.append("deformations" + (f" ({', '.join(fits)})" if fits else ""))
     channels = [words for tool, words in (("set_channel_properties", "channel display"),
                                           ("set_preprocessed_channel_properties",
@@ -116,11 +118,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["resolution_note"] = note
         return pictured(result, done)
 
-    def zoom(box: list[float], picture: int, region: str = "",
-             requests: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def zoom(box: list[float], picture: int, region: str = "") -> dict[str, Any]:
         try:
             done = ops_look.zoom(job, ctx, as_list(box), picture=int(picture or 0) or None,
-                                 region=region, requests=requests or [])
+                                 region=region)
         except Refused as refusal:
             return refusal.payload()
         except (TypeError, ValueError):
@@ -130,10 +131,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                   "redrawn": done.redrawn}
         if done.stale:
             result["stale"] = True
-        if done.results:
-            result["results"] = done.results
-            if not done.pictures:
-                result.update(status="error", error="NOTHING_ZOOMED")
         result["pictures"] = list(done.entries)
         result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
         return result

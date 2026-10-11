@@ -49,3 +49,72 @@ def resized_recipe(recipe: dict[str, Any] | None, source: tuple[int, int],
         out["args"] = {}
         out.pop("source_endpoint_panels", None)
     return out
+
+
+# --- the source picture's pixel system a zoom is read in -------------------------------
+
+#: Round grid steps, in source-picture pixels.
+GRID_STEPS = (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000)
+#: At most this many grid lines along a zoom's longer side.
+GRID_LINES = 12
+
+
+class SourceFrame:
+    """Where a zoom's pixels lie in the pixels of the whole (unzoomed) picture
+    it was cut from: ``source = origin + (pixel + 0.5) * scale - 0.5`` per
+    axis (pixel centres at integers, as every picture coordinate here)."""
+
+    def __init__(self, origin: Any, scale: Any, shown: Any) -> None:
+        self.origin = np.asarray(origin, dtype=float)
+        self.scale = np.asarray(scale, dtype=float)
+        self.shown = np.asarray(shown, dtype=float)
+
+    def to_source(self, xy: Any) -> np.ndarray:
+        return self.origin + (np.asarray(xy, dtype=float) + 0.5) * self.scale - 0.5
+
+    def to_picture(self, xy: Any) -> np.ndarray:
+        return (np.asarray(xy, dtype=float) + 0.5 - self.origin) / self.scale - 0.5
+
+    def edge_to_picture(self, xy: Any) -> np.ndarray:
+        """A box corner (a pixel EDGE: the left edge of pixel 0 is 0) in the
+        whole picture's numbers, as the zoom's own edge coordinate."""
+        return (np.asarray(xy, dtype=float) - self.origin) / self.scale
+
+    def covers(self) -> list[float]:
+        """``[x0, y0, x1, y1]``: the source pixels the zoom's content spans."""
+        low, high = self.to_source([0, 0]), self.to_source(self.shown - 1)
+        return [float(v) for v in (*low, *high)]
+
+
+def source_frame(recipe: dict[str, Any] | None) -> SourceFrame | None:
+    """The :class:`SourceFrame` of a zoomed picture's *recipe* (its window on
+    the unzoomed picture, else the box a crop was cut at); None for a picture
+    that is itself whole, whose pixels are its own."""
+    if not recipe:
+        return None
+    shown = recipe.get("shown")
+    args = recipe.get("args") or {}
+    if not shown or min(shown) <= 0:
+        return None
+    if recipe.get("renderer") == "crop":
+        box = args.get("box")
+        if not box:
+            return None
+        low, high = np.asarray(box[:2], dtype=float), np.asarray(box[2:], dtype=float)
+    else:
+        window, base = args.get("zoom"), recipe.get("base")
+        if not window or not base:
+            return None
+        low = np.asarray(window[:2], dtype=float) * base
+        high = np.asarray(window[2:], dtype=float) * base
+    scale = (high - low) / np.asarray(shown, dtype=float)
+    return SourceFrame(low, scale, shown)
+
+
+def grid_step(extent: float) -> int:
+    """The round step (pixels) that puts at most :data:`GRID_LINES` lines along
+    *extent* source pixels, and so about six or more."""
+    for step in GRID_STEPS:
+        if extent / step <= GRID_LINES:
+            return step
+    return GRID_STEPS[-1]

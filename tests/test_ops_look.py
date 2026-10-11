@@ -155,7 +155,9 @@ def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
     assert zoomed.redrawn and zoomed.entries[0]["caption"]
     window = _recipe(job, zoomed.entries[0]["id"])["args"]["zoom"]
     assert window[0] == pytest.approx(box[0] / width, abs=1e-6)
-    again = ops_look.zoom(job, ws, [0, 0, 10, 10], picture=zoomed.entries[0]["id"])
+    # On a zoom, a box is in the grid's numbers: the whole picture's pixels.
+    again = ops_look.zoom(job, ws, [box[0], box[1], box[0] + 10, box[1] + 10],
+                          picture=zoomed.entries[0]["id"])
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["base"] == recipe["base"]  # redrawn from the original, not enlarged
     assert inner["args"]["zoom"][0] == pytest.approx(window[0])
@@ -167,7 +169,7 @@ def test_zoom_lands_on_the_box_and_a_zoom_of_a_zoom_maps_back(tmp_path: Path):
     shown = np.asarray(zoomed.pictures[0].convert("L"))[:zoom_height, :zoom_width]
     middle = shown[zoom_height * 2 // 5:zoom_height * 3 // 5,
                    zoom_width * 2 // 5:zoom_width * 3 // 5]
-    assert middle.min() > 240
+    assert np.median(middle) > 240  # the grid draws thin lines over it
     assert shown[:, :zoom_width // 20].mean() < 200  # the margin left of the square
 
 
@@ -194,11 +196,11 @@ def test_a_picture_without_a_recipe_is_cropped_and_a_crop_of_a_crop_maps_back(tm
     held = job.views.lookup(crop_id)
     assert held is not None and held.recipe is not None
     assert held.recipe["renderer"] == "crop" and held.recipe["source"] == number
-    width, height = held.recipe["shown"]
-    again = ops_look.zoom(job, ws, [width / 2, height / 2, width, height], picture=crop_id)
+    # A box on the crop is in the source picture's pixels (the grid's numbers).
+    again = ops_look.zoom(job, ws, [300, 100, 400, 200], picture=crop_id)
     inner = _recipe(job, again.entries[0]["id"])
     assert inner["args"]["box"] == [300.0, 100.0, 400.0, 200.0] and inner["source"] == number
-    assert np.asarray(again.pictures[0].convert("L"))[:10].min() > 240
+    assert np.median(np.asarray(again.pictures[0].convert("L"))[150:250, 150:250]) > 240
 
 
 def test_a_picture_that_is_not_saved_is_refused(tmp_path: Path):

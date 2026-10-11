@@ -77,34 +77,9 @@
    }
   },
   {
-   "description": "Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.\n\nThe new picture is as large as the earlier one. In a picture of a\nsection or of a section with the atlas on it, the section is read again\nfrom its original image file at the file's own resolution, only inside\nthe box, and drawn with the same channels, display settings and atlas\nborders; the caption says when the file holds fewer pixels than the\npicture. A positioning picture's sections are drawn again from their\nworking copies (the file reduced to at most 3072 pixels), and the atlas\nfrom its voxels. The box is drawn as the picture was, even if the stack\nhas changed since (the reply then says `stale`). The new picture has its\nown number, so it can be zoomed again.\n\nAfter a linear or nonlinear fit, use region on its overlay to inspect\na particular structure closely, with only that region's border shown.\nThis can reveal internal mismatches hidden at whole-section scale and\nhelp you decide whether to adjust the linear alignment, refine that\nregion nonlinearly, or revisit the section's position.\n\nEarlier pictures remain available by number. Reopen or zoom a saved\noverlay to compare an intermediate registration with the current result;\nits saved placement is preserved. Use undo when the latest change makes\nthe alignment worse.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner. Give either box or region, not both.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n    requests: Up to four {picture, box} or {picture, region} inspections\n        in one call. Leave the single arguments empty.\n    region: One atlas acronym or numeric id, descendants included;\n        \"CTX:left\" or \"CTX:right\" selects one displayed side. Overlay\n        pictures only. Crops to the entire region with a small margin\n        and draws only its border, preserving the saved registration\n        and display settings. An absent region is reported. Leave box\n        empty when using region.\n\nReturns:\n    One picture with its number, caption and `content_box` [x0, y0, x1,\n    y1], where the drawing lies in the image (a narrow box is padded with\n    black beside it, the caption below), and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
+   "description": "Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.\n\nThe new picture is as large as the earlier one. In a picture of a\nsection or of a section with the atlas on it, the section is read again\nfrom its original image file at the file's own resolution, only inside\nthe box, and drawn with the same channels, display settings and atlas\nborders; the caption says when the file holds fewer pixels than the\npicture. A positioning picture's sections are drawn again from their\nworking copies (the file reduced to at most 3072 pixels), and the atlas\nfrom its voxels. The box is drawn as the picture was, even if the stack\nhas changed since (the reply then says `stale`). The new picture has its\nown number, so it can be zoomed again. A dashed green grid on it is\nlabelled with the pixel numbers of the whole picture the zoom was cut\nfrom, and those numbers are the coordinates of a further zoom's box and\nof a set_landmarks endpoint, on the zoom or on the whole picture alike.\n\nAfter a linear or nonlinear fit, use region on its overlay to inspect\na particular structure closely, with only that region's border shown.\nThis can reveal internal mismatches hidden at whole-section scale and\nhelp you decide whether to adjust the linear alignment, refine that\nregion nonlinearly, or revisit the section's position.\n\nEarlier pictures remain available by number. Reopen or zoom a saved\noverlay to compare an intermediate registration with the current result;\nits saved placement is preserved. Use undo when the latest change makes\nthe alignment worse.\n\nArgs:\n    box: [x0, y0, x1, y1] in pixels of that picture as it was shown,\n        from its top-left corner (on a zoom, the numbers its grid prints). Give either box or region, not both.\n    picture: The picture's number; 0 is the newest picture that is not\n        itself a zoom.\n    region: One atlas acronym or numeric id, descendants included;\n        \"CTX:left\" or \"CTX:right\" selects one displayed side. Overlay\n        pictures only. Crops to the entire region with a small margin\n        and draws only its border, preserving the saved registration\n        and display settings. An absent region is reported. Leave box\n        empty when using region.\n\nReturns:\n    One picture with its number, caption, `covers` [x0, y0, x1, y1] (the\n    whole picture's pixels it shows) and `content_box` [x0, y0, x1,\n    y1], where the drawing lies in the image (a narrow box is padded with\n    black beside it, the caption below), and `redrawn`: false when\n    the picture could not be drawn again, so the box was cut from the\n    saved picture and enlarged, with no more detail than it had.",
    "name": "zoom",
    "parameters_json_schema": {
-    "$defs": {
-     "ZoomRequest": {
-      "additionalProperties": false,
-      "description": "One saved-picture inspection in a batched zoom call.",
-      "properties": {
-       "box": {
-        "items": {
-         "type": "number"
-        },
-        "title": "Box",
-        "type": "array"
-       },
-       "picture": {
-        "title": "Picture",
-        "type": "integer"
-       },
-       "region": {
-        "title": "Region",
-        "type": "string"
-       }
-      },
-      "title": "ZoomRequest",
-      "type": "object"
-     }
-    },
     "properties": {
      "box": {
       "default": [],
@@ -123,14 +98,6 @@
       "default": "",
       "title": "Region",
       "type": "string"
-     },
-     "requests": {
-      "default": [],
-      "items": {
-       "$ref": "#/$defs/ZoomRequest"
-      },
-      "title": "Requests",
-      "type": "array"
      }
     },
     "title": "zoomParams",
@@ -505,7 +472,7 @@
    }
   },
   {
-   "description": "Add, update or delete persistent corresponding landmarks. Does not apply a warp.\n\nBuild corresponding pairs across the full section and atlas before calling\nlandmark_triangulation to apply the set. Pair IDs are stable. Every batch\nis one undo step. Atlas and section endpoints are explicitly named.\nCoordinates are x,y PIXELS from the top-left of the whole returned picture,\nincluding panel offsets; no fractions or atlas coordinates are accepted.\nSaved geometry resolves the exact referenced view, including old zooms,\norientation and an applied warp. Caption/gutter/out-of-image points are\nrefused. A picture of the atlas alone supplies atlas points only when drawn\nwith look(mode=\"atlas\", sections=[section]); generic atlas browsing has no\nsection context. Plane changes retain pairs\nbut flag their atlas correspondences stale; update those atlas endpoints.\nPrefer both endpoints on the same overlay, or a zoom of it: the\natlas point where an atlas border is drawn, the section point where that\nborder belongs in the tissue. You point at what you see; a point on a warped\noverlay is mapped back to the section itself. Spread pairs over the outline and\nthe internal anatomy. With no pairs and no delete, nothing is written and\nthe reply lists the pairs.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.\n        Updates add id and either or both endpoints; omitted endpoints stay.\n        At most four added/edited pairs with view true.\n    delete: Stable pair IDs to delete from this section, or [\"all\"] to\n        delete every pair of this section.\n\nReturns:\n    The changed and deleted IDs and every pair of the section, one record\n    each: id, atlas and section as {picture, x, y}, and state: applied (in\n    the landmark warp applied now), pending (saved, not applied) or stale\n    (placed against an earlier atlas plane); with the count of each.",
+   "description": "Add, update or delete persistent corresponding landmarks. Does not apply a warp.\n\nBuild corresponding pairs across the full section and atlas before calling\nlandmark_triangulation to apply the set. Pair IDs are stable. Every batch\nis one undo step. Atlas and section endpoints are explicitly named.\nCoordinates are x,y PIXELS from the top-left of the whole returned picture,\nincluding panel offsets; no fractions or atlas coordinates are accepted.\nOn a zoom, x,y are the numbers its grid prints (pixels of the whole\npicture it was cut from), so a number read off any grid works whether you\nname the zoom's picture or the whole picture. Saved geometry resolves the\nexact referenced view, including old zooms, orientation and an applied warp.\nCaption/gutter/out-of-image points are refused. A picture of the\natlas alone supplies atlas points only when drawn with\nlook(mode=\"atlas\", sections=[section]); generic atlas browsing has no\nsection context. Plane changes retain pairs but flag their atlas\ncorrespondences stale; update those atlas endpoints.\nPrefer both endpoints on the same overlay, or a zoom of it: the\natlas point where an atlas border is drawn, the section point where that\nborder belongs in the tissue. You point at what you see; a point on a warped\noverlay is mapped back to the section itself. Spread pairs over the outline and\nthe internal anatomy. A pair whose section point and atlas point are at the\nsame spot holds that spot at its current (linear) placement; tissue far\nfrom every pair follows the nearest pairs and the four fixed corners of the\nframe. With no pairs and\nno delete, nothing is written and the reply lists the pairs.\n\nArgs:\n    section: Section filename (the extension may be left off).\n    pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.\n        Updates add id and either or both endpoints; omitted endpoints stay.\n        At most four added/edited pairs with view true.\n    delete: Stable pair IDs to delete from this section, or [\"all\"] to\n        delete every pair of this section.\n\nReturns:\n    The changed and deleted IDs and every pair of the section, one record\n    each: id, atlas and section as {picture, x, y}, and state: applied (in\n    the landmark warp applied now, as they are), moved (in it, but at other\n    endpoints now), pending (saved, not in it) or stale (placed against an\n    earlier atlas plane); with the count of each; and `warp`: the pairs the\n    current warp was built from, those not in it, those deleted but still\n    shaping it, and that landmark_triangulation must run again to apply the\n    set as it stands.",
    "name": "set_landmarks",
    "parameters_json_schema": {
     "$defs": {
@@ -583,7 +550,7 @@
    }
   },
   {
-   "description": "Apply this section's saved landmark set as a piecewise affine warp.\n\nRequires at least three corresponding pairs, with coverage across the full\nsection; the tool cannot assess anatomical coverage. Uses VisuAlign's\nsection-domain Delaunay mesh in pixels and four fixed corners 10% outside\nthe section. Repeated section points, zero-area triangles and stale atlas\nplanes are refused. Folded triangles are applied, as VisuAlign does: the\nreply gives the share of the section they cover and the pairs at their\ncorners, and the picture outlines them in magenta. The inverse uses the\nsame triangles (unfolded ones first where folded ones overlap). Composes a\ncorrection onto the current deformation; undo removes the application.\nEditing pairs alone never warps.\n\nArgs:\n    section: Section filename (the extension may be left off).\n\nReturns:\n    Landmark count, whether applied/composed, displacement, diagnostics\n    and any folds. The picture's number is under `pictures`.",
+   "description": "Apply this section's saved landmark set as a piecewise affine warp.\n\nRequires at least three corresponding pairs, with coverage across the full\nsection; the tool cannot assess anatomical coverage. A pair at the same\nspot on both holds that spot at its current (linear) placement; tissue far\nfrom every pair follows the nearest pairs and the fixed frame corners. Uses\nVisuAlign's section-domain Delaunay mesh in pixels and four fixed corners 10% outside\nthe section. Repeated section points, zero-area triangles and stale atlas\nplanes are refused. Folded triangles are applied, as VisuAlign does: the\nreply gives the share of the section they cover and the pairs at their\ncorners, and the picture outlines them in magenta. The inverse uses the\nsame triangles (unfolded ones first where folded ones overlap). Composes a\ncorrection onto the current deformation; undo removes the application.\nEditing pairs alone never warps: pairs added, moved or deleted after an\napplication change nothing until this runs again.\n\nArgs:\n    section: Section filename (the extension may be left off).\n\nReturns:\n    Landmark count, `built_from` (the pair IDs the warp was made of),\n    whether applied/composed, displacement_mm (the whole deformation now\n    applied) and step_displacement_mm (only the change this application made\n    over the warp it replaced), diagnostics and any folds. The picture's\n    number is under `pictures`.",
    "name": "landmark_triangulation",
    "parameters_json_schema": {
     "properties": {

@@ -18,6 +18,7 @@ from langslice.core.deformable import FitSettings, finish_fit, prepare_fit
 from langslice.core.deformable.engines import EngineResult
 from langslice.core.deformable.geometry import WorkingGrid
 from langslice.core.handoff import digest
+from langslice.core.picture_geometry import source_frame
 from langslice.core.triangulation import DegenerateMesh, visualign_mesh
 from langslice.ops.refusal import Refused, check_frozen, unknown_sections
 
@@ -45,11 +46,15 @@ def _span(low: float, high: float) -> str:
     return f"{int(np.floor(low))}-{int(np.ceil(high)) - 1}"
 
 
-def _content(seq: int, panels: Sequence[dict[str, Any]]) -> str:
-    """Where picture *seq*'s image content lies, from its panels' bounds."""
+def _content(seq: int, panels: Sequence[dict[str, Any]], frame: Any = None) -> str:
+    """Where picture *seq*'s image content lies, from its panels' bounds (on a
+    zoom, in the grid's numbers: the whole picture's pixels)."""
     boxes = []
     for panel in panels:
         x0, y0, x1, y1 = panel["bounds"]
+        if frame is not None:
+            x0, y0 = frame.to_source([x0 - 0.5, y0 - 0.5]) + 0.5
+            x1, y1 = frame.to_source([x1 - 0.5, y1 - 0.5]) + 0.5
         text = f"x {_span(x0, x1)}, y {_span(y0, y1)}"
         if text not in boxes:
             boxes.append(text)
@@ -73,6 +78,7 @@ def _endpoint(
         )
     try:
         seq, x, y = int(point["picture"]), float(point["x"]), float(point["y"])
+        given = (x, y)
     except (KeyError, TypeError, ValueError):
         raise Refused(
             "BAD_ARGS", message=f"{here}: an endpoint needs picture, x and y in pixels."
@@ -87,11 +93,18 @@ def _endpoint(
             "UNKNOWN_PICTURE",
             picture=seq,
             message=(
-                f"{here}: there is no saved picture {seq}. Use the picture number "
-                "a look or zoom reply gave."
+                f"{here}: there is no saved picture {seq}"
+                + (f" (the newest is {newest.seq})" if (newest := job.views.latest(
+                    exclude_tool=None)) else "")
+                + ". Use the picture number a look or zoom reply gave."
             ),
         )
     recipe = picture.recipe or {}
+    # On a zoom, x and y are the numbers its grid prints: pixels of the whole
+    # picture it was cut from. They are the same on the source picture.
+    frame = source_frame(recipe)
+    if frame is not None and np.isfinite([x, y]).all():
+        x, y = (float(v) for v in frame.to_picture([x, y]))
     every = [p for p in recipe.get("endpoint_panels", []) if p.get("role") == role]
     panels = [p for p in every if p.get("section") == record.id]
     if not panels:
@@ -108,7 +121,7 @@ def _endpoint(
                 + f" drawn with look (sections=[{record.id!r}])."
             ),
         )
-    where = f"({x:g}, {y:g}) in picture {seq}"
+    where = f"({given[0]:g}, {given[1]:g}) in picture {seq}"
     eligible = [
         p
         for p in panels
@@ -120,7 +133,7 @@ def _endpoint(
             picture=seq,
             message=(
                 f"{here}: the point {where} is outside the image content (in a caption/gutter, "
-                f"or off the picture); {_content(seq, panels)}. Choose a point inside it."
+                f"or off the picture); {_content(seq, panels, frame)}. Choose a point inside it."
             ),
         )
     panel = eligible[0]
@@ -160,13 +173,13 @@ def _endpoint(
             picture=seq,
             message=(
                 f"{here}: the point {where} lies outside the {role} image; "
-                f"{_content(seq, [panel])}. Coordinates are never clamped."
+                f"{_content(seq, [panel], frame)}. Coordinates are never clamped."
             ),
         )
     return {
         "canonical_xy": canonical.tolist(),
         "picture": seq,
-        "pixel_xy": [x, y],
+        "pixel_xy": list(given),
         "registration_context": copy.deepcopy(held),
         "geometry": copy.deepcopy(panel),
     }
@@ -174,7 +187,8 @@ def _endpoint(
 
 def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
     """One compact record per pair: id, the endpoints as the call gave them
-    (picture, x, y) and the state (``applied``, ``pending`` or ``stale``)."""
+    (picture, x, y) and the state (``applied``, ``moved``, ``pending`` or
+    ``stale``)."""
     states = geometry.pair_states(job.state, record)
     rows = []
     for pair in record.landmarks.get("pairs", []):
@@ -189,7 +203,8 @@ def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
 
 def _counts(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
     states = [row["state"] for row in rows]
-    return {"total": len(states), **{k: states.count(k) for k in ("applied", "pending", "stale")}}
+    kinds = ("applied", "moved", "pending", "stale")
+    return {"total": len(states), **{k: states.count(k) for k in kinds}}
 
 
 def set_landmarks(
@@ -204,8 +219,10 @@ def set_landmarks(
     ``delete=["all"]`` clears the section's pairs (pair IDs are never reused).
     With no pairs and no delete nothing is written and the reply is the
     listing: one record per pair with its state (``applied``: in the landmark
-    warp applied now; ``pending``: saved but not applied; ``stale``: placed
-    against an atlas plane the section has left).
+    warp applied now; ``moved``: in it at other endpoints; ``pending``: saved
+    but not in it; ``stale``: placed against an atlas plane the section has
+    left), and ``warp``: the pairs the current warp was built from, those not
+    in it, those deleted but still shaping it.
     """
     del workspace
     if (
@@ -299,6 +316,7 @@ def set_landmarks(
         "deleted": deleted,
         "counts": _counts(rows),
         "landmarks": rows,
+        **({"warp": report} if (report := geometry.warp_report(job.state, record)) else {}),
     }
 
 
@@ -314,6 +332,14 @@ def _sample(field: np.ndarray, points: np.ndarray) -> np.ndarray:
     )
 
 
+#: What the apply reply's two displacement figures are.
+DISPLACEMENT_NOTE_KEY = "displacement_note"
+DISPLACEMENT_NOTE = (
+    "displacement_mm is the whole deformation now applied to the section (every step "
+    "since its linear placement, the landmark warp included); step_displacement_mm, when "
+    "present, is only the change this application made over the warp it replaced or "
+    "was applied onto."
+)
 #: Folded triangles a reply lists; the rest are counted.
 MAX_FOLDS_LISTED = 8
 
@@ -390,7 +416,9 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             "section": record.id,
             "written": False,
             "landmark_count": len(pairs),
+            "built_from": [p["id"] for p in pairs],
             **held.get("summary", {}),
+            DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
             **_folds_reply(held.get("landmark_folds")),
         }
     started = time.monotonic()
@@ -518,8 +546,10 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "section": record.id,
         "written": True,
         "landmark_count": len(pairs),
+        "built_from": [p["id"] for p in pairs],
         "composed": previous is not None,
         "replaced": replacing,
         **numbers,
+        DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
         **_folds_reply(folds),
     }

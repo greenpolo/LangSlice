@@ -1,7 +1,7 @@
 {
  "args": [],
  "data": {
-  "picture": 0,
+  "picture": 5,
   "pictures": [
    {
     "caption": "crop of an earlier picture, not redrawn: box [0, 0, 150, 130], enlarged x3.4",
@@ -11,60 +11,16 @@
      512,
      444
     ],
-    "id": 8
-   },
-   {
-    "caption": "crop of an earlier picture, not redrawn: box [530, 100, 730, 260], enlarged x2.6",
-    "content_box": [
+    "covers": [
      0,
      0,
-     512,
-     410
+     149,
+     129
     ],
-    "id": 9
+    "id": 8
    }
   ],
   "redrawn": false,
-  "results": [
-   {
-    "picture": 5,
-    "pictures": [
-     {
-      "caption": "crop of an earlier picture, not redrawn: box [0, 0, 150, 130], enlarged x3.4",
-      "content_box": [
-       0,
-       0,
-       512,
-       444
-      ],
-      "id": 8
-     }
-    ],
-    "redrawn": false,
-    "request": 0,
-    "stale": false,
-    "status": "ok"
-   },
-   {
-    "picture": 5,
-    "pictures": [
-     {
-      "caption": "crop of an earlier picture, not redrawn: box [530, 100, 730, 260], enlarged x2.6",
-      "content_box": [
-       0,
-       0,
-       512,
-       410
-      ],
-      "id": 9
-     }
-    ],
-    "redrawn": false,
-    "request": 1,
-    "stale": false,
-    "status": "ok"
-   }
-  ],
   "status": "ok"
  },
  "door": "landmarks",
@@ -76,37 +32,16 @@
     512,
     465
    ]
-  },
-  {
-   "file": "153_landmarks_zoom.1.png",
-   "mode": "RGB",
-   "size": [
-    512,
-    431
-   ]
   }
  ],
  "kwargs": {
-  "requests": [
-   {
-    "box": [
-     0,
-     0,
-     150,
-     130
-    ],
-    "picture": 5
-   },
-   {
-    "box": [
-     530,
-     100,
-     730,
-     260
-    ],
-    "picture": 5
-   }
-  ]
+  "box": [
+   0,
+   0,
+   150,
+   130
+  ],
+  "picture": 5
  },
  "media_texts": [],
  "tool": "zoom"

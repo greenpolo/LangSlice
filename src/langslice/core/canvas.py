@@ -723,7 +723,9 @@ def physical_views(
             f"{head} @ {position_mm:.3f} mm  pitch {pitch_deg:.2f} yaw {yaw_deg:.2f}\n"
             f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
         ).strip()
-        if mode != "overlay" or zoomed:
+        if mode != "overlay" or zoomed or abs(float(factor) - 1.0) > 0.02:
+            # `view` is the picture's own pixel; `canvas` the canvas's (they differ
+            # whenever the picture is drawn at other than canvas pixels).
             where = (f"  zoom {[round(float(v)) for v in zoom_pixels]} px"
                      if zoom_pixels else "")
             text += f"\n{mode}{where}  view {geometry.um_per_px / factor:.2f} um/px"

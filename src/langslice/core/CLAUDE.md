@@ -326,6 +326,15 @@ the angles in a caption (empty for the flat plane).
   With `region`, exactly one region replaces the box, on an overlay only
   (`BAD_REGION_PICTURE` otherwise); absent anatomy is `REGION_NOT_IN_PLANE`.
   The bounds and borders come from the saved overlay, never today's state.
+- `zoom_grid.py` and `picture_geometry.source_frame` — the coordinate grid every
+  zoom carries. `source_frame(recipe)` is where a zoom's pixels lie in the
+  whole (unzoomed) picture's pixels (`SourceFrame`: `to_source`, `to_picture`,
+  `covers`; from the recipe's window on `base`, or a crop's box; None for a
+  whole picture), `grid_step` the round step (at most `GRID_LINES` lines along
+  the longer side) and `draw_grid` the thin dashed lime-green lines (a colour no
+  other drawing uses) with labels on a dark chip at every edge, over the content
+  only. `zoom.redraw` draws it on every zoom; a zoom's box and a
+  `set_landmarks` endpoint on a zoom are read in these numbers (`ops/`).
 - `native.py` — sections at their image file's own resolution, for
   zooms. `section_pixels(ws, record, look, x, y)` -> `NativePixels` (`rgb`,
   `inside`, `enlarged`: picture pixels per file pixel): the section at
@@ -517,8 +526,10 @@ Annotations are drawn only on final composite pictures. Look snapshots include
 the landmark set, so old zooms preserve its original markers; `ANNOTATION_FIELDS`
 (`landmarks`) leave `changed_since` alone, so a pair edit never makes a picture
 `stale` (`differs_since` still restores the old markers). `pair_states` /
-`landmark_counts` give a pair's `applied` / `pending` / `stale` state and the
-status row's counts; `draw_folds` outlines the applied warp's folded
+`landmark_counts` give a pair's `applied` / `moved` / `pending` / `stale` state
+and the status row's counts (`warp` in words), `applied_pairs` the pairs the
+current landmark warp was built from and `warp_report` which pairs are in it,
+not in it, or deleted but still shaping it; `draw_folds` outlines the applied warp's folded
 triangles (`landmark_folds` in the deformation reference) on a warped
 overlay. An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
 times past its voxels. Positioning index

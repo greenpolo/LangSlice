@@ -14,6 +14,9 @@ its window as fractions of the unzoomed picture, so a zoom of a zoom (a box
 in the zoomed picture's pixels) maps back onto the first picture and is
 redrawn from the source again, never enlarged from the zoom.
 
+Every zoom carries a coordinate grid labelled in the whole picture's pixels
+(:mod:`langslice.core.zoom_grid`).
+
 When the stack has changed since the picture was drawn, it is redrawn as it
 was (the recipe's snapshot) and flagged ``stale``. A picture without a
 recipe (the opening strips), or whose sections are no longer in the stack,
@@ -37,9 +40,11 @@ from PIL import Image
 from langslice.core import look as looks
 from langslice.core.captions import caption
 from langslice.core.layers import annotate, note
+from langslice.core.picture_geometry import source_frame
 from langslice.core.sizes import picture_edge
 from langslice.core.state import StackState
 from langslice.core.workspace import Workspace
+from langslice.core.zoom_grid import draw_grid
 
 #: The recipe renderer of a picture cropped from a saved image.
 CROP_RENDERER = "crop"
@@ -191,6 +196,8 @@ def redraw(
             text = f"{text}; {STALE_NOTE}"
         kept = {key: value for key, value in recipe.items() if key not in drawn.recipe}
         out_recipe = {**kept, **drawn.recipe}
+        if (frame := source_frame(out_recipe)) is not None:
+            draw_grid(image, frame)
         if image is drawn.image:
             # The renderer's own note (an overlay's frame, for its layers) is kept.
             annotate(image, recipe=out_recipe, caption=text)
@@ -263,6 +270,8 @@ def _crop(
                 panel[key] = (np.asarray(panel[key]) @ to_source).tolist()
         panels.append(panel)
     out_recipe["endpoint_panels"] = panels
+    if (frame := source_frame(out_recipe)) is not None:
+        draw_grid(image, frame)
     note(image, mode="zoom", recipe=out_recipe, caption=label)
     return Zoomed(image=image, caption=label, recipe=out_recipe, redrawn=False, stale=stale,
                   mode="zoom")

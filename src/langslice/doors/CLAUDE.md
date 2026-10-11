@@ -353,12 +353,13 @@ keys are checked recursively. `set_landmarks` defaults to one contextual
 side-by-side template/preprocessed crop for each edited pair (at most four
 with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`
-where `look` does: `dropped_arguments` drops both together). Both honor forced
+where `look` does: `dropped_arguments` drops both together; `TOO_MANY_LANDMARK_VIEWS`
+says how many pairs were sent and what to resend; the landmark codes' `FIXES`
+are specific, written with needs marks). `status`' `can_change` names the
+landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /
 `redone` (tool, sections), the rows of those sections and the depth, not the
 whole table.
-`ZoomRequest` declares the optional `zoom.requests` batch of up to four boxes
-or regions while retaining the single-picture arguments.
 
 MCP reply-budget shrinking saves each delivered JPEG with a distinct immutable
 picture number and resized endpoint geometry. `extra.transport_source_picture`

@@ -4,6 +4,7 @@
   "changed": [],
   "counts": {
    "applied": 2,
+   "moved": 0,
    "pending": 0,
    "stale": 0,
    "total": 2
@@ -43,6 +44,18 @@
   ],
   "section": "s1.png",
   "status": "ok",
+  "warp": {
+   "built_from": [
+    "L1",
+    "L2",
+    "L3"
+   ],
+   "deleted_still_in_warp": [
+    "L2"
+   ],
+   "not_applied": [],
+   "note": "The current warp was built from L1, L2, L3. Deleted, but still shaping it: L2. Run landmark_triangulation again to apply the set as it stands now."
+  },
   "written": true
  },
  "door": "landmarks",

@@ -7,7 +7,7 @@
    "orientation and mirroring and in-plane transforms by hand",
    "in-plane transforms by elastix_affine",
    "damaged regions",
-   "deformations (ants_syn, trace_borders)",
+   "deformations (ants_syn, trace_borders, landmark pairs by set_landmarks, applied by landmark_triangulation)",
    "channel display and the preprocessed channel"
   ],
   "channel_display": "gray auto",

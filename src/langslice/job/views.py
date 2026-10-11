@@ -614,9 +614,11 @@ class ViewStore:
 
 class DiscardedViews(ViewStore):
     """A store that saves nothing to disk: a job that writes nothing
-    (``Job.persist`` False: the CLI's dry run). It indexes the pictures in
-    memory, so :meth:`lookup` and :meth:`latest` work within the process; the
-    newest :data:`KEPT_PICTURES` keep the picture itself
+    (``Job.persist`` False: the CLI's dry run). It reads the pictures the job
+    folder already holds (so a dry run resolves the picture numbers a real call
+    would) and indexes the ones drawn in this process in memory, numbered after
+    them, so :meth:`lookup` and :meth:`latest` work within the process; the
+    newest :data:`KEPT_PICTURES` of those keep the picture itself
     (``PictureRecord.image``)."""
 
     #: How many of the newest pictures keep their image in memory.
@@ -636,8 +638,9 @@ class DiscardedViews(ViewStore):
             return []
         step = self._step(step)
         with self._lock:
-            call = max((r.call for r in self._memory), default=0) + 1
-            first = max((r.seq for r in self._memory), default=0) + 1
+            held = self._held() + self._memory
+            call = max((r.call for r in held), default=0) + 1
+            first = max((r.seq for r in held), default=0) + 1
             items = _items(first, tool, pictures, step, recipes, captions)
             for item in items:
                 held = item.note
@@ -652,6 +655,10 @@ class DiscardedViews(ViewStore):
                     self._memory[at] = replace(old, image=None)
         return [item.name for item in items]
 
+    def _held(self) -> list[PictureRecord]:
+        """The pictures the job folder holds already (read, never written)."""
+        return super().records()
+
     def records(self) -> list[PictureRecord]:
         with self._lock:
-            return list(self._memory)
+            return self._held() + list(self._memory)

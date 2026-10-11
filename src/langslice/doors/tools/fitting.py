@@ -187,8 +187,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                       view: bool = True) -> dict[str, Any]:
         if shows(view) and len(pairs) > 4:
             return {"status": "error", "error": "TOO_MANY_LANDMARK_VIEWS",
-                    "message": "At most four pairs with view true; "
-                               "use view false for a larger batch."}
+                    "message": f"You sent {len(pairs)} pairs with view true, and a call draws one "
+                               "picture per pair for at most four. Nothing was written. Send "
+                               f"the same {len(pairs)} pairs again with view false (no pair "
+                               "pictures; the pairs are listed in the reply), or send them in "
+                               "calls of four or fewer."}
         try:
             result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete)
         except Refused as refusal:
