@@ -341,9 +341,18 @@ def draw_landmarks(
         else:
             groups.append([item])
     taken: list[tuple[float, float, float, float]] = []
+    labelled: list[list[tuple[str, np.ndarray, str, bool]]] = []
     for group in groups:
         first = group[0]
         label = ", ".join(member[2] for member in group)
+        # A pair whose two endpoints meet (its warp applied) is labelled once:
+        # the other kind's group of the same ids at that spot already says it.
+        if any(other[0][0] != first[0] and {m[2] for m in other} == {m[2] for m in group}
+               and any(np.hypot(*(a[1] - b[1])) <= MERGE_PX for a in other for b in group)
+               for other in labelled):
+            label = ""
+        else:
+            labelled.append(group)
         for member in group[1:]:
             glyph(image, member[1], "", member[0], old=member[3])
         glyph(image, first[1], label, first[0], old=all(m[3] for m in group), taken=taken)

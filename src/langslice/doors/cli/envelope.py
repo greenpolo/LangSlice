@@ -79,7 +79,8 @@ FIXES: dict[str, str] = {
                          "lists them.",
     "UNKNOWN_SECTION": "Name sections by filename, as `langslice-job {job} status` "
                        "lists them.",
-    "NO_JOB": "Create the job first: `langslice-job <image folder> init`.",
+    "NO_JOB": "Create the job first: `langslice-job <image folder> init`; a job made "
+              "with --job-dir is named by its own folder.",
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
     "NOTHING_TO_REDO": "Redo follows an undo only.",

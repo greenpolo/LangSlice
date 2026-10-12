@@ -17,6 +17,7 @@ from langslice.core import landmarks as geometry
 from langslice.core.deformable import FitSettings, finish_fit, prepare_fit
 from langslice.core.deformable.engines import EngineResult
 from langslice.core.deformable.geometry import WorkingGrid
+from langslice.core.deformable.masks import tissue_masks
 from langslice.core.handoff import digest
 from langslice.core.picture_geometry import source_frame
 from langslice.core.triangulation import DegenerateMesh, visualign_mesh
@@ -185,6 +186,47 @@ def _endpoint(
     }
 
 
+def _atlas_regions(
+    workspace: Workspace, plane: dict[str, Any], items: Sequence[dict[str, Any]]
+) -> tuple[dict[str, str], list[str]]:
+    """The region drawn at each of *items*' atlas endpoint on the atlas *plane*
+    (``plane_context``), as ``ACRONYM (name)`` by pair id, and the ids whose
+    atlas endpoint is outside the atlas."""
+    from langslice.core.atlas.render import annotation_slice
+
+    if not items:
+        return {}, []
+    angles = plane.get("angles") or [0, 0]
+    annotation = annotation_slice(workspace.atlas, float(plane["position_mm"]),
+                                  plane=plane["plane"], pitch_deg=float(angles[0]),
+                                  yaw_deg=float(angles[1]))
+    structures = getattr(workspace.atlas, "structures", None) or {}
+    regions: dict[str, str] = {}
+    outside: list[str] = []
+    for item in items:
+        c, r = (int(v) for v in np.rint(item["atlas_native_xy"]))
+        inside = 0 <= r < annotation.shape[0] and 0 <= c < annotation.shape[1]
+        label = int(annotation[r, c]) if inside else 0
+        if not label:
+            regions[item["id"]] = "outside the atlas"
+            outside.append(item["id"])
+            continue
+        entry = structures.get(label)
+        regions[item["id"]] = (f"{entry['acronym']} ({entry['name']})" if entry is not None
+                               else f"region {label}")
+    return regions, outside
+
+
+def _outside_words(outside: Sequence[str]) -> str:
+    one = len(outside) == 1
+    return (f"The atlas endpoint{'' if one else 's'} of {', '.join(outside)} "
+            f"{'is' if one else 'are'} outside the atlas, where no brain is drawn: "
+            f"{'it pairs' if one else 'they pair'} empty atlas with the tissue. For a pair "
+            "on the outline, put the atlas endpoint on the drawn border or just inside it; "
+            "a point read off a close-up picture lands within a few pixels of what you "
+            "meant, a point read off a whole picture can miss by 20 pixels or more.")
+
+
 def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
     """One compact record per pair: id, the endpoints as the call gave them
     (picture, x, y) and the state (``applied``, ``moved``, ``pending`` or
@@ -224,7 +266,6 @@ def set_landmarks(
     left), and ``warp``: the pairs the current warp was built from, those not
     in it, those deleted but still shaping it.
     """
-    del workspace
     if (
         isinstance(pairs, (str, bytes))
         or not isinstance(pairs, Sequence)
@@ -244,6 +285,7 @@ def set_landmarks(
     ):
         raise Refused("BAD_ARGS", message="A pair ID may be edited or deleted only once per batch.")
     changed: list[str] = []
+    placed: list[dict[str, Any]] = []
     deleted = list(by_id) if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
         raise Refused("BAD_ARGS", message=f'delete ["{DELETE_ALL}"] stands alone.')
@@ -296,6 +338,7 @@ def set_landmarks(
                 ]
         if "atlas" in edit:
             item["plane"] = geometry.plane_context(job.state, record)
+            placed.append(item)
         item["stale"] = geometry.stale(job.state, record, item)
         by_id[pair_id] = item
         changed.append(pair_id)
@@ -306,6 +349,8 @@ def set_landmarks(
         record.landmarks = current
         job.commit(before)
     rows = _listing(job, record)
+    regions, outside = _atlas_regions(workspace, geometry.plane_context(job.state, record),
+                                      placed)
     return {
         "status": "ok",
         "section": record.id,
@@ -313,6 +358,8 @@ def set_landmarks(
         **({} if pairs or delete else {"note": "No pairs or delete given: this is the listing; "
                                                 "nothing was written."}),
         "changed": changed,
+        **({"atlas_endpoint_regions": regions} if regions else {}),
+        **({"outside_atlas": outside, "warning": _outside_words(outside)} if outside else {}),
         "deleted": deleted,
         "counts": _counts(rows),
         "landmarks": rows,
@@ -358,11 +405,14 @@ _HOLD_PREFIX = "~"
 
 
 def automatic_holds(
-    pair_points: np.ndarray, size: tuple[int, int], shift: float = 0.0
+    pair_points: np.ndarray, size: tuple[int, int], shift: float = 0.0,
+    tissue: np.ndarray | None = None,
 ) -> np.ndarray:
     """Section points (pixels) of the automatic holds: a regular lattice over
     the section frame, spaced :data:`HOLD_SPACING` of its longer side, without
-    the points within :data:`HOLD_CLEARANCE` spacings of any of *pair_points*.
+    the points within :data:`HOLD_CLEARANCE` spacings of any of *pair_points*,
+    and, given a *tissue* mask (rows, cols on the frame), without the points
+    off the tissue: the empty slide needs no holding.
 
     Each hold corresponds to itself (it keeps its spot where the baseline
     placement puts it); the pairs are never changed."""
@@ -374,6 +424,9 @@ def automatic_holds(
     lattice = np.stack(np.meshgrid(xs, ys), -1).reshape(-1, 2)
     inside = (lattice[:, 0] < width - 0.5) & (lattice[:, 1] < height - 0.5)
     lattice = lattice[inside]
+    if tissue is not None and len(lattice):
+        rows, cols = np.rint(lattice[:, 1]).astype(int), np.rint(lattice[:, 0]).astype(int)
+        lattice = lattice[tissue[rows.clip(0, height - 1), cols.clip(0, width - 1)]]
     points = np.asarray(pair_points, dtype=float).reshape(-1, 2)
     if not len(points) or not len(lattice):
         return lattice
@@ -449,12 +502,13 @@ def _holds_reply(count: int) -> dict[str, Any]:
         "automatic_holds": count,
         "holds_note": (
             f"{count} automatic hold{'s were' if count != 1 else ' was'} added between the "
-            "pairs: spots that keep "
+            "pairs, over the tissue: spots that keep "
             "their current place, so a pair moves its neighbourhood up to the holds "
             "near it and the tissue between the pairs stays put. They are not pairs "
             "and cannot be edited; they are recomputed from the pairs on every application."
             if count else
-            "No automatic holds were added: every spot of the hold lattice is near a pair."
+            "No automatic holds were added: every spot of the hold lattice over the tissue "
+            "is near a pair."
         ),
     }
 
@@ -531,12 +585,16 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             assert previous.inverse_field_mm is not None
             target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
         names = [p["id"] for p in pairs]
+        try:
+            tissue: np.ndarray | None = tissue_masks(grid.image)[0]
+        except ValueError:  # no tissue told from the slide: the lattice everywhere
+            tissue = None
         # Automatic holds between the pairs, each corresponding to itself against
         # the baseline (the pair targets above are already in the baseline's
         # section coordinates, so a hold's target is its own spot). Only this verb
         # adds them: the VisuAlign mesh below is exact for any point set.
         for shift in HOLD_SHIFTS:
-            holds = automatic_holds(source, size, shift)
+            holds = automatic_holds(source, size, shift, tissue)
             try:
                 mesh = visualign_mesh(
                     np.vstack([source, holds]), np.vstack([target, holds]), size=size)
@@ -604,6 +662,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "automatic_holds_xy": holds.tolist(),
         "hold_spacing_px": max(size) * HOLD_SPACING,
         "hold_clearance_spacings": HOLD_CLEARANCE,
+        "holds_on_tissue_only": tissue is not None,
     }
     job.deformations.put(key, result)
     folder = job.deformations.save(record.id, key, result)
