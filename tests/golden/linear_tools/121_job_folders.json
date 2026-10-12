@@ -776,7 +776,7 @@
     },
     {
      "call": 6,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn; 31.2 um/px; raw gray auto; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn: the section is warped onto the atlas, which keeps its place; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000006_ants_syn_overlay",
@@ -988,7 +988,7 @@
     },
     {
      "call": 7,
-     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn; 41.2 um/px; raw gray auto; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn: the section is warped onto the atlas, which keeps its place; 41.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000007_look_overlay",
@@ -8077,7 +8077,7 @@
     },
     {
      "call": 32,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn: the section is warped onto the atlas, which keeps its place; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000046_ants_syn_overlay",
@@ -8316,7 +8316,7 @@
     },
     {
      "call": 33,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 6.1 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders; regions TH drawn thick, the other borders faint; from the image file",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn: the section is warped onto the atlas, which keeps its place; 6.1 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders; regions TH drawn thick, the other borders faint; from the image file",
      "layers": true,
      "mode": "overlay",
      "name": "000047_ants_syn_overlay",
@@ -8577,7 +8577,7 @@
     },
     {
      "call": 34,
-     "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), deformation drawn; 31.2 um/px; raw gray auto; atlas borders",
+     "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), deformation drawn: the section is warped onto the atlas, which keeps its place; 31.2 um/px; raw gray auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000048_look_overlay",
@@ -8811,7 +8811,7 @@
     },
     {
      "call": 34,
-     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
+     "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 1.0, scale 1.010/0.995, shift -0.06/-0.02 mm, shear -0.011), deformation drawn: the section is warped onto the atlas, which keeps its place; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
      "layers": true,
      "mode": "overlay",
      "name": "000049_look_overlay",

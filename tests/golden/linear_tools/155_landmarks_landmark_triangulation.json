@@ -1,7 +1,7 @@
 {
  "args": [],
  "data": {
-  "automatic_holds": 30,
+  "automatic_holds": 12,
   "built_from": [
    "L1",
    "L2",
@@ -10,16 +10,16 @@
   "composed": false,
   "displacement_mm": {
    "max": 0.07,
-   "median": 0.0
+   "median": 0.004
   },
   "displacement_note": "displacement_mm is the whole deformation now applied to the section (every step since its linear placement, the landmark warp included); step_displacement_mm, when present, is only the change this application made over the warp it replaced or was applied onto.",
   "flags": [],
   "fold_fraction": 0.0,
-  "holds_note": "30 automatic holds were added between the pairs: spots that keep their current place, so a pair moves its neighbourhood up to the holds near it and the tissue between the pairs stays put. They are not pairs and cannot be edited; they are recomputed from the pairs on every application.",
+  "holds_note": "12 automatic holds were added between the pairs, over the tissue: spots that keep their current place, so a pair moves its neighbourhood up to the holds near it and the tissue between the pairs stays put. They are not pairs and cannot be edited; they are recomputed from the pairs on every application.",
   "landmark_count": 3,
   "pictures": [
    {
-    "caption": "s1.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn; 31.2 um/px; raw red, green, blue auto; atlas borders",
+    "caption": "s1.png overlay, at 0.10 mm; interactive transform (rot 0.0, scale 1.000/1.000, shift +0.00/+0.00 mm), deformation drawn: the section is warped onto the atlas, which keeps its place; 31.2 um/px; raw red, green, blue auto; atlas borders",
     "id": 10
    }
   ],

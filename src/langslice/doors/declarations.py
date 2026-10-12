@@ -811,7 +811,9 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     [[?look:overlay Prefer both endpoints on the same overlay[[?zoom , or a zoom of it]]: the
     atlas point where an atlas border is drawn, the section point where that
     border belongs in the tissue. You point at what you see; a point on a warped
-    overlay is mapped back to the section itself. ]]Spread pairs over the outline and
+    overlay is mapped back to the section itself. ]][[?zoom Read endpoints off a close
+    zoom, its grid lines 10 to 20 pixels apart: read off a coarse grid, a point can
+    miss the border you meant by 20 pixels or more. ]]Spread pairs over the outline and
     the internal anatomy: a pair on the outline moves the outline, and a pair
     on an internal landmark (the midline, a ventricle, a fibre tract) moves the
     anatomy inside. Place no pair on a spot just to keep it where it is:
@@ -819,8 +821,9 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     moves its neighbourhood up to the nearby holds and tissue far from every pair
     stays where it was. [[?mark_damage  An atlas region with no tissue on the
     section (torn or missing) takes no pair: mark it with mark_damage; a region
-    only partly missing keeps its pairs on the part that is present. ]]With no pairs and
-    no delete, nothing is written and the reply lists the pairs.
+    only partly missing keeps its pairs on the part that is present. ]]Tissue with no
+    atlas counterpart (a detached fragment, debris) takes no pair either.
+    With no pairs and no delete, nothing is written and the reply lists the pairs.
 
     Args:
         section: Section filename (the extension may be left off).
@@ -833,7 +836,9 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
             atlas TEMPLATE and section PREPROCESSED. False shows no pictures.
 
     Returns:
-        The changed and deleted IDs and every pair of the section, one record
+        The changed and deleted IDs; for each pair given an atlas endpoint, the
+        region drawn there (`atlas_endpoint_regions`), with a warning naming
+        any atlas endpoint outside the atlas; and every pair of the section, one record
         each: id, atlas and section as {picture, x, y}, and state: applied (in
         the landmark warp applied now, as they are), moved (in it, but at other
         endpoints now), pending (saved, not in it) or stale (placed against an
@@ -853,7 +858,7 @@ def landmark_triangulation(
     Requires at least three corresponding pairs, with coverage across the full
     section; the tool cannot assess anatomical coverage. Before it builds the
     mesh it adds automatic holds between the pairs: a regular lattice of spots over
-    the section, left out near any pair, each kept where it currently is (its
+    the tissue, left out near any pair, each kept where it currently is (its
     current placement: linear, or the earlier deformation this composes onto). A
     pair therefore moves its neighbourhood up to the nearby holds, and tissue far
     from every pair stays where it was. Holds are not pairs: they are listed

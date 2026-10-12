@@ -230,7 +230,8 @@ endpoints, what `applied` / `pending` is read from) and `landmark_folds`
 (`area_fraction` and the pair ids of each folded triangle, empty when none); the saved `DeformableRecord` includes its source/target vertices
 and mesh connectivity in `engine.native_parameters`, and its full pair set
 in `provenance`, with `automatic_holds_xy` (the automatic holds' section pixels
-on the working grid), `hold_spacing_px` and `hold_clearance_spacings`; the
+on the working grid), `hold_spacing_px`, `hold_clearance_spacings` and
+`holds_on_tissue_only` (false when no tissue could be told from the slide); the
 mesh vertices of `native_parameters` are the four fixed corners, then the
 pairs, then the holds (`pair_count`, `hold_count`), each hold's target equal to its
 source. The section's deformation reference lists the holds as `landmark_holds`

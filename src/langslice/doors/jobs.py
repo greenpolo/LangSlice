@@ -145,7 +145,8 @@ def find(path: str | os.PathLike[str]) -> Path:
         if (folder / "job.json").is_file() and (folder / "state.json").is_file():
             return folder
     raise NoJob(f"No LangSlice job in {given} (neither a job folder nor an image folder "
-                "with one beside it)")
+                "with one beside it). A job made with init --job-dir is in that folder: "
+                "name it instead of the images.")
 
 
 def read_spec(job_folder: Path) -> JobSpec:

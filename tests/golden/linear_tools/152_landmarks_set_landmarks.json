@@ -1,6 +1,11 @@
 {
  "args": [],
  "data": {
+  "atlas_endpoint_regions": {
+   "L1": "VL (VL)",
+   "L2": "CTX (CTX)",
+   "L3": "HY (HY)"
+  },
   "changed": [
    "L1",
    "L2",

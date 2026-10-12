@@ -337,14 +337,24 @@ Place both endpoints of a pair on the same overlay (or a zoom of it) where you
 can: the atlas point where a border is drawn, the section point where that
 border belongs in the tissue. After a warp, overlays show the section warped
 onto the fixed atlas borders and a point placed there is read through the
-warp. Spread the pairs over the outline and the internal anatomy: a pair on
+warp; the overlay's caption says so ("the section is warped onto the atlas,
+which keeps its place"). Read endpoints off a close zoom, its grid lines 10 to 20
+pixels apart: read off a coarse grid, a point can miss the border meant by 20
+pixels or more. Spread the pairs over the outline and the internal anatomy: a pair on
 the outline moves the outline, and a pair on an internal landmark (the midline,
 a ventricle, a fibre tract) moves the anatomy inside. No pair is needed to keep
 a spot where it is: `landmark_triangulation` adds automatic holds between the
 pairs. An atlas region with no tissue on the section (torn or missing) takes no
 pair; `mark_damage` records it. `mark_damage` marks whole regions, so mark a
 region only when it is missing; a region only partly present keeps its pairs on
-the part that is present.
+the part that is present. Tissue with no atlas counterpart (a detached fragment,
+debris) takes no pair either.
+
+The reply names the region drawn at each atlas endpoint the call placed
+(`atlas_endpoint_regions`, by pair id, from the section's current atlas plane).
+An atlas endpoint outside the atlas, where no brain is drawn, is saved, listed in
+`outside_atlas` and named in a `warning`: for a pair on the outline the atlas
+endpoint belongs on the drawn border or just inside it.
 
 On the command line a list of objects such as `pairs` goes through `--args`,
 as a JSON object or a file, and a list of four numbers such as a zoom's box
@@ -395,7 +405,9 @@ with `FROZEN`.
 placement. The agent is responsible for anatomical coverage. Before the mesh is
 built it adds **automatic holds** between the pairs: a regular lattice over the
 section frame, spaced one seventh of its longer side (about 35 points on a
-typical section), leaving out every lattice point within 0.7 spacings of the
+typical frame), keeping only the lattice points on the tissue (the fits' filled
+tissue estimate on the section; the whole lattice when no tissue can be told
+from the slide) and leaving out every lattice point within 0.7 spacings of the
 section point of any pair, so a pair moves its own neighbourhood freely and the
 holds fill only the gaps between pairs. Each hold corresponds to itself against
 the baseline the warp is applied on (the linear placement, or the earlier

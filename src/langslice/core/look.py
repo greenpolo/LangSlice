@@ -533,7 +533,8 @@ def _overlay_picture(
     base = base or shown
     short, full = channel_words(state, record, names, version)
     drawn = placed.row.get("deformation_drawn")
-    warp_words = ("deformation drawn" if drawn else
+    warp_words = ("deformation drawn: the section is warped onto the atlas, which keeps "
+                  "its place" if drawn else
                   "deformation held but not drawable" if drawn is False else
                   "linear placement only" if request.warp == "none" and record.deformation
                   else "no deformation")
