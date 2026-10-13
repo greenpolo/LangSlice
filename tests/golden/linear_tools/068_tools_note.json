@@ -4,7 +4,7 @@
  ],
  "data": {
   "background": [
-   "w2 trace_borders of s1.png finished: the trace landed and ANTs fitted the traced borders (medium stiffness, restricted to TH) on top of its previous deformation. The deformation is applied as its own undo step: undo removes it while it is the latest step. Displacement median 0.055 mm, max 0.196 mm; fold fraction 0.0. Pictures #51, #52."
+   "w2 trace_borders of s1.png finished: the trace landed and ANTs fitted the traced borders (medium stiffness, restricted to TH) on top of its previous deformation. The deformation is applied as its own undo step: undo removes it while it is the latest step. Displacement median 0.053 mm, max 0.195 mm; fold fraction 0.0. Pictures #51, #52."
   ],
   "notes": [
    "ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm",
@@ -13,7 +13,7 @@
   ],
   "pictures": [
    {
-    "caption": "s1.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.15 mm; the fitted atlas borders on the image the fit read; regions TH drawn thick, the other borders faint; displacement median 0.055 mm, max 0.196 mm; fold fraction 0.0",
+    "caption": "s1.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.15 mm; the fitted atlas borders on the image the fit read; regions TH drawn thick, the other borders faint; displacement median 0.053 mm, max 0.195 mm; fold fraction 0.0",
     "id": 51,
     "work": "w2"
    },

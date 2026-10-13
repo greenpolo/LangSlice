@@ -313,6 +313,60 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
                                                            structures=("VS",), exclude=("VS",)))
 
 
+def test_taper_weight_holds_the_neighbourhood_and_fades_beyond():
+    from langslice.core.deformable.fit import RESTRICTED_TAPER_MM, _taper_weight
+
+    region = np.zeros((100, 200), dtype=bool)
+    region[40:60, 20:40] = True
+    spacing = 0.01  # mm per working pixel
+    weight = _taper_weight(region, spacing, 0.1, (400, 200))  # section grid twice the size
+    assert weight.shape == (200, 400)
+    distance = ndi.distance_transform_edt(~region) * spacing
+    distance = np.kron(distance, np.ones((2, 2)))
+    assert weight[distance <= 0.09].min() > 0.999
+    assert weight[distance >= 0.1 + RESTRICTED_TAPER_MM + 0.02].max() < 1e-6
+    ramp = (distance > 0.12) & (distance < 0.1 + RESTRICTED_TAPER_MM - 0.02)
+    assert 0.0 < weight[ramp].min() and weight[ramp].max() < 1.0
+
+
+def test_inverted_step_undoes_the_tapered_step():
+    from langslice.core.deformable.fit import _invert_step
+
+    yy, xx = np.indices((120, 160), dtype=np.float32)
+    bump = np.exp(-((xx - 80) ** 2 + (yy - 60) ** 2) / (2 * 20.0 ** 2))
+    step = np.stack([6.0 * bump, -4.0 * bump], axis=-1).astype(np.float32)
+    inverse = _invert_step(step, np.zeros_like(step))
+    # q -> q + v(q) -> + w(q + v(q)) returns to q.
+    mx, my = xx + inverse[..., 0], yy + inverse[..., 1]
+    import cv2
+
+    back = np.stack([cv2.remap(np.ascontiguousarray(step[..., k]), mx, my, cv2.INTER_LINEAR,
+                               borderMode=cv2.BORDER_REPLICATE) for k in range(2)], -1)
+    assert np.abs(inverse + back).max() < 1e-3
+
+
+@needs_ants
+def test_a_restricted_step_leaves_tissue_beyond_its_taper_unmoved(atlas, warped):
+    from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
+
+    field, image, truth = warped
+    first = fit_section(image, atlas, placement(), _settings(detail="coarse",
+                                                               stiffness="firm", **MI))
+    second = fit_section(image, atlas, placement(),
+                         _settings(detail="coarse", structures=("STR",),
+                                   neighbourhood_um=250, **MI), previous=first)
+    assert second.engine["step_details"]["taper_um"] == [250.0, 250.0 + 1000 * RESTRICTED_TAPER_MM]
+    mm = second.placement.section_mm_per_px
+    distance = ndi.distance_transform_edt(first.labels != STR) * mm
+    change = np.linalg.norm(second.field_mm - first.field_mm, axis=-1)
+    beyond = (distance > 0.25 + RESTRICTED_TAPER_MM + 2 * mm) & (truth > 0)
+    assert beyond.any() and change[beyond].max() < 1e-4
+    near = (distance <= 0.25) & (truth > 0)
+    assert change[near].max() > 1e-3
+    assert second.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
+    assert second.diagnostics["fold_fraction"] == 0.0 or second.diagnostics["fold_fraction"] < 1e-3
+
+
 @needs_ants
 def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped

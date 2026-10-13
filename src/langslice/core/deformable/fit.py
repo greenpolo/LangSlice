@@ -71,6 +71,14 @@ from langslice.core.space import atlas_space_context
 LABEL_CHANNEL_WEIGHT = 1.0
 #: Stain normalization percentiles inside the fixed mask.
 STAIN_PERCENTILES = (1.0, 99.0)
+#: A region-restricted step keeps its full displacement inside the region's
+#: fit neighbourhood and fades it (raised cosine) to none over this distance
+#: beyond: ANTs' masks only limit where the metric is measured, so its smooth
+#: field otherwise moves tissue far from the region.
+RESTRICTED_TAPER_MM = 0.3
+#: Fixed-point iterations (and relaxation) that invert a tapered step.
+TAPER_INVERSE_ITERATIONS = 200
+TAPER_INVERSE_RELAXATION = 0.5
 
 
 @dataclass
@@ -93,6 +101,10 @@ class PreparedFit:
     details: dict[str, Any] = field(default_factory=dict)
     #: Native-plane pixels excluded from the fit, one-sided entries included.
     excluded_mask: np.ndarray | None = None
+    #: A restricted step's weight on the section grid (1 in the region's fit
+    #: neighbourhood, fading to 0 over :data:`RESTRICTED_TAPER_MM`); None
+    #: for a fit over the whole section.
+    step_weight: np.ndarray | None = None
 
 
 @dataclass
@@ -259,6 +271,7 @@ def prepare_fit(
 
     details: dict[str, Any] = {}
     region: np.ndarray | None = None
+    step_weight: np.ndarray | None = None
     if settings.structures:
         chosen = regions_mask(atlas, native, settings.structures, left)
         in_reach = sample_native(chosen, working_coords) & kept
@@ -271,6 +284,10 @@ def prepare_fit(
         details["structures"] = sorted(resolve_structures(
             atlas, [split_side(entry)[0] for entry in settings.structures]))
         details["neighbourhood_um"] = settings.neighbourhood_um
+        step_weight = _taper_weight(in_reach, spacing, settings.neighbourhood_um / 1000.0,
+                                    (width, height))
+        details["taper_um"] = [settings.neighbourhood_um,
+                               settings.neighbourhood_um + RESTRICTED_TAPER_MM * 1000.0]
 
     fixed_labels: list[np.ndarray] = []
     moving_labels: list[np.ndarray] = []
@@ -332,7 +349,33 @@ def prepare_fit(
         excluded=excluded, ventricles=ventricles,
         atlas_meta=_atlas_record(atlas, placement, native),
         previous=previous, details=details, excluded_mask=excluded_native,
+        step_weight=step_weight,
     )
+
+
+def _taper_weight(region: np.ndarray, spacing_mm: float, neighbourhood_mm: float,
+                  section_size: tuple[int, int]) -> np.ndarray:
+    """1 within *neighbourhood_mm* of *region* (working grid), a raised cosine to 0
+    over :data:`RESTRICTED_TAPER_MM` beyond, on the section grid."""
+    distance = ndi.distance_transform_edt(~region) * spacing_mm
+    t = np.clip((distance - neighbourhood_mm) / RESTRICTED_TAPER_MM, 0.0, 1.0)
+    weight = (0.5 * (1.0 + np.cos(np.pi * t))).astype(np.float32)
+    return cv2.resize(weight, section_size, interpolation=cv2.INTER_LINEAR)
+
+
+def _invert_step(field_px: np.ndarray, guess_px: np.ndarray) -> np.ndarray:
+    """v with v(q) = -w(q + v(q)) for a step w (section pixels): damped fixed point
+    from *guess_px*."""
+    height, width = field_px.shape[:2]
+    yy, xx = np.indices((height, width), dtype=np.float32)
+    channels = [np.ascontiguousarray(field_px[..., k], dtype=np.float32) for k in range(2)]
+    inverse = guess_px.astype(np.float32).copy()
+    for _ in range(TAPER_INVERSE_ITERATIONS):
+        mx, my = xx + inverse[..., 0], yy + inverse[..., 1]
+        sampled = np.stack([cv2.remap(c, mx, my, cv2.INTER_LINEAR,
+                                      borderMode=cv2.BORDER_REPLICATE) for c in channels], -1)
+        inverse += TAPER_INVERSE_RELAXATION * (-sampled - inverse)
+    return inverse
 
 
 def prepare_warp(
@@ -401,6 +444,11 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
     width, height = grid.section_size
     step_field = grid.field_to_section(result.field_mm)
     step_inverse = grid.field_to_section(result.inverse_field_mm)
+    if prepared.step_weight is not None:
+        weight = prepared.step_weight[..., None]
+        step_field = (step_field * weight).astype(np.float32)
+        step_inverse = (_invert_step(step_field / mm, step_inverse * weight / mm)
+                        * mm).astype(np.float32)
     yy, xx = np.indices((height, width), dtype=np.float64)
     previous = prepared.previous
     if previous is None:

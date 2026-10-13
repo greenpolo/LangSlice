@@ -178,13 +178,13 @@
      ],
      "summary": {
       "displacement_mm": {
-       "max": 0.196,
-       "median": 0.055
+       "max": 0.195,
+       "median": 0.053
       },
       "flags": [],
       "fold_fraction": 0.0,
       "step_displacement_mm": {
-       "max": 0.204,
+       "max": 0.234,
        "median": 0.0
       }
      }

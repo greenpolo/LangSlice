@@ -7970,7 +7970,7 @@
            "flags": [],
            "fold_fraction": 0.0,
            "step_displacement_mm": {
-            "max": 0.126,
+            "max": 0.125,
             "median": 0.0
            }
           }
@@ -8455,7 +8455,7 @@
            "flags": [],
            "fold_fraction": 0.0,
            "step_displacement_mm": {
-            "max": 0.126,
+            "max": 0.125,
             "median": 0.0
            }
           }
@@ -8747,7 +8747,7 @@
     },
     {
      "call": 36,
-     "caption": "s1.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.15 mm; the fitted atlas borders on the image the fit read; regions TH drawn thick, the other borders faint; displacement median 0.055 mm, max 0.196 mm; fold fraction 0.0",
+     "caption": "s1.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.15 mm; the fitted atlas borders on the image the fit read; regions TH drawn thick, the other borders faint; displacement median 0.053 mm, max 0.195 mm; fold fraction 0.0",
      "layers": true,
      "mode": "borders",
      "name": "000051_trace_borders_borders",

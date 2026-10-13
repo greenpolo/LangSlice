@@ -43,7 +43,10 @@ and returns a `record.DeformableRecord`. No custom solver.
   descendants included, optionally one-sided) restricts both masks to those
   structures plus
   `neighbourhood_um`, and with `previous=record` composes onto that record;
-  `record.parent` is the step before.
+  `record.parent` is the step before. The step's own field (and its inverse,
+  re-inverted: `fit._invert_step`) is tapered to none over
+  `fit.RESTRICTED_TAPER_MM` beyond the neighbourhood (`PreparedFit.step_weight`;
+  `step_details.taper_um`), since ANTs' masks bound the metric, not the field.
 - Route B (image model): the model's extracted line mask (`lines=`, on the
   section grid, e.g. `trace_borders`' `extracted_lines.png` with its
   `atlas_to_canvas`) against `borders_merged` (the regions the model was shown:

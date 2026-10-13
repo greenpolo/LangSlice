@@ -56,7 +56,7 @@
     },
     "status": "ok",
     "step_displacement_mm": {
-     "max": 0.126,
+     "max": 0.125,
      "median": 0.0
     },
     "steps": 2,
