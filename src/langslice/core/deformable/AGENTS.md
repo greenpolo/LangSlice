@@ -22,7 +22,9 @@ and returns a `record.DeformableRecord`. No custom solver.
 - Route A (no image model): the stain image (`section_image="stain"`) against
   an atlas image — one of the atlas's own images (`core.atlas.images`:
   BrainGlobe's `template` and any additional references the atlas ships,
-  by their BrainGlobe names; nothing borrowed from another atlas). Metric
+  by their BrainGlobe names; temporarily, an Allen CCFv3 atlas also gets
+  `ccfv3augmented_nissl`, the Blue Brain averaged Nissl from
+  `ccfv3augmented_mouse_25um` at its 0.35 mm AP offset). Metric
   (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
   cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
   (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); the

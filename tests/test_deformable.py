@@ -362,6 +362,41 @@ def test_atlas_images_are_the_atlas_own(atlas):
         atlas_volume(two, "nissl")
 
 
+class _Ccfv3At50um:
+    """An Allen CCFv3 atlas at 50 um: the extent the borrowed Nissl is offered on."""
+
+    atlas_name = "allen_mouse_50um"
+    orientation = "asr"
+    resolution = (50.0, 50.0, 50.0)
+    template = np.zeros((264, 160, 228), dtype=np.uint8)
+
+    def __init__(self) -> None:
+        self.annotation = np.ones((264, 160, 228), dtype=np.uint8)
+        self.annotation[:, :10] = 0  # the top rows are outside the brain
+
+
+def test_a_ccfv3_atlas_borrows_the_augmented_nissl_at_the_offset(atlas, monkeypatch):
+    from langslice.core.atlas import images
+
+    ap = np.arange(566, dtype=np.uint16)[:, None, None]
+    augmented = type("Augmented", (), {"template": np.broadcast_to(ap, (566, 320, 456))})
+    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda name: augmented)
+    images._borrowed.clear()
+    try:
+        ccf = _Ccfv3At50um()
+        assert atlas_images(ccf) == ("template", images.BORROWED_NISSL)
+        assert atlas_images(atlas) == ("template",)  # not the CCFv3 extent
+        volume = atlas_volume(ccf, images.BORROWED_NISSL)
+        assert volume.shape == ccf.annotation.shape
+        # 50 um voxel i is centred (i + 0.5) * 0.05 mm into the CCFv3, 0.35 mm more
+        # into the augmented atlas: index ((i + 0.5) * 0.05 + 0.35) / 0.025 - 0.5.
+        expected = (np.arange(264) + 0.5) * 2 + 14 - 0.5
+        assert np.allclose(volume[:, 80, 100], np.rint(expected), atol=1)
+        assert not volume[:, :10].any()
+    finally:
+        images._borrowed.clear()
+
+
 def test_an_additional_reference_is_sampled_like_the_template(atlas):
     two = _TwoImageAtlas(atlas)
     straight = sample_oblique_plane(two, 0.1, "coronal", volume="second")
