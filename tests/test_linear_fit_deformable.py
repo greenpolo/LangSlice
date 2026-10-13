@@ -537,8 +537,10 @@ def test_the_job_is_a_deformation_per_section_with_or_without_the_image_model(
             "A trace requires a position and a linear transform.") in text
     assert ("- Fit each section whole first, then refine regions. Inspect each fit's "
             "borders against the section's internal anatomy and, where traced, its traced "
-            "borders; undo a fit that does not improve the alignment, and name in submit's "
-            "`left_linear` only a section that no fit improves.") in text
+            "borders; undo a fit that does not improve the alignment and fit that section "
+            "again with different `ants_syn` settings, such as another stiffness or another "
+            "atlas image, and name in submit's `left_linear` only a section that no fit "
+            "improves.") in text
 
     (tmp_path / "none").mkdir()
     none_state, _, none_spec, none_box = _setup(tmp_path / "none", atlas, provider="none")

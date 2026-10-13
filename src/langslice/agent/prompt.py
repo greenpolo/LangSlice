@@ -259,6 +259,11 @@ def build_job_statement(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."
     )
+    constraints.append(
+        "- LangSlice sets no limit on tokens, time or tool calls. Quality is the "
+        "absolute priority: this run may be evaluated on the quality of its "
+        "registration alone, without regard to the time or tokens it spends."
+    )
 
     method: list[str] = []
     if places and spec.position.playbook:
@@ -334,6 +339,8 @@ def build_job_statement(
             + (" and, where traced, its traced borders"
                if "trace_borders" in tool_names else "")
             + "; undo a fit that does not improve the alignment"
+            + render("[[?ants_syn  and fit that section again with different `ants_syn` "
+                     "settings, such as another stiffness or another atlas image]]", off)
             + ("." if spec.nonlinear.require_deformation else
                ", and name in submit's `left_linear` only a section that no fit improves.")
         )
