@@ -60,6 +60,10 @@ class Looked:
     #: :func:`show_result` only: ``{"id", "error", "message"}`` per section
     #: whose picture could not be drawn (the write stands).
     failed: list[dict[str, Any]] = field(default_factory=list)
+    #: ``look`` with ``layers``: per picture and layer asked for, ``{"picture",
+    #: "section", "name", "tool", "kind", "drawn"}`` (and ``reason`` for a layer
+    #: not drawn).
+    layers: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -156,6 +160,7 @@ def look(
     atlas_opacity: float | None = None,
     warp: str = "applied",
     resolution: int | None = None,
+    plugin_layers: Sequence[str] = (),
 ) -> Looked:
     """Draw *mode* (``section``, ``atlas``, ``overlay`` or ``positioning``;
     :func:`langslice.core.look.look`) and save every picture with its recipe
@@ -174,6 +179,12 @@ def look(
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS``,
     ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the
     mode: ``look:<mode>`` in its ``disabled`` list).
+
+    *plugin_layers* names the layers tool plugins left on the sections (``"all"``:
+    every one) to draw on the pictures of mode ``section`` or ``overlay``
+    (:mod:`langslice.core.plugin_layers`); the reply's ``layers`` says which
+    were drawn. Refused: ``BAD_ARGS`` in another mode, ``UNKNOWN_PLUGIN_LAYER``
+    for a name no drawn section has.
     """
     state = job.state
     if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
@@ -201,17 +212,45 @@ def look(
     if atlas_opacity is not None and not 0.0 <= float(atlas_opacity) <= 1.0:
         raise Refused("BAD_ARGS", message="atlas_opacity is between 0 and 1.")
     edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
+    named = tuple(str(v) for v in _strings(plugin_layers, "layers"))
+    if named:
+        _check_plugin_layers(job, str(mode), ids, named)
     request = looks.LookRequest(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
         channels=tuple(str(c) for c in _strings(channels, "channels")), atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
-        warp=str(warp or "applied"), long_edge=edge)
+        warp=str(warp or "applied"), long_edge=edge, layers=named)
     try:
         with collecting() as notes:
             drawn = looks.look(workspace, state, request, store=job.deformations)
     except looks.LookError as exc:
         raise Refused(exc.code, message=str(exc)) from exc
     return _reply(job, workspace, LOOK_TOOL, drawn, notes, request.mode, request.args())
+
+
+def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) -> None:
+    from langslice.core.plugin_layers import known_names
+
+    if mode not in ("section", "overlay"):
+        raise Refused("BAD_ARGS", message="layers are drawn on pictures of mode section or "
+                      "overlay.")
+    held = known_names(job.state, ids)
+    unknown = [name for name in names if name != "all" and name not in held]
+    if unknown:
+        raise Refused("UNKNOWN_PLUGIN_LAYER", unknown=unknown, layers=held,
+                      message=f"No drawn section has a layer named {', '.join(unknown)}; "
+                      f"the layers: {', '.join(held) or 'none'}.")
+
+
+def _layer_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],
+                 ) -> list[dict[str, Any]]:
+    """The layers each shown picture drew or could not draw, with its number."""
+    out: list[dict[str, Any]] = []
+    for picture, entry in zip(shown, entries, strict=False):
+        for item in picture.extra.get("layers") or []:
+            out.append({"picture": entry["id"],
+                        "section": picture.sections[0] if picture.sections else "", **item})
+    return out
 
 
 def _reply(
@@ -221,7 +260,7 @@ def _reply(
     shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
     entries = save_pictures(job, workspace, tool, shown, notes, arguments)
     return Looked(pictures=[picture.image for picture in shown], entries=entries,
-                  not_shown=not_shown(rest, mode))
+                  not_shown=not_shown(rest, mode), layers=_layer_notes(shown, entries))
 
 
 # --- a change tool's picture --------------------------------------------------------------

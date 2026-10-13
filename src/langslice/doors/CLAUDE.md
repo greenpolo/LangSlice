@@ -23,6 +23,12 @@ scripting doors and called by name (`langslice-job FOLDER trace_from_atlas`,
 name), the card, the library's `verbs`, the CLI's `verbs` lists, the job
 statement, nor the public docs (`registry.listed()`).
 
+A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
+the native ones on every door: the toolbox (agent and MCP), `ops` / `schema`
+(for the job in the folder), the card and the library's `verbs` read the
+per-spec view (`registry.verbs_for(spec)`, `listed(spec)`).
+A job without plugins declares, replies and draws exactly as before.
+
 A replaced verb's old name keeps answering on every door
 (`ops.registry.RETIRED`, `retired_payload`): a call by a retired name gets
 `RETIRED_TOOL` with the verb to use instead (`use`) and how to call it, and
@@ -95,6 +101,30 @@ the CLI is a process per call.
   argument is a `TypeError`), `arguments_schema(name, variant)` (pydantic
   JSON schema, unknown keys refused). `FULL` is the variant of a caller
   without a job (LangSlice's coronal base prompt for the OpenAI models).
+- `plugins/` — tool plugins (`docs/plugins.md`); `langslice/plugin_api.py`
+  re-exports its names. `loader.py`: `load(ref, config)` imports
+  `module:factory`, calls it, checks every tool (`core.plugins.check_tool`,
+  retired names), builds the provenance (module, factory, versions, source
+  SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
+  at import); `as_refs` (the library's objects: factory functions by
+  `module:qualname`, ToolSpecs as `inline:<digest>`).
+  `context.py`: `ToolContext` (reads `sections`, `section_image`, `atlas`,
+  `fit_frame`, `atlas_slice`, `section_inputs`, `read_registration`;
+  conversions `transform_from_matrix` / `transform_from_params`; writes
+  `set_positions`, `set_transforms`, `mark_damage` through `ops/`, `add_layer`
+  through `job/plugin_store`, `expect=` fingerprints refusing `STALE_INPUT`
+  rows; `writing()` holds the lock around several writes; a call's writes are
+  one undo step unless another write came between; `overlay_picture`) and
+  its views. `runtime.py`: the body of a plugin tool (limits, the context, a
+  write tool's call as one undo step, `ToolError` / `Refused` / any exception
+  as a reply, the reply and pictures from the `ToolResult`). `provenance.py`:
+  `job.json`'s `plugins` and the declarations as the model sees them (also
+  `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
+  adapter plugin (LangSlice as a client of a configured server, allow-list,
+  `server__tool` names, `inputs` / `results` mapping through the context).
+  `declarations.Variant.plugins` makes `declaration` read a plugin stub and
+  `look` take `layers` (dropped without plugins or without `section` and
+  `overlay` modes).
 - `statement.py` — the job statement every door gives a registration agent:
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
   max_resolution=, image_model_off=, auto=, gates=)` (`agent.prompt.build_job_statement`
@@ -264,7 +294,9 @@ the CLI is a process per call.
   `spec_from_args` (`--frozen JSON`: the job's `frozen`); `--tasks` defaults to `DEFAULT_TASKS`, or with
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
-  with a message), `mcp.py` (`mcp`), and the agent CLI
+  with a message; `linear run` alone also takes `--tool-plugin
+  MODULE:FACTORY` and `--tool-plugin-config REF=JSON`, `with_tool_plugins`),
+  `mcp.py` (`mcp`), and the agent CLI
   (`docs/agents.md`), a command of its own so that allowing it allows
   no agent, server, host or login:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,

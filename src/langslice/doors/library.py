@@ -193,9 +193,9 @@ class JobHandle:
         tools = self.__dict__.get("_tools") or {}
         if name in tools:
             return tools[name]
-        from langslice.ops.registry import VERBS, retired_payload
+        from langslice.ops.registry import retired_payload, verbs_for
 
-        if name in VERBS:
+        if name in verbs_for(self._opened.spec):
             spec = self._opened.spec
             raise AttributeError(f"This job's settings have no {name!r} (tasks "
                                  f"{spec.tasks}"
@@ -380,6 +380,7 @@ def create_job(
     inputs: Mapping[str, Any] | None = None,
     registration: str | os.PathLike[str] | None = None,
     fresh: bool = False,
+    plugins: Any = None,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
     **settings: Any,
@@ -413,6 +414,12 @@ def create_job(
     imported placement kept as it is. The handle's :attr:`JobHandle.imported`
     says what was placed; the warnings go to *emit* as well.
 
+    *plugins* adds tool plugins to the job's toolbox (``docs/plugins.md``):
+    ``module:factory`` references, factory functions defined at module level,
+    or :class:`~langslice.plugin_api.ToolSpec` objects, one or a list; the job
+    records the references (``plugin_config`` in *settings* gives a factory its
+    options), so reopening it loads the same plugins. Loading runs their code.
+
     *image_model* as in :func:`open_job`; None makes a job
     without one (nonlinear provider ``none``). *fresh* starts over instead
     of continuing the folder's job. *settings* are further
@@ -425,6 +432,14 @@ def create_job(
 
     load_credentials()  # the image model's keys, as open_job loads them
     model = as_image_model(image_model)
+    if plugins is not None:
+        from langslice.doors.plugins import as_refs
+
+        refs = as_refs(plugins)
+        if isinstance(images, JobSpec):
+            raise ValueError("create_job takes a JobSpec as it is: set plugins on the spec "
+                             "instead")
+        settings["plugins"] = [*list(settings.get("plugins") or ()), *refs]
     if isinstance(images, JobSpec):
         given = {name: value for name, value in {
             "positions": positions, "transforms": transforms, "angles": angles,

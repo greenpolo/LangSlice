@@ -85,6 +85,7 @@ def look(
     atlas_opacity: float = 0.5,
     warp: Warp = "applied",
     resolution: int = 0,
+    layers: list[str] = [],
 ) -> dict[str, Any]:
     """Draw pictures of sections and the atlas. Writes nothing.
 
@@ -138,6 +139,10 @@ def look(
         resolution: The long edge of each picture in pixels; 0 is the
             default size. A section picture is never drawn larger than its
             source, an atlas plane at most four times larger.
+        layers: Names of the layers that tools have left on the sections, or
+            ["all"], drawn as marks and outlines on the [[#look:section=\"section\"||~
+            look:overlay=\"overlay\"]] pictures. The reply says which layers
+            were drawn. Empty draws none.
 
     Returns:
         Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -941,6 +946,10 @@ class Variant:
     prompt: str = ""
     #: What the job disables (``JobSpec.disabled``).
     off: frozenset[str] = frozenset()
+    #: The tool plugins the job loads (:class:`langslice.core.plugins.LoadedPlugin`,
+    #: compared by identity): their tools are declared from their own stubs, and
+    #: ``look`` takes ``layers``. Empty: no plugin text is in any declaration.
+    plugins: tuple[Any, ...] = ()
 
     @classmethod
     def of(cls, spec: Any, *, auto: bool, image_model: bool = True, door: str = "agent",
@@ -954,11 +963,14 @@ class Variant:
         if traced:
             text = prompt if prompt is not None else base_prompt(
                 str(spec.plane), spec.nonlinear.provider)
+        from langslice.core.plugins import of_spec
+
+        held = tuple(of_spec(spec))
         return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
                    positions=bool(spec.has("position")),
                    left_linear=bool(spec.has("nonlinear")
                                     and not spec.nonlinear.require_deformation),
-                   prompt=text, off=frozenset(spec.switched_off))
+                   prompt=text, off=frozenset(spec.switched_off), plugins=held)
 
 
 #: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and
@@ -1080,6 +1092,10 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
             dropped.append("positions_mm")
         if not modes & {"overlay", "atlas", "positioning"}:  # an atlas to layer
             dropped.append("atlas_layers")
+    if name == "look" and not variant.plugins:
+        dropped.append("layers")  # nothing leaves layers without tool plugins
+    elif name == "look" and not set(options_on(variant.off, "look")) & {"section", "overlay"}:
+        dropped.append("layers")  # they are drawn on those two modes only
     if name == "grep_atlas" and is_off(variant.off, "grep_atlas:points"):
         dropped.append("points")
     if name == "zoom" and is_off(variant.off, "look:overlay"):
@@ -1091,7 +1107,7 @@ def narrowed(name: str, argument: str, annotation: Any, off: Collection[str]) ->
     """*annotation* of verb *name*'s *argument* without the options the job
     disables: the values of an enumeration (``look``'s ``mode``), the
     ``flip`` and ``rotate_quarter`` keys of ``interactive_transform``'s sections."""
-    options = TOOLS[name].options
+    options = TOOLS[name].options if name in TOOLS else {}
     if argument in options.values():
         values = typing.get_args(annotation)
         return Literal[tuple(value for value in values
@@ -1108,10 +1124,19 @@ def narrowed(name: str, argument: str, annotation: Any, off: Collection[str]) ->
     return annotation
 
 
+def plugin_stub(name: str, variant: Variant) -> Callable[..., Any]:
+    """The stub of tool plugin tool *name*, from the plugins *variant* holds."""
+    for plugin in variant.plugins:
+        for tool in plugin.tools:
+            if tool.name == name:
+                return tool.stub  # type: ignore[no-any-return]
+    raise KeyError(name)
+
+
 @functools.cache
 def declaration(name: str, variant: Variant = FULL) -> Declaration:
     """The declaration of verb *name* in a run of *variant*."""
-    stub = STUBS[name]
+    stub = STUBS[name] if name in STUBS else plugin_stub(name, variant)
     signature = inspect.signature(stub, eval_str=True)
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
     doc = render(_door_doc(name, model_doc(stub), variant.door), variant.off)
@@ -1129,9 +1154,10 @@ def declaration(name: str, variant: Variant = FULL) -> Declaration:
     return Declaration(name, doc, signature.replace(parameters=parameters), annotations)
 
 
-def summary(name: str) -> str:
-    """Verb *name*'s one-line description."""
-    return declaration(name).summary
+def summary(name: str, variant: Variant = FULL) -> str:
+    """Verb *name*'s one-line description (a plugin tool's: in *variant*, which
+    holds its plugin)."""
+    return declaration(name, variant).summary
 
 
 def declare(name: str, body: Callable[..., Any], variant: Variant = FULL) -> Callable[..., Any]:

@@ -106,15 +106,21 @@ def canonical_verb(name: str) -> str:
     return name.strip().replace("-", "_")
 
 
-def verbs_table() -> list[dict[str, Any]]:
+def verbs_table(spec: Any = None) -> list[dict[str, Any]]:
     """Every listed verb: name, kind, group, one-line description, and
-    ``long: true`` for a long verb."""
-    from langslice.doors.declarations import summary
+    ``long: true`` for a long verb. For the job *spec* of a folder that loads
+    tool plugins, their tools follow the native ones."""
+    from langslice.core.toolset import TOOLS
+    from langslice.doors.declarations import Variant, summary
     from langslice.ops.registry import listed
 
-    return [{"name": name, "kind": verb.kind, "group": verb.group, "summary": summary(name),
+    variant = Variant.of(spec, auto=True, door="cli") if spec is not None and spec.plugins \
+        else None
+    return [{"name": name, "kind": verb.kind, "group": verb.group,
+             "summary": summary(name, variant) if variant is not None and name not in TOOLS
+             else summary(name),
              **({"long": True} if verb.long else {})}
-            for name, verb in listed().items()]
+            for name, verb in listed(spec).items()]
 
 
 class Declared:
@@ -125,6 +131,7 @@ class Declared:
         from langslice.doors.declarations import FULL, Variant
 
         self.folder: str | None = None
+        self.spec: Any = None
         self.variant = Variant(auto=True, door="cli", prompt=FULL.prompt)
         self.disabled: tuple[str, ...] = ()
         found = job or _job_here()
@@ -138,6 +145,7 @@ class Declared:
         opened = open_folder(folder, persist=False, door="cli")
         try:
             self.folder = str(opened.job.folder)
+            self.spec = opened.spec
             self.variant = Variant.of(opened.spec, auto=True, door="cli",
                                       image_model=opened.image_model_connected)
             self.disabled = tuple(opened.spec.switched_off)
@@ -147,10 +155,10 @@ class Declared:
     def entry(self, name: str) -> dict[str, Any]:
         """One verb as this call declares it."""
         from langslice.doors.declarations import arguments_schema, declaration
-        from langslice.ops.registry import VERBS
+        from langslice.ops.registry import verbs_for
 
         declared = declaration(name, self.variant)
-        verb = VERBS[name]
+        verb = verbs_for(self.spec)[name]
         return {
             "summary": declared.summary, "description": declared.doc,
             "kind": verb.kind, "group": verb.group, "long": verb.long,
@@ -163,6 +171,17 @@ class Declared:
             return {"job": self.folder}
         return {"job": None, "hint": "Declared without a job: every argument. Add --job "
                 "FOLDER (or run it in a job folder) for a job's own declarations."}
+
+
+def _spec_here() -> Any:
+    """The settings of the job in the current folder, if there is one and it
+    reads (what ``ops`` lists the plugin tools of); None otherwise."""
+    from langslice.doors.jobs import NoJob, find, read_spec
+
+    try:
+        return read_spec(find(os.getcwd()))
+    except (NoJob, OSError, ValueError, FileNotFoundError):
+        return None
 
 
 def _job_here() -> str | None:
@@ -188,7 +207,7 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
 def ops(_args: argparse.Namespace) -> Envelope:
     """``langslice-job ops``."""
     return Envelope(result={
-        "verbs": verbs_table(),
+        "verbs": verbs_table(_spec_here()),
         "usage": "langslice-job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
                  "[--background] [--verbose]",
         "long": "A long verb computes outside the job lock and may take minutes: run it "
@@ -201,7 +220,7 @@ def schema(args: argparse.Namespace) -> Envelope:
     """``langslice-job schema [VERB] [--job FOLDER]``."""
     from langslice.core.toolset import is_off
     from langslice.doors.jobs import NoJob
-    from langslice.ops.registry import VERBS, listed, retired_payload
+    from langslice.ops.registry import listed, retired_payload, verbs_for
 
     if args.verb is not None and canonical_verb(args.verb) in command_names():
         name = canonical_verb(args.verb)  # init, brief, runs, wait: no job needed
@@ -212,7 +231,8 @@ def schema(args: argparse.Namespace) -> Envelope:
         declared = Declared(args.job)
         if args.verb is None:  # every listed verb; a hidden one only by name
             result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, **declared.facts(),
-                                      "verbs": {name: declared.entry(name) for name in listed()
+                                      "verbs": {name: declared.entry(name)
+                                                for name in listed(declared.spec)
                                                 if not is_off(declared.disabled, name)}}
             nexts: list[str] = []
         else:
@@ -222,7 +242,7 @@ def schema(args: argparse.Namespace) -> Envelope:
                 return Envelope.failure(
                     "RETIRED_TOOL", retired["message"], verb=name,
                     result={key: retired[key] for key in ("tool", "use") if key in retired})
-            if name not in VERBS:
+            if name not in verbs_for(declared.spec):
                 return Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}.")
             if is_off(declared.disabled, name):
                 return Envelope.failure(
@@ -232,7 +252,7 @@ def schema(args: argparse.Namespace) -> Envelope:
                       **declared.entry(name)}
             folder = declared.folder or "FOLDER"
             nexts = [f"langslice-job {folder} {name} --args '{{...}}'"
-                     + (" --background" if VERBS[name].long else "")]
+                     + (" --background" if verbs_for(declared.spec)[name].long else "")]
     except NoJob as exc:
         return Envelope.failure("NO_JOB", str(exc))
     except (FileNotFoundError, ValueError) as exc:

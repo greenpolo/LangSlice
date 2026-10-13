@@ -136,7 +136,10 @@ retired tool's name answers with its replacement (`ops.registry.RETIRED`,
   every model call. `env_value` / `env_float` read the environment.
 - `trace.py` — `SessionTrace`, the full-content JSONL trace (what the agent
   was shown, said, called and got back; images as descriptors, never
-  bytes), written only when `LANGSLICE_TRACE_DIR` is set (`--trace-dir`).
+  bytes), written only when `LANGSLICE_TRACE_DIR` is set (`--trace-dir`). A
+  job that loaded tool plugins adds a `plugins` record after `session`
+  (`ToolBox.plugins`: provenance and each tool's declaration as the model saw
+  it; `run_agent_session(plugins=)`).
 - `live.py` — `LiveEvents`, the optional in-memory observer behind
   `engine.run(on_event=...)`: sanitized seed images, assistant text,
   provider-exposed reasoning summaries, tool calls and results with detached

@@ -28,7 +28,28 @@ whose imports are core-only:
   written with what it needs (`[[?NAMES text||other]]`, `[[#NAMES=item||...]]`
   lists), dropped or swapped for the disabled list; with nothing off a text
   renders to itself without its marks, byte for byte. Neither imports
-  anything above the core;
+  anything above the core. `toolset.tools_for(spec)` is the per-spec view
+  (`TOOLS` plus the tools of `spec.plugins`; `TOOLS` itself without plugins),
+  which `valid_names(spec)`, `check_names`, `refusal(spec)`, `off_names`,
+  `catalog(spec)` read, so a job's `disabled` list can name a plugin tool;
+- `plugins.py` and `plugin_layers.py`: tool plugins (`docs/plugins.md`), the
+  core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
+  `ToolError`, `PluginError`, `PLUGIN_API_VERSION`), `check_tool` (the
+  one-line reasons a tool declaration is refused), `tool_def` (a plugin tool
+  as a `ToolDef`: `when` is its task being on) and the registry of loaded
+  plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
+  `set_loader` is how `doors/plugins` registers the code that imports a
+  plugin: the core imports nothing by name). `JobSpec.plugins` /
+  `plugin_config` are validated by loading (`toolset.tools_for`), so a bad
+  plugin is refused when the spec is made. `plugin_layers.py`: the layer
+  files per kind (`save_layer`, `load_layer`), and `draw_layers`, which draws
+  the layers a `LookRequest.layers` names on a section or overlay picture over
+  the landmark panels' geometry (outlines and halo marks, never fills;
+  `section_px` through the section panel and the applied warp, `atlas_um`
+  through the overlay's atlas panel or the section's linear placement). A
+  section's `layers` (state: references only, absent from the serialized
+  state while empty, an annotation field of the look snapshot) are read from
+  `<job folder>/plugins/` through the workspace's `job_folder`;
 - `frozen.py`: what the agent may not change (`JobSpec.frozen`). The five
   properties a section has (`PROPERTIES`: `position`, `angles`,
   `orientation` (flip and quarter turn together), `affine`, `deformation`),
@@ -231,7 +252,9 @@ the angles in a caption (empty for the flat plane).
 - `status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
   `status_rows` (`position_source` "default" on a section still
-  at the starting position the job gave it), `compact_rows` (a model's:
+  at the starting position the job gave it; a section with plugin layers also
+  carries `layers`: name, kind, frame, tool, which `uniform_rows` takes as an
+  extra field), `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
@@ -253,7 +276,7 @@ the angles in a caption (empty for the flat plane).
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
-  highlight=, region_only=), store=)`
+  highlight=, region_only=, layers=), store=)`
   returns one `LookPicture` per section (`section`:
   `display.framed_section`; `overlay`: `placement.placement_pictures` mode
   `overlay`, the applied deformation unless `warp` is `none`), per position

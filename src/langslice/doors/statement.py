@@ -104,11 +104,12 @@ def opening_for_mcp(pages: int) -> list[str]:
 
 
 def opening_for_cli(folder: str, pictures: int | None,
-                    disabled: Collection[str] = ()) -> list[str]:
+                    disabled: Collection[str] = (), spec: Any = None) -> list[str]:
     """The agent CLI's opening paragraph and how its commands behave.
 
     *pictures* is how many opening pictures ``brief`` saved (None: not saved
-    yet; ``init`` says how to). *disabled* is the job's disabled list."""
+    yet; ``init`` says how to). *disabled* is the job's disabled list; *spec*
+    the job's, whose plugin tools are listed with the long ones."""
     if pictures is None:
         opening = (f"Opening pictures: `langslice-job {folder} brief` saves them as "
                    "picture files; open every one before any write. ")
@@ -128,7 +129,8 @@ def opening_for_cli(folder: str, pictures: int | None,
                "[[?elastix_affine|ants_syn|trace_borders ; the "
                "[[#elastix_affine|ants_syn=fits||trace_borders=trace_borders]] "
                "are only checked, not run]].", disabled),
-        f"- Long tools ({', '.join(long_verbs(disabled))}) can run with `--background`, which "
+        f"- Long tools ({', '.join(long_verbs(disabled, spec))}) can run with `--background`, "
+        "which "
         "answers at once with a run id; `wait ID` collects the answer.",
         "- Commands may run in parallel: each write holds the job folder's lock, and a "
         "long tool re-checks each section before it applies (STALE_INPUT when the "
@@ -136,14 +138,14 @@ def opening_for_cli(folder: str, pictures: int | None,
     ]
 
 
-def long_verbs(disabled: Collection[str] = ()) -> list[str]:
+def long_verbs(disabled: Collection[str] = (), spec: Any = None) -> list[str]:
     """The listed verbs that compute outside the job lock and may take long
     (:attr:`langslice.ops.registry.Verb.long`), in registry order, less the
     ones *disabled* names."""
     from langslice.core.toolset import is_off
     from langslice.ops.registry import listed
 
-    return [name for name, verb in listed().items()
+    return [name for name, verb in listed(spec).items()
             if verb.long and not is_off(disabled, name)]
 
 

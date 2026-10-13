@@ -38,6 +38,11 @@ The coding agent opens those pictures with its image reader and decides what
 to do next. Keep its scripts in the job's `scripts/` and other work in
 `scratch/`.
 
+A job made with [tool plugins](plugins.md) (`langslice linear run FOLDER
+--tool-plugin MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has
+their tools after the native ones in `ops`, `schema` and the reference card,
+and calls them by name like any other.
+
 Tool names and arguments are shared with MCP and the built-in agent.
 `langslice-job schema VERB --job FOLDER` gives the exact arguments enabled
 for that job; `schema init` lists initialization flags. Sections are named

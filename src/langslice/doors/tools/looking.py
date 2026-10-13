@@ -24,7 +24,7 @@ from langslice.core.channels import stack_display
 from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.core.state import unknown_sections
-from langslice.core.toolset import TOOLS
+from langslice.core.toolset import TOOLS, tools_for
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.door import Door, Media, as_list, pictured
 from langslice.doors.tools.view_options import clamp_resolution
@@ -76,6 +76,10 @@ def can_change(door: Door) -> list[str]:
                                            "the preprocessed channel")) if has(tool)]
     if channels:
         out.append(" and ".join(channels))
+    added = [name for name, tool in tools_for(spec).items()
+             if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)]
+    if added:  # tools tool plugins added (a job without plugins has none)
+        out.append(f"whatever the plugin tools change ({', '.join(added)})")
     return out
 
 
@@ -86,7 +90,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def look(mode: str, sections: list[str], channels: list[str],
              positions_mm: list[float] | None = None, atlas_layers: list[str] | None = None,
              atlas_opacity: float = 0.5, warp: str = "applied",
-             resolution: int = 0) -> dict[str, Any]:
+             resolution: int = 0, layers: list[str] | None = None) -> dict[str, Any]:
         note = ""
         edge: int | None = None
         if resolution and door.level == AUTO_RESOLUTION:
@@ -101,7 +105,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 job, ctx, str(mode or "").strip().lower(), sections=as_list(sections),
                 positions_mm=as_list(positions_mm), channels=as_list(channels),
                 atlas_layers=layers_asked or None, atlas_opacity=atlas_opacity,
-                warp=str(warp or "applied").strip().lower(), resolution=edge)
+                warp=str(warp or "applied").strip().lower(), resolution=edge,
+                plugin_layers=as_list(layers))
         except Refused as refusal:
             return refusal.payload()
         if door.gated and str(mode).strip().lower() in COMPARING_MODES:
@@ -116,6 +121,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         result: dict[str, Any] = {"status": "ok"}
         if note:
             result["resolution_note"] = note
+        if done.layers:
+            result["layers"] = done.layers
         return pictured(result, done)
 
     def zoom(box: list[float], picture: int, region: str = "") -> dict[str, Any]:

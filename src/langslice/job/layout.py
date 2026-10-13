@@ -63,6 +63,9 @@ EXPORTS_DIR = "exports"
 LOGS_DIR = "logs"
 EVENTS_FILE = "events.jsonl"
 PROMPT_FILE = "prompt.txt"
+#: Where tool plugins keep their files: ``plugins/<tool>/`` is a plugin tool's
+#: only place to write (:mod:`langslice.job.plugin_store`).
+PLUGINS_DIR = "plugins"
 #: Under ``exports/``: the run's result (the state's shape, unversioned) and
 #: a host job's final result (state + host updates).
 RESULTS_FILE = "linear_results.json"
@@ -280,6 +283,14 @@ class JobLayout:
     @property
     def prompt_file(self) -> Path:
         return self.folder / PROMPT_FILE
+
+    @property
+    def plugins_dir(self) -> Path:
+        return self.folder / PLUGINS_DIR
+
+    def plugin_dir(self, tool: str) -> Path:
+        """The folder of plugin tool *tool* (``plugins/<tool>/``; made on use)."""
+        return self.plugins_dir / tool
 
     # --- sections ---------------------------------------------------------------
 

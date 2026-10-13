@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.toolset import valid_names
+from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
 
 if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
@@ -41,6 +42,19 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument("image_folder", help="Folder containing the section images")
     add_linear_arguments(p)
+    p.add_argument(
+        "--tool-plugin", dest="tool_plugins", action="append", default=[],
+        metavar="MODULE:FACTORY",
+        help="Add the tools of a tool plugin to the agent's toolbox (repeatable): a "
+        "Python module and the function in it that returns the tools. Importing it runs "
+        "its code; the job records which plugin ran (docs/plugins.md)",
+    )
+    p.add_argument(
+        "--tool-plugin-config", dest="tool_plugin_configs", action="append", default=[],
+        metavar="MODULE:FACTORY=JSON",
+        help="Options for a plugin's factory (repeatable): the plugin's reference, '=', "
+        "then a JSON object or the path of a JSON file",
+    )
 
 
 def add_linear_arguments(p: argparse.ArgumentParser) -> None:
@@ -428,6 +442,32 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
     )
 
 
+def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
+    """*spec* with the tool plugins ``--tool-plugin`` names (and their
+    ``--tool-plugin-config`` options): the plugins are loaded, so a plugin
+    that cannot be loaded, or whose tools clash, is a ``ValueError`` here."""
+    refs = [ref.strip() for item in getattr(args, "tool_plugins", []) for ref in item.split(",")
+            if ref.strip()]
+    if not refs:
+        if getattr(args, "tool_plugin_configs", []):
+            raise ValueError("--tool-plugin-config needs the --tool-plugin it configures")
+        return spec
+    import dataclasses
+
+    configs: dict[str, Any] = {}
+    for item in getattr(args, "tool_plugin_configs", []):
+        ref, equals, value = item.partition("=")
+        if not equals or ref.strip() not in refs:
+            raise ValueError(f"--tool-plugin-config {item[:40]!r}: expected MODULE:FACTORY=JSON "
+                             "of a --tool-plugin")
+        loaded = load_json_arg(value, "--tool-plugin-config")
+        if not isinstance(loaded, dict):
+            raise ValueError("--tool-plugin-config options are a JSON object")
+        configs[ref.strip()] = loaded
+    return dataclasses.replace(spec, plugins=[*spec.plugins, *refs],
+                               plugin_config={**spec.plugin_config, **configs})
+
+
 def run_linear(args: argparse.Namespace) -> None:
     import asyncio
     import os
@@ -437,7 +477,7 @@ def run_linear(args: argparse.Namespace) -> None:
 
     apply_trace_dir(args)
     try:
-        spec = build_linear_spec(args, args.image_folder)
+        spec = with_tool_plugins(build_linear_spec(args, args.image_folder), args)
     except ValueError as exc:
         raise SystemExit(f"langslice linear run: {exc}") from exc
     if not os.environ.get(TRACE_DIR_ENV):

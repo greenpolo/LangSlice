@@ -98,7 +98,10 @@ def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
 
     if n_slices < 1:
         raise ValueError("n_slices must be at least 1")
-    parsed = JobSpec.from_dict({**spec, "image_folder": spec.get("image_folder") or "."})
+    # Tool plugins change no cost this estimate prices: they are not loaded for it.
+    parsed = JobSpec.from_dict({
+        **{key: value for key, value in spec.items() if key not in ("plugins", "plugin_config")},
+        "image_folder": spec.get("image_folder") or "."})
     every = set(parsed.frozen.get("*", ()))
     aligned = {"orientation", "affine"}
     aligned_frozen = n_slices if aligned <= every else min(n_slices, sum(

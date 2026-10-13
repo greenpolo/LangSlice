@@ -42,6 +42,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | `interactive_transform:flip` | mirroring: the `flip` key of its sections |
 | `interactive_transform:rotate` | the quarter turn: the `rotate_quarter` key of its sections |
 
+The tools of a job's [plugins](plugins.md) are valid names too, for that job.
 `look`, `status`, `undo` and `submit` cannot be disabled. An unknown name is
 refused when the job is made, with the valid names listed. A list that cannot
 work is refused with one line saying why:

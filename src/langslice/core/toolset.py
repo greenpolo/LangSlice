@@ -21,6 +21,12 @@ The valid names are derived from this table (:func:`valid_names`).
 :func:`refusal` says, in one line, why a list cannot work; the spec refuses
 it when it is made. The text a tool or option appears in is written with
 what it needs and rendered for the job (:mod:`langslice.core.needs`).
+
+A job that loads tool plugins (``JobSpec.plugins``,
+:mod:`langslice.core.plugins`) has their tools beside these: :func:`tools_for`
+is the per-spec view (:data:`TOOLS` plus the plugin tools), and the functions
+below that take a *spec* or *tools* read it. With no plugins every answer is
+the one :data:`TOOLS` gives.
 """
 
 from __future__ import annotations
@@ -162,24 +168,38 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
 )}
 
 
-def option_names(tool: str) -> tuple[str, ...]:
+def tools_for(spec: Any = None) -> Mapping[str, ToolDef]:
+    """The tools a job of *spec* can have: :data:`TOOLS`, then the tools of the
+    plugins its ``plugins`` name (:mod:`langslice.core.plugins`; loaded when not
+    yet, ``PluginError`` -- a ``ValueError`` -- when one cannot be). Without
+    plugins, :data:`TOOLS` itself."""
+    if not getattr(spec, "plugins", None):
+        return TOOLS
+    from langslice.core import plugins
+
+    return {**TOOLS, **plugins.tool_defs(spec)}
+
+
+def option_names(tool: str, tools: Mapping[str, ToolDef] = TOOLS) -> tuple[str, ...]:
     """The ``tool:option`` names of *tool*'s options."""
-    return tuple(f"{tool}{OPTION_SEPARATOR}{option}" for option in TOOLS[tool].options)
+    return tuple(f"{tool}{OPTION_SEPARATOR}{option}" for option in tools[tool].options)
 
 
-def valid_names() -> list[str]:
+def valid_names(spec: Any = None) -> list[str]:
     """Every name a ``disabled`` list takes, in table order (a tool, then its
-    options): the tools that can be switched off and every option. The hidden
-    scripting verbs are accepted and not listed."""
+    options): the tools that can be switched off and every option, the tools
+    of *spec*'s plugins after the native ones. The hidden scripting verbs are
+    accepted and not listed."""
+    tools = tools_for(spec)
     names: list[str] = []
-    for tool in TOOLS.values():
+    for tool in tools.values():
         if not tool.essential and not tool.hidden:
             names.append(tool.name)
-        names.extend(option_names(tool.name))
+        names.extend(option_names(tool.name, tools))
     return names
 
 
-def catalog() -> list[dict[str, Any]]:
+def catalog(spec: Any = None) -> list[dict[str, Any]]:
     """The tools a host dialog can offer to switch off, listed tools only, in
     table order: name, group, kind, whether the tool can be disabled
     (``essential`` tools cannot, their options can), the names of its options
@@ -187,12 +207,13 @@ def catalog() -> list[dict[str, Any]]:
     return [{"name": tool.name, "group": tool.group, "kind": tool.kind,
              "disableable": not tool.essential, "options": list(tool.options),
              "needs": [list(group) for group in tool.needs]}
-            for tool in TOOLS.values() if not tool.hidden]
+            for tool in tools_for(spec).values() if not tool.hidden]
 
 
-def accepted_names() -> set[str]:
+def accepted_names(spec: Any = None) -> set[str]:
     """Every name :func:`valid_names` lists, and the hidden verbs."""
-    return {*valid_names(), *(tool.name for tool in TOOLS.values() if tool.hidden)}
+    return {*valid_names(spec), *(tool.name for tool in tools_for(spec).values()
+                                  if tool.hidden)}
 
 
 def off_names(spec: Any) -> list[str]:
@@ -207,7 +228,7 @@ def off_names(spec: Any) -> list[str]:
     if not spec.frozen:
         return names
     everywhere = spec.frozen_everywhere
-    for tool in TOOLS.values():
+    for tool in tools_for(spec).values():
         if tool.writes and set(tool.writes) <= everywhere and tool.when(spec):
             names.append(tool.name)
     if "orientation" in everywhere:
@@ -232,18 +253,20 @@ def _either(names: list[str]) -> str:
     return ", ".join(names[:-1]) + " or " + names[-1] if len(names) > 1 else names[0]
 
 
-def check_names(names: list[Any]) -> str | None:
+def check_names(names: list[Any], spec: Any = None) -> str | None:
     """Why *names* hold a name no tool or option has, or a tool that cannot
-    be switched off; None when they do not."""
-    known = accepted_names()
+    be switched off; None when they do not. *spec*: the job whose plugin
+    tools are valid names too."""
+    known = accepted_names(spec)
     for name in names:
         if name in known:
             continue
-        held = TOOLS.get(str(name))
+        held = tools_for(spec).get(str(name))
         if held is not None and held.essential:
             return (f"disabled: {name} cannot be disabled (the run needs it); the tools and "
-                    f"options that can be: {', '.join(valid_names())}")
-        return f"disabled: unknown name {name!r}; the valid names are {', '.join(valid_names())}"
+                    f"options that can be: {', '.join(valid_names(spec))}")
+        return (f"disabled: unknown name {name!r}; the valid names are "
+                f"{', '.join(valid_names(spec))}")
     return None
 
 
@@ -257,7 +280,7 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
     disabled = spec.disabled
     if not disabled:
         return None
-    reason = check_names(disabled)
+    reason = check_names(disabled, spec)
     if reason is not None:
         return reason
     if not options_on(disabled, "look"):
@@ -271,7 +294,7 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
             return (f"disabled: the {task} task is on and every tool that writes its answer "
                     f"({', '.join(writers)}) is off here; keep one of them on or leave the "
                     "task out")
-    for tool in TOOLS.values():
+    for tool in tools_for(spec).values():
         if not tool.is_on(spec):
             continue
         for group in tool.needs:

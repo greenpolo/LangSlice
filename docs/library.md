@@ -72,6 +72,7 @@ untouched.
 | `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`; see [freezing](registration.md#freezing-what-the-agent-may-not-change) |
 | `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](registration.md#switching-tools-and-options-off) |
 | `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one |
+| `plugins`, `plugin_config` | [Tool plugins](plugins.md) to add to the job's toolbox: `module:factory` references, factory functions defined at module level, or `ToolSpec` objects; options for a factory by reference. Loading runs their code. The references are saved with the job, so reopening it loads the same plugins |
 
 Set `tasks` explicitly for a job that must determine positions. The library
 default is `transform,nonlinear`, or just `nonlinear` when every section has

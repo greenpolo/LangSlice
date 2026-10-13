@@ -19,10 +19,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import langslice
 from langslice.core.needs import render
-from langslice.core.toolset import is_off
+from langslice.core.toolset import TOOLS, is_off
 from langslice.doors.declarations import summary
 from langslice.job.layout import JobLayout, read_job_file
 from langslice.ops.registry import listed
@@ -48,16 +49,24 @@ def limits_note(limits: Mapping[str, int]) -> str:
                                     for what, most in limits.items()) + " per call"
 
 
+def job_spec(layout: JobLayout) -> Any:
+    """The job's settings as ``job.json`` holds them (older switches read as
+    they became; the tool plugins it names loaded), or None when the folder
+    holds no readable settings."""
+    from langslice.core.spec import JobSpec
+
+    try:
+        return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {})
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
 def disabled_names(layout: JobLayout) -> list[str]:
     """The tools and options the job disables (``JobSpec.disabled``, older
     switches read as they became), as its settings hold them; none when the
     folder holds no readable settings."""
-    from langslice.core.spec import JobSpec
-
-    try:
-        return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {}).switched_off
-    except (OSError, ValueError, TypeError, AttributeError):
-        return []
+    spec = job_spec(layout)
+    return [] if spec is None else spec.switched_off
 
 
 def transform_cap_line(layout: JobLayout) -> str:
@@ -80,11 +89,18 @@ def transform_cap_line(layout: JobLayout) -> str:
 def card_text(layout: JobLayout) -> str:
     """The card for the job folder *layout* (see the module text)."""
     images = str(layout.image_folder) if layout.image_folder is not None else "the images"
-    disabled = disabled_names(layout)
+    spec = job_spec(layout)
+    disabled = [] if spec is None else spec.switched_off
+    variant = None
+    if spec is not None and spec.plugins:  # the tools plugins add are declared in its run
+        from langslice.doors.declarations import Variant
+
+        variant = Variant.of(spec, auto=True, door="cli")
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
-        f"{limits_note(verb.limits)}): {summary(name)}"
-        for name, verb in listed().items() if not is_off(disabled, name)
+        f"{limits_note(verb.limits)}): "
+        f"{summary(name, variant) if variant is not None and name not in TOOLS else summary(name)}"
+        for name, verb in listed(spec).items() if not is_off(disabled, name)
     ) + transform_cap_line(layout)
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
                      'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)

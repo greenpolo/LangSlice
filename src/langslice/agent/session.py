@@ -203,6 +203,7 @@ async def run_agent_session(
     on_event: LiveCallback | None = None,
     background: Callable[[], list[Any] | None] | None = None,
     disabled: Collection[str] = (),
+    plugins: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -217,13 +218,16 @@ async def run_agent_session(
     (texts and pictures: the notices of the work that finished), or None
     when there is nothing; that is then the next message instead of a
     nudge.
+
+    *plugins* is the provenance of the tool plugins the job loaded
+    (``ToolBox.plugins``), written to the trace as its ``plugins`` record.
     """
     live = LiveEvents(on_event) if on_event is not None else None
     run_config = RunConfig(
         max_llm_calls=0,
         streaming_mode=StreamingMode.SSE if live else StreamingMode.NONE,
     )
-    trace = open_trace(run_label, agent=agent)
+    trace = open_trace(run_label, agent=agent, plugins=plugins)
     if trace is not None and hasattr(agent.model, "capture_usage_details"):
         cast(Any, agent.model).capture_usage_details = True
     app = App(

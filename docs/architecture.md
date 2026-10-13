@@ -36,6 +36,15 @@ tools remain available otherwise. Model-facing text that names a tool or an
 option is written with what it needs (`core/needs.py`) and rendered for the
 job. See [registration](registration.md).
 
+A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
+whose tools join the toolbox. `core/plugins.py` holds the plugin types and the
+registry of loaded plugins, which `core/toolset.py` (`tools_for(spec)`) and
+`ops/registry.py` (`verbs_for(spec)`) merge with the native tables for that
+spec; `doors/plugins/` loads them, gives each handler a context that writes
+through the same operations, and builds their declarations, provenance and the
+MCP adapter. The native tables are unchanged, and a job without plugins has
+none of this in any declaration, reply or picture.
+
 `state.json` is the checkpoint; every write creates an undo step and rewrites
 the derived `registration.json`. Source images remain immutable. Processes
 share a file lock and reload changed state before calls. Long operations

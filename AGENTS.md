@@ -54,6 +54,11 @@ and `environment.yml` hold the worker's source installation.
   (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
   `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
+- A tool plugin (`JobSpec.plugins`, `docs/plugins.md`) adds first-class tools
+  through `langslice.plugin_api`; it loads only where the user chose it
+  (library, `linear run --tool-plugin`), never through MCP or the ABBA worker,
+  writes job state only through the context's operations and files only under
+  `plugins/<tool>/`; a job without plugins shows no trace of the seam.
 - Any tool, or option of a tool, is switched off per job by `JobSpec.disabled`
   (`tool` or `tool:option`; `core/toolset.py` lists the valid names, the
   spec refuses an unknown name or a list that cannot work). Every sentence
