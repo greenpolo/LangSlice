@@ -338,8 +338,13 @@ TRACE_OPTIONAL = ("- `trace_borders` is optional: you decide which sections, if 
 MARK_FIRST = ("- Before fitting a damaged section, mark the regions it has lost with "
               "`mark_damage`, so that every region it still has drives its fits.")
 FIT_METHOD = "- Fit each section whole first, then refine regions."
-FIT_ENDING = ("; undo a fit that does not improve the alignment, and name in submit's "
-              "`left_linear` only a section that no fit improves.")
+FIT_RETRY = (" and fit that section again with different `ants_syn` settings, such as "
+             "another stiffness or another atlas image")
+FIT_ENDING = ("; undo a fit that does not improve the alignment" + FIT_RETRY + ", and name in "
+              "submit's `left_linear` only a section that no fit improves.")
+NO_LIMIT = ("- LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute "
+            "priority: this run may be evaluated on the quality of its registration alone, "
+            "without regard to the time or tokens it spends.")
 FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this run, "
                 "orientation included.")
 
@@ -405,7 +410,8 @@ def test_a_required_deformation_drops_left_linear_from_the_statement(images):
     assert _said(text, "- `submit` is refused unless every section carries a deformation "
                  "applied at its current placement, damaged sections included; the user "
                  "requires one on every section.",
-                 "; undo a fit that does not improve the alignment.") == []
+                 "; undo a fit that does not improve the alignment" + FIT_RETRY + ".",
+                 NO_LIMIT) == []
     assert "left_linear" not in text
 
 
