@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from langslice.ops.registry import GROUPS, RETIRED, VERBS, enabled, retired_payload
+from langslice.ops.registry import GROUPS, VERBS, enabled
 from tests.golden.record import atlas_loader, full_spec, write_sections
 
 
@@ -63,27 +63,9 @@ def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, mon
     monkeypatch.setenv("HOME", str(folder / "home"))
     names = _names(full_spec(folder))
     assert names == MODEL_VERBS
-    # The scripting door (the CLI, the library) adds the scripting verbs,
-    # the hidden one included (callable by name).
+    # The scripting door (the CLI, the library) adds the scripting verb.
     assert _names(full_spec(folder), scripting=True) == list(VERBS)
-    assert [name for name, verb in VERBS.items() if verb.scripting] == [
-        "trace_from_atlas", "export_maps"]
-
-
-def test_a_hidden_verb_is_a_scripting_verb_left_out_of_every_listing(folder: Path):
-    from langslice.ops.registry import listed
-
-    hidden = [name for name, verb in VERBS.items() if verb.hidden]
-    assert hidden == ["trace_from_atlas"]
-    assert all(VERBS[name].scripting for name in hidden)
-    spec = full_spec(folder)
-    assert "trace_from_atlas" not in enabled(spec, scripting=True)
-    assert "trace_from_atlas" in enabled(spec, scripting=True, hidden=True)
-    assert "trace_from_atlas" not in enabled(spec, hidden=True)  # never a model's
-    assert list(listed()) == [name for name in VERBS if name not in hidden]
-    # Like trace_borders, it needs the run's image model.
-    assert "trace_from_atlas" not in enabled(spec, scripting=True, hidden=True,
-                                             image_model=False)
+    assert [name for name, verb in VERBS.items() if verb.scripting] == ["export_maps"]
 
 
 def _spec(folder: Path, **changes: Any) -> Any:
@@ -138,28 +120,4 @@ def test_every_operation_is_an_op_and_classified():
              "search_files", "read_file", "export_maps"}
     assert {name for name, verb in VERBS.items() if verb.kind == "read"} == reads
     assert {name for name, verb in VERBS.items() if verb.long} == {
-        "elastix_affine", "ants_syn", "trace_borders", "trace_from_atlas", "export_maps"}
-
-
-def test_every_retired_name_answers_with_its_replacement():
-    assert set(RETIRED) == {
-        "view_slices", "view_atlas", "view_placement", "view_stack", "preprocess",
-        "set_positions", "set_cutting_angles", "reorder_slices", "orient_slices",
-        "adjust_transforms", "mark_damaged", "fit_affine", "fit_deformable",
-        "search_position"}
-    for name, (replacement, hint) in RETIRED.items():
-        assert name not in VERBS, name  # a retired name is never a verb again
-        assert hint
-        payload = retired_payload(name)
-        assert payload is not None
-        assert payload["error"] == "RETIRED_TOOL" and payload["tool"] == name
-        assert "Nothing was done." in payload["message"]
-        if replacement:
-            assert replacement in VERBS
-            assert payload["use"] == replacement
-            assert f"Use {replacement} instead" in payload["message"]
-        else:
-            assert "use" not in payload
-    assert RETIRED["search_position"][0] == ""
-    assert retired_payload("look") is None
-    assert retired_payload("no_such_tool") is None
+        "elastix_affine", "ants_syn", "trace_borders", "export_maps"}

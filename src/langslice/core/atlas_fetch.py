@@ -55,9 +55,8 @@ def atlas_section(
 ) -> Image.Image:
     """The atlas template section at *position_mm*, at the plane's angles.
 
-    *frame* crops to the tissue silhouette plus a margin, so the section fills
-    its frame about as much as a tissue-framed histology render does. The
-    silhouette comes from the ANNOTATION, not from the render's non-zero
+    *frame* crops to the brain silhouette plus a margin. The silhouette
+    comes from the ANNOTATION, not from the render's non-zero
     pixels: reference volumes carry faint background noise that would put the
     bounding box back at the canvas edges.
     """
@@ -101,7 +100,7 @@ def reference_atlas(
 
     The reference spans the atlas's valid range at the
     nominal interval, or coarser when that would exceed *max_images*. Each
-    picture is tissue-framed at the stack's cutting angles
+    picture is framed to the atlas anatomy at the stack's cutting angles
     (``StackState.view_angles``: the median of the sections' when they
     differ) and at most *long_edge* (None: the run's opening size), never
     upsampled; a plane with nothing in it (an oblique plane through the

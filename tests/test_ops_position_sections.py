@@ -57,7 +57,6 @@ def test_positions_and_angles_are_one_undo_step(tmp_path: Path):
     assert job.state.cutting_angles_deg == {"pitch": 2.0, "yaw": -1.0}
     assert len(job.undo_stack) == 1
     assert job.undo()
-    assert job.state.by_id("s0.png").position_source == ""  # type: ignore[union-attr]
     assert _position(job, "s0.png") == start != middle
     assert job.state.cutting_angles_deg == before_angles
 
@@ -85,7 +84,7 @@ def test_order_follows_position(tmp_path: Path):
     low, high = ctx.position_range
     unplaced = job.state.by_id("s2.png")  # an unplaced section
     assert unplaced is not None
-    unplaced.position_mm, unplaced.position_source = None, ""
+    unplaced.position_mm = None
     step = (high - low) / 10
     done = positions.position_sections(job, ctx, [
         {"id": "s0.png", "position_mm": low + 3 * step},

@@ -20,11 +20,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ATLAS_NAME = "allen_mouse_25um"
 
-_ATLAS_ALIASES: dict[str, str] = {
-    "whs_sd_rat": "whs_sd_rat_39um",
-}
-
-
 class _AtlasLike(Protocol):
     atlas_name: str
     orientation: str
@@ -38,11 +33,8 @@ BrainGlobeAtlas = _AtlasLike
 
 
 def canonicalize_atlas_name(name: str) -> str:
-    """Normalize atlas identifiers and resolve legacy aliases."""
-    cleaned = name.strip()
-    if not cleaned:
-        return DEFAULT_ATLAS_NAME
-    return _ATLAS_ALIASES.get(cleaned, cleaned)
+    """An atlas identifier stripped; empty is :data:`DEFAULT_ATLAS_NAME`."""
+    return name.strip() or DEFAULT_ATLAS_NAME
 
 
 @lru_cache(maxsize=64)

@@ -1,21 +1,17 @@
 """The change tools and the bookkeeping, through the tool door:
 position_sections, interactive_transform, mark_damage, note/undo/redo,
-submit, and the look-before-commit gates (``PositionSpec.gated``)."""
+and submit."""
 
 from __future__ import annotations
 
 import inspect
 from pathlib import Path
 
-from langslice.agent.engine import build_context
-from langslice.core.spec import JobSpec, PositionSpec
+from langslice.core.spec import PositionSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.checkpoint import load_checkpoint
-from langslice.job.job import Job
-from langslice.ops.registry import RETIRED
 from tests.deformable_synthetic import SyntheticAtlas
-from tests.linear_tool_helpers import SLAB, ToolContext, single_transform
+from tests.linear_tool_helpers import ToolContext, load_checkpoint, single_transform
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import submit as _submit
@@ -35,7 +31,6 @@ def test_a_position_only_run_has_no_transform_or_fit_tools(tmp_path: Path):
     assert {"status", "look", "position_sections", "mark_damage", "submit"} <= names
     assert not names & {"interactive_transform", "elastix_affine", "ants_syn",
                         "trace_borders"}
-    assert not names & set(RETIRED)
 
 
 # --- position_sections -------------------------------------------------------------
@@ -128,43 +123,13 @@ def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
     assert "rows" not in result  # the whole table is `status`, one call away
     assert len(_tool(box, "status")()["rows"]) == 5
     undone = _tool(box, "undo")()
-    assert undone["undone"]["tool"] == "position_sections"
+    assert "placement" in undone["undone"]["fields"]
     assert {"s0.png", "s3.png"} <= set(undone["undone"]["sections"])
     assert sorted(row["id"] for row in undone["changed"]) == sorted(undone["undone"]["sections"])
     assert "rows" not in undone  # only what the step touched
     redone = _tool(box, "redo")()
-    assert redone["redone"]["tool"] == "position_sections"
+    assert "placement" in redone["redone"]["fields"]
     assert {"s0.png", "s3.png"} <= {row["id"] for row in redone["changed"]}
-
-
-def test_an_exact_rewrite_of_a_starting_position_makes_it_the_agents(tmp_path: Path):
-    _stack(tmp_path, tasks=["position"])  # the images
-    spec = JobSpec(image_folder=str(tmp_path), model="fake-model", preprocess="none",
-                   tasks=["position"])
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: SLAB)
-    job = Job.open(spec, ctx)
-    box = build_tools(job.state, ctx, spec, job=job)
-    # A checkpoint from a version that assigned starting positions.
-    for record in job.state.slices:
-        record.position_mm, record.position_source = 2.0, "default"
-    job.checkpoint()
-    rows = {row["id"]: row for row in _tool(box, "status")()["rows"]}
-    assert all(row["position_source"] == "default" for row in rows.values())
-    start = rows["s1.png"]["position_mm"]
-
-    result = _tool(box, "position_sections")([{"id": "s1.png", "position_mm": start}],
-                                             view=False)
-    assert result["written"] == [{"id": "s1.png", "position_mm": start}]
-    assert "position_source" not in result["changed"][0]
-    assert job.state.by_id("s1.png").position_source == ""
-    assert job.state.by_id("s1.png").position_mm == start
-    refusal = _submit(box)
-    assert refusal["error"] == "MISSING_POSITIONS"
-    assert "s1.png" not in refusal["missing_ids"] and len(refusal["missing_ids"]) == 4
-    assert refusal["at_default"] == refusal["missing_ids"]
-    # Undo gives the starting mark back.
-    _tool(box, "undo")()
-    assert job.state.by_id("s1.png").position_source == "default"
 
 
 def test_cutting_angles_are_one_write_for_the_stack(tmp_path: Path):
@@ -212,83 +177,6 @@ def test_force_view_drops_the_view_argument_and_always_draws(tmp_path: Path):
     assert len(turned["pictures"]) == 1
 
 
-# --- the look-before-commit gates -----------------------------------------------------
-
-
-def _gated(tmp_path: Path, **kwargs):
-    return _box(tmp_path, placed=True, tasks=["position"], position=PositionSpec(gated=True),
-                **kwargs)
-
-
-def test_gated_writes_need_an_overlay_or_positioning_look_first(tmp_path: Path):
-    state, _, box = _gated(tmp_path)
-    write = _tool(box, "position_sections")
-    look = _tool(box, "look")
-    refused = write([{"id": "s0.png", "position_mm": 3.0}])
-    assert refused["status"] == "refused" and refused["error"] == "NOT_COMPARED"
-    assert refused["rejected"][0]["id"] == "s0.png"
-    assert "look at it in mode overlay or positioning" in refused["rejected"][0]["reason"]
-    # A look at the section alone is not a comparison with the atlas, nor is
-    # a refused look.
-    look("section", sections=["s0.png"])
-    assert look("overlay", sections=["s0.png"], warp="bent")["error"] == "BAD_WARP"
-    assert write([{"id": "s0.png", "position_mm": 3.0}])["error"] == "NOT_COMPARED"
-    assert state.by_id("s0.png").position_mm == 2.0
-
-    look("overlay", sections=["s0.png"])
-    assert write([{"id": "s0.png", "position_mm": 3.0}], view=False)["status"] == "ok"
-    assert state.by_id("s0.png").position_mm == 3.0
-    # The write resets the record: the section needs a new look.
-    assert write([{"id": "s0.png", "position_mm": 3.2}])["error"] == "NOT_COMPARED"
-    look("positioning", sections=["s0.png"], positions_mm=[3.2])
-    assert write([{"id": "s0.png", "position_mm": 3.2}], view=False)["status"] == "ok"
-
-
-def test_a_gated_call_writes_the_compared_and_names_the_rest(tmp_path: Path):
-    state, _, box = _gated(tmp_path)
-    _tool(box, "look")("overlay", sections=["s0.png"])
-    result = _tool(box, "position_sections")(
-        [{"id": "s0.png", "position_mm": 3.1}, {"id": "s1.png", "position_mm": 3.3}],
-        view=False)
-    assert result["status"] == "ok"
-    assert result["written"] == [{"id": "s0.png", "position_mm": 3.1}]
-    assert [row["id"] for row in result["rejected"]] == ["s1.png"]
-    assert state.by_id("s1.png").position_mm == 2.5
-    # Cutting angles alone pass the gate.
-    angled = _tool(box, "position_sections")(cutting_angles={"pitch_deg": 1, "yaw_deg": 0},
-                                             view=False)
-    assert angled["status"] == "ok" and state.cutting_angles_deg["pitch"] == 1.0
-
-
-def test_gated_submit_waits_for_a_positioning_review_of_every_section(tmp_path: Path):
-    state, _, box = _gated(tmp_path)
-    look = _tool(box, "look")
-    result = _submit(box)
-    assert result["status"] == "refused" and result["error"] == "NOT_REVIEWED"
-    look("positioning", sections=["s0.png", "s1.png"])
-    assert _submit(box)["error"] == "NOT_REVIEWED"  # not every section
-    look("positioning")
-    look("overlay", sections=["s1.png"])
-    _tool(box, "position_sections")([{"id": "s1.png", "position_mm": 2.6}], view=False)
-    assert _submit(box)["error"] == "NOT_REVIEWED"  # the write undid the review
-    look("positioning")
-    assert _submit(box)["status"] == "ok" and state.submitted is True
-
-
-def test_undo_of_a_position_is_a_write_to_it_for_the_gates(tmp_path: Path):
-    _, _, box = _gated(tmp_path)
-    look = _tool(box, "look")
-    write = _tool(box, "position_sections")
-    look("overlay", sections=["s0.png"])
-    write([{"id": "s0.png", "position_mm": 3.0}], view=False)
-    look("overlay", sections=["s0.png"])
-    look("positioning")
-    assert box.compared.get("s0.png") and box.reviewed
-    _tool(box, "undo")()  # s0 moves back
-    assert "s0.png" not in box.compared and box.reviewed is False
-    assert write([{"id": "s0.png", "position_mm": 3.0}])["error"] == "NOT_COMPARED"
-
-
 # --- interactive_transform --------------------------------------------------------------
 
 
@@ -313,7 +201,7 @@ def test_one_section_is_written_shown_and_undone(tmp_path: Path):
     assert stored["kind"] == "interactive" and len(stored["params"]) == 6
     assert stored["physical"]["rotation_deg"] == 5.0
     # Nothing states a pixel size here, and the record says so.
-    assert stored["calibration"]["source"] == "estimated"
+    assert stored["calibration"]["source"] == "uncalibrated"
     assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
 
     # The same numbers again draw, and write nothing.
@@ -585,7 +473,7 @@ def test_a_refused_submit_writes_nothing(tmp_path: Path):
 
 
 def test_the_position_gates_do_not_apply_when_position_is_off(tmp_path: Path):
-    state, _, box = _box(tmp_path, tasks=["reorder"])
+    state, _, box = _box(tmp_path, tasks=[])
     assert _submit(box)["status"] == "ok"
     assert state.submitted is True
 
@@ -609,19 +497,3 @@ def test_left_linear_belongs_to_runs_with_nonlinear(tmp_path: Path):
         {"id": "s0.png", "reason": "no deformation needed"}])
     assert refused["error"] == "UNKNOWN_ARGUMENTS"
     assert state.submitted is False
-
-
-def test_gated_positioning_can_start_with_no_positions(tmp_path: Path):
-    state, _, box = _gated(tmp_path)
-    for record in state.slices:
-        record.position_mm = None
-    box.job.checkpoint()
-    write = _tool(box, "position_sections")
-    sections = [{"id": "s0.png", "position_mm": 3.0}]
-    assert write(sections, view=False)["error"] == "NOT_COMPARED"
-    assert _tool(box, "look")("positioning", sections=["s0.png"],
-                               positions_mm=[2.5, 3.0])["status"] == "ok"
-    assert state.by_id("s0.png").position_mm is None
-    assert write(sections, view=False)["status"] == "ok"
-    assert state.by_id("s0.png").position_mm == 3.0
-    assert write(sections, view=False)["error"] == "NOT_COMPARED"

@@ -11,7 +11,6 @@ from typing import TextIO, cast
 
 from pydantic import ValidationError
 
-from langslice.doors.api import runtime
 from langslice.doors.api.models import (
     EngineDataEvent,
     EngineError,
@@ -102,27 +101,16 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
             id=request.id, type="result", result=prepare_saved_job(request.params),
         )
 
-    if request.method != "version":
-        from langslice.doors.api.setup import apply_saved_credentials
+    from langslice.doors.api.setup import apply_saved_credentials
 
-        apply_saved_credentials()
+    apply_saved_credentials()
 
     if request.method == "linear.run":
         from langslice.doors.api import abba_worker
 
         data = abba_worker.run_linear(request.params, data_emit)
         return EngineResultEnvelope(id=request.id, type="result", result=data)
-
-    if request.method == "version":
-        result = runtime.get_version()
-    else:
-        raise KeyError(request.method)
-
-    return EngineResultEnvelope(
-        id=request.id,
-        type="result",
-        result=result.model_dump(mode="json"),
-    )
+    raise AssertionError(f"unhandled engine method {request.method}")
 
 
 def run_stdio(
@@ -199,18 +187,10 @@ def _run_requests(input_stream: TextIO | None, out_stream: TextIO) -> int:
                 ]},
             )
             continue
-        except KeyError:
-            _emit_error(
-                output_stream=out_stream,
-                request_id=parsed_id,
-                code="invalid_request",
-                message="The request is missing a required field or setting.",
-            )
-            continue
         except Exception as exc:  # noqa: BLE001
-            sensitive = isinstance(payload, dict) and str(payload.get("method", "")).startswith(
-                "setup."
-            )
+            # Sign-in and key errors may echo credentials or a provider's reply.
+            sensitive = isinstance(payload, dict) and payload.get("method") in (
+                "setup.login", "setup.api_key")
             _emit_error(
                 output_stream=out_stream,
                 request_id=parsed_id,

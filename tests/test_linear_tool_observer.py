@@ -87,13 +87,13 @@ def test_callback_failures_never_change_tool_results_or_exceptions():
 
 def test_build_tools_forwards_execution_observer(tmp_path):
     from langslice.core.spec import JobSpec
-    from langslice.job.layout import JobLayout
+    from langslice.job.layout import JobLayout, job_folder_for
 
     events = []
     state = StackState(slices=[SliceState("a", 0, 0)])
     ctx: Any = SimpleNamespace(position_range=(0, 10),
                                section_channels=lambda _id: (("gray",), []),
-                               layout=JobLayout.for_images(tmp_path),
+                               layout=JobLayout(job_folder_for(tmp_path), tmp_path),
                                results_path=str(tmp_path / "linear_results.json"))
     box = build_tools(state, ctx, JobSpec(str(tmp_path), tasks=[]), on_event=events.append)
     result = next(tool for tool in box.tools if tool.__name__ == "status")()

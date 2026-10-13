@@ -92,7 +92,7 @@ public final class HostSessionSmokeTest {
 
     static JsonObject warp(double amplitude) {
         double[][][] pairs = landmarks(amplitude);
-        return HostGeometrySmokeTest.warpRow(pairs[0], pairs[1], true);
+        return HostGeometrySmokeTest.warpRow(pairs[0], pairs[1]);
     }
 
     static JsonObject angles(double pitch, double yaw) {

@@ -31,7 +31,7 @@ LangSlice, so a job travels with its images:
 | `langslice linear run FOLDER` | `FOLDER` | `FOLDER/langslice/` |
 | `langslice mcp`, `start_job(image_folder=...)` | that folder (or the named job folder's) | `<folder>/langslice/`, or the named job folder |
 | `langslice mcp`, `start_job(job_id=...)` | the saved job's | the index entry's job folder |
-| ABBA worker `linear.run` (Fiji connector) | the connector's snapshot folder, a fresh `langslice-abba-*` temporary folder per run | `<snapshots>/langslice/` (or the spec's `job_dir`, or the read-only fallback); the result's `output_dir` names the one used |
+| ABBA worker `linear.run` (Fiji connector) | the connector's snapshot folder, a fresh `~/.langslice/snapshots/abba-*` folder per run | `<snapshots>/langslice/` (or the spec's `job_dir`, or the read-only fallback); the result's `output_dir` names the one used |
 | ABBA Claude mode (`mcp.prepare`) | `~/.langslice/snapshots/mcp-*/` | `<snapshots>/langslice/` (id in the index) |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
@@ -74,8 +74,8 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
   coords.tif, labels.tif,    the section's maps (formats.py), written at submit
   labels_fiji.tif,           and by export_maps, never on an ordinary write;
-  labels.csv, tissue.png,    over the section's filled outline (tissue.png: the
-  residual.tif, maps.json    threshold's tissue estimate, not used to cut them)
+  labels.csv,                wherever the section maps into the atlas volume
+  residual.tif, maps.json
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
                              opening strips, show_stack pages, brief's strips)
 views.jsonl          append-only index of every saved picture
@@ -108,7 +108,7 @@ numbers and their knobs, the applied deformation's record), the file
 pixel -> atlas matrix of its linear placement (`core.maps`), why it has none
 (`problem`), and its written maps with whether they are still `current`
 (`maps.json`'s `parameters_digest`). The maps (`write_section_maps`:
-`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`, `tissue.png`,
+`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
 `residual.tif`, `maps.json`) and the exports are written by
 `ops.exports.export_maps`, at submit and on demand. `Job.persist` False
 writes none of it.
@@ -231,13 +231,10 @@ longer exist be taken over by the images it is opened with.
   stable id). The channel token stays here, not in a folder that may be
   shared. `register`, `lookup` (refuses a newer entry).
 - `checkpoint.py` — `state.json`: `write_checkpoint` (atomic, versioned,
-  `STATE_FORMAT_VERSION` 3), `read_checkpoint` / `load_checkpoint`,
+  `STATE_FORMAT_VERSION` 3), `read_checkpoint`,
   `current_state` (refuses any other format: a newer LangSlice's asks for
   an update, an older pre-release's for a new job, `--fresh` or
-  `resume=False`; a saved `appearance` passes through
-  `core.appearance.migrated`: an older `fit` recipe read as `preprocessed`,
-  an older `view` look dropped; history steps are read the
-  same way), `write_json_atomic` (every job file's writer),
+  `resume=False`; history steps are read the same way), `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
 - `job.py` — `Job`: `open` (resume or ingest, then the first checkpoint;
@@ -257,21 +254,16 @@ longer exist be taken over by the images it is opened with.
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
   checked; `spec.frozen` must name sections that are here, a frozen position
   must have been supplied, and a frozen affine without a supplied transform
-  carries `host_transform()`, `kind` `"host"`), `changed_inputs` (above; the
-  saved spec read through `JobSpec.migrated`, and `frozen` counts as a
-  changed input). New sections remain unplaced until
+  carries `host_transform()`, `kind` `"host"`), `changed_inputs` (above;
+  `frozen` counts as a changed input). New sections remain unplaced until
   the caller supplies or writes positions; no positions are interpolated
   or extrapolated around supplied ones. Saved positions are preserved on
-  resume. Legacy checkpoints may carry `SliceState.position_source`
-  `DEFAULT_POSITION` ("default"); these are unconfirmed. `commit` drops
-  that mark when the position changes (`clear_default_marks`), and
-  `ops.positions` drops it on every explicit write, the same value included;
-  undo restores it.
+  resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
   gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and
-  only for the tasks that are on: `MISSING_POSITIONS` (no position, or
-  still at the starting one: `at_default`), `STRICT_INTERVAL` or
+  only for the tasks that are on: `MISSING_POSITIONS` (no position),
+  `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
   `MISSING_DEFORMATIONS`. The sections whose
   deformation is frozen need no deformation and no image correction, and
@@ -290,15 +282,15 @@ longer exist be taken over by the images it is opened with.
   JSON, QuickNII/DeepSlice XML, DeepSlice CSV, a job's `registration.json`),
   `match_sections` (exact name, then stem ignoring case, then one `_sNNN`
   section number; `AmbiguousMatch` refuses doubles), `import_placements(source,
-  workspace, section_ids=, orientations=, target=)` -> `ImportResult`
+  workspace, section_ids=, orientations=)` -> `ImportResult`
   (per-section `ImportedPlacement`: position, per-section pitch and yaw,
   flip, quarter turn, six numbers, pixel size and its source, the imported
   map on the job's file, VisuAlign markers rescaled to the file and raw;
   `transform()` the stored-transform dict, kind `imported`; `unmatched`,
   `missing`, `refused`). Geometry through `job/quint.py`'s inverses and
   `core/import_geometry.py`; `docs/file_formats.md` ("Importing a
-  registration made elsewhere"). `registration_inputs(source, workspace,
-  target=)` -> `RegistrationInputs`: the result as `JobSpec.inputs`
+  registration made elsewhere"). `registration_inputs(source,
+  workspace)` -> `RegistrationInputs`: the result as `JobSpec.inputs`
   (`positions`, `angles` stack-wide when every section's agree to within
   `ANGLE_EPSILON_DEG` (the median), else per section, `orientation`,
   `transforms` with their `physical` knobs, and `pixel_size_um` when neither

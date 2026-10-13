@@ -1,4 +1,4 @@
-"""ADK plugins of the session: pacing, retired names, strict arguments, media, capture."""
+"""ADK plugins of the session: pacing, strict arguments, media, capture."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import asyncio
 import io
 import json
 import time
-from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -114,34 +113,6 @@ class ModelCallPacingPlugin(BasePlugin):
         if self.delay_s > 0:
             await asyncio.sleep(self.delay_s)
         return None
-
-
-class RetiredToolsPlugin(BasePlugin):
-    """Answer a call of a retired tool with the tool to use instead.
-
-    ADK (2.11) resolves a call's tool before its callbacks run and, for a
-    name it does not know, hands the plugins' ``before_tool_callback`` a
-    placeholder tool of that name; the "tool not found" error comes only
-    when no callback answers. This answers a name in
-    :data:`langslice.ops.registry.RETIRED` with
-    :func:`~langslice.ops.registry.retired_payload` (``RETIRED_TOOL``,
-    nothing done), every time it is called; any other name is left to ADK.
-    """
-
-    def __init__(self, *, name: str = "langslice_retired_tools",
-                 disabled: Collection[str] = ()) -> None:
-        super().__init__(name)
-        self._disabled = tuple(disabled)
-
-    async def before_tool_callback(
-        self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any,
-    ) -> dict[str, Any] | None:
-        del tool_args, tool_context
-        if getattr(tool, "func", None) is not None:  # a real tool of the run
-            return None
-        from langslice.ops.registry import retired_payload
-
-        return retired_payload(str(getattr(tool, "name", "") or ""), self._disabled)
 
 
 class StrictArgumentsPlugin(BasePlugin):

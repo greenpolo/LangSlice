@@ -66,10 +66,6 @@ def _over_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> dict[str, Any] 
     return None
 
 
-def _positions(door: Door) -> dict[str, float | None]:
-    return {record.id: record.position_mm for record in door.state.slices}
-
-
 def reply_of(tool: ToolSpec, result: Any) -> dict[str, Any]:
     """The reply a handler's *result* makes: its ``reply`` (``status`` ``ok``
     unless it says otherwise), and its pictures under the media key, at most
@@ -111,7 +107,6 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
             return refused
         call_id = getattr(tool_context, "function_call_id", None) or uuid.uuid4().hex[:8]
         context = ToolContext(door, tool, str(call_id))
-        before = _positions(door) if tool.kind == "write" else {}
         try:
             if tool.kind == "write" and not tool.long:
                 with context.writing():  # everything the call writes is one undo step
@@ -126,9 +121,6 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
             logger.exception("plugin tool %s failed", tool.name)
             return {"status": "error", "error": "PLUGIN_FAILED", "tool": tool.name,
                     "message": f"{type(exc).__name__}: {exc}"}
-        if tool.kind == "write":  # a moved position needs a new look (the gates)
-            now = _positions(door)
-            door.forget_looks([name for name, mm in now.items() if before.get(name) != mm])
         return reply_of(tool, result)
 
     declared = declaration(tool.name, variant)

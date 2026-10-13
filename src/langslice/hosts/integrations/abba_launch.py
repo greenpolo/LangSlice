@@ -23,7 +23,7 @@ connector's runs can also be watched with the Python viewer and log:
   (:class:`~langslice.hosts.integrations.abba_follow.AbbaFollower` with
   :class:`~langslice.hosts.integrations.abba_compare.ComparisonWindow`)
   and the browser activity log
-  (:func:`~langslice.hosts.integrations.abba_chat.create_activity_window`),
+  (:class:`~langslice.hosts.integrations.abba_chat.ChatWindow`),
   whose pictures are read from the events' ``views`` (saved view files in
   the job folder; events never carry image bytes). The viewer opens only
   for a run whose ``run_started`` asked for it. Neither writes anything to
@@ -205,7 +205,7 @@ class RunListener:
         kind = message.get("kind")
         if kind == "run_started":
             self._finish_run()
-            self.viewer_wanted = bool(message.get("viewer", True))
+            self.viewer_wanted = bool(message["viewer"])
             self._to_log({"kind": "status", "text": "Running"})
             self._show_log()
             self._ensure_run(force=True)
@@ -375,9 +375,9 @@ def start_abba(
                             comparison_factory=lambda: ComparisonWindow(abba, parent=frame))
 
     def activity() -> Any:
-        from langslice.hosts.integrations.abba_chat import create_activity_window
+        from langslice.hosts.integrations.abba_chat import ChatWindow
 
-        return create_activity_window(parent=frame)
+        return ChatWindow(parent=frame)
 
     def slices() -> dict[str, Any]:
         held = events.slices()

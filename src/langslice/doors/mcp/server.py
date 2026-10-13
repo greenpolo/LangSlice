@@ -15,7 +15,7 @@ import sys
 import threading
 from collections.abc import Callable
 from contextlib import redirect_stdout
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from io import BytesIO, TextIOWrapper
 from pathlib import Path
@@ -66,7 +66,7 @@ from langslice.doors.tools.reply import (
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.doors.trace import TRACE_DIR_ENV, HostTrace
 from langslice.job.job import Job
-from langslice.ops.registry import VERBS, retired_payload
+from langslice.ops.registry import VERBS
 
 logger = logging.getLogger(__name__)
 
@@ -334,12 +334,9 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     """A saved ABBA job (:mod:`langslice.doors.api.saved_jobs`), by id."""
     folder, record = load_job(job_id)
     prepared = prepare_linear(record["params"])
-    session = open_job(prepared.spec, atlas_loader, folder)
+    session = open_job(replace(prepared.spec, resume=True), atlas_loader, folder)
     session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
     session.notes = read_notes(session.job.layout)
-    trace_dir = prepared.trace_dir
-    if trace_dir:
-        session.trace = HostTrace(trace_dir, session.ctx.image_folder)
     session.channel = HostChannel(job_id, record.get("host_channel"))
     channel = session.channel
     session.events.target = lambda event: channel.event(
@@ -353,16 +350,15 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
 
 def open_folder(
     path: str, spec_for: Callable[[str], JobSpec],
-    atlas_loader: Callable[[str], Any] | None, *, fresh: bool = False,
+    atlas_loader: Callable[[str], Any] | None,
 ) -> Session:
     """The job of the folder the host names: an image folder or its job
     folder. A job made there (``langslice-job FOLDER init``, any door)
     opens as it stands, with its saved settings and notes, resuming its
-    checkpoint; a folder without one, or any folder when *fresh*
-    (``langslice mcp --fresh``), gets its job from this server's job flags
-    (*spec_for*)."""
+    checkpoint; a folder without one gets its job from this server's job
+    flags (*spec_for*)."""
     try:
-        folder = None if fresh else find(path)
+        folder = find(path)
     except NoJob:
         folder = None
     if folder is None:
@@ -377,14 +373,7 @@ def finish(session: Session) -> None:
         session.host_update(session.state)
     session.job.emit_results(session.ctx.progress)
     if session.job_dir is not None and session.prepared is not None:
-        result = {"state": session.state.to_dict(), "output_dir": str(session.job_dir),
-                  "final_updates": session.prepared.final_updates,
-                  "abba": dict(session.prepared.abba)}
-        if session.prepared.final_angles is not None:
-            result["host_angles"] = session.prepared.final_angles
-        target = session.job.layout.host_result_file
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        result = {"state": session.state.to_dict(), "output_dir": str(session.job_dir)}
         if session.channel is not None:
             session.channel.send({"type": "result", "result": result})
             session.channel.close()
@@ -483,27 +472,6 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
 # --- the server ------------------------------------------------------------
 
 
-class LangSliceServer(FastMCP):
-    """FastMCP, answering a retired tool's name (``ops.registry.RETIRED``)
-    with ``RETIRED_TOOL`` and the tool to use instead, every time it is
-    called, where FastMCP would raise "Unknown tool" (traced like any tool
-    result in the open job's trace, *traced*: the server's sessions)."""
-
-    traced: dict[str, Any] = {}
-
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        if self._tool_manager.get_tool(name) is None:  # noqa: SLF001 — FastMCP has no hook
-            session = self.traced.get("job")
-            retired = retired_payload(name, session.spec.switched_off if session else ())
-            if retired is not None:
-                blocks = result_blocks(retired)
-                if session is not None and session.trace is not None:
-                    session.trace.write("tool_result", name=name, args=arguments,
-                                        content=describe_blocks(blocks))
-                return blocks
-        return await super().call_tool(name, arguments)
-
-
 def build_server(
     spec_for: Callable[[str], JobSpec],
     folder: str | None = None,
@@ -511,11 +479,9 @@ def build_server(
     job_id: str | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
     sessions: dict[str, Session] | None = None,
-    fresh: bool = False,
-) -> LangSliceServer:
+) -> FastMCP:
     """The server. *spec_for* turns a folder into this server's job spec,
-    for a folder without a job, or for every folder when *fresh*
-    (:func:`open_folder`).
+    for a folder without a job (:func:`open_folder`).
 
     With *folder*, that job opens now and its tools are listed from the
     start; otherwise ``start_job`` names the folder and the tools appear then.
@@ -525,9 +491,8 @@ def build_server(
     *sessions* holds the open job under ``"job"`` (the caller closes it when
     the server stops: :func:`serve`).
     """
-    server = LangSliceServer(SERVER_NAME, instructions=INSTRUCTIONS)
+    server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
     current: dict[str, Session] = {} if sessions is None else sessions
-    server.traced = current
 
     def install(session: Session) -> None:
         """List the session's tools: the verbs the registry gives its spec
@@ -592,7 +557,7 @@ def build_server(
         if wanted is not None and (session is None or wanted not in (
                 session.ctx.image_folder, str(session.job.folder))):
             session = await to_thread.run_sync(
-                partial(open_folder, wanted, spec_for, atlas_loader, fresh=fresh))
+                partial(open_folder, wanted, spec_for, atlas_loader))
             install(session)
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
@@ -613,13 +578,12 @@ def build_server(
         install(open_saved_job(job_id, atlas_loader))
     elif folder is not None:
         install(open_folder(os.path.abspath(os.path.expanduser(folder)), spec_for,
-                            atlas_loader, fresh=fresh))
+                            atlas_loader))
     return server
 
 
 def serve(
     spec_for: Callable[[str], JobSpec], folder: str | None = None, job_id: str | None = None,
-    *, fresh: bool = False,
 ) -> None:
     """Run the server over stdio until the host disconnects.
 
@@ -633,7 +597,7 @@ def serve(
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     with redirect_stdout(sys.stderr):
         sessions: dict[str, Session] = {}
-        server = build_server(spec_for, folder, job_id=job_id, sessions=sessions, fresh=fresh)
+        server = build_server(spec_for, folder, job_id=job_id, sessions=sessions)
         try:
             anyio.run(_run_stdio, server, wire)
         finally:

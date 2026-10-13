@@ -116,7 +116,7 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     held = record.deformation
     assert held is not None and len(held["steps"]) == 1
     assert held["steps"][0]["fit_section"] == deformation.TRACED_BORDERS
-    assert held["steps"][0]["engine"] == "ants" and held["steps"][0]["stiffness"] == "medium"
+    assert held["steps"][0]["stiffness"] == "medium"
     assert len(job.undo_stack) == depth + 2  # the landing is its own step
     assert job.undo()
     record = job.state.by_id(ID)

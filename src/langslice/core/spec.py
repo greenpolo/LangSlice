@@ -22,9 +22,6 @@ from langslice.core import toolset
 #: Every task, in the order they are listed everywhere else.
 DEFAULT_TASKS: tuple[str, ...] = ("position", "transform")
 ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
-#: Tasks of older jobs that are read and dropped: ``reorder`` (the stack's
-#: order follows the positions, so ``position`` holds it).
-RETIRED_TASKS: tuple[str, ...] = ("reorder",)
 
 PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
@@ -47,17 +44,6 @@ INPUT_KEYS: tuple[str, ...] = (
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
 ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
-
-
-#: The switches older specs had, now names in ``disabled``: ``(section of
-#: the spec or "", key, the name it became when the key is false)``. Read
-#: from a saved spec (:meth:`JobSpec.from_dict`), never written.
-LEGACY_SWITCHES: tuple[tuple[str, str, str], ...] = (
-    ("", "agent_damage", "mark_damage"),
-    ("transform", "interactive", "interactive_transform"),
-    ("transform", "automatic", "elastix_affine"),
-    ("transform", "flip", "interactive_transform:flip"),
-)
 
 
 def _degrees(value: Any, where: str) -> float:
@@ -123,13 +109,6 @@ class PositionSpec:
     interval_um: int | None = None
     #: Sections must sit exactly one interval apart (gated at submit).
     strict_interval: bool = False
-    #: Look-before-you-write gates: ``position_sections`` is refused for a
-    #: section not looked at in mode ``overlay`` or ``positioning`` since its
-    #: last write, and ``submit`` until ``look`` in mode ``positioning`` has
-    #: shown every section after the last write. The refusals name what is
-    #: missing. Needs ``look:positioning`` (the spec refuses the gates where
-    #: the job disables it).
-    gated: bool = False
     #: Optional positioning coaching: compare candidate planes and regions,
     #: write supported placements, revisit uncertainty and review the stack.
     #: Guidance only, off by default.
@@ -254,10 +233,6 @@ class JobSpec:
     #: pages; the pages themselves stay readable as channels. None: the file
     #: is shown through ``preprocess`` as above.
     host_preprocessing: dict[str, Any] | None = None
-    #: Whether a host exports every channel of its sections (the Fiji
-    #: connector). The agent's channel tools (``set_channel_properties``,
-    #: ``set_preprocessed_channel_properties``) exist in every run either way.
-    agent_preprocessing: bool = False
     #: Size of every picture the agent sees: "low", "medium", "high" or
     #: "auto" (:data:`IMAGE_RESOLUTIONS`). Display only: fits, working frames
     #: and stored transforms are unchanged, and the image model's inputs are
@@ -341,15 +316,10 @@ class JobSpec:
                 f"Unsupported image_resolution {self.image_resolution!r}; "
                 f"expected one of {IMAGE_RESOLUTIONS}"
             )
-        if not isinstance(self.agent_preprocessing, bool):
-            raise ValueError(
-                f"agent_preprocessing must be true or false; got {self.agent_preprocessing!r}"
-            )
         if self.host_preprocessing is not None and not isinstance(self.host_preprocessing, dict):
             raise ValueError("host_preprocessing must be a settings object or null")
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
-        self.tasks = [task for task in self.tasks if task not in RETIRED_TASKS]
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
         if unknown:
             raise ValueError(f"Unknown task(s) {unknown}; expected any of {list(ALL_TASKS)}")
@@ -464,40 +434,21 @@ class JobSpec:
             data.pop("plugin_config", None)
         return data
 
-    @staticmethod
-    def migrated(data: dict[str, Any]) -> dict[str, Any]:
-        """A saved spec's dict as today's spec has it: the switches older
-        specs had (:data:`LEGACY_SWITCHES`) as names in ``disabled``, and the
-        ``inputs`` keys that were freezes (:data:`langslice.core.frozen.LEGACY_INPUTS`:
-        ``locked``, ``keep_warp``, ``nonlinear_skip``) as ``frozen``."""
-        data = dict(data)
-        legacy = [became for section, key, became in LEGACY_SWITCHES
-                  if ((data.get(section) or {}) if section else data).get(key) is False]
-        if legacy:
-            data["disabled"] = [*(data.get("disabled") or []), *legacy]
-        if isinstance(data.get("inputs"), dict) and any(
-                key in data["inputs"] for key in freeze.LEGACY_INPUTS):
-            inputs, older = freeze.from_legacy(data["inputs"])
-            data["inputs"] = inputs
-            data["frozen"] = freeze.merge(data.get("frozen") or {}, older)
-        return data
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:
-        """Rebuild from :meth:`to_dict` output, ignoring unknown keys, after
-        :meth:`migrated` has read what older specs held."""
-        data = cls.migrated(data)
+        """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any
+        unknown key (a nested one as ``section.key``)."""
         nested = {
             "position": PositionSpec,
             "transform": TransformSpec,
             "nonlinear": NonlinearSpec,
         }
-        kwargs: dict[str, Any] = {}
-        for name, value in data.items():
-            if name in nested:
-                sub = nested[name]
-                fields = sub.__dataclass_fields__
-                kwargs[name] = sub(**{k: v for k, v in (value or {}).items() if k in fields})
-            elif name in cls.__dataclass_fields__:
-                kwargs[name] = value
+        unknown = [name for name in data if name not in cls.__dataclass_fields__]
+        unknown += [f"{name}.{key}" for name, sub in nested.items()
+                    for key in (data.get(name) or {}) if key not in sub.__dataclass_fields__]
+        if unknown:
+            raise ValueError(f"Unknown job setting(s) {sorted(unknown)}")
+        kwargs: dict[str, Any] = {
+            name: nested[name](**(value or {})) if name in nested else value
+            for name, value in data.items()}
         return cls(**kwargs)

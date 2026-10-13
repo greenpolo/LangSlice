@@ -113,7 +113,7 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
                                     "translate_x_mm", "translate_y_mm", "pivot"}
     assert row["physical"]["translate_x_mm"] == pytest.approx(0.15, abs=0.01)
     assert row["physical"]["translate_y_mm"] == pytest.approx(-0.10, abs=0.01)
-    assert row["iou"] > 0.97 and row["mirrored"] is False
+    assert row["mirrored"] is False
     assert row["calibration"] == {"section_um_per_px": UM, "source": "host"}
     assert "params" not in row  # the six raw numbers stay host-side
     # The section under its new transform, saved with a number.
@@ -144,7 +144,6 @@ def test_starts_from_the_current_placement(tmp_path: Path, atlas):
     exact = normalized_affine(truth[:2], SECTION_SIZE)
     fit = tr.elastix_affine(state, _ctx, record, exact)
     assert fit.start_params == exact
-    assert fit.start_iou > 0.97
     assert _error_vs(truth, fit.params)["corner_px"] < 1.0
 
 
@@ -242,15 +241,6 @@ def test_an_elastix_failure_is_refused_cleanly(tmp_path: Path, atlas, monkeypatc
     assert row["error"] == "FIT_FAILED" and "non-finite" in row["message"]
     assert state.slices[0].transform is None
     assert TOOL_MEDIA_PARTS_KEY not in result
-
-
-def test_a_section_without_tissue_is_refused_cleanly(tmp_path: Path, atlas):
-    blank = Image.new("RGB", SECTION_SIZE, (236, 236, 236))
-    state, _ctx, box = _setup(tmp_path, atlas, blank)
-    result = _tool(box, "elastix_affine")([ID])
-    assert result["error"] == "NOTHING_FITTED"
-    assert result["results"][0]["error"] == "FIT_FAILED"
-    assert state.slices[0].transform is None
 
 
 def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Path, atlas):

@@ -12,7 +12,8 @@ This package is the optional Python side of a session started with
 `langslice abba`: it starts ABBA 0.24.x from Python and follows the
 connector's runs in a passive agent viewer and an activity log. Nothing
 here changes ABBA's registrations: the connector applies every change.
-ABBA's sign table for the cutting angles is `core/abba_angles.py`.
+The Fiji connector converts ABBA's `ReslicedAtlas` rotations to the job's
+cutting angles (`AbbaHostSession.anglesDeg`: pitch = -rotateX, yaw = -rotateY).
 
 ## `abba_launch.py` — `langslice abba` (`hosts/cli.py`)
 
@@ -40,7 +41,7 @@ ABBA's sign table for the cutting angles is `core/abba_angles.py`.
   (`LangSliceEvents.slices()`) or `run_started` is a new run (the old
   follower finishes); the follower opens only when the run asked for the
   viewer.
-- One log window (`create_activity_window`) serves the session:
+- One log window (`abba_chat.ChatWindow`) serves the session:
   `run_started` reopens it when the user closed it, and a disposed one
   (`closed`) is replaced on the next message. Agent events reach it with
   their pictures read from the event's `views` (saved `view.jpg` paths in
@@ -61,9 +62,10 @@ ABBA's sign table for the cutting angles is `core/abba_angles.py`.
 them inside its lock, with corrected-index references resolved to stable
 filenames). Model `tool_call` announcements may be batched ahead of
 execution and never drive the viewer. `_FOLLOWED` names the tools whose
-targets are shown; every one in `_WRITES` (all but `look` and
-`set_preprocessed_channel_properties`) refreshes its targets on its end event, after the connector
-has applied the checkpoint's rows. Every followed event goes to the
+targets are shown; every one in `_WRITES` (the catalog's write tools,
+`core.toolset.TOOLS` kind `write`; `_FOLLOWED` adds `look` and `zoom`)
+refreshes its targets on its end event, after the connector has applied
+the checkpoint's rows. Every followed event goes to the
 comparison window its `comparison_factory` builds on first use; the main
 ABBA view, its camera, selection and display modes are never touched, and
 a viewer failure is logged and never reaches the run.
@@ -97,10 +99,9 @@ show committed ABBA registrations; candidate positions are never drawn
 
 ## The activity log
 
-`abba_chat.py::create_activity_window` prefers a local Chrome/Chromium app
-window beside ABBA (`ChatWindow`: a private profile; `show` relaunches the
-app window only when none is open), falling back to the Swing
-`abba_activity.py::ActivityWindow` when no browser starts. The browser log
+`abba_chat.py::ChatWindow` is a local Chrome/Chromium app window beside ABBA
+(a private profile; `show` relaunches the app window only when none is
+open); when no browser starts, opening the log fails with that error. The log
 renders escaped Markdown, streamed assistant text and provider-exposed
 reasoning summaries; compact expandable tool rows show tool names, targets,
 status and image counts, and an image panel below supports history and

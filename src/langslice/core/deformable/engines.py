@@ -37,17 +37,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy import ndimage as ndi
 
 from langslice.core.deformable.settings import (
     ANTS_STIFFNESS,
     DETAIL,
+    ELASTIX_STAIN_METRIC,
     FitSettings,
     Metric,
 )
 
-#: Iterations of the fixed-point inversion used when an engine gives no inverse.
-INVERSE_ITERATIONS = 30
 #: Fixed step for ANTs SyN's gradient descent (ANTs' own default).
 ANTS_GRADIENT_STEP = 0.2
 #: Histogram bins for mutual information, both engines.
@@ -260,12 +258,8 @@ def _run_ants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -> En
     )
 
 
-#: Elastix's name for each metric it fits with.
-ELASTIX_METRICS: dict[str, str] = {
-    "mutual_information": "AdvancedMattesMutualInformation",
-    "normalized_correlation": "AdvancedNormalizedCorrelation",
-    "mean_squares": "AdvancedMeanSquares",
-}
+#: Elastix's name for the affine's metric (:data:`~.settings.ELASTIX_STAIN_METRIC`).
+ELASTIX_METRIC = "AdvancedMattesMutualInformation"
 
 
 def _elastix_image(array: np.ndarray, inputs: EngineInputs, pixel: type = np.float32) -> Any:
@@ -345,9 +339,7 @@ class AffineResult:
     engine_version: str
 
 
-def run_elastix_affine(
-    inputs: EngineInputs, metric: Metric = "mutual_information",
-) -> AffineResult:
+def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     """An Elastix affine (rotation, scales, shear, shift) starting at the identity.
 
     The identity is the placement the moving image was drawn at, so this is a
@@ -361,8 +353,6 @@ def run_elastix_affine(
 
     if inputs.fixed_labels:
         raise ValueError("Label-map channels are ANTs-only")
-    if metric not in ELASTIX_METRICS:
-        raise ValueError(f"Elastix has no {metric!r} metric")
     start = time.perf_counter()
     edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
     metrics = 2 if edges else 1
@@ -371,7 +361,7 @@ def run_elastix_affine(
     pm["Transform"] = ("AffineTransform",)
     pm["AutomaticTransformInitialization"] = ("false",)
     pm["AutomaticScalesEstimation"] = ("true",)
-    pm["Metric"] = (ELASTIX_METRICS[metric],) * metrics
+    pm["Metric"] = (ELASTIX_METRIC,) * metrics
     if edges:
         # Metric k reads image pair k; pyramids, interpolators and samplers
         # number one per metric (Elastix's multi-image rules).
@@ -387,7 +377,7 @@ def run_elastix_affine(
     pm["NumberOfSpatialSamples"] = (str(ELASTIX_SPATIAL_SAMPLES),)
     pm["NewSamplesEveryIteration"] = ("true",)
     pm["RandomSeed"] = (str(RANDOM_SEED),)
-    # Masks are already widened past the tissue outline; eroding them at
+    # Masks are already widened past the placed atlas footprint; eroding them at
     # coarse pyramid levels would cut away exactly that informative edge.
     pm["ErodeMask"] = ("false",)
     pm["ErodeFixedMask"] = ("false",)
@@ -420,61 +410,8 @@ def run_elastix_affine(
     return AffineResult(
         matrix_mm=matrix,
         native_parameters={"requested": requested, "transform_parameter_maps": maps,
-                           "metric": metric, "edge_channel": edges,
+                           "metric": ELASTIX_STAIN_METRIC, "edge_channel": edges,
                            "threads": FIT_THREADS, "random_seed": RANDOM_SEED},
         runtime_s=time.perf_counter() - start,
         engine_version=f"itk-elastix (itk {itk.__version__})",
     )
-
-
-def invert_field(
-    field_mm: np.ndarray, spacing_mm: tuple[float, float], iterations: int = INVERSE_ITERATIONS,
-) -> tuple[np.ndarray, float]:
-    """Approximate the inverse of a displacement field by fixed-point iteration.
-
-    Solves ``v(q) = -u(q + v(q))`` on the same grid. Returns the inverse and
-    the largest remaining ``|u(q + v(q)) + v(q)|`` in millimetres; where the
-    forward map folds there is no inverse and that residual stays large.
-    """
-    height, width = field_mm.shape[:2]
-    yy, xx = np.indices((height, width), dtype=np.float64)
-    sx, sy = spacing_mm
-    inverse = -field_mm.astype(np.float64)
-    residual = np.zeros((height, width))
-    for _ in range(iterations):
-        coordinates = [yy + inverse[..., 1] / sy, xx + inverse[..., 0] / sx]
-        sampled = np.stack([
-            ndi.map_coordinates(field_mm[..., k], coordinates, order=1, mode="nearest")
-            for k in range(2)
-        ], axis=-1)
-        residual = np.linalg.norm(sampled + inverse, axis=-1)
-        inverse = -sampled
-    return inverse.astype(np.float32), float(residual.max())
-
-
-def ants_preprocess(
-    image: np.ndarray, mask: np.ndarray, steps: tuple[str, ...],
-    spacing_mm: tuple[float, float],
-) -> np.ndarray:
-    """N4 bias-field correction and/or ANTs denoising of a section image.
-
-    Runs in the listed order on the working grid, restricted to *mask*.
-    Intensities are shifted positive first (N4 works on their logarithm).
-    """
-    if not steps:
-        return image
-    ants = import_ants()
-    array = np.asarray(image, dtype=np.float32)
-    array = array - float(array.min()) + 1.0
-    current = ants.from_numpy(np.ascontiguousarray(array.T), spacing=tuple(spacing_mm))
-    ants_mask = ants.from_numpy(
-        np.ascontiguousarray(mask.astype(np.float32).T), spacing=tuple(spacing_mm),
-    )
-    for step in steps:
-        if step == "n4":
-            current = ants.n4_bias_field_correction(current, mask=ants_mask)
-        elif step == "denoise":
-            current = ants.denoise_image(current, mask=ants_mask)
-        else:
-            raise ValueError(f"Unknown preprocessing step: {step!r}")
-    return np.ascontiguousarray(current.numpy().T, dtype=np.float32)

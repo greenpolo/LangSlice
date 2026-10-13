@@ -167,7 +167,7 @@ images = Path(sys.argv[1])
 write_sections(images)
 loader = atlas_loader()
 create(JobSpec(image_folder=str(images), preprocess="none",
-               tasks=["reorder", "position", "transform"],
+               tasks=["position", "transform"],
                inputs={"pixel_size_um": PIXEL_SIZE_UM}), atlas_loader=loader).close()
 job = langslice.open_job(images, atlas_loader=loader)
 job.status()

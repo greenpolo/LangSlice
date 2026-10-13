@@ -1,10 +1,10 @@
-"""Picture options and the tissue-framed renderers.
+"""Picture options and the section and atlas renderers.
 
 A :class:`DisplayOptions` is one picture's options, built by the core's own
 callers (``look``'s pictures, :mod:`langslice.core.look`; the fit, trace and
 damage pictures, :func:`default_options`) and drawn by the shared renderers
 (the physical canvas in :func:`langslice.core.canvas.physical_views`, the
-tissue-framed pictures below):
+section and atlas pictures below):
 
 - ``mode`` — :data:`MODE_RULES` says what each mode draws.
 - ``channels`` — what of the SECTION is shown: one or more raw channel names
@@ -20,7 +20,7 @@ tissue-framed pictures below):
   as the atlas picture; two images are added in two colours. No ``borders``
   means no lines.
 - ``atlas_opacity``, ``regions`` (one side allowed, ``"CTX:left"``),
-  ``outlines`` (which lines ``borders`` draws: all or outer), ``border_color``,
+  ``outlines`` (which lines ``borders`` draws: all or none), ``border_color``,
   ``border_thickness``, ``zoom`` (``[x0, y0, x1, y1]`` pixels of the picture
   the same call returns unzoomed, top-left origin: :func:`zoom_fractions`),
   ``deformation`` (placement pictures: draw the applied warp, or ``none`` for
@@ -46,11 +46,11 @@ from langslice.core.appearance import (
     preprocessed_settings,
 )
 from langslice.core.atlas.core import get_reference_slice
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import (
     HIGHLIGHT_WIDTH,
     annotation_slice,
-    family_outlines,
-    outer_outline,
+    region_outlines,
 )
 from langslice.core.canvas import (
     REGION_CONTEXT_ALPHA,
@@ -73,14 +73,7 @@ logger = logging.getLogger(__name__)
 ATLAS_CHANNELS: tuple[str, ...] = ("template", "nissl", "borders")
 #: The atlas channels that are images (``borders`` is lines).
 ATLAS_IMAGES: tuple[str, ...] = ("template", "nissl")
-#: Names the atlas template went by earlier; still accepted on input.
-_ATLAS_NAME_ALIASES = {"ara": "template"}
 
-
-def canonical_atlas_name(name: str) -> str:
-    """The current name of an atlas channel or fit atlas image. The one place
-    the old name ``ara`` is accepted (call arguments, saved jobs and settings)."""
-    return _ATLAS_NAME_ALIASES.get(name, name)
 
 #: Raw channels one overlay may add up.
 MAX_OVERLAY_CHANNELS = 6
@@ -147,7 +140,7 @@ class DisplayOptions:
     zoom: tuple[float, ...]
     #: Raw channel names shown (empty: the default render, or the version).
     channels: tuple[str, ...]
-    #: ``preprocessed`` (or its older name ``fit``), or empty.
+    #: ``preprocessed``, or empty.
     version: str
     atlas_channels: tuple[str, ...]
     atlas_opacity: float
@@ -155,7 +148,7 @@ class DisplayOptions:
     #: a name may carry a side (``"CTX:left"``, :mod:`langslice.core.atlas.sides`),
     #: which the renderers resolve against the picture's placement.
     regions: tuple[tuple[str, frozenset[int]], ...]
-    #: Which lines ``borders`` draws: ``all`` or ``outer``.
+    #: Which lines ``borders`` draws: ``all`` or ``none``.
     outlines: str
     border_color: str
     border_thickness: float
@@ -164,6 +157,9 @@ class DisplayOptions:
     #: Long edge of each picture this call returns
     #: (:func:`langslice.core.sizes.picture_edge`).
     long_edge: int = PICTURE_EDGES["low"][1]
+    #: Ontology depth of the regions whose boundaries ``all`` draws
+    #: (:func:`langslice.core.atlas.levels.labels_at`).
+    depth: int = OVERLAY_DEPTH
 
     @property
     def full_view(self) -> bool:
@@ -196,10 +192,10 @@ class DisplayOptions:
 
     def look(self, state: StackState, record: SliceState) -> Look:
         """The look a picture of *record* is drawn in: the version
-        ``preprocessed`` (or ``fit``) is the preprocessed channel, no channels
+        ``preprocessed`` is the preprocessed channel, no channels
         the default render (None); raw channels carry their display
         properties."""
-        if self.version in ("fit", PREPROCESSED):
+        if self.version == PREPROCESSED:
             return preprocessed_settings(state, record.id)
         if not self.channels:
             return None
@@ -223,7 +219,7 @@ class DisplayOptions:
         """Caption fragment naming what of the section is shown ("" for the
         default render): each raw channel with its display setting, ``auto``
         without *state* (:func:`langslice.core.channels.display_words`)."""
-        if self.version in ("fit", PREPROCESSED):
+        if self.version == PREPROCESSED:
             return "  [preprocessed channel]"
         if not self.channels:
             return ""
@@ -358,32 +354,31 @@ def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
     return cropped_geometry(image.crop(box), image, box)
 
 
-# --- tissue-framed pictures ----------------------------------------------
+# --- section and atlas pictures -----------------------------------------
 
 
 def framed_section(
     ctx: Workspace, state: StackState, record: SliceState, options: DisplayOptions,
     *, long_edge: int | None = None, look: Look | str = "options",
 ) -> Image.Image:
-    """One section as corrected, tissue-framed, in the call's look and zoom.
+    """One section as corrected, the whole image, in the call's look and zoom.
 
     *long_edge* None is the call's picture size (``options.long_edge``);
     *look* overrides the options' (``preprocess`` draws a target's
-    appearance before and after its write). A zoom renders the framed section
+    appearance before and after its write). A zoom renders the section
     larger (never past its working copy) and crops the requested fraction,
     so it magnifies.
     """
     long_edge = long_edge or options.long_edge
     drawn: Look = options.look(state, record) if look == "options" else cast(Look, look)
-    whole = render_slice(ctx, record, long_edge=long_edge, frame=True, look=drawn)
+    whole = render_slice(ctx, record, long_edge=long_edge, look=drawn)
     if options.full_view:
         return whole
     window = options.window(whole.size)
     x0, y0, x1, y1 = window
     extent = max(abs(x1 - x0), abs(y1 - y0), 1e-3)
     larger = render_slice(
-        ctx, record, long_edge=int(math.ceil(long_edge / min(1.0, extent))), frame=True,
-        look=drawn,
+        ctx, record, long_edge=int(math.ceil(long_edge / min(1.0, extent))), look=drawn,
     )
     return _crop_fraction(larger, tuple(window))
 
@@ -462,10 +457,8 @@ def framed_atlas(
     rgb, _ = normalize_border_style(options.border_color, options.border_thickness)
     context: list[np.ndarray] = []
     if options.borders:
-        draw = outer_outline if options.outlines == "outer" else family_outlines
-        context = [poly for _color, poly in draw(
-            ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
-        )]
+        context = region_outlines(ctx.atlas, position_mm, depth=options.depth, plane=plane,
+                                  pitch_deg=pitch, yaw_deg=yaw)
     origin = (box[0], box[1])
     if context:
         _draw_polys(canvas, context, rgb, thickness=options.border_thickness, origin=origin,
@@ -492,15 +485,13 @@ def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions
     shown = view_angles_label(plane_angles(state, angles), median=median)
     name = options.atlas_name()
     extra = "" if name == "template" else f" {name}"
-    if options.borders and options.outlines == "outer":
-        extra += " outer outline"
     if options.regions:
         extra += " regions " + ",".join(name for name, _ids in options.regions)
     return f"atlas {position_mm:.2f} mm{shown}{extra}"
 
 
 __all__ = [
-    "ATLAS_CHANNELS", "DisplayOptions", "canonical_atlas_name", "MODE_RULES",
+    "ATLAS_CHANNELS", "DisplayOptions", "MODE_RULES",
     "atlas_caption", "atlas_image_picture", "available_atlas_channels",
     "default_options", "framed_atlas", "framed_section", "regions_in_plane",
 ]

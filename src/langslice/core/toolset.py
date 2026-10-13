@@ -77,8 +77,6 @@ class ToolDef:
     #: The verb calls the run's image model: a door that cannot reach one
     #: leaves it out.
     image_model: bool = False
-    #: A hidden verb (always a scripting verb) is in no listing.
-    hidden: bool = False
     #: The parts of the tool that can be switched off on their own: option
     #: name -> the argument whose values the option is one of ("" when the
     #: option is no value of an argument). ``tool:option`` names them.
@@ -152,11 +150,6 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("trace_borders", "write", "Nonlinear", long=True, image_model=True,
             when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model,
             needs=_OVERLAY, writes=("deformation",)),
-    # The placement-free trace (route "atlas"): kept for experiments, called
-    # by name from the agent CLI and the library, listed nowhere.
-    ToolDef("trace_from_atlas", "write", "Nonlinear", long=True, image_model=True,
-            scripting=True, hidden=True, writes=("deformation",),
-            when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
     # --- bookkeeping (every run) --------------------------------------------------------
     ToolDef("note", "write", "Common"),
     ToolDef("undo", "write", "Common", essential=True),
@@ -188,32 +181,25 @@ def option_names(tool: str, tools: Mapping[str, ToolDef] = TOOLS) -> tuple[str, 
 def valid_names(spec: Any = None) -> list[str]:
     """Every name a ``disabled`` list takes, in table order (a tool, then its
     options): the tools that can be switched off and every option, the tools
-    of *spec*'s plugins after the native ones. The hidden scripting verbs are
-    accepted and not listed."""
+    of *spec*'s plugins after the native ones."""
     tools = tools_for(spec)
     names: list[str] = []
     for tool in tools.values():
-        if not tool.essential and not tool.hidden:
+        if not tool.essential:
             names.append(tool.name)
         names.extend(option_names(tool.name, tools))
     return names
 
 
 def catalog(spec: Any = None) -> list[dict[str, Any]]:
-    """The tools a host dialog can offer to switch off, listed tools only, in
-    table order: name, group, kind, whether the tool can be disabled
-    (``essential`` tools cannot, their options can), the names of its options
-    and what it needs (groups of names, one of each on). Plain data."""
+    """The tools a host dialog can offer to switch off, in table order: name,
+    group, kind, whether the tool can be disabled (``essential`` tools cannot,
+    their options can), the names of its options and what it needs (groups
+    of names, one of each on). Plain data."""
     return [{"name": tool.name, "group": tool.group, "kind": tool.kind,
              "disableable": not tool.essential, "options": list(tool.options),
              "needs": [list(group) for group in tool.needs]}
-            for tool in tools_for(spec).values() if not tool.hidden]
-
-
-def accepted_names(spec: Any = None) -> set[str]:
-    """Every name :func:`valid_names` lists, and the hidden verbs."""
-    return {*valid_names(spec), *(tool.name for tool in tools_for(spec).values()
-                                  if tool.hidden)}
+            for tool in tools_for(spec).values()]
 
 
 def off_names(spec: Any) -> list[str]:
@@ -257,7 +243,7 @@ def check_names(names: list[Any], spec: Any = None) -> str | None:
     """Why *names* hold a name no tool or option has, or a tool that cannot
     be switched off; None when they do not. *spec*: the job whose plugin
     tools are valid names too."""
-    known = accepted_names(spec)
+    known = set(valid_names(spec))
     for name in names:
         if name in known:
             continue
@@ -275,8 +261,7 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
     it can. The checks, in order: the names; ``look`` keeps a mode; every
     task that is on keeps a tool that writes its answer (without those that
     call the image model when *image_model* is False: a door that cannot
-    reach it); a tool that is on keeps what it needs; the viewing gates keep
-    the positioning look."""
+    reach it); a tool that is on keeps what it needs."""
     disabled = spec.disabled
     if not disabled:
         return None
@@ -302,8 +287,4 @@ def refusal(spec: Any, *, image_model: bool = True) -> str | None:
                 return (f"disabled: {tool.name} is on and needs {_either(list(group))}, "
                         f"which {'is' if len(group) == 1 else 'are'} off; turn "
                         f"{tool.name} off too or keep {_either(list(group))} on")
-    if (spec.has("position") and spec.position.gated
-            and is_off(disabled, "look:positioning")):
-        return ("disabled: position.gated makes submit wait for a look in mode "
-                "positioning, which is off; switch the gates off or keep look:positioning on")
     return None

@@ -143,39 +143,6 @@ def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
     assert sum(p.inline_data is not None for p in placed) == 1
 
 
-def test_a_starting_position_is_labelled_start_and_said_not_placed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-):
-    from langslice.core import opening
-
-    state, ctx = _stack(tmp_path / "s", 3)
-    labels: list[str] = []
-    cell = opening._cell
-
-    def spy(image, label, width):
-        labels.append(label)
-        return cell(image, label, width)
-
-    monkeypatch.setattr(opening, "_cell", spy)
-    first, second, third = state.in_order()
-    first.position_mm, first.position_source = 1.0, "default"
-    second.position_mm, second.position_source = 2.0, "default"
-    third.position_mm = 3.5  # a position of its own
-    parts = opening_parts(state, ctx)
-    text = " ".join((parts[0].text or "").split())
-    assert ("A label ending 'start' marks an evenly spaced starting position the job "
-            "gave the section: it is not yet placed.") in text
-    assert "atlas 1.00 mm start" in labels and "atlas 2.00 mm start" in labels
-    assert "atlas 3.50 mm" in labels and "atlas 3.50 mm start" not in labels
-
-    # Without any starting position, no label says "start" and the sentence is gone.
-    first.position_source = second.position_source = ""
-    labels.clear()
-    parts = opening_parts(state, ctx)
-    assert "'start'" not in (parts[0].text or "")
-    assert not any(label.endswith(" start") for label in labels)
-
-
 def test_the_reference_is_atlas_strips_at_the_tile_size(tmp_path: Path):
     state, ctx = _stack(tmp_path / "s", 2)
     parts = opening_parts(state, ctx)

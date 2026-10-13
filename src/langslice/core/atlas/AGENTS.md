@@ -30,38 +30,28 @@ here is a verbatim copy — edit one, mirror to the other.
 - `render.py` — the geometry both methods draw from, belonging to neither:
   `annotation_slice` (the display-oriented annotation at a position,
   resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,
-  `family_mapping` (region id -> its merged color family's representative),
-  `family_labels` (a label map rewritten to those representatives),
-  `placed_border_coverage` (antialiased placed boundaries; the image tool's
-  overlay and the deformable fit's border images), `region_contours` +
+  `region_boundaries` (where neighbouring pixels of a label map differ: the
+  one boundary computation every pixel boundary picture uses) and
+  `stroke_boundaries` (those edges widened and area-averaged into antialiased
+  coverage), `placed_border_coverage` (antialiased placed boundaries; the
+  image tool's overlay and the deformable fit's border images), `region_contours` +
   `_smooth_closed` (smoothed per-region polygons, holes included, confetti
   dropped; each outline runs along the pixel edges its region shares with
   its neighbours, `_on_pixel_edges`, not through its boundary pixels'
-  centres, so a border two regions share is one line), `family_outlines` / `outer_outline` (one `(family color,
-  polyline)` per family region, in atlas-native pixels), and the shade rules
-  `border_color` / `is_dark_background`. Every picture draws its boundaries
+  centres, so a border two regions share is one line), `region_outlines` (the polylines of every region at a
+  depth, `levels.labels_at`), in
+  atlas-native pixels, and the shade rule
+  `is_dark_background`. Every picture draws its boundaries
   from these, so two views never disagree about where a boundary is.
-- `recolor.py` — `color_lut(atlas)`: organized structure colors for atlases
-  whose native palettes are visually confusing. Its consumer is the family
-  grouping (`render.family_mapping`) behind the placement overlay's outlines,
-  whose lines are drawn in one color (yellow by default); no model is shown a
-  colored atlas render. Native colors are kept when they are
-  hierarchy-organized. Otherwise the true Allen CCF colors (vendored
-  `allen_colors.json`) are joined for trees with enough Allen overlap (the
-  all-white atlases such as Osten, Princeton and adult Kim, and the Waxholm
-  rat family): by normalized name, a terminology bridge (classical or
-  embryological vocabulary onto Allen's, e.g. mesencephalon -> Midbrain,
-  white matter -> fiber tracts), name variants, and acronym only when the
-  names corroborate it; unmatched subregions inherit their deepest matched
-  ancestor's color (the root never joins or seeds inheritance). Foreign trees
-  get a generated Allen-style palette: nested hue subdivision (each
-  division's hue range proportional to its subtree), quantized to at most
-  `MAX_FAMILIES` flat family colors, because few flat colors is the Allen
-  convention. Auto-detection is data-driven (degenerate = one color for
-  everything; disorganized = child colors uncorrelated with parents), and
-  flat or small trees keep native colors. A derived palette is then
-  organized: colors closer than `MERGE_EPS` (40, `family_mapping`'s own
-  radius) collapse into one unit, and the surviving units are pulled at least
-  `MIN_SEPARATION` (60) apart, nudging value/saturation before hue so a
-  family keeps its identity. Native palettes are left exactly as the atlas
-  authored them.
+- `tree.py` — the structure table and walks over its hierarchy, the one
+  reader of `atlas.structures`: `structure_table` (`{id: record}`, records
+  read in place, never copied, so BrainGlobe never loads a lazy mesh), `path`,
+  `ancestry`, `ancestor_at`, `descendants` and `with_descendants`.
+- `levels.py` — `labels_at(labels, atlas, depth)`: each id mapped to its
+  ancestor at that depth of BrainGlobe's `structure_id_path` (root = 0; an id
+  with a shorter path stays itself, 0 stays 0), cached per atlas and depth.
+  The one region grouping for every atlas: agent overlays draw contours at
+  `OVERLAY_DEPTH` (6; `look`'s `depth`), the image model is shown and traces
+  regions at `MODEL_DEPTH` (6, fixed). Atlas colours are BrainGlobe's own
+  `rgb_triplet` (the exported label table, `job.formats.write_labels`);
+  every picture draws its lines in one colour.

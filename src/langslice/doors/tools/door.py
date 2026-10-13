@@ -2,8 +2,8 @@
 
 The tool bodies (:mod:`.looking`, :mod:`.changing`, :mod:`.fitting`) are
 closures over one :class:`Door`: the job and the workspace they work on,
-the toolbox's door-side record (:class:`langslice.doors.tools.toolbox.ToolBox`:
-the look-before-commit gates), the run's picture size, the image model, and
+the toolbox's door-side record (:class:`langslice.doors.tools.toolbox.ToolBox`),
+the run's picture size, the image model, and
 the small helpers every body words its reply with (the status rows a write
 changed, a section list resolved, a refusal as a payload).
 """
@@ -44,8 +44,6 @@ class Door:
     box: ToolBox
     #: The picture-size level the tools work at (``core.sizes``).
     level: str
-    #: The look-before-commit gates of ``position.gated`` apply here.
-    gated: bool
     #: The image model is in this run and reachable (``trace_borders``).
     traces_on: bool
     image_model: ImageModel | None
@@ -93,16 +91,6 @@ class Door:
             elif all(held.id != record.id for held in known):
                 known.append(record)
         return known, unknown
-
-    def forget_looks(self, moved: Sequence[str]) -> None:
-        """A position moved (by a write, undo, redo or a reload) is a write to
-        it: that section needs a new look, and the stack a new review (the
-        gates)."""
-        for name in moved:
-            self.box.compared.pop(name, None)
-        if moved:
-            self.box.reviewed = False
-
 
 def pictured(result: dict[str, Any], looked: Looked) -> dict[str, Any]:
     """*result* with the pictures :mod:`langslice.ops.look` drew and saved:

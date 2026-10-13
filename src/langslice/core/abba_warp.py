@@ -1,7 +1,7 @@
 """An applied deformation as ABBA landmark pairs, on top of LangSlice's affine step.
 
 The Fiji connector lands a section's deformation as a SECOND ABBA
-registration step (a BigWarp thin-plate spline, ``SacBigWarp2DRegistration``)
+registration step (a BigWarp thin-plate spline, ``BigWarpSource2DRegistration``)
 on top of the affine step :func:`langslice.core.abba_affine.normalized_to_abba_affine`
 gives it. ABBA applies the affine first, so the warp step maps points
 ALREADY PLACED by the affine. This module computes that step's landmark pairs.

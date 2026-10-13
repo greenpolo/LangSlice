@@ -131,7 +131,7 @@ public final class SetupDialog extends JDialog {
                 try {
                     JsonObject result = get();
                     if (!isDisplayable()) return;
-                    if (!result.has("protocol_version") || result.get("protocol_version").getAsInt() != 1) throw new IllegalStateException("This LangSlice version is incompatible with the plugin. Update LangSlice and the Fiji plugin together.");
+                    if (!result.has("protocol_version") || result.get("protocol_version").getAsInt() != 2) throw new IllegalStateException("This LangSlice version is incompatible with the plugin. Update LangSlice and the Fiji plugin together.");
                     verified = true; verifiedPrefix = selected;
                     StringBuilder text = new StringBuilder("Installation working. LangSlice ").append(result.get("version").getAsString()).append("\n\nAccounts:\n");
                     boolean configured = false;
@@ -141,6 +141,8 @@ public final class SetupDialog extends JDialog {
                         boolean present = account.has("configured") && account.get("configured").getAsBoolean(); configured |= present;
                         text.append(entry.getKey()).append(present ? ": credentials saved (not validated online)\n" : ": not connected\n");
                     }
+                    if (!result.get("credentials_error").isJsonNull())
+                        text.append("\nSaved credentials could not be read: ").append(result.get("credentials_error").getAsString()).append('\n');
                     text.append("\nModel requests send selected section images to the chosen provider. API providers may charge for usage.");
                     status.setText(text.toString());
                     if (continueWhenReady && configured) {
@@ -150,7 +152,7 @@ public final class SetupDialog extends JDialog {
                     }
                 } catch (Exception failure) {
                     verified = false; Throwable cause = failure.getCause() != null ? failure.getCause() : failure;
-                    status.setText(cause instanceof CancellationException ? "Operation cancelled." : cause.getMessage());
+                    status.setText(cause instanceof CancellationException ? "Operation cancelled." : RegistrationDialog.reason(cause));
                 } finally { params.remove("api_key"); busy(false); current.close(); worker = null; }
             }
         }.execute();

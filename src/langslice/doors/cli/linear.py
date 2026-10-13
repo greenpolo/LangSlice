@@ -9,14 +9,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.spec import DEFAULT_TASKS as SPEC_DEFAULT_TASKS
 from langslice.core.toolset import valid_names
 from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
 
 if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
 
-#: The tasks a stack-opening command runs without ``--tasks``.
-DEFAULT_TASKS = "position,transform"
+#: The tasks a stack-opening command runs without ``--tasks``: the job's own default.
+DEFAULT_TASKS = ",".join(SPEC_DEFAULT_TASKS)
 #: ... and with ``--registration``: only the nonlinear step, on top of the
 #: imported linear registration.
 REGISTRATION_TASKS = "nonlinear"
@@ -55,6 +56,15 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Options for a plugin's factory (repeatable): the plugin's reference, '=', "
         "then a JSON object or the path of a JSON file",
     )
+    add_session_arguments(p)
+    add_trace_argument(p)
+    p.add_argument(
+        "--fresh",
+        dest="resume",
+        action="store_false",
+        default=True,
+        help="Ignore any existing checkpoint and start over",
+    )
 
 
 def add_linear_arguments(p: argparse.ArgumentParser) -> None:
@@ -78,7 +88,6 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         choices=["coronal", "sagittal", "horizontal"],
         help=PLANE_HELP,
     )
-    p.add_argument("--model", default=None, help="Model name for the agent session")
     p.add_argument(
         "--image-provider", default="openai-oauth",
         help="Image provider for the nonlinear task's trace_borders (openai-oauth, "
@@ -88,13 +97,6 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--image-model", default=None,
         help="Image model for the nonlinear tool; default is the provider's image model",
-    )
-    p.add_argument(
-        "--reasoning",
-        default=None,
-        choices=["low", "medium", "high", "xhigh", "max"],
-        help="Reasoning effort for models that expose one. Default: the "
-        "provider's own",
     )
     p.add_argument(
         "--pixel-size-um",
@@ -112,22 +114,10 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "only - the image files are never modified",
     )
     p.add_argument(
-        "--agent-preprocessing",
-        action="store_true",
-        help="The host exports every channel of its sections (the agent's channel "
-        "tools exist either way)",
-    )
-    p.add_argument(
         "--image-resolution",
         default="low",
         choices=["low", "medium", "high", "auto"],
         help="Size of the pictures the agent is shown; auto lets it choose per call",
-    )
-    p.add_argument(
-        "--engine",
-        default="either",
-        choices=["ants", "elastix", "either"],
-        help="Accepted and ignored: ANTs SyN (ants_syn) is the one deformable fit",
     )
     p.add_argument(
         "--disable",
@@ -154,10 +144,6 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "--strict-interval",
         action="store_true",
         help="Sections must sit exactly one interval apart",
-    )
-    p.add_argument(
-        "--bayesian", action="store_true", help="Accepted and ignored: no tool searches "
-        "for positions"
     )
     p.add_argument(
         "--angles", action="store_true", help="Let the agent set the cutting angles"
@@ -235,18 +221,22 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "image folder is refused",
     )
     p.add_argument(
-        "--trace-dir",
-        default=None,
-        metavar="PATH",
-        help="Write a full-content JSONL trace of every agent session here. "
-        "Overrides LANGSLICE_TRACE_DIR; without either, <job folder>/trace",
+        "--playbook",
+        action="store_true",
+        help="Add optional positioning guidance: compare candidate planes and regions, "
+        "write supported placements, revisit uncertainty and review the stack",
     )
+
+
+def add_session_arguments(p: argparse.ArgumentParser) -> None:
+    """The flags of the built-in agent's session (``linear run`` only)."""
+    p.add_argument("--model", default=None, help="Model name for the agent session")
     p.add_argument(
-        "--fresh",
-        dest="resume",
-        action="store_false",
-        default=True,
-        help="Ignore any existing checkpoint and start over",
+        "--reasoning",
+        default=None,
+        choices=["low", "medium", "high", "xhigh", "max"],
+        help="Reasoning effort for models that expose one. Default: the "
+        "provider's own",
     )
     p.add_argument(
         "--max-input-tokens",
@@ -254,19 +244,6 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         help="Stop after one request reports more than N input tokens, cached included, "
         "then allow one submit call (default: disabled; checked after the response)",
-    )
-    p.add_argument(
-        "--gates",
-        action="store_true",
-        help="Refuse position_sections for a section not looked at since its last "
-        "write, and submit until look in mode positioning has shown every section "
-        "after the last write",
-    )
-    p.add_argument(
-        "--playbook",
-        action="store_true",
-        help="Add optional positioning guidance: compare candidate planes and regions, "
-        "write supported placements, revisit uncertainty and review the stack",
     )
     p.add_argument(
         "--max-quota-percent",
@@ -280,6 +257,17 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         dest="debrief",
         action="store_false",
         help="Skip the post-submit debrief question (what tools the agent missed)",
+    )
+
+
+def add_trace_argument(p: argparse.ArgumentParser) -> None:
+    """``--trace-dir`` (``linear run`` and ``mcp``, :func:`apply_trace_dir`)."""
+    p.add_argument(
+        "--trace-dir",
+        default=None,
+        metavar="PATH",
+        help="Write a full-content JSONL trace here. Overrides LANGSLICE_TRACE_DIR "
+        "(linear run without either: <job folder>/trace)",
     )
 
 
@@ -410,18 +398,16 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         image_folder=image_folder,
         atlas=args.atlas,
         plane=args.plane,
-        model=args.model,
-        reasoning=args.reasoning,
+        model=getattr(args, "model", None),
+        reasoning=getattr(args, "reasoning", None),
         out=args.out,
         job_dir=getattr(args, "job_dir", None),
         preprocess=args.preprocess,
-        agent_preprocessing=bool(getattr(args, "agent_preprocessing", False)),
         tasks=[task.strip() for task in tasks.split(",") if task.strip()],
         position=PositionSpec(
             thickness_um=args.thickness,
             interval_um=args.interval,
             strict_interval=args.strict_interval,
-            gated=args.gates,
             playbook=args.playbook,
         ),
         transform=TransformSpec(angles=args.angles, hemisphere_cue=args.hemisphere_cue),
@@ -436,9 +422,11 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         inputs=inputs,
         frozen=frozen or {},
         resume=args.resume,
-        debrief=args.debrief,
-        **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
-        **({"max_quota_percent": args.max_quota_percent} if args.max_quota_percent else {}),
+        debrief=getattr(args, "debrief", True),
+        **({"max_input_tokens": args.max_input_tokens}
+           if getattr(args, "max_input_tokens", None) else {}),
+        **({"max_quota_percent": args.max_quota_percent}
+           if getattr(args, "max_quota_percent", None) else {}),
     )
 
 
@@ -482,10 +470,11 @@ def run_linear(args: argparse.Namespace) -> None:
         raise SystemExit(f"langslice linear run: {exc}") from exc
     if not os.environ.get(TRACE_DIR_ENV):
         # Every run keeps its full agent trace: by default in the job folder.
+        from langslice.agent.trace import job_trace_dir
         from langslice.job.layout import job_folder_for
 
         folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
-        os.environ[TRACE_DIR_ENV] = str(folder / "trace")
+        os.environ[TRACE_DIR_ENV] = str(job_trace_dir(folder))
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")

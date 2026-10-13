@@ -64,6 +64,7 @@ class ChatHistory:
             "complete",
             "error",
             "status",
+            "progress",
         }:
             return
         clean = {
@@ -78,11 +79,12 @@ class ChatHistory:
                 "response",
                 "revised",
                 "submitted",
+                "failed",
             )
             if k in event
         }
         # Seed text is the instruction, not a conversational message.
-        if kind in {"text", "reasoning", "error", "status"}:
+        if kind in {"text", "reasoning", "error", "status", "progress"}:
             clean["text"] = str(event.get("text") or "")[:180000]
         with self.lock:
             media = []
@@ -263,7 +265,7 @@ def _arrange(parent: Any) -> tuple[int, int, int, int]:
 
 
 class ChatWindow:
-    """Same host lifecycle as ActivityWindow, with a private browser app process."""
+    """The activity log: a private Chrome/Chromium app window fed by a local event server."""
 
     def __init__(self, *, parent: Any = None) -> None:
         self.browser = _browser()
@@ -328,18 +330,3 @@ class ChatWindow:
                 self.process.kill()
                 self.process.wait(timeout=2)
         shutil.rmtree(self.profile, ignore_errors=True)
-
-
-def create_activity_window(*, parent: Any = None) -> Any:
-    """The browser log, or the Swing window when no Chromium browser starts."""
-    import logging
-
-    try:
-        return ChatWindow(parent=parent)
-    except Exception:
-        logging.getLogger(__name__).warning(
-            "Browser activity window unavailable; using Swing viewer", exc_info=True
-        )
-        from langslice.hosts.integrations.abba_activity import ActivityWindow
-
-        return ActivityWindow(parent=parent)

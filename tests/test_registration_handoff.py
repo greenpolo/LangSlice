@@ -34,7 +34,7 @@ def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: boo
     record = SliceState(
         id="section.png", index_original=0, index_corrected=0, position_mm=4.0,
         transform={"params": [1, 0, 0, 0, 1, 0],
-                   "calibration": {"section_um_per_px": 10.0, "source": "estimated"}},
+                   "calibration": {"section_um_per_px": 10.0, "source": "uncalibrated"}},
     )
     state = StackState(atlas="test_atlas", slices=[record])
     return state, context, record, pixels
@@ -84,10 +84,10 @@ def test_without_a_pixel_size_the_scale_is_the_pictures_one(tmp_path, monkeypatc
     from langslice.core import transform as core_transform
 
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch, known=False)
-    monkeypatch.setattr(core_transform, "calibrate", lambda *a, **k: (12.5, "estimated"))
+    monkeypatch.setattr(core_transform, "calibrate", lambda *a, **k: (12.5, "uncalibrated"))
     full = prepare_linear_registration(state, ctx, record.id, long_edge=120)
     small = prepare_linear_registration(state, ctx, record.id, long_edge=60)
-    assert full.metadata["calibration_source"] == "estimated"
+    assert full.metadata["calibration_source"] == "uncalibrated"
     assert full.metadata["section_um_per_px"] == 12.5
     assert small.metadata["section_um_per_px"] == 25.0
     assert record.transform is not None

@@ -46,7 +46,7 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
     from langslice.ops.deformable import fit_deformable
 
     choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                engine="ants", stiffness="medium")
+                                stiffness="medium")
     options = (default_options("overlay") if long_edge is None
                else default_options("overlay", long_edge=long_edge))
     job, workspace = handle.job, handle.workspace
@@ -71,8 +71,7 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     apply_patches()
     folder = root / "stack"
     write_sections(folder)
-    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
-                               agent_preprocessing=False)
+    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"))
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     assert job.position_sections(sections=[
@@ -95,9 +94,10 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     job.look(mode="overlay", sections=[ID1], resolution=700)
     job.look(mode="overlay", sections=[ID2], resolution=300)
     job.zoom(box=[30, 25, 270, 200])
-    # A picture smaller than the fit grid, so the residual is resampled.
+    # A picture smaller than the fit grid, so the residual is resampled (the
+    # fit is a second step on top of the first).
     again = _fit_and_draw(job, [ID0], long_edge=160)
-    assert again.rows[0]["status"] == "ok" and not again.written  # the same fit
+    assert again.rows[0]["status"] == "ok" and again.written == [ID0]
     exported = job.export_maps()
     job.close()
     yield job, Path(job.folder), exported
@@ -131,7 +131,7 @@ def test_export_writes_every_file_with_its_kind(placed):
     for stem in ("s0", "s1", "s2"):
         for name, kind in (("coords.tif", "coords"), ("labels.tif", "labels"),
                            ("labels_fiji.tif", "labels_fiji"), ("labels.csv", "labels_csv"),
-                           ("tissue.png", "tissue"), ("maps.json", "maps")):
+                           ("maps.json", "maps")):
             assert (f"sections/{stem}/{name}", kind) in kinds
     # Only the warped section has a residual.
     assert ("sections/s0/residual.tif", "residual") in kinds
@@ -157,14 +157,6 @@ def test_the_map_files_are_what_the_format_says(placed):
     outside = ~np.isfinite(coords[0])
     assert outside.any() and (~outside).any()
     assert (labels[outside] == 0).all()
-    # The maps cover the section's whole footprint: every pixel the tissue
-    # estimate holds (inside the atlas) has coordinates, and tissue.png is
-    # that estimate, for a script to mask with.
-    with Image.open(folder / "tissue.png") as opened:
-        tissue = np.asarray(opened)
-    assert tissue.dtype == np.uint8 and tissue.shape == labels.shape
-    assert set(np.unique(tissue)) <= {0, 255} and (tissue == 255).any()
-    assert np.isfinite(coords[0][tissue == 255]).mean() > 0.999
     rows = list(csv.DictReader((folder / "labels.csv").open()))
     ids = {int(row["index"]): int(row["id"]) for row in rows}
     assert set(np.unique(dense)) - {0} == set(ids)
@@ -252,11 +244,13 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
 
     job, root, _exported = placed
     record = job.state.by_id(ID0)
-    warp = job.job.deformations.current(job.state, record)
+    current = job.job.deformations.current(job.state, record)
     frame = section_frame(job.state, job.workspace, record)
     folders = _views(root, "trace_borders")
     assert folders and all((folder / "residual.tif").exists() for folder in folders)
-    for folder in folders:
+    # The first picture shows the first fit, the second the step on top of it.
+    assert len(folders) == 2 and current.parent is not None
+    for folder, warp in zip(folders, (current.parent, current), strict=True):
         picture = json.loads((folder / "view.json").read_text())["frame"]
         x0, band, x1, y1 = picture["content_box"]
         rows, cols = _content_pixels(folder)
@@ -379,56 +373,6 @@ def test_registration_json_is_rewritten_on_every_write_and_never_by_a_dry_run(pl
     assert after["sections"][0]["maps"]["current"] is True
 
 
-def test_a_starting_position_is_said_in_registration_json_and_the_maps(tmp_path, monkeypatch):
-    """A section still at the starting position the job gave it is
-    ``parameters.plane.starting_position`` true in registration.json, and maps
-    written while it sits there say ``"starting_position": true``. Writing its
-    position, even the very same value, makes it the writer's own: both go."""
-    import langslice
-    from langslice.core.spec import NonlinearSpec
-    from langslice.doors.jobs import create
-
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
-    folder = tmp_path / "stack"
-    write_sections(folder)
-    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
-                               agent_preprocessing=False)
-    # A legacy checkpoint still identifies unconfirmed starting estimates.
-    opened = create(spec, atlas_loader=atlas_loader())
-    for index, record in enumerate(opened.job.state.slices):
-        record.position_mm, record.position_source = 0.05 + 0.05 * index, "default"
-    opened.job.checkpoint()
-    opened.close()
-    job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
-    root = Path(job.folder)
-
-    def planes() -> dict[str, dict[str, Any]]:
-        return {entry["id"]: entry["parameters"]["plane"] for entry in json.loads(
-            (root / "registration.json").read_text())["sections"]}
-
-    def maps(stem: str) -> dict[str, Any]:
-        return json.loads((root / "sections" / stem / "maps.json").read_text())
-
-    status = {row["id"]: row for row in job.status()["rows"]}
-    assert all(row["position_source"] == "default" for row in status.values())
-    assert all(plane["starting_position"] is True for plane in planes().values())
-    exported = job.export_maps(slices=[ID0, ID1])
-    assert exported["written"] == [ID0, ID1]
-    assert maps("s0")["starting_position"] is True and maps("s1")["starting_position"] is True
-
-    start = status[ID0]["position_mm"]
-    assert job.position_sections(sections=[{"id": ID0, "position_mm": start}],
-                                 view=False)["status"] == "ok"
-    held = planes()
-    assert held[ID0]["starting_position"] is False and held[ID0]["position_mm"] == start
-    assert held[ID1]["starting_position"] is True
-    job.export_maps(slices=[ID0, ID1])
-    job.close()
-    assert "starting_position" not in maps("s0")
-    assert maps("s1")["starting_position"] is True
-
-
 def test_full_resolution_maps_are_on_the_file_pixels(placed, tmp_path, monkeypatch):
     import shutil
 
@@ -495,36 +439,12 @@ def test_orientation_matrix_is_the_render_order(rotation, flip):
             == np.arange(width * height).reshape(height, width)).all()
 
 
-def test_the_footprint_keeps_dark_tissue_and_tears_inside_the_outline():
-    """A dark band inside the section, open to the slide through a narrow
-    tear, is still the section: the footprint covers it; the tissue
-    estimate does not."""
-    from types import SimpleNamespace
-
-    import cv2
-
-    from langslice.core.maps import section_footprint
-
-    image = np.full((400, 600, 3), 10, dtype=np.uint8)
-    cv2.ellipse(image, (300, 200), (260, 170), 0, 0, 360, (170, 170, 170), -1)
-    cv2.ellipse(image, (300, 200), (120, 40), 0, 0, 360, (12, 12, 12), -1)  # dim band
-    cv2.line(image, (300, 240), (300, 399), (10, 10, 10), 3)  # a tear to the edge
-    workspace = SimpleNamespace(working_source=lambda _id: (Image.fromarray(image), 1.0))
-    frame = SimpleNamespace(section_id="x", file_um_per_px=10.0, working_factor=1.0)
-    footprint, tissue, found = section_footprint(workspace, frame, (600, 400))  # type: ignore[arg-type]
-    assert found
-    assert not tissue[200, 300] and footprint[200, 300]      # the dark band
-    assert not tissue[300, 300] and footprint[300, 300]      # the tear
-    assert not footprint[5, 5] and not footprint[395, 590]   # the slide
-
-
 # --- sections without a pixel size -------------
 
 
 def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """The golden stack with no pixel size anywhere (no host input, the PNGs
-    carry none), on an atlas whose anatomy is narrower at AP index 5, so
-    the tissue-width estimate differs between 0.10 and 0.25 mm."""
+    carry none)."""
     import langslice
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
@@ -534,9 +454,8 @@ def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     folder = tmp_path / "stack"
     write_sections(folder)
     loader = atlas_loader()
-    loader("x").annotation[5][:, 10:50] = 0
     spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
-                               agent_preprocessing=False, inputs={})
+                               inputs={})
     create(spec, atlas_loader=loader).close()
     return langslice.open_job(str(folder), atlas_loader=loader)
 
@@ -552,8 +471,8 @@ def _picture_um_per_section_px(root: Path, section: str) -> float:
 
 
 def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, monkeypatch):
-    """No pixel size: the pictures estimate one from the tissue width at the
-    section's CURRENT position; registration.json (and so the maps and the
+    """No pixel size: the pictures map the atlas frame onto the section at
+    its CURRENT position; registration.json (and so the maps and the
     exports, the same frame) uses that same scale, not the one stored with
     a transform written at another position."""
     job = _uncalibrated_job(tmp_path, monkeypatch)
@@ -573,7 +492,7 @@ def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, m
                             * file_size[0] / render[0])
     picture = _picture_um_per_section_px(root, ID0)
     assert abs(reg_um_per_render_px - picture) < 0.01, (reg_um_per_render_px, picture)
-    assert entry["image"]["pixel_size_source"] == "estimated"
+    assert entry["image"]["pixel_size_source"] == "uncalibrated"
     assert "pixel size" in (entry["problem"] or "")
 
 
@@ -592,16 +511,14 @@ def test_an_uncalibrated_section_is_fitted_at_the_scale_its_pictures_draw(tmp_pa
     job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
                                          "scale_y": 1.0, "translate_x_mm": 0.0,
                                          "translate_y_mm": 0.0}], view=False)
-    stored = job.state.by_id(ID0).transform["calibration"]["section_um_per_px"]
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.25}], view=False)
     job.look(mode="overlay", sections=[ID0], resolution=512)
     handoff = prepare_linear_registration(job.state, job.workspace, ID0,
                                           long_edge=PREVIEW_LONG_EDGE).metadata
     job.close()
     picture = _picture_um_per_section_px(Path(job.folder), ID0)
-    assert abs(stored - picture) > 0.1, (stored, picture)  # the scale did change
     assert abs(handoff["section_um_per_px"] - picture) < 0.01, (handoff, picture)
-    assert handoff["calibration_source"] == "estimated"
+    assert handoff["calibration_source"] == "uncalibrated"
 
 
 def prepared_render_size(path: Path) -> tuple[int, int]:
@@ -614,7 +531,7 @@ def prepared_render_size(path: Path) -> tuple[int, int]:
 
 def test_an_uncalibrated_section_without_a_transform_is_the_identity(tmp_path, monkeypatch,
                                                                      caplog):
-    """No pixel size and no transform: the identity at the estimated scale,
+    """No pixel size and no transform: the identity at the uncalibrated scale,
     as its pictures draw it, the scale stated as unknown; no traceback per
     section per checkpoint."""
     import logging

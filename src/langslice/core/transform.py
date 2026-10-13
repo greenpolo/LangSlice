@@ -33,8 +33,8 @@ from langslice.core.affine import (
     denormalized_affine,
     normalized_affine,
 )
-from langslice.core.atlas.render import atlas_um_per_px
-from langslice.core.canvas import canvas_geometry, estimate_um_per_px
+from langslice.core.atlas.render import annotation_slice, atlas_um_per_px
+from langslice.core.canvas import canvas_geometry
 from langslice.core.needs import render
 from langslice.core.sections import PREVIEW_LONG_EDGE, canvas_um_per_px, render_slice
 from langslice.core.space import Plane
@@ -52,24 +52,18 @@ def calibrate(
     """``(canvas micrometres per pixel, source)``, never failing.
 
     The file's tags or the host answer first (``"file"`` / ``"host"``). With
-    neither, the section's tissue width against the atlas anatomy's gives a
-    scale, reported as ``"estimated"`` — a shape fit, not a calibration, and
-    the payloads say so. If even that is degenerate the atlas's own voxel size
-    stands in, still ``"estimated"``: an alignment loop with an honest guess
-    beats one that crashes.
+    neither, the section image's width is mapped onto the width of the atlas
+    plane (``annotation_slice``) at the section's position and angles,
+    reported as ``"uncalibrated"``.
     """
     known, source = canvas_um_per_px(ctx, record, long_edge=PREVIEW_LONG_EDGE)
     if known is not None:
         return known, source
-    estimated = estimate_um_per_px(
-        section,
-        ctx.atlas,
-        record.position_mm or 0.0,
-        cast(Plane, state.plane),
-        record.pitch_deg,
-        record.yaw_deg,
+    plane = annotation_slice(
+        ctx.atlas, record.position_mm or 0.0, plane=cast(Plane, state.plane),
+        pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
     )
-    return (estimated or atlas_um_per_px(ctx.atlas)), "estimated"
+    return plane.shape[1] * atlas_um_per_px(ctx.atlas) / float(section.width), "uncalibrated"
 
 
 # --- the closed-form fit -------------------------------------------------
@@ -96,7 +90,6 @@ def _fit_payload(
     source: str,
     geometry: Any,
     in_section: np.ndarray,
-    iou: float,
     *,
     regions: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -113,7 +106,6 @@ def _fit_payload(
         "status": "ok",
         "id": record.id,
         "position_mm": round(record.position_mm, 3),
-        "iou": round(float(iou), 3),
         "params": params,
         # The same five knobs the interactive tools take, about the canvas
         # centre: one representation for every transform this run records.
@@ -206,54 +198,12 @@ class ElastixFit:
 
     params: list[float]
     start_params: list[float]
-    iou: float
-    start_iou: float
     report: dict[str, Any]
     placement: Any
     start_placement: Any
     grid_image: Image.Image
     fit_image: Image.Image
     engine: dict[str, Any]
-
-
-def _overlap(prepared: Any, atlas: Any, atlas_to_section: np.ndarray,
-             include: Sequence[str]) -> float:
-    """Tissue against the kept atlas footprint under *atlas_to_section*.
-
-    Excluded regions leave the atlas side, the tissue laid on them leaves the section side, and with
-    *include* both are limited to those regions plus 300 um.
-    """
-    from langslice.core.deformable.atlas_images import placement_left, regions_mask
-    from langslice.core.deformable.geometry import warp_affine
-    from langslice.core.deformable.masks import dilate
-    from langslice.core.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
-
-    native = prepared.native
-    dropped = prepared.excluded_mask
-    kept_native = native != 0
-    if dropped is not None:
-        kept_native &= ~dropped
-    zone = None
-    if include:
-        left = placement_left(atlas, prepared.placement, include)
-        chosen = regions_mask(atlas, native, include, left) & kept_native
-        zone = dilate(chosen, DEFAULT_NEIGHBOURHOOD_UM / atlas_um_per_px(atlas))
-    height, width = prepared.tissue.shape
-
-    def placed(mask: np.ndarray) -> np.ndarray:
-        return warp_affine(mask.astype(np.uint8), atlas_to_section, (width, height),
-                           nearest=True) > 0
-
-    kept = placed(kept_native)
-    tissue = prepared.tissue.copy()
-    if dropped is not None:
-        tissue &= ~placed(dropped)
-    if zone is not None:
-        near = placed(zone)
-        kept &= near
-        tissue &= near
-    union = float((kept | tissue).sum())
-    return float((kept & tissue).sum()) / union if union else 0.0
 
 
 def elastix_affine(
@@ -274,13 +224,10 @@ def elastix_affine(
     (``deformation.fit_grid``), the
     section's preprocessed channel (:func:`langslice.core.deformation.stain_image`)
     and the placed atlas template are prepared
-    exactly as a deformable stain fit prepares them (tissue and atlas masks,
+    exactly as a deformable stain fit prepares them (section and atlas masks,
     excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
     and :func:`langslice.core.deformable.engines.run_elastix_affine` fits an affine
-    from the identity. An intact section gets no torn-edge band (its whole
-    outline is real, and the band's rule would also mark outline the start
-    placement merely overhangs); a damaged one gets the deformable fit's
-    automatic band. Raises on a placement, region or engine failure.
+    from the identity. Raises on a placement, region or engine failure.
     """
     from dataclasses import replace
 
@@ -292,11 +239,11 @@ def elastix_affine(
     grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
     image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
     width, height = grid.image.size
-    torn = None if record.damaged else np.zeros((height, width), dtype=bool)
     prepared = prepare_fit(image, ctx.atlas, grid.placement,
-                           elastix_settings(include, exclude, atlas_image), torn_band=torn,
+                           elastix_settings(include, exclude, atlas_image),
                            nissl=ctx.nissl_atlas if atlas_image == "nissl" else None)
     _check_elastix_region(prepared, ctx.atlas, include)
+    assert prepared.inputs is not None  # prepare_fit always builds engine inputs
     result = run_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.
@@ -319,8 +266,6 @@ def elastix_affine(
     }
     return ElastixFit(
         params=params, start_params=start,
-        iou=_overlap(prepared, ctx.atlas, fitted.atlas_to_section, include),
-        start_iou=_overlap(prepared, ctx.atlas, grid.placement.atlas_to_section, include),
         report=report, placement=fitted, start_placement=grid.placement,
         grid_image=grid.image, fit_image=image,
         engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
@@ -342,8 +287,7 @@ def fit_elastix(
     A local refinement of the section's CURRENT placement (its stored six
     numbers, or the identity without a transform) by :func:`elastix_affine`.
     The payload: ``params`` (six normalized numbers on the section's frame),
-    ``iou`` (the overlap of the tissue and the kept atlas footprint under the
-    fitted placement), the ``physical`` knobs about the canvas centre, the
+    the ``physical`` knobs about the canvas centre, the
     ``calibration`` of the working frame, and a ``regions`` report when
     regions were given.
     """
@@ -382,7 +326,7 @@ def fit_elastix(
             "message": f"The Elastix affine failed: {exc}",
         }
     in_section = denormalized_affine(fit.params, section.size)
-    return _fit_payload(record, section, um_per_px, source, geometry, in_section, fit.iou,
+    return _fit_payload(record, section, um_per_px, source, geometry, in_section,
                         regions=fit.report if (include or exclude) else None)
 
 

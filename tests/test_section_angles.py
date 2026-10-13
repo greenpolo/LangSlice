@@ -106,9 +106,9 @@ def test_a_shared_angle_is_stored_on_the_stack_and_read_onto_every_section(tmp_p
     from langslice.job.checkpoint import (
         FORMAT_KEY,
         STATE_FORMAT_VERSION,
-        load_checkpoint,
         write_checkpoint,
     )
+    from tests.linear_tool_helpers import load_checkpoint
 
     stored = {FORMAT_KEY: STATE_FORMAT_VERSION, "atlas": "allen_mouse_25um",
               "plane": "coronal", "cutting_angles_deg": {"pitch": 2.0, "yaw": -1.0},
@@ -301,7 +301,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
                "--transforms", transforms_file(images),
                "--section-angles", json.dumps(SECTION_ANGLES))
-    from langslice.job.checkpoint import load_checkpoint
+    from tests.linear_tool_helpers import load_checkpoint
 
     state = load_checkpoint(str(job / "state.json"))
     assert state is not None

@@ -54,7 +54,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     first = ops_deformable.ants_syn(job, ctx, [ID])
     (row,) = first.rows
     assert row["status"] == "ok" and row["written"]
-    assert row["settings"] == {"engine": "ants", "stiffness": "medium", "fit_section": "fit",
+    assert row["settings"] == {"stiffness": "medium", "fit_section": "fit",
                                "fit_atlas": "template"}
     assert len(job.undo_stack) == depth + 1
     held = job.state.slices[0].deformation
@@ -107,9 +107,3 @@ def test_without_ants_it_refuses(tmp_path: Path, atlas, monkeypatch):
         ops_deformable.ants_syn(job, ctx, [ID])
     assert refused.value.code == "ANTS_MISSING"
     assert "antspyx" in refused.value.payload()["message"]
-
-
-def test_the_old_atlas_name_is_accepted(tmp_path: Path, atlas):
-    job, ctx = _job(tmp_path, atlas)
-    done = ops_deformable.ants_syn(job, ctx, [ID], atlas_image="ara")
-    assert done.rows[0]["settings"]["fit_atlas"] == "template"

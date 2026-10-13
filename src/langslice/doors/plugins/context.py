@@ -97,7 +97,7 @@ class FitFrame:
     fits work on.
 
     ``image`` is the section as its orientation sets it, at its current plane,
-    with no in-plane transform (RGB, ``uint8``); ``tissue`` is its tissue mask.
+    with no in-plane transform (RGB, ``uint8``).
     ``atlas`` holds the plane at the section's position and cutting angles on
     the native atlas grid: ``template``, ``annotation`` (region ids) and, where
     the atlas has one, ``nissl``. ``atlas_to_section`` (3x3 on ``[x, y, 1]``)
@@ -109,7 +109,6 @@ class FitFrame:
 
     id: str
     image: np.ndarray
-    tissue: np.ndarray
     atlas: dict[str, np.ndarray]
     atlas_to_section: np.ndarray
     plane: dict[str, Any]
@@ -399,7 +398,7 @@ class ToolContext:
             look = (preprocessed_settings(self._door.state, record.id)
                     if names == ["preprocessed"]
                     else with_properties(self._door.state, {"overlay": names}))
-        image = render_slice(self._door.ctx, record, long_edge=edge, frame=False, look=look)
+        image = render_slice(self._door.ctx, record, long_edge=edge, look=look)
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
             file_size=tuple(render_sizes(self._door.ctx, record.id).file_size),  # type: ignore[arg-type]
@@ -426,15 +425,10 @@ class ToolContext:
         Needs a position. *atlas* picks the atlas planes to sample
         (``nissl`` only where the atlas has one)."""
         from langslice.core.deformable.atlas_images import native_intensity, native_labels
-        from langslice.core.deformable.masks import tissue_masks
 
         record = self._record(section)
         grid = self._grid(record)
         image = grid.image.convert("RGB")
-        try:
-            tissue, _raw = tissue_masks(image)
-        except ValueError as exc:
-            raise ToolError("NO_TISSUE", f"{record.id}: {exc}") from exc
         placement = grid.placement
         workspace = self._door.ctx
         planes: dict[str, np.ndarray] = {}
@@ -448,7 +442,7 @@ class ToolContext:
                 workspace.atlas, placement, "nissl", nissl=workspace.nissl_atlas),
                 dtype=np.float32)
         return FitFrame(
-            id=record.id, image=np.asarray(image), tissue=np.asarray(tissue), atlas=planes,
+            id=record.id, image=np.asarray(image), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),

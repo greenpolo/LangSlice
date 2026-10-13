@@ -40,11 +40,11 @@ and returns a `record.DeformableRecord`. No custom solver.
   descendants included, optionally one-sided) restricts both masks to those
   structures plus
   `neighbourhood_um`, and with `previous=record` composes onto that record;
-  `record.parent` / `record.undo()` is the step before.
+  `record.parent` is the step before.
 - Route B (image model): the model's extracted line mask (`lines=`, on the
   section grid, e.g. `trace_borders`' `extracted_lines.png` with its
-  `atlas_to_canvas`) against `borders_merged` (the same color-family set the
-  model was shown, `core.atlas.render.family_labels`) or `borders`; both softened
+  `atlas_to_canvas`) against `borders_merged` (the regions the model was shown:
+  `core.atlas.levels.labels_at` at `MODEL_DEPTH`) or `borders`; both softened
   by the same Gaussian ridge (`settings.LINE_SOFTENING_UM`, fixed at 60 µm).
   Mean squares (`core/deformation.Choice` adds the lines as named regions,
   `labels="model"`, for `traced_borders`). The crossed pairings are refused
@@ -54,10 +54,8 @@ and returns a `record.DeformableRecord`. No custom solver.
 - Label-map channels (`labels=`, ANTs only): `model` names each area the
   model's lines enclose after the placed merged region it overlaps most
   (`regions.named_regions`, small loops around bubbles dropped, joint
-  one-to-one renaming) and pairs each region's indicator with the atlas's;
-  `auto` adds the stain's tissue footprint and empty interior holes near
-  placed ventricles (the linear tool adds `auto` to every ANTs stain fit,
-  `core/deformation.Choice`). Built as `ants.registration`
+  one-to-one renaming) and pairs each region's indicator with the atlas's.
+  Built as `ants.registration`
   `multivariate_extras` (the same per-label MeanSquares construction
   `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
   so would ignore stiffness); the edge channel is the first extra.
@@ -67,8 +65,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   spacing and origin, returning millimetre fields and ANTs' own inverse.
   Any other `FitSettings.engine` is refused there: `engine="elastix"` exists
   for the Elastix affine's inputs (its metric, no label channels), never a
-  deformation. `engines.invert_field` (a fixed-point inverse) serves
-  pictures of a record without a stored inverse.
+  deformation.
 - DETERMINISM: identical inputs give identical fields, bit for bit (test
   `test_identical_inputs_give_identical_fields`: twice in process and in a
   pool worker). Fixed seed `engines.RANDOM_SEED` (antsRegistration
@@ -95,7 +92,6 @@ and returns a `record.DeformableRecord`. No custom solver.
   `AffineResult.matrix_mm` (section mm -> placed-atlas mm, the field's
   direction); a non-finite or singular matrix raises. `_elastix_register` is
   the one Elastix call (images, masks, extra pairs, the global thread count).
-- Optional ANTs preprocessing of the stain (`preprocess=("n4", "denoise")`).
 - `fit_prepared` runs 1–8 prepared fits (different sections or settings) in
   a spawn process pool (atlas work in the caller, engine calls in workers,
   `cpu_count // FIT_THREADS` workers at most, one per fit); a failing
@@ -116,11 +112,7 @@ The step size is fixed.
 
 Stain defaults, and why: local correlation at 80 µm radius followed visible
 structure better than mutual information but on its own still crossed
-enlarged ventricles, so the edge channel is on by default and the tool adds
-the automatic label channels to every ANTs stain fit (they give a continuous
-pial outline and fill enlarged ventricles; their known error: small
-lateral-ventricle pieces pulled into a dorsal third-ventricle hole, since the
-ventricle channel pairs all ventricles with all holes). There is no `stiff`
+enlarged ventricles, so the edge channel is on by default. There is no `stiff`
 setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
 slower, worse outlines) and the linear tool always runs `standard`; line
 softening is the constant `LINE_SOFTENING_UM` = 60. `template` is the default
@@ -145,13 +137,10 @@ one side, excluding RSP/VIS/PTLp by name also drops the intact hemisphere;
 
 ## Masks (`masks.py`)
 
-Fixed: tissue (`image_prep.foreground_mask` at a 1024-px proxy, holes
-filled) widened by `MASK_MARGIN_MM`, minus the torn-edge band. Default torn
-rule: tissue outline lying more than `TORN_EDGE_DEPTH_MM` inside the placed,
-non-excluded atlas footprint, widened by `TORN_EDGE_BAND_MM`; `torn_band=`
-overrides it. Moving: placed footprint widened by the margin, minus excluded
-regions and `EXCLUSION_MARGIN_MM` around them (blanking alone left an edge
-that still pulled tissue). Excluded regions are blanked on the native plane
+Fixed mask = placed atlas footprint widened by `MASK_MARGIN_MM`. Moving:
+placed footprint widened by the margin, minus excluded regions and
+`EXCLUSION_MARGIN_MM` around them (blanking alone left an edge that still
+pulled tissue). Excluded regions are blanked on the native plane
 for EVERY atlas image kind before placement (one-sided entries: that half
 of the region only).
 
@@ -161,10 +150,9 @@ of the region only).
 placed-atlas point + field (brainglobe-registration's direction); native =
 inv(atlas_to_section) @ (pixel + field/mm_per_px), the order `core/maps.native_points` composes. A sequential record's field is
 the total. Also: inverse field (or None), engine name/version/runtime/native
-parameters, working grid, warped leaf labels CLIPPED TO TISSUE, tissue and
-torn-band masks, excluded ids, `native_to_volume_index` (plane pixel → atlas
-volume index, so exports need no atlas object), `native_coordinates()`,
-`volume_coordinates()`, `save()`/`load()` (parent chain under `parent/`),
+parameters, working grid, warped leaf labels (unclipped), the placed
+footprint mask the fixed mask starts from, excluded ids, `native_to_volume_index` (plane pixel → atlas
+volume index, so exports need no atlas object), `save()`/`load()` (parent chain under `parent/`),
 and a free-form `provenance` dict saved with the metadata (the linear tool
 stores section id, linear handoff metadata and its inputs there). The job
 folder's maps (`coords.tif`, `labels.tif`, `residual.tif`) and the VisuAlign
@@ -172,13 +160,13 @@ markers are composed from it by `core/maps.py` (`native_points`).
 
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
-fraction in tissue, inverse consistency, and flags REGION_COMPRESSED /
+fraction in the footprint, inverse consistency, and flags REGION_COMPRESSED /
 EXPANDED / VANISHED / FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. Limits are the
 named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
 `VENTRICLE_AREA_RATIO_LIMITS` (0.1, 10) for `VS` and descendants,
 `MIN_FLAG_AREA_MM2`, `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED
 (`displacement_report`, also in `diagnostics["displacement"]`) a maximum
-displacement in tissue above `OUTSIZED_MAX_FRACTION` (0.1) of the tissue's
+displacement in the footprint above `OUTSIZED_MAX_FRACTION` (0.1) of the footprint's
 longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6). The median
 limit sits above every observed median.
 
@@ -208,16 +196,16 @@ warped=...)` (exported from the package): it composes the linear placement and
 the residual field and draws per-region blurred indicators sampled bilinearly
 on a 3x supersampled grid (the approach of `core.atlas.render.placed_border_coverage`,
 which is affine-only, so the composed sampling lives here), one shared line per
-edge, antialiased, clipped to tissue. `highlight` (acronyms/ids, descendants
+edge, antialiased. `highlight` (acronyms/ids, descendants
 included, one-sided entries drawn on that side of the record's placement)
 draws those regions' edges strongly, `core.atlas.render.HIGHLIGHT_WIDTH`
-times as thick, over a faint outline of the colour-family regions; `marked` draws a second set (regions excluded from a
-fit) in `MARKED_COLOR`, and `outlines` (`all`/`outer`/`none`) limits the
+times as thick, over a faint outline of the other regions; `marked` draws a second set (regions excluded from a
+fit) in `MARKED_COLOR`, and `outlines` (`all`/`none`) limits the
 rest (`warped_border_layers` returns every layer; `drawn_border_coverage`
 the lines a call draws, as a saved picture's borders layer). `resampled_record` carries a
 record onto a smaller or cropped grid for pictures; `warp_section_image`
-resamples a section render into its placed-atlas frame through the inverse
-field (`engines.invert_field` when none is stored), so a picture drawn under the
+resamples a section render into its placed-atlas frame through the stored
+inverse field, so a picture drawn under the
 linear placement shows the full registration; `warp_source_points` gives the
 section points it shows at any points of its result (a zoom reads the image
 file there, `core/native.py`). Never judge borders traced from `record.labels`: those
@@ -230,20 +218,18 @@ turns thin regions into dotted blobs.
 
 ## Known limits
 
-Label-map mode is ANTs-only. The torn-edge rule also marks real outline
-wherever the linear placement overhangs tissue by more than its depth, and
-covers most of the outline on heavily damaged sections; pass `torn_band` or
-`exclude` there. `auto` ventricle detection only finds empty holes near
-placed ventricles (none at caudal levels). Named model regions inherit the
+Label-map mode is ANTs-only. Named model regions inherit the
 linear placement's naming. Composed sequential inverses carry each step's
 approximation.
 
 ## Landmark record adapter
 
-`ops.landmarks.landmark_triangulation` uses `prepare_fit` and `finish_fit` to
-build the same residual-field record and report as other nonlinear methods,
-but supplies fields from `core.triangulation` instead of running an engine.
-Its record settings and engine name are `landmark_triangulation`; source/target
+`ops.landmarks.landmark_triangulation` uses `prepare_warp` (the atlas side
+only: native plane, placed footprint, ventricles, atlas facts; no images,
+masks or settings) and `finish_fit` to build the same residual-field record
+and report as other nonlinear methods, with fields from `core.triangulation`
+instead of an engine. Its record has no `settings` (null) and the engine name
+`landmark_triangulation`; source/target
 vertices and connectivity are saved in `engine.native_parameters`. A
 composition converts each atlas endpoint through the baseline's stored inverse,
 then composes the resulting correction with its field. On the first application,

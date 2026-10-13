@@ -18,10 +18,10 @@ from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed
-from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import ingest
 from tests.deformable_synthetic import SyntheticAtlas, bump_field, render_section
 from tests.fakes import SlabAtlas
+from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
 
 POSITIONS = (0.05, 0.15, 0.10, 0.20, 0.12)
@@ -259,13 +259,12 @@ def test_the_recipe_refuses_bad_settings_before_writing(tmp_path: Path):
 def test_the_preprocessed_channel_is_what_look_draws_as_preprocessed(tmp_path: Path):
     state, ctx, box = _rgb(tmp_path)
     record = state.by_id("s0.png")
-    raw = np.asarray(render_slice(ctx, record, long_edge=2048, frame=False)).copy()
+    raw = np.asarray(render_slice(ctx, record, long_edge=2048)).copy()
     default = np.asarray(looks.preprocessed_image(ctx, state, record, long_edge=512)).copy()
     _tool(box, "set_preprocessed_channel_properties")(channel_weights=[0, 0, 1])
     ctx.render_cache.clear()
     # Geometry is measured on the default render, whatever the recipe.
-    assert np.array_equal(raw, np.asarray(render_slice(ctx, record, long_edge=2048,
-                                                       frame=False)))
+    assert np.array_equal(raw, np.asarray(render_slice(ctx, record, long_edge=2048)))
     changed = np.asarray(looks.preprocessed_image(ctx, state, record, long_edge=512))
     assert not np.array_equal(default, changed)
 
@@ -394,15 +393,6 @@ def test_one_raw_channel_in_gray_several_overlaid_in_colour(tmp_path: Path):
     assert state.appearance == {}
 
 
-def test_a_flat_channel_is_dimmed_in_an_overlay():
-    from langslice.core.channels import fine_detail
-
-    rng = np.random.default_rng(0)
-    textured = rng.uniform(0.2, 1.0, (64, 64)).astype(np.float32)
-    flat = np.full((64, 64), 0.9, dtype=np.float32)
-    assert fine_detail(flat) < 0.01 < fine_detail(textured)
-
-
 def test_atlas_layers_and_the_host_without_nissl(tmp_path: Path):
     _, _, box = _rgb(tmp_path)
     look = _tool(box, "look")
@@ -415,8 +405,6 @@ def test_atlas_layers_and_the_host_without_nissl(tmp_path: Path):
         ["template", "borders"])
     assert template[0].endswith("layers template") and both[0].endswith("template + borders")
     assert len({template[1], borders[1], both[1]}) == 3
-    # The template was once called ``ara``; the name is still read.
-    assert drawn(["ara"]) == template
     refused = look("atlas", positions_mm=[5.0], atlas_layers=["nissl"])
     assert refused["error"] == "UNKNOWN_LAYER" and "template, borders" in refused["message"]
     under = look("overlay", sections=["s0.png"], atlas_layers=["template"], atlas_opacity=0.6)
@@ -438,8 +426,6 @@ def test_an_overlay_shows_the_stored_transform(tmp_path: Path):
 def test_the_channel_tools_are_in_every_run(tmp_path: Path):
     _, _, box = _rgb(tmp_path)
     assert {"set_channel_properties", "set_preprocessed_channel_properties"} <= set(box.names)
-    with pytest.raises(ValueError, match="agent_preprocessing"):
-        JobSpec(image_folder=str(tmp_path), agent_preprocessing="yes")  # type: ignore[arg-type]
 
 
 def test_zoom_accepts_a_single_region_on_the_latest_overlay(tmp_path: Path, atlas):

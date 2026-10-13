@@ -38,7 +38,6 @@ _KNOWN_TARGETS: dict[str, str] = {
     "allen_mouse_10um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "allen_mouse_50um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "allen_mouse_100um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
-    "whs_sd_rat": "WHS_Rat_v4_39um.cutlas",
     "whs_sd_rat_39um": "WHS_Rat_v4_39um.cutlas",
     "kim_unified_25um": "Kim_UnifiedMouse_v1_25um.cutlas",
 }

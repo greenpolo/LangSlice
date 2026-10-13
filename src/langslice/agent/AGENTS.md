@@ -14,7 +14,7 @@ The method spans the layers; each package has its own guide:
 |---|---|---|
 | `core/` | `JobSpec`, `StackState`, `Workspace`, renders, pictures, fits, the deformable engine | `core/CLAUDE.md` |
 | `job/` | `Job` (undo, checkpoint, submit gates, image corrections, background work), the job folder | `job/CLAUDE.md` |
-| `ops/` | one operation per verb, `ops/registry.py` (`VERBS`, `enabled(spec)`, `RETIRED`) | `ops/CLAUDE.md` |
+| `ops/` | one operation per verb, `ops/registry.py` (`VERBS`, `enabled(spec)`) | `ops/CLAUDE.md` |
 | `doors/` | the declarations, the toolbox (`doors/tools/`), MCP, the agent CLI, the library | `doors/CLAUDE.md` |
 | `agent/` | this driver: engine, session, job statement, plugins, model resolver, trace, cost | here |
 
@@ -59,9 +59,7 @@ each switchable alone; `ants_syn` and `trace_borders` with
 and tool options (`look:positioning`, `interactive_transform:flip`) off on
 top of that (`core/toolset.py` lists the names and refuses a list that cannot
 work); every line of the job statement that names a tool or an option is
-written with what it needs (`core/needs.py`) and rendered for the job. A
-retired tool's name answers with its replacement (`ops.registry.RETIRED`,
-`plugins.RetiredToolsPlugin`; the hint names only what the job has).
+written with what it needs (`core/needs.py`) and rendered for the job.
 
 ## Files
 
@@ -104,7 +102,7 @@ retired tool's name answers with its replacement (`ops.registry.RETIRED`,
 - `prompt.py` — `build_job_statement`: the job, the run facts (`run_facts`:
   the range, the optional protocol (`cutting_protocol_fact`: unknown values
   stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections
-  (legacy default positions remain unconfirmed), the damaged sections and the user's
+  the damaged sections and the user's
   damage notes, what is frozen (`core.frozen.statement`: sections sharing a
   freeze are one clause), that the order follows the positions;
   `channel_facts`: the raw channels, the atlas layers here, and where the
@@ -119,10 +117,7 @@ retired tool's name answers with its replacement (`ops.registry.RETIRED`,
   assembled in `doors/statement.py`.
 - `plugins.py` — the ADK plugins every session runs with:
   `WorkingSetImages` (in ADK's `ContextFilterPlugin`, below),
-  `RetiredToolsPlugin` (a call of a
-  retired tool's name, which ADK hands the plugins as a placeholder tool
-  before its "tool not found" answer, is answered with
-  `ops.registry.retired_payload`), `StrictArgumentsPlugin` (ADK drops
+  `StrictArgumentsPlugin` (ADK drops
   unknown top-level arguments before a tool runs; this refuses them first,
   with `doors.tools.arguments.argument_refusal`), `ModelCallPacingPlugin`
   (`LANGSLICE_ADK_MODEL_CALL_DELAY_S`) and `RequestCapturePlugin`
@@ -162,7 +157,7 @@ retired tool's name answers with its replacement (`ops.registry.RETIRED`,
 ## The tools
 
 The tools are the toolbox `doors.tools.toolbox.build_tools(state, ctx, spec,
-job=, image_model=, gates=, level=, max_view_edge=)` builds: the verbs
+job=, image_model=, level=, max_view_edge=)` builds: the verbs
 `ops.registry.enabled(spec)` names, each declared once in
 `doors/declarations.py` (name, arguments, description) and each body
 (`doors/tools/looking.py`, `changing.py`, `fitting.py`) argument checking,
@@ -187,10 +182,7 @@ argument, label, caption and status line; ordinary writes answer with the
 rows they changed (`Door.answered`) plus `n_sections`; `status`, `undo`,
 `redo` and `submit` return the whole table, and `status` also the channel
 display settings, the preprocessed channel's recipe, the background work
-still running and what this run lets the agent change. What stays on the
-`ToolBox`, the tool door, and is never undone: the look-before-commit gates
-(`compared`, `reviewed`). An undo, redo or reload that moves a section's
-position counts as a write to it (`Door.forget_looks`).
+still running and what this run lets the agent change.
 
 ## Host controls
 
@@ -221,8 +213,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   frozen everywhere is off and a task that is off freezes its properties
   everywhere; a tool that writes only frozen properties is not built
   (`JobSpec.switched_off`). The statement's frozen line and each status row's
-  `frozen` tell the agent. Replaces the older `inputs.locked`, `keep_warp`
-  and `nonlinear_skip`, which a saved spec still reads as freezes.
+  `frozen` tell the agent.
 - **`nonlinear.require_deformation`**: every section needs a deformation;
   `submit` takes no `left_linear` (not declared, refused when sent).
 - **`force_view`**: the change tools always return their picture (their
@@ -244,8 +235,6 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   answer. Mirroring is `interactive_transform:flip` (with it off the tool's
   sections have no `flip` key); `transform.hemisphere_cue` is shown only
   where the agent can mirror.
-- **`agent_preprocessing`**: whether the Fiji connector exports every
-  channel; the channel tools exist in every run.
 
 ## Pictures and context
 
@@ -279,8 +268,7 @@ run's cost. The rules that follow:
 - **The opening** is ABBA-style strips (`core/opening.py`): the sections in
   current order. Unplaced sections have no paired atlas plane; a separate
   atlas overview follows whenever any section is unplaced. Placed sections
-  have the atlas at their current position beneath them (legacy default
-  positions are labelled `start`). Every tile is
+  have the atlas at their current position beneath them. Every tile is
   labelled in its pixels, each strip at the model lane's largest image
   (`doors.tools.view_options.image_limit`) and within its patch budget.
 
@@ -334,22 +322,14 @@ Still out: rules of thumb, failure-mode warnings and region names in the
 statement (the same text runs against every BrainGlobe atlas, species and
 plane). Each tool's description is the only place it is described.
 
-**Gates for cheap models** (`--gates`, `PositionSpec.gated`, off by
-default): data-only refusals. `position_sections` refuses a section not
-looked at (`look` in mode overlay or positioning) since its last write
-(one look is enough), and `submit` refuses until a `look` in mode
-positioning has covered every section after the last write.
-Gates need `look:positioning` (the spec refuses them without it).
 `--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
 method in the statement: compare candidate planes and distinguishing regions,
 write supported placements, revisit uncertain sections and review the stack.
-This is guidance, not enforcement. Viewing gates are tool-door only: a
-script, the library or the agent CLI is never gated.
+This is guidance, not enforcement.
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
 caused it; a failed `submit` neither writes nor ends the run. `submit`
-waits for the background work, then refuses `MISSING_POSITIONS` (a section
-still at the starting position the job gave it counts as missing),
+waits for the background work, then refuses `MISSING_POSITIONS`,
 `STRICT_INTERVAL` (spacing within 10% of the interval and no breaks, with
 `--strict-interval`), `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must
 exceed 1.5x the median written spacing), `MISSING_TRANSFORMS` (every

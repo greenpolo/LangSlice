@@ -27,8 +27,8 @@
    {
     "cached": false,
     "displacement_mm": {
-     "max": 0.174,
-     "median": 0.076
+     "max": 0.17,
+     "median": 0.075
     },
     "engine_settings": {
      "correlation_radius_um": 80.0,
@@ -38,7 +38,6 @@
       50,
       25
      ],
-     "label_map": "auto",
      "metric": "local_correlation",
      "total_sigma_mm": 0.02,
      "update_sigma_mm": 0.08,
@@ -49,7 +48,6 @@
     "id": "s0.png",
     "runtime_s": "<seconds>",
     "settings": {
-     "engine": "ants",
      "fit_atlas": "template",
      "fit_section": "fit",
      "stiffness": "medium"

@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
 EngineMethod = Literal[
-    "version",
     "setup.status",
     "setup.login",
     "setup.api_key",
@@ -19,7 +18,6 @@ EngineMethod = Literal[
     "linear.estimate",
 ]
 ENGINE_METHODS: tuple[EngineMethod, ...] = (
-    "version",
     "setup.status",
     "setup.login",
     "setup.api_key",
@@ -46,12 +44,6 @@ class EngineRequest(EngineBaseModel):
     params: dict[str, object] = Field(default_factory=dict)
 
 
-class EngineProgressEvent(EngineBaseModel):
-    kind: Literal["progress"]
-    message: str
-    stage: str | None = None
-
-
 class EngineLogEvent(EngineBaseModel):
     kind: Literal["log"]
     message: str
@@ -65,7 +57,7 @@ class EngineDataEvent(EngineBaseModel):
 
 
 EngineEvent = Annotated[
-    EngineProgressEvent | EngineLogEvent | EngineDataEvent, Field(discriminator="kind")
+    EngineLogEvent | EngineDataEvent, Field(discriminator="kind")
 ]
 
 
@@ -150,15 +142,10 @@ class EngineErrorEnvelope(EngineBaseModel):
     error: EngineError
 
 
-class VersionResult(EngineBaseModel):
-    version: str
-
-
 def export_schema_bundle() -> dict[str, object]:
     models: dict[str, type[BaseModel]] = {
         "EngineError": EngineError,
         "EngineRequest": EngineRequest,
-        "EngineProgressEvent": EngineProgressEvent,
         "EngineDataEvent": EngineDataEvent,
         "SetupLoginRequest": SetupLoginRequest,
         "SetupApiKeyRequest": SetupApiKeyRequest,
@@ -171,7 +158,6 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineEventEnvelope": EngineEventEnvelope,
         "EngineResultEnvelope": EngineResultEnvelope,
         "EngineErrorEnvelope": EngineErrorEnvelope,
-        "VersionResult": VersionResult,
     }
     return {
         "schema_version": "1",

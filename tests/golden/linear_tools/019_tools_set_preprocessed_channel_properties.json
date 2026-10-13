@@ -41,14 +41,12 @@
    }
   ],
   "recipe": {
-   "preprocessed": {
-    "stack": {
-     "channel_weights": null,
-     "clahe_clip": 6.0,
-     "clahe_tiles": 4,
-     "denoise": false,
-     "n4": false
-    }
+   "stack": {
+    "channel_weights": null,
+    "clahe_clip": 6.0,
+    "clahe_tiles": 4,
+    "denoise": false,
+    "n4": false
    }
   },
   "scope": "stack",
@@ -65,39 +63,39 @@
    "file": "019_tools_set_preprocessed_channel_properties.0.png",
    "mode": "RGB",
    "size": [
-    255,
-    236
+    272,
+    246
    ]
   },
   {
    "file": "019_tools_set_preprocessed_channel_properties.1.png",
    "mode": "RGB",
    "size": [
-    255,
-    236
+    272,
+    246
    ]
   },
   {
    "file": "019_tools_set_preprocessed_channel_properties.2.png",
    "mode": "RGB",
    "size": [
-    258,
-    239
+    272,
+    246
    ]
   },
   {
    "file": "019_tools_set_preprocessed_channel_properties.3.png",
    "mode": "RGB",
    "size": [
-    258,
-    239
+    272,
+    246
    ]
   },
   {
    "file": "019_tools_set_preprocessed_channel_properties.4.png",
    "mode": "RGB",
    "size": [
-    184,
+    272,
     246
    ]
   },
@@ -105,8 +103,8 @@
    "file": "019_tools_set_preprocessed_channel_properties.5.png",
    "mode": "RGB",
    "size": [
-    184,
-    245
+    272,
+    246
    ]
   }
  ],

@@ -9,8 +9,8 @@ agent changes nothing until its first write) and :func:`create` makes one
 from an image folder through the same ingest every host uses
 (``Job.open``). Both write the job folder's reference card
 (:mod:`langslice.doors.card`). The tools on top are the same toolbox the
-agent and MCP doors use (:meth:`Opened.tools`), with the look-before-commit gates
-off (gates are tool-only) and the picture size the caller's.
+agent and MCP doors use (:meth:`Opened.tools`), with the picture size the
+caller's.
 """
 
 from __future__ import annotations
@@ -169,7 +169,10 @@ def read_spec(job_folder: Path) -> JobSpec:
             f"init --job-dir {job_folder} (or move the job folder back beside them, as "
             "<images>/langslice).")
     data["image_folder"] = str(images)
-    spec = JobSpec.from_dict(data)
+    try:
+        spec = JobSpec.from_dict(data)
+    except ValueError as exc:
+        raise ValueError(f"{job_folder / 'job.json'}: {exc}") from exc
     spec.resume = True
     return spec
 
@@ -232,19 +235,15 @@ class Opened:
 
             self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
                                     job=self.job, max_view_edge=self.max_view_edge,
-                                    gates=False, level=AUTO_RESOLUTION, scripting=True,
+                                    level=AUTO_RESOLUTION, scripting=True,
                                     image_model=self.image_model,
                                     image_model_connected=self.image_model_connected,
                                     door=self.door)
         return self._box
 
     def listed_verbs(self) -> list[str]:
-        """The job's verbs a caller is shown, in registry order (a hidden
-        verb, ``Verb.hidden``, is callable by name but not listed)."""
-        from langslice.ops.registry import listed
-
-        shown = listed(self.spec)
-        return [name for name in self.tools().names if name in shown]
+        """The job's verbs, in registry order."""
+        return list(self.tools().names)
 
     def close(self) -> None:
         """Finish the job's background writes (image corrections, pictures):
@@ -311,7 +310,6 @@ def with_registration(
     spec: JobSpec,
     registration: str | os.PathLike[str],
     *,
-    target: str | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
 ) -> tuple[JobSpec, dict[str, Any]]:
@@ -324,7 +322,7 @@ def with_registration(
     ``ValueError`` when *spec* already supplies positions, transforms,
     angles or an orientation (the registration supplies them), when its
     entries cannot be matched one to one, or when no section could be
-    placed. *target* overrides the file's QuickNII target.
+    placed.
     """
     from langslice.job.imports import registration_inputs
 
@@ -337,7 +335,7 @@ def with_registration(
         raise ValueError(f"No registration file at {path}")
     folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
     ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
-    imported = registration_inputs(path, ctx, target=target)
+    imported = registration_inputs(path, ctx)
     say = emit or log_progress
     for warning in imported.report["warnings"]:
         say(f"[registration] {warning}")

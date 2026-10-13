@@ -50,8 +50,7 @@ def case(tmp_path, monkeypatch):
     prepared = LinearRegistrationInput(original, placement, "test", 4, "coronal", 0, 0, {})
     monkeypatch.setattr(tool, "prepare_linear_registration", lambda *a, **k: prepared)
     monkeypatch.setattr(tool, "annotation_slice", lambda *a, **k: labels)
-    monkeypatch.setattr(tool, "_merge_classified", lambda ids, atlas: ids)
-    monkeypatch.setattr(tool, "prepare_canvas", lambda image, **k: (image, image.size, 0, 0, 0))
+    monkeypatch.setattr(tool, "prepare_canvas", lambda image, **k: (image, image.size, 0, 0))
     return state, ctx, record, original, labels, placement
 
 
@@ -200,27 +199,3 @@ def test_smooth_borders_draw_one_antialiased_line_per_shared_edge():
     # One stroke about two pixels wide, not one line per region an atlas pixel apart.
     assert lit.size and lit.max() - lit.min() <= 3
     assert ((row > 0) & (row < 255)).any()  # antialiased edge pixels
-
-
-def test_atlas_route_keeps_pass_one_when_pass_two_is_refused(case, tmp_path, monkeypatch):
-    """Two passes, pass 1 draws no lines: pass 2 is refused, yet pass 1's
-    reply is saved and counts as received, so a retry is not paid again."""
-    state, ctx, record, original, *_ = case
-    monkeypatch.setattr(tool, "outlined_atlas_template", lambda *a, **k: original)
-    calls = []
-    model = _model(
-        lambda request: calls.append(request) or SimpleNamespace(image=original, route="test"),
-    )
-    submitted, job = tool.start_atlas_correction(
-        state, ctx, record.id, passes=2, image_model=model, calls_dir=tmp_path / "calls",
-    )
-    assert job is not None
-    result = job()
-    assert result["status"] == "error" and "nothing to correct" in result["message"]
-    assert result["raw_received"] is True and len(calls) == 1
-    np.testing.assert_array_equal(
-        Image.open(result["artifact_paths"]["pass1_raw_correction"]), original)
-    again, job = tool.start_atlas_correction(
-        state, ctx, record.id, passes=2, image_model=model, calls_dir=tmp_path / "calls",
-    )
-    assert job is None and again["cached"] and len(calls) == 1

@@ -98,10 +98,16 @@ def test_activity_hides_protocol_payloads_and_reports_image_count():
     assert text == "Viewing 2 images"
     assert style == "result"
     assert activity.format_event({"kind": "usage", "tokens": {"input": 5000}})[0] == ""
-    assert activity.format_event({"kind": "progress", "text": "[tokens] diagnostic"})[0] == ""
-    refused = {"name": "elastix_affine", "response": {"status": "error", "message": "s1 is locked"}}
+    # A worker log line (and a line ABBA could not apply) is shown as it is.
+    assert activity.format_event({"kind": "progress", "text": "[tokens] diagnostic"}) == (
+        "[tokens] diagnostic", "tool")
+    refused = {"name": "elastix_affine", "failed": True,
+               "response": {"status": "error", "message": "s1 is locked"}}
     shown = activity.format_event({"kind": "tool_end", **refused})
     assert shown == ("elastix affine: s1 is locked", "error")
+    # A background trace that started is no failure (toolbox.FAILED_STATUSES).
+    started = {"name": "trace_borders", "failed": False, "response": {"status": "started"}}
+    assert activity.format_event({"kind": "tool_end", **started})[1] != "error"
     assert activity.format_event({"kind": "tool_result", **refused})[0] == ""
     assert len(response["detail"]) == 10_000
 

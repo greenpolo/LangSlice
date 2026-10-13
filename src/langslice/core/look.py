@@ -3,7 +3,7 @@
 One entry point, :func:`look`, takes a :class:`LookRequest` and returns one
 :class:`LookPicture` per picture:
 
-- ``section`` — each section alone, oriented, tissue-framed
+- ``section`` — each section alone, oriented, the whole image
   (:func:`langslice.core.display.framed_section`): its raw channels with
   their display properties (:mod:`langslice.core.channels`), or its
   ``preprocessed`` channel;
@@ -52,6 +52,7 @@ from PIL import Image
 
 from langslice.core.appearance import PREPROCESSED, channel_colors, preprocessed_settings
 from langslice.core.appearance import describe as describe_look
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.captions import angles_label, caption, view_angles_label
@@ -63,7 +64,6 @@ from langslice.core.display import (
     DisplayOptions,
     atlas_caption,
     available_atlas_channels,
-    canonical_atlas_name,
     framed_atlas,
     framed_section,
 )
@@ -116,6 +116,10 @@ _BORDER_COLOR = "#ffff00"
 
 logger = logging.getLogger(__name__)
 
+#: Said after a picture's micrometres per pixel when the section has no pixel
+#: size: its image width is mapped onto the atlas plane's width.
+UNCALIBRATED = " (uncalibrated)"
+
 
 class LookError(ValueError):
     """A request look cannot draw: ``code`` is ``UNKNOWN_MODE``,
@@ -165,6 +169,9 @@ class LookRequest:
     #: Section and overlay: names of the plugin layers drawn on the picture
     #: (``"all"``: every layer the section has); empty: none.
     layers: tuple[str, ...] = ()
+    #: Ontology depth of the regions whose boundaries are drawn
+    #: (:func:`langslice.core.atlas.levels.labels_at`).
+    depth: int = OVERLAY_DEPTH
 
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
@@ -175,26 +182,30 @@ class LookRequest:
             "atlas_layers": None if self.atlas_layers is None else list(self.atlas_layers),
             "atlas_opacity": self.atlas_opacity, "warp": self.warp,
             "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
-            "part": self.part, "highlight": list(self.highlight),
+            "part": self.part, "highlight": list(self.highlight), "depth": self.depth,
             **({"region_only": True} if self.region_only else {}),
             **({"layers": list(self.layers)} if self.layers else {}),
         }
 
     @classmethod
     def from_args(cls, args: dict[str, Any]) -> LookRequest:
-        layers = args.get("atlas_layers")
+        unknown = sorted(set(args) - set(cls.__dataclass_fields__))
+        if unknown:
+            raise ValueError(f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
+        layers = args["atlas_layers"]
         return cls(
-            mode=str(args["mode"]), sections=tuple(str(s) for s in args.get("sections") or ()),
-            positions_mm=tuple(float(v) for v in args.get("positions_mm") or ()),
-            channels=tuple(str(c) for c in args.get("channels") or ()),
+            mode=str(args["mode"]), sections=tuple(str(s) for s in args["sections"]),
+            positions_mm=tuple(float(v) for v in args["positions_mm"]),
+            channels=tuple(str(c) for c in args["channels"]),
             atlas_layers=None if layers is None else tuple(str(v) for v in layers),
-            atlas_opacity=args.get("atlas_opacity"), warp=str(args.get("warp") or "applied"),
-            long_edge=args.get("long_edge"),
-            zoom=tuple(float(v) for v in args.get("zoom") or ()),
-            part=None if args.get("part") is None else int(args["part"]),
-            highlight=tuple(str(v) for v in args.get("highlight") or ()),
+            atlas_opacity=args["atlas_opacity"], warp=str(args["warp"]),
+            long_edge=args["long_edge"],
+            zoom=tuple(float(v) for v in args["zoom"]),
+            part=None if args["part"] is None else int(args["part"]),
+            highlight=tuple(str(v) for v in args["highlight"]),
             region_only=bool(args.get("region_only", False)),
             layers=tuple(str(v) for v in args.get("layers") or ()),
+            depth=int(args["depth"]),
         )
 
 
@@ -340,7 +351,7 @@ def _channels_for(ws: Workspace, record: SliceState, channels: Sequence[str]
 def _atlas_layers(ws: Workspace, request: LookRequest) -> tuple[str, ...]:
     if request.atlas_layers is None:
         return ATLAS_LAYER_DEFAULTS[request.mode]
-    layers = tuple(dict.fromkeys(canonical_atlas_name(str(v)) for v in request.atlas_layers))
+    layers = tuple(dict.fromkeys(str(v) for v in request.atlas_layers))
     allowed = available_atlas_channels(ws)
     unknown = [name for name in layers if name not in allowed]
     if unknown:
@@ -378,7 +389,7 @@ def _options(
         atlas_channels=layers, atlas_opacity=float(opacity), regions=regions,
         outlines="none" if request.region_only else "all",
         border_color=_BORDER_COLOR, border_thickness=DEFAULT_BORDER_THICKNESS,
-        deformation=request.warp, long_edge=int(long_edge),
+        deformation=request.warp, long_edge=int(long_edge), depth=request.depth,
     )
 
 
@@ -455,7 +466,7 @@ def _section_picture(
     names, version = _channels_for(ws, record, request.channels)
     options = _options(request, names=names, version=version, layers=(), long_edge=long_edge)
     look_ = options.look(state, record)
-    whole = render_slice(ws, record, long_edge=long_edge, frame=True, look=look_)
+    whole = render_slice(ws, record, long_edge=long_edge, look=look_)
     base = base or whole.size
     picture: Image.Image | None = None
     enlarged = ""
@@ -473,7 +484,7 @@ def _section_picture(
             options = replace(options, zoom=_zoom_pixels(request.zoom, base))
         picture = framed_section(ws, state, record, options)
     working = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
-    working_um, _source = calibrate(state, ws, record, working)
+    working_um, source = calibrate(state, ws, record, working)
     base_um = framed_um_per_px(ws, record, working_um, long_edge=long_edge, look=look_)
     if request.zoom and not enlarged and max(picture.size) < long_edge:
         # The box holds fewer source pixels than the picture size: shown
@@ -493,8 +504,8 @@ def _section_picture(
     label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
              f"{_orientation(record)}  [{short}]{enlarged}")
     text = (f"{record.id} section{_orientation(record)}, "
-            f"{_where(record)}; {um:.1f} um/px; {full}"
-            + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else ""))
+            f"{_where(record)}; {um:.1f} um/px{UNCALIBRATED if source == 'uncalibrated' else ''}; "
+            f"{full}" + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else ""))
     from langslice.core.landmarks import draw_landmarks
 
     panel = {"role": "section", "section": record.id, "bounds": [0, 0, *picture.size],
@@ -557,10 +568,12 @@ def _overlay_picture(
         atlas_words += f"; regions {', '.join(name for name, _ids in options.regions)} {emphasis}"
     read = (placed.canvas.panels[0].from_file
             if placed.canvas is not None and placed.canvas.panels else None)
+    calibration = placed.row.get("calibration") or {}
+    uncalibrated = UNCALIBRATED if calibration.get("source") == "uncalibrated" else ""
     text = (f"{record.id} overlay{_orientation(record)}, "
             f"{_where(record)}; "
             f"{placed.row.get('transform_words') or 'identity transform'}, "
-            f"{warp_words}; {um:.1f} um/px; {full}; atlas {atlas_words}"
+            f"{warp_words}; {um:.1f} um/px{uncalibrated}; {full}; atlas {atlas_words}"
             + (f";{FROM_FILE}" if read is not None else ""))
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
@@ -663,6 +676,7 @@ def _atlas_picture(
     options = _options(request, names=(), version="", layers=layers, long_edge=long_edge)
     voxel = atlas_um_per_px(ws.atlas)
     measured = base is None or base_um is None
+    whole = None
     if base is None or base_um is None:
         whole = framed_atlas(ws, state, position_mm, options, angles=angles)
         native = atlas_section(ws, state, position_mm, frame=True, angles=angles)
@@ -675,7 +689,8 @@ def _atlas_picture(
         options = replace(options, zoom=_zoom_pixels(request.zoom, at_um))
         picture = framed_atlas(ws, state, position_mm, options, angles=angles, um_per_px=um)
     else:
-        picture = framed_atlas(ws, state, position_mm, options, angles=angles)
+        picture = (whole if whole is not None
+                   else framed_atlas(ws, state, position_mm, options, angles=angles))
         um = base_um
         # A resolution asked for is honoured past the plane's voxels, as a zoom
         # is: at most ATLAS_UPSAMPLE times, the lines drawn at that size. A

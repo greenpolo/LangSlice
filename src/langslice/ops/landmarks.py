@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import copy
+import logging
 import time
 from collections.abc import Sequence
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -14,10 +14,10 @@ from scipy.ndimage import map_coordinates
 
 from langslice.core import deformation
 from langslice.core import landmarks as geometry
-from langslice.core.deformable import FitSettings, finish_fit, prepare_fit
+from langslice.core.atlas.tree import structure_table
+from langslice.core.deformable import finish_fit, prepare_warp
 from langslice.core.deformable.engines import EngineResult
 from langslice.core.deformable.geometry import WorkingGrid
-from langslice.core.deformable.masks import tissue_masks
 from langslice.core.handoff import digest
 from langslice.core.picture_geometry import source_frame
 from langslice.core.triangulation import DegenerateMesh, visualign_mesh
@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from langslice.core.state import SliceState
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
+
+logger = logging.getLogger(__name__)
 
 
 #: ``delete=[DELETE_ALL]`` removes every pair of the section.
@@ -158,8 +160,12 @@ def _endpoint(
         warp = None
         key = panel.get("warp_key")
         if key:
-            warp = job.deformations.get(record.id, key)
-            if warp is None or warp.inverse_field_mm is None:
+            try:
+                warp = job.deformations.get(record.id, key)
+            except ValueError:  # its record.json does not load (the error names it)
+                logger.warning("Landmark view warp of %s unreadable", record.id, exc_info=True)
+                warp = None
+            if warp is None:
                 raise Refused(
                     "LANDMARK_WARP_UNAVAILABLE",
                     picture=seq,
@@ -200,7 +206,7 @@ def _atlas_regions(
     annotation = annotation_slice(workspace.atlas, float(plane["position_mm"]),
                                   plane=plane["plane"], pitch_deg=float(angles[0]),
                                   yaw_deg=float(angles[1]))
-    structures = getattr(workspace.atlas, "structures", None) or {}
+    structures = structure_table(workspace.atlas)
     regions: dict[str, str] = {}
     outside: list[str] = []
     for item in items:
@@ -406,13 +412,13 @@ _HOLD_PREFIX = "~"
 
 def automatic_holds(
     pair_points: np.ndarray, size: tuple[int, int], shift: float = 0.0,
-    tissue: np.ndarray | None = None,
+    footprint: np.ndarray | None = None,
 ) -> np.ndarray:
     """Section points (pixels) of the automatic holds: a regular lattice over
     the section frame, spaced :data:`HOLD_SPACING` of its longer side, without
     the points within :data:`HOLD_CLEARANCE` spacings of any of *pair_points*,
-    and, given a *tissue* mask (rows, cols on the frame), without the points
-    off the tissue: the empty slide needs no holding.
+    and, given a *footprint* mask (rows, cols on the frame: the placed atlas
+    footprint the deformable fit's fixed mask is), without the points off it.
 
     Each hold corresponds to itself (it keeps its spot where the baseline
     placement puts it); the pairs are never changed."""
@@ -424,9 +430,9 @@ def automatic_holds(
     lattice = np.stack(np.meshgrid(xs, ys), -1).reshape(-1, 2)
     inside = (lattice[:, 0] < width - 0.5) & (lattice[:, 1] < height - 0.5)
     lattice = lattice[inside]
-    if tissue is not None and len(lattice):
+    if footprint is not None and len(lattice):
         rows, cols = np.rint(lattice[:, 1]).astype(int), np.rint(lattice[:, 0]).astype(int)
-        lattice = lattice[tissue[rows.clip(0, height - 1), cols.clip(0, width - 1)]]
+        lattice = lattice[footprint[rows.clip(0, height - 1), cols.clip(0, width - 1)]]
     points = np.asarray(pair_points, dtype=float).reshape(-1, 2)
     if not len(points) or not len(lattice):
         return lattice
@@ -502,12 +508,12 @@ def _holds_reply(count: int) -> dict[str, Any]:
         "automatic_holds": count,
         "holds_note": (
             f"{count} automatic hold{'s were' if count != 1 else ' was'} added between the "
-            "pairs, over the tissue: spots that keep "
+            "pairs, over the placed atlas: spots that keep "
             "their current place, so a pair moves its neighbourhood up to the holds "
-            "near it and the tissue between the pairs stays put. They are not pairs "
+            "near it and the section between the pairs stays put. They are not pairs "
             "and cannot be edited; they are recomputed from the pairs on every application."
             if count else
-            "No automatic holds were added: every spot of the hold lattice over the tissue "
+            "No automatic holds were added: every spot of the hold lattice over the placed atlas "
             "is near a pair."
         ),
     }
@@ -551,7 +557,11 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
     started = time.monotonic()
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
-        current = job.deformations.current(job.state, record)
+        try:
+            current = job.deformations.current(job.state, record)
+        except ValueError:  # its record.json does not load (the error names it)
+            logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
+            current = None
         if held and "keep_linear" not in held and current is None:
             raise Refused(
                 "LANDMARK_WARP_UNAVAILABLE",
@@ -564,11 +574,6 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             held.get("landmark_baseline_steps", held.get("steps", [])[:-1])
             if replacing else held.get("steps", [])
         )
-        if previous is not None and previous.inverse_field_mm is None:
-            raise Refused(
-                "LANDMARK_WARP_UNAVAILABLE",
-                message="Composition needs the baseline deformation's inverse.",
-            )
         size = grid.image.size
         source = (
             geometry.transform(
@@ -585,16 +590,14 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             assert previous.inverse_field_mm is not None
             target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
         names = [p["id"] for p in pairs]
-        try:
-            tissue: np.ndarray | None = tissue_masks(grid.image)[0]
-        except ValueError:  # no tissue told from the slide: the lattice everywhere
-            tissue = None
+        prepared = prepare_warp(workspace.atlas, grid.placement, size, deformation.DETAIL_LEVEL,
+                                previous=previous)
         # Automatic holds between the pairs, each corresponding to itself against
         # the baseline (the pair targets above are already in the baseline's
         # section coordinates, so a hold's target is its own spot). Only this verb
         # adds them: the VisuAlign mesh below is exact for any point set.
         for shift in HOLD_SHIFTS:
-            holds = automatic_holds(source, size, shift, tissue)
+            holds = automatic_holds(source, size, shift, prepared.footprint)
             try:
                 mesh = visualign_mesh(
                     np.vstack([source, holds]), np.vstack([target, holds]), size=size)
@@ -616,10 +619,6 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         folds = _folds(mesh, points, names)
         if not np.isfinite(forward).all() or not np.isfinite(inverse).all():
             raise ValueError("The mesh does not cover the full section frame")
-        image, _identity = deformation.stain_image(workspace, job.state, grid, deformation.FIT_LOOK)
-        prepared = prepare_fit(
-            image, workspace.atlas, grid.placement, FitSettings(), previous=previous
-        )
         prepared.grid = WorkingGrid(size, mm, size)
         result = finish_fit(
             prepared,
@@ -641,7 +640,6 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             ),
         )
         result.engine["name"] = "landmark_triangulation"
-        result.settings = replace(result.settings, engine="landmark_triangulation")
     except Refused:
         raise
     except (ValueError, OSError) as exc:
@@ -662,7 +660,6 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "automatic_holds_xy": holds.tolist(),
         "hold_spacing_px": max(size) * HOLD_SPACING,
         "hold_clearance_spacings": HOLD_CLEARANCE,
-        "holds_on_tissue_only": tissue is not None,
     }
     job.deformations.put(key, result)
     folder = job.deformations.save(record.id, key, result)

@@ -14,11 +14,11 @@ import pytest
 
 from langslice.core.needs import render
 from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
-from langslice.core.toolset import TASK_WRITERS, TOOLS, accepted_names, is_off, valid_names
+from langslice.core.toolset import TASK_WRITERS, TOOLS, is_off, valid_names
 from langslice.doors import jobs
-from langslice.doors.cli.envelope import FIXES, disabled_for
+from langslice.doors.cli.envelope import DISABLED, FIXES
 from langslice.doors.declarations import DOORS, Variant, arguments_schema, declaration
-from langslice.ops.registry import RETIRED, VERBS, enabled, retired_payload
+from langslice.ops.registry import VERBS, enabled
 from tests.linear_tool_helpers import SLAB, tool_named
 
 # --- the names ------------------------------------------------------------------------
@@ -34,13 +34,11 @@ def test_the_valid_names_come_from_the_registry():
     # a tool that can be switched off, then its options, in registry order
     assert names[:4] == [f"look:{mode}" for mode in TOOLS["look"].options]
     for name, verb in VERBS.items():
-        assert (name in names) is (not verb.tool.essential and not verb.hidden), name
+        assert (name in names) is (not verb.tool.essential), name
         for option in verb.tool.options:
             assert f"{name}:{option}" in names
     assert {"look:section", "look:atlas", "look:overlay", "look:positioning",
             "interactive_transform:flip"} <= set(names)
-    # the hidden scripting verb is accepted and not advertised
-    assert "trace_from_atlas" in accepted_names() and "trace_from_atlas" not in names
     assert not {"submit", "status", "look", "undo"} & set(names)
 
 
@@ -79,34 +77,6 @@ def test_a_tool_disables_its_options():
     assert is_off(["look:overlay"], "look:overlay") and not is_off(["look:overlay"], "look")
 
 
-# --- the older switches ----------------------------------------------------------------
-
-
-def test_older_specs_read_their_switches_as_disabled_names():
-    old = {"image_folder": "/stack", "agent_damage": False,
-           "transform": {"interactive": False, "automatic": True, "flip": False}}
-    spec = JobSpec.from_dict({**old, "tasks": ["position", "transform"]})
-    assert spec.disabled == ["mark_damage", "interactive_transform",
-                             "interactive_transform:flip"]
-    assert "mark_damage" not in enabled(spec) and "elastix_affine" in enabled(spec)
-    assert "interactive_transform" not in enabled(spec)
-    written = spec.to_dict()
-    assert "agent_damage" not in written
-    assert not {"interactive", "automatic", "flip"} & set(written["transform"])
-    assert JobSpec.from_dict(written) == spec
-    # switches left on say nothing; the explicit list comes first
-    kept = JobSpec.from_dict({"image_folder": "/stack", "agent_damage": True,
-                              "transform": {"interactive": True, "automatic": False},
-                              "disabled": ["zoom"]})
-    assert kept.disabled == ["zoom", "elastix_affine"]
-
-
-def test_an_older_spec_with_every_alignment_tool_off_is_refused_as_a_new_one_is():
-    with pytest.raises(ValueError, match="every tool that writes its answer"):
-        JobSpec.from_dict({"image_folder": "/stack", "tasks": ["transform"],
-                           "transform": {"interactive": False, "automatic": False}})
-
-
 # --- what cannot work -------------------------------------------------------------------
 
 
@@ -129,8 +99,6 @@ def test_an_older_spec_with_every_alignment_tool_off_is_refused_as_a_new_one_is(
      "ants_syn is on and needs look:overlay"),
     ({"disabled": ["look:section", "look:atlas", "look:overlay", "look:positioning"]},
      "every look mode is off"),
-    ({"tasks": ["position"], "position": PositionSpec(gated=True),
-      "disabled": ["look:positioning"]}, "position.gated .* look:positioning"),
     ({"tasks": ["position"], "disabled": ["look:positioning", "look:overlay"]},
      "position_sections is on and needs look:positioning or look:overlay"),
     ({"tasks": ["transform"], "disabled": ["look:overlay"]},
@@ -150,9 +118,6 @@ def test_what_can_work_is_accepted():
     _spec(tasks=["position"], disabled=["look:positioning"])  # overlays stand in
     _spec(tasks=["position"], disabled=["look:overlay"])
     _spec(tasks=["nonlinear"], disabled=["ants_syn"])
-    _spec(tasks=["position"], disabled=["look:overlay"], position=PositionSpec(gated=True))
-    _spec(tasks=["transform"], position=PositionSpec(gated=True),  # no position task: no gate
-          disabled=["look:positioning"])
 
 
 def test_task_writers_name_real_tools():
@@ -250,20 +215,6 @@ def test_position_sections_shows_overlays_where_the_positioning_look_is_off(tmp_
     assert "a picture of each written section" in description
 
 
-def test_the_gates_name_the_modes_that_remain(tmp_path: Path):
-    from tests.linear_tool_helpers import box
-
-    for off, words in (([], "overlay or positioning"), (["look:overlay"], "positioning")):
-        folder = tmp_path / ("a" if not off else "b")
-        folder.mkdir()
-        state, ctx, toolbox = box(folder, placed=True, tasks=["position"],
-                                  position=PositionSpec(gated=True), disabled=off)
-        refused = tool_named(toolbox, "position_sections")(
-            sections=[{"id": "s0.png", "position_mm": 6.0}])
-        assert refused["error"] == "NOT_COMPARED"
-        assert refused["rejected"][0]["reason"].endswith(f"look at it in mode {words} first")
-
-
 def test_read_file_points_to_zoom_only_when_there_is_one(tmp_path: Path):
     from tests.linear_tool_helpers import box
 
@@ -324,7 +275,7 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
     try:
         texts: dict[str, str] = {}
         ctx, state = opened.ctx, opened.job.state
-        names = enabled(spec, scripting=True, hidden=True)
+        names = enabled(spec, scripting=True)
         for door, auto, traced in itertools.product(DOORS, (False, True), (True, False)):
             variant = Variant.of(spec, auto=auto, door=door, image_model=traced)
             for tool in names:
@@ -333,13 +284,12 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
                 texts[f"schema {tool} {door} auto={auto} traced={traced}"] = json.dumps(
                     arguments_schema(tool, variant))
         low, high = ctx.position_range
-        for door, gates in itertools.product(DOORS, (True, False)):
-            for connected in (True, False):
-                opening = (opening_for_mcp(3) if door == "mcp"
-                           else opening_for_cli("/job", 3, spec.switched_off))
-                texts[f"statement {door} gates={gates} connected={connected}"] = job_statement(
-                    spec, state, ctx, door=door, tool_names=names, opening=opening,
-                    image_model_off=not connected, auto=door == "cli", gates=gates)
+        for door, connected in itertools.product(DOORS, (True, False)):
+            opening = (opening_for_mcp(3) if door == "mcp"
+                       else opening_for_cli("/job", 3, spec.switched_off))
+            texts[f"statement {door} connected={connected}"] = job_statement(
+                spec, state, ctx, door=door, tool_names=names, opening=opening,
+                image_model_off=not connected, auto=door == "cli")
         texts["statement agent"] = build_job_statement(
             spec, state, tool_names=names, species=ctx.species, pos_lo=low, pos_hi=high,
             axis_ends=ctx.axis_ends, **display_facts(ctx, state))
@@ -347,17 +297,14 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         texts["card"] = card_text(opened.job.layout)
         status = tool_named(opened.tools(), "status")()
         texts["status"] = json.dumps(status.get("can_change", status))
-        for code in FIXES:
-            if code in ("NOT_COMPARED", "NOT_REVIEWED") and not spec.position.gated:
-                continue  # the viewing gates' refusals: no gates, no such refusal
-            with disabled_for(spec.switched_off):
-                from langslice.doors.cli.envelope import Envelope
+        from langslice.doors.cli.envelope import Envelope
 
+        token = DISABLED.set(tuple(spec.switched_off))
+        try:
+            for code in FIXES:
                 texts[f"fix {code}"] = Envelope.failure(code, fix=None).error["fix"]
-        for name in RETIRED:
-            payload = retired_payload(name, spec.switched_off)
-            assert payload is not None
-            texts[f"retired {name}"] = payload["message"]
+        finally:
+            DISABLED.reset(token)
         return texts
     finally:
         opened.close()
@@ -370,7 +317,7 @@ def _base_specs(folder: str) -> dict[str, JobSpec]:
                      facts=["a fact"], position=PositionSpec(playbook=True),
                      nonlinear=NonlinearSpec(provider="openai-oauth")),
         "position": _spec(folder, tasks=["position"],
-                          position=PositionSpec(gated=True, playbook=True)),
+                          position=PositionSpec(playbook=True)),
         "position-open": _spec(folder, tasks=["position"]),
         "linear": _spec(folder, tasks=["transform"], transform=TransformSpec(angles=True)),
         "nonlinear": _spec(folder, tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none")),
@@ -418,7 +365,7 @@ def test_no_text_names_what_the_job_disables(tmp_path: Path):
     Every name is checked at least once."""
     folder = _stack_folder(tmp_path)
     bases = _base_specs(str(folder))
-    attempts = [[name] for name in sorted(accepted_names())] + COMBINATIONS
+    attempts = [[name] for name in sorted(valid_names())] + COMBINATIONS
     covered: set[str] = set()
     problems: list[str] = []
     for disabled in attempts:
@@ -438,7 +385,7 @@ def test_no_text_names_what_the_job_disables(tmp_path: Path):
                         problems.append(
                             f"[{label}] {disabled}: {name!r} in {where}: ...{around}...")
                         break
-    assert covered == accepted_names()
+    assert covered == set(valid_names())
     assert not problems, "\n".join(sorted(set(problems))[:40]) + f"\n({len(problems)} in all)"
 
 
@@ -490,8 +437,7 @@ def test_the_setup_status_offers_what_a_dialog_can_switch_off():
     from langslice.doors.api.setup import setup_status
 
     tools = setup_status()["tools"]
-    assert [tool["name"] for tool in tools] == [
-        name for name, tool in TOOLS.items() if not tool.hidden]
+    assert [tool["name"] for tool in tools] == list(TOOLS)
     by_name = {tool["name"]: tool for tool in tools}
     assert by_name["look"]["disableable"] is False
     assert by_name["look"]["options"] == ["section", "atlas", "overlay", "positioning"]

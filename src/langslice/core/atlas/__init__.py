@@ -1,9 +1,9 @@
 """BrainGlobe atlas access as plain functions: loading, plane positions, slices.
 
 A deliberately small public surface: what LangSlice itself reads (the atlas,
-its plane positions and the reference plate); region maps, borders and the
-colour table are in :mod:`langslice.core.atlas.render` and
-:mod:`langslice.core.atlas.recolor`.
+its plane positions and the reference plate); region maps and borders are in
+:mod:`langslice.core.atlas.render`, region levels in
+:mod:`langslice.core.atlas.levels`.
 """
 
 from langslice.core.atlas.core import (

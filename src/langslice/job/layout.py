@@ -15,7 +15,7 @@ without an id. Inside::
         deformable/<key>/          applied deformation records
         image_correction/<key>/    trace_borders calls and their attempts
         views/<seq>_<tool>_<mode>/ pictures of this section the model saw
-        coords.tif, labels.tif, labels_fiji.tif, labels.csv, tissue.png,
+        coords.tif, labels.tif, labels_fiji.tif, labels.csv,
         residual.tif, maps.json    the section's maps (at submit and by
                                    ``export_maps``)
     views/<seq>_<tool>_<mode>/     pictures of several sections (stack level)
@@ -69,7 +69,6 @@ PLUGINS_DIR = "plugins"
 #: Under ``exports/``: the run's result (the state's shape, unversioned) and
 #: a host job's final result (state + host updates).
 RESULTS_FILE = "linear_results.json"
-HOST_RESULT_FILE = "result.json"
 #: Under ``sections/<name>/``.
 DEFORMABLE_DIR = "deformable"
 IMAGE_CORRECTION_DIR = "image_correction"
@@ -235,11 +234,6 @@ class JobLayout:
     image_folder: Path | None = None
     _names: dict[str, str] | None = field(default=None, repr=False)
 
-    @classmethod
-    def for_images(cls, image_folder: str | os.PathLike[str]) -> JobLayout:
-        """The job folder next to *image_folder*."""
-        return cls(job_folder_for(image_folder), Path(os.path.abspath(os.fspath(image_folder))))
-
     @property
     def job_file(self) -> Path:
         return self.folder / JOB_FILE
@@ -275,10 +269,6 @@ class JobLayout:
     @property
     def results_file(self) -> Path:
         return self.exports_dir / RESULTS_FILE
-
-    @property
-    def host_result_file(self) -> Path:
-        return self.exports_dir / HOST_RESULT_FILE
 
     @property
     def prompt_file(self) -> Path:

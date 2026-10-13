@@ -55,12 +55,13 @@ class Tools(dict):
 
 def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
          count: int = 2, um_per_px: float = _UM_PER_PX,
-         tasks: tuple[str, ...] = ("reorder", "position", "transform"),
+         tasks: tuple[str, ...] = ("position", "transform"),
          ) -> tuple[Any, Any, Tools, JobSpec]:
     folder.mkdir()
     for index in range(count):
         _section(size).rotate(7 * index, fillcolor=(0, 0, 0)).save(
-            folder / f"s{index}.tif", dpi=(25400 / um_per_px,) * 2)
+            folder / f"s{index}.tif", resolution_unit=3, x_resolution=10000 / um_per_px,
+            y_resolution=10000 / um_per_px)
     spec = JobSpec(image_folder=str(folder), model="fake", preprocess="none",
                    image_resolution=resolution, tasks=list(tasks))
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: TwoRegionAtlas())
@@ -128,10 +129,10 @@ def test_a_small_snapshot_is_never_upsampled(tmp_path: Path):
     """A 300 x 225 px snapshot stays at most its own pixels at every size."""
     state, ctx, tools, _spec = _run(tmp_path / "small", "high", size=(300, 225),
                                     um_per_px=20.0)
-    framed = render_slice(ctx, state.slices[0], long_edge=4096, frame=True)
-    assert max(framed.size) < 300
-    assert _seed_sections(state, ctx)[0].width == framed.width
-    assert _widths(tools["look"]("section", sections=["s0.tif"])) == [framed.width]
+    whole = render_slice(ctx, state.slices[0], long_edge=4096)
+    assert max(whole.size) <= 300
+    assert _seed_sections(state, ctx)[0].width == whole.width
+    assert _widths(tools["look"]("section", sections=["s0.tif"])) == [whole.width]
     (overlay,) = _images(tools["look"]("overlay", sections=["s0.tif"]))
     assert overlay.width < PICTURE_EDGES["high"][1]
 
@@ -156,7 +157,7 @@ def test_resolution_exists_only_at_auto(tmp_path: Path, level: str):
     from langslice.providers.openai_oauth import _json_schema_dict
 
     state, ctx, _tools, spec = _run(
-        tmp_path / level, level, tasks=("reorder", "position", "transform", "nonlinear"))
+        tmp_path / level, level, tasks=("position", "transform", "nonlinear"))
     tools = {tool.__name__: tool for tool in build_tools(state, ctx, spec).tools}
     auto = level == "auto"
     # look and landmark_triangulation are the tools that take a picture size.
@@ -222,10 +223,10 @@ def test_resolution_is_ignored_and_invisible_below_auto(tmp_path: Path):
 # --- what is computed does not move ------------------------------------------
 
 
-#: A hand transform about the tissue pivot on this stack, computed with the
-#: code before pictures were sized by level: the stored numbers must match.
-_PINNED_S1_ADJUST = [1.0973204552858067, 0.04970148754268928, -0.053191461442875475,
-                     -0.10230949482471711, 0.947685847746833, 0.06586465442425882]
+#: A hand transform about the canvas centre on this stack (re-pinned when the
+#: per-entry pivot was deleted): the stored numbers are the same at every level.
+_PINNED_S1_ADJUST = [1.0973204552858067, 0.04970148754268928, -0.05351097141424801,
+                     -0.10230949482471711, 0.947685847746833, 0.06620071242783103]
 
 
 def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
@@ -239,7 +240,8 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
         arr[600:1000, 800:1400, 1] = 220
         arr[1100:1300, 1500:1800, 0] = 250
         Image.fromarray(arr).rotate(7 * index, fillcolor=(0, 0, 0)).save(
-            folder / f"s{index}.tif", dpi=(25400 / 2.5,) * 2)
+            folder / f"s{index}.tif", resolution_unit=3, x_resolution=10000 / 2.5,
+            y_resolution=10000 / 2.5)
     spec = JobSpec(image_folder=str(folder), model="fake", preprocess="none",
                    image_resolution=level)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: TwoRegionAtlas())
@@ -258,7 +260,7 @@ def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: s
     state, ctx, job = _fixed_stack(tmp_path / level, level)
     transforms.interactive_transform(job, ctx, [{
         "id": "s1.tif", "rotation_deg": 4.0, "scale_x": 1.1, "scale_y": 0.95,
-        "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue",
+        "translate_x_mm": 0.12, "translate_y_mm": -0.05,
         "shear": 0.0}])
     assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
 

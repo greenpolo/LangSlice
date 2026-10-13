@@ -9,10 +9,8 @@ take minutes). ``schema`` gives per verb what a model reads of it: the
 whole declared description, the one-line summary, the argument schema and
 ``long``; declared as the job's settings declare it with ``--job FOLDER``,
 or the job of the folder it runs in, otherwise every argument (``hint``
-says how to narrow it). ``schema`` is versioned (:data:`SCHEMA_VERSION`);
-a retired verb's name (``registry.RETIRED``) answers ``RETIRED_TOOL`` with
-the verb to use instead. A hidden verb (``registry.Verb.hidden``) is in neither list;
-``schema VERB`` still answers for it by name. ``schema`` of a job command
+says how to narrow it). ``schema`` is versioned (:data:`SCHEMA_VERSION`).
+``schema`` of a job command
 (``init``, ``brief``, ``runs``, ``wait``: :data:`JOB_COMMANDS`) gives its
 summary, usage and flags (``init``'s are its parser's,
 :func:`langslice.doors.cli.job.init_parser`); ``langslice-job FOLDER NAME
@@ -107,12 +105,12 @@ def canonical_verb(name: str) -> str:
 
 
 def verbs_table(spec: Any = None) -> list[dict[str, Any]]:
-    """Every listed verb: name, kind, group, one-line description, and
+    """Every verb: name, kind, group, one-line description, and
     ``long: true`` for a long verb. For the job *spec* of a folder that loads
     tool plugins, their tools follow the native ones."""
     from langslice.core.toolset import TOOLS
     from langslice.doors.declarations import Variant, summary
-    from langslice.ops.registry import listed
+    from langslice.ops.registry import verbs_for
 
     variant = Variant.of(spec, auto=True, door="cli") if spec is not None and spec.plugins \
         else None
@@ -120,7 +118,7 @@ def verbs_table(spec: Any = None) -> list[dict[str, Any]]:
              "summary": summary(name, variant) if variant is not None and name not in TOOLS
              else summary(name),
              **({"long": True} if verb.long else {})}
-            for name, verb in listed(spec).items()]
+            for name, verb in verbs_for(spec).items()]
 
 
 class Declared:
@@ -134,6 +132,8 @@ class Declared:
         self.spec: Any = None
         self.variant = Variant(auto=True, door="cli", prompt=FULL.prompt)
         self.disabled: tuple[str, ...] = ()
+        #: The open job's verbs (``Opened.listed_verbs``); None without a job.
+        self.verbs: tuple[str, ...] | None = None
         found = job or _job_here()
         if found:
             self._open(found)
@@ -149,8 +149,13 @@ class Declared:
             self.variant = Variant.of(opened.spec, auto=True, door="cli",
                                       image_model=opened.image_model_connected)
             self.disabled = tuple(opened.spec.switched_off)
+            self.verbs = tuple(opened.listed_verbs())
         finally:
             opened.close()
+
+    def has(self, name: str) -> bool:
+        """The verb is the job's (every verb without a job)."""
+        return self.verbs is None or name in self.verbs
 
     def entry(self, name: str) -> dict[str, Any]:
         """One verb as this call declares it."""
@@ -218,9 +223,8 @@ def ops(_args: argparse.Namespace) -> Envelope:
 
 def schema(args: argparse.Namespace) -> Envelope:
     """``langslice-job schema [VERB] [--job FOLDER]``."""
-    from langslice.core.toolset import is_off
     from langslice.doors.jobs import NoJob
-    from langslice.ops.registry import listed, retired_payload, verbs_for
+    from langslice.ops.registry import verbs_for
 
     if args.verb is not None and canonical_verb(args.verb) in command_names():
         name = canonical_verb(args.verb)  # init, brief, runs, wait: no job needed
@@ -229,24 +233,19 @@ def schema(args: argparse.Namespace) -> Envelope:
                         next=[entry["usage"]])
     try:
         declared = Declared(args.job)
-        if args.verb is None:  # every listed verb; a hidden one only by name
+        if args.verb is None:  # every verb
             result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, **declared.facts(),
                                       "verbs": {name: declared.entry(name)
-                                                for name in listed(declared.spec)
-                                                if not is_off(declared.disabled, name)}}
+                                                for name in verbs_for(declared.spec)
+                                                if declared.has(name)}}
             nexts: list[str] = []
         else:
             name = canonical_verb(args.verb)
-            retired = retired_payload(name, declared.disabled)
-            if retired is not None:
-                return Envelope.failure(
-                    "RETIRED_TOOL", retired["message"], verb=name,
-                    result={key: retired[key] for key in ("tool", "use") if key in retired})
             if name not in verbs_for(declared.spec):
                 return Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}.")
-            if is_off(declared.disabled, name):
+            if not declared.has(name):
                 return Envelope.failure(
-                    "VERB_OFF", f"This job disables {name} (disabled {list(declared.disabled)}).",
+                    "VERB_OFF", f"This job's settings have no {name}.",
                     job=declared.folder or "<folder>", verb=name)
             result = {"schema_version": SCHEMA_VERSION, "verb": name, **declared.facts(),
                       **declared.entry(name)}

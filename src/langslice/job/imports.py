@@ -25,7 +25,7 @@ Formats (``read_registration`` tells them apart by extension and content):
 - ``deepslice-csv``: DeepSlice's ``save_predictions`` CSV (``Filenames``,
   ``ox`` ... ``vz``, and ``width``, ``height``, ``nr`` when present; an
   unnamed pandas index column is ignored). No target: DeepSlice's mouse
-  target (``ABA_Mouse_CCFv3_2017_25um.cutlas``) unless the caller says.
+  target (``ABA_Mouse_CCFv3_2017_25um.cutlas``).
 - ``langslice-registration``: a job folder's ``registration.json``
   (:mod:`langslice.job.formats`): each placed section's
   ``pixel_to_atlas_um`` on its image size.
@@ -65,7 +65,7 @@ otherwise the median, over the matched sections, of the size each imported
 map implies (:func:`langslice.core.import_geometry.implied_pixel_size_um`),
 ``pixel_size_source`` ``"imported"``. Such a job must then be given that
 pixel size (``ImportResult.pixel_size_um``) for the placements to hold: the
-job otherwise estimates one from the tissue.
+job is otherwise uncalibrated.
 
 VisuAlign markers (``[x, y, nx, ny]`` in the pixels of the slice's
 ``width`` x ``height``: the anchored atlas point ``(x, y)`` moved to the
@@ -248,9 +248,6 @@ class ImportResult:
     pixel_size_um: float | None
     pixel_size_source: str
 
-    def by_section(self) -> dict[str, ImportedPlacement]:
-        return {placement.section_id: placement for placement in self.placements}
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "path": self.source.path, "format": self.source.format,
@@ -403,7 +400,7 @@ def _deepslice_csv(path: str, raw: str) -> RegistrationFile:
         path=path, format="deepslice-csv", target=None, aligner=None, atlas=None,
         entries=entries,
         notes=["A DeepSlice CSV names no target; read as DeepSlice's mouse target "
-               f"{DEEPSLICE_DEFAULT_TARGET} unless another is given"])
+               f"{DEEPSLICE_DEFAULT_TARGET}"])
 
 
 def read_registration(path: str | os.PathLike[str]) -> RegistrationFile:
@@ -556,14 +553,12 @@ def import_placements(
     *,
     section_ids: Iterable[str] | None = None,
     orientations: Mapping[str, tuple[int, bool]] | None = None,
-    target: str | None = None,
 ) -> ImportResult:
     """Every matched section's placement in the job's terms (see the module
     text). *workspace* gives the job's atlas, plane, section files and
     calibration; *section_ids* the sections (default: the folder's images,
     named as the job names them). *orientations* fixes a section's
-    ``(rotation_deg, flip)`` (default: chosen per section). *target*
-    overrides the file's QuickNII target (a DeepSlice CSV has none).
+    ``(rotation_deg, flip)`` (default: chosen per section).
     A section whose entry cannot be placed is listed under ``refused`` with
     the reason; an ambiguous match raises :class:`AmbiguousMatch`."""
     from langslice.core.discovery import discover_slices
@@ -580,7 +575,7 @@ def import_placements(
     atlas_object = workspace.atlas
     atlas = atlas_facts(atlas_object)
     plane = cast(Plane, workspace.spec.plane)
-    file_target = target or held.target or (
+    file_target = held.target or (
         DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None)
 
     refused: dict[str, str] = {}
@@ -689,8 +684,6 @@ def _plural(count: int, one: str, many: str) -> str:
 def registration_inputs(
     source: str | os.PathLike[str] | RegistrationFile,
     workspace: Workspace,
-    *,
-    target: str | None = None,
 ) -> RegistrationInputs:
     """Import *source* (:func:`import_placements`) into the job of
     *workspace*'s spec, as the supplied inputs a job is made from.
@@ -706,7 +699,7 @@ def registration_inputs(
     from langslice.core.workspace import Workspace as Plain
 
     held = source if isinstance(source, RegistrationFile) else read_registration(source)
-    result = import_placements(held, workspace, target=target)
+    result = import_placements(held, workspace)
     host_size = bool((workspace.spec.inputs or {}).get("pixel_size_um"))
     pixel_size: float | None = None
     overridden: list[str] = []
@@ -721,7 +714,7 @@ def registration_inputs(
                 **(spec.inputs or {}), "pixel_size_um": pixel_size}})
             again = Plain(spec=fixed, image_folder=workspace.image_folder,
                           emit=workspace.emit, atlas_loader=workspace.atlas_loader)
-            result = import_placements(held, again, target=target)
+            result = import_placements(held, again)
     if not result.placements:
         reasons = "; ".join(f"{name}: {why}" for name, why in result.refused.items())
         raise ValueError(
@@ -773,7 +766,7 @@ def registration_inputs(
             + (f" The files' own sizes of {overridden} are replaced by it." if overridden
                else ""))
     report = {
-        "path": held.path, "format": held.format, "target": target or held.target or (
+        "path": held.path, "format": held.format, "target": held.target or (
             DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None),
         "aligner": held.aligner,
         "sections": [{

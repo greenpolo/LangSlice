@@ -96,15 +96,6 @@ def test_server_requires_token_host_and_exposes_no_mutations():
         server.close()
 
 
-def test_browser_missing_falls_back_to_existing_viewer(monkeypatch):
-    from langslice.hosts.integrations import abba_activity
-
-    monkeypatch.setattr(chat, "_browser", lambda: (_ for _ in ()).throw(RuntimeError("missing")))
-    marker = object()
-    monkeypatch.setattr(abba_activity, "ActivityWindow", lambda **kwargs: marker)
-    assert chat.create_activity_window() is marker
-
-
 def test_windows_browser_searches_standard_install_locations(monkeypatch, tmp_path):
     browser = tmp_path / "Google" / "Chrome" / "Application" / "chrome.exe"
     browser.parent.mkdir(parents=True)

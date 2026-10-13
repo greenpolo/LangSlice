@@ -13,7 +13,7 @@ import java.util.function.Consumer;
  *
  * <p>Each message is one JSON object (as text) with a {@code kind}. The worker's own messages are passed on
  * verbatim, in both modes: {@code agent_event} ({@code event}: the agent's tool_start / tool_end / seed ...),
- * {@code checkpoint} (host_updates, host_angles, updates_since_start, state) and {@code log} (message). The
+ * {@code checkpoint} (host_updates, host_angles) and {@code log} (message; the worker's stderr lines of a run too). The
  * connector adds {@code run_started} (mode "openai-oauth" or "claude", viewer: the user ticked "Open agent viewer",
  * image_folder, sections: snapshot filename to ABBA slice name), {@code job} (Claude mode: job_id, job_dir),
  * {@code applied} (what reached ABBA: applied ids, failed id to reason, angles) and {@code run_finished}

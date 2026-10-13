@@ -91,3 +91,12 @@ def single_transform(tool):
             row["changed"] = result["changed"]
         return row
     return transform
+
+
+def load_checkpoint(path):
+    """The stack state saved at *path*, or None when there is none."""
+    from langslice.core.state import StackState
+    from langslice.job.checkpoint import read_checkpoint
+
+    data = read_checkpoint(str(path))
+    return None if data is None else StackState.from_dict(data)

@@ -72,6 +72,13 @@ logger = logging.getLogger(__name__)
 TRACE_DIR_ENV = _TRACE_DIR_ENV
 
 
+def job_trace_dir(job_folder: str | Path) -> Path:
+    """Where a run keeps its full agent trace when nothing else is named:
+    ``trace/`` in its job folder (``langslice linear run`` and the ABBA
+    worker's ``linear.run``)."""
+    return Path(job_folder) / "trace"
+
+
 def _describe_parts(parts: Any) -> list[dict[str, Any]]:
     """Text parts verbatim; media parts as descriptors labelled by the text above."""
     described: list[dict[str, Any]] = []
