@@ -858,6 +858,7 @@ def test_the_mcp_server_and_the_abba_worker_load_a_jobs_plugins(
     Image.new("L", (80, 40)).save(tmp_path / "section_0001.tif")
     params = {"image_folder": str(tmp_path), "pixel_size_um": 25,
               "positions_mm": {"section_0001.tif": 4.0},
+              "angles_deg": {"pitch_deg": 0.0, "yaw_deg": 0.0},
               "spec": {"tasks": ["position"], "plugins": [ref]}}
     assert prepare_linear(params).spec.plugins == [ref]
 
