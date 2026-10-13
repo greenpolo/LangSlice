@@ -129,7 +129,7 @@ def test_bad_arguments_are_refused_before_any_fit(tmp_path: Path, atlas, monkeyp
     assert many["error"] == "BAD_ARGS" and many["max_sections"] == 4
     assert fit([ID], stiffness="jelly")["error"] == "BAD_ARGS"
     assert fit([ID], atlas_image="borders")["error"] == "BAD_ARGS"
-    assert fit([ID], atlas_image="nissl")["error"] == "FIT_ATLAS_UNAVAILABLE"
+    assert fit([ID], atlas_image="nissl")["error"] == "BAD_ARGS"  # not this atlas's image
     assert fit([ID], restrict_to=["NOPE"])["error"] == "UNKNOWN_REGIONS"
     assert fit([ID], restrict_to=["STR:up"])["error"] == "BAD_ARGS"  # no such side
     assert fit(["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"

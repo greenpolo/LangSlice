@@ -148,7 +148,7 @@ def test_elastix_affine_without_a_picture_and_its_refusals(tmp_path: Path, atlas
     assert nope["filenames"] == ["s0.png"]
     assert fit(["s0.png"], ["XYZ"])["error"] == "UNKNOWN_REGIONS"
     unavailable = fit(["s0.png"], [], "nissl")
-    assert unavailable["error"] == "FIT_ATLAS_UNAVAILABLE"
+    assert unavailable["error"] == "BAD_ARGS"
     assert unavailable["atlas_image"] == ["template"]
     assert fit(["s0.png"], [], "spline")["error"] == "BAD_ARGS"
     assert state.slices[0].transform is None and box.job.undo_stack == []

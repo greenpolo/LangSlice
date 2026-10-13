@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -141,8 +142,11 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 def test_elastix_affine_restricts_and_carries_the_region_box(
-        tmp_path: Path, calls: list[dict[str, Any]]):
+        tmp_path: Path, calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch):
     job, ctx = _open(tmp_path)
+    # The atlas's additional references are fit images too (BrainGlobe's names).
+    monkeypatch.setattr(ctx.atlas, "additional_references",
+                        {"nissl": np.asarray(ctx.atlas.template)}, raising=False)
     done = transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=["L"],
                                      atlas_image="nissl")
     assert calls == [{"id": "s0.png", "include": ("L",), "exclude": (),

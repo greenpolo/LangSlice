@@ -383,8 +383,6 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
             + (f"; {facts}" if facts else ""))
 
 
-#: The atlas images :func:`ants_syn` reads (``atlas_image``).
-ANTS_SYN_ATLASES = ("template", "nissl")
 #: Stiffness levels (``core.deformable.settings.Stiffness``).
 STIFFNESSES = ("soft", "medium", "firm")
 #: Sections one :func:`ants_syn` call takes.
@@ -449,8 +447,8 @@ def ants_syn(
     """A deformable fit with ANTs SyN on each section, applied: ONE undo step.
 
     One choice, no candidates: the section's preprocessed channel
-    (:mod:`langslice.core.appearance`) against *atlas_image* (``template``,
-    or ``nissl`` where the atlas covers the CCFv3), at *stiffness*
+    (:mod:`langslice.core.appearance`) against *atlas_image* (one of the atlas's
+    images, :func:`langslice.core.atlas.images.atlas_images`), at *stiffness*
     (``soft`` / ``medium`` / ``firm``), on top of each section's applied
     deformation where it holds one, else its linear placement
     (undo is how to start over). *restrict_to*: warp by
@@ -463,12 +461,11 @@ def ants_syn(
     picture of what was written (:func:`langslice.ops.look.show_result`).
 
     Refused (nothing done): ``ANTS_MISSING``; ``BAD_ARGS`` (no sections,
-    more than :data:`MAX_ANTS_SYN_SECTIONS`, an unknown atlas image or
-    stiffness, a bad region entry); ``FIT_ATLAS_UNAVAILABLE`` (``nissl`` on
-    an atlas that does not cover the CCFv3); ``UNKNOWN_SLICE_IDS``;
+    more than :data:`MAX_ANTS_SYN_SECTIONS`, an image the atlas does not
+    have, an unknown stiffness, a bad region entry); ``UNKNOWN_SLICE_IDS``;
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
-    from langslice.core.display import available_atlas_channels
+    from langslice.core.atlas.images import atlas_images
 
     refs = list(sections or [])
     if not refs:
@@ -476,17 +473,15 @@ def ants_syn(
     if len(refs) > MAX_ANTS_SYN_SECTIONS:
         raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_ANTS_SYN_SECTIONS} "
                       "sections.", max_sections=MAX_ANTS_SYN_SECTIONS)
-    kind = str(atlas_image or "template").strip().lower()
-    if kind not in ANTS_SYN_ATLASES:
-        raise Refused("BAD_ARGS", message=f"atlas_image is one of {list(ANTS_SYN_ATLASES)}.")
+    kind = str(atlas_image or "template").strip()
+    offered = atlas_images(workspace.atlas)
+    if kind not in offered:
+        raise Refused("BAD_ARGS", message=f"atlas_image is one of this atlas's images: "
+                      f"{list(offered)}.", atlas_image=list(offered))
     level = str(stiffness or "medium").strip().lower()
     if level not in STIFFNESSES:
         raise Refused("BAD_ARGS", message=f"stiffness is one of {list(STIFFNESSES)}.")
     refuse_without_ants()
-    if kind not in available_atlas_channels(workspace):
-        raise Refused("FIT_ATLAS_UNAVAILABLE", message=f"The {kind} atlas image is offered "
-                      f"on Allen mouse atlases only; {job.state.atlas} does not cover the "
-                      "CCFv3 grid.")
     regions = region_entries(workspace, job.state, restrict_to)
     records: list[SliceState] = []
     unknown: list[str] = []

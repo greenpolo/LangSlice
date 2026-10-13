@@ -15,6 +15,7 @@ from langslice.core.atlas.core import (
     load_atlas,
     position_mm_to_index,
 )
+from langslice.core.atlas.images import TEMPLATE, atlas_images, atlas_volume
 
 __all__ = [
     "load_atlas",
@@ -24,4 +25,7 @@ __all__ = [
     "index_to_position_mm",
     "get_position_range_mm",
     "get_reference_slice",
+    "TEMPLATE",
+    "atlas_images",
+    "atlas_volume",
 ]

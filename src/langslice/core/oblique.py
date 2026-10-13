@@ -82,7 +82,9 @@ def _scaled_volume(
     hit = cache.get(key)
     if hit is not None:
         return hit
-    raw = np.asarray(getattr(atlas, kind))
+    from langslice.core.atlas.images import atlas_volume
+
+    raw = np.asarray(atlas.annotation) if kind == "annotation" else atlas_volume(atlas, kind)
     step = max(1, int(downsample))
     volume = np.ascontiguousarray(raw[::step, ::step, ::step], dtype=np.float32)
     context = atlas_space_context(atlas)
@@ -249,13 +251,15 @@ def sample_oblique_plane(
     lands on the voxel grid.
 
     Args:
-        atlas: BrainGlobe-style atlas exposing ``template``/``annotation``.
+        atlas: BrainGlobe-style atlas exposing ``template``/``annotation``
+            (and any additional references).
         position_mm: Position along the slice-normal axis.
         plane: Slicing plane.
         pitch_deg: Rotation about the plane's column axis (degrees).
         yaw_deg: Rotation about the plane's row axis (degrees).
-        volume: ``"template"``, ``"annotation"``, or a full-resolution array
-            with the same shape as the template.
+        volume: ``"annotation"``, one of the atlas's images
+            (:func:`langslice.core.atlas.images.atlas_images`), or a
+            full-resolution array with the same shape as the template.
         downsample: Integer stride applied to all three volume axes. The
             returned plane shrinks by the same factor.
         order: ``map_coordinates`` spline order. 1 (linear) is right for a

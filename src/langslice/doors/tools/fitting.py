@@ -17,7 +17,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from langslice.core.display import available_atlas_channels, default_options
+from langslice.core.atlas.images import atlas_images
+from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.doors.tools.door import Door, as_list, pictured
 from langslice.doors.tools.view_options import clamp_resolution
@@ -38,13 +39,12 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return bool(view) or bool(spec.force_view)
 
     def atlas_refusal(atlas_image: str) -> dict[str, Any] | None:
-        kind = str(atlas_image or "template").strip().lower()
-        offered = [name for name in available_atlas_channels(ctx) if name != "borders"]
-        if kind in ("template", "nissl") and kind not in offered:
-            return {"status": "error", "error": "FIT_ATLAS_UNAVAILABLE",
-                    "message": f"The {kind} atlas image is offered on Allen mouse atlases "
-                    f"only; {job.state.atlas} does not cover the CCFv3 grid.",
-                    "atlas_image": offered}
+        kind = str(atlas_image or "template").strip()
+        offered = list(atlas_images(ctx.atlas))
+        if kind not in offered:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": f"{job.state.atlas} has no atlas image {kind!r}; its images: "
+                    f"{', '.join(offered)}.", "atlas_image": offered}
         return None
 
     def elastix_affine(sections: list[str], restrict_to: list[str], atlas_image: str,

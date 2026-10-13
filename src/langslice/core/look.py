@@ -9,7 +9,7 @@ One entry point, :func:`look`, takes a :class:`LookRequest` and returns one
   ``preprocessed`` channel;
 - ``atlas`` — the atlas plane alone at each of ``positions_mm``, at the
   stack's view angles (``StackState.view_angles``), in the chosen atlas
-  layers (``template``, ``nissl``, ``borders``;
+  layers (the atlas's images and ``borders``;
   :func:`langslice.core.display.framed_atlas`);
 - ``overlay`` — each section under its current registration with the atlas
   borders and any chosen atlas layers on it
@@ -146,7 +146,7 @@ class LookRequest:
     positions_mm: tuple[float, ...] = ()
     #: Raw channel names, or ``("preprocessed",)``; empty: every raw channel.
     channels: tuple[str, ...] = ()
-    #: Any of ``template``, ``nissl``, ``borders``; None: the mode's default.
+    #: Any of the atlas's images and ``borders``; None: the mode's default.
     atlas_layers: tuple[str, ...] | None = None
     #: Opacity of atlas images under an overlay; None: 0.5 when one is shown.
     atlas_opacity: float | None = None

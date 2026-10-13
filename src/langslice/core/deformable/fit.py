@@ -1,7 +1,7 @@
 """One deformable fit of a placed atlas plane onto a section: prepare, run, record.
 
 Route A (no image model): the section's stain image against an atlas image
-(``template`` or ``nissl``; in practice mostly an outline fit), optionally in
+(one of the atlas's images; in practice mostly an outline fit), optionally in
 sequential steps each restricted to the neighbourhood of chosen structures.
 Route B (image model): the model's extracted lines against atlas borders
 rendered from the same merged region set the model was shown, or
@@ -53,7 +53,6 @@ from langslice.core.deformable.masks import (
     MASK_MARGIN_MM,
     dilate,
 )
-from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.regions import named_regions
 from langslice.core.deformable.settings import (
@@ -205,7 +204,6 @@ def prepare_fit(
     *,
     lines: np.ndarray | None = None,
     previous: DeformableRecord | None = None,
-    nissl: NisslAtlas | None = None,
 ) -> PreparedFit:
     """Build the working-grid images and masks for one candidate.
 
@@ -236,7 +234,7 @@ def prepare_fit(
 
     moving = placed_atlas_image(
         settings.atlas_image, native, atlas, placement, atlas_to_working, grid.size,
-        excluded_native, softening_px=softening_px, nissl=nissl,
+        excluded_native, softening_px=softening_px,
     )
     if offset is not None:
         moving = _remap(moving, offset)

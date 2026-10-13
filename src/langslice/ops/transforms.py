@@ -487,8 +487,6 @@ def interactive_transform(
 
 # --- elastix_affine --------------------------------------------------------------------
 
-#: The atlas images an Elastix affine fit reads.
-ELASTIX_ATLAS_IMAGES: tuple[str, ...] = ("template", "nissl")
 #: Margin added round the regions' bounding box, as a fraction of the canvas.
 BOX_MARGIN = 0.05
 #: The least magnification a restricted fit's picture zooms to its regions'
@@ -554,7 +552,8 @@ def elastix_affine(
 ) -> AffineFit:
     """Fit an in-plane affine with Elastix, per section; ONE undo step for the fits.
 
-    Each section's current placement is refined against *atlas_image* (``template`` or ``nissl``).
+    Each section's current placement is refined against *atlas_image* (one of
+    the atlas's images, :func:`langslice.core.atlas.images.atlas_images`).
     *sections* are filenames
     (``StackState.resolve``); empty, every section :func:`fit_targets` names.
     *restrict_to* fits by those atlas regions only (sides allowed; empty:
@@ -565,12 +564,16 @@ def elastix_affine(
     regions' bounding box on that section's canvas as ``[x0, y0, x1, y1]``
     fractions (``core.canvas.zoom_box``'s zoom), so a later picture can zoom
     on them; absent when the regions are not in that plane. Refused (nothing
-    fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not one of
-    :data:`ELASTIX_ATLAS_IMAGES`, a region that is not text).
+    fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not one of the
+    atlas's images, a region that is not text).
     """
-    image = str(atlas_image)
-    if image not in ELASTIX_ATLAS_IMAGES:
-        raise Refused("BAD_ARGS", message=f"atlas_image is one of {list(ELASTIX_ATLAS_IMAGES)}")
+    from langslice.core.atlas.images import atlas_images
+
+    image = str(atlas_image).strip()
+    offered = atlas_images(workspace.atlas)
+    if image not in offered:
+        raise Refused("BAD_ARGS", message=f"atlas_image is one of this atlas's images: "
+                      f"{list(offered)}", atlas_image=list(offered))
     if any(not isinstance(name, str) for name in restrict_to):
         raise Refused("BAD_ARGS", message="restrict_to lists atlas regions")
     if sections:

@@ -190,7 +190,7 @@ wording; `registry.py` lists which.
   `error`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
   `elastix_affine(job, workspace, sections=(), restrict_to=(),
-  atlas_image="template"|"nissl")`: per section `core.transform.fit_elastix`
+  atlas_image="template")` (any of the atlas's images): per section `core.transform.fit_elastix`
   refining its current placement against the atlas image, by the *restrict_to* regions only, its marked damage regions
   left out on their own (`core.damage.exclusions`); the named sections, else
   `fit_targets(job)` (every positioned section whose affine is not frozen);
@@ -231,8 +231,8 @@ wording; `registry.py` lists which.
   (`traced_lines(root=...)`).
   `ants_syn(job, workspace, sections, restrict_to=, atlas_image=,
   stiffness=)`: the ANTs SyN fit, applied as ONE undo step:
-  on the preprocessed channel (`fit`) against `template` or
-  `nissl`, `soft`/`medium`/`firm`, on top of the applied deformation
+  on the preprocessed channel (`fit`) against one of the atlas's
+  images (`core.atlas.images`), `soft`/`medium`/`firm`, on top of the applied deformation
   (undo is how to start over); *restrict_to*
   checked against the atlas (`region_entries`); refused, nothing done:
   `ANTS_MISSING` (`refuse_without_ants`: antspyx must import, `ants_ready`),

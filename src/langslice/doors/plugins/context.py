@@ -99,8 +99,9 @@ class FitFrame:
     ``image`` is the section as its orientation sets it, at its current plane,
     with no in-plane transform (RGB, ``uint8``).
     ``atlas`` holds the plane at the section's position and cutting angles on
-    the native atlas grid: ``template``, ``annotation`` (region ids) and, where
-    the atlas has one, ``nissl``. ``atlas_to_section`` (3x3 on ``[x, y, 1]``)
+    the native atlas grid: ``annotation`` (region ids) and the atlas's images
+    asked for (``template`` and any additional reference the BrainGlobe atlas
+    ships, by its name). ``atlas_to_section`` (3x3 on ``[x, y, 1]``)
     maps native atlas pixel centres to ``image`` pixel centres. ``plane`` says
     where the native plane lies in atlas micrometres: ``center_um``, ``dx``,
     ``dy`` (the column and row directions), ``px_um``, ``shape`` and
@@ -420,10 +421,13 @@ class ToolContext:
         return self._grids[record.id]
 
     def fit_frame(self, section: object, *, atlas: Sequence[str] = (
-            "template", "annotation", "nissl")) -> FitFrame:
+            "template", "annotation")) -> FitFrame:
         """The section and its atlas plane on the fit grid (:class:`FitFrame`).
-        Needs a position. *atlas* picks the atlas planes to sample
-        (``nissl`` only where the atlas has one)."""
+        Needs a position. *atlas* picks the atlas planes to sample:
+        ``annotation`` and any of the atlas's images
+        (:func:`langslice.core.atlas.images.atlas_images`); a name the atlas
+        does not have is skipped."""
+        from langslice.core.atlas.images import atlas_images
         from langslice.core.deformable.atlas_images import native_intensity, native_labels
 
         record = self._record(section)
@@ -434,13 +438,10 @@ class ToolContext:
         planes: dict[str, np.ndarray] = {}
         if "annotation" in atlas:
             planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
-        if "template" in atlas:
-            planes["template"] = np.asarray(native_intensity(workspace.atlas, placement,
-                                                             "template"), dtype=np.float32)
-        if "nissl" in atlas and workspace.nissl_atlas is not None:
-            planes["nissl"] = np.asarray(native_intensity(
-                workspace.atlas, placement, "nissl", nissl=workspace.nissl_atlas),
-                dtype=np.float32)
+        for kind in atlas_images(workspace.atlas):
+            if kind in atlas:
+                planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
+                                          dtype=np.float32)
         return FitFrame(
             id=record.id, image=np.asarray(image), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
@@ -451,12 +452,13 @@ class ToolContext:
     def atlas_slice(self, section: object, *, kind: str = "template") -> np.ndarray:
         """The atlas plane at the section's position and cutting angles, on
         the native atlas grid (:class:`FitFrame` ``atlas``): *kind* is
-        ``template``, ``nissl`` or ``annotation``."""
-        if kind not in ("template", "nissl", "annotation"):
-            raise ToolError("BAD_ARGS", f"kind is template, nissl or annotation; got {kind!r}")
+        ``annotation`` or one of the atlas's images."""
+        from langslice.core.atlas.images import atlas_images
+
+        offered = ("annotation", *atlas_images(self._door.ctx.atlas))
+        if kind not in offered:
+            raise ToolError("BAD_ARGS", f"kind is one of {', '.join(offered)}; got {kind!r}")
         frame = self.fit_frame(section, atlas=(kind,))
-        if kind not in frame.atlas:
-            raise ToolError("UNAVAILABLE", f"this atlas has no {kind} image")
         return frame.atlas[kind]
 
     def transform_from_matrix(self, section: object, matrix: Any, *,

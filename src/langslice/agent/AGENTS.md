@@ -282,7 +282,7 @@ in its `left_linear` with the reason its linear placement stands (unless
 the host requires a deformation on every section).
 
 - `ants_syn(sections, restrict_to=, atlas_image=, stiffness=, view=)`:
-  ANTs SyN on the preprocessed channel against the template (or Nissl), on
+  ANTs SyN on the preprocessed channel against one of the atlas's images, on
   top of each section's current registration (each fit builds on the one
   before; undo is how to start over), the marked damage regions left out;
   at most 4 sections per call; `ANTS_MISSING` without antspyx.

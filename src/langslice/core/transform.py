@@ -169,9 +169,9 @@ def elastix_settings(
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
-    The section's preprocessed channel against *atlas_image* (``template``, the
-    default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` on an Allen mouse atlas:
-    ``elastix_affine``'s ``atlas_image``),
+    The section's preprocessed channel against *atlas_image* (one of the
+    atlas's images, :func:`langslice.core.atlas.images.atlas_images`; default
+    :data:`ELASTIX_ATLAS_IMAGE`: ``elastix_affine``'s ``atlas_image``),
     mutual information plus the edge channel (the Elastix stain fit's own
     pairing). *include* becomes the restricted ``structures`` (the regions
     plus 300 um), *exclude* the excluded regions; one-sided entries such as
@@ -240,8 +240,7 @@ def elastix_affine(
     image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
     width, height = grid.image.size
     prepared = prepare_fit(image, ctx.atlas, grid.placement,
-                           elastix_settings(include, exclude, atlas_image),
-                           nissl=ctx.nissl_atlas if atlas_image == "nissl" else None)
+                           elastix_settings(include, exclude, atlas_image))
     _check_elastix_region(prepared, ctx.atlas, include)
     assert prepared.inputs is not None  # prepare_fit always builds engine inputs
     result = run_elastix_affine(prepared.inputs)

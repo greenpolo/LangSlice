@@ -20,8 +20,9 @@ atlas-plane pixel centres to section pixel centres, section mm/px) and one
 and returns a `record.DeformableRecord`. No custom solver.
 
 - Route A (no image model): the stain image (`section_image="stain"`) against
-  an atlas image — `template` (BrainGlobe reference), or `nissl` (the Nissl
-  template aligned to the CCFv3, `nissl.py`; Allen mouse atlases). Metric
+  an atlas image — one of the atlas's own images (`core.atlas.images`:
+  BrainGlobe's `template` and any additional references the atlas ships,
+  by their BrainGlobe names; nothing borrowed from another atlas). Metric
   (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
   cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
   (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); the
@@ -49,7 +50,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   Mean squares (`core/deformation.Choice` adds the lines as named regions,
   `labels="model"`, for `traced_borders`). The crossed pairings are refused
   (`metric_for`): lines
-  against `template`/`nissl`, and the stain against borders (the pairing that
+  against an atlas image, and the stain against borders (the pairing that
   stays at the linear placement).
 - Label-map channels (`labels=`, ANTs only): `model` names each area the
   model's lines enclose after the placed merged region it overlaps most
@@ -107,7 +108,7 @@ levels are its capture range); `atlas_image`, `section_image`, `exclude`,
 `stain_metric` (`local_correlation` | `mutual_information`) and
 `stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
 from pairing, engine and stain metric (`metric_for`); lines against
-`template`/`nissl` and the stain against `borders`/`borders_merged` are refused.
+an atlas image and the stain against `borders`/`borders_merged` are refused.
 The step size is fixed.
 
 Stain defaults, and why: local correlation at 80 µm radius followed visible
@@ -116,8 +117,9 @@ enlarged ventricles, so the edge channel is on by default. There is no `stiff`
 setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
 slower, worse outlines) and the linear tool always runs `standard`; line
 softening is the constant `LINE_SOFTENING_UM` = 60. `template` is the default
-stain atlas image; the aligned `nissl` is untested on real sections (the
-misaligned Allen Nissl it replaced sat 40-80 µm inside fluorescent tissue).
+stain atlas image; the agent picks whichever of the atlas's images looks most
+like its sections (on `ccfv3augmented_mouse_25um` the template is the Blue
+Brain averaged Nissl and `single_animal_nissl` is an additional reference).
 On synthetic sections (flat regions, no texture) local correlation recovers a
 known warp worse than mutual information, so the mechanism tests pin mutual
 information.
@@ -169,23 +171,6 @@ named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
 displacement in the footprint above `OUTSIZED_MAX_FRACTION` (0.1) of the footprint's
 longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6). The median
 limit sits above every observed median.
-
-## The aligned Nissl (`nissl.py`)
-
-`NisslAtlas` serves the `nissl` image on any asr atlas covering the Allen
-CCFv3 extent (13.2 x 8.0 x 11.4 mm, `compatible`): the reference image of
-BrainGlobe's `ccfv3augmented_mouse_25um` v1.0, the Blue Brain
-population-averaged Nissl template (Piluso et al. 2025), loaded once per
-process through the workspace's atlas loader (downloaded on first use; a
-different shape is refused). That atlas is the CCFv3 grid extended along AP:
-the CCFv3 starts `AP_OFFSET_MM` (0.35 mm, 14 voxels) into it, where tissue
-outlines agree with `allen_mouse_25um` at Dice 0.997
-(`test_the_augmented_atlas_holds_the_ccfv3_at_the_offset`). `sample_plane`
-maps the run atlas's plane (`oblique.plane_index_coordinates`, any
-resolution, cutting angles included) to millimetres, adds the offset, samples
-trilinearly, and zeroes pixels outside the run atlas's brain (the averaged
-template glows faintly beyond the tissue). The Allen Institute's own Nissl
-(ABBA's) is misaligned with the CCFv3 annotation and is not read.
 
 ## Visual review
 
