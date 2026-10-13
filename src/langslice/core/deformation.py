@@ -83,11 +83,11 @@ FIT_LONG_EDGE = 1536
 DETAIL_LEVEL = "standard"
 #: Fitted records kept in memory for reuse (a record is tens of megabytes).
 CACHE_SIZE = 8
-#: The atlas a fit can read (``fit_atlas``), as the agent names it, and the
-#: engine's name for each. ``borders`` is the boundaries of the regions the
-#: image model is shown (``levels.MODEL_DEPTH``).
-FIT_ATLASES: dict[str, str] = {
-    "borders": "borders_merged", "template": "template", "nissl": "nissl"}
+#: The ``fit_atlas`` that reads the boundaries of the regions the image model
+#: is shown (``levels.MODEL_DEPTH``; the engine's ``borders_merged``). Every
+#: other ``fit_atlas`` is one of the atlas's images, by its own name
+#: (:func:`langslice.core.atlas.images.atlas_images`).
+FIT_BORDERS = "borders"
 #: What of the section a fit can read (``fit_section``).
 FIT_LOOK = "fit"
 TRACED_BORDERS = "traced_borders"
@@ -280,7 +280,7 @@ class Choice:
         return FitSettings(
             stiffness=self.stiffness,  # type: ignore[arg-type]
             detail=DETAIL_LEVEL,  # type: ignore[arg-type]
-            atlas_image=FIT_ATLASES[self.fit_atlas],  # type: ignore[arg-type]
+            atlas_image="borders_merged" if self.fit_atlas == FIT_BORDERS else self.fit_atlas,
             section_image="lines" if traced else "stain",
             labels="model" if traced else "none",
             exclude=exclude, structures=include,
@@ -480,7 +480,6 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
             prepared.append(prepare_fit(
                 job.image, ctx.atlas, job.grid.placement, job.settings, lines=job.lines,
                 previous=job.previous,
-                nissl=ctx.nissl_atlas if job.choice.fit_atlas == "nissl" else None,
             ))
             waiting.append(job)
         except Exception as exc:  # noqa: BLE001 - a bad candidate must not sink the rest
@@ -542,8 +541,8 @@ def picture(
 
     The crop (the zoom, or the whole fit image) is shown at ``style.long_edge``
     on its long side, or at its own pixels when it has fewer: the fit image
-    (:data:`FIT_LONG_EDGE`) is never upsampled. *atlas_images* (``template``,
-    ``nissl``; the call's ``view.atlas_channels``) are pulled through the
+    (:data:`FIT_LONG_EDGE`) is never upsampled. *atlas_images* (the atlas's
+    images among the call's ``view.atlas_channels``) are pulled through the
     record's map and blended under the lines at ``style.atlas_opacity``.
     With *note* (:func:`langslice.core.layers.note` fields: sections, mode)
     the picture is noted with its frame (:class:`~langslice.core.layers.WarpNote`),
@@ -565,7 +564,7 @@ def picture(
         shown = zoom_box(list(zoom), full)
     small = resampled_record(record, full, shown)
     base = image.convert("RGB").resize(full, Image.Resampling.LANCZOS).crop(shown)
-    kinds = tuple(kind for kind in atlas_images if kind in ("template", "nissl"))
+    kinds = tuple(kind for kind in atlas_images if kind != "borders")
     if style.atlas_opacity > 0 and kinds:
         base = _blend_atlas(ctx, base, small if warped else _unwarped(small), kinds,
                             style.atlas_opacity)
@@ -642,8 +641,7 @@ def _blend_atlas(
     nx, ny = composed_native_grid(record, 1)
 
     def pulled(kind: str) -> np.ndarray:
-        native = native_intensity(ctx.atlas, record.placement, kind,
-                                  nissl=ctx.nissl_atlas if kind == "nissl" else None)
+        native = native_intensity(ctx.atlas, record.placement, kind)
         native = normalize_intensity(native, labels > 0)
         return cv2.remap(native.astype(np.float32), nx, ny, cv2.INTER_LINEAR,
                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)

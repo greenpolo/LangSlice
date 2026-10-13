@@ -393,7 +393,7 @@ def test_one_raw_channel_in_gray_several_overlaid_in_colour(tmp_path: Path):
     assert state.appearance == {}
 
 
-def test_atlas_layers_and_the_host_without_nissl(tmp_path: Path):
+def test_atlas_layers_are_the_atlas_images_and_borders(tmp_path: Path):
     _, _, box = _rgb(tmp_path)
     look = _tool(box, "look")
 

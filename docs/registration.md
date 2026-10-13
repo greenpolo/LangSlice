@@ -248,8 +248,7 @@ shifts for up to four sections. Values are absolute; omitted values keep
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` refines a placement against the atlas `template` or `nissl`
-image. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` refines a placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a side, such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -269,10 +268,13 @@ on the previous one and can be undone. It accepts one to four sections,
 The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically.
 
-Both registration engines accept `atlas_image="template"` (the default)
-or `"nissl"`. The Nissl reference is read from BrainGlobe's
-`ccfv3augmented_mouse_25um` atlas and is available for Allen mouse CCFv3
-atlases; it downloads on first use.
+Both registration engines accept any of the atlas's own images as
+`atlas_image`: BrainGlobe's `"template"` (the default) and every additional
+reference the atlas ships, under BrainGlobe's names (for example
+`ccfv3augmented_mouse_25um`, whose template is the Blue Brain averaged Nissl,
+also ships a single-animal Nissl). The job statement lists them, and `look`
+draws any of them as an atlas layer. Nothing is borrowed from another atlas:
+an atlas without a histological image offers none.
 
 The reply reports displacement, fold fraction and plausibility flags, and
 shows the fitted overlay. These diagnostics report concerns rather than

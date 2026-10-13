@@ -21,14 +21,15 @@ Stiffness = Literal["soft", "medium", "firm"]
 #: at a fraction of the time, for quick previews and tests; a 10 um level
 #: was 4-5x slower with no visible gain.
 Detail = Literal["coarse", "standard"]
-#: ``template``: the atlas's own BrainGlobe reference (for Allen, the ARA average
-#: template). ``nissl``: a Nissl template aligned to the Allen CCFv3 (``nissl.py``).
-#: ``borders``: every region boundary from the annotation. ``borders_merged``:
-#: the boundaries of the regions at ``levels.MODEL_DEPTH``, the set the image
-#: model is shown (``trace_borders``). The
+#: Any of the atlas's images (:func:`langslice.core.atlas.images.atlas_images`:
+#: ``template`` and the atlas's additional references, by BrainGlobe's names;
+#: checked against the atlas when the fit samples it), or one of
+#: :data:`BORDER_IMAGES`: ``borders``, every region boundary from the
+#: annotation; ``borders_merged``: the boundaries of the regions at
+#: ``levels.MODEL_DEPTH``, the set the image model is shown (``trace_borders``). The
 #: grayscale images pair with the stain, the border images with model lines
 #: (:func:`metric_for`).
-AtlasImage = Literal["template", "nissl", "borders", "borders_merged"]
+AtlasImage = str
 #: ``stain``: the preprocessed section photograph. ``lines``: the image
 #: model's extracted boundary lines on that photograph's grid.
 SectionImage = Literal["stain", "lines"]
@@ -147,11 +148,13 @@ class FitSettings:
 
     def __post_init__(self) -> None:
         for name, kind in (("engine", Engine), ("stiffness", Stiffness), ("detail", Detail),
-                           ("atlas_image", AtlasImage), ("section_image", SectionImage),
+                           ("section_image", SectionImage),
                            ("labels", Labels), ("stain_metric", StainMetric)):
             value = getattr(self, name)
             if value not in get_args(kind):
                 raise ValueError(f"{name} must be one of {get_args(kind)}, got {value!r}")
+        if not isinstance(self.atlas_image, str) or not self.atlas_image:
+            raise ValueError(f"atlas_image must name an atlas image, got {self.atlas_image!r}")
         if not (self.neighbourhood_um >= 0 and self.neighbourhood_um < 5000):
             raise ValueError("neighbourhood_um must be a non-negative width below 5 mm")
         for name in ("exclude", "structures"):
@@ -213,7 +216,7 @@ def metric_for(
         return "mean_squares"
     if atlas_image in BORDER_IMAGES:
         raise ValueError("Atlas borders are fitted against traced lines only; fit a stain "
-                         "against a grayscale atlas image (template or nissl)")
+                         "against a grayscale atlas image")
     if stain_metric == "mutual_information":
         return "mutual_information"
     return "local_correlation" if engine == "ants" else ELASTIX_STAIN_METRIC

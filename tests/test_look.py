@@ -84,7 +84,7 @@ def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
     with pytest.raises(LookError) as caught:
         look(ws, state, LookRequest("atlas"))
     assert caught.value.code == "NO_POSITIONS"
-    for layers in (("nissl",), ("fur",)):  # no Nissl for the synthetic atlas
+    for layers in (("nissl",), ("fur",)):  # the synthetic atlas has only its template
         with pytest.raises(LookError) as caught:
             look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=layers))
         assert caught.value.code == "UNKNOWN_LAYER"

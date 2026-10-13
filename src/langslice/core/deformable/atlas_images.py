@@ -7,9 +7,9 @@ placed on the section's working grid through the linear placement. Blanking
 before placement is what makes exclusion work the same for every image kind:
 an excluded region's Nissl or template texture is gone, not just its lines.
 
-The ``nissl`` image is the Nissl template aligned to the Allen CCFv3
-(:class:`NisslAtlas`, an Allen mouse atlas only); the reference and the
-borders come from the BrainGlobe atlas itself.
+The grayscale images are the atlas's own (:mod:`langslice.core.atlas.images`:
+its ``template`` and any additional references BrainGlobe ships); the
+borders come from its annotation.
 """
 
 from __future__ import annotations
@@ -20,11 +20,11 @@ from typing import Any
 import numpy as np
 from scipy import ndimage as ndi
 
+from langslice.core.atlas.images import atlas_images, atlas_volume
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.render import annotation_slice, placed_border_coverage
 from langslice.core.atlas.tree import structure_table, with_descendants
 from langslice.core.deformable.geometry import Placement, warp_affine
-from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.settings import BORDER_IMAGES
 
 #: Acronym of the ventricular system: it and all its descendants get the
@@ -135,31 +135,25 @@ def native_labels(atlas: Any, placement: Placement) -> np.ndarray:
     return labels
 
 
-def native_intensity(
-    atlas: Any, placement: Placement, kind: str, *, nissl: NisslAtlas | None = None,
-) -> np.ndarray:
-    """The grayscale atlas plane (``template`` or ``nissl``) on the native grid, float32."""
-    if kind == "template":
-        if placement.pitch_deg or placement.yaw_deg:
-            from langslice.core.oblique import sample_oblique_plane
+def native_intensity(atlas: Any, placement: Placement, kind: str) -> np.ndarray:
+    """The atlas image *kind* (one of :func:`langslice.core.atlas.images.atlas_images`)
+    on the native plane grid, float32."""
+    if kind not in atlas_images(atlas):
+        raise ValueError(f"Not an image of this atlas: {kind!r}; its images: "
+                         f"{', '.join(atlas_images(atlas))}")
+    if placement.pitch_deg or placement.yaw_deg:
+        from langslice.core.oblique import sample_oblique_plane
 
-            return sample_oblique_plane(
-                atlas, placement.position_mm, placement.plane,
-                placement.pitch_deg, placement.yaw_deg, volume="template", order=1,
-            )
-        from langslice.core.oblique import plane_index_coordinates
-
-        coords = plane_index_coordinates(atlas, placement.position_mm, placement.plane)
-        index = np.rint(coords).astype(np.intp)
-        return np.asarray(np.asarray(atlas.template)[index[0], index[1], index[2]],
-                          dtype=np.float32)
-    if kind == "nissl":
-        source = nissl or NisslAtlas()
-        return source.sample_plane(
+        return sample_oblique_plane(
             atlas, placement.position_mm, placement.plane,
-            placement.pitch_deg, placement.yaw_deg,
+            placement.pitch_deg, placement.yaw_deg, volume=kind, order=1,
         )
-    raise ValueError(f"Not a grayscale atlas image: {kind!r}")
+    from langslice.core.oblique import plane_index_coordinates
+
+    coords = plane_index_coordinates(atlas, placement.position_mm, placement.plane)
+    index = np.rint(coords).astype(np.intp)
+    return np.asarray(atlas_volume(atlas, kind)[index[0], index[1], index[2]],
+                      dtype=np.float32)
 
 
 def normalize_intensity(image: np.ndarray, region: np.ndarray) -> np.ndarray:
@@ -200,7 +194,6 @@ def placed_atlas_image(
     excluded: np.ndarray | None,
     *,
     softening_px: float,
-    nissl: NisslAtlas | None = None,
 ) -> np.ndarray:
     """The moving image on the working grid, excluded regions blanked first.
 
@@ -218,7 +211,7 @@ def placed_atlas_image(
             supersample=BORDER_SUPERSAMPLE,
         )
         return soft_lines(coverage >= BORDER_COVERAGE_THRESHOLD, softening_px)
-    native = native_intensity(atlas, placement, kind, nissl=nissl)
+    native = native_intensity(atlas, placement, kind)
     native = normalize_intensity(native, (labels > 0) & keep)
     native = np.where(keep, native, 0.0).astype(np.float32)
     return warp_affine(native, atlas_to_working, working_size)

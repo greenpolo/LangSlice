@@ -10,21 +10,21 @@ import numpy as np
 import pytest
 from scipy import ndimage as ndi
 
+from langslice.core.atlas.images import atlas_images, atlas_volume
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.render import region_boundaries
 from langslice.core.deformable import (
     CandidateFailure,
     DeformableRecord,
     FitSettings,
-    NisslAtlas,
     diagnose,
     prepare_fit,
     ventricle_ids,
 )
-from langslice.core.deformable.atlas_images import whole_region_ids
+from langslice.core.deformable.atlas_images import native_intensity, whole_region_ids
 from langslice.core.deformable.engines import FIT_THREADS, RANDOM_SEED, run_engine
 from langslice.core.deformable.fit import finish_fit, fit_prepared
-from langslice.core.deformable.nissl import AP_OFFSET_MM, NISSL_SHAPE, NISSL_VOXEL_MM
+from langslice.core.deformable.geometry import Placement
 from langslice.core.deformable.record import jacobian_determinant
 from langslice.core.deformable.regions import named_regions
 from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
@@ -338,62 +338,40 @@ def test_plane_coordinates_match_the_samplers(atlas):
     assert np.allclose(sampled, expected, atol=1e-3)
 
 
-class _Ccfv3At50um:
-    """An Allen CCFv3 atlas at 50 um: the extent the Nissl template covers."""
+class _TwoImageAtlas:
+    """A synthetic atlas that ships one additional reference, as BrainGlobe does."""
 
-    atlas_name = "allen_mouse_50um"
-    orientation = "asr"
-    resolution = (50.0, 50.0, 50.0)
-    template = np.zeros((264, 160, 228), dtype=np.uint8)
-    annotation = np.ones((264, 160, 228), dtype=np.uint8)
-
-
-class _NisslSource:
-    """A stand-in for the augmented atlas: each voxel holds its AP index."""
-
-    def __init__(self) -> None:
-        ap = np.arange(NISSL_SHAPE[0], dtype=np.uint16)[:, None, None]
-        self.reference = np.broadcast_to(ap, NISSL_SHAPE)
+    def __init__(self, atlas) -> None:
+        self.atlas_name = atlas.atlas_name
+        self.orientation = atlas.orientation
+        self.resolution = atlas.resolution
+        self.metadata = getattr(atlas, "metadata", {})
+        self.template = atlas.template
+        self.annotation = atlas.annotation
+        ap = np.arange(atlas.template.shape[0], dtype=np.float32)[:, None, None]
+        self.additional_references = {
+            "second": np.broadcast_to(ap, atlas.template.shape).copy()}
 
 
-def test_nissl_is_sampled_at_the_ccfv3_offset_inside_the_brain():
-    from langslice.core.deformable import nissl as nissl_module
-
-    atlas = _Ccfv3At50um()
-    atlas.annotation = atlas.annotation.copy()
-    atlas.annotation[:, :10] = 0  # the top rows are outside the brain
-    nissl_module._volumes.clear()
-    try:
-        source = NisslAtlas(loader=lambda name: _NisslSource())
-        assert source.compatible(atlas)
-        plane = source.sample_plane(atlas, 6.5, "coronal")
-        ap_index = plane_index_coordinates(atlas, 6.5, "coronal")[0]
-        expected = ((ap_index + 0.5) * 0.05 + AP_OFFSET_MM) / NISSL_VOXEL_MM - 0.5
-        assert plane.shape == (160, 228)
-        assert np.allclose(plane[20:], expected[20:], atol=1e-3)
-        assert np.all(plane[:10] == 0)
-    finally:
-        nissl_module._volumes.clear()
+def test_atlas_images_are_the_atlas_own(atlas):
+    assert atlas_images(atlas) == ("template",)
+    two = _TwoImageAtlas(atlas)
+    assert atlas_images(two) == ("template", "second")
+    assert np.array_equal(atlas_volume(two, "template"), np.asarray(atlas.template))
+    with pytest.raises(ValueError, match="its images: template, second"):
+        atlas_volume(two, "nissl")
 
 
-def test_nissl_is_offered_only_for_the_ccfv3_extent(atlas):
-    assert NisslAtlas.compatible(_Ccfv3At50um())
-    assert not NisslAtlas.compatible(atlas)
-
-
-AUGMENTED = Path.home() / ".brainglobe/ccfv3augmented_mouse_25um_v1.0"
-ALLEN_25 = Path.home() / ".brainglobe/allen_mouse_25um_v1.2"
-
-
-@pytest.mark.skipif(not (AUGMENTED.exists() and ALLEN_25.exists()),
-                    reason="the cached ccfv3augmented and allen_mouse 25 um atlases")
-def test_the_augmented_atlas_holds_the_ccfv3_at_the_offset():
-    import tifffile
-
-    allen = tifffile.imread(ALLEN_25 / "annotation.tiff") > 0
-    augmented = tifffile.imread(AUGMENTED / "annotation.tiff") > 0
-    assert augmented.shape == NISSL_SHAPE
-    start = round(AP_OFFSET_MM / NISSL_VOXEL_MM)
-    window = augmented[start:start + allen.shape[0]]
-    dice = 2 * (allen & window).sum() / (allen.sum() + window.sum())
-    assert dice > 0.99
+def test_an_additional_reference_is_sampled_like_the_template(atlas):
+    two = _TwoImageAtlas(atlas)
+    straight = sample_oblique_plane(two, 0.1, "coronal", volume="second")
+    ap_index = plane_index_coordinates(two, 0.1, "coronal")[0]
+    assert np.allclose(straight, ap_index, atol=1e-3)
+    tilted = sample_oblique_plane(two, 0.1, "coronal", 3.0, 0.0, volume="second")
+    assert not np.allclose(tilted, straight)
+    placement = Placement(atlas_name=two.atlas_name, position_mm=0.1, plane="coronal",
+                          pitch_deg=0.0, yaw_deg=0.0, atlas_to_section=np.eye(3),
+                          section_mm_per_px=0.01)
+    assert np.allclose(native_intensity(two, placement, "second"), ap_index, atol=1e-3)
+    with pytest.raises(ValueError, match="Not an image of this atlas"):
+        native_intensity(atlas, placement, "second")

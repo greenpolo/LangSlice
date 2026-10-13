@@ -12,10 +12,10 @@ section and atlas pictures below):
   :mod:`langslice.core.channels`; one is gray, several are added in distinct
   colours, ABBA's multichannel display), or the version ``preprocessed``
   (what registration reads); neither is the section's default render.
-- ``atlas_channels`` — what of the ATLAS is shown: any of ``template`` (the
-  reference template), ``nissl`` (a Nissl template aligned to the Allen CCFv3,
-  Allen mouse atlases only, :mod:`langslice.core.deformable.nissl`) and
-  ``borders`` (the region lines).
+- ``atlas_channels`` — what of the ATLAS is shown: any of the atlas's images
+  (``template`` and the additional references the BrainGlobe atlas ships,
+  by their names, :mod:`langslice.core.atlas.images`) and ``borders`` (the
+  region lines).
   Images are drawn under the section at ``atlas_opacity`` (overlay modes) or
   as the atlas picture; two images are added in two colours. No ``borders``
   means no lines.
@@ -46,6 +46,7 @@ from langslice.core.appearance import (
     preprocessed_settings,
 )
 from langslice.core.atlas.core import get_reference_slice
+from langslice.core.atlas.images import TEMPLATE, atlas_images
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import (
     HIGHLIGHT_WIDTH,
@@ -69,10 +70,8 @@ from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
-#: Every atlas channel, in the order pictures and docs list them.
-ATLAS_CHANNELS: tuple[str, ...] = ("template", "nissl", "borders")
-#: The atlas channels that are images (``borders`` is lines).
-ATLAS_IMAGES: tuple[str, ...] = ("template", "nissl")
+#: The atlas channel that is lines; every other atlas channel is an image.
+BORDERS = "borders"
 
 
 #: Raw channels one overlay may add up.
@@ -81,8 +80,9 @@ MAX_OVERLAY_CHANNELS = 6
 DEFAULT_ATLAS_OPACITY = 0.5
 #: Region line width in output pixels, everywhere.
 DEFAULT_BORDER_THICKNESS = 1.0
-#: Intensity percentile mapped to white when a Nissl plane is shown.
-NISSL_PERCENTILE = 99.5
+#: Intensity percentile (inside the atlas anatomy) mapped to white when an
+#: atlas image other than the template is shown.
+ATLAS_IMAGE_PERCENTILE = 99.5
 
 
 def zoom_fractions(zoom: tuple[float, ...] | list[float],
@@ -173,12 +173,12 @@ class DisplayOptions:
     @property
     def borders(self) -> bool:
         """Whether the atlas region lines are drawn."""
-        return "borders" in self.atlas_channels
+        return BORDERS in self.atlas_channels
 
     @property
     def atlas_images(self) -> tuple[str, ...]:
-        """The atlas images shown (``template``/``nissl``), in canonical order."""
-        return tuple(kind for kind in self.atlas_channels if kind in ATLAS_IMAGES)
+        """The atlas images shown, in the order the atlas lists them."""
+        return tuple(kind for kind in self.atlas_channels if kind != BORDERS)
 
     @property
     def layer(self) -> str:
@@ -232,15 +232,14 @@ class DisplayOptions:
         images = self.atlas_images
         if not images:
             return "lines only" if self.borders else "none"
-        if images == ("template",):
-            return "template"
         if len(images) == 1:
             return images[0]
         return " + ".join(f"{kind} {word}" for kind, word, _rgb in channel_colors(images))
 
 def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
-    """The atlas channels this host can draw."""
-    return ATLAS_CHANNELS if ctx.nissl_atlas is not None else ("template", "borders")
+    """The atlas channels of this run's atlas: its images
+    (:func:`langslice.core.atlas.images.atlas_images`), then ``borders``."""
+    return (*atlas_images(ctx.atlas), BORDERS)
 
 
 def default_options(
@@ -260,19 +259,21 @@ def default_options(
 # --- atlas images --------------------------------------------------------
 
 
-def _nissl_plane(
-    ctx: Workspace, state: StackState, position_mm: float, labels: np.ndarray,
+def _image_plane(
+    ctx: Workspace, state: StackState, kind: str, position_mm: float, labels: np.ndarray,
     angles: Angles,
 ) -> np.ndarray:
-    """The aligned Nissl on the native plane grid, percentile-stretched to 0..1."""
-    source = ctx.nissl_atlas
-    if source is None:
-        raise ValueError("The nissl atlas channel needs an Allen mouse (CCFv3) atlas")
-    values = np.asarray(source.sample_plane(
-        ctx.atlas, position_mm, cast(Plane, state.plane), *angles,
+    """The atlas image *kind* on the native plane grid, percentile-stretched to 0..1."""
+    from langslice.core.oblique import sample_oblique_plane
+
+    values = np.asarray(sample_oblique_plane(
+        ctx.atlas, position_mm, cast(Plane, state.plane), *angles, volume=kind, order=1,
     ), dtype=np.float32)
+    if values.shape != labels.shape:
+        values = np.asarray(Image.fromarray(values, mode="F").resize(
+            (labels.shape[1], labels.shape[0]), Image.Resampling.BILINEAR), dtype=np.float32)
     inside = values[(labels > 0) & (values > 0)]
-    top = float(np.percentile(inside, NISSL_PERCENTILE)) if inside.size else 0.0
+    top = float(np.percentile(inside, ATLAS_IMAGE_PERCENTILE)) if inside.size else 0.0
     if top <= 0:
         return np.zeros(values.shape, dtype=np.float32)
     return np.clip(values / top, 0.0, 1.0)
@@ -282,19 +283,19 @@ def atlas_image_picture(
     ctx: Workspace, state: StackState, kinds: tuple[str, ...], position_mm: float,
     *, angles: Angles | None = None,
 ) -> Image.Image | None:
-    """The atlas images *kinds* on the native plane grid; None for ``template`` alone.
+    """The atlas images *kinds* on the native plane grid; None for the template alone.
 
     At *angles* (:func:`langslice.core.state.plane_angles`: a section's own,
     or the stack's when None).
 
     ``template`` alone is left to the renderers' own reference path (the pixels
-    every earlier picture showed). ``nissl`` is the aligned Nissl, stretched
-    inside the atlas anatomy. Two images are added in their two colours
+    every earlier picture showed). Any other atlas image is stretched inside
+    the atlas anatomy. Two images are added in their two colours
     (:func:`langslice.core.appearance.channel_colors`); no image is a black
     plane (the lines alone).
     """
-    images = tuple(kind for kind in kinds if kind in ATLAS_IMAGES)
-    if images == ("template",):
+    images = tuple(kind for kind in kinds if kind != BORDERS)
+    if images == (TEMPLATE,):
         return None
     plane = cast(Plane, state.plane)
     pitch, yaw = plane_angles(state, angles)
@@ -306,8 +307,8 @@ def atlas_image_picture(
         return Image.new("L", (shape[1], shape[0]), 0)
 
     def gray(kind: str) -> np.ndarray:
-        if kind == "nissl":
-            return _nissl_plane(ctx, state, position_mm, labels, (pitch, yaw))
+        if kind != TEMPLATE:
+            return _image_plane(ctx, state, kind, position_mm, labels, (pitch, yaw))
         reference = get_reference_slice(ctx.atlas, position_mm, plane=plane,
                                         pitch_deg=pitch, yaw_deg=yaw)
         if reference.size != (shape[1], shape[0]):
@@ -484,14 +485,14 @@ def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions
 
     shown = view_angles_label(plane_angles(state, angles), median=median)
     name = options.atlas_name()
-    extra = "" if name == "template" else f" {name}"
+    extra = "" if name == TEMPLATE else f" {name}"
     if options.regions:
         extra += " regions " + ",".join(name for name, _ids in options.regions)
     return f"atlas {position_mm:.2f} mm{shown}{extra}"
 
 
 __all__ = [
-    "ATLAS_CHANNELS", "DisplayOptions", "MODE_RULES",
+    "BORDERS", "DisplayOptions", "MODE_RULES",
     "atlas_caption", "atlas_image_picture", "available_atlas_channels",
     "default_options", "framed_atlas", "framed_section", "regions_in_plane",
 ]

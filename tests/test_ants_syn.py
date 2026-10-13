@@ -85,7 +85,7 @@ def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
     ({"sections": [ID] * 5}, "BAD_ARGS"),
     ({"sections": [ID], "stiffness": "stiff"}, "BAD_ARGS"),
     ({"sections": [ID], "atlas_image": "borders"}, "BAD_ARGS"),
-    ({"sections": [ID], "atlas_image": "nissl"}, "FIT_ATLAS_UNAVAILABLE"),
+    ({"sections": [ID], "atlas_image": "nissl"}, "BAD_ARGS"),  # not this atlas's image
     ({"sections": ["nope.png"]}, "UNKNOWN_SLICE_IDS"),
     ({"sections": [ID], "restrict_to": ["NOPE"]}, "UNKNOWN_REGIONS"),
     ({"sections": [ID], "restrict_to": "TH"}, "BAD_ARGS"),

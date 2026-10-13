@@ -69,9 +69,12 @@ from langslice.doors.tools.arguments import (
 
 #: The choices a string argument takes, offered as an enum in every door's schema.
 LookMode = Literal["section", "atlas", "overlay", "positioning"]
-AtlasLayer = Literal["template", "nissl", "borders"]
+#: Atlas layers and fit images are the atlas's own (its "template" and any
+#: additional references BrainGlobe ships), so they differ by atlas: plain
+#: strings, listed in the job statement and checked by the tools.
+AtlasLayer = str
 Warp = Literal["applied", "none"]
-FitAtlas = Literal["template", "nissl"]
+FitAtlas = str
 Stiffness = Literal["soft", "medium", "firm"]
 
 # --- looking ---------------------------------------------------------------------
@@ -125,8 +128,9 @@ def look(
             are blended in distinct colours, at most 6), or ["preprocessed"]
             for the channel the fits and the image model read. Empty is every
             raw channel, each with its display settings.
-        atlas_layers: Any of "template", "nissl" (Allen mouse atlases only)
-            and "borders". Empty is the mode's default: ~
+        atlas_layers: Any of the atlas's images (the job statement lists
+            them: "template" and any other reference images the atlas ships,
+            by their names) and "borders". Empty is the mode's default: ~
             [[?look:overlay borders in "overlay"]]~
             [[?look:overlay,look:atlas|look:positioning ,
             ]]~
@@ -134,8 +138,8 @@ def look(
             [[?look:atlas template in "atlas"]]~
             [[?look:positioning template in "positioning"]]]].~
             [[?look:section  "section" draws no atlas.]]
-        atlas_opacity: 0 to 1: how strongly an atlas image (template or
-            nissl) shows under the section in "overlay".
+        atlas_opacity: 0 to 1: how strongly an atlas image shows under the
+            section in "overlay".
         warp: "applied" draws each section with its deformation, "none" with
             its linear placement only.
         resolution: The long edge of each picture in pixels; 0 is the
@@ -582,8 +586,9 @@ def elastix_affine(
             included; "CTX:left" or "CTX:right" for one side): only the
             atlas within 300 um of them, against the tissue the fit lays
             there. Empty fits by every region.
-        atlas_image: "template" (the atlas's reference template) or "nissl"
-            (a Nissl-stained reference, Allen mouse atlases only).
+        atlas_image: One of the atlas's images (the job statement lists
+            them: "template" and any other reference images the atlas ships,
+            by their names); pick the one that looks most like the sections.
         view: True returns the picture described below; false returns none.
 
     Returns:
@@ -626,8 +631,9 @@ def ants_syn(
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side). Empty fits by
             every region.
-        atlas_image: "template" (the atlas's reference template) or "nissl"
-            (a Nissl-stained reference, Allen mouse atlases only).
+        atlas_image: One of the atlas's images (the job statement lists
+            them: "template" and any other reference images the atlas ships,
+            by their names); pick the one that looks most like the sections.
         stiffness: "soft", "medium" or "firm".
         view: True returns the picture described below; false returns none.
 

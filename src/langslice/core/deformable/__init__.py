@@ -17,7 +17,6 @@ from langslice.core.deformable.fit import (
     prepare_warp,
 )
 from langslice.core.deformable.geometry import Placement, placement_from_handoff
-from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.render import (
     draw_warped_borders,
@@ -32,7 +31,6 @@ __all__ = [
     "CandidateFailure",
     "DeformableRecord",
     "FitSettings",
-    "NisslAtlas",
     "Placement",
     "PreparedFit",
     "diagnose",
