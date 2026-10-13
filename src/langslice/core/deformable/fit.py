@@ -357,7 +357,7 @@ def _taper_weight(region: np.ndarray, spacing_mm: float, neighbourhood_mm: float
                   section_size: tuple[int, int]) -> np.ndarray:
     """1 within *neighbourhood_mm* of *region* (working grid), a raised cosine to 0
     over :data:`RESTRICTED_TAPER_MM` beyond, on the section grid."""
-    distance = ndi.distance_transform_edt(~region) * spacing_mm
+    distance = np.asarray(ndi.distance_transform_edt(~region), dtype=np.float64) * spacing_mm
     t = np.clip((distance - neighbourhood_mm) / RESTRICTED_TAPER_MM, 0.0, 1.0)
     weight = (0.5 * (1.0 + np.cos(np.pi * t))).astype(np.float32)
     return cv2.resize(weight, section_size, interpolation=cv2.INTER_LINEAR)
