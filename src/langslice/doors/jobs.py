@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core.spec import JobSpec
 from langslice.core.workspace import Workspace, log_progress
+from langslice.doors import plugins as _plugins  # noqa: F401 - registers the plugin loader
 from langslice.doors.card import write_card
 from langslice.job.job import Job
 from langslice.job.layout import (
@@ -242,7 +243,7 @@ class Opened:
         verb, ``Verb.hidden``, is callable by name but not listed)."""
         from langslice.ops.registry import listed
 
-        shown = listed()
+        shown = listed(self.spec)
         return [name for name in self.tools().names if name in shown]
 
     def close(self) -> None:

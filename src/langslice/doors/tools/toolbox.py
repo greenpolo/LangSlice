@@ -48,7 +48,7 @@ from langslice.job.job import HOST_TRANSFORM_KIND, Job
 from langslice.job.views import PICTURE_FILE as VIEW_PICTURE_FILE
 from langslice.job.views import captured as captured_views
 from langslice.ops import history as ops_history
-from langslice.ops.registry import VERBS, enabled
+from langslice.ops.registry import enabled, verbs_for
 from langslice.providers.registry import ImageModel, resolve_image_model
 
 if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
@@ -320,6 +320,10 @@ class ToolBox:
     #: ``None`` while the door has not armed it (:meth:`require_opening`).
     #: Every write is refused (``OPENING_NOT_READ``) until the set is empty.
     opening_unread: set[int] | None = None
+    #: The provenance of the tool plugins the job loaded (module, factory,
+    #: versions, source digests, each tool's declaration as the model sees it;
+    #: :mod:`langslice.doors.plugins.provenance`); empty without plugins.
+    plugins: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def names(self) -> list[str]:
@@ -392,6 +396,11 @@ def build_tools(
     the strict argument check, the stale-deformation sweep, the picture
     saving (``pictures``), the background-work notices at the head of the
     reply, and the serialization lock with the host events.
+
+    A job whose spec names tool plugins (``spec.plugins``) gets their tools
+    after the native ones: declared from their own stubs, their bodies run
+    by :mod:`langslice.doors.plugins.runtime`, wrapped the same way; the
+    plugins' provenance is recorded in ``job.json`` and kept on the box.
     """
     if job is None:
         job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
@@ -420,7 +429,7 @@ def build_tools(
         lock, after the state is brought up to date (:meth:`Job.writing`); a
         long verb (``VERBS[name].long``) only syncs, computes outside the
         lock and takes it itself to apply, re-checking its sections."""
-        if VERBS[name].long:
+        if verbs[name].long:
             sync_job()
             yield
             return
@@ -429,6 +438,7 @@ def build_tools(
                 run.forget_looks(ops_history.moved_positions(before, job.state))
             yield
 
+    verbs = verbs_for(spec)
     bodies: dict[str, Callable[..., Any]] = {
         **looking.bodies(run), **changing.bodies(run), **fitting.bodies(run),
     }
@@ -442,11 +452,17 @@ def build_tools(
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
                          door=door, prompt=prompt)
+    if spec.plugins:
+        from langslice.doors.plugins import provenance, runtime
+
+        bodies.update(runtime.bodies(run, variant))
+        box.plugins = provenance.records(variant)
+        provenance.record(job, box.plugins)
     lock = threading.Lock()
 
     def behind_gate(name: str, tool: Any) -> Any:
         """A write behind the door's opening-read gate (armed by MCP only)."""
-        return _opening_gate(tool, box) if VERBS[name].kind == "write" else tool
+        return _opening_gate(tool, box) if verbs[name].kind == "write" else tool
 
     box.tools = [
         _serialized(

@@ -654,6 +654,8 @@ class Job:
         #: Whole states, oldest first; the last one is what ``undo`` restores.
         self.undo_stack: list[dict[str, Any]] = list(undo or [])[-UNDO_DEPTH:]
         self.redo_stack: list[dict[str, Any]] = list(redo or [])
+        #: Undo steps recorded by this job so far (:meth:`merge_steps`).
+        self.pushed = 0
         #: Called with the state after every checkpoint and every reload.
         self.observers: list[Callable[[StackState], None]] = []
         #: Image corrections still running, per section id: the geometry they
@@ -881,6 +883,21 @@ class Job:
         self.undo_stack.append(before)
         del self.undo_stack[:-UNDO_DEPTH]
         self.redo_stack.clear()
+        self.pushed += 1
+
+    def merge_steps(self, mark: int) -> None:
+        """Make the undo steps recorded since :attr:`pushed` was *mark* one
+        step: the state before the first of them. A tool whose call writes
+        through several operations is still one undo step. Call it inside
+        :meth:`writing`."""
+        count = min(self.pushed - mark, len(self.undo_stack))
+        if count < 2:
+            return
+        first = self.undo_stack[-count]
+        del self.undo_stack[-count:]
+        self.undo_stack.append(first)
+        self.pushed -= count - 1  # the steps since an earlier mark are still counted right
+        self._save_history()
 
     def undo(self) -> bool:
         """Restore the state before the last step; False when there is none."""

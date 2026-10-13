@@ -9,7 +9,7 @@ A registration file can also be explicitly imported when creating a job.
 
 ```text
 <images>/langslice/
-  job.json              settings (the JobSpec, with its `disabled` tools and options and its `frozen` properties when it has any) and the format version
+  job.json              settings (the JobSpec, with its `disabled` tools and options, its `frozen` properties and its tool `plugins` when it has any), the format version, and the provenance of the plugins it ran with (`plugins`)
   state.json            the checkpoint: the truth
   registration.json     its public rendering
   history/              undo and redo steps
@@ -19,7 +19,8 @@ A registration file can also be explicitly imported when creating a job.
                         image-model traces (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
-  exports/              linear_results.json, quicknii.json, visualign.json
+  exports/              linear_results.json, quicknii.json, visualign.json, plugins/<tool>/ (copies of plugin layers)
+  plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/)
   logs/                 the agent CLI's calls and background runs
   AGENTS.md, CLAUDE.md  the reference card for coding agents
   BRIEF.md              the agent CLI's brief
@@ -261,3 +262,41 @@ JPEG gets a new picture number and geometry at its delivered size. The
 original picture remains unchanged; `extra.transport_source_picture` names
 it. Look pictures retain their native-detail redraw recipe. Other resized
 pictures use `transport_snapshot` and subsequent zooms crop that snapshot.
+
+## Plugin layers
+
+A tool plugin leaves layers on sections (`docs/plugins.md`). Each tool keeps
+its files under `plugins/<tool>/`; nothing else of the job is written by it.
+`plugins/<tool>/layers.json` is the manifest of every layer the tool ever made:
+`tool`, `next` (the number of the next layer file) and `layers`, each with `id`
+(`<tool>/<number>`), `section`, `name`, `kind`, `frame`, `file` (relative to the
+job folder), `tool`, `call` (the call that made it) and `created`. The layers a
+section shows now are its `layers` in `state.json` (the same fields, without
+`section`; the key is absent while a section has none), so undoing the call that
+made a layer hides it and the files stay.
+
+The files are `plugins/<tool>/layers/<section>_<number>_<name>.<ext>`:
+
+| Kind | File | Content |
+|---|---|---|
+| `points` | `.csv` | header `x,y,label,value` for `section_px`, `x_um,y_um,z_um,label,value` for `atlas_um`; `label` and `value` empty where absent |
+| `lines` | `.json` | `{"kind": "lines", "frame", "features": [...]}`; a feature is a GeoJSON `LineString`, or a `Polygon` (one ring, first point repeated) for a closed line, with `properties.label` when labelled |
+| `labels` | `.png` | 16-bit grey, the integer ids; `.npz` (`labels`, `uint32`) when an id is 65536 or more |
+| `scalar` | `.npz` | `values` (`float32`, 2-D) and `level` (the level drawn as an outline) |
+| `picture` | `.png` | the picture as given |
+
+Frames: `section_px` is `[x, y]` pixels of the section's image file (pixel
+centres at integers, `(0, 0)` the centre of the first pixel; a raster covers
+the whole file whatever its size, in the file's orientation: not turned or
+flipped); `atlas_um` is `[x, y, z]` in BrainGlobe
+micrometres in the atlas's axis order (the convention above). `export_maps`
+copies the layers the sections show to `exports/plugins/<tool>/` with a
+`layers.json` listing them (`file` the name inside that folder).
+
+`job.json`'s `plugins` lists, per plugin of the most recent run that built its
+tools: `ref`, `module`, `factory`, `version`, `package_version`, `api_version`,
+`sources` (SHA-256 of each source file that declared its tools) and `tools`:
+`name`, `kind`, `group`, `task`, `writes`, `long`, `limits`, `version`, `meta`
+(when given) and `declaration` (`name`, `description`, `arguments`: the tool as
+the model reads it). `logs/events.jsonl` has a `plugins` line whenever that
+record changes.

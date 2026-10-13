@@ -11,7 +11,10 @@ doors) and ``submit`` write, from the stack as it stands:
 - ``exports/quicknii.json`` (every placed section's linear anchoring) and
   ``exports/visualign.json`` (the same, with VisuAlign markers of each
   applied deformation) (:func:`langslice.job.quint.job_export`);
-- ``registration.json`` again, so it lists the files just written.
+- ``registration.json`` again, so it lists the files just written;
+- ``exports/plugins/<tool>/``: a copy of the layers tool plugins left on the
+  sections, with a manifest each (:func:`langslice.job.plugin_store.export_layers`),
+  only when a section has layers.
 
 Nothing in the state changes (no undo step). A job that persists nothing
 (``Job.persist`` False, a dry run) writes nothing and reports what would be
@@ -221,4 +224,9 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
     path = formats.write_registration(layout, state, workspace)
     if path is not None:
         files.append((str(path), "registration"))
+    if any(record.layers for record in state.slices):  # tool plugins' layers (docs/plugins.md)
+        from langslice.job.plugin_store import export_layers
+
+        files += [(str(layout.resolve(relative)), "plugin_layer")
+                  for relative in export_layers(layout, state)]
     return files

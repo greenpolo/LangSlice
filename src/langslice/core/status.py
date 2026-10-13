@@ -45,7 +45,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     do not (the stack's angle is reported once, beside them). A section with
     landmark pairs carries ``landmarks``: their ``total``, ``pending`` (not in
     the landmark warp applied now) and ``stale`` (placed against another atlas
-    plane) counts.
+    plane) counts. A section tool plugins left layers on carries ``layers``
+    (name, kind, frame and tool of each); other sections do not.
     """
     from langslice.core.landmarks import landmark_counts
 
@@ -88,6 +89,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                    else {"deformation_steps": len(record.deformation.get("steps") or [])}
                    if record.deformation else {}),
                 **({"landmarks": counts} if (counts := landmark_counts(state, record)) else {}),
+                **({"layers": [{"name": ref["name"], "kind": ref["kind"],
+                                "frame": ref["frame"], "tool": ref["tool"]}
+                               for ref in record.layers]} if record.layers else {}),
                 "caveats": list(record.caveats),
             }
         )
@@ -146,7 +150,7 @@ def _status_rows(value: Any) -> bool:
     """*value* is a list of status rows: dicts with no field outside
     :data:`ROW_FIELDS` (``grep_atlas``'s region rows, under the same key, are
     not)."""
-    fields = set(ROW_FIELDS)
+    fields = {*ROW_FIELDS, "layers"}  # ``layers``: only a section with plugin layers has it
     return isinstance(value, list) and all(
         isinstance(row, dict) and set(row) <= fields for row in value)
 

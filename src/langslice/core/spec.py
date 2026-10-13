@@ -322,6 +322,18 @@ class JobSpec:
     #: the window's reading on the first call; ignored when the provider
     #: reports no quota.
     max_quota_percent: int = DEFAULT_MAX_QUOTA_PERCENT
+    #: Tool plugins the job loads, each ``module:factory``
+    #: (:mod:`langslice.core.plugins`, ``docs/plugins.md``): their tools join
+    #: the toolbox, and are named in ``disabled`` like the native ones. A
+    #: plugin that cannot be loaded, or whose tools clash with another's, is
+    #: refused when the spec is made. Code runs on load: only the library and
+    #: the CLI build specs with plugins (the MCP server and the ABBA worker
+    #: refuse them).
+    plugins: list[str] = field(default_factory=list)
+    #: Options a plugin's factory is called with, by plugin reference (a JSON
+    #: object each; the generic MCP adapter's server and allow-list are one).
+    #: A plugin without an entry is called without arguments.
+    plugin_config: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.image_resolution not in IMAGE_RESOLUTIONS:
@@ -354,6 +366,19 @@ class JobSpec:
                 isinstance(name, str) for name in self.disabled):
             raise ValueError("disabled must be a list of tool and option names")
         self.disabled = list(dict.fromkeys(name.strip() for name in self.disabled))
+        if not isinstance(self.plugins, (list, tuple)) or not all(
+                isinstance(ref, str) and ref.strip() for ref in self.plugins):
+            raise ValueError("plugins must be a list of module:factory references")
+        self.plugins = list(dict.fromkeys(ref.strip() for ref in self.plugins))
+        if not isinstance(self.plugin_config, dict) or not all(
+                isinstance(ref, str) and isinstance(item, dict)
+                for ref, item in self.plugin_config.items()):
+            raise ValueError("plugin_config must map a plugin reference to an options object")
+        stray = sorted(set(self.plugin_config) - set(self.plugins))
+        if stray:
+            raise ValueError(f"plugin_config names {stray}, which are no plugin of this job")
+        if self.plugins:
+            toolset.tools_for(self)  # loads them: refused here when they cannot be
         self.frozen = freeze.clean(self.frozen)
         supplied = (self.inputs or {}).get("positions") or {}
         unsupplied = sorted(name for name, held in self.frozen.items()
@@ -433,6 +458,10 @@ class JobSpec:
             data.pop("disabled", None)
         if not data.get("frozen"):  # likewise
             data.pop("frozen", None)
+        if not data.get("plugins"):  # likewise
+            data.pop("plugins", None)
+        if not data.get("plugin_config"):  # likewise
+            data.pop("plugin_config", None)
         return data
 
     @staticmethod

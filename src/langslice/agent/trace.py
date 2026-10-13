@@ -20,6 +20,10 @@ Record kinds, in the order a healthy session writes them:
 ``session``
     Once, first line: run label, agent name, model name, and the full system
     instruction.
+``plugins``
+    Only for a job that loaded tool plugins, once, after ``session``: per
+    plugin its module, factory, versions, source digests and every tool's
+    declaration as the model saw it (``ToolBox.plugins``).
 ``seed``
     The step's seed message: text parts verbatim, image parts as descriptors
     carrying the label text that preceded them.
@@ -87,7 +91,8 @@ def _describe_parts(parts: Any) -> list[dict[str, Any]]:
 class SessionTrace:
     """Append-only JSONL record of one linear agent session."""
 
-    def __init__(self, trace_dir: str | Path, run_label: str, *, agent: Any) -> None:
+    def __init__(self, trace_dir: str | Path, run_label: str, *, agent: Any,
+                 plugins: list[dict[str, Any]] | None = None) -> None:
         self._steps = 0
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in run_label)
         # Same uuid trick as RequestCapturePlugin: concurrent sessions can share
@@ -103,6 +108,8 @@ class SessionTrace:
                 instruction if isinstance(instruction, str) else "<dynamic instruction>"
             ),
         })
+        if plugins:
+            self._write({"kind": "plugins", "plugins": plugins})
 
     def _write(self, record: dict[str, Any]) -> None:
         record["at"] = datetime.now().isoformat(timespec="seconds")
@@ -216,9 +223,10 @@ class SessionTrace:
         self._write(record)
 
 
-def open_trace(run_label: str, *, agent: Any) -> SessionTrace | None:
+def open_trace(run_label: str, *, agent: Any,
+               plugins: list[dict[str, Any]] | None = None) -> SessionTrace | None:
     """A trace for this session, or ``None`` when tracing is off."""
     trace_dir = env_value(TRACE_DIR_ENV)
     if trace_dir is None:
         return None
-    return SessionTrace(trace_dir, run_label, agent=agent)
+    return SessionTrace(trace_dir, run_label, agent=agent, plugins=plugins)

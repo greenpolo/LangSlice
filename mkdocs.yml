@@ -42,6 +42,7 @@ nav:
   - ABBA: abba.md
   - Registration tools: registration.md
   - Python library: library.md
+  - Tool plugins: plugins.md
   - File formats: file_formats.md
   - Architecture: architecture.md
 

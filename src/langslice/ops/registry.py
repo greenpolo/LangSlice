@@ -21,6 +21,12 @@ run, in this order, each one declared by
 ``langslice-job schema``, ``langslice-job FOLDER VERB``), the library's job
 methods and the job folder's reference card.
 
+A job that loads tool plugins (``JobSpec.plugins``,
+``docs/plugins.md``) has their tools after these: :func:`verbs_for` is the
+per-spec view (:data:`VERBS` plus one :class:`Verb` per plugin tool, whose
+function is the plugin's handler), and :func:`enabled` and :func:`listed` read
+it. :data:`VERBS` stays the native table.
+
 A tool that has been replaced keeps answering by its old name: :data:`RETIRED`
 maps each retired name to its replacement and a hint, and every door answers
 a call by a retired name with :func:`retired_payload` (``RETIRED_TOOL``:
@@ -63,7 +69,7 @@ from langslice.ops import (
 )
 
 __all__ = ["GROUPS", "RETIRED", "VERBS", "Group", "Kind", "Verb", "enabled", "listed",
-           "positions_on", "retired_payload"]
+           "positions_on", "retired_payload", "verbs_for"]
 
 
 @dataclass(frozen=True)
@@ -173,6 +179,20 @@ VERBS: dict[str, Verb] = {
     for name, tool in TOOLS.items()
 }
 
+def verbs_for(spec: Any = None) -> dict[str, Verb]:
+    """Every verb a job of *spec* can have: :data:`VERBS`, then one verb per
+    tool of the plugins its ``plugins`` name (loaded when not yet). Without
+    plugins, :data:`VERBS` itself."""
+    if not getattr(spec, "plugins", None):
+        return VERBS
+    from langslice.core import plugins
+
+    return {**VERBS, **{
+        name: Verb(name, tool.handler, tool.kind, tool.group, plugins.tool_def(tool),
+                   limits=dict(tool.limits))
+        for name, (_plugin, tool) in plugins.tool_specs(spec).items()}}
+
+
 #: Every retired tool name: ``(replacement, hint)``. The replacement is the
 #: verb that does the retired tool's job now ("" when none does); the hint
 #: says how to call it. Every door answers a call by one of these names with
@@ -248,13 +268,14 @@ def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True,
     with none connected), so the verbs that call it (``Verb.image_model``)
     are left out. The hidden verbs (``Verb.hidden``) only with *hidden* as
     well as *scripting*: a door builds them, a listing never shows them."""
-    return [name for name, verb in VERBS.items()
+    return [name for name, verb in verbs_for(spec).items()
             if verb.tool.is_on(spec) and (scripting or not verb.scripting)
             and (hidden or not verb.hidden)
             and (image_model or not verb.image_model)]
 
 
-def listed() -> dict[str, Verb]:
+def listed(spec: Any = None) -> dict[str, Verb]:
     """Every verb a listing shows (``langslice-job ops``, ``langslice-job schema``,
-    the job folder's card): :data:`VERBS` without the hidden ones."""
-    return {name: verb for name, verb in VERBS.items() if not verb.hidden}
+    the job folder's card): :data:`VERBS` without the hidden ones, and, for a
+    *spec* that loads tool plugins, their tools after them."""
+    return {name: verb for name, verb in verbs_for(spec).items() if not verb.hidden}

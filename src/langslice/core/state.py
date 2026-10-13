@@ -134,6 +134,12 @@ class SliceState:
     deformation: dict[str, Any] | None = None
     #: Authoritative stable landmark pairs and the next never-reused pair number.
     landmarks: dict[str, Any] = field(default_factory=dict)
+    #: The layers tool plugins left on this section (``ctx.add_layer``): one
+    #: reference per layer (``id``, ``name``, ``kind``, ``frame``, ``file``
+    #: relative to the job folder, ``tool``, ``call``, ``created``). Part of
+    #: the checkpoint, so undoing the call that made a layer hides it. Left
+    #: out of the serialized state while empty.
+    layers: list[dict[str, Any]] = field(default_factory=list)
     caveats: list[str] = field(default_factory=list)
     #: This section's own cutting angles, ``{"pitch": deg, "yaw": deg}``:
     #: the atlas plane every picture, fit and map of it is drawn at. Equal
@@ -306,6 +312,9 @@ class StackState:
             data[ANGLES_KEY] = (dict(rows[0][ANGLES_KEY]) if rows else flat_angles())
             for row in rows:
                 row.pop(ANGLES_KEY, None)
+        for row in rows:
+            if not row.get("layers"):  # most jobs have none: the state reads as it always has
+                row.pop("layers", None)
         return data
 
     @classmethod

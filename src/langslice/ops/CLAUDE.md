@@ -169,7 +169,9 @@ wording; `registry.py` lists which.
   section (`job.quint.job_export`, markers from
   `core.maps.residual_markers`), then `registration.json`. A job that
   persists nothing writes nothing and lists what it would (`written`
-  False). `UNKNOWN_SLICE_IDS`. Returns `Exported`.
+  False). A job whose sections show plugin layers also gets
+  `exports/plugins/<tool>/` (`job.plugin_store.export_layers`, kind
+  `plugin_layer`). `UNKNOWN_SLICE_IDS`. Returns `Exported`.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (an Elastix affine fit's record, kind `elastix`), `set_transforms(job,
@@ -319,7 +321,8 @@ wording; `registry.py` lists which.
   `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
   `NO_SIDES`.
 - `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
-  channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=)` and
+  channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=,
+  plugin_layers=)` and
   `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
   save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
@@ -339,7 +342,10 @@ wording; `registry.py` lists which.
   crop, or a dry run's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
   refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_CHANNEL`,
   `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
-  `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`). `show_result(job, workspace, tool,
+  `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
+  `plugin_layers` names the layers tool plugins left (`"all"`: every one) to
+  draw on `section` and `overlay` pictures (`BAD_ARGS` in another mode);
+  `Looked.layers` says per picture which were drawn. `show_result(job, workspace, tool,
   mode, sections, positions_mm=, zooms=)`: the picture a change tool shows
   of what it wrote, drawn as `look` draws `overlay` (one per section, each
   zoomed to its window) or `positioning`, saved under the change tool's
@@ -357,7 +363,12 @@ wording; `registry.py` lists which.
   `image_model`, `hidden`, `options`, `essential`, `needs`: the core's list of
   what a spec can switch, which the registry binds to the operations);
   `enabled(spec, scripting=, image_model=, hidden=)`: the verbs a run of the
-  spec has, less the ones its `disabled` list names. The gating (`when`):
+  spec has, less the ones its `disabled` list names. `verbs_for(spec)` is the
+  per-spec table: `VERBS` plus one `Verb` per tool of the plugins in
+  `spec.plugins` (its function the plugin's handler; `core/plugins.py`,
+  `docs/plugins.md`), which `enabled(spec)` and `listed(spec)` read;
+  `VERBS` itself stays the native table (and without plugins `verbs_for` is
+  `VERBS`). The gating (`when`):
   `look`, `zoom`, both channel tools, `grep_atlas`, `grep_atlas_view`,
   `status`, the job-folder tools (`list_files`, `search_files`, `read_file`),
   `note`, `undo`, `redo`, `mark_damage` and `submit` in every run;

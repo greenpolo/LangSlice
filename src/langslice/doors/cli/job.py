@@ -343,15 +343,22 @@ def arguments_for(tool: Any, options: dict[str, Any],
 # --- one verb ---------------------------------------------------------------------
 
 
-def _disabled_of(folder: str) -> tuple[str, ...]:
-    """The tools and options the job at *folder* disables; none when it has no
-    readable settings (the call then fails on its own)."""
+def _spec_of(folder: str) -> Any:
+    """The settings of the job at *folder* (its tool plugins loaded), or None
+    when it has no readable ones (the call then fails on its own)."""
     from langslice.doors.jobs import find, read_spec
 
     try:
-        return tuple(read_spec(find(folder)).switched_off)
+        return read_spec(find(folder))
     except Exception:  # noqa: BLE001 - only the wording of a hint depends on it
-        return ()
+        return None
+
+
+def _disabled_of(folder: str) -> tuple[str, ...]:
+    """The tools and options the job at *folder* disables; none when it has no
+    readable settings (the call then fails on its own)."""
+    spec = _spec_of(folder)
+    return () if spec is None else tuple(spec.switched_off)
 
 
 def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
@@ -370,14 +377,15 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.ops.registry import VERBS, retired_payload
+    from langslice.ops.registry import retired_payload, verbs_for
 
-    retired = retired_payload(verb, _disabled_of(folder))
+    held = _spec_of(folder)
+    retired = retired_payload(verb, () if held is None else tuple(held.switched_off))
     if retired is not None:
         raise _Refusal(Envelope.failure(
             "RETIRED_TOOL", retired["message"], verb=verb,
             result={key: retired[key] for key in ("tool", "use") if key in retired}))
-    if verb not in VERBS:
+    if verb not in verbs_for(held):
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
     dry_run = bool(options.get("dry_run"))
     if dry_run and options.get("background"):
@@ -395,7 +403,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         offered = opened.listed_verbs()
         if verb not in tools:
             spec = opened.spec
-            if (VERBS[verb].image_model and spec.has("nonlinear")
+            if (verbs_for(spec)[verb].image_model and spec.has("nonlinear")
                     and spec.nonlinear.uses_image_model and not opened.image_model_connected):
                 raise _Refusal(Envelope.failure(
                     "IMAGE_MODEL_OFF", f"{verb} needs the job's image model "
@@ -420,7 +428,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
         else:
             envelope = _run(opened, verb, tool, arguments, dry_run=dry_run,
                             verbose=bool(options.get("verbose")))
-        if dry_run and envelope.ok and VERBS[verb].long:
+        if dry_run and envelope.ok and verbs_for(opened.spec)[verb].long:
             # A long verb: the real call may take minutes; --background
             # answers at once and `wait` collects the answer.
             envelope.next = [*envelope.next, _command(job_folder, verb, arguments)
@@ -462,17 +470,18 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
          dry_run: bool, verbose: bool) -> Envelope:
     from langslice.job.views import artifacts as picture_artifacts
     from langslice.job.views import captured
-    from langslice.ops.registry import VERBS
+    from langslice.ops.registry import verbs_for
 
+    verbs = verbs_for(opened.spec)
     job = opened.job
     job_folder = str(job.folder)
     before = job.snapshot() if dry_run else None
     with captured() as saved:
         reply = tool(**arguments)
-        if VERBS[verb].image_model:
+        if verbs[verb].image_model:
             job.settle_image_corrections()  # this process ends: the calls land now
             job.background.wait_all()  # and the work they start (their pictures saved)
-    if VERBS[verb].image_model and isinstance(reply, dict):
+    if verbs[verb].image_model and isinstance(reply, dict):
         from langslice.doors.tools.toolbox import with_notices
 
         reply = with_notices(job, reply)
@@ -515,10 +524,10 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
             result["image_model"] = state
     if dry_run and isinstance(result, dict):
         result["dry_run"] = True
-        if VERBS[verb].kind == "write":
+        if verbs[verb].kind == "write":
             result["would_change"] = changes(before or {}, job.state.to_dict(),
                                              verbose=verbose)
-        elif VERBS[verb].scripting:
+        elif verbs[verb].scripting:
             warnings.append(f"{verb} wrote nothing under --dry-run; `files` lists what it "
                             "would write.")
         else:
@@ -542,7 +551,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         failed.artifacts, failed.warnings = artifacts, warnings
         return failed
     nexts = ([_command(job_folder, verb, arguments)] if dry_run
-             and VERBS[verb].kind == "write" else [])
+             and verbs[verb].kind == "write" else [])
     return Envelope(result=result, artifacts=artifacts, warnings=warnings, next=nexts)
 
 
@@ -581,14 +590,19 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     :func:`langslice.core.status.with_uniform_rows`); concise unless
     *verbose* (no whole-stack rows on a write; a reply with pictures keeps
     what they are as one line, ``picture_note``; *verbose* keeps the
-    description and the pictures' text lines as written for a model)."""
+    description and the pictures' text lines as written for a model). A
+    plugin tool's reply (a verb that is no native one) is left as it is
+    but for its pictures."""
     from langslice.core.status import with_uniform_rows
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+    from langslice.ops.registry import VERBS
 
     if not isinstance(reply, dict):
         return reply
     body = with_uniform_rows(dict(reply))
     media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
+    if verb not in VERBS:  # a plugin tool's reply is its own: no key is read as a native one
+        return body
     if verbose:
         texts = [item for item in media if isinstance(item, str)] if isinstance(media, list) \
             else []

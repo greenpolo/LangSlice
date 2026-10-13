@@ -219,6 +219,7 @@ async def run_session(
         on_event=on_event,
         background=functools.partial(background_message, box.job),
         disabled=spec.switched_off,
+        plugins=box.plugins,
     )
     if sink and sink[0]:
         state.debrief = sink[0]

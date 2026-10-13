@@ -162,6 +162,9 @@ class LookRequest:
     highlight: tuple[str, ...] = ()
     #: Region zoom: omit every border except the highlighted region.
     region_only: bool = False
+    #: Section and overlay: names of the plugin layers drawn on the picture
+    #: (``"all"``: every layer the section has); empty: none.
+    layers: tuple[str, ...] = ()
 
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
@@ -174,6 +177,7 @@ class LookRequest:
             "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
             "part": self.part, "highlight": list(self.highlight),
             **({"region_only": True} if self.region_only else {}),
+            **({"layers": list(self.layers)} if self.layers else {}),
         }
 
     @classmethod
@@ -190,6 +194,7 @@ class LookRequest:
             part=None if args.get("part") is None else int(args["part"]),
             highlight=tuple(str(v) for v in args.get("highlight") or ()),
             region_only=bool(args.get("region_only", False)),
+            layers=tuple(str(v) for v in args.get("layers") or ()),
         )
 
 
@@ -237,6 +242,8 @@ def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False
         record = state.by_id(section_id)
         if record is not None:
             sections[section_id] = {name: getattr(record, name) for name in SECTION_FIELDS}
+            if record.layers:  # only a section with plugin layers records them
+                sections[section_id]["layers"] = record.layers
     data: dict[str, Any] = {
         "sections": sections,
         "appearance": {key: state.appearance[key] for key in APPEARANCE_KEYS
@@ -251,7 +258,7 @@ def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False
 #: landmark markers (an edit redraws an old picture with the markers it then
 #: had) and the damage marks (only fits read them). An edit to them does not
 #: make a picture stale.
-ANNOTATION_FIELDS: tuple[str, ...] = ("landmarks", "damaged_regions")
+ANNOTATION_FIELDS: tuple[str, ...] = ("landmarks", "damaged_regions", "layers")
 
 
 def _without_annotations(data: dict[str, Any]) -> dict[str, Any]:
@@ -292,6 +299,8 @@ def restored(state: StackState, held: dict[str, Any]) -> StackState:
             if name == "cutting_angles_deg":
                 value = {"pitch": float(value["pitch"]), "yaw": float(value["yaw"])}
             setattr(record, name, copy.deepcopy(value))
+        if "layers" not in fields:
+            record.layers = []
     appearance = held.get("appearance") or {}
     for key in APPEARANCE_KEYS:
         if key in appearance:
@@ -493,6 +502,7 @@ def _section_picture(
     panels = [panel]
     picture = picture.copy()
     draw_landmarks(picture, panels, state, record)
+    drawn_layers = _draw_layers(picture, panels, state, record, request, ws)
     image = caption(picture, label, min_width=long_edge if request.zoom else 0)
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
@@ -501,7 +511,8 @@ def _section_picture(
     recipe["registration_context"] = _landmark_context(state, record)
     note(image, sections=(record.id,), mode="section", recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
-                       mode="section", um_per_px=um)
+                       mode="section", um_per_px=um,
+                       extra={"layers": drawn_layers} if drawn_layers else {})
 
 
 def _overlay_picture(
@@ -570,11 +581,14 @@ def _overlay_picture(
                    "pixel_to_native": (swap @ picture_to_native(panel) @ swap).tolist(),
                    "native_size": list(panel.geometry.annotation.shape[::-1])}]
         draw_landmarks(image, panels, state, record, warp=placed.canvas.frame.warp)
+    drawn_layers = _draw_layers(image, panels, state, record, request, ws,
+                                warp=placed.canvas.frame.warp if placed.canvas else None)
     recipe["endpoint_panels"] = panels
     recipe["registration_context"] = _landmark_context(state, record)
     annotate(image, recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
-                       mode="overlay", um_per_px=um, extra=dict(placed.row))
+                       mode="overlay", um_per_px=um,
+                       extra={**placed.row, **({"layers": drawn_layers} if drawn_layers else {})})
 
 
 def overlay_region_window(
@@ -619,6 +633,20 @@ def overlay_region_window(
     upper = np.minimum(1, (upper + margin) / np.asarray(geometry.size))
     window = (float(lower[0]), float(lower[1]), float(upper[0]), float(upper[1]))
     return {**recipe, "args": request.args()}, window
+
+
+def _draw_layers(
+    picture: Image.Image, panels: list[dict[str, Any]], state: StackState, record: SliceState,
+    request: LookRequest, ws: Workspace, *, warp: Any = None,
+) -> list[dict[str, Any]]:
+    """The plugin layers *request* names, drawn on *picture* over its *panels*
+    (:mod:`langslice.core.plugin_layers`); one note per layer, empty when the
+    request names none."""
+    if not request.layers or not panels:
+        return []
+    from langslice.core.plugin_layers import draw_layers
+
+    return draw_layers(picture, panels, state, record, request.layers, ws=ws, warp=warp)
 
 
 def _landmark_context(state: StackState, record: SliceState) -> dict[str, Any]:

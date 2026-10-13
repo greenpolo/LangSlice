@@ -82,7 +82,10 @@ views.jsonl          append-only index of every saved picture
 views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
                      the path), result.json (a saved host job's final result),
-                     quicknii.json and visualign.json (with the maps)
+                     quicknii.json and visualign.json (with the maps),
+                     plugins/<tool>/ (copies of the layers plugins left)
+plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/);
+                     the only place a plugin tool writes
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, artifacts)
@@ -198,6 +201,17 @@ longer exist be taken over by the images it is opened with.
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
+- `plugin_store.py` — what tool plugins keep in the job folder
+  (`docs/plugins.md`): `register_layer(layout, record, tool, call, layer,
+  persist=)` writes a layer's file under `plugins/<tool>/layers/`, lists it in
+  the tool's manifest `layers.json` and puts its reference in the section's
+  `layers` (the state: undo hides it, the files stay); `read_manifest`,
+  `layer_rows`, `export_layers` (copies the shown layers to
+  `exports/plugins/<tool>/`, called by `ops.exports`). `job.json`'s `plugins`
+  (the provenance `doors/plugins` records) is written with `write_job_file`.
+  `JobLayout.plugins_dir` / `plugin_dir(tool)`. `Job.pushed` counts undo steps
+  and `Job.merge_steps(mark)` makes the steps since `mark` one (a plugin tool's
+  call is one step however many operations it ran).
 - `history.py` — `History`: the undo/redo stacks on disk. A step is written
   once, as its own file, when it enters the history (matched to the job's
   stacks by identity); `index.json` (format 1: `undo`, `redo`, `next`) is
