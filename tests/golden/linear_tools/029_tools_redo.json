@@ -33,12 +33,14 @@
   "interval_breaks": [],
   "redo_depth": 0,
   "redone": {
+   "fields": [
+    "placement"
+   ],
    "sections": [
     "s0.png",
     "s1.png",
     "s2.png"
-   ],
-   "tool": "position_sections"
+   ]
   },
   "status": "ok"
  },

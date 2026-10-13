@@ -102,7 +102,7 @@ def test_bad_values_are_refused(tmp_path: Path, data: dict[str, Any], message: s
 
 def test_each_note_sits_with_its_task_not_in_the_facts(tmp_path: Path):
     state, spec, tools = _stack(
-        tmp_path, facts=["global fact"], tasks=["reorder", "position", "transform"],
+        tmp_path, facts=["global fact"], tasks=["position", "transform"],
     )
     spec.position.notes = "Sections 3-5 are from a second brain.\n\n  second line "
     spec.transform.notes = "Tissue shrank about 10%."
@@ -397,11 +397,3 @@ def test_prompt_distinguishes_known_protocol_from_inferred_spacing(interval, thi
     assert ("not supplied" in text) == unknown
     assert ("Infer positions and spacing from anatomy" in text) == unknown
     assert ("uncertainty in your notes" in text) == unknown
-
-
-def test_legacy_zero_protocol_is_unknown():
-    from langslice.agent.prompt import cutting_protocol_fact
-    from langslice.core.state import StackState
-
-    text = cutting_protocol_fact(StackState(interval_mm=0.0, thickness_mm=0.0))
-    assert text.count("not supplied") == 2 and "0.000" not in text

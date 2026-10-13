@@ -46,7 +46,7 @@ from langslice.core.atlas_fetch import atlas_section
 from langslice.core.canvas import zoom_box
 from langslice.core.captions import _font, caption, view_angles_label
 from langslice.core.display import DisplayOptions, framed_atlas
-from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE
+from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, tile_label
 from langslice.core.scale import (
     finest_um_per_px,
     framed_um_per_px,
@@ -111,7 +111,7 @@ class SectionEntry:
     #: slot is drawn (the last is always drawn).
     labels: tuple[str, ...]
     position_mm: float | None
-    #: ``(width, height)`` of its tissue-framed picture, micrometres.
+    #: ``(width, height)`` of its whole picture, micrometres.
     extent_um: tuple[float, float]
 
 
@@ -557,12 +557,12 @@ def section_extent(
     ws: Workspace, state: StackState, record: SliceState,
 ) -> tuple[tuple[float, float], float, float]:
     """``((width, height) um, working um/px, finest um/px)`` of *record*'s
-    tissue-framed picture as its placement draws it
+    whole picture as its placement draws it
     (:func:`langslice.core.scale.section_um_per_px`)."""
     working_um = section_um_per_px(ws, state, record)
-    framed = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE, frame=True)
+    whole = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     per_px = framed_um_per_px(ws, record, working_um, long_edge=PREVIEW_LONG_EDGE)
-    return ((framed.width * per_px, framed.height * per_px), working_um,
+    return ((whole.width * per_px, whole.height * per_px), working_um,
             finest_um_per_px(ws, record, working_um))
 
 
@@ -577,16 +577,9 @@ def atlas_extent(
 
 def label_candidates(record: SliceState) -> tuple[str, ...]:
     """A section's first-line labels, longest first: its filename with short
-    correction flags, then the filename alone, then without its extension."""
-    flags = []
-    if record.rotation_deg:
-        flags.append(f"rot {record.rotation_deg}")
-    if record.flip:
-        flags.append("flipped")
-    if record.damaged:
-        flags.append("damaged")
-    full = record.id + (f" [{', '.join(flags)}]" if flags else "")
-    return tuple(dict.fromkeys((full, record.id, filename_stem(record.id))))
+    correction flags (:func:`langslice.core.opening.tile_label`), then the
+    filename alone, then without its extension."""
+    return tuple(dict.fromkeys((tile_label(record), record.id, filename_stem(record.id))))
 
 
 def positioning_pictures(
@@ -728,7 +721,9 @@ def positioning_caption(
         parts.append("atlas" + view_angles_label(angles, median=True))
     else:
         parts.append(ruler + view_angles_label(angles, median=False))
-    parts.append(f"all at {um_per_px:.1f} um/px")
+    uncalibrated = [slot.key for slot in layout.sections if ws.calibration(slot.key)[0] is None]
+    parts.append(f"all at {um_per_px:.1f} um/px"
+                 + (f" (uncalibrated: {', '.join(uncalibrated)})" if uncalibrated else ""))
     return "; ".join(parts)
 
 

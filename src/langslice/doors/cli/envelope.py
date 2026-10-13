@@ -28,7 +28,7 @@ import io
 import json
 import os
 import sys
-from collections.abc import Collection, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -44,23 +44,13 @@ EXIT_INTERNAL = 4
 #: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
     "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "EMPTY_BOX", "NO_JOB",
-    "NO_IMAGES", "RETIRED_TOOL",
+    "NO_IMAGES",
 })
 
-#: The disabled list of the job the call is about, once it is open
-#: (:func:`disabled_for`): the fixes name no tool the job disables.
+#: The disabled list of the job the call is about, once it is open (set by
+#: ``doors.cli.job``): the fixes name no tool the job disables.
 DISABLED: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
     "langslice_disabled", default=())
-
-
-@contextlib.contextmanager
-def disabled_for(disabled: Collection[str]) -> Iterator[None]:
-    """Fixes rendered for a job that disables *disabled*, in the block."""
-    token = DISABLED.set(tuple(disabled))
-    try:
-        yield
-    finally:
-        DISABLED.reset(token)
 
 
 #: What to do about a code (the envelope's ``error.fix``), written with what
@@ -68,8 +58,6 @@ def disabled_for(disabled: Collection[str]) -> Iterator[None]:
 #: ``{verb}`` the verb.
 FIXES: dict[str, str] = {
     "UNKNOWN_VERB": "List the verbs with `langslice-job ops`.",
-    "RETIRED_TOOL": "Call the verb named under result.use instead (see the message); "
-                    "`langslice-job ops` lists the verbs.",
     "VERB_OFF": "This job's tasks do not include this verb; `langslice-job {job} status` "
                 "lists the job's verbs under `verbs`.",
     "UNKNOWN_ARGUMENTS": "Check the argument names with `langslice-job schema {verb}`.",
@@ -87,8 +75,7 @@ FIXES: dict[str, str] = {
     "NO_POSITION": "Write the section's position first[[?position_sections  "
                    "(position_sections)]].",
     "MISSING_POSITIONS": "Write every section's own position first[[?position_sections  "
-                         "(position_sections)]]; "
-                         "a starting position the job gave a section does not count.",
+                         "(position_sections)]].",
     "MISSING_TRANSFORMS": "Give every section a transform[[?elastix_affine|"
                           "interactive_transform  ([[%elastix_affine=elastix_affine||"
                           "interactive_transform=interactive_transform]])]].",
@@ -127,10 +114,6 @@ FIXES: dict[str, str] = {
                       "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
                       "elastix_affine||interactive_transform=interactive_transform]])]] "
                       "before trace_borders]].",
-    "NOT_COMPARED": "Look at each section in mode [[?look:overlay overlay or ]]positioning "
-                    "since its last write, then write its position again.",
-    "NOT_REVIEWED": "Run look in mode positioning over every section after the last "
-                    "position_sections write, then submit again.",
     "INTERVAL_BREAKS_UNSUPPORTED": "Report a break only where the written spacing exceeds "
                                    "1.5x the stack's median spacing; check the positions "
                                    "on both sides first.",

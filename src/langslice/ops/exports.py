@@ -149,8 +149,7 @@ def export_maps(
             try:
                 written = formats.write_section_maps(
                     layout, maps, atlas, parameters_digest=entry["parameters_digest"],
-                    deformation_record=stored,
-                    starting_position=current.position_source == "default")
+                    deformation_record=stored)
             except (OSError, ValueError) as exc:
                 logger.warning("Could not write the maps of %s", record.id, exc_info=True)
                 skipped.append({"id": record.id, "reason": str(exc)})

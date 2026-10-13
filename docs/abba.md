@@ -50,9 +50,12 @@ means all), and open **Register > LangSlice Registration…**.
 | Slices | Notes on damaged tissue, permission to mark damaged regions, and permission to overwrite existing transforms. |
 | Preprocessing | Automatic or custom channel blending and contrast, snapshot pixel size, and a before/after preview. |
 
-Section thickness and interval are prefilled from ABBA when available, or
-from saved settings. Zero means unspecified: the agent infers what the
-anatomy supports. There are no fixed lab protocol defaults. Nonlinear needs
+A new dialog starts from the same job defaults as `langslice linear run`
+and the MCP door. Section thickness and interval are the values you enter
+(zero means unspecified: the agent infers what the anatomy supports); until
+you enter one, ABBA's values for the selected sections are shown and sent,
+except the interval after a LangSlice run in the same ABBA session. There
+are no fixed lab protocol defaults. Nonlinear needs
 a linear placement; when Linear is off and some sections have none, the
 dialog offers to align them first or exclude them from Nonlinear.
 
@@ -62,8 +65,7 @@ move. A user's existing spline or BigWarp registration is protected.
 Damage notes inform the agent; only atlas regions it marks are excluded
 from fits.
 
-**Let the agent drive preprocessing** exports every raw channel so its
-channel tools can inspect and blend them. Those tools exist either way.
+Custom preprocessing exports only the channels with a weight above 0.
 Use the preview to check contrast between anatomical regions.
 
 ## Run and review
@@ -89,8 +91,8 @@ mode, closing the window disconnects live updates; the MCP job continues
 independently. Save with ABBA's normal Save command. Saved registrations
 reopen without LangSlice installed.
 
-**Show agent log** displays activity; **Save traces to** records a run for
-inspection. **Open agent viewer** is available when ABBA was launched with
+**Show agent log** displays activity. Every run keeps its full agent trace
+in the job folder's `trace/`, as `langslice linear run` does. **Open agent viewer** is available when ABBA was launched with
 `langslice abba`. That optional command starts ABBA from Python and needs
 the connector jar (`--connector-jar` or `LANGSLICE_CONNECTOR_JAR`) and Java
 21, fetched on first start. An existing Fiji installation uses the connector

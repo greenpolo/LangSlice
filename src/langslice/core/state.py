@@ -84,11 +84,8 @@ class SliceState:
          "physical": {rotation_deg, scale_x, scale_y, shear,
                       translate_x_mm, translate_y_mm, pivot},
          "calibration": {section_um_per_px, source},
-         "iou": float | None,              # fits only
          "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
-
-    ``iou`` is always tissue overlap, not anatomical quality.
 
     For an affine, ``physical`` is the ONE representation it carries, whatever
     made it: the five knobs the alignment tools take (plus the ``shear`` an
@@ -119,10 +116,6 @@ class SliceState:
     #: when it gave one. A note alone does not make the section damaged.
     damage_note: str = ""
     position_mm: float | None = None
-    #: ``"default"`` while the position is the evenly spaced starting one
-    #: stored in a legacy checkpoint;
-    #: empty once anything wrote it, or when it was supplied.
-    position_source: str = ""
     transform: dict[str, Any] | None = None
     #: Raw image-model correction and artifacts; does not replace the transform.
     image_correction: dict[str, Any] | None = None
@@ -319,26 +312,30 @@ class StackState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StackState:
-        """Rebuild from :meth:`to_dict` output, ignoring unknown keys.
+        """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any
+        unknown key (a section row's as ``slices.key``).
 
         A section row without its own angles carries the stack's
         (``cutting_angles_deg`` on the stack, flat without), which is how a
-        single-angle state and every state before format 3 read. An older
-        row's whole-section ``damaged`` flag (or ``damage_marked``) is read as
-        its note alone: the section is damaged only with marked regions.
+        single-angle state is written.
         """
         slice_fields = SliceState.__dataclass_fields__
+        stack_fields = {k for k in cls.__dataclass_fields__ if k != "slices"}
+        unknown = {k for k in data if k not in stack_fields | {"slices", ANGLES_KEY}}
+        unknown |= {f"slices.{k}" for row in data.get("slices", []) for k in row
+                    if k not in slice_fields}
+        if unknown:
+            raise ValueError(f"Unknown stack state key(s) {sorted(unknown)}")
         stack = data.get(ANGLES_KEY)
         slices = []
         for row in data.get("slices", []):
-            kwargs = {k: v for k, v in row.items() if k in slice_fields}
+            kwargs = dict(row)
             kwargs["damaged_regions"] = [str(name) for name in
                                          kwargs.get("damaged_regions") or ()]
             own = kwargs.get(ANGLES_KEY)
             kwargs[ANGLES_KEY] = dict(own if isinstance(own, dict) else
                                       stack if isinstance(stack, dict) else flat_angles())
             slices.append(SliceState(**kwargs))
-        stack_fields = {k for k in cls.__dataclass_fields__ if k != "slices"}
         kwargs = {k: v for k, v in data.items() if k in stack_fields}
         return cls(slices=slices, **kwargs)
 

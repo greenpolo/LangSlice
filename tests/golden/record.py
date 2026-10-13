@@ -16,9 +16,6 @@ The doors covered:
   the background ``trace_borders`` and its notice, ``ants_syn``, the
   job-folder files, refusals, ``submit`` with ``left_linear``. Then an
   ``auto`` picture-size spec with no image model.
-- ``gated``: the look-before-commit gates on a ``position.gated`` toolbox:
-  a position write refused until the section was looked at in mode overlay
-  or positioning, submit refused until a positioning look of the stack.
 - ``long``: eight sections, so the positioning picture is split into parts
   and ``look`` names the pictures past four under ``not_shown``.
 - ``engine``: ``langslice.agent.engine.run`` with a fake ADK model that
@@ -30,7 +27,7 @@ The doors covered:
 - ``resume``: a checkpoint -> reload -> continue round trip through the MCP
   door: one server writes, a second server on the same folder resumes from
   the checkpoint and carries on (including ``undo``/``redo`` across it).
-- the final stack state of the main toolbox, the gated one and the resumed job.
+- the final stack state of the main toolbox and the resumed job.
 - ``declarations``: what each door declares per tool (ADK function
   declarations of four toolboxes, the last a host forcing the change tools'
   pictures and requiring a deformation; MCP tool lists with their schemas).
@@ -370,12 +367,11 @@ def full_spec(folder: Path) -> Any:
 
     return JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none",
-        tasks=["reorder", "position", "transform", "nonlinear"],
+        tasks=["position", "transform", "nonlinear"],
         inputs={"pixel_size_um": PIXEL_SIZE_UM},
         position=PositionSpec(),
         transform=TransformSpec(angles=True),
         nonlinear=NonlinearSpec(provider="openai-oauth"),
-        agent_preprocessing=True,
     )
 
 
@@ -427,7 +423,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("zoom", [0, 0, 50, 50], picture=999)
     call("look", "atlas", positions_mm=[0.05, 0.2])
     call("look", "atlas", positions_mm=[0.1], atlas_layers=["template", "borders"])
-    call("look", "atlas", positions_mm=[0.1], atlas_layers=["ara"])  # "ara" read as template
+    call("look", "atlas", positions_mm=[0.1], atlas_layers=["template"])
     call("look", "positioning")
     # Refusals: sections named by a number and by a name that is no file's
     # (sections are named by filename), a stray top-level argument (the
@@ -490,9 +486,9 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("interactive_transform", [{"id": ID0, "rotation_deg": 1.0},
                                    {"id": ID1, "shear": 0.02}], view=False)
     call("interactive_transform", [{"id": ID0, "rotate_quarter": 45}])
-    # elastix: every placed section, then one by a region, with "ara" for template.
+    # elastix: every placed section, then one by a region, on the template.
     call("elastix_affine")
-    call("elastix_affine", [ID1], restrict_to=["TH"], atlas_image="ara")
+    call("elastix_affine", [ID1], restrict_to=["TH"], atlas_image="template")
     call("elastix_affine", [ID0], restrict_to=["NOPE"])
     call("undo")
     call("redo")
@@ -506,7 +502,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     call("trace_borders", ID0)  # already fitted at this placement: nothing again
     # ANTs SyN on top of the current registration; damage left out by itself.
     call("ants_syn", [ID1])
-    call("ants_syn", [ID1], restrict_to=["TH"], stiffness="soft", atlas_image="ara")
+    call("ants_syn", [ID1], restrict_to=["TH"], stiffness="soft", atlas_image="template")
     call("ants_syn", [ID2], view=False)
     call("undo")  # ID2 is left linear (submit's left_linear)
     call("ants_syn", [ID0, ID1, ID2, 0, 1])
@@ -560,41 +556,6 @@ def record_auto_toolbox(rec: Recorder, folder: Path) -> list[str]:
 
 
 # --- door 1c: the look-before-commit gates ---------------------------------------------
-
-
-def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
-    """Positions behind the gates: a write refused until the section was looked
-    at in mode overlay or positioning, submit refused until a positioning look
-    of the whole stack since the last write."""
-    from langslice.core.spec import JobSpec, PositionSpec
-
-    spec = JobSpec(
-        image_folder=str(folder), model="fake-model", preprocess="none",
-        tasks=["reorder", "position"], inputs={"pixel_size_um": PIXEL_SIZE_UM},
-        position=PositionSpec(gated=True),
-    )
-    box = open_toolbox(spec)
-    state = box.job.state
-    t = tool_map(box)
-    door = "gated"
-
-    def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return rec.tool(door, t, name, *args, **kwargs)
-
-    every = [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
-             {"id": ID2, "position_mm": 0.2}]
-    # Not looked at yet: refused. Compare an unplaced section with candidate
-    # atlas planes, then compare the whole stack.
-    call("position_sections", every)
-    call("look", "positioning", sections=[ID0], positions_mm=[0.05, 0.1])
-    call("position_sections", every, view=False)  # ID0 written, the others rejected
-    call("look", "positioning")
-    call("position_sections", every)  # every section compared by that look
-    call("submit", "Not reviewed yet.", [], [], tool_context=ToolContext("s0"))
-    call("look", "positioning")
-    call("submit", "Placed behind the gates.", [], [], tool_context=ToolContext("s1"))
-    rec.raw("state", "final_gated", {"state": state.to_dict()})
-    return box.names
 
 
 class ToolContext:
@@ -740,8 +701,6 @@ def record_mcp(rec: Recorder, folder: Path) -> None:
     calls: list[tuple[str, dict[str, Any]]] = [
         ("status", {}),
         ("look", {"mode": "overlay", "sections": [ID0]}),
-        # A retired tool answers with its replacement; nothing is done.
-        ("view_slices", {"slices": [ID1]}),
         # A stray argument is refused before the tool runs.
         ("look", {"mode": "section", "sections": [ID0], "view": {"mode": "section"}}),
         ("elastix_affine", {"sections": [ID1]}),
@@ -783,8 +742,8 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
 
     from langslice.core.spec import JobSpec
     from langslice.doors.mcp.server import build_server
-    from langslice.job.checkpoint import load_checkpoint
-    from langslice.job.layout import JobLayout
+    from tests.linear_tool_helpers import load_checkpoint
+    from langslice.job.layout import JobLayout, job_folder_for
 
     positions = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
 
@@ -827,7 +786,7 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
 
     session("first", first)
     session("second", second)
-    saved = load_checkpoint(str(JobLayout.for_images(folder).state_file))
+    saved = load_checkpoint(str(JobLayout(job_folder_for(folder), folder).state_file))
     rec.raw("state", "final_resumed", {"state": saved.to_dict() if saved else None})
 
 
@@ -837,7 +796,7 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
 def record_declarations(rec: Recorder, folder: Path) -> None:
     """What each door declares, per tool: the ADK function declarations of
     four toolboxes (the full spec; the "auto" spec without an image model;
-    a positioning-only gated spec; a host that forces the change tools'
+    a positioning-only spec; a host that forces the change tools'
     pictures and requires a deformation on every section) and the MCP tool
     list (name, description, input schema, annotations) of a transform job
     and a positioning job."""
@@ -860,8 +819,7 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
         "auto": JobSpec(image_folder=str(folder), tasks=["position", "transform", "nonlinear"],
                         image_resolution="auto", nonlinear=NonlinearSpec(provider="none"),
                         **base),
-        "gated": JobSpec(image_folder=str(folder), tasks=["position"],
-                         position=PositionSpec(gated=True), **base),
+        "position": JobSpec(image_folder=str(folder), tasks=["position"], **base),
         "host": JobSpec(image_folder=str(folder), tasks=["transform", "nonlinear"],
                         force_view=True, disabled=["mark_damage"],
                         nonlinear=NonlinearSpec(provider="none", require_deformation=True),
@@ -875,11 +833,13 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
             exclude_none=True, mode="json") for tool in packaged_tools(box.tools)]
         rec.raw("declarations", f"adk_{label}", {"tools": declarations})
 
-    for label, tasks in (("transform", ["transform"]), ("position", ["reorder", "position"])):
-        spec = JobSpec(image_folder=str(folder), tasks=tasks, **base)
+    for label, tasks in (("transform", ["transform"]), ("position", ["position"])):
+        # A folder each: a server reopens the job a folder already holds.
+        served = folder.parent / f"declarations_{label}"
+        write_sections(served)
+        spec = JobSpec(image_folder=str(served), tasks=tasks, **base)
         server = build_server(lambda image_folder, spec=spec: dataclasses.replace(
-            spec, image_folder=image_folder), str(folder), atlas_loader=atlas_loader(),
-            fresh=True)
+            spec, image_folder=image_folder), str(served), atlas_loader=atlas_loader())
 
         async def listed(server: Any = server) -> list[dict[str, Any]]:
             async with create_connected_server_and_client_session(server) as client:
@@ -1098,12 +1058,11 @@ def record(out: Path) -> dict[str, Any]:
         root = Path(temporary)
         rec = Recorder(out, root)
         folders = {name: root / name
-                   for name in ("tools", "auto", "gated", "engine", "mcp", "resume")}
+                   for name in ("tools", "auto", "engine", "mcp", "resume")}
         for folder in folders.values():
             write_sections(folder)
         main_names, _state = record_full_toolbox(rec, folders["tools"])
         auto_names = record_auto_toolbox(rec, folders["auto"])
-        gated_names = record_gated_toolbox(rec, folders["gated"])
         long_names = record_long_stack(rec, root / "long")
         record_engine_request(rec, folders["engine"])
         record_mcp(rec, folders["mcp"])
@@ -1124,8 +1083,7 @@ def record(out: Path) -> dict[str, Any]:
         rec.tool("regions", region_tools, "zoom", region="TH:left")
         rec.tool("regions", region_tools, "zoom", box=[0, 0, 50, 50], region="STR")
         record_landmarks(rec, root / "landmarks")
-        built = sorted(set(main_names) | set(auto_names) | set(gated_names)
-                       | set(long_names))
+        built = sorted(set(main_names) | set(auto_names) | set(long_names))
         from langslice.ops.registry import VERBS
 
         unbuilt = sorted(name for name, verb in VERBS.items()
@@ -1141,7 +1099,6 @@ def record(out: Path) -> dict[str, Any]:
             "tools_built": built,
             "tools_full_spec": sorted(main_names),
             "tools_auto_spec": sorted(auto_names),
-            "tools_gated_spec": sorted(gated_names),
             "calls": rec.count,
         }
         (out / "manifest.json").write_text(canonical(summary), encoding="utf-8")

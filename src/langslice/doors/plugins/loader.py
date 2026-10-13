@@ -35,7 +35,6 @@ from langslice.core.plugins import (
     ToolSpec,
     check_tool,
 )
-from langslice.ops.registry import RETIRED
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +97,6 @@ def build(ref: str, factory: Callable[..., Any], *, module_name: str,
     taken: list[str] = []
     for tool in made:
         reason = check_tool(tool, taken=taken)
-        if reason is None and tool.name in RETIRED:
-            reason = f"tool {tool.name!r} is the name of a retired tool"
         if reason is not None:
             raise PluginError(f"plugin {ref}: {reason}")
         taken.append(tool.name)

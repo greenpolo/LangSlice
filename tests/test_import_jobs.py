@@ -123,7 +123,7 @@ def ok(capsys: pytest.CaptureFixture[str], folder: Path, verb: str,
 def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str,
          atlas_name: str = "synthetic_deep_50um") -> dict[str, Any]:
     code, envelope = cli(capsys, str(images), "init", "--atlas", atlas_name,
-                         "--preprocess", "none", "--no-debrief", *flags)
+                         "--preprocess", "none", *flags)
     assert code == 0, envelope
     return envelope
 
@@ -225,7 +225,7 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
         "rotation_deg", "scale_x", "scale_y", "shear", "translate_x_mm", "translate_y_mm"}
     # The same init again continues the job (the same inputs).
     code, envelope = cli(capsys, str(images), "init", "--atlas",
-                         "synthetic_deep_50um", "--preprocess", "none", "--no-debrief",
+                         "synthetic_deep_50um", "--preprocess", "none",
                          "--image-provider", "openai-oauth", "--pixel-size-um",
                          str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
                          "--registration", str(copy))

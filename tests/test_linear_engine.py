@@ -17,10 +17,10 @@ from langslice.agent.engine import build_context, run
 from langslice.agent.prompt import build_job_statement
 from langslice.core.spec import JobSpec, PositionSpec
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import apply_host_inputs, ingest
 from tests import fakes
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack
+from tests.linear_tool_helpers import load_checkpoint
 
 _ATLAS = SlabAtlas()
 
@@ -169,7 +169,7 @@ def test_mirroring_is_part_of_linear_never_of_positioning(tmp_path: Path):
 
     _make_stack(tmp_path, n=3)
     cue = TransformSpec(hemisphere_cue="ink on the right")
-    positioning = _statement(_spec(tmp_path, tasks=["reorder", "position"], transform=cue))
+    positioning = _statement(_spec(tmp_path, tasks=["position"], transform=cue))
     for word in ("mirror", "flip", "hemisphere", "interactive_transform"):
         assert word not in positioning.lower()
 
@@ -299,8 +299,7 @@ def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
     seen: list[bool] = []  # snapshot of "has any position of its own yet" per call
 
     def on_write(state):
-        seen.append(any(s.position_mm is not None and s.position_source != "default"
-                        for s in state.slices))
+        seen.append(any(s.position_mm is not None for s in state.slices))
 
     spec = _spec(tmp_path, tasks=["position"])
     state = asyncio.run(

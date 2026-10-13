@@ -1,5 +1,5 @@
 """Round-5 landmark fixes: the region at each atlas endpoint and the warning for
-one outside the atlas, holds over the tissue only, one label for a pair whose
+one outside the atlas, holds over the placed footprint only, one label for a pair whose
 endpoints meet, the warped overlay's caption, the job-not-found hint."""
 
 from __future__ import annotations
@@ -48,15 +48,15 @@ def test_an_atlas_endpoint_outside_the_atlas_is_saved_with_a_warning(tmp_path):
         job.close()
 
 
-def test_holds_are_kept_only_on_the_tissue():
+def test_holds_are_kept_only_on_the_placed_footprint():
     size = (700, 500)
-    tissue = np.zeros((size[1], size[0]), bool)
-    tissue[100:400, 150:550] = True
+    footprint = np.zeros((size[1], size[0]), bool)
+    footprint[100:400, 150:550] = True
     everywhere = automatic_holds(np.empty((0, 2)), size)
-    holds = automatic_holds(np.empty((0, 2)), size, tissue=tissue)
+    holds = automatic_holds(np.empty((0, 2)), size, footprint=footprint)
     assert 0 < len(holds) < len(everywhere)
     rows, cols = np.rint(holds[:, 1]).astype(int), np.rint(holds[:, 0]).astype(int)
-    assert tissue[rows, cols].all()
+    assert footprint[rows, cols].all()
 
 
 def test_an_applied_pair_whose_endpoints_meet_is_labelled_once(tmp_path, monkeypatch):

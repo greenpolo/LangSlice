@@ -20,7 +20,9 @@ from typing import Any
 import numpy as np
 from scipy import ndimage as ndi
 
-from langslice.core.atlas.render import annotation_slice, family_labels, placed_border_coverage
+from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
+from langslice.core.atlas.render import annotation_slice, placed_border_coverage
+from langslice.core.atlas.tree import structure_table, with_descendants
 from langslice.core.deformable.geometry import Placement, warp_affine
 from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.settings import BORDER_IMAGES
@@ -28,33 +30,15 @@ from langslice.core.deformable.settings import BORDER_IMAGES
 #: Acronym of the ventricular system: it and all its descendants get the
 #: looser area limits (a ventricle collapses or dilates far more than tissue).
 VENTRICLE_ACRONYMS = ("VS",)
-#: Fallback for atlases without a ``VS`` node: structure names containing any
-#: of these (spelled out so periventricular nuclei are not swept in).
-VENTRICLE_NAME_KEYWORDS = (
-    "ventricle", "central canal", "cerebral aqueduct", "ventricular system",
-)
 #: Intensity percentile mapped to 1.0 when normalizing grayscale atlas planes.
 INTENSITY_PERCENTILE = 99.5
 
 
-_RECORD_FIELDS = ("id", "acronym", "name", "structure_id_path")
-
-
-def _structure_records(atlas: Any) -> list[dict[str, Any]]:
-    """id/acronym/name/path per structure; never copies a BrainGlobe record
-    whole, which would load its lazy ``mesh`` entry from disk or the network."""
-    structures = getattr(atlas, "structures", None)
-    if structures is None:
-        return []
-    values = structures.values() if hasattr(structures, "values") else structures
-    return [{key: record[key] for key in _RECORD_FIELDS if key in record} for record in values]
-
-
 def resolve_structures(atlas: Any, names: Iterable[str | int]) -> frozenset[int]:
     """Structure ids for acronyms or ids, refusing unknown names."""
-    records = _structure_records(atlas)
-    by_acronym = {str(r.get("acronym", "")).lower(): int(r["id"]) for r in records}
-    known_ids = {int(r["id"]) for r in records}
+    table = structure_table(atlas)
+    by_acronym = {str(r.get("acronym", "")).lower(): sid for sid, r in table.items()}
+    known_ids = set(table)
     resolved: set[int] = set()
     unknown: list[str] = []
     for name in names:
@@ -73,24 +57,6 @@ def resolve_structures(atlas: Any, names: Iterable[str | int]) -> frozenset[int]
     if unknown:
         raise ValueError("Unknown atlas structures: " + ", ".join(unknown))
     return frozenset(resolved)
-
-
-def with_descendants(atlas: Any, ids: Iterable[int]) -> frozenset[int]:
-    """*ids* plus every structure whose ``structure_id_path`` passes through one."""
-    roots = {int(i) for i in ids}
-    if not roots:
-        return frozenset()
-    result = set(roots)
-    for record in _structure_records(atlas):
-        path = [int(p) for p in record.get("structure_id_path", [])]
-        if roots.intersection(path):
-            result.add(int(record["id"]))
-    return frozenset(result)
-
-
-def excluded_ids(atlas: Any, names: Iterable[str | int]) -> frozenset[int]:
-    """Agent-chosen exclusions, each with all its descendants."""
-    return with_descendants(atlas, resolve_structures(atlas, names))
 
 
 def resolve_entries(
@@ -146,20 +112,15 @@ def placement_left(
 
 
 def ventricle_ids(atlas: Any) -> frozenset[int]:
-    """The ventricular system (``VS`` and descendants), or a name-based fallback."""
-    records = _structure_records(atlas)
-    roots = {int(r["id"]) for r in records if str(r.get("acronym", "")) in VENTRICLE_ACRONYMS}
-    if roots:
-        return with_descendants(atlas, roots)
-    return frozenset(
-        int(r["id"]) for r in records
-        if any(k in str(r.get("name", "")).lower() for k in VENTRICLE_NAME_KEYWORDS)
-    )
+    """The ventricular system (``VS`` and descendants); empty when the atlas has no ``VS``."""
+    roots = {sid for sid, r in structure_table(atlas).items()
+             if str(r.get("acronym", "")) in VENTRICLE_ACRONYMS}
+    return with_descendants(atlas, roots)
 
 
 def structure_acronyms(atlas: Any, ids: Iterable[int]) -> dict[int, str]:
     """Acronym per id (the id itself when the atlas has no record)."""
-    table = {int(r["id"]): str(r.get("acronym", r["id"])) for r in _structure_records(atlas)}
+    table = {sid: str(r.get("acronym", r["id"])) for sid, r in structure_table(atlas).items()}
     return {int(i): table.get(int(i), str(int(i))) for i in ids}
 
 
@@ -248,7 +209,7 @@ def placed_atlas_image(
     """
     keep = ~excluded if excluded is not None else np.ones(labels.shape, bool)
     if kind in BORDER_IMAGES:
-        source = family_labels(labels, atlas) if kind == "borders_merged" else labels
+        source = labels_at(labels, atlas, MODEL_DEPTH) if kind == "borders_merged" else labels
         # Excluded regions join the background, so their internal lines vanish
         # and their edge with kept tissue becomes an outline.
         source = np.where(keep, source, 0)

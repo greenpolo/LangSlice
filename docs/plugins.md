@@ -54,7 +54,7 @@ another version is refused. The same names are importable from
 
 | Field | Meaning |
 |---|---|
-| `name` | The tool's name: an identifier; not a native tool's, not a retired tool's, not another plugin tool's |
+| `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
 | `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/doors/declarations.py`. The description may use [needs marks](registration.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
@@ -98,7 +98,7 @@ One per call; a handler must not keep it.
 | `ctx.section_raster(id, level=, channels=)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
 | `ctx.section_image(id, ...)` | Only the `array` of `section_raster`. **Its pixels are not `section_px`** (see [frames](#frames)) |
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
-| `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`, `tissue`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and `["nissl"]` where the atlas has one), `atlas_to_section` (3x3), `plane` (the plane in atlas micrometres) |
+| `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and `["nissl"]` where the atlas has one), `atlas_to_section` (3x3), `plane` (the plane in atlas micrometres) |
 | `ctx.atlas_slice(id, kind=)` | One of those atlas planes |
 | `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, appearance, damage marks); for [`expect=`](#long-tools-and-stale_input) |
 | `ctx.read_registration(path)` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements` (`id`, `position_mm`, `pitch_deg`, `yaw_deg`), nothing written |

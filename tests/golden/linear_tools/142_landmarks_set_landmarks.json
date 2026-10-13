@@ -1,0 +1,163 @@
+{
+ "args": [],
+ "data": {
+  "atlas_endpoint_regions": {
+   "L1": "VL (VL)",
+   "L2": "CTX (CTX)",
+   "L3": "HY (HY)"
+  },
+  "changed": [
+   "L1",
+   "L2",
+   "L3"
+  ],
+  "counts": {
+   "applied": 0,
+   "moved": 0,
+   "pending": 3,
+   "stale": 0,
+   "total": 3
+  },
+  "deleted": [],
+  "landmarks": [
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 46.4,
+     "y": 35.8
+    },
+    "id": "L1",
+    "section": {
+     "picture": 4,
+     "x": 81.1,
+     "y": 61.9
+    },
+    "state": "pending"
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 114.4,
+     "y": 35.8
+    },
+    "id": "L2",
+    "section": {
+     "picture": 4,
+     "x": 189.9,
+     "y": 61.9
+    },
+    "state": "pending"
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 80.4,
+     "y": 87.8
+    },
+    "id": "L3",
+    "section": {
+     "picture": 4,
+     "x": 135.5,
+     "y": 145.1
+    },
+    "state": "pending"
+   }
+  ],
+  "pictures": [
+   {
+    "caption": "s1.png L1: atlas template (diamond), preprocessed section (circle)",
+    "id": 5
+   },
+   {
+    "caption": "s1.png L2: atlas template (diamond), preprocessed section (circle)",
+    "id": 6
+   },
+   {
+    "caption": "s1.png L3: atlas template (diamond), preprocessed section (circle)",
+    "id": 7
+   }
+  ],
+  "section": "s1.png",
+  "status": "ok",
+  "warp": {
+   "built_from": [],
+   "not_applied": [
+    "L1",
+    "L2",
+    "L3"
+   ],
+   "note": "No landmark warp is applied to this section yet; landmark_triangulation applies the pairs."
+  },
+  "written": true
+ },
+ "door": "landmarks",
+ "images": [
+  {
+   "file": "142_landmarks_set_landmarks.0.png",
+   "mode": "RGB",
+   "size": [
+    916,
+    434
+   ]
+  },
+  {
+   "file": "142_landmarks_set_landmarks.1.png",
+   "mode": "RGB",
+   "size": [
+    916,
+    434
+   ]
+  },
+  {
+   "file": "142_landmarks_set_landmarks.2.png",
+   "mode": "RGB",
+   "size": [
+    916,
+    434
+   ]
+  }
+ ],
+ "kwargs": {
+  "pairs": [
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 46.43750000000001,
+     "y": 35.8125
+    },
+    "section": {
+     "picture": 4,
+     "x": 81.1,
+     "y": 61.9
+    }
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 114.4375,
+     "y": 35.8125
+    },
+    "section": {
+     "picture": 4,
+     "x": 189.89999999999998,
+     "y": 61.9
+    }
+   },
+   {
+    "atlas": {
+     "picture": 3,
+     "x": 80.4375,
+     "y": 87.8125
+    },
+    "section": {
+     "picture": 4,
+     "x": 135.5,
+     "y": 145.1
+    }
+   }
+  ],
+  "section": "s1.png"
+ },
+ "media_texts": [],
+ "tool": "set_landmarks"
+}

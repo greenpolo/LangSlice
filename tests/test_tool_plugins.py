@@ -25,7 +25,7 @@ from langslice.core.spec import JobSpec
 from langslice.core.toolset import TOOLS, tools_for, valid_names
 from langslice.doors.declarations import FULL, Variant, declaration
 from langslice.doors.tools.toolbox import build_tools
-from langslice.ops.registry import enabled, listed, verbs_for
+from langslice.ops.registry import enabled, verbs_for
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
 
 EXAMPLE = "tests.fixtures.example_plugin:tools"
@@ -155,7 +155,6 @@ def _decl(name: str = '"thing"', kind: str = '"read"', group: str = '"Common"',
 @pytest.mark.parametrize("changes, fragment", [
     ({"name": '"look"'}, "clashes with the native tool"),
     ({"name": '"2bad"'}, "is not an identifier"),
-    ({"name": '"fit_affine"'}, "retired tool"),
     ({"task": '"bogus"'}, "unknown task 'bogus'"),
     ({"kind": '"write"', "writes": '("wings",)'}, "no section properties"),
     ({"writes": '("affine",)'}, "a read tool writes nothing"),
@@ -221,9 +220,9 @@ def test_a_frozen_property_refuses_the_write_as_that_sections_row(images: Path):
 def test_the_listing_follows_the_spec_and_is_unchanged_without_plugins(images: Path):
     _s, _c, box = box_of(images, EXAMPLE)
     spec = box.job.spec
-    assert list(listed()) == [name for name in TOOLS if name != "trace_from_atlas"]
-    assert list(listed(spec))[-2:] == ["section_brightness", "nudge_sections"]
-    assert list(listed(JobSpec(image_folder=str(images)))) == list(listed())
+    assert list(verbs_for()) == list(TOOLS)
+    assert list(verbs_for(spec))[-2:] == ["section_brightness", "nudge_sections"]
+    assert list(verbs_for(JobSpec(image_folder=str(images)))) == list(verbs_for())
 
 
 def test_a_per_call_limit_refuses_a_longer_call(images: Path):
@@ -267,21 +266,6 @@ def test_pictures_past_the_limit_are_counted_not_sent(make, images: Path):
     _s, _c, box = box_of(images, ref)
     reply = call(box, "draw")
     assert len(reply["images"]) == 2 and reply["pictures_not_shown"] == 3
-
-
-def test_a_section_with_no_tissue_is_a_tool_error_not_a_crash(make, images: Path):
-    ref = make("tissueless", '''
-        from langslice.plugin_api import ToolResult, ToolSpec
-        def stub():
-            """Look for tissue."""
-        def handler(ctx):
-            return ToolResult({"tissue": ctx.fit_frame("s0.png").tissue.any()})
-        def tools():
-            return [ToolSpec("find_tissue", stub, handler, kind="read", group="Common")]
-    ''')
-    _s, _c, box = box_of(images, ref)
-    reply = call(box, "find_tissue")
-    assert reply["error"] == "NO_TISSUE" and "s0.png" in reply["message"]
 
 
 # --- writes -------------------------------------------------------------------------------------
@@ -502,7 +486,7 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
                 "id": view.id, "position": view.position_mm, "size": list(view.file_size),
                 "shape": list(image.shape), "atlas": atlas.name, "plane": atlas.plane,
                 "planes": sorted(frame.atlas), "matrix": frame.atlas_to_section.shape[0],
-                "tissue": bool(frame.tissue.any()), "work": str(ctx.work_dir()),
+                "work": str(ctx.work_dir()),
                 "spec_tasks": list(ctx.spec["tasks"]),
                 "layers": [r.name for r in ctx.layers("s1")]})
         def tools():
@@ -511,7 +495,7 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
     _s, ctx, box = box_of(images, ref)
     from tests.fakes import ellipse_section
 
-    ellipse_section((40, 30), (14, 9)).save(images / "s1.png")  # tissue to find
+    ellipse_section((40, 30), (14, 9)).save(images / "s1.png")
     ctx.source_cache.clear()
     ctx.render_cache.clear()
     reply = call(box, "read_it")
@@ -822,7 +806,7 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
     monkeypatch.chdir(images.parent)  # a folder with no job: the native listing
     main(["ops"])
     plain = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
-    assert [item["name"] for item in plain] == list(listed())
+    assert [item["name"] for item in plain] == list(verbs_for())
     card = (Path(folder) / "AGENTS.md").read_text()
     assert "`nudge_sections` (write, Linear" in card and "`section_brightness` (read" in card
 

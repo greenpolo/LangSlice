@@ -29,7 +29,7 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 - `integrations/` — `abba_launch.py` (what `langslice abba` starts, and
   the listener of the connector's run messages), the ABBA agent viewer
   (`abba_follow.py`, `abba_compare.py`, `abba_overview.py`) and activity log
-  (`abba_chat.py` + `static/`, `abba_activity.py`): `integrations/CLAUDE.md`.
+  (`abba_chat.py` + `static/`): `integrations/CLAUDE.md`.
   The Fiji connector is the one ABBA integration; this package only follows
   its runs.
 - `api/` — `service.py` (`langslice serve --stdio`: the JSON-lines engine

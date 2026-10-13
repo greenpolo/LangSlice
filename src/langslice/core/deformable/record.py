@@ -10,10 +10,9 @@ atlas plane composes the linear placement after it::
     native_xy = inverse(atlas_to_section) @ (pixel + field_mm / mm_per_px)
 
 (residual first, then undo the placement; ``core.maps.native_points``
-composes it the same way), so ABBA,
-VisuAlign and BrainGlobe exports can all be derived from
-:meth:`DeformableRecord.native_coordinates` and
-:meth:`DeformableRecord.volume_coordinates` without the atlas object. The
+composes it the same way, and ``atlas["native_to_volume_index"]`` carries a
+native pixel to the atlas volume), so ABBA, VisuAlign and BrainGlobe exports
+need no atlas object. The
 inverse field lives on the same grid in the placed-atlas frame: placed point
 q corresponds to section point ``q + inverse_field_mm(q)``.
 
@@ -29,13 +28,14 @@ a person or agent decides what that means.
 from __future__ import annotations
 
 import json
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from langslice.core.deformable.geometry import Placement, sample_native
+from langslice.core.deformable.geometry import Placement
 from langslice.core.deformable.settings import FitSettings
 
 #: Area ratio (warped / placed) limits for solid tissue regions.
@@ -44,20 +44,25 @@ TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
 VENTRICLE_AREA_RATIO_LIMITS = (0.1, 10.0)
 #: Regions smaller than this (placed area, mm^2) are reported but never flagged.
 MIN_FLAG_AREA_MM2 = 0.02
-#: Fraction of tissue pixels with a non-positive Jacobian above which FOLDS is flagged.
+#: Fraction of footprint pixels with a non-positive Jacobian above which FOLDS is flagged.
 FOLD_FRACTION_LIMIT = 0.001
-#: DISPLACEMENT_OUTSIZED: the largest displacement in tissue above this
-#: fraction of the tissue's longest extent (about 1 mm on a 10 mm coronal
+#: DISPLACEMENT_OUTSIZED: the largest displacement in the footprint above this
+#: fraction of the footprint's longest extent (about 1 mm on a 10 mm coronal
 #: section): a blow-up can stay under every fold and area flag while it
 #: drags the outline over a millimetre.
 OUTSIZED_MAX_FRACTION = 0.1
-#: DISPLACEMENT_OUTSIZED also fires when the median displacement in tissue
+#: DISPLACEMENT_OUTSIZED also fires when the median displacement in the footprint
 #: exceeds this, in mm: a wholesale drift a uniform field would hide from the
 #: maximum rule. It sits above the medians of fits whose borders looked
 #: plausible.
 OUTSIZED_MEDIAN_MM = 0.6
 
 RECORD_VERSION = 1
+#: The keys ``record.json`` holds (:meth:`DeformableRecord.metadata`); any
+#: other is refused on loading.
+_RECORD_KEYS = ("version", "step", "placement", "section_size", "settings", "field_convention",
+                "inverse_source", "labels", "excluded_ids", "engine", "diagnostics", "atlas",
+                "provenance")
 
 
 def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
@@ -70,16 +75,16 @@ def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
 
 
 def displacement_report(
-    field_mm: np.ndarray, mm_per_px: float, tissue: np.ndarray,
+    field_mm: np.ndarray, mm_per_px: float, footprint: np.ndarray,
 ) -> dict[str, Any]:
-    """Max and median displacement in tissue, their limits, and whether either is passed.
+    """Max and median displacement in *footprint*, their limits, and whether either is passed.
 
-    The maximum's limit is :data:`OUTSIZED_MAX_FRACTION` of the tissue's
+    The maximum's limit is :data:`OUTSIZED_MAX_FRACTION` of the footprint's
     longest extent (the longer side of its bounding box); the median's is
     :data:`OUTSIZED_MEDIAN_MM`.
     """
-    magnitude = np.linalg.norm(field_mm, axis=-1)[tissue]
-    rows, cols = np.nonzero(tissue)
+    magnitude = np.linalg.norm(field_mm, axis=-1)[footprint]
+    rows, cols = np.nonzero(footprint)
     extent_mm = (float(max(rows.max() - rows.min(), cols.max() - cols.min()) + 1) * mm_per_px
                  if rows.size else 0.0)
     largest = float(magnitude.max()) if magnitude.size else 0.0
@@ -97,7 +102,7 @@ def diagnose(
     mm_per_px: float,
     warped: np.ndarray,
     placed: np.ndarray,
-    tissue: np.ndarray,
+    footprint: np.ndarray,
     *,
     ventricles: frozenset[int],
     excluded: frozenset[int],
@@ -112,7 +117,7 @@ def diagnose(
     section). The raster ratio of pixel counts is reported alongside.
     """
     jacobian = jacobian_determinant(field_mm, mm_per_px)
-    in_tissue = jacobian[tissue]
+    in_tissue = jacobian[footprint]
     fold_fraction = float(np.mean(in_tissue <= 0)) if in_tissue.size else 0.0
     ids = np.union1d(np.unique(warped), np.unique(placed))
     ids = ids[ids != 0]
@@ -159,7 +164,7 @@ def diagnose(
     if fold_fraction > FOLD_FRACTION_LIMIT:
         flags.append({"code": "FOLDS", "fold_fraction": fold_fraction,
                       "limit": FOLD_FRACTION_LIMIT})
-    displacement = displacement_report(field_mm, mm_per_px, tissue)
+    displacement = displacement_report(field_mm, mm_per_px, footprint)
     if displacement["outsized"]:
         flags.append({"code": "DISPLACEMENT_OUTSIZED",
                       **{key: displacement[key] for key in (
@@ -172,8 +177,8 @@ def diagnose(
             "p99": float(np.percentile(in_tissue, 99)) if in_tissue.size else None,
             "max": float(in_tissue.max()) if in_tissue.size else None,
         },
-        "max_displacement_mm": float(np.linalg.norm(field_mm, axis=-1)[tissue].max())
-        if tissue.any() else 0.0,
+        "max_displacement_mm": float(np.linalg.norm(field_mm, axis=-1)[footprint].max())
+        if footprint.any() else 0.0,
         "displacement": displacement,
         "regions": regions,
         "flags": flags,
@@ -195,13 +200,13 @@ class DeformableRecord:
 
     placement: Placement
     section_size: tuple[int, int]
-    settings: FitSettings
+    #: The engine's settings; None for a warp no engine computed (the landmark warp).
+    settings: FitSettings | None
     field_mm: np.ndarray
     inverse_field_mm: np.ndarray | None
     inverse_source: str
     labels: np.ndarray
-    tissue: np.ndarray
-    torn_band: np.ndarray
+    footprint: np.ndarray
     excluded_ids: list[int]
     engine: dict[str, Any]
     diagnostics: dict[str, Any]
@@ -217,88 +222,69 @@ class DeformableRecord:
     def mm_per_px(self) -> float:
         return self.placement.section_mm_per_px
 
-    def native_coordinates(self) -> np.ndarray:
-        """(H, W, 2) native atlas-plane pixel [x, y] for every section pixel."""
-        height, width = self.field_mm.shape[:2]
-        yy, xx = np.indices((height, width), dtype=np.float64)
-        x = xx + self.field_mm[..., 0] / self.mm_per_px
-        y = yy + self.field_mm[..., 1] / self.mm_per_px
-        inverse = np.linalg.inv(self.placement.atlas_to_section)
-        return np.stack([inverse[k, 0] * x + inverse[k, 1] * y + inverse[k, 2]
-                         for k in range(2)], axis=-1)
-
-    def volume_coordinates(self) -> np.ndarray:
-        """(H, W, 3) atlas volume index coordinates in the atlas's own axis order."""
-        native = self.native_coordinates()
-        matrix = np.asarray(self.atlas["native_to_volume_index"], dtype=np.float64)
-        return native[..., 0:1] * matrix[:, 0] + native[..., 1:2] * matrix[:, 1] + matrix[:, 2]
-
-    def placed_labels(self, native: np.ndarray) -> np.ndarray:
-        """The linear placement alone, as leaf labels on the section grid (unclipped)."""
-        height, width = self.field_mm.shape[:2]
-        yy, xx = np.indices((height, width), dtype=np.float64)
-        inverse = np.linalg.inv(self.placement.atlas_to_section)
-        coords = np.stack([inverse[k, 0] * xx + inverse[k, 1] * yy + inverse[k, 2]
-                           for k in range(2)], axis=-1)
-        return sample_native(native, coords)
-
-    def undo(self) -> DeformableRecord | None:
-        """The record before this step of a sequential fit (None for the first)."""
-        return self.parent
-
     def metadata(self) -> dict[str, Any]:
         return {
             "version": RECORD_VERSION, "step": self.step,
             "placement": self.placement.to_dict(),
             "section_size": list(self.section_size),
-            "settings": self.settings.to_dict(),
+            "settings": None if self.settings is None else self.settings.to_dict(),
             "field_convention": (
                 "field_mm[y, x] = [dx, dy] mm: section pixel (x, y) at (x, y)*mm_per_px "
                 "corresponds to placed-atlas point (x, y)*mm_per_px + field; native = "
                 "inv(atlas_to_section) @ (pixel + field/mm_per_px)"
             ),
             "inverse_source": self.inverse_source,
-            "labels": "leaf atlas ids under the composed warp, 0 outside tissue",
+            "labels": "leaf atlas ids under the composed warp",
             "excluded_ids": list(self.excluded_ids),
             "engine": self.engine, "diagnostics": self.diagnostics, "atlas": self.atlas,
             "provenance": self.provenance,
         }
 
     def save(self, directory: str | Path) -> Path:
-        """Write ``record.json`` + ``arrays.npz``; the parent chain goes in ``parent/``."""
+        """Write ``arrays.npz``, the parent chain in ``parent/``, then ``record.json``
+        last, so an interrupted save leaves no ``record.json`` (the store rewrites it)."""
         out = Path(directory)
         out.mkdir(parents=True, exist_ok=True)
-        (out / "record.json").write_text(json.dumps(self.metadata(), indent=2,
-                                                    default=_json_default) + "\n")
         arrays: dict[str, np.ndarray] = {
             "field_mm": self.field_mm.astype(np.float32), "labels": self.labels,
-            "tissue": self.tissue, "torn_band": self.torn_band,
+            "footprint": self.footprint,
         }
         if self.inverse_field_mm is not None:
             arrays["inverse_field_mm"] = self.inverse_field_mm.astype(np.float32)
         np.savez_compressed(out / "arrays.npz", **arrays)  # pyright: ignore[reportArgumentType]
         if self.parent is not None:
             self.parent.save(out / "parent")
+        (out / "record.json").write_text(json.dumps(self.metadata(), indent=2,
+                                                    default=_json_default) + "\n")
         return out
 
     @classmethod
     def load(cls, directory: str | Path) -> DeformableRecord:
+        """The record saved in *directory*; ``ValueError`` naming its
+        ``record.json`` when it (or its arrays) cannot be read."""
         root = Path(directory)
-        meta = json.loads((root / "record.json").read_text())
-        with np.load(root / "arrays.npz") as data:
-            arrays = {key: data[key] for key in data.files}
         parent = cls.load(root / "parent") if (root / "parent" / "record.json").exists() else None
-        return cls(
-            placement=Placement.from_dict(meta["placement"]),
-            section_size=(int(meta["section_size"][0]), int(meta["section_size"][1])),
-            settings=FitSettings.from_dict(meta["settings"]),
-            field_mm=arrays["field_mm"], inverse_field_mm=arrays.get("inverse_field_mm"),
-            inverse_source=str(meta["inverse_source"]), labels=arrays["labels"],
-            tissue=arrays["tissue"], torn_band=arrays["torn_band"],
-            excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
-            diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
-            parent=parent, provenance=dict(meta.get("provenance") or {}),
-        )
+        try:
+            meta = json.loads((root / "record.json").read_text())
+            unknown = sorted(set(meta) - set(_RECORD_KEYS))
+            if unknown:
+                raise ValueError(f"Unknown record key(s) {unknown}")
+            with np.load(root / "arrays.npz") as data:
+                arrays = {key: data[key] for key in data.files}
+            return cls(
+                placement=Placement.from_dict(meta["placement"]),
+                section_size=(int(meta["section_size"][0]), int(meta["section_size"][1])),
+                settings=None if meta["settings"] is None else FitSettings.from_dict(
+                    meta["settings"]),
+                field_mm=arrays["field_mm"], inverse_field_mm=arrays.get("inverse_field_mm"),
+                inverse_source=str(meta["inverse_source"]), labels=arrays["labels"],
+                footprint=arrays["footprint"],
+                excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
+                diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
+                parent=parent, provenance=dict(meta["provenance"]),
+            )
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+            raise ValueError(f"{root / 'record.json'}: {exc}") from exc
 
 
 def _json_default(value: Any) -> Any:

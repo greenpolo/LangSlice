@@ -23,17 +23,16 @@ from langslice.core.affine import (
     resize_long_edge,
 )
 from langslice.core.atlas.core import get_reference_slice
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import (
     HIGHLIGHT_WIDTH,
     annotation_slice,
     atlas_um_per_px,
-    family_outlines,
     is_dark_background,
-    outer_outline,
     region_contours,
+    region_outlines,
 )
 from langslice.core.captions import _draw_scale_bar, caption
-from langslice.core.image_prep import foreground_mask
 from langslice.core.space import Plane
 
 #: Black working space on each side of the larger of section and atlas, as a
@@ -85,7 +84,6 @@ def canvas_geometry(
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     *,
-    pad_to_fit_atlas: bool = True,
     margin: float = WORKING_MARGIN,
 ) -> CanvasGeometry:
     """Place an atlas section on a section's frame at TRUE physical scale.
@@ -95,7 +93,7 @@ def canvas_geometry(
     plate at two thirds of the tissue's size where true scale matches it.
     Its ANATOMY (the annotation's bounding box, not the atlas frame with its
     empty margins) is centred on the canvas centre, and
-    with *pad_to_fit_atlas* the canvas grows to hold whichever of the section
+    the canvas grows to hold whichever of the section
     and the atlas anatomy is larger, plus *margin* of black on every side —
     ABBA's viewer leaves generous black space around both, and the alignment
     loop needs it: the atlas runs out of frame otherwise and every x/y move
@@ -114,12 +112,10 @@ def canvas_geometry(
         cx, cy = ann.shape[1] / 2.0, ann.shape[0] / 2.0
         extent = (float(ann.shape[1]), float(ann.shape[0]))
 
-    width, height = section_size
-    if pad_to_fit_atlas:
-        body_w = max(width, extent[0] * scale)
-        body_h = max(height, extent[1] * scale)
-        width = int(np.ceil(body_w * (1.0 + 2.0 * margin)))
-        height = int(np.ceil(body_h * (1.0 + 2.0 * margin)))
+    body_w = max(section_size[0], extent[0] * scale)
+    body_h = max(section_size[1], extent[1] * scale)
+    width = int(np.ceil(body_w * (1.0 + 2.0 * margin)))
+    height = int(np.ceil(body_h * (1.0 + 2.0 * margin)))
     return CanvasGeometry(
         size=(width, height),
         um_per_px=float(section_um_per_px),
@@ -238,31 +234,6 @@ def line_coverage(
     ).astype(np.float32) / 255.0
 
 
-def _draw_outlines(
-    canvas: np.ndarray,
-    outlines: list[tuple[tuple[int, int, int], np.ndarray]],
-    geometry: CanvasGeometry,
-    *,
-    color: tuple[int, int, int] = (255, 255, 0),
-    thickness: float = 1,
-    factor: float = 1.0,
-    origin: tuple[int, int] = (0, 0),
-    alpha: float = 1.0,
-) -> None:
-    """One atlas-border color, with width set after crop and display resizing."""
-    _draw_polys(
-        canvas,
-        [poly for _color, poly in outlines],
-        color,
-        thickness=thickness,
-        scale=geometry.atlas_scale,
-        offset=geometry.atlas_offset,
-        origin=origin,
-        factor=factor,
-        alpha=alpha,
-    )
-
-
 #: Strength of the context outlines drawn under highlighted regions.
 REGION_CONTEXT_ALPHA = 0.35
 
@@ -291,7 +262,7 @@ def region_polys(
 
     *regions* is ``[(name, ids)]``; each region is traced as the union of its
     ids (the region and its descendants), with the same tracer and smoothing
-    as the family outlines. A name with a side (``"CTX:left"``) keeps only
+    as the region outlines. A name with a side (``"CTX:left"``) keeps only
     that side, *left* being the native pixels on the left (:func:`regions_left`).
     """
     from langslice.core.atlas.sides import restrict, split_side
@@ -414,15 +385,11 @@ def _to_screen(
     return np.asarray(image, dtype=np.uint8).copy(), factor
 
 
-def pivot_on_canvas(
-    pivot: Any, section: Image.Image, geometry: CanvasGeometry
-) -> tuple[float, float] | None:
+def pivot_on_canvas(pivot: Any, geometry: CanvasGeometry) -> tuple[float, float] | None:
     """A pivot spec as CANVAS pixels, or ``None`` for the canvas centre.
 
-    ``"canvas"`` (or empty) is the centre, ``"tissue"`` the section's own
-    tissue centroid placed on the canvas, and ``[fx, fy]`` fractions of the
-    canvas. A section whose tissue cannot be detected falls back to the
-    centre; the caller reports the pivot it actually got.
+    ``"canvas"`` (or empty) is the centre and ``[fx, fy]`` fractions of the
+    canvas.
 
     Raises ``ValueError`` on anything else.
     """
@@ -430,18 +397,7 @@ def pivot_on_canvas(
         return None
     width, height = geometry.size
     if isinstance(pivot, str):
-        if pivot.strip().lower() != "tissue":
-            raise ValueError(f"pivot must be 'canvas', 'tissue' or [fx, fy]; got {pivot!r}")
-        mask = foreground_mask(section)
-        if mask is None or not mask.any():
-            return None
-        ys, xs = np.nonzero(mask)
-        # The mask is measured on a proxy; scale its centroid onto the section,
-        # then place the section on the canvas.
-        return (
-            float(xs.mean()) * section.width / mask.shape[1] + geometry.section_offset[0],
-            float(ys.mean()) * section.height / mask.shape[0] + geometry.section_offset[1],
-        )
+        raise ValueError(f"pivot must be 'canvas' or [fx, fy]; got {pivot!r}")
     values = [float(v) for v in pivot]
     if len(values) != 2:
         raise ValueError("pivot fractions must be [fx, fy] of the canvas")
@@ -531,7 +487,7 @@ def physical_views(
     border_color: str = "yellow",
     border_thickness: float = 0.5,
     outlines: str = "all",
-    pad_to_fit_atlas: bool = True,
+    depth: int = OVERLAY_DEPTH,
     pivot: tuple[float, float] | None = None,
     label: str = "",
     long_edge: int | None = None,
@@ -550,7 +506,7 @@ def physical_views(
     (:func:`canvas_geometry`) and the same crop, so a number read off one is
     the number on the others:
 
-    * ``overlay`` — the warped section with the atlas family outlines on it,
+    * ``overlay`` — the warped section with the atlas region outlines on it,
       and the atlas image blended under them at *atlas_opacity*.
     * ``section`` — the warped section alone, no lines.
     * ``template`` — the atlas image alone; *template_lines* adds the
@@ -566,8 +522,9 @@ def physical_views(
     *zoom_pixels* is the zoom as the caller gave it (pixels of the unzoomed
     picture), for the caption.
 
-    *outlines* picks which atlas lines are drawn: every family boundary
-    (``all``), the root silhouette alone (``outer``), or none (``none``). *border_color*
+    *outlines* picks which atlas lines are drawn: every boundary between
+    regions at ontology *depth* (``all``, :func:`langslice.core.atlas.levels.labels_at`)
+    or none (``none``). *border_color*
     is a named color or #RRGGBB (default yellow); *border_thickness* is 0.25..8
     output-image pixels (default 0.5), unchanged by zoom or canvas resolution.
 
@@ -605,7 +562,6 @@ def physical_views(
         plane,
         pitch_deg,
         yaw_deg,
-        pad_to_fit_atlas=pad_to_fit_atlas,
     )
     fill = _background_color(section)
     canvas = Image.new("RGB", geometry.size, fill)
@@ -625,11 +581,10 @@ def physical_views(
 
     dark = is_dark_background(section)
     layer = str(outlines or "all").strip().lower()
-    draw = outer_outline if layer == "outer" else family_outlines
     atlas_lines = (
-        []
-        if layer == "none"
-        else draw(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
+        [] if layer == "none"
+        else region_outlines(atlas, position_mm, depth=depth, plane=plane, pitch_deg=pitch_deg,
+                             yaw_deg=yaw_deg)
     )
 
     highlighted: list[np.ndarray] = []
@@ -706,9 +661,10 @@ def physical_views(
                 if mode == "overlay" and opacity > 0.0:
                     _blend_screen(screen, _template_canvas(), box, edge, opacity)
         if lines:
-            _draw_outlines(
-                screen, atlas_lines, geometry, color=line_color, thickness=line_width,
-                factor=factor, origin=box[:2],
+            _draw_polys(
+                screen, atlas_lines, line_color, thickness=line_width,
+                scale=geometry.atlas_scale, offset=geometry.atlas_offset,
+                origin=box[:2], factor=factor,
                 alpha=REGION_CONTEXT_ALPHA if regions else 1.0,
             )
         if highlighted:
@@ -734,8 +690,6 @@ def physical_views(
                     f" (file pixels enlarged x{from_file:.1f})" if from_file > 1.05 else "")
             elif factor > 1.05:
                 text += f" (canvas pixels enlarged x{factor:.1f})"
-        if layer == "outer" and lines:
-            text += "  outlines outer"
         if regions:
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
         labelled = caption(Image.fromarray(screen, mode="RGB"), text,
@@ -746,7 +700,7 @@ def physical_views(
                 content_box=(0, 0, screen.shape[1], screen.shape[0]),
                 crop_box=box, factor=float(factor), geometry=geometry,
                 section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
-                lines=tuple(poly for _color, poly in atlas_lines) if lines else (),
+                lines=tuple(atlas_lines) if lines else (),
                 highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
                 from_file=from_file,
             ))
@@ -805,36 +759,3 @@ def _blend_screen(
     lit = cv2.resize(lit, (screen.shape[1], screen.shape[0]),
                      interpolation=cv2.INTER_NEAREST) > 0
     screen[lit] = (screen[lit] * (1.0 - opacity) + shown[lit] * opacity).astype(np.uint8)
-
-
-def estimate_um_per_px(
-    section: Image.Image,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane,
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-) -> float | None:
-    """Micrometres per pixel guessed from the tissue's width, or None.
-
-    The fallback when no file and no host says: the section's tissue is
-    assumed to span the same millimetres as the atlas anatomy at this
-    position, which is a SHAPE fit, not a calibration — every caller that
-    uses it reports the calibration as "estimated".
-    """
-    mask = foreground_mask(section)
-    if mask is None:
-        return None
-    xs = np.nonzero(mask.any(axis=0))[0]
-    if xs.size == 0:
-        return None
-    # The mask is measured on a proxy; scale its width back onto the section.
-    tissue_px = (xs.max() - xs.min() + 1) * section.width / float(mask.shape[1])
-    ann = annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-    )
-    columns = np.nonzero(ann.any(axis=0))[0]
-    if columns.size == 0 or tissue_px < 1:
-        return None
-    atlas_um = (columns.max() - columns.min() + 1) * atlas_um_per_px(atlas)
-    return float(atlas_um / tissue_px)

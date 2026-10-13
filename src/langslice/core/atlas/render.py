@@ -1,9 +1,9 @@
-"""Atlas geometry both methods draw from: annotation slices, contours, colors.
+"""Atlas geometry both methods draw from: annotation slices and contours.
 
-Shared on purpose. ``linear`` draws family outlines over a section in physical
-space and ``nonlinear`` draws the same lines over its generated maps; the lines
-have to come from the same source, or the two methods disagree about where a
-boundary is.
+Shared on purpose. ``linear`` draws region outlines over a section in physical
+space and ``nonlinear`` draws region lines over its generated maps from the
+same annotation, so the two methods agree about where a boundary is. Regions
+are grouped by ontology depth alone (:mod:`langslice.core.atlas.levels`).
 
 Nothing here loads a model, writes a file, or knows about a run — an atlas, a
 position and (optionally) the block's cutting angles go in, geometry comes out.
@@ -16,25 +16,22 @@ from typing import Any
 import cv2
 import numpy as np
 
-from langslice.core.atlas.core import orient_slice_for_display, position_mm_to_index
-from langslice.core.atlas.recolor import MERGE_EPS, color_lut
-from langslice.core.space import Plane, atlas_space_context, slice_axis_index
+from langslice.core.atlas.core import _resolve_idx_axis, orient_slice_for_display
+from langslice.core.atlas.levels import labels_at
+from langslice.core.space import Plane
 
 __all__ = [
     "annotation_slice",
     "atlas_um_per_px",
-    "border_color",
-    "family_labels",
-    "family_mapping",
-    "family_outlines",
     "is_dark_background",
-    "outer_outline",
     "placed_border_coverage",
+    "region_boundaries",
     "region_contours",
+    "smooth_owner_map",
+    "stroke_boundaries",
+    "supersampled_positions",
+    "region_outlines",
 ]
-
-Rgb = tuple[int, int, int]
-
 
 #: How much thicker than the other atlas lines a picture draws the regions
 #: it highlights (``grep_atlas_view``'s regions, a restricted fit's
@@ -60,8 +57,7 @@ def annotation_slice(
         from langslice.core.oblique import sample_oblique_annotation
 
         return sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     return orient_slice_for_display(
         np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
     )
@@ -70,43 +66,6 @@ def annotation_slice(
 def atlas_um_per_px(atlas: Any) -> float:
     """Micrometres per pixel of an atlas render at native resolution."""
     return float(max(atlas.resolution))
-
-
-def family_mapping(
-    uids: Any, atlas: Any, merge_eps: float = MERGE_EPS
-) -> dict[int, int]:
-    """region id -> representative id of its merged color family.
-
-    Deterministic in the id set it is given: pass the ids of every map that
-    has to share one vocabulary (e.g. a generated map and the atlas render),
-    or the two get different representatives for the same family.
-    """
-    lut = color_lut(atlas)
-    reps: list[tuple[tuple[int, int, int], int]] = []
-    mapping: dict[int, int] = {}
-    for uid in sorted(int(u) for u in uids if int(u) != 0):
-        color = lut.get(uid, (128, 128, 128))
-        for rep_color, rep_id in reps:
-            if sum((a - b) ** 2 for a, b in zip(color, rep_color, strict=False)) <= merge_eps**2:
-                mapping[uid] = rep_id
-                break
-        else:
-            reps.append((color, uid))
-            mapping[uid] = uid
-    return mapping
-
-
-def family_labels(labels: np.ndarray, atlas: Any, merge_eps: float = MERGE_EPS) -> np.ndarray:
-    """*labels* with every region replaced by its color family's representative.
-
-    The merged set the image model is shown: the image tool's placed borders
-    are drawn from exactly this map (``nonlinear``'s ``_merge_classified`` is
-    the same mapping), so a fit against the model's lines must use it too.
-    """
-    merged = np.zeros_like(labels)
-    for uid, rep_id in family_mapping(np.unique(labels), atlas, merge_eps).items():
-        merged[labels == uid] = rep_id
-    return merged
 
 
 def placed_border_coverage(
@@ -123,43 +82,128 @@ def placed_border_coverage(
     *labels* is an atlas-resolution region map and *atlas_to_image* the 3x3
     (or 2x3) map from its pixel centres to the image's. A nearest-neighbour
     warp of the label map magnifies the atlas grid into a staircase; instead
-    each region's indicator is blurred by *smoothing_px* atlas pixels, warped
-    bilinearly onto a *supersample*-times finer grid, and every fine pixel
-    takes the region that covers it most. Boundaries between neighbouring
-    fine pixels are one shared line (tracing each region separately draws a
-    shared edge twice, one atlas pixel apart), widened to *width_px* image
-    pixels and area-averaged back down, so the edges are antialiased.
+    each region's indicator is blurred by *smoothing_px* atlas pixels and
+    sampled bilinearly on a *supersample*-times finer grid, every fine
+    pixel taking the region that covers it most (:func:`smooth_owner_map`).
+    Boundaries between neighbouring fine pixels are one shared line (tracing
+    each region separately draws a shared edge twice, one atlas pixel apart),
+    widened to *width_px* image pixels and area-averaged back down, so the
+    edges are antialiased.
     """
-    width, height = size
     s = int(supersample)
-    fine = np.array([[s, 0, (s - 1) / 2], [0, s, (s - 1) / 2], [0, 0, 1]], dtype=np.float64)
     matrix = np.asarray(atlas_to_image, dtype=np.float64)
     if matrix.shape == (2, 3):
         matrix = np.vstack([matrix, [0.0, 0.0, 1.0]])
-    to_fine = (fine @ matrix)[:2]
-    fine_size = (width * s, height * s)
-    best = np.full((height * s, width * s), -1.0, dtype=np.float32)
-    owner = np.zeros((height * s, width * s), dtype=np.int32)
-    for index, region in enumerate(np.unique(labels)):
-        indicator = (labels == region).astype(np.float32)
+    px, py = supersampled_positions(size, s)
+    inverse = np.linalg.inv(matrix)
+    native_x = (inverse[0, 0] * px + inverse[0, 1] * py + inverse[0, 2]).astype(np.float32)
+    native_y = (inverse[1, 0] * px + inverse[1, 1] * py + inverse[1, 2]).astype(np.float32)
+    owner = smooth_owner_map(labels, native_x, native_y, smoothing_px=smoothing_px)
+    edges, _horizontal, _vertical = region_boundaries(owner)
+    return stroke_boundaries(edges, size, s, width_px)
+
+
+#: Stride of the coarse coordinate grid that finds each region's fine-pixel box.
+COARSE_STEP = 8
+
+
+def supersampled_positions(
+    size: tuple[int, int], supersample: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Image-pixel ``(x, y)`` of every pixel centre of the *supersample*-times
+    finer grid over a *size* image, float32: fine pixel ``(i, j)`` sits at
+    ``((i - (s-1)/2) / s, (j - (s-1)/2) / s)``."""
+    width, height = size
+    s = int(supersample)
+    xs = (np.arange(width * s, dtype=np.float32) - (s - 1) / 2) / s
+    ys = (np.arange(height * s, dtype=np.float32) - (s - 1) / 2) / s
+    map_x, map_y = np.meshgrid(xs, ys)
+    return map_x, map_y
+
+
+def smooth_owner_map(
+    labels: np.ndarray, native_x: np.ndarray, native_y: np.ndarray,
+    *, smoothing_px: float,
+) -> np.ndarray:
+    """Region of each fine pixel: the one whose blurred indicator covers it most.
+
+    Each region is sampled only inside its own bounding box (plus the blur's
+    reach) so the cost does not grow with the number of regions times the
+    fine grid.
+    """
+    height, width = labels.shape
+    owner = np.zeros(native_x.shape, dtype=labels.dtype)
+    best = np.full(native_x.shape, -1.0, dtype=np.float32)
+    pad = int(np.ceil(3 * smoothing_px)) + 2
+    coarse_x = native_x[::COARSE_STEP, ::COARSE_STEP]
+    coarse_y = native_y[::COARSE_STEP, ::COARSE_STEP]
+    for region in np.unique(labels):
+        mask = labels == region
+        if region == 0:
+            box = (0, width, 0, height)  # the background also lies outside the plane
+        else:
+            ys, xs = np.nonzero(mask)
+            box = (max(xs.min() - pad, 0), min(xs.max() + pad + 1, width),
+                   max(ys.min() - pad, 0), min(ys.max() + pad + 1, height))
+        x0, x1, y0, y1 = box
+        indicator = mask[y0:y1, x0:x1].astype(np.float32)
         if smoothing_px > 0:
-            indicator = cv2.GaussianBlur(indicator, (0, 0), smoothing_px)
-        cover = cv2.warpAffine(
-            indicator, to_fine, fine_size, flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT, borderValue=float(region == 0),
+            indicator = cv2.GaussianBlur(
+                indicator, (0, 0), smoothing_px,
+                borderType=cv2.BORDER_REPLICATE if region == 0 else cv2.BORDER_CONSTANT)
+        near = ((coarse_x >= x0 - 1) & (coarse_x <= x1) & (coarse_y >= y0 - 1)
+                & (coarse_y <= y1))
+        rows, cols = np.nonzero(near.any(axis=1))[0], np.nonzero(near.any(axis=0))[0]
+        if rows.size == 0 or cols.size == 0:
+            continue
+        # Coarse indices back to fine pixels, with one coarse step of slack.
+        r0 = max(int(rows[0]) * COARSE_STEP - COARSE_STEP, 0)
+        r1 = min(int(rows[-1]) * COARSE_STEP + 2 * COARSE_STEP, native_x.shape[0])
+        c0 = max(int(cols[0]) * COARSE_STEP - COARSE_STEP, 0)
+        c1 = min(int(cols[-1]) * COARSE_STEP + 2 * COARSE_STEP, native_x.shape[1])
+        cover = cv2.remap(
+            indicator, np.ascontiguousarray(native_x[r0:r1, c0:c1] - np.float32(x0)),
+            np.ascontiguousarray(native_y[r0:r1, c0:c1] - np.float32(y0)),
+            cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=float(region == 0),
         )
-        wins = cover > best
-        best[wins] = cover[wins]
-        owner[wins] = index
-    edges = np.zeros(owner.shape, dtype=np.uint8)
-    edges[:, 1:] |= (owner[:, 1:] != owner[:, :-1]).astype(np.uint8)
-    edges[1:, :] |= (owner[1:, :] != owner[:-1, :]).astype(np.uint8)
-    radius = max(0.5, width_px * s / 2.0)
+        view_best = best[r0:r1, c0:c1]
+        wins = cover > view_best
+        view_best[wins] = cover[wins]
+        owner[r0:r1, c0:c1][wins] = region
+    return owner
+
+
+def region_boundaries(labels: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Where neighbouring pixels of *labels* hold different ids.
+
+    ``(edges, horizontal, vertical)``: *horizontal* ``[r, c]`` is True where
+    pixels ``(r, c)`` and ``(r, c + 1)`` differ, *vertical* ``[r, c]`` where
+    ``(r, c)`` and ``(r + 1, c)`` do, and *edges* (the shape of *labels*)
+    marks the right or lower pixel of each such pair, so a boundary two
+    regions share is one line one pixel wide. Every pixel boundary picture
+    (:func:`placed_border_coverage`, the warped borders of
+    :mod:`langslice.core.deformable.render`) starts here.
+    """
+    horizontal = labels[:, 1:] != labels[:, :-1]
+    vertical = labels[1:, :] != labels[:-1, :]
+    edges = np.zeros(labels.shape, dtype=bool)
+    edges[:, 1:] |= horizontal
+    edges[1:, :] |= vertical
+    return edges, horizontal, vertical
+
+
+def stroke_boundaries(
+    edges: np.ndarray, size: tuple[int, int], supersample: int, width_px: float,
+) -> np.ndarray:
+    """Coverage in [0, 1] on a *size* image of *edges*, a boolean mask on the
+    *supersample*-times finer grid: widened to *width_px* image pixels and
+    area-averaged down, so the lines are antialiased."""
+    radius = max(0.5, width_px * supersample / 2.0)
     kernel = cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (2 * int(np.ceil(radius)) + 1,) * 2,
     )
-    stroke = cv2.dilate(edges * 255, kernel)
-    coverage = cv2.resize(stroke, (width, height), interpolation=cv2.INTER_AREA)
+    stroke = cv2.dilate(edges.astype(np.uint8) * 255, kernel)
+    coverage = cv2.resize(stroke, size, interpolation=cv2.INTER_AREA)
     return coverage.astype(np.float32) / 255.0
 
 
@@ -177,24 +221,6 @@ def is_dark_background(image: Any) -> bool:
         arr = np.asarray(image)
         gray = arr if arr.ndim == 2 else cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
     return float(np.median(gray)) < 110.0
-
-
-def border_color(color: Rgb, *, dark_background: bool = False) -> Rgb:
-    """A saturated, background-contrasting version of a region's own color.
-
-    Keeping the hue is the whole point: a border tells you which structure it
-    bounds. Only saturation and value move, and value moves toward whichever
-    end the canvas is not.
-    """
-    hsv = cv2.cvtColor(np.array([[color]], dtype=np.uint8), cv2.COLOR_RGB2HSV)
-    hue, sat, val = (int(v) for v in hsv[0, 0])
-    # Gray regions (fiber tracts, root) stay gray: pushing saturation on an
-    # achromatic color invents a hue out of rounding noise.
-    sat = 0 if sat < 12 else min(255, int(sat * 1.9) + 40)
-    val = min(255, int(val * 0.35) + 170) if dark_background else int(val * 0.52)
-    out = cv2.cvtColor(np.array([[(hue, sat, val)]], dtype=np.uint8), cv2.COLOR_HSV2RGB)
-    r, g, b = (int(v) for v in out[0, 0])
-    return (r, g, b)
 
 
 def _smooth_closed(points: np.ndarray, window: int) -> np.ndarray:
@@ -285,62 +311,23 @@ def region_contours(
     return out
 
 
-def outer_outline(
+def region_outlines(
     atlas: Any,
     position_mm: float,
     *,
+    depth: int,
     plane: Plane = "coronal",
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     smooth_window: int = 9,
     min_area_px: float = 24.0,
-) -> list[tuple[Rgb, np.ndarray]]:
-    """``(color, polyline)`` for the ROOT silhouette alone, in atlas pixels.
-
-    Same shape as :func:`family_outlines`, one layer down: the boundary of
-    everything the annotation labels, with no internal region lines. What an
-    overlay wants when the family lines read as busy.
-    """
+) -> list[np.ndarray]:
+    """Polylines of every region at ontology *depth*
+    (:func:`~langslice.core.atlas.levels.labels_at`), in atlas-native pixels."""
     labels = annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
     )
     contours = region_contours(
-        (labels > 0).astype(np.int32),
-        smooth_window=smooth_window,
-        min_area_px=min_area_px,
+        labels_at(labels, atlas, depth), smooth_window=smooth_window, min_area_px=min_area_px
     )
-    return [((128, 128, 128), poly) for poly in contours.get(1, [])]
-
-
-def family_outlines(
-    atlas: Any,
-    position_mm: float,
-    *,
-    plane: Plane = "coronal",
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-    smooth_window: int = 9,
-    min_area_px: float = 24.0,
-) -> list[tuple[Rgb, np.ndarray]]:
-    """``(family color, polyline)`` per family region, in atlas-native pixels.
-
-    Family level, not leaf level: the registration units the color LUT already
-    merges at :data:`~langslice.core.atlas.recolor.MERGE_EPS`. Leaf boundaries are
-    a dozen near-identical lines through one cortex and read as noise on an
-    overlay.
-    """
-    labels = annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-    )
-    families = np.zeros_like(labels)
-    for uid, rep_id in family_mapping(np.unique(labels), atlas).items():
-        families[labels == uid] = rep_id
-    lut = color_lut(atlas)
-    contours = region_contours(
-        families, smooth_window=smooth_window, min_area_px=min_area_px
-    )
-    return [
-        (lut.get(uid, (128, 128, 128)), poly)
-        for uid, polys in sorted(contours.items())
-        for poly in polys
-    ]
+    return [poly for _uid, polys in sorted(contours.items()) for poly in polys]

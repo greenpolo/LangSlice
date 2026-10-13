@@ -10,11 +10,14 @@ from PIL import Image
 
 from langslice.doors.api.abba_worker import run_linear
 
+#: ABBA's stack-wide angles as the connector always sends them (flat).
+FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
+
 
 @pytest.fixture
 def params(tmp_path):
     Image.new("L", (80, 40)).save(tmp_path / "section_0001.tif")
-    return {"image_folder": str(tmp_path), "pixel_size_um": 25,
+    return {"image_folder": str(tmp_path), "pixel_size_um": 25, "angles_deg": FLAT,
             "positions_mm": {"section_0001.tif": 4.0},
             "spec": {"tasks": ["position", "transform"]}}
 
@@ -33,7 +36,7 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
         assert not spec.resume
         row = {"id": "section_0001.tif", "position_mm": initial_position, "rotation_deg": 0,
                "transform": None}
-        value = {"slices": [row]}
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0}, "slices": [row]}
         state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
         on_write(state)
         row.update(position_mm=4.2, transform={"params": [1, 0, .1, 0, 1, .2]})
@@ -57,10 +60,11 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
 
 @pytest.mark.parametrize("change, message", [
     ({"pixel_size_um": 0}, "positive"),
+    ({"angle_deg": {"pitch_deg": 1.0}}, r"Unknown request key\(s\) \[.angle_deg.\]"),
     ({"positions_mm": {"missing.tif": 4}}, "exactly"),
     ({"positions_mm": {"section_0001.tif": float("nan")}}, "finite"),
     ({"spec": {"plane": "sagittal"}}, "coronal"),
-    ({"angles_deg": {"pitch_deg": float("nan")}}, "finite"),
+    ({"angles_deg": {"pitch_deg": float("nan"), "yaw_deg": 0.0}}, "finite"),
     ({"angles_deg": {"pitch": 4.0}}, "pitch_deg"),
     ({"z_offset_mm": float("inf")}, "z_offset_mm"),
     ({"existing_warp": ["missing.tif"]}, "existing_warp"),
@@ -84,51 +88,33 @@ def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypa
         run_linear(params, lambda event: None)
 
 
-def test_trace_dir_saves_this_runs_trace_and_names_it(params, monkeypatch, tmp_path):
+def test_a_run_keeps_its_trace_in_the_job_folder_as_linear_run_does(params, monkeypatch):
     import os
 
     from langslice.agent import engine
     from langslice.agent.trace import TRACE_DIR_ENV
 
-    traces = tmp_path / "traces" / "nested"
     monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
+    seen = []
 
     async def run(spec, *, on_write, on_event, emit, **_):
-        # The engine's session opens its trace from the environment.
-        folder = Path(os.environ[TRACE_DIR_ENV])
-        (folder / "linear_stack_abcd1234.jsonl").write_text("{}\n")
-        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+        seen.append(os.environ[TRACE_DIR_ENV])
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0},
+                 "slices": [{"id": "section_0001.tif", "position_mm": 4.0,
                              "rotation_deg": 0, "transform": None}]}
         state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
         on_write(state)
         return state
 
     monkeypatch.setattr(engine, "run", run)
-    (tmp_path / "traces" / "nested").mkdir(parents=True)
-    (traces / "older_run.jsonl").write_text("{}\n")
-    result = run_linear({**params, "trace_dir": str(traces)}, lambda event: None)
-    assert result["trace_files"] == [str(traces.resolve() / "linear_stack_abcd1234.jsonl")]
+    result = run_linear(params, lambda event: None)
+    assert seen == [str(Path(result["output_dir"]) / "trace")]
     assert TRACE_DIR_ENV not in os.environ
-
-
-def test_no_trace_dir_means_no_trace(params, monkeypatch):
-    import os
-
-    from langslice.agent import engine
-    from langslice.agent.trace import TRACE_DIR_ENV
-
-    monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
-
-    async def run(spec, *, on_write, on_event, emit, **_):
-        assert TRACE_DIR_ENV not in os.environ
-        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
-                             "rotation_deg": 0, "transform": None}]}
-        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
-        on_write(state)
-        return state
-
-    monkeypatch.setattr(engine, "run", run)
-    assert "trace_files" not in run_linear(params, lambda event: None)
+    monkeypatch.setenv(TRACE_DIR_ENV, "/elsewhere")  # a named folder wins, as for linear run
+    run_linear(params, lambda event: None)
+    assert seen[-1] == "/elsewhere"
+    with pytest.raises(ValueError, match=r"Unknown request key\(s\) \['trace_dir'\]"):
+        run_linear({**params, "trace_dir": "/tmp/x"}, lambda event: None)
 
 
 @pytest.mark.parametrize(("frozen", "sent"), [
@@ -170,7 +156,8 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
     monkeypatch.setattr(index, "default_root", lambda: tmp_path / "home" / ".langslice" / "jobs")
 
     async def run(spec, *, on_write, on_event, emit, **_):
-        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0},
+                 "slices": [{"id": "section_0001.tif", "position_mm": 4.0,
                              "rotation_deg": 0, "transform": None}]}
         state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
         on_write(state)
@@ -273,7 +260,7 @@ def test_host_angles_are_sent_when_the_stack_wide_angles_change(tmp_path):
         Image.new("L", (80, 40)).save(tmp_path / name)
     events = []
     prepared = prepare_linear({"image_folder": str(tmp_path), "pixel_size_um": 25,
-                               "positions_mm": {"s0.tif": 4.0, "s1.tif": 4.1},
+                               "angles_deg": FLAT, "positions_mm": {"s0.tif": 4.0, "s1.tif": 4.1},
                                "spec": {"tasks": ["position", "transform"]}})
     checkpoint = checkpoint_callback(prepared, events.append)
     checkpoint(_angled_state((0.0, 0.0), (0.0, 0.0)))
@@ -283,7 +270,6 @@ def test_host_angles_are_sent_when_the_stack_wide_angles_change(tmp_path):
     assert "host_angles" not in events[0] and "host_angles" not in events[1]
     assert events[2]["host_angles"] == {"pitch_deg": 2.0, "yaw_deg": -1.5}
     assert "host_angles" not in events[3]
-    assert prepared.final_angles == {"pitch_deg": 2.0, "yaw_deg": -1.5}
 
 
 def test_the_abba_session_facts_are_kept_with_the_job(params, monkeypatch, tmp_path):
@@ -298,15 +284,15 @@ def test_the_abba_session_facts_are_kept_with_the_job(params, monkeypatch, tmp_p
                            Path(params["image_folder"]))
         layout.ensure()
         on_open(SimpleNamespace(layout=layout, persist=True), None)
-        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0},
+                 "slices": [{"id": "section_0001.tif", "position_mm": 4.0,
                              "rotation_deg": 0, "transform": None}]}
         state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
         on_write(state)
         return state
 
     monkeypatch.setattr(engine, "run", run)
-    result = run_linear(params, lambda event: None)
-    assert result["abba"]["z_offset_mm"] == 5.7
+    run_linear(params, lambda event: None)
     held = read_job_file(JobLayout(Path(params["image_folder"]) / "langslice"))
     assert held["host"]["abba"]["z_offset_mm"] == 5.7
     assert held["host"]["abba"]["angles_deg"] == {"pitch_deg": 1.0, "yaw_deg": 0.0}
@@ -338,8 +324,7 @@ def warped(tmp_path_factory):
     apply_patches()
     folder = root / "stack"
     write_sections(folder)
-    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
-                               agent_preprocessing=False)
+    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"))
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     geometry = {}
@@ -350,8 +335,7 @@ def warped(tmp_path_factory):
     for name in others:
         with Image.open(folder / name) as image:
             geometry[name] = image.size
-    prepared = PreparedLinear(folder, job.job.spec, geometry, PIXEL_SIZE_UM, frozenset(),
-                              [], None, {})
+    prepared = PreparedLinear(folder, job.job.spec, geometry, PIXEL_SIZE_UM, {})
     events: list = []
     tracker = checkpoint_callback(prepared, events.append)
     tracker.attach(job.job, job.workspace)
@@ -435,6 +419,50 @@ def test_an_ants_syn_deformation_is_sent_with_its_error(warped):
     assert any("deformation sent to ABBA" in m for m in logged)
 
 
+def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeypatch):
+    """CONN-4: the row names the failure (the connector keeps it as a failed
+    update and leaves ABBA's warp as it is); it is not remembered, so the
+    next checkpoint tries again."""
+    from tests.golden.record import ID0
+
+    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    job, tracker, events, _prepared = warped
+    if job.state.by_id(ID0).deformation is None:
+        assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+        tracker(job.state)
+    record = job.state.by_id(ID0)
+    key = str(record.deformation["key"])
+    real = tracker._warp_row
+
+    def folds(*_args):
+        raise ValueError("the thin-plate spline folds at every grid")
+
+    tracker._warp_cache.clear()
+    monkeypatch.setattr(tracker, "_warp_row", folds)
+    assert tracker._warp(job.state, record, key) == {
+        "error": "its deformation could not be converted "
+                 "(the thin-plate spline folds at every grid)"}
+    monkeypatch.setattr(tracker, "_warp_row", real)
+    assert "source_mm" in tracker._warp(job.state, record, key)
+
+
+def test_a_budget_stop_is_named_in_the_result(params, monkeypatch):
+    from langslice.agent import engine
+
+    async def run(spec, *, on_write, on_event, emit, **_):
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0},
+                 "slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+                             "rotation_deg": 0, "transform": None}]}
+        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
+        on_write(state)
+        on_event({"kind": "complete", "submitted": False, "stopped": "quota_budget"})
+        return state
+
+    monkeypatch.setattr(engine, "run", run)
+    result = run_linear(params, lambda event: None)
+    assert "usage window" in result["stopped"]
+
+
 def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
     """The "linear placement stands" record (what submit's ``left_linear``
     writes) and a moved placement each send ABBA no warp for the section."""
@@ -462,8 +490,6 @@ def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
     tracker(job.state)
     moved = _row(events[-1], ID0)
     assert moved["position_mm"] == pytest.approx(0.11) and moved["warp"] is None
-    # Since the start, the section has no LangSlice warp either.
-    assert _row({"host_updates": events[-1]["updates_since_start"]}, ID0)["warp"] is None
 
 
 def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monkeypatch):
@@ -487,7 +513,7 @@ def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monke
     folder = tmp_path / "stack"
     write_sections(folder)
     spec = dataclasses.replace(
-        full_spec(folder), nonlinear=NonlinearSpec(provider="none"), agent_preprocessing=False,
+        full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
         inputs={"pixel_size_um": PIXEL_SIZE_UM}, frozen={ID0: ["deformation"]})
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
@@ -537,13 +563,13 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     snapshots.mkdir()
     Image.new("L", (80, 40)).save(snapshots / "a.tif")
     prepared = prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
-                               "positions_mm": {"a.tif": 4.0},
+                               "angles_deg": FLAT, "positions_mm": {"a.tif": 4.0},
                                "spec": {"tasks": ["position", "nonlinear"],
                                         "nonlinear": {"provider": "none"},
                                         "frozen": {"a.tif": ["deformation"]}}})
     assert prepared.spec.frozen == {"a.tif": ["deformation"]}
     with pytest.raises(ValueError, match="frozen names"):
-        prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
+        prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25, "angles_deg": FLAT,
                         "positions_mm": {"a.tif": 4.0},
                         "spec": {"frozen": {"b.tif": ["deformation"]}}})
 
@@ -553,7 +579,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     folder = tmp_path / "stack"
     write_sections(folder)
     spec = dataclasses.replace(
-        full_spec(folder), nonlinear=NonlinearSpec(provider="none"), agent_preprocessing=False,
+        full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
         inputs={"pixel_size_um": PIXEL_SIZE_UM}, frozen={ID0: ["deformation"]})
     create(spec, atlas_loader=atlas_loader()).close()
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
@@ -567,14 +593,14 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
 
 
 def test_the_run_ends_with_a_checkpoint_of_the_final_state(params, monkeypatch):
-    """The connector applies the end-of-run checkpoint's rows (not
-    final_updates), so the worker always sends one after the engine."""
+    """The connector applies the end-of-run checkpoint's rows, so the
+    worker always sends one after the engine."""
     from langslice.agent import engine
 
     async def run(spec, *, on_write, on_event, emit, **_):
         row = {"id": "section_0001.tif", "position_mm": 4.0, "rotation_deg": 0,
                "transform": None}
-        value = {"slices": [row]}
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0}, "slices": [row]}
         on_write(SimpleNamespace(to_dict=lambda: copy.deepcopy(value)))
         row["position_mm"] = 4.3
         return SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
@@ -584,4 +610,4 @@ def test_the_run_ends_with_a_checkpoint_of_the_final_state(params, monkeypatch):
     result = run_linear(params, events.append)
     last = [event for event in events if event["kind"] == "checkpoint"][-1]
     assert last["host_updates"] == [{"id": "section_0001.tif", "position_mm": 4.3}]
-    assert result["final_updates"] == last["updates_since_start"]
+    assert set(result) == {"state", "output_dir"}

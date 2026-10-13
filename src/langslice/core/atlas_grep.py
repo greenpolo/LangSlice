@@ -7,7 +7,8 @@ from typing import Any, cast
 
 import numpy as np
 
-from langslice.core.atlas.core import _resolve_idx_axis
+from langslice.core.atlas.render import annotation_slice
+from langslice.core.atlas.tree import ancestry, descendants, path
 from langslice.core.space import Plane
 
 GREP_ATLAS_LIMIT = 40
@@ -18,15 +19,9 @@ def plane_structure_ids(
 ) -> set[int]:
     """Annotation ids present in the atlas plane at a placement and *angles*
     (``(pitch, yaw)``: the section's own)."""
-    plane = cast(Plane, state.plane)
     pitch, yaw = angles
-    if pitch or yaw:
-        from langslice.core.oblique import sample_oblique_annotation
-
-        labels = sample_oblique_annotation(ctx.atlas, position_mm, plane, pitch, yaw)
-    else:
-        idx, axis = _resolve_idx_axis(ctx.atlas, position_mm, plane)
-        labels = np.take(np.asarray(ctx.atlas.annotation), idx, axis=axis)
+    labels = annotation_slice(ctx.atlas, position_mm, plane=cast(Plane, state.plane),
+                              pitch_deg=pitch, yaw_deg=yaw)
     return {int(v) for v in np.unique(labels)}
 
 
@@ -47,11 +42,7 @@ def grep_structures(
     """
     structures = {int(e["id"]): e for e in entries}
     acronym = {sid: str(e["acronym"]) for sid, e in structures.items()}
-    descendants: dict[int, list[int]] = {sid: [] for sid in structures}
-    for sid, e in structures.items():
-        for ancestor in e["structure_id_path"][:-1]:
-            if int(ancestor) in descendants:
-                descendants[int(ancestor)].append(sid)
+    below = descendants(structures)
 
     needle = query.strip().lower()
     ranked: list[tuple[int, int, int]] = []
@@ -70,7 +61,7 @@ def grep_structures(
             tier = 4
         else:
             continue
-        ranked.append((tier, len(e["structure_id_path"]), sid))
+        ranked.append((tier, len(path(e)), sid))
     ranked.sort()
 
     rows: list[dict[str, Any]] = []
@@ -80,10 +71,10 @@ def grep_structures(
             "acronym": acronym[sid],
             "id": sid,
             "name": str(e["name"]),
-            "ancestry": [acronym.get(int(a), str(a)) for a in e["structure_id_path"][:-1]],
-            "n_descendants": len(descendants[sid]),
+            "ancestry": [acronym.get(a, str(a)) for a in ancestry(e)],
+            "n_descendants": len(below.get(sid, [])),
         }
         if present is not None:
-            row["in_section"] = sid in present or any(d in present for d in descendants[sid])
+            row["in_section"] = sid in present or any(d in present for d in below.get(sid, []))
         rows.append(row)
     return rows, len(ranked)

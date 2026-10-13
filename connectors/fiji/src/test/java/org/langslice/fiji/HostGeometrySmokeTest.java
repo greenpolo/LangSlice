@@ -27,34 +27,30 @@ public final class HostGeometrySmokeTest {
         JsonObject value = new JsonObject(); value.addProperty("rotation_deg", rotation);
         value.addProperty("flip", flip); return value;
     }
-    /** A warp row: [[x...],[y...]] or [[x, y], ...]; source = row's source_mm, target = row's target_mm. */
-    static JsonObject warpRow(double[][] source, double[][] target, boolean rows) {
+    /** A warp row: [[x...],[y...]] as the worker sends it; source = row's source_mm, target = row's target_mm. */
+    static JsonObject warpRow(double[][] source, double[][] target) {
         JsonObject warp = new JsonObject();
-        warp.add("source_mm", coordinates(source, rows)); warp.add("target_mm", coordinates(target, rows));
+        warp.add("source_mm", coordinates(source)); warp.add("target_mm", coordinates(target));
         warp.addProperty("record", "deformable/record-1"); warp.addProperty("max_error_mm", 0.004); warp.addProperty("points", source[0].length);
         return warp;
     }
 
-    private static JsonArray coordinates(double[][] points, boolean rows) {
+    private static JsonArray coordinates(double[][] points) {
         JsonArray out = new JsonArray();
-        if (rows) for (double[] axis : points) { JsonArray row = new JsonArray(); for (double v : axis) row.add(v); out.add(row); }
-        else for (int i = 0; i < points[0].length; i++) { JsonArray p = new JsonArray(); p.add(points[0][i]); p.add(points[1][i]); out.add(p); }
+        for (double[] axis : points) { JsonArray row = new JsonArray(); for (double v : axis) row.add(v); out.add(row); }
         return out;
     }
 
     /**
-     * The warp step: a pull-back (target point -> source point), in both coordinate
-     * layouts; a BigWarp step that survives ABBA's serialization and that BigWarp can reopen for editing.
+     * The warp step: a pull-back (target point -> source point); a BigWarp step that survives ABBA's serialization and that BigWarp can reopen for editing.
      */
     static int warpChecks(double[][] source, double[][] target) throws Exception {
         int probes = 0;
-        InvertibleRealTransform byRows = AbbaHostSession.warpTransform(warpRow(source, target, true));
-        InvertibleRealTransform byPoints = AbbaHostSession.warpTransform(warpRow(source, target, false));
+        InvertibleRealTransform byRows = AbbaHostSession.warpTransform(warpRow(source, target));
         for (int i = 0; i < source[0].length; i++) {
             double[] expected = {source[0][i], source[1][i], 0};
-            close(expected, apply(byRows, target[0][i], target[1][i], 0), 1e-8, "Warp maps target_mm to source_mm (rows)");
-            close(expected, apply(byPoints, target[0][i], target[1][i], 0), 1e-8, "Warp maps target_mm to source_mm (points)");
-            probes += 2;
+            close(expected, apply(byRows, target[0][i], target[1][i], 0), 1e-8, "Warp maps target_mm to source_mm");
+            probes++;
         }
         // Exactly the plain TPS pull-back with no orientation inside (the affine step carries it).
         InvertibleRealTransform plain = AbbaHostSession.tps(target, source);
@@ -65,7 +61,7 @@ public final class HostGeometrySmokeTest {
         }
         try { AbbaHostSession.warpTransform(JsonParser.parseString("{\"source_mm\":[[0,1],[0,1]],\"target_mm\":[[0,1],[0,1]]}").getAsJsonObject());
               throw new AssertionError("Two points cannot make a warp"); } catch (IllegalArgumentException expected) { }
-        JsonObject miscounted = warpRow(source, target, true); miscounted.addProperty("points", 3);
+        JsonObject miscounted = warpRow(source, target); miscounted.addProperty("points", 3);
         try { AbbaHostSession.warpTransform(miscounted); throw new AssertionError("Point count is checked"); } catch (IllegalArgumentException expected) { }
         try (Context context = new Context(PluginService.class, sc.fiji.persist.IObjectScijavaAdapterService.class)) {
             BigWarpSource2DRegistration registration = new BigWarpSource2DRegistration();

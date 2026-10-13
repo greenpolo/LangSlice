@@ -81,10 +81,7 @@ def format_event(event: dict[str, Any]) -> tuple[str, str]:
         return prefix + str(text), kind
     if kind == "tool_start":
         targets = event.get("target_ids") or []
-        labels = []
-        for target in targets[:4]:
-            match = re.fullmatch(r"section_0*(\d+)\.[^.]+", str(target))
-            labels.append(f"slice {match[1]}" if match else str(target)[:48])
+        labels = [str(target)[:48] for target in targets[:4]]
         suffix = " · " + ", ".join(labels) if labels else ""
         if len(targets) > 4:
             suffix += f" + {len(targets) - 4} more"
@@ -94,12 +91,10 @@ def format_event(event: dict[str, Any]) -> tuple[str, str]:
     if kind in {"seed", "tool_end"}:
         count = len(event.get("images") or [])
         response = event.get("response") or {}
-        if isinstance(response, dict):
-            status = str(response.get("status", ""))
-            if status and status.lower() not in {"ok", "success"}:
-                reason = response.get("message") or response.get("reason") or status
-                title = _tool_title(str(event.get("name", "Tool")))
-                return f"{title}: {str(reason)[:500]}", "error"
+        if event.get("failed"):
+            reason = response.get("message") or response.get("reason") or response.get("status")
+            title = _tool_title(str(event.get("name", "Tool")))
+            return f"{title}: {str(reason)[:500]}", "error"
         if count:
             return f"Viewing {count} image{'s' if count != 1 else ''}", "result"
         return "", "muted"
@@ -107,6 +102,8 @@ def format_event(event: dict[str, Any]) -> tuple[str, str]:
         return "Submitted" if event.get("submitted") else "Stopped before submission", "tool"
     if kind == "error":
         return f"Run failed: {text}", "error"
+    if kind == "progress":
+        return str(text), "tool"
     # Usage, seed instructions, paths and JSON make the conversation harder
     # to read. They remain available in console/opt-in JSONL diagnostics.
     return "", "muted"

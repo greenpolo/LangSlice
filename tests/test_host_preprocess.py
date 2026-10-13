@@ -17,12 +17,14 @@ from PIL import Image
 from langslice.core.image_prep import (
     adaptive_preprocess,
     host_preprocess,
-    host_preprocess_file,
     normalize_image,
     read_pages,
 )
 from langslice.doors.api.abba_worker import run_linear
 from langslice.hosts.api.service import run_stdio
+
+#: ABBA's stack-wide angles as the connector always sends them (flat).
+FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
 
 
 def _tissue(shape=(120, 160)) -> np.ndarray:
@@ -54,7 +56,7 @@ def test_auto_on_one_page_is_todays_automatic_path(tmp_path: Path, page: np.ndar
     with Image.open(path) as handle:
         today = adaptive_preprocess(normalize_image(handle.copy()))
     for settings in (None, {"mode": "auto"}):
-        result = host_preprocess_file(path, settings)
+        result = host_preprocess(read_pages(path), settings)
         assert np.array_equal(np.asarray(result), np.asarray(today))
 
 
@@ -148,7 +150,7 @@ def test_preview_refuses_bad_settings_as_validation_errors(tmp_path: Path):
 def snapshots(tmp_path: Path):
     tifffile.imwrite(tmp_path / "a.tif", np.stack(_two_channels()))
     tifffile.imwrite(tmp_path / "b.tif", np.stack(_two_channels()[::-1]))
-    return {"image_folder": str(tmp_path), "pixel_size_um": 25,
+    return {"image_folder": str(tmp_path), "pixel_size_um": 25, "angles_deg": FLAT,
             "positions_mm": {"a.tif": 4.0, "b.tif": 4.2},
             "spec": {"tasks": ["position", "transform"]}}
 
@@ -163,7 +165,7 @@ def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
                  "flip": False, "rotation_deg": 0,
                  "transform": (spec.inputs.get("transforms") or {}).get(name)}
                 for index, (name, value) in enumerate(sorted(spec.inputs["positions"].items()))]
-        value = {"slices": rows}
+        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0}, "slices": rows}
         state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
         on_write(state)
         for step in steps:
@@ -214,7 +216,7 @@ def test_single_page_snapshots_without_settings_keep_todays_path(tmp_path, monke
     Image.fromarray(_tissue()).save(tmp_path / "a.tif")
     seen: dict[str, Any] = {}
     _fake_engine(monkeypatch, [], seen)
-    run_linear({"image_folder": str(tmp_path), "pixel_size_um": 25,
+    run_linear({"image_folder": str(tmp_path), "pixel_size_um": 25, "angles_deg": FLAT,
                 "positions_mm": {"a.tif": 4.0}, "spec": {"tasks": ["position"]}},
                lambda event: None)
     assert Path(seen["spec"].image_folder) == tmp_path
@@ -231,7 +233,7 @@ def test_bad_weights_for_the_pages_are_refused_before_the_engine(snapshots, monk
     assert "spec" not in seen
 
 
-def test_checkpoints_carry_updates_since_start_and_the_result_the_final_ones(
+def test_checkpoints_carry_the_rows_since_the_previous_one(
     snapshots, monkeypatch,
 ):
     def move(value):
@@ -245,24 +247,14 @@ def test_checkpoints_carry_updates_since_start_and_the_result_the_final_ones(
     seen: dict[str, Any] = {}
     _fake_engine(monkeypatch, [move(4.1), move(4.3), turn_locked], seen)
     events: list[dict[str, Any]] = []
-    result = run_linear(
+    run_linear(
         {**snapshots, "spec": {"frozen": {"b.tif": ["orientation", "affine"]}},
          "damaged": {"a.tif": "torn"}}, events.append,
     )
     assert seen["spec"].frozen == {"b.tif": ["orientation", "affine"]}
     assert seen["spec"].inputs["damaged"] == {"a.tif": "torn"}
     checkpoints = [event for event in events if event["kind"] == "checkpoint"]
-    assert checkpoints[0]["initial"] and checkpoints[0]["updates_since_start"] == []
+    assert checkpoints[0]["initial"] and checkpoints[0]["host_updates"] == []
     assert checkpoints[2]["host_updates"] == [{"id": "a.tif", "position_mm": 4.3}]
-    assert checkpoints[2]["updates_since_start"] == [{"id": "a.tif", "position_mm": 4.3}]
     # A section with a frozen affine: its transform is never sent back to the host.
     assert checkpoints[3]["host_updates"] == []
-    assert result["final_updates"] == [{"id": "a.tif", "position_mm": 4.3}]
-    assert checkpoints[-1]["updates_since_start"] == result["final_updates"]
-
-
-def test_an_older_jobs_reorder_task_is_read_and_dropped(snapshots, monkeypatch):
-    seen: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [], seen)
-    run_linear({**snapshots, "spec": {"tasks": ["reorder", "position"]}}, lambda event: None)
-    assert seen["spec"].tasks == ["position"]

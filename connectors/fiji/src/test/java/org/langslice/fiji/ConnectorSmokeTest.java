@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** Offline executable integration checks, using a real fake-worker subprocess. */
 public final class ConnectorSmokeTest {
+    /** setup.status "spec_defaults" as the worker sends it (doors/api/setup.spec_defaults: JobSpec's defaults). */
+    static final JsonObject SPEC_DEFAULTS = JsonParser.parseString("{\"atlas\":\"allen_mouse_25um\",\"plane\":\"coronal\",\"model\":null,\"reasoning\":null,\"preprocess\":\"auto\",\"host_preprocessing\":null,\"image_resolution\":\"low\",\"tasks\":[\"position\",\"transform\"],\"position\":{\"thickness_um\":null,\"interval_um\":null,\"strict_interval\":false,\"playbook\":false,\"notes\":\"\"},\"transform\":{\"hemisphere_cue\":\"\",\"angles\":false,\"max_parallel\":4,\"notes\":\"\"},\"nonlinear\":{\"provider\":\"openai-oauth\",\"image_model\":null,\"notes\":\"\"},\"debrief\":true,\"max_input_tokens\":null,\"max_quota_percent\":25}").getAsJsonObject();
     static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
 
     /** A worker that answers each method the connector calls, without a model or ABBA. */
@@ -25,29 +27,29 @@ public final class ConnectorSmokeTest {
         "def chunk(t,d): return struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)",
         "if m=='timeout':",
         " time.sleep(20)",
-        "elif m=='setup.fail':",
+        "elif m=='setup.login':",
         " out({'id':r['id'],'type':'error','error':'secret-key-must-not-escape'})",
         "elif m=='linear.estimate':",
-        " if p.get('n_slices')==99: result({'low':2,'high':3.5,'unit':'percent_of_usage_window','basis':'test'})",
-        " else: out({'id':r['id'],'type':'error','error':{'code':'runtime_error','message':'Runtime request handling failed','details':{'error':'No runs have been measured at this image resolution'}}})",
+        " if p.get('n_slices')==99: result({'low':2,'high':3.5,'unit':'percent_of_usage_window','basis':'test','available':True})",
+        " else: out({'id':r['id'],'type':'error','error':{'code':'runtime_error','message':'Runtime request handling failed','details':{'error':'the estimate failed'}}})",
         "elif m=='preprocess.preview':",
         " rows=b''.join(b'\\x00'+bytes([0,120,240]) for y in range(2))",
         " png=b'\\x89PNG\\r\\n\\x1a\\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',3,2,8,0,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b'')",
         " open(p['output_path'],'wb').write(png); open(p['output_path']+'.json','w').write(json.dumps(p))",
         " result({'output_path':p['output_path'],'width':3,'height':2})",
         "elif m=='linear.run':",
-        " data({'kind':'checkpoint','initial':True,'host_updates':[],'updates_since_start':[]})",
+        " data({'kind':'checkpoint','initial':True,'host_updates':[]})",
         " data({'kind':'log','message':'agent started'})",
         " data({'kind':'agent_event','event':{'kind':'tool_start','name':'look','target_ids':['a']}})",
-        " data({'kind':'checkpoint','initial':False,'host_updates':[{'id':'a','position_mm':1}],'host_angles':{'pitch_deg':2.0,'yaw_deg':-1.0},'updates_since_start':[{'id':'a','position_mm':1}]})",
+        " data({'kind':'checkpoint','initial':False,'host_updates':[{'id':'a','position_mm':1}],'host_angles':{'pitch_deg':2.0,'yaw_deg':-1.0}})",
         " if p.get('stall'):",
-        "  data({'kind':'checkpoint','initial':False,'host_updates':[{'id':'a','position_mm':2}],'updates_since_start':[{'id':'a','position_mm':2}]})",
+        "  data({'kind':'checkpoint','initial':False,'host_updates':[{'id':'a','position_mm':2}]})",
         "  time.sleep(20)",
-        " result({'state':{'submitted':True},'output_dir':'out','final_updates':[{'id':'a','position_mm':3}],'echo':p})",
+        " result({'state':{'submitted':True},'output_dir':'out','echo':p})",
         "else:",
         " out({'id':None,'type':'event'})",
         " data({'kind':'checkpoint'})",
-        " result({'protocol_version':1})",
+        " result({'protocol_version':2})",
         "");
 
     static final class Recorder implements AgentRunner.Progress {
@@ -75,10 +77,10 @@ public final class ConnectorSmokeTest {
                 try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
                     JsonObject auth = new JsonObject(); auth.add("token", settings.get("token"));
                     String messages = auth + "\n"
-                            + "{\"type\":\"event\",\"event\":{\"kind\":\"data\",\"payload\":{\"kind\":\"checkpoint\",\"initial\":false,\"host_updates\":[{\"id\":\"a\",\"position_mm\":2}],\"updates_since_start\":[{\"id\":\"a\",\"position_mm\":2}]}}}\n"
-                            + "{\"type\":\"result\",\"result\":{\"final_updates\":[]}}\n";
+                            + "{\"type\":\"event\",\"event\":{\"kind\":\"data\",\"payload\":{\"kind\":\"checkpoint\",\"initial\":false,\"host_updates\":[{\"id\":\"a\",\"position_mm\":2}]}}}\n"
+                            + "{\"type\":\"result\",\"result\":{\"output_dir\":\"out\"}}\n";
                     socket.getOutputStream().write(messages.getBytes(StandardCharsets.UTF_8));
-                    require(received.get(5, java.util.concurrent.TimeUnit.SECONDS).has("final_updates"), "Authenticated final result");
+                    require(received.get(5, java.util.concurrent.TimeUnit.SECONDS).has("output_dir"), "Authenticated final result");
                     require(applied.get().getAsJsonArray("host_updates").get(0).getAsJsonObject().get("position_mm").getAsInt() == 2,
                             "Live host update reaches common apply callback");
                 }
@@ -126,11 +128,11 @@ public final class ConnectorSmokeTest {
         AtomicInteger events = new AtomicInteger();
         try (WorkerClient client = new WorkerClient(prefix)) {
             JsonObject result = client.request("hello", new JsonObject(), e -> events.incrementAndGet(), Duration.ofSeconds(5));
-            require(result.get("protocol_version").getAsInt() == 1 && events.get() == 1, "Events and results traverse subprocess pipe");
+            require(result.get("protocol_version").getAsInt() == 2 && events.get() == 1, "Events and results traverse subprocess pipe");
         }
         try (WorkerClient client = new WorkerClient(prefix)) {
-            try { client.request("setup.fail", new JsonObject(), null, Duration.ofSeconds(5)); throw new AssertionError("Expected failure"); }
-            catch (IOException expected) { require(!expected.getMessage().contains("secret-key"), "Setup errors redact provider secrets"); }
+            try { client.request("setup.login", new JsonObject(), null, Duration.ofSeconds(5)); throw new AssertionError("Expected failure"); }
+            catch (IOException expected) { require(!expected.getMessage().contains("secret-key"), "Sign-in errors redact provider secrets"); }
         }
         long start = System.nanoTime();
         try (WorkerClient client = new WorkerClient(prefix)) {
@@ -227,7 +229,7 @@ public final class ConnectorSmokeTest {
             require(host.viewerAvailable(), "Viewer offered while a listener is registered");
         } finally { LangSliceEvents.removeListener(broken); LangSliceEvents.removeListener(good); }
         require(!LangSliceEvents.hasListeners(), "Listeners can be removed");
-        JsonObject refused = JsonParser.parseString("{\"kind\":\"tool_end\",\"name\":\"elastix_affine\",\"response\":{\"status\":\"error\","
+        JsonObject refused = JsonParser.parseString("{\"kind\":\"tool_end\",\"name\":\"elastix_affine\",\"failed\":true,\"response\":{\"status\":\"error\","
                 + "\"error\":\"LOCKED\",\"message\":\"s1 is locked\"}}").getAsJsonObject();
         require(AgentRunner.agentText(refused).equals("\ns1 is locked\n"), "A failing tool's reason reaches the run log (both modes)");
         refused.addProperty("kind", "tool_result");
@@ -236,7 +238,10 @@ public final class ConnectorSmokeTest {
 
     /** Dialog choices become the contract's spec, preprocessing and exported channel order, and persist. */
     static void settingsChecks() throws Exception {
-        RegistrationSettings s = new RegistrationSettings();
+        RegistrationSettings s = RegistrationSettings.defaults(SPEC_DEFAULTS);
+        require(s.positioning && s.linear && !s.nonlinear && s.resolution.equals("low") && s.maxParallel == 4
+                && s.imageProvider.equals("openai-oauth") && s.agentDamage && s.affine && s.flip,
+                "Dialog defaults are the worker's JobSpec defaults");
         JsonObject unknownProtocol = s.spec().getAsJsonObject("position");
         require(!unknownProtocol.has("thickness_um") && !unknownProtocol.has("interval_um"),
                 "Unspecified protocol has no lab-specific defaults");
@@ -244,7 +249,10 @@ public final class ConnectorSmokeTest {
         JsonObject knownProtocol = s.spec().getAsJsonObject("position");
         require(knownProtocol.get("thickness_um").getAsInt() == 50
                 && knownProtocol.get("interval_um").getAsInt() == 200, "Supplied lab protocol survives");
+        s.thickness = null; s.interval = null; s.abbaThickness = 40; s.abbaInterval = 150;
+        require(s.spec().getAsJsonObject("position").get("interval_um").getAsInt() == 150, "ABBA's values are sent while the user has set none");
         s.thickness = 0; s.interval = 0;
+        require(!s.spec().getAsJsonObject("position").has("interval_um"), "The user's 0 (infer) wins over ABBA's value");
 
         s.model = RegistrationSettings.modelId("gpt-6-luna"); s.reasoning = "high"; s.resolution = "medium";
         s.positioning = true; s.linear = true; s.affine = false; s.maxParallel = 2; s.agentDamage = false;
@@ -276,11 +284,10 @@ public final class ConnectorSmokeTest {
         List<RegistrationSettings.Tool> tools = RegistrationSettings.toolCatalog(catalog);
         require(tools.size() == 3 && !tools.get(0).disableable && tools.get(0).options.equals(Arrays.asList("section", "atlas"))
                 && tools.get(2).needs.get(0).get(0).equals("look:overlay") && tools.get(1).disableable && !tools.get(1).group.equals("Linear"),
-                "The tool catalog parses; a service without one gives none");
-        require(RegistrationSettings.toolCatalog(new JsonObject()).isEmpty(), "No catalog from an older service");
+                "The tool catalog parses");
         require(spec.getAsJsonObject("position").get("notes").getAsString().equals("thick sections"), "Positioning block");
         require(!spec.has("inputs"), "Damaged slices travel as a request parameter, never in the spec");
-        require(!spec.get("agent_preprocessing").getAsBoolean() && !spec.getAsJsonArray("tasks").toString().contains("nonlinear"), "Off by default");
+        require(!spec.has("agent_preprocessing") && !spec.getAsJsonArray("tasks").toString().contains("nonlinear"), "Off by default");
         s.angles = true;
         require(s.spec().getAsJsonObject("transform").get("angles").getAsBoolean(), "Slice angle estimation sends transform.angles");
         s.positioning = false;
@@ -303,11 +310,7 @@ public final class ConnectorSmokeTest {
         require(preprocessing.get("mode").getAsString().equals("custom") && !preprocessing.get("clahe").getAsBoolean()
                 && preprocessing.get("clahe_strength").getAsString().equals("high")
                 && preprocessing.getAsJsonArray("channel_weights").toString().equals("[1.0,0.5]"), "Custom weights follow the page order");
-        s.agentPreprocessing = true;
-        require(s.exportChannels(3).equals(Arrays.asList(0, 1, 2)) && s.spec().get("agent_preprocessing").getAsBoolean()
-                && s.preprocessing(3).getAsJsonArray("channel_weights").toString().equals("[1.0,0.0,0.5]"),
-                "Agent-driven preprocessing exports every channel, weight 0 included");
-        s.agentPreprocessing = false;
+        require(!s.spec().has("agent_preprocessing"), "No agent_preprocessing in the spec");
         require(AbbaHostSession.exportedNames(Arrays.asList(0, 2), Arrays.asList("DAPI", "", "DAPI")).toString().equals("[\"DAPI\",\"DAPI (2)\"]")
                 && AbbaHostSession.exportedNames(Arrays.asList(0, 1, 2), Arrays.asList("x", "x", "")).toString().equals("[\"x\",\"x (2)\",\"ch3\"]"),
                 "channel_names follow the exported pages, never empty or repeated");
@@ -315,20 +318,17 @@ public final class ConnectorSmokeTest {
         require(s.problem(3) != null, "All-zero weights are refused");
         require(new RegistrationSettings().weightsFor(2).length == 2, "Saved weights adapt to the channel count");
         s.weights = new double[]{0.2, 0.7, 1};
-        s.nonlinear = true; s.angles = true; s.agentPreprocessing = true; s.viewer = true;
+        s.nonlinear = true; s.angles = true; s.viewer = true;
         s.imageProvider = "none"; s.imageModel = null; s.nonlinearNotes = "notes";
-        s.saveTraces = true; s.traceDir = " ";
         s.disabled.add("zoom");
-        require(s.problem(3) != null, "Saving traces needs a folder");
-        s.traceDir = "/tmp/langslice traces";
-        require(s.problem(3) == null, "A trace folder with a space is accepted");
+        require(s.problem(3) == null, "Runnable settings");
         java.util.prefs.Preferences node = java.util.prefs.Preferences.userRoot().node("langslice-smoke-" + System.nanoTime());
         s.save(node);
-        RegistrationSettings back = RegistrationSettings.load(node);
+        RegistrationSettings back = RegistrationSettings.load(node, SPEC_DEFAULTS);
         require(!back.fresh && back.spec().equals(s.spec()) && back.preprocessing(3).equals(s.preprocessing(3)) && back.pixelSize == s.pixelSize
                 && back.overwrite == s.overwrite && back.showLog == s.showLog && back.viewer
                 && back.imageProvider.equals("none") && back.imageModel == null 
-                && back.saveTraces && back.traceDir.equals(s.traceDir) && back.disabled.equals(s.disabled)
+                && back.thickness == 0 && back.disabled.equals(s.disabled)
                 && back.spec().getAsJsonArray("disabled").toString().equals(s.spec().getAsJsonArray("disabled").toString()),
                 "Every choice persists between runs, the Advanced list included");
         node.removeNode();
@@ -339,17 +339,16 @@ public final class ConnectorSmokeTest {
                 && RegistrationSettings.accountDefault(new JsonObject(), "default_agent_model") == null, "Account defaults");
         require(RegistrationSettings.signedIn(status) && !RegistrationSettings.signedIn(new JsonObject()), "Account status");
         require(RegistrationSettings.modelLabel("openai-oauth/gpt-5.6-sol").equals("gpt-5.6-sol"), "Model labels drop the account prefix");
-        require(new RegistrationSettings().problem(1) != null, "No agent model until the dialog fills in the worker's default");
+        require(RegistrationSettings.defaults(SPEC_DEFAULTS).problem(1) != null, "No agent model until the dialog fills in the worker's default");
         // Image models in the worker's order, with None (fit to the stain only) as the worker places it.
         JsonObject current = JsonParser.parseString("{\"image_models\":[{\"provider\":\"openai-oauth\",\"label\":\"ChatGPT image lane\",\"connected\":true,"
                 + "\"models\":[\"gpt-image-2.5-sunburst\"],\"default_model\":\"gpt-image-2.5-sunburst\"},{\"provider\":\"gemini-api\",\"label\":\"Gemini API\",\"connected\":false,"
-                + "\"models\":[\"g1\",\"g2\"],\"default_model\":\"g1\"},{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":true,\"models\":[],"
+                + "\"models\":[\"g1\",\"g2\"],\"default_model\":\"g1\"},{\"provider\":\"openai-api\",\"label\":\"OpenAI API\",\"connected\":true,\"models\":[\"img-1\"],"
                 + "\"default_model\":\"img-1\"},{\"provider\":\"none\",\"label\":\"None\",\"connected\":true,\"models\":[],\"default_model\":null}]}").getAsJsonObject();
         List<RegistrationSettings.ImageChoice> given = RegistrationSettings.imageChoices(current);
         require(given.size() == 5 && given.get(0).label.equals("ChatGPT image lane: gpt-image-2.5-sunburst") && given.get(2).matches("gemini-api", "g2")
                 && given.get(2).toString().endsWith("(not set up)") && given.get(3).matches("openai-api", "img-1")
                 && given.get(4).label.equals("None (fit to the stain only)"), "setup.status image_models list: " + given);
-        require(RegistrationSettings.imageChoices(new JsonObject()).isEmpty(), "No list, no choices");
     }
 
     private static String spec(RegistrationSettings s) { return s.spec().getAsJsonArray("tasks").toString(); }
@@ -388,19 +387,17 @@ public final class ConnectorSmokeTest {
             require(text.equals("Estimated cost: 2–3.5% of your ChatGPT usage window"), "Estimate text: " + text);
         }
         params.addProperty("n_slices", 98);
-        RegistrationSettings medium = new RegistrationSettings(); medium.resolution = "medium";
         try (WorkerClient client = new WorkerClient(prefix)) {
             client.request("linear.estimate", params, null, Duration.ofSeconds(5)); throw new AssertionError("Expected a refusal");
         } catch (IOException refused) {
-            String text = RegistrationDialog.refusalText(refused, medium);
-            require(text.equals("Estimated cost: no estimate (only runs at Low image resolution have been measured)"), "Refusal text: " + text);
+            String text = RegistrationDialog.refusalText(refused);
+            require(text.equals("Estimated cost: no estimate (the estimate failed)"), "Refusal text: " + text);
         }
         require(RegistrationDialog.costText(JsonParser.parseString("{\"low\":null,\"high\":null,\"unit\":\"percent_of_usage_window\",\"available\":false,"
                 + "\"basis\":\"no runs measured at Medium resolution\"}").getAsJsonObject()).equals("Estimated cost: no estimate (no runs measured at Medium resolution)"),
                 "A worker without a number shows its plain reason");
-        RegistrationSettings deform = new RegistrationSettings(); deform.nonlinear = true;
-        require(RegistrationDialog.refusalText(new IOException("{\"code\":\"runtime_error\",\"message\":\"Runtime request handling failed\"}"), deform)
-                .contains("Nonlinear"), "A refusal without a reason still says why");
+        require(RegistrationDialog.refusalText(new IOException("{\"code\":\"runtime_error\",\"message\":\"Runtime request handling failed\"}"))
+                .equals("Estimated cost: no estimate (LangSlice could not estimate these settings)"), "A refusal without a reason says so");
     }
 
     /** ABBA's Register menu gets one LangSlice submenu with one callable entry. */

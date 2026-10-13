@@ -62,15 +62,14 @@ def test_one_undo_step_for_orientation_and_knobs_on_several_sections(tmp_path: P
 def test_a_knob_left_out_keeps_its_value_and_the_same_numbers_write_nothing(tmp_path: Path):
     job, ctx = _open(tmp_path)
     transforms.interactive_transform(job, ctx, [
-        {"id": "s0.png", "rotation_deg": 3.0, "scale_x": 1.1, "shear": 0.02,
-         "pivot": [0.4, 0.6]}])
+        {"id": "s0.png", "rotation_deg": 3.0, "scale_x": 1.1, "shear": 0.02}])
     done = transforms.interactive_transform(job, ctx, [
         {"id": "s0.png", "translate_x_mm": 0.2}])
     assert done.written == ["s0.png"]
     physical = _record(job, "s0.png").transform["physical"]
     assert physical["translate_x_mm"] == 0.2
     assert physical["rotation_deg"] == 3.0 and physical["scale_x"] == 1.1
-    assert physical["shear"] == 0.02 and physical["pivot"] == [0.4, 0.6]
+    assert physical["shear"] == 0.02 and physical["pivot"] == [0.5, 0.5]
     assert len(job.undo_stack) == 2
     again = transforms.interactive_transform(job, ctx, [
         {"id": "s0.png", "translate_x_mm": 0.2, "rotation_deg": 3.0}])
@@ -135,7 +134,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
                 "physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
                              "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
                              "pivot": [0.5, 0.5]},
-                "iou": 0.9, "calibration": {}, "mirrored": False}
+                "calibration": {}, "mirrored": False}
 
     monkeypatch.setattr("langslice.core.transform.fit_elastix", fake)
     return seen
@@ -156,9 +155,9 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
     assert 0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0
     # The left half of the brain: the box leaves the right side of the canvas out.
     assert x1 < 0.8 and (x0 + x1) / 2 < 0.5
-    # Every section when none is named; "ara" still reads as the template; no regions, no box.
+    # Every section when none is named; no regions, no box.
     calls.clear()
-    everything = transforms.elastix_affine(job, ctx, atlas_image="ara")
+    everything = transforms.elastix_affine(job, ctx, atlas_image="template")
     assert [call["id"] for call in calls] == ["s0.png", "s1.png"]
     assert {call["atlas_image"] for call in calls} == {"template"}
     assert all("restrict_box" not in row for row in everything.rows)

@@ -16,7 +16,7 @@ import javax.swing.*;
 public final class DialogPreview {
     public static void main(String[] args) throws Exception {
         File folder = new File(args.length > 0 ? args[0] : ".");
-        JsonObject status = JsonParser.parseString("{\"protocol_version\":1,\"providers\":{\"openai-oauth\":{\"configured\":true,"
+        JsonObject status = JsonParser.parseString("{\"protocol_version\":2,\"providers\":{\"openai-oauth\":{\"configured\":true,"
                 + "\"agent_models\":[\"openai-oauth/gpt-6-astra\",\"openai-oauth/gpt-6-sol\",\"openai-oauth/gpt-6-luna\",\"openai-oauth/gpt-5.6-sol\",\"openai-oauth/gpt-5.6-terra\",\"openai-oauth/gpt-5.6-luna\"],"
                 + "\"default_agent_model\":\"openai-oauth/gpt-5.6-sol\",\"image_models\":[\"gpt-image-2.5-sunburst\"],\"default_image_model\":\"gpt-image-2.5-sunburst\"},"
                 + "\"gemini-api\":{\"configured\":true},\"openai-api\":{\"configured\":false},\"none\":{\"configured\":true}},"
@@ -34,7 +34,7 @@ public final class DialogPreview {
         List<RegistrationDialog.SliceRow> rows = new ArrayList<>();
         for (int i = 1; i <= 12; i++) rows.add(new RegistrationDialog.SliceRow("M03_B_" + String.format("%02d", i) + ".vsi - 10x_01", i % 5 == 0 ? 2 : 0));
         List<String> channels = Arrays.asList("DAPI", "NeuN-AF488", "Iba1-AF647 (a long channel name from the scanner)");
-        RegistrationSettings settings = new RegistrationSettings();
+        RegistrationSettings settings = RegistrationSettings.defaults(ConnectorSmokeTest.SPEC_DEFAULTS);
         settings.interval = 120; settings.thickness = 40; settings.nonlinear = true; settings.angles = true;
         RegistrationDialog.Host host = new RegistrationDialog.Host() {
             public BufferedImage[] preview(int slice, List<Integer> pages, JsonObject preprocessing, double pixelSize) {

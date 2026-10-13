@@ -70,6 +70,17 @@ def test_tool_end_names_the_pictures_the_call_saved(tmp_path: Path):
     assert path.endswith(PICTURE_FILE)
     box.job.views.flush()
     assert Path(path).is_file()
+    assert end["failed"] is False
+
+
+def test_tool_end_says_whether_the_tool_failed(tmp_path: Path):
+    """One rule for every host (the Fiji log, the browser and Swing logs): a
+    reply whose status is ``error`` or ``refused`` failed; any other did not."""
+    events: list[dict] = []
+    state, ctx, spec = _stack(tmp_path, n=3, placed=True)
+    box = build_tools(state, ctx, spec, on_event=events.append)
+    reply = _tool(box, "look")("overlay", sections=["nope.png"])
+    assert reply["status"] in ("error", "refused") and events[-1]["failed"] is True
 
 
 # --- what ADK reads -----------------------------------------------------------------------
@@ -119,7 +130,8 @@ def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_pa
     assert top["error"] == "UNKNOWN_ARGUMENTS" and top["tool"] == "look"
     assert top["problems"] == [{"argument": "(top level)", "unknown": ["zoom"],
                                 "accepted": ["mode", "sections", "positions_mm", "channels",
-                                             "atlas_layers", "atlas_opacity", "warp"]}]
+                                             "atlas_layers", "atlas_opacity", "warp",
+                                             "depth"]}]
     assert top["message"].endswith("Nothing was done.")
 
     write = _tool(box, "position_sections")

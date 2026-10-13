@@ -9,15 +9,15 @@ from langslice.doors.api.models import (
     ENGINE_METHODS,
     EngineError,
     EngineEventEnvelope,
-    EngineProgressEvent,
+    EngineLogEvent,
     EngineRequest,
     export_schema_bundle,
 )
 
 
 def test_engine_request_defaults_are_not_shared() -> None:
-    first = EngineRequest(id="a", method="version")
-    second = EngineRequest(id="b", method="version")
+    first = EngineRequest(id="a", method="setup.status")
+    second = EngineRequest(id="b", method="setup.status")
     first.params["x"] = 1
     assert second.params == {}
 
@@ -41,8 +41,8 @@ def test_engine_request_rejects_unknown_method() -> None:
 
 
 def test_event_envelope_requires_event_kind() -> None:
-    event = EngineProgressEvent(kind="progress", message="loading", stage="estimate")
+    event = EngineLogEvent(kind="log", message="loading")
     envelope = EngineEventEnvelope(id="req-1", type="event", event=event)
-    assert envelope.event.kind == "progress"
+    assert envelope.event.kind == "log"
     err = EngineError(code="runtime_error", message="boom")
     assert err.details == {}

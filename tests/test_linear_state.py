@@ -32,7 +32,7 @@ def test_spec_round_trips_through_dict():
     assert again == spec
     assert again.interval_mm == 0.3
     assert again.thickness_mm is None
-    assert again.has("position") and not again.has("reorder")
+    assert again.has("position")
 
 
 def test_spec_rejects_an_unknown_plane_and_task():

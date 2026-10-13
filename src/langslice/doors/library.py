@@ -19,10 +19,8 @@ under ``artifacts`` the files of its pictures, saved in the job folder with
 their layers as every door saves them, as the CLI lists them (``path``,
 ``kind``, ``index``, ``label``). A method returns once its pictures are on
 disk; the pictures themselves, as PIL images, are on the reply's
-``images`` attribute (not a key). The look-before-commit gates do not apply
-(gates are tool-only) and ``look``'s ``resolution`` takes any size from
-128 px to the source's own pixels. A retired verb's name raises an
-``AttributeError`` naming the verb to use instead. Writes go through the job: one undo step each,
+``images`` attribute (not a key). ``look``'s ``resolution`` takes any size from
+128 px to the source's own pixels. Writes go through the job: one undo step each,
 checkpointed, and picked up by an agent working on the same folder
 (``Job.sync``), whose writes this handle picks up before each call.
 
@@ -185,15 +183,14 @@ class JobHandle:
 
     @property
     def verbs(self) -> list[str]:
-        """The verbs this job has (its tasks decide), in registry order; a
-        hidden verb (``Verb.hidden``) is callable by name but not listed."""
+        """The verbs this job has (its tasks decide), in registry order."""
         return self._opened.listed_verbs()
 
     def __getattr__(self, name: str) -> Callable[..., Reply]:
         tools = self.__dict__.get("_tools") or {}
         if name in tools:
             return tools[name]
-        from langslice.ops.registry import retired_payload, verbs_for
+        from langslice.ops.registry import verbs_for
 
         if name in verbs_for(self._opened.spec):
             spec = self._opened.spec
@@ -201,9 +198,6 @@ class JobHandle:
                                  f"{spec.tasks}"
                                  + (f", disabled {spec.disabled}" if spec.disabled else "")
                                  + "); see .verbs")
-        retired = retired_payload(name, self._opened.spec.switched_off)
-        if retired is not None:  # a retired verb says what replaced it
-            raise AttributeError(retired["message"])
         raise AttributeError(name)
 
     def __dir__(self) -> list[str]:
@@ -475,9 +469,6 @@ def create_job(
             nonlinear.update(provider=model.provider, image_model=model.model)
         else:
             nonlinear.setdefault("provider", "none")
-        unknown = sorted(set(settings) - set(JobSpec.__dataclass_fields__))
-        if unknown:
-            raise ValueError(f"Unknown job setting(s) {unknown}")
         spec = JobSpec.from_dict({
             "atlas": atlas, "plane": plane, "debrief": False, **settings,
             "image_folder": str(folder),

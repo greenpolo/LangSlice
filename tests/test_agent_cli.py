@@ -64,7 +64,7 @@ def cli(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, 
 
 def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
     code, envelope = cli(capsys, str(images), "init", "--tasks",
-                         "reorder,position,transform,nonlinear", "--image-provider", "none",
+                         "position,transform,nonlinear", "--image-provider", "none",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          *flags)
     assert code == 0, envelope
@@ -80,10 +80,7 @@ def test_ops_lists_every_verb_with_kind_group_and_one_line(capsys):
     code, envelope = cli(capsys, "ops")
     assert code == 0 and envelope["ok"] is True
     listed = envelope["result"]["verbs"]
-    # Every verb but the hidden ones (Verb.hidden: called by name only).
-    assert [row["name"] for row in listed] == [
-        name for name, verb in VERBS.items() if not verb.hidden]
-    assert "trace_from_atlas" not in [row["name"] for row in listed]
+    assert [row["name"] for row in listed] == list(VERBS)
     for row in listed:
         assert row["kind"] == VERBS[row["name"]].kind
         assert row["group"] == VERBS[row["name"]].group
@@ -125,23 +122,9 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     assert everything["result"]["verbs"]["status"]["arguments"]["properties"] == {}
     assert not any("picture_options" in entry
                    for entry in everything["result"]["verbs"].values())
-    # A hidden verb: not in the listing, its schema by name.
-    assert "trace_from_atlas" not in everything["result"]["verbs"]
-    code, hidden = cli(capsys, "schema", "trace-from-atlas")
-    assert code == 0 and hidden["result"]["arguments"]["required"] == ["slices"]
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
     assert "langslice-job ops" in unknown["error"]["fix"]
-    # A retired verb is in no listing; its schema names the verb to use.
-    from langslice.ops.registry import RETIRED
-
-    assert not set(everything["result"]["verbs"]) & set(RETIRED)
-    code, retired = cli(capsys, "schema", "view_slices")
-    assert code == 2 and retired["error"]["code"] == "RETIRED_TOOL"
-    assert retired["result"] == {"tool": "view_slices", "use": "look"}
-    assert "look" in retired["error"]["message"] and "result.use" in retired["error"]["fix"]
-    code, retired = cli(capsys, "schema", "fit-affine")
-    assert code == 2 and retired["result"]["use"] == "elastix_affine"
 
 
 def test_init_is_described_by_schema_and_by_help(capsys, images):
@@ -200,30 +183,6 @@ def test_load_atlas_keeps_brainglobe_notices_off_stdout(capsys, monkeypatch):
     assert captured.out == "" and "not the latest" in captured.err
 
 
-def test_a_retired_verb_answers_with_the_verb_to_use(capsys, images):
-    job = init(capsys, images)
-    before = (job / "state.json").read_bytes()
-    code, envelope = cli(capsys, str(images), "fit_affine", "--slices", ID0)
-    assert code == 2 and envelope["ok"] is False
-    assert envelope["error"]["code"] == "RETIRED_TOOL"
-    assert envelope["result"] == {"tool": "fit_affine", "use": "elastix_affine"}
-    assert "Use elastix_affine instead" in envelope["error"]["message"]
-    assert "result.use" in envelope["error"]["fix"]
-    # Every time, kebab-case too, and with nothing to replace it.
-    code, again = cli(capsys, str(images), "fit-affine")
-    assert code == 2 and again["result"]["use"] == "elastix_affine"
-    code, view = cli(capsys, str(images), "view_slices", "--slices", ID0)
-    assert code == 2 and view["result"]["use"] == "look" and view["artifacts"] == []
-    code, search = cli(capsys, str(images), "search_position", "--id", ID1)
-    assert code == 2 and search["error"]["code"] == "RETIRED_TOOL"
-    assert search["result"] == {"tool": "search_position"}
-    # Nothing was done; the calls are logged as refused.
-    assert (job / "state.json").read_bytes() == before
-    lines = [json.loads(line) for line in (job / "logs" / "calls.jsonl").read_text()
-             .splitlines()]
-    assert [line.get("error") for line in lines[1:]] == ["RETIRED_TOOL"] * 4
-
-
 def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     # The positions are the host's; the agent sets only the cutting angles.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "transform", "--angles",
@@ -244,6 +203,12 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     code, here = cli(capsys, "schema", "position_sections")
     assert here["result"]["job"] == str(images / "langslice")
     assert "sections" not in here["result"]["arguments"]["properties"]
+    # Only the job's verbs: no Nonlinear verb for a transform job.
+    code, listed = cli(capsys, "schema", "--job", str(images))
+    assert "ants_syn" not in listed["result"]["verbs"]
+    assert "interactive_transform" in listed["result"]["verbs"]
+    code, off = cli(capsys, "schema", "ants_syn", "--job", str(images))
+    assert code == 3 and off["error"]["code"] == "VERB_OFF"
 
 
 def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
@@ -265,7 +230,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert agents == (job / "CLAUDE.md").read_text()
     from langslice.ops.deformable import MAX_ANTS_SYN_SECTIONS
     from langslice.ops.look import MAX_LOOK_PICTURES
-    from langslice.ops.registry import RETIRED, listed
+    from langslice.ops.registry import VERBS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " brief`", "BRIEF.md", "STALE_INPUT",
@@ -278,11 +243,8 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    'job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])',
                    "schema init", "reply.images", "`scripts/`", "never in /tmp"):
         assert needle in agents, needle
-    # Every listed verb, and no retired or hidden one.
-    for name in listed():
+    for name in VERBS:
         assert f"- `{name}` (" in agents, name
-    for name in [*RETIRED, "trace_from_atlas"]:
-        assert f"`{name}`" not in agents, name
     assert len(agents.splitlines()) < 85  # one screen, its verb list included
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
@@ -354,7 +316,6 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
         tail = statement[len(expected):]
         assert "Opening pictures: `brief` saved 2 picture files" in tail
         assert "User notes:\nSection 2 is torn." in tail
-        assert "trace_from_atlas" not in statement  # a hidden verb is listed nowhere
         from langslice.doors.statement import status_and_notes
 
         assert tail.endswith(status_and_notes(opened.job.state))
@@ -408,6 +369,17 @@ def test_init_answers_with_the_statement_and_keeps_notes_and_viewer(capsys, imag
     assert record["notes"] == "Mind the bulbs." and record["viewer"] == "openai"
 
 
+def test_init_on_an_existing_job_refuses_other_settings(capsys, images):
+    """DOORS-2: a second init with other job flags does not replace the saved settings."""
+    job = init(capsys, images)
+    before = json.loads((job / "job.json").read_text())["spec"]
+    code, envelope = cli(capsys, str(images), "init", "--pixel-size-um", str(PIXEL_SIZE_UM),
+                         "--notes", "Mind the bulbs.")
+    assert code != 0 and envelope["error"]["code"] == "SETTINGS_CHANGED", envelope
+    assert "tasks" in envelope["error"]["message"]
+    assert json.loads((job / "job.json").read_text())["spec"] == before
+
+
 def test_pictures_are_capped_at_the_viewers_largest(capsys, images):
     init(capsys, images)  # viewer claude (default): up to 2000 px
     code, envelope = cli(capsys, str(images), "look", "--mode", "section", "--sections", ID1,
@@ -442,18 +414,6 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     code, status = cli(capsys, str(images), "status")
     assert status["result"]["image_model"]["connected"] is True
     assert "trace_borders" in status["result"]["verbs"]
-    assert "trace_from_atlas" not in status["result"]["verbs"]
-
-
-def test_the_brief_never_names_a_hidden_verb(capsys, images, monkeypatch):
-    from langslice.doors.api import setup
-
-    monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
-    init(capsys, images, "--image-provider", "openai-oauth")
-    code, brief = cli(capsys, str(images), "brief")
-    assert code == 0, brief
-    assert "`trace_borders`" in brief["result"]["statement"]
-    assert "trace_from_atlas" not in brief["result"]["statement"]
 
 
 def test_status_marks_what_the_user_froze_or_marked_damaged(capsys, images):
@@ -574,7 +534,7 @@ def test_exit_codes_and_fix_hints(capsys, images):
     code, envelope = cli(capsys, str(images), "trace_borders", "--section", ID0)
     assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
     code, envelope = cli(capsys, str(images), "fit_affine")
-    assert code == 2 and envelope["error"]["code"] == "RETIRED_TOOL"
+    assert code == 2 and envelope["error"]["code"] == "UNKNOWN_VERB"
 
 
 def test_an_internal_error_exits_4(capsys, images, monkeypatch):
@@ -619,20 +579,6 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
     assert not (job / "logs" / "runs").exists()
     assert (job / "state.json").read_bytes() == state_before
-
-
-def test_the_cli_never_applies_the_look_before_commit_gates(capsys, images):
-    init(capsys, images, "--gates")
-    for name, position in ((ID0, 0.1), (ID1, 0.15), (ID2, 0.2)):
-        code, envelope = cli(capsys, str(images), "position_sections", "--sections",
-                             json.dumps([{"id": name, "position_mm": position}]))
-        assert code == 0, envelope
-        assert "rejected" not in envelope["result"], envelope
-        assert envelope["result"]["written"] == [{"id": name, "position_mm": position}]
-    code, envelope = cli(capsys, str(images), "submit", "--summary", "done",
-                         "--notes", "[]", "--interval-breaks", "[]")
-    # Past the positions: the transforms gate (the job's rule), not NOT_REVIEWED.
-    assert code == 3 and envelope["error"]["code"] == "MISSING_TRANSFORMS"
 
 
 def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
@@ -746,7 +692,7 @@ def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images
     start = {row["id"]: row.get("position_mm") for row in envelope["result"]["rows"]}
     # The agent's side: the job folder opened as a run opens it, its tools.
     spec = JobSpec(image_folder=str(images), preprocess="none", resume=True,
-                   tasks=["reorder", "position", "transform", "nonlinear"],
+                   tasks=["position", "transform", "nonlinear"],
                    inputs={"pixel_size_um": PIXEL_SIZE_UM}, position=PositionSpec(),
                    nonlinear=NonlinearSpec(provider="none"))
     ctx = context(spec, job_folder)
@@ -785,12 +731,10 @@ def test_cli_calls_and_a_running_toolbox_interleave_on_one_folder(capsys, images
 
 def test_open_job_gives_the_verbs_as_methods(capsys, images):
     import langslice
-    from langslice.ops.registry import RETIRED
 
     init(capsys, images)
     with langslice.open_job(images) as job:
         assert "position_sections" in job.verbs and "position_sections" in dir(job)
-        assert not set(job.verbs) & set(RETIRED)
         reply = job.position_sections(sections=[{"id": ID2, "position_mm": 0.2}])
         # A plain JSON reply; the pictures as files already on disk (as the
         # CLI lists them), the images themselves on an attribute.
@@ -804,14 +748,7 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
         # delta_to_next_mm is null, not missing.
         rows = job.status()["rows"]
         assert len({tuple(row) for row in rows}) == 1
-        assert rows[-1]["delta_to_next_mm"] is None and "transform_iou" in rows[0]
-        # A retired verb names the verb to use; nothing replaces search_position.
-        with pytest.raises(AttributeError, match="Use elastix_affine instead"):
-            getattr(job, "fit_affine")  # noqa: B009 — a retired verb
-        with pytest.raises(AttributeError, match="Use position_sections instead"):
-            getattr(job, "set_positions")  # noqa: B009
-        with pytest.raises(AttributeError, match="search_position is no longer a tool"):
-            getattr(job, "search_position")  # noqa: B009
+        assert rows[-1]["delta_to_next_mm"] is None
         # A verb this job's settings have not: said so.
         with pytest.raises(AttributeError, match="This job's settings have no 'trace_borders'"):
             getattr(job, "trace_borders")  # noqa: B009
@@ -996,8 +933,6 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
     code, sections = cli(capsys, "schema", "interactive_transform", "--job", str(folder))
     defs = sections["result"]["arguments"]["$defs"]
     assert all("flip" not in entry["properties"] for entry in defs.values())
-    code, retired = cli(capsys, str(folder), "view_slices")
-    assert retired["error"]["code"] == "RETIRED_TOOL" and "zoom" not in retired["error"]["message"]
 
 
 def test_a_bad_disable_ends_init_with_the_valid_names(capsys, images):

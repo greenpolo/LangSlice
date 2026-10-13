@@ -139,13 +139,13 @@ def opening_for_cli(folder: str, pictures: int | None,
 
 
 def long_verbs(disabled: Collection[str] = (), spec: Any = None) -> list[str]:
-    """The listed verbs that compute outside the job lock and may take long
+    """The verbs that compute outside the job lock and may take long
     (:attr:`langslice.ops.registry.Verb.long`), in registry order, less the
     ones *disabled* names."""
     from langslice.core.toolset import is_off
-    from langslice.ops.registry import listed
+    from langslice.ops.registry import verbs_for
 
-    return [name for name, verb in listed(spec).items()
+    return [name for name, verb in verbs_for(spec).items()
             if verb.long and not is_off(disabled, name)]
 
 
@@ -153,7 +153,7 @@ def job_statement(
     spec: JobSpec, state: StackState, ctx: Workspace, *, door: str,
     tool_names: list[str], opening: list[str], notes: str = "",
     max_resolution: int | None = None, image_model_off: bool = False,
-    auto: bool | None = None, gates: bool = True,
+    auto: bool | None = None,
 ) -> str:
     """The whole statement a host-owned door (MCP, the agent CLI) gives:
     the job statement the ADK agent is given, worded for *door*, then
@@ -175,7 +175,7 @@ def job_statement(
         build_job_statement(
             spec, state, tool_names=tool_names, species=ctx.species,
             pos_lo=low, pos_hi=high, axis_ends=ctx.axis_ends,
-            max_resolution=max_resolution, door=door, auto=auto, gates=gates,
+            max_resolution=max_resolution, auto=auto,
             **display_facts(ctx, state),
         ),
     ]

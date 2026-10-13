@@ -38,8 +38,7 @@ and `environment.yml` hold the worker's source installation.
 - Every way in goes through one job folder and its verbs: the agent run
   (`langslice linear run`), the agent CLI (`langslice-job FOLDER VERB`, `ops`,
   `schema`), the library (`langslice.open_job`, `create_job`),
-  MCP and the Fiji worker. `trace_from_atlas` is an internal scripting verb
-  (`Verb.hidden` in `ops/registry.py`) in no listing.
+  MCP and the Fiji worker.
 - Tasks `position` / `transform` / `nonlinear` are switched on in
   `JobSpec.tasks`; a task that is off builds no tools and takes its answer from
   `JobSpec.inputs`. Nonlinear needs a linear placement first.

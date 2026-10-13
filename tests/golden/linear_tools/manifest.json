@@ -1,5 +1,5 @@
 {
- "calls": 160,
+ "calls": 150,
  "tools_auto_spec": [
   "ants_syn",
   "elastix_affine",
@@ -68,24 +68,6 @@
   "status",
   "submit",
   "trace_borders",
-  "undo",
-  "zoom"
- ],
- "tools_gated_spec": [
-  "grep_atlas",
-  "grep_atlas_view",
-  "list_files",
-  "look",
-  "mark_damage",
-  "note",
-  "position_sections",
-  "read_file",
-  "redo",
-  "search_files",
-  "set_channel_properties",
-  "set_preprocessed_channel_properties",
-  "status",
-  "submit",
   "undo",
   "zoom"
  ]

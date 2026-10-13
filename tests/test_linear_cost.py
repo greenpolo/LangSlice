@@ -9,7 +9,7 @@ import pytest
 from langslice.agent.cost import estimate
 from langslice.hosts.api.service import run_stdio
 
-FULL = {"tasks": ["reorder", "position", "transform"], "model": "openai-oauth/gpt-5.6-sol",
+FULL = {"tasks": ["position", "transform"], "model": "openai-oauth/gpt-5.6-sol",
         "reasoning": "medium"}
 
 
@@ -102,9 +102,9 @@ def test_an_unestimable_setting_is_a_result_with_its_reason():
     assert message["result"]["low"] is None and "medium" in message["result"]["basis"]
 
 
-def test_a_malformed_setting_is_a_runtime_error_not_a_validation_error():
-    # The connector treats validation errors as "old worker without this method"
-    # and stops asking; a setting it cannot read must stay retryable.
+def test_a_malformed_setting_is_refused_with_its_reason():
+    # The dialog shows the reason (`details.error`).
     message = _request({"id": "e", "method": "linear.estimate", "params": {
         "spec": {**FULL, "reasoning": "galactic"}, "n_slices": 10}})
     assert message["error"]["code"] == "runtime_error"
+    assert "galactic" in message["error"]["details"]["error"]

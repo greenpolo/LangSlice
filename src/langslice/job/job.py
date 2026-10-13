@@ -15,11 +15,9 @@ core and the job folder package (``langslice.job``) only: no agent
 framework, no message types, no provider. The doors (the ADK toolbox, the
 MCP server) sit on it; a script can drive it directly.
 
-What a Job never holds: the look-before-commit gates (``look`` before
-``position_sections``, a positioning look before ``submit``) and the
-model-delivery bookkeeping (which pictures a model has received). Those are
-the tool doors' (:class:`langslice.doors.tools.toolbox.ToolBox`); a library call
-is never gated.
+What a Job never holds: the model-delivery bookkeeping (which pictures a
+model has received). That is the tool doors'
+(:class:`langslice.doors.tools.toolbox.ToolBox`).
 
 **Undo.** One pattern: ``before = job.snapshot()`` before a write, then
 ``job.commit(before)`` once it succeeded (one undo step, then the
@@ -296,25 +294,6 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             "(the agent may not change it)")
 
 
-#: Legacy checkpoints may carry automatically assigned positions with this
-#: mark. They remain unconfirmed until explicitly written by the caller.
-DEFAULT_POSITION = "default"
-
-
-def clear_default_marks(before: dict[str, Any], state: StackState) -> list[str]:
-    """Drop the :data:`DEFAULT_POSITION` mark of every section whose position
-    differs from *before* (a state's dict); return their ids. A written
-    position is the writer's own, whatever wrote it."""
-    held = {row.get("id"): row.get("position_mm") for row in before.get("slices", [])}
-    cleared: list[str] = []
-    for record in state.slices:
-        if record.position_source == DEFAULT_POSITION and (
-                record.id not in held or held[record.id] != record.position_mm):
-            record.position_source = ""
-            cleared.append(record.id)
-    return cleared
-
-
 class InputsChanged(ValueError):
     """A job folder's checkpoint was made from other supplied inputs
     (``JobSpec.inputs``) than the spec opening it: resuming would keep the
@@ -327,8 +306,7 @@ START_FRESH = "start a fresh job instead (`--fresh` on the command line, resume=
 
 def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     """The ``inputs`` keys, and ``frozen``, whose values differ between a
-    checkpoint's spec (*saved_spec*, the dict it stores, older keys read as
-    today's: :meth:`~langslice.core.spec.JobSpec.migrated`) and *spec*; none
+    checkpoint's spec (*saved_spec*, the dict it stores) and *spec*; none
     when the checkpoint records no spec inputs."""
     if not isinstance(saved_spec, dict) or "inputs" not in saved_spec:
         return []
@@ -336,12 +314,21 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     def plain(value: Any) -> dict[str, Any]:
         return json.loads(json.dumps(value or {}, sort_keys=True, default=str))
 
-    saved = JobSpec.migrated(saved_spec)
+    saved = saved_spec
     old, new = plain(saved.get("inputs")), plain(spec.inputs)
     changed = [key for key in set(old) | set(new) if old.get(key) != new.get(key)]
     if freeze.clean(saved.get("frozen")) != freeze.clean(spec.frozen):
         changed.append("frozen")
     return sorted(changed)
+
+
+def _state_from(data: dict[str, Any], path: str | os.PathLike[str]) -> StackState:
+    """The stack state *path* holds; ``ValueError`` naming the file and the
+    unknown keys when it holds any."""
+    try:
+        return StackState.from_dict(data)
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
 
 
 def inputs_changed(folder: str | os.PathLike[str], changed: list[str]) -> InputsChanged:
@@ -368,26 +355,18 @@ def emit_results(
 
 
 def missing_positions(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section has a position of its own, else the
-    rejection: a section without one, or still at the starting position
-    LangSlice gave it (:data:`DEFAULT_POSITION`, listed in ``at_default``)."""
-    ordered = state.in_order()
-    missing = [record.id for record in ordered if record.position_mm is None
-               or record.position_source == DEFAULT_POSITION]
+    """``None`` when every section has a position, else the rejection
+    naming the sections without one."""
+    missing = [record.id for record in state.in_order() if record.position_mm is None]
     if not missing:
         return None
-    at_default = [record.id for record in ordered if record.position_mm is not None
-                  and record.position_source == DEFAULT_POSITION]
     return {
         "status": "error",
         "error": "MISSING_POSITIONS",
         "missing_ids": missing,
-        **({"at_default": at_default} if at_default else {}),
         "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) have no position of their "
-            "own" + (f" ({len(at_default)} still at the evenly spaced starting position "
-                     "they were given)" if at_default else "")
-            + "; every section needs one, damaged ones included."
+            f"{len(missing)} of {len(state.slices)} section(s) have no position; "
+            "every section needs one, damaged ones included."
         ),
     }
 
@@ -721,7 +700,7 @@ class Job:
             resumed = False
             if spec.resume:
                 data = read_checkpoint(str(layout.state_file))
-                state = None if data is None else StackState.from_dict(data)
+                state = None if data is None else _state_from(data, layout.state_file)
                 changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
                     raise inputs_changed(layout.folder, changed)
@@ -776,7 +755,8 @@ class Job:
             raise FileNotFoundError(f"No job state in {layout.folder}")
         history = History(layout.history_dir)
         undo, redo = history.load()
-        job = cls(StackState.from_dict(data), spec, layout=layout, results_path=results_path,
+        job = cls(_state_from(data, layout.state_file), spec, layout=layout,
+                  results_path=results_path,
                   undo=undo, redo=redo, history=history)
         job.persist = persist
         job.workspace = workspace
@@ -870,11 +850,8 @@ class Job:
 
     def commit(self, before: dict[str, Any]) -> None:
         """Record one undo step (*before*), clear the redo side, checkpoint.
-        Call it inside :meth:`writing` (with *before* taken there). A section
-        whose position the step changed loses its :data:`DEFAULT_POSITION`
-        mark (:func:`clear_default_marks`)."""
+        Call it inside :meth:`writing` (with *before* taken there)."""
         with self.lock.held():
-            clear_default_marks(before, self.state)
             self._push(before)
             self._save_history()
             self.checkpoint()
@@ -960,7 +937,7 @@ class Job:
         if data is None:  # deleted: the next checkpoint writes it again
             return None
         held = self.state.to_dict()
-        loaded = StackState.from_dict(data).to_dict()
+        loaded = _state_from(data, self.checkpoint_path).to_dict()
         if loaded == held:
             return None
         if not history_changed:

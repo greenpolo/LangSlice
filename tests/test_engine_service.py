@@ -19,15 +19,6 @@ def _run_lines(*lines: str) -> list[dict[str, object]]:
     return [json.loads(line) for line in payload_lines]
 
 
-def test_version_request_success() -> None:
-    messages = _run_lines(json.dumps({"id": "1", "method": "version", "params": {}}))
-    result = cast(dict[str, Any], messages[0]["result"])
-    assert len(messages) == 1
-    assert messages[0]["id"] == "1"
-    assert messages[0]["type"] == "result"
-    assert "version" in result
-
-
 def test_unknown_method_returns_validation_error() -> None:
     messages = _run_lines(json.dumps({"id": "1", "method": "nope", "params": {}}))
     error = cast(dict[str, Any], messages[0]["error"])
@@ -39,7 +30,7 @@ def test_unknown_method_returns_validation_error() -> None:
 
 def test_handle_request_unknown_method_still_raises_for_bypassed_validation() -> None:
     request = EngineRequest.model_construct(id="1", method="nope", params={})
-    with pytest.raises(KeyError):
+    with pytest.raises(AssertionError, match="unhandled engine method nope"):
         handle_request(request, emit=lambda _event: None)
 
 

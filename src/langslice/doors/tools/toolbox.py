@@ -10,8 +10,8 @@ Tools report data: no advice, no interpretation, no strategy in any payload.
 A constraint that states a number is not coaching: refusals name the
 numbers that caused them and stop there.
 
-The tools are a door over the core and the job: they check arguments, keep
-the look-before-commit gates, call the operations (:mod:`langslice.ops`) and
+The tools are a door over the core and the job: they check arguments, call
+the operations (:mod:`langslice.ops`) and
 word the reply. The bodies are in :mod:`.looking`, :mod:`.changing` and
 :mod:`.fitting`, closures over one :class:`~langslice.doors.tools.door.Door`;
 this module wraps each one (:func:`build_tools`). Their pictures are plain
@@ -47,7 +47,6 @@ from langslice.doors.tools.view_options import view_edge_limit
 from langslice.job.job import HOST_TRANSFORM_KIND, Job
 from langslice.job.views import PICTURE_FILE as VIEW_PICTURE_FILE
 from langslice.job.views import captured as captured_views
-from langslice.ops import history as ops_history
 from langslice.ops.registry import enabled, verbs_for
 from langslice.providers.registry import ImageModel, resolve_image_model
 
@@ -55,6 +54,10 @@ if TYPE_CHECKING:  # import cycle: the engine builds the toolbox
     from langslice.agent.engine import EngineContext
 
 logger = logging.getLogger(__name__)
+#: The reply statuses that mean a tool failed (every other status, ``ok``,
+#: ``started``, ``running``, ``submitted`` ..., is not a failure). The one
+#: rule: each ``tool_end`` event carries it as ``failed`` for the hosts.
+FAILED_STATUSES = ("error", "refused")
 
 #: Tools whose host display targets are the whole stack.
 _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
@@ -142,13 +145,15 @@ def _serialized(
                 with captured_views() as saved:
                     result = tool(*args, **kwargs)
             except Exception as exc:
-                notify({"kind": "tool_end", **fields, "response": {
+                notify({"kind": "tool_end", **fields, "failed": True, "response": {
                     "status": "error", "error": type(exc).__name__, "message": str(exc),
                 }})
                 raise
             # The pictures as saved in the job folder (written in the
             # background): hosts show them from there, never from bytes.
-            notify({"kind": "tool_end", **fields, "response": plain(result),
+            response = plain(result)
+            failed = isinstance(response, dict) and response.get("status") in FAILED_STATUSES
+            notify({"kind": "tool_end", **fields, "failed": failed, "response": response,
                     "views": [str(item.folder / VIEW_PICTURE_FILE) for item in saved]})
             return result
 
@@ -293,25 +298,15 @@ def _strict(tool: Any) -> Any:
 @dataclass
 class ToolBox:
     """The tools of one run over its :class:`~langslice.job.job.Job`, plus
-    what only a tool door keeps: the look-before-commit gates.
+    what only a tool door keeps (the submission, the opening-read gate).
 
     The job holds the state, undo/redo, the checkpoint, the submit gates,
-    the image-correction jobs and the background work; the gates here are
-    consulted by the tools alone, never by a library call.
+    the image-correction jobs and the background work.
     """
 
     job: Job
     tools: list[Any] = field(default_factory=list)
     submission: dict[str, Any] = field(default_factory=dict)
-    #: Positions each section was looked at (``look`` in mode overlay or
-    #: positioning) since its last write, and whether a positioning look of
-    #: every section has run since the last write (the gates). A position
-    #: that undo, redo or a reload of the state file moves counts as a
-    #: write (``Door.forget_looks``); None records an unplaced section seen
-    #: in positioning mode. Nothing else of this door's record is
-    #: undone.
-    compared: dict[str, set[float | None]] = field(default_factory=dict)
-    reviewed: bool = False
     #: The largest picture the driver model takes: the cap of ``look``'s
     #: ``resolution`` at image resolution "auto".
     max_view_edge: int = DEFAULT_IMAGE_LIMIT[0]
@@ -360,7 +355,6 @@ def build_tools(
     on_event: LiveCallback | None = None,
     max_view_edge: int | None = None,
     image_model: ImageModel | None = None,
-    gates: bool = True,
     level: str | None = None,
     scripting: bool = False,
     image_model_connected: bool = True,
@@ -379,13 +373,11 @@ def build_tools(
     :func:`langslice.doors.tools.view_options.view_edge_limit`). *image_model*
     is the image model ``trace_borders`` calls when the run has one (None:
     this door resolves the spec's ``nonlinear.provider`` and ``image_model``
-    through :func:`langslice.providers.registry.resolve_image_model`). *gates*
-    False drops the look-before-commit gates of ``position.gated`` (the CLI
-    door: gates are tool-only). *level* is the picture-size level the tools
-    work at (None: the run's ``image_resolution``; the CLI passes "auto": its
-    caller sizes every picture). *scripting* adds the verbs only scripts get
-    (``Verb.scripting``: ``export_maps``, and the hidden ``trace_from_atlas``,
-    called by name, listed nowhere), for the CLI and the library.
+    through :func:`langslice.providers.registry.resolve_image_model`). *level*
+    is the picture-size level the tools work at (None: the run's
+    ``image_resolution``; the CLI passes "auto": its caller sizes every
+    picture). *scripting* adds the verbs only scripts get
+    (``Verb.scripting``: ``export_maps``), for the CLI and the library.
     *image_model_connected* False: the door cannot reach the spec's image
     model (MCP with none connected), so the tools are those of a run without
     one: no ``trace_borders``, ``submit`` not waiting for traces. The spec
@@ -414,14 +406,12 @@ def build_tools(
     if traces_on and image_model is None:
         image_model = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
     run = Door(job=job, ctx=ctx, spec=spec, box=box, level=level,
-               gated=bool(gates and spec.position.gated), traces_on=traces_on,
+               traces_on=traces_on,
                image_model=image_model, over_cap=job.over_cap)
 
     def sync_job() -> None:
         """Before every call: pick up a state file changed on disk."""
-        before = job.sync()
-        if before is not None:
-            run.forget_looks(ops_history.moved_positions(before, job.state))
+        job.sync()
 
     @contextlib.contextmanager
     def guarded(name: str) -> Iterator[None]:
@@ -433,9 +423,7 @@ def build_tools(
             sync_job()
             yield
             return
-        with job.writing() as before:
-            if before is not None:
-                run.forget_looks(ops_history.moved_positions(before, job.state))
+        with job.writing():
             yield
 
     verbs = verbs_for(spec)
@@ -470,7 +458,6 @@ def build_tools(
                 _strict(behind_gate(name, declare(name, bodies[name], variant))), job),
                 job, ctx), job),
             lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
-        for name in enabled(spec, scripting=scripting, image_model=image_model_connected,
-                            hidden=scripting)
+        for name in enabled(spec, scripting=scripting, image_model=image_model_connected)
     ]
     return box

@@ -10,16 +10,17 @@
     "position_mm": 0.15,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 1.0,
     "transform_mirrored": false
    }
   ],
   "redo_depth": 0,
   "redone": {
+   "fields": [
+    "linear"
+   ],
    "sections": [
     "s1.png"
-   ],
-   "tool": "elastix_affine"
+   ]
   },
   "status": "ok"
  },

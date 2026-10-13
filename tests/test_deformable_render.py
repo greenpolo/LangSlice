@@ -6,13 +6,19 @@ import cv2
 import numpy as np
 import pytest
 
+from langslice.core.atlas.render import region_boundaries
 from langslice.core.deformable import (
     FitSettings,
     draw_warped_borders,
-    fit_section,
     warped_border_layers,
 )
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, placement, render_section
+from tests.deformable_synthetic import (
+    SMOOTH_FIELD,
+    SyntheticAtlas,
+    fit_section,
+    placement,
+    render_section,
+)
 
 
 def warped_border_coverage(record, atlas, **options):
@@ -32,24 +38,16 @@ def case():
     return atlas, image, record
 
 
-def test_borders_are_drawn_only_over_tissue(case):
+def test_without_highlight_every_border_is_strong(case):
     atlas, _, record = case
     faint, strong = warped_border_coverage(record, atlas)
     assert strong.max() > 0.5 and not faint.any()
-    reach = cv2.dilate(record.tissue.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
-    assert not strong[~reach].any()
 
 
 def test_smooth_borders_follow_the_nearest_label_edges(case):
     atlas, _, record = case
     _, strong = warped_border_coverage(record, atlas)
-    from langslice.core.atlas.render import family_labels
-
-    merged = family_labels(record.labels, atlas)
-    edge = np.zeros(merged.shape, np.uint8)
-    edge[:, 1:] |= merged[:, 1:] != merged[:, :-1]
-    edge[1:, :] |= merged[1:, :] != merged[:-1, :]
-    edge[~record.tissue] = 0
+    edge = region_boundaries(record.labels)[0].astype(np.uint8)
     near = cv2.dilate(edge, np.ones((7, 7), np.uint8)) > 0
     drawn = strong > 0.5
     assert drawn.sum() > 100
@@ -78,13 +76,12 @@ def test_marked_regions_get_their_own_layer_and_outlines_limit_the_rest(case):
     assert ((layers["marked"] > 0.5) & (layers["strong"] > 0.5)).sum() == 0
     plain = draw_warped_borders(image, record, atlas)
     none = draw_warped_borders(image, record, atlas, outlines="none")
-    outer = draw_warped_borders(image, record, atlas, outlines="outer")
     base = np.asarray(image.convert("RGB"), dtype=int)
 
     def inked(out) -> int:
         return int((np.abs(np.asarray(out, dtype=int) - base).sum(axis=-1) > 30).sum())
 
-    assert inked(none) == 0 < inked(outer) < inked(plain)
+    assert inked(none) == 0 < inked(plain)
     with pytest.raises(ValueError):
         draw_warped_borders(image, record, atlas, outlines="some")
 

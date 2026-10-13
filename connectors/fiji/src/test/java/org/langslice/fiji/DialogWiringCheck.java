@@ -9,7 +9,7 @@ import javax.swing.*;
 /**
  * Optional, needs a display and no ABBA: DialogWiringCheck. Checks the Registration dialog's Advanced list
  * inside the real dialog: the simple checkboxes mirror their list entries, catalog checkboxes reach spec.disabled,
- * the choices persist, and the panel is hidden when the service sends no tool catalog.
+ * and the choices persist.
  */
 public final class DialogWiringCheck {
     static void require(boolean ok, String message) { if (!ok) throw new AssertionError(message); }
@@ -21,9 +21,9 @@ public final class DialogWiringCheck {
             + "{\"name\":\"elastix_affine\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]},"
             + "{\"name\":\"ants_syn\",\"group\":\"Nonlinear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]}]";
 
-    static JsonObject status(boolean tools) {
+    static JsonObject status() {
         String text = "{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],"
-                + "\"default_agent_model\":\"openai-oauth/gpt-6-sol\"}}," + (tools ? TOOLS : "\"tools_absent\":true") + "}";
+                + "\"default_agent_model\":\"openai-oauth/gpt-6-sol\"}}," + TOOLS + "}";
         return JsonParser.parseString(text).getAsJsonObject();
     }
 
@@ -54,9 +54,9 @@ public final class DialogWiringCheck {
 
     static void run() throws Exception {
         // 1. Catalog present: the toggle is shown, collapsed; simple boxes mirror into the list.
-        RegistrationSettings s = new RegistrationSettings();
+        RegistrationSettings s = RegistrationSettings.defaults(ConnectorSmokeTest.SPEC_DEFAULTS);
         s.model = "openai-oauth/gpt-6-sol"; s.fresh = false;
-        RegistrationDialog d = dialog(status(true), s);
+        RegistrationDialog d = dialog(status(), s);
         Map<String, JCheckBox> mirrors = field(d, "mirrors"), boxes = field(d, "toolBoxes");
         require(d.advanced.isVisible() && !d.advancedPanel.isVisible(), "Advanced toggle shown, panel collapsed");
         require(mirrors.keySet().equals(new HashSet<>(Arrays.asList("mark_damage", "elastix_affine", "interactive_transform:flip"))), "Mirrors: " + mirrors.keySet());
@@ -82,8 +82,8 @@ public final class DialogWiringCheck {
         java.util.prefs.Preferences node = java.util.prefs.Preferences.userRoot().node("dialogcheck-" + System.nanoTime());
         RegistrationSettings saved = d.read();
         saved.save(node);
-        RegistrationSettings back = RegistrationSettings.load(node);
-        RegistrationDialog again = dialog(status(true), back);
+        RegistrationSettings back = RegistrationSettings.load(node, ConnectorSmokeTest.SPEC_DEFAULTS);
+        RegistrationDialog again = dialog(status(), back);
         Map<String, JCheckBox> againBoxes = field(again, "toolBoxes");
         require(!againBoxes.get("zoom").isSelected() && !againBoxes.get("ants_syn").isSelected() && againBoxes.get("look:section").isSelected(),
                 "Advanced checkboxes restored from settings");
@@ -91,11 +91,5 @@ public final class DialogWiringCheck {
                 "Flip restored, and its mirror follows");
         require(again.read().spec().getAsJsonArray("disabled").toString().equals("[\"interactive_transform:flip\",\"zoom\",\"ants_syn\"]"), "Restored disabled list");
         node.removeNode();
-        // 5. Older service: no catalog, the panel is hidden, and the simple boxes still work.
-        RegistrationSettings plain = new RegistrationSettings(); plain.model = "openai-oauth/gpt-6-sol"; plain.fresh = false;
-        RegistrationDialog old = dialog(status(false), plain);
-        require(!old.advanced.isVisible() && old.read().spec().getAsJsonArray("disabled").size() == 0, "No catalog: advanced hidden");
-        old.agentDamage.doClick();
-        require(old.read().spec().getAsJsonArray("disabled").toString().equals("[\"mark_damage\"]"), "No catalog: the simple box still switches its tool off");
     }
 }

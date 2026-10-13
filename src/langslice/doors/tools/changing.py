@@ -16,7 +16,6 @@ from typing import Any
 
 from langslice.core import layers
 from langslice.core.display import default_options
-from langslice.core.needs import render
 from langslice.core.sizes import picture_edge
 from langslice.core.state import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
@@ -56,22 +55,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                           view: bool = True) -> dict[str, Any]:
         entries = as_list(sections)
         angles = cutting_angles if cutting_angles else None
-        rejected: list[dict[str, Any]] = []
-        if door.gated and entries:
-            kept = []
-            for entry in entries:
-                record = job.state.resolve(entry.get("id", "")) if isinstance(entry, dict) \
-                    else None
-                if record is not None and not door.box.compared.get(record.id):
-                    # One look is enough: a section is confirmed at one position.
-                    rejected.append({"id": record.id, "reason": render(
-                        "not compared since its last write; look at it in mode "
-                        "[[?look:overlay overlay or ]]positioning first", spec.switched_off)})
-                    continue
-                kept.append(entry)
-            entries = kept
-            if not entries and angles is None:
-                return {"status": "refused", "error": "NOT_COMPARED", "rejected": rejected}
         try:
             done = ops_positions.position_sections(job, ctx, entries, angles)
         except Refused as refusal:
@@ -80,11 +63,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if not done.written and done.cutting_angles is None:
             return {"status": "error", "error": "NOTHING_WRITTEN",
                     **({"unknown_ids": done.unknown, "message": unknown["message"],
-                        "filenames": unknown["filenames"]} if unknown else {}),
-                    **({"rejected": rejected} if rejected else {})}
-        door.forget_looks(done.touched)
-        if angles is not None:
-            door.box.reviewed = False
+                        "filenames": unknown["filenames"]} if unknown else {})}
         result: dict[str, Any] = {
             "written": [{"id": name, "position_mm": round(value, 3)}
                         for name, value in done.written],
@@ -95,7 +74,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                if done.clamped else {}),
             **({"unknown_ids": done.unknown, "unknown_message": unknown["message"]}
                if unknown else {}),
-            **({"rejected": rejected} if rejected else {}),
             "order": done.order,
             **({"reordered": done.reordered} if done.reordered else {}),
             **door.answered(*done.touched),
@@ -196,11 +174,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     def stepped(word: str, depth_key: str, step: Any) -> dict[str, Any]:
         """The reply to an undo or redo: which step it took back or forward
-        (its tool and sections), the rows of those sections and the depth."""
+        (its sections and the fields it changed), the rows of those sections
+        and the depth."""
         info = step.step
-        what: dict[str, Any] = {"tool": info.get("tool"), "sections": info.get("sections", [])}
-        if info.get("tool") is None:
-            what["fields"] = info.get("fields", [])
+        what: dict[str, Any] = {"sections": info.get("sections", []),
+                                "fields": info.get("fields", [])}
         result: dict[str, Any] = {"status": "ok", word: what, depth_key: step.depth}
         if what["sections"]:
             rows = door.changed(what["sections"])
@@ -214,31 +192,22 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         step = ops_history.undo(job)
         if not step.done:
             return {"status": "error", "error": "NOTHING_TO_UNDO"}
-        door.forget_looks(step.moved)
         return stepped("undone", "undo_depth", step)
 
     def redo() -> dict[str, Any]:
         step = ops_history.redo(job)
         if not step.done:
             return {"status": "error", "error": "NOTHING_TO_REDO"}
-        door.forget_looks(step.moved)
         return stepped("redone", "redo_depth", step)
 
     def submit(summary: str, notes: list[str], interval_breaks: list[str],
                left_linear: list[dict[str, Any]] = [],  # noqa: B006 (read only)
                tool_context: Any = None) -> dict[str, Any]:
-        def look_gate() -> dict[str, Any] | None:
-            if spec.has("position") and door.gated and not door.box.reviewed:
-                return {"status": "refused", "error": "NOT_REVIEWED",
-                        "detail": "look in mode positioning at every section has not run "
-                        "since the last position_sections write"}
-            return None
-
         try:
             done = ops_submit.submit(
                 job, summary=summary, notes=as_list(notes),
                 interval_breaks=as_list(interval_breaks), left_linear=as_list(left_linear),
-                traces=door.traces_on, workspace=ctx, gate=look_gate)
+                traces=door.traces_on, workspace=ctx)
         except Refused as refusal:
             return refusal.payload()
         door.box.submission.update({"summary": done.summary, "notes": done.notes,

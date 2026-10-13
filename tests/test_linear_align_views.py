@@ -153,13 +153,10 @@ def _line_pixels(rgb: np.ndarray) -> int:
 def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
     """This atlas has two families: the 1 mm square and a region inside it."""
     (every,) = _views()
-    (outer,) = _views(outlines="outer")
     (bare,) = _views(outlines="none")
 
     assert _line_pixels(bare) == 0, "outlines='none' still drew lines"
-    assert _line_pixels(outer) > 300, "the root contour is missing"
-    # The inner family's contour is what "outer" drops, and it is not small.
-    assert _line_pixels(every) > _line_pixels(outer) + 200
+    assert _line_pixels(every) > 300, "the region lines are missing"
     # Lines are the only thing that changes: they can cover tissue, never
     # uncover it, so the bare view shows at least as much of the section.
     tissue = lambda rgb: int(((rgb >= 110) & (rgb <= 130)).all(axis=2).sum())  # noqa: E731
@@ -174,7 +171,8 @@ def _tools(tmp_path: Path):
     """The transform tools of a one-section run, on a 10 um/px file."""
     from langslice.doors.tools.toolbox import build_tools
 
-    _section(200, (512, 512)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))  # 10 um/px
+    _section(200, (512, 512)).save(tmp_path / "s.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
     record.position_mm = 0.2
@@ -244,81 +242,6 @@ def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
 
 
 # --- the pivot -----------------------------------------------------------
-
-
-def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path):
-    """A rotation about the tissue centroid leaves that centroid in place."""
-    from langslice.core.canvas import canvas_geometry, physical_views, pivot_on_canvas
-    from langslice.core.image_prep import foreground_mask
-
-    section = _section(200, (300, 200))  # tissue square well off the canvas centre
-    arr = np.asarray(section).copy()
-    arr[:] = 0
-    arr[20:100, 30:110] = 200
-    section = Image.fromarray(arr, mode="RGB")
-    geometry = canvas_geometry(section.size, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal")
-    pivot = pivot_on_canvas("tissue", section, geometry)
-    assert pivot is not None and foreground_mask(section) is not None
-
-    def centroid(images) -> tuple[float, float]:
-        rgb = np.asarray(images[0].convert("RGB"))
-        ys, xs = np.nonzero((rgb > 150).all(axis=2))
-        return float(xs.mean()), float(ys.mean())
-
-    turned = {"rotation_deg": 40.0, "scale_x": 1.0, "scale_y": 1.0,
-              "translate_x_mm": 0.0, "translate_y_mm": 0.0}
-    still = physical_views(
-        section, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
-        mode="section", long_edge=None,
-    )
-    about_tissue = physical_views(
-        section, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, turned,
-        mode="section", pivot=pivot, long_edge=None,
-    )
-    about_canvas = physical_views(
-        section, UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, turned,
-        mode="section", long_edge=None,
-    )
-    x0, y0 = centroid(still)
-    xt, yt = centroid(about_tissue)
-    xc, yc = centroid(about_canvas)
-    assert (xt, yt) == pytest.approx((x0, y0), abs=2.0)  # the pivot held it
-    assert abs(xc - x0) + abs(yc - y0) > 20.0  # the canvas centre swung it away
-
-
-def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
-    """The pivot is the operation's (``ops.transforms.interactive_transform``;
-    no tool takes one): a hand transform afterwards keeps the stored pivot."""
-    from langslice.ops import transforms
-
-    tools, box, state = _tools(tmp_path)
-    job, ctx = box.job, box.job.workspace
-
-    def adjust(pivot: object) -> transforms.Adjustment:
-        done = transforms.interactive_transform(job, ctx, [{
-            "id": "s.tif", **_IDENTITY, "rotation_deg": 10.0, "pivot": pivot}])
-        return done.entries[0]
-
-    centred = adjust("canvas")
-    corner = adjust([0.25, 0.75])
-    assert corner.transform["physical"]["pivot"] == [0.25, 0.75]
-    assert adjust("middle").error["error"] == "BAD_PIVOT"
-
-    stored = state.slices[0].transform
-    assert stored["physical"]["pivot"] == [0.25, 0.75]
-    # Same rotation, different pivot: the same map only up to a translation,
-    # which is exactly what the six normalized numbers must carry.
-    assert stored["params"][:2] == pytest.approx(
-        [np.cos(np.radians(10.0)), np.sin(np.radians(10.0)) * 512 / 512], abs=1e-6
-    )
-    assert centred.transform["params"][2] != stored["params"][2]
-    assert centred.transform["physical"]["rotation_deg"] == pytest.approx(
-        corner.transform["physical"]["rotation_deg"]
-    )
-    # The hand tool turns about the stored pivot (a value left out keeps it).
-    done = tools["interactive_transform"]([{"id": "s.tif", "rotation_deg": 12.0}], view=False)
-    assert done["results"][0]["transform"]["pivot"] == [0.25, 0.75]
-    assert state.slices[0].transform["physical"]["pivot"] == [0.25, 0.75]
 
 
 def _bodies(**kwargs) -> list[np.ndarray]:

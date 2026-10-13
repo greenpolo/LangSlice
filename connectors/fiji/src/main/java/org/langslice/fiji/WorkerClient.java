@@ -25,10 +25,18 @@ public final class WorkerClient implements AutoCloseable {
         process = child;
         if (closed) { terminate(child); throw new IOException("LangSlice request cancelled"); }
         ExecutorService io = Executors.newFixedThreadPool(2, r -> { Thread t = new Thread(r, "LangSlice worker IO"); t.setDaemon(true); return t; });
-        // Drain stderr to avoid deadlock; raw provider diagnostics may contain secrets and are not shown.
+        // A run's warnings and tracebacks go to the langslice abba log (a "log" message to LangSliceEvents listeners).
+        // Every other request's stderr is drained only: setup's raw provider diagnostics may contain secrets.
+        boolean forward = method.equals("linear.run") || method.equals("mcp.prepare");
         Future<?> stderr = io.submit(() -> {
-            try (InputStream stream = child.getErrorStream()) { byte[] bytes = new byte[4096]; while (stream.read(bytes) >= 0) { } }
-            catch (IOException ignored) { }
+            try (BufferedReader lines = new BufferedReader(new InputStreamReader(child.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = lines.readLine()) != null) {
+                    if (!forward || line.isBlank()) continue;
+                    JsonObject body = new JsonObject(); body.addProperty("message", "LangSlice worker: " + line);
+                    LangSliceEvents.publish("log", body);
+                }
+            } catch (IOException ignored) { }
         });
         String id = UUID.randomUUID().toString();
         Future<JsonObject> response = io.submit(() -> {
@@ -43,8 +51,9 @@ public final class WorkerClient implements AutoCloseable {
                     if ("event".equals(type)) { if (event != null) event.accept(message.getAsJsonObject("event")); }
                     else if ("result".equals(type)) return message.getAsJsonObject("result");
                     else if ("error".equals(type)) {
-                        // Authentication errors must not echo credentials or raw server replies.
-                        if (method.startsWith("setup.")) throw new IOException("Setup could not complete. Check the installation, account details and internet connection, then try again.");
+                        // Sign-in and key errors must not echo credentials or raw server replies (the worker redacts them too).
+                        if (method.equals("setup.login") || method.equals("setup.api_key"))
+                            throw new IOException("Setup could not complete. Check the installation, account details and internet connection, then try again.");
                         JsonElement error = message.get("error");
                         throw new IOException(error != null ? error.toString() : "LangSlice request failed");
                     }

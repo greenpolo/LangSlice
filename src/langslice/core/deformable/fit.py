@@ -2,11 +2,11 @@
 
 Route A (no image model): the section's stain image against an atlas image
 (``template`` or ``nissl``; in practice mostly an outline fit), optionally in
-sequential steps each restricted to the neighbourhood of chosen structures,
-optionally with the automatic tissue/ventricle label channels. Route B (image
-model): the model's extracted lines against atlas borders rendered from the
-same merged region set the model was shown, or (``labels="model"``) the
-lines turned into named regions against the placed atlas regions.
+sequential steps each restricted to the neighbourhood of chosen structures.
+Route B (image model): the model's extracted lines against atlas borders
+rendered from the same merged region set the model was shown, or
+(``labels="model"``) the lines turned into named regions against the placed
+atlas regions.
 
 Everything that needs the atlas object happens in :func:`prepare_fit`; the
 engine call works on plain arrays, so :func:`fit_prepared` runs several
@@ -27,7 +27,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage as ndi
 
-from langslice.core.atlas.render import family_labels
+from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.sides import split_side
 from langslice.core.deformable.atlas_images import (
     native_labels,
@@ -44,7 +44,6 @@ from langslice.core.deformable.engines import (
     FIT_THREADS,
     EngineInputs,
     EngineResult,
-    ants_preprocess,
     ants_worker,
     run_engine,
 )
@@ -53,9 +52,6 @@ from langslice.core.deformable.masks import (
     EXCLUSION_MARGIN_MM,
     MASK_MARGIN_MM,
     dilate,
-    tissue_masks,
-    torn_edge_band,
-    ventricle_holes,
 )
 from langslice.core.deformable.nissl import NisslAtlas
 from langslice.core.deformable.record import DeformableRecord, diagnose
@@ -74,21 +70,22 @@ from langslice.core.space import atlas_space_context
 #: Metric weight of each label-map channel; ANTs' own label registration
 #: weights every label pair 1.0, next to 1.0 for the image pair.
 LABEL_CHANNEL_WEIGHT = 1.0
-#: Stain normalization percentiles inside the tissue.
+#: Stain normalization percentiles inside the fixed mask.
 STAIN_PERCENTILES = (1.0, 99.0)
 
 
 @dataclass
 class PreparedFit:
-    """Everything a fit needs, with the engine's part as plain arrays."""
+    """Everything a fit needs, with the engine's part as plain arrays. A warp no
+    engine computes (:func:`prepare_warp`) has no *settings* and no *inputs*."""
 
-    settings: FitSettings
+    settings: FitSettings | None
     placement: Placement
     grid: WorkingGrid
-    inputs: EngineInputs
+    inputs: EngineInputs | None
     native: np.ndarray
-    tissue: np.ndarray
-    torn_band: np.ndarray
+    #: The placed atlas footprint the fixed mask starts from, on the section grid.
+    footprint: np.ndarray
     #: Ids excluded on both sides (whole regions; diagnostics skip them).
     excluded: frozenset[int]
     ventricles: frozenset[int]
@@ -111,8 +108,8 @@ def _gray(image: Image.Image) -> np.ndarray:
     return np.asarray(image.convert("L"), dtype=np.float32)
 
 
-def _normalize_stain(gray: np.ndarray, tissue: np.ndarray) -> np.ndarray:
-    values = gray[tissue] if tissue.any() else gray.ravel()
+def _normalize_stain(gray: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    values = gray[mask] if mask.any() else gray.ravel()
     lo, hi = np.percentile(values, STAIN_PERCENTILES)
     return np.clip((gray - lo) / max(float(hi - lo), 1e-6), 0.0, 1.0).astype(np.float32)
 
@@ -207,50 +204,32 @@ def prepare_fit(
     settings: FitSettings,
     *,
     lines: np.ndarray | None = None,
-    torn_band: np.ndarray | None = None,
     previous: DeformableRecord | None = None,
     nissl: NisslAtlas | None = None,
 ) -> PreparedFit:
     """Build the working-grid images and masks for one candidate.
 
     *section_image* is the section on the grid *placement* refers to; *lines*
-    (route B) is the model's line mask on that same grid. *torn_band*
-    overrides the automatic torn-edge band (a boolean mask on the section
-    grid). With *previous*, this is the next step of a sequential fit: the
-    atlas starts where *previous* left it and the result composes onto it.
+    (route B) is the model's line mask on that same grid. With *previous*,
+    this is the next step of a sequential fit: the atlas starts where
+    *previous* left it and the result composes onto it.
     """
     width, height = section_image.size
-    mm = placement.section_mm_per_px
     if settings.section_image == "lines" or settings.labels == "model":
         if lines is None or np.shape(lines) != (height, width):
             raise ValueError("This setting needs the model's line mask on the section grid")
-    if torn_band is not None and np.shape(torn_band) != (height, width):
-        raise ValueError("torn_band must be a mask on the section grid")
-    if previous is not None and (tuple(previous.section_size) != (width, height)
-                                 or previous.placement.to_dict() != placement.to_dict()):
-        raise ValueError("A sequential step must use its previous record's section and placement")
 
-    tissue, raw_tissue = tissue_masks(section_image)
-    grid = WorkingGrid.for_section((width, height), mm, DETAIL[settings.detail].working_um / 1000)
+    grid, native, working_coords, current, footprint = _placed_atlas(
+        atlas, placement, (width, height), settings.detail, previous)
     spacing = float(np.mean(grid.spacing_mm))
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
-    native = native_labels(atlas, placement)
     # One-sided entries ("CTX:left") need the placement's displayed left.
     left = placement_left(atlas, placement, (*settings.exclude, *settings.structures))
     excluded = whole_region_ids(atlas, settings.exclude)
     excluded_native = (regions_mask(atlas, native, settings.exclude, left)
                        if settings.exclude else None)
     ventricles = ventricle_ids(atlas)
-
-    # The atlas's current frame on the working grid: placed, or where the
-    # previous step left it.
-    offset = None
-    if previous is not None:
-        prev_w = cv2.resize(previous.field_mm, grid.size, interpolation=cv2.INTER_LINEAR)
-        offset = np.stack([prev_w[..., 0] / grid.spacing_mm[0],
-                           prev_w[..., 1] / grid.spacing_mm[1]], axis=-1)
-    working_coords = _native_coords(atlas_to_working, offset, (grid.size[1], grid.size[0]))
-    current = sample_native(native, working_coords)
+    offset = _previous_offset(grid, previous)
     excluded_w = (sample_native(excluded_native, working_coords) if excluded_native is not None
                   else np.zeros(current.shape, dtype=bool))
     softening_px = LINE_SOFTENING_UM / 1000.0 / spacing
@@ -262,29 +241,19 @@ def prepare_fit(
     if offset is not None:
         moving = _remap(moving, offset)
 
-    tissue_w = grid.to_working(tissue.astype(np.uint8), nearest=True) > 0
-    raw_w = grid.to_working(raw_tissue.astype(np.uint8), nearest=True) > 0
     lines_w = None
     if lines is not None:
         lines_w = grid.to_working(np.asarray(lines, dtype=np.float32)) > 0
+    margin_px = MASK_MARGIN_MM / spacing
     if settings.section_image == "lines":
         assert lines_w is not None
         fixed = soft_lines(lines_w, softening_px)
     else:
         fixed = grid.to_working(_gray(section_image))
-        fixed = ants_preprocess(fixed, tissue_w, settings.preprocess, grid.spacing_mm)
-        fixed = _normalize_stain(fixed, tissue_w)
+        fixed = _normalize_stain(fixed, footprint)
 
     kept = (current != 0) & ~excluded_w
-    if torn_band is not None:
-        torn_w = grid.to_working(torn_band.astype(np.uint8), nearest=True) > 0
-        torn_section = torn_band.astype(bool)
-    else:
-        torn_w = torn_edge_band(tissue_w, kept, spacing)
-        torn_section = cv2.resize(torn_w.astype(np.uint8), (width, height),
-                                  interpolation=cv2.INTER_NEAREST) > 0
-    margin_px = MASK_MARGIN_MM / spacing
-    fixed_mask = dilate(tissue_w, margin_px) & ~torn_w
+    fixed_mask = footprint.copy()
     # Blanking leaves an edge where an excluded region was; a margin around
     # it stays out of the moving mask so that edge cannot attract the tissue.
     excluded_zone = dilate(excluded_w, EXCLUSION_MARGIN_MM / spacing)
@@ -315,20 +284,11 @@ def prepare_fit(
         moving_labels.append(cv2.GaussianBlur(atlas_side.astype(np.float32), (0, 0), blur))
         channel_names.append(name)
 
-    if settings.labels == "auto":
-        add_channel("tissue", tissue_w, kept)
-        atlas_ventricles = np.isin(current, list(ventricles)) & kept
-        holes = ventricle_holes(raw_w, tissue_w, atlas_ventricles, spacing)
-        details["detected_ventricle_area_mm2"] = float(holes.sum() * spacing ** 2)
-        # A missed detection is not evidence of a collapsed ventricle, so the
-        # ventricle pair is only added when the section shows one.
-        if holes.any():
-            add_channel("ventricles", holes, atlas_ventricles)
-    elif settings.labels == "model":
+    if settings.labels == "model":
         assert lines_w is not None
-        merged = family_labels(current, atlas)
+        merged = labels_at(current, atlas, MODEL_DEPTH)
         merged = np.where(kept, merged, 0)
-        section_regions, unnamed, report = named_regions(lines_w, merged, tissue_w, spacing)
+        section_regions, unnamed, report = named_regions(lines_w, merged, footprint, spacing)
         fixed_mask &= ~unnamed
         allowed = set(np.unique(section_regions)) & set(np.unique(merged))
         allowed.discard(0)
@@ -342,7 +302,7 @@ def prepare_fit(
         }
     details["label_channels"] = channel_names
     if not fixed_mask.any() or not moving_mask.any():
-        raise ValueError("The fit masks are empty: no tissue overlaps the placed atlas")
+        raise ValueError("The fit masks are empty")
 
     fixed_edges = moving_edges = None
     if settings.section_image == "stain" and settings.stain_edges:
@@ -370,12 +330,70 @@ def prepare_fit(
     )
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
-        tissue=tissue, torn_band=torn_section, excluded=excluded, ventricles=ventricles,
-        atlas_meta={**_atlas_meta(atlas, placement, native),
-                    "acronyms": {str(k): v for k, v in structure_acronyms(
-                        atlas, np.unique(native)).items()}},
+        footprint=_on_section(footprint, (width, height)),
+        excluded=excluded, ventricles=ventricles,
+        atlas_meta=_atlas_record(atlas, placement, native),
         previous=previous, details=details, excluded_mask=excluded_native,
     )
+
+
+def prepare_warp(
+    atlas: Any, placement: Placement, size: tuple[int, int], detail: str, *,
+    previous: DeformableRecord | None = None,
+) -> PreparedFit:
+    """What :func:`finish_fit` reads for a warp no engine computes (the
+    landmark warp): the native plane, the placed atlas footprint (as a
+    :func:`prepare_fit` at *detail* has it), the ventricles and the atlas
+    facts. No images, masks or settings: nothing excluded, no details."""
+    grid, native, _coords, _current, footprint = _placed_atlas(
+        atlas, placement, size, detail, previous)
+    return PreparedFit(
+        settings=None, placement=placement, grid=grid, inputs=None, native=native,
+        footprint=_on_section(footprint, size), excluded=frozenset(),
+        ventricles=ventricle_ids(atlas), atlas_meta=_atlas_record(atlas, placement, native),
+        previous=previous,
+    )
+
+
+def _previous_offset(grid: WorkingGrid, previous: DeformableRecord | None) -> np.ndarray | None:
+    """Where *previous* left the atlas on the working grid, in pixels (None: placed)."""
+    if previous is None:
+        return None
+    prev_w = cv2.resize(previous.field_mm, grid.size, interpolation=cv2.INTER_LINEAR)
+    return np.stack([prev_w[..., 0] / grid.spacing_mm[0],
+                     prev_w[..., 1] / grid.spacing_mm[1]], axis=-1)
+
+
+def _placed_atlas(
+    atlas: Any, placement: Placement, size: tuple[int, int], detail: str,
+    previous: DeformableRecord | None,
+) -> tuple[WorkingGrid, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """``(grid, native labels, working-grid native coordinates, labels there,
+    footprint)``: the atlas's current frame on the working grid of *detail*
+    (placed, or where *previous* left it) and its footprint widened by
+    :data:`MASK_MARGIN_MM`, on that grid."""
+    if previous is not None and (tuple(previous.section_size) != tuple(size)
+                                 or previous.placement.to_dict() != placement.to_dict()):
+        raise ValueError("A sequential step must use its previous record's section and placement")
+    grid = WorkingGrid.for_section(size, placement.section_mm_per_px,
+                                   DETAIL[detail].working_um / 1000)
+    native = native_labels(atlas, placement)
+    atlas_to_working = grid.section_to_working @ placement.atlas_to_section
+    working_coords = _native_coords(atlas_to_working, _previous_offset(grid, previous),
+                                    (grid.size[1], grid.size[0]))
+    current = sample_native(native, working_coords)
+    footprint = dilate(current != 0, MASK_MARGIN_MM / float(np.mean(grid.spacing_mm)))
+    return grid, native, working_coords, current, footprint
+
+
+def _on_section(mask: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    return cv2.resize(mask.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
+
+
+def _atlas_record(atlas: Any, placement: Placement, native: np.ndarray) -> dict[str, Any]:
+    return {**_atlas_meta(atlas, placement, native),
+            "acronyms": {str(k): v for k, v in structure_acronyms(
+                atlas, np.unique(native)).items()}}
 
 
 def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
@@ -393,12 +411,11 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
         # Section p -> p + w(p) in the previous frame -> + u_prev(p + w(p)).
         moved = np.stack([xx + step_field[..., 0] / mm, yy + step_field[..., 1] / mm], axis=-1)
         total = step_field + _sample_field(previous.field_mm, moved)
-        inverse = None
-        if previous.inverse_field_mm is not None:
-            # Placed q -> q + v_prev(q) -> + v_w(q + v_prev(q)).
-            back = np.stack([xx + previous.inverse_field_mm[..., 0] / mm,
-                             yy + previous.inverse_field_mm[..., 1] / mm], axis=-1)
-            inverse = previous.inverse_field_mm + _sample_field(step_inverse, back)
+        # Placed q -> q + v_prev(q) -> + v_w(q + v_prev(q)).
+        assert previous.inverse_field_mm is not None
+        back = np.stack([xx + previous.inverse_field_mm[..., 0] / mm,
+                         yy + previous.inverse_field_mm[..., 1] / mm], axis=-1)
+        inverse = previous.inverse_field_mm + _sample_field(step_inverse, back)
     offset = np.stack([total[..., 0] / mm, total[..., 1] / mm], axis=-1)
     warped = sample_native(prepared.native,
                            _native_coords(prepared.placement.atlas_to_section, offset,
@@ -417,24 +434,22 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
         diag_placed = sample_native(kept_native, _native_coords(
             prepared.placement.atlas_to_section, None, (height, width)))
     diagnostics = diagnose(
-        total, mm, diag_warped, diag_placed, prepared.tissue, ventricles=prepared.ventricles,
+        total, mm, diag_warped, diag_placed, prepared.footprint, ventricles=prepared.ventricles,
         excluded=prepared.excluded, acronyms=acronyms,
     )
-    if inverse is not None:
-        back = _sample_field(inverse, np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1))
-        error = np.linalg.norm(total + back, axis=-1)[prepared.tissue]
-        diagnostics["inverse_consistency_mm"] = {
-            "p99": float(np.percentile(error, 99)) if error.size else 0.0,
-            "max": float(error.max()) if error.size else 0.0,
-        }
+    back = _sample_field(inverse, np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1))
+    error = np.linalg.norm(total + back, axis=-1)[prepared.footprint]
+    diagnostics["inverse_consistency_mm"] = {
+        "p99": float(np.percentile(error, 99)) if error.size else 0.0,
+        "max": float(error.max()) if error.size else 0.0,
+    }
     inverse_source = result.inverse_source
     if previous is not None:
         earlier = previous.inverse_source.removeprefix("composed: ")
         inverse_source = f"composed: {earlier} then {result.inverse_source}"
-        if inverse is None:
-            inverse_source = "unavailable: an earlier step has no inverse"
     engine = {
-        "name": prepared.settings.engine, "version": result.engine_version,
+        "name": prepared.settings.engine if prepared.settings is not None else None,
+        "version": result.engine_version,
         "runtime_s": result.runtime_s, "native_parameters": result.native_parameters,
         "notes": result.notes,
         "working_grid": {"size": list(grid.size), "spacing_mm": list(grid.spacing_mm),
@@ -444,30 +459,14 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
     return DeformableRecord(
         placement=prepared.placement, section_size=(width, height),
         settings=prepared.settings, field_mm=total.astype(np.float32),
-        inverse_field_mm=None if inverse is None else inverse.astype(np.float32),
+        inverse_field_mm=inverse.astype(np.float32),
         inverse_source=inverse_source,
-        labels=np.where(prepared.tissue, warped, 0).astype(prepared.native.dtype),
-        tissue=prepared.tissue, torn_band=prepared.torn_band,
+        labels=warped.astype(prepared.native.dtype),
+        footprint=prepared.footprint,
         excluded_ids=sorted(prepared.excluded), engine=engine, diagnostics=diagnostics,
         atlas={k: v for k, v in prepared.atlas_meta.items() if k != "acronyms"},
         step=0 if previous is None else previous.step + 1, parent=previous,
     )
-
-
-def fit_section(
-    section_image: Image.Image,
-    atlas: Any,
-    placement: Placement,
-    settings: FitSettings | None = None,
-    **options: Any,
-) -> DeformableRecord:
-    """Prepare, run and record one fit (options as :func:`prepare_fit`)."""
-    prepared = prepare_fit(section_image, atlas, placement, settings or FitSettings(), **options)
-    return finish_fit(prepared, run_engine(prepared.inputs, prepared.settings))
-
-
-def _run_candidate(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
-    return run_engine(inputs, settings)
 
 
 def fit_prepared(
@@ -489,10 +488,18 @@ def fit_prepared(
     results: list[DeformableRecord | CandidateFailure] = []
     with ProcessPoolExecutor(max_workers=workers, mp_context=context,
                              initializer=ants_worker) as pool:
-        futures = [pool.submit(_run_candidate, p.inputs, p.settings) for p in prepared]
+        futures = [pool.submit(run_engine, *_engine_args(p)) for p in prepared]
         for item, future in zip(prepared, futures, strict=True):
             try:
                 results.append(finish_fit(item, future.result()))
             except Exception as exc:  # noqa: BLE001 - one candidate must not sink the rest
-                results.append(CandidateFailure(item.settings, f"{type(exc).__name__}: {exc}"))
+                results.append(CandidateFailure(_engine_args(item)[1],
+                                                f"{type(exc).__name__}: {exc}"))
     return results
+
+
+def _engine_args(prepared: PreparedFit) -> tuple[EngineInputs, FitSettings]:
+    """The engine's inputs and settings of a fit; a :func:`prepare_warp` has none."""
+    if prepared.inputs is None or prepared.settings is None:
+        raise ValueError("A prepared warp has no engine fit to run")
+    return prepared.inputs, prepared.settings

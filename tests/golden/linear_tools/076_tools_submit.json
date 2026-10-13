@@ -25,7 +25,6 @@
     "position_mm": 0.1,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 0.989,
     "transform_mirrored": false
    },
    {
@@ -37,7 +36,6 @@
     "position_mm": 0.15,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 1.0,
     "transform_mirrored": false
    },
    {
@@ -52,7 +50,6 @@
     "position_mm": 0.2,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 0.911,
     "transform_mirrored": false
    }
   ],
