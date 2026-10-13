@@ -20,9 +20,8 @@ once with a run id), ``--verbose`` (the whole reply: whole-stack rows, the
 descriptions written for a model), ``--timeout SECONDS`` (``wait``).
 
 Each call opens the job as it stands on disk (``doors.jobs.open_folder``),
-runs the verb through the same tool a running agent has (the
-look-before-commit gates off: they are tool-only; ``look``'s ``resolution``
-any size from 128 px to the source's own pixels) and closes it, so calls and a
+runs the verb through the same tool a running agent has (``look``'s
+``resolution`` any size from 128 px to the source's own pixels) and closes it, so calls and a
 running agent interleave on one folder: each picks up the other's writes
 (``Job.sync``) and every write is one undo step. The answer is the JSON
 envelope of :mod:`langslice.doors.cli.envelope` on stdout; anything a
@@ -59,7 +58,7 @@ from langslice.job.lock import JobBusy
 logger = logging.getLogger(__name__)
 
 #: Verbs a dry run checks without running (a model call, a long fit).
-CHECKED_ONLY = frozenset({"trace_borders", "trace_from_atlas", "elastix_affine", "ants_syn"})
+CHECKED_ONLY = frozenset({"trace_borders", "elastix_affine", "ants_syn"})
 #: Reply keys worth a warning when present and not empty.
 WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")
@@ -343,17 +342,6 @@ def arguments_for(tool: Any, options: dict[str, Any],
 # --- one verb ---------------------------------------------------------------------
 
 
-def _disabled_of(folder: str) -> tuple[str, ...]:
-    """The tools and options the job at *folder* disables; none when it has no
-    readable settings (the call then fails on its own)."""
-    from langslice.doors.jobs import find, read_spec
-
-    try:
-        return tuple(read_spec(find(folder)).switched_off)
-    except Exception:  # noqa: BLE001 - only the wording of a hint depends on it
-        return ()
-
-
 def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
     from langslice.doors.jobs import NoJob, open_folder
 
@@ -370,13 +358,8 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.ops.registry import VERBS, retired_payload
+    from langslice.ops.registry import VERBS
 
-    retired = retired_payload(verb, _disabled_of(folder))
-    if retired is not None:
-        raise _Refusal(Envelope.failure(
-            "RETIRED_TOOL", retired["message"], verb=verb,
-            result={key: retired[key] for key in ("tool", "use") if key in retired}))
     if verb not in VERBS:
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
     dry_run = bool(options.get("dry_run"))
@@ -389,8 +372,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     job_folder = str(opened.job.folder)
     token = DISABLED.set(tuple(opened.spec.switched_off))  # the fixes name what the job has
     try:
-        # The job's verbs as the tool door builds them (a hidden verb is
-        # called by name, never listed: ``Verb.hidden``).
+        # The job's verbs as the tool door builds them.
         tools = {tool.__name__: tool for tool in opened.tools().tools}
         offered = opened.listed_verbs()
         if verb not in tools:
@@ -500,12 +482,6 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         if work is not None:  # the packaged trace, landed in this process
             result["work_status"] = work.status
             result["work_result"] = work.result
-    if verb == "trace_from_atlas" and isinstance(result, dict):
-        for row in result.get("results") or []:  # each landed call's outcome
-            if isinstance(row, dict) and row.get("error") is None:
-                landed = _landed(job, row.get("id"))
-                if landed:
-                    row["image_correction"] = landed
     if verb == "status" and isinstance(result, dict):
         from langslice.doors.statement import image_model_state
 
@@ -638,6 +614,13 @@ def init_parser() -> argparse.ArgumentParser:
 
     parser = _Parser(prog="langslice-job FOLDER init", add_help=False)
     add_linear_arguments(parser)
+    parser.add_argument(
+        "--fresh",
+        dest="resume",
+        action="store_false",
+        default=True,
+        help="Ignore any existing checkpoint and start over",
+    )
     parser.add_argument("--notes", default=None, metavar="TEXT",
                         help="The user's notes for this job (job.json), which every door "
                         "gives the registration agent")
@@ -657,7 +640,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     read, matched one to one, or places no section)."""
     from langslice.core.discovery import discover_slices
     from langslice.doors.cli.linear import spec_from_args
-    from langslice.doors.jobs import create, with_registration
+    from langslice.doors.jobs import NoJob, create, find, read_spec, with_registration
     from langslice.job.job import InputsChanged
 
     args = init_parser().parse_args(rest)
@@ -675,6 +658,22 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
                                                atlas_loader=atlas_loader, emit=progress)
         except (OSError, ValueError) as exc:
             return Envelope.failure("BAD_REGISTRATION", str(exc), job=str(images))
+    if spec.resume:
+        try:
+            saved = read_spec(find(spec.job_dir or images)).to_dict()
+        except NoJob:
+            saved = None
+        if saved is not None:
+            asked = spec.to_dict()
+            changed = sorted(key for key in set(asked) | set(saved)
+                             if key not in ("resume", "inputs", "image_folder")
+                             and asked.get(key) != saved.get(key))
+            if changed:
+                return Envelope.failure(
+                    "SETTINGS_CHANGED",
+                    f"The job in this folder was made with other settings: {', '.join(changed)}.",
+                    fix="Give init the job flags it was made with (job.json, spec) to continue "
+                    "it, or --fresh to start it over (its work is discarded).", job=str(images))
     try:
         opened = create(spec, atlas_loader=atlas_loader, emit=progress, door="cli")
     except InputsChanged as exc:

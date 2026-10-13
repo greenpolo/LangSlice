@@ -20,7 +20,7 @@ from langslice.core import toolset
 
 logger = logging.getLogger(__name__)
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 _KEY_ENV = {
     "openai-api": ("OPENAI_API_KEY",),
     "gemini-api": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -164,8 +164,21 @@ def setup_status() -> dict[str, Any]:
         "providers": providers,
         "image_models": image_model_choices(),
         "tools": toolset.catalog(),
+        "spec_defaults": spec_defaults(),
         "credentials_error": error,
     }
+
+
+def spec_defaults() -> dict[str, Any]:
+    """The job settings a host dialog starts from: ``JobSpec``'s own defaults
+    (the ones ``langslice linear run``, the MCP door and the library use),
+    without the per-job fields (folders, inputs, resume)."""
+    from langslice.core.spec import JobSpec
+
+    defaults = JobSpec(image_folder=".").to_dict()
+    for key in ("image_folder", "out", "job_dir", "inputs", "resume", "facts"):
+        defaults.pop(key, None)
+    return defaults
 
 
 def image_model_connected(provider: str) -> bool:

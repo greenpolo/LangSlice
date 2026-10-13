@@ -27,6 +27,7 @@ from langslice.core import frozen as freeze
 from langslice.core.needs import render
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.core.state import StackState
+from langslice.job.job import INTERVAL_BREAK_MIN_RATIO, STRICT_INTERVAL_TOLERANCE
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -36,11 +37,6 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
     "sagittal": "ML",
     "horizontal": "DV",
 }
-
-#: ``SliceState.position_source`` of a starting position the job gave a
-#: section (``job.job.DEFAULT_POSITION``).
-STARTING_POSITION = "default"
-
 
 def display_facts(
     ctx: Workspace, state: StackState,
@@ -141,27 +137,20 @@ def build_job_statement(
     channels: list[str] | dict[str, list[str]] | None = None,
     atlas_channels: tuple[str, ...] | None = None,
     max_resolution: int | None = None,
-    door: str = "agent",
     auto: bool | None = None,
-    gates: bool = True,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
     *max_resolution* is the largest picture the driver model takes, the
     top of ``look``'s ``resolution`` at image resolution "auto" (None: the
-    OpenAI lanes', ``opening.DEFAULT_IMAGE_LIMIT``). *door* is who reads it
-    (``agent``, ``mcp``, ``cli``; the doors' own paragraphs are
-    ``doors.statement``'s); *auto* whether the caller sizes each picture
-    (None: the spec's image resolution is "auto", the agent CLI always
-    does); *gates* False leaves out the look-before-commit gates
-    (``position.gated``), which a door without them (the agent CLI) never
-    applies. *axis_ends* is ``(low, high)`` from
+    OpenAI lanes', ``opening.DEFAULT_IMAGE_LIMIT``); every door reads the
+    same statement, its own lines added after it (``doors.statement``).
+    *auto* whether the caller sizes each picture (None: the spec's image
+    resolution is "auto", the agent CLI always does); *axis_ends* is ``(low, high)`` from
     :func:`langslice.core.space.slice_axis_ends` — what the two ends of the slicing
     axis are anatomically in THIS atlas.
     """
-    del door  # every door reads the same statement; its own lines are added after it
     off = spec.switched_off
-    gated = bool(spec.position.gated and gates)
     held = freeze.everywhere(spec.frozen)
     #: Positions are the agent's to write (the Positioning task is on and its
     #: positions are not frozen): else the task, when on, is the stack's angles.
@@ -215,22 +204,10 @@ def build_job_statement(
         constraints.append(
             "- `submit` is refused unless every section has a position of its own, "
             "damaged sections included."
-            + (" An unconfirmed starting position from a saved job does not count."
-               if any(s.position_source == STARTING_POSITION for s in state.slices) else "")
         )
-        if gated:
-            constraints.append(render(
-                "- `position_sections` is refused for a section that has not been looked "
-                "at with `look` in mode [[?look:overlay overlay or ]]positioning since it "
-                "was last written.", off
-            ))
-            constraints.append(
-                "- `submit` is refused until `look` in mode positioning has shown every "
-                "section after the last `position_sections` write."
-            )
         if spec.position.strict_interval:
             constraints.append(
-                f"- Every consecutive spacing must be within 10% of "
+                f"- Every consecutive spacing must be within {STRICT_INTERVAL_TOLERANCE:.0%} of "
                 f"{state.interval_mm:.3f} mm, and no interval break may be "
                 f"reported."
             )
@@ -238,7 +215,8 @@ def build_job_statement(
             constraints.append(
                 "- A reported interval break is accepted only at a section "
                 "whose interval from the section before it, in the positions "
-                "you wrote, exceeds 1.5x the stack's median written spacing."
+                f"you wrote, exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the stack's median written "
+                "spacing."
             )
     if spec.has("transform") and "affine" not in held:
         constraints.append(
@@ -404,11 +382,11 @@ def stack_angles_fact(state: StackState, off: Collection[str] = ()) -> str:
 
 
 def cutting_protocol_fact(state: StackState) -> str:
-    """Supplied protocol values, with unknowns explicit (legacy zero also means unknown)."""
+    """Supplied protocol values, with unknowns explicit."""
     interval = state.interval_mm
     thickness = state.thickness_mm
-    known_interval = interval is not None and interval > 0
-    known_thickness = thickness is not None and thickness > 0
+    known_interval = interval is not None
+    known_thickness = thickness is not None
     interval_text = f"{interval:.3f} mm center-to-center" if known_interval else "not supplied"
     thickness_text = f"{thickness:.3f} mm" if known_thickness else "not supplied"
     text = (f"- Cutting protocol: nominal section interval {interval_text}, "
@@ -428,7 +406,6 @@ def run_facts(
     axis = _PLANE_AXIS_LABEL.get(state.plane, "AP")
     ordered = state.in_order()
     placed = [s for s in ordered if s.position_mm is not None]
-    starting = [s.id for s in ordered if s.position_source == STARTING_POSITION]
     damaged = [s.id for s in ordered if s.damaged]
     inputs = spec.inputs or {}
     noted = [s.id for s in ordered if s.id in (inputs.get("damaged") or {})]
@@ -445,17 +422,7 @@ def run_facts(
         cutting_protocol_fact(state),
         stack_angles_fact(state, spec.switched_off),
     ]
-    if starting:
-        facts.append(
-            f"- {len(starting)} of {len(state.slices)} sections are at evenly spaced "
-            "starting positions the job gave them, in file order; they are not placed "
-            "yet (status shows position_source \"default\", the opening labels their "
-            "atlas \"start\")."
-        )
-        if len(placed) > len(starting):
-            facts.append(f"- {len(placed) - len(starting)} sections carry a position "
-                         "of their own.")
-    elif placed:
+    if placed:
         facts.append(f"- {len(placed)} of {len(state.slices)} sections carry a position.")
     else:
         facts.append("- No section carries a position yet.")
@@ -486,9 +453,10 @@ def run_facts(
             facts.append("- Flipping sections is switched off for this run.")
         facts.append(
             "- Alignment canvas: each section is drawn at its TRUE physical size "
-            "from its pixel size (read from the file, or given by the host, or "
-            "estimated — the tool payload says which), and the atlas at its "
-            "voxel size; scale 1.0 is the section's calibrated size."
+            "from its pixel size (read from the file, or given by the host; "
+            "without one the section image's width is mapped onto the atlas "
+            "plane's width and the tool payload says uncalibrated), and the "
+            "atlas at its voxel size; scale 1.0 is the section's calibrated size."
         )
         facts.append(
             "- Transform frame: rotation and scales act about the pivot (the "

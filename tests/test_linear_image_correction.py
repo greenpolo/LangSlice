@@ -14,8 +14,8 @@ from langslice.core.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from langslice.core.state import StackState
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import _tool_target_ids, build_tools
-from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import apply_host_inputs
+from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import tool_named as _tool
 
@@ -149,7 +149,6 @@ def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
     """A section whose deformation is frozen is refused by the traces and
     skipped by both submit gates, so the run can still submit."""
     code = "FROZEN"
-    from langslice.ops import traces
 
     state, ctx, spec = _stack(
         tmp_path, n=2, placed=True, tasks=["nonlinear"],
@@ -163,8 +162,6 @@ def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     assert _tool(box, "trace_borders")("s1.png")["error"] == code
-    rows = traces.trace_from_atlas(box.job, ctx, ["s1.png"], image_model=None).rows  # type: ignore[arg-type]
-    assert [row["error"] for row in rows] == [code]
     assert _tool(box, "submit")("Done", [], [], left_linear=[
         {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
     assert state.slices[1].deformation is None

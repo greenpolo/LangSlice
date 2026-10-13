@@ -97,11 +97,6 @@ def patches(size: tuple[int, int]) -> int:
     return math.ceil(size[0] / 32) * math.ceil(size[1] / 32)
 
 
-#: ``SliceState.position_source`` of a starting position the job gave a
-#: section at ingest (``job.job.DEFAULT_POSITION``): not yet placed.
-STARTING_POSITION = "default"
-
-
 def strip_layout(edge: int, tile_edge: int) -> tuple[int, int]:
     """``(tiles per strip, tile edge)``: as many tiles as fit along *edge*.
 
@@ -128,14 +123,15 @@ def tile_label(record: SliceState) -> str:
 
 def section_tile(ctx: Workspace, state: StackState, record: SliceState, tile: int
                  ) -> Image.Image:
-    """The section as the agent is shown it, tissue-framed, at most *tile*."""
-    return render_slice(ctx, record, long_edge=tile, frame=True)
+    """The section as the agent is shown it, the whole image, at most *tile*."""
+    return render_slice(ctx, record, long_edge=tile)
 
 
 def pair_tiles(ctx: Workspace, state: StackState, record: SliceState, position_mm: float,
                tile: int) -> tuple[Image.Image, Image.Image]:
     """``(section, atlas)``: *record* and the atlas at *position_mm* at its
-    own angles, each tissue-framed, at ONE micrometres per pixel, the larger
+    own angles (the whole section image, the atlas framed to its anatomy), at
+    ONE micrometres per pixel, the larger
     of the two at most *tile* (:func:`langslice.core.scale.pair_scale`): the
     section reads at its true size against the atlas, and a small plane (an
     olfactory bulb) is drawn large when its section is small too."""
@@ -241,16 +237,14 @@ def opening_items(
     ordered = list(state.in_order())
     placed = any(record.position_mm is not None for record in ordered)
     unplaced = [record for record in ordered if record.position_mm is None]
-    starting = any(record.position_source == STARTING_POSITION for record in ordered)
 
     columns: list[list[Image.Image]] = []
     for record in ordered:
         position = record.position_mm
         if placed and position is not None:
             section, atlas = pair_tiles(ctx, state, record, position, tile)
-            start = " start" if record.position_source == STARTING_POSITION else ""
             column = [_cell(section, tile_label(record), tile),
-                      _cell(atlas, f"atlas {position:.2f} mm{start}", tile)]
+                      _cell(atlas, f"atlas {position:.2f} mm", tile)]
         else:
             column = [_cell(section_tile(ctx, state, record, tile), tile_label(record), tile)]
             if placed:
@@ -264,8 +258,6 @@ def opening_items(
         " Beneath each section is the atlas at that section's current position "
         f"{planes}, labelled 'atlas <position> mm' "
         "('no position' where it has none)."
-        + (" A label ending 'start' marks an evenly spaced starting position the job "
-           "gave the section: it is not yet placed." if starting else "")
         if placed else ""
     )
     items: list[str | Image.Image] = [(

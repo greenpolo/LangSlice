@@ -4,7 +4,7 @@
 mode) saves a job an MCP host opens later by id. The job lives in the job
 folder next to its images (``<images>/langslice/``,
 :mod:`langslice.job.layout`): ``job.json`` there holds the settings and,
-under ``host``, the kind (``host``), the host's parameters and the notes;
+under ``host``, the kind (``host``) and the host's parameters;
 ``prompt.txt`` the copy prompt. The id leads there through the index
 (:mod:`langslice.job.index`, ``~/.langslice/jobs/<id>.json``), which also
 holds the host's loopback channel. No model access; the image provider's
@@ -106,16 +106,13 @@ def copy_prompt(job_id: str, spec: Any) -> str:
 
 
 def prepare_saved_job(params: dict[str, Any]) -> dict[str, Any]:
-    notes = params.get("notes", "")
-    if not isinstance(notes, str):
-        raise ValueError("notes must be text")
+    """Save an ABBA job: a ``linear.run`` request plus ``host_channel``."""
     channel = validate_channel(params.get("host_channel"))
-    run_params = {key: value for key, value in params.items()
-                  if key not in {"notes", "host_channel"}}
+    run_params = {key: value for key, value in params.items() if key != "host_channel"}
     prepared = prepare_linear(run_params)
     job_id, layout = _write_job(
         prepared.folder, {"kind": "host", "params": run_params},
-        spec=prepared.spec, channel=channel, notes=notes,
+        spec=prepared.spec, channel=channel,
     )
     return {"job_id": job_id, "job_dir": str(layout.folder),
             "prompt": _save_prompt(layout, copy_prompt(job_id, prepared.spec))}
@@ -129,12 +126,11 @@ def _save_prompt(layout: JobLayout, prompt: str) -> str:
 
 def _write_job(
     image_folder: Path, host: dict[str, Any], *, spec: JobSpec,
-    channel: dict[str, Any] | None, notes: str = "",
+    channel: dict[str, Any] | None,
 ) -> tuple[str, JobLayout]:
     """Save the job: its folder located and checked (another image
-    folder's job is refused before anything is written), ``job.json`` (the
-    user's *notes* under ``notes``, which every door reads:
-    :func:`langslice.doors.statement.read_notes`) and the index entry."""
+    folder's job is refused before anything is written), ``job.json`` and
+    the index entry."""
     job_id = index.new_id()
     images = Path(image_folder).expanduser().resolve()
     folder, fallback = locate_job_folder(images, spec.job_dir, root=jobs_root(),
@@ -142,7 +138,7 @@ def _write_job(
     layout = JobLayout(folder, images)
     check_owner(layout)
     layout.ensure()
-    write_job_file(layout, job_id=job_id, spec=spec.to_dict(), notes=notes,
+    write_job_file(layout, job_id=job_id, spec=spec.to_dict(),
                    host={"format": FORMAT_VERSION, **host})
     index.register(jobs_root(), job_id, layout.folder, host_channel=channel, fallback=fallback)
     from langslice.doors.card import write_card

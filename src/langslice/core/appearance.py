@@ -23,13 +23,8 @@ everything else:
 - ``"channels"``: the raw channels' display properties, by channel name
   (:mod:`langslice.core.channels`).
 
-A state saved before the preprocessed channel held its recipe under
-``"fit"``; :func:`migrated` moves it to ``"preprocessed"``, and every reader
-here reads it there too. An older saved ``"view"`` look is dropped.
-
-Calibration and the tissue pivot measure geometry on the default render
-whatever the recipe, so neither a recipe nor a display property can move
-them.
+Calibration measures geometry on the default render whatever the recipe,
+so neither a recipe nor a display property can move it.
 """
 
 from __future__ import annotations
@@ -40,21 +35,15 @@ from typing import Any
 
 from PIL import Image
 
+from langslice.core.image_prep import HOST_CLAHE_CLIP, HOST_CLAHE_TILE
 from langslice.core.state import SliceState, StackState
 from langslice.core.workspace import Workspace
 
 #: The preprocessed channel's key on ``StackState.appearance``.
 PREPROCESSED = "preprocessed"
-#: The key a state saved before the preprocessed channel held it under (also
-#: its name as a fit reads it, ``ops.inputs``).
-FIT = "fit"
-#: A view look an older saved state may hold; dropped on reading.
-_OLD_VIEW = "view"
-#: Where each name is held on ``StackState.appearance``.
-HELD_UNDER: dict[str, str] = {FIT: PREPROCESSED, PREPROCESSED: PREPROCESSED}
 #: CLAHE clip limit and tile grid of the automatic path.
-DEFAULT_CLAHE_CLIP = 4.0
-DEFAULT_CLAHE_TILES = 8
+DEFAULT_CLAHE_CLIP = HOST_CLAHE_CLIP["medium"]
+DEFAULT_CLAHE_TILES = HOST_CLAHE_TILE[0]
 #: Accepted CLAHE ranges (0 clip = no CLAHE).
 MAX_CLAHE_CLIP = 40.0
 MAX_CLAHE_TILES = 32
@@ -144,35 +133,10 @@ def validate_settings(
     }
 
 
-def migrated(appearance: Any) -> dict[str, Any]:
-    """A saved state's ``appearance`` as this version holds it.
-
-    ``"fit"`` (a state saved before the preprocessed channel) becomes
-    ``"preprocessed"`` unless that is there already; ``"view"`` is dropped;
-    everything else is kept. The input is not changed.
-    """
-    if not isinstance(appearance, dict):
-        return {}
-    out = {key: value for key, value in appearance.items() if key not in (_OLD_VIEW, FIT)}
-    if PREPROCESSED not in out and appearance.get(FIT) is not None:
-        out[PREPROCESSED] = appearance[FIT]
-    return out
-
-
-def _held(state: StackState, target: str) -> dict[str, Any]:
-    if target not in HELD_UNDER:
-        raise ValueError(f"target must be one of {tuple(HELD_UNDER)}")
-    key = HELD_UNDER[target]
-    held = state.appearance.get(key)
-    if held is None and key == PREPROCESSED:
-        held = state.appearance.get(FIT)
-    return held or {}
-
-
-def section_settings(state: StackState, target: str, section_id: str) -> Look:
-    """The recipe *target* (``"preprocessed"``, or its older name ``"fit"``)
-    uses for one section: its override, else the stack's."""
-    held = _held(state, target)
+def preprocessed_settings(state: StackState, section_id: str) -> Look:
+    """The section's preprocessed-channel recipe (None: the default): its
+    override, else the stack's."""
+    held = state.appearance.get(PREPROCESSED) or {}
     override = (held.get("sections") or {}).get(section_id)
     if override is not None:
         return dict(override)
@@ -180,23 +144,14 @@ def section_settings(state: StackState, target: str, section_id: str) -> Look:
     return dict(stack) if stack is not None else None
 
 
-def preprocessed_settings(state: StackState, section_id: str) -> Look:
-    """The section's preprocessed-channel recipe (None: the default)."""
-    return section_settings(state, PREPROCESSED, section_id)
-
-
-def set_settings(
-    state: StackState, target: str, section_ids: list[str] | None, settings: Look,
-) -> None:
-    """Write *settings* (None = back to the default) for the stack or sections.
+def set_settings(state: StackState, section_ids: list[str] | None, settings: Look) -> None:
+    """Write the preprocessed channel's *settings* (None = back to the
+    default) for the stack or sections.
 
     Stack-wide writes leave per-section overrides in place; a section reset
     removes its override, so it follows the stack again.
     """
-    held = {**_held(state, target)}
-    key = HELD_UNDER[target]
-    if key == PREPROCESSED:
-        state.appearance.pop(FIT, None)  # now held under its own name
+    held = {**(state.appearance.get(PREPROCESSED) or {})}
     sections = dict(held.get("sections") or {})
     if section_ids is None:
         held["stack"] = settings
@@ -208,9 +163,9 @@ def set_settings(
                 sections[name] = dict(settings)
     held["sections"] = sections
     if held.get("stack") is None and not sections:
-        state.appearance.pop(key, None)
+        state.appearance.pop(PREPROCESSED, None)
     else:
-        state.appearance[key] = held
+        state.appearance[PREPROCESSED] = held
 
 
 def look_token(ctx: Workspace, look: Look) -> str:
@@ -223,15 +178,15 @@ def look_token(ctx: Workspace, look: Look) -> str:
 def preprocessed_image(
     ctx: Workspace, state: StackState, record: SliceState, *, long_edge: int,
 ) -> Image.Image:
-    """The section's preprocessed channel, unframed: what the fits read.
+    """The section's preprocessed channel: what the fits read.
 
     Same frame as :func:`langslice.core.handoff.prepare_linear_registration`
-    (oriented, not tissue-framed) at *long_edge*; with the default recipe it
+    (oriented) at *long_edge*; with the default recipe it
     is that function's render exactly.
     """
     from langslice.core.sections import render_slice
 
-    return render_slice(ctx, record, long_edge=long_edge, frame=False,
+    return render_slice(ctx, record, long_edge=long_edge,
                         look=preprocessed_settings(state, record.id))
 
 

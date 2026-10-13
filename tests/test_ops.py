@@ -49,7 +49,7 @@ def test_positions_are_clamped_written_and_one_undo_step(tmp_path: Path):
     assert done.clamped == [("s1.png", high + 5.0, high)]
     assert done.unknown == ["nope.png", "2"] and done.touched == ["s0.png", "s1.png"]
     assert len(job.undo_stack) == 1
-    assert job.undo() and _record(job, "s1.png").position_source == ""
+    assert job.undo()
     assert _record(job, "s1.png").position_mm == start != high
     # Nothing to write: no undo step.
     assert positions.position_sections(
@@ -95,11 +95,10 @@ def test_appearance_plan_matches_the_write(tmp_path: Path):
     job, _ = _open(tmp_path)
     settings = {"channel_weights": None, "clahe_clip": 2.0, "clahe_tiles": 8,
                 "n4": False, "denoise": False}
-    planned = appearance.planned_settings(job.state, "preprocessed", ["s1.png"], settings,
-                                          "s1.png")
+    planned = appearance.planned_settings(job.state, ["s1.png"], settings, "s1.png")
     assert job.state.appearance == {}  # planning writes nothing
-    done = appearance.set_appearance(job, ["preprocessed"], ["s1.png"], settings)
-    assert done.in_force["preprocessed"] == {"sections": {"s1.png": planned}}
+    done = appearance.set_appearance(job, ["s1.png"], settings)
+    assert done.in_force == {"sections": {"s1.png": planned}}
     assert planned == settings and len(job.undo_stack) == 1
 
 
@@ -109,15 +108,14 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
              "translate_x_mm": 0.0, "translate_y_mm": 0.0}
     record = transforms.transform_record(
         size=(40, 30), um_per_px=10.0, calibration={"section_um_per_px": 10.0, "source": "host"},
-        pivot=None, pivot_frac=[0.5, 0.5], knobs=knobs, note=" why ")
+        pivot=None, pivot_frac=[0.5, 0.5], knobs=knobs)
     assert record["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     assert record["physical"] == {**knobs, "shear": 0.0, "pivot": [0.5, 0.5]}
-    assert record["note"] == "why"
     assert not transforms.same_transform(None, record)
     assert transforms.same_transform({**record, "note": "other"}, record)
 
     fitted = transforms.fit_transform(
-        {"params": [1, 0, 0, 0, 1, 0], "physical": {}, "iou": 0.5,
+        {"params": [1, 0, 0, 0, 1, 0], "physical": {},
                     "calibration": {}, "mirrored": False},
         exclude=["HY"], fit_atlas="nissl")
     assert fitted["regions"] == {"include": [], "exclude": ["HY"]}

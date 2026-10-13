@@ -41,6 +41,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image
 
+from langslice.core.atlas.levels import OVERLAY_DEPTH
+
 if TYPE_CHECKING:
     from langslice.core.canvas import PanelFrame
     from langslice.core.placement import CanvasFrame
@@ -106,6 +108,7 @@ class WarpNote:
     highlight: tuple[str, ...] = ()
     marked: tuple[str, ...] = ()
     outlines: str = "all"
+    depth: int = OVERLAY_DEPTH
     width_px: float = 2.0
     native: Any = None
 
@@ -372,7 +375,7 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     labels[band:band + rows, :cols] = ids.astype(np.uint32)
     coverage = drawn_border_coverage(
         record, atlas, highlight=warp.highlight, marked=warp.marked, warped=warp.warped,
-        outlines=warp.outlines, width_px=warp.width_px, native=native)
+        outlines=warp.outlines, depth=warp.depth, width_px=warp.width_px, native=native)
     borders = np.zeros((height, width), dtype=np.uint8)
     borders[band:band + rows, :cols] = np.rint(np.clip(coverage, 0.0, 1.0) * 255.0)
     residual: np.ndarray | None = None

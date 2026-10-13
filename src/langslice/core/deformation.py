@@ -5,7 +5,7 @@
 module and the engine package :mod:`langslice.core.deformable`. What lives
 here:
 
-- the fit grid: the section's oriented, unframed render at
+- the fit grid: the section's oriented render at
   :data:`FIT_LONG_EDGE` with its linear placement
   (:func:`langslice.core.handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
@@ -15,8 +15,8 @@ here:
 - the resolved :class:`Choice` and its engine settings;
 - :class:`RecordStore`: results cached by a digest of every input (the same
   fit again reuses it), applied records saved under the section's folder
-  (``deformable/<key>/``, the parent steps inside), and loaded back for
-  ``start="current"`` and for placement pictures;
+  (``deformable/<key>/``, the parent steps inside), and loaded back to fit on
+  top of and for placement pictures;
 - :func:`linear_key` and :func:`clear_stale`: a deformation lives on top of
   the linear placement it was fitted at, and any change to that placement
   drops it;
@@ -84,16 +84,14 @@ DETAIL_LEVEL = "standard"
 #: Fitted records kept in memory for reuse (a record is tens of megabytes).
 CACHE_SIZE = 8
 #: The atlas a fit can read (``fit_atlas``), as the agent names it, and the
-#: engine's name for each. ``borders`` is the colour-family boundaries the
-#: pictures draw (and the image model is shown).
+#: engine's name for each. ``borders`` is the boundaries of the regions the
+#: image model is shown (``levels.MODEL_DEPTH``).
 FIT_ATLASES: dict[str, str] = {
     "borders": "borders_merged", "template": "template", "nissl": "nissl"}
 #: What of the section a fit can read (``fit_section``).
 FIT_LOOK = "fit"
 TRACED_BORDERS = "traced_borders"
-TRACED_LINES = "traced_lines"
-TRACED = (TRACED_BORDERS, TRACED_LINES)
-FIT_SECTIONS = (FIT_LOOK, *TRACED)
+FIT_SECTIONS = (FIT_LOOK, TRACED_BORDERS)
 #: Flags listed per fit before the rest are only counted.
 MAX_FLAGS = 12
 #: Flags about the whole section, listed before any per-region flag.
@@ -196,8 +194,7 @@ def stain_image(
     preprocessed channel (:mod:`langslice.core.appearance`).
 
     Traced fit sections draw their pictures on it too. A raw channel is a
-    preprocessed-channel recipe (``preprocess`` target ``fit``), not a fit
-    section.
+    preprocessed-channel recipe, not a fit section.
     """
     if fit_section not in FIT_SECTIONS:
         raise ValueError(f"Unknown fit section {fit_section!r}")
@@ -275,33 +272,22 @@ class Choice:
 
     fit_section: str
     fit_atlas: str
-    engine: str
     stiffness: str
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...]) -> FitSettings:
-        """The engine settings. A stain fit with ANTs adds the automatic tissue
-        and ventricle label channels (``labels="auto"``), the clearest gain
-        on the outline and enlarged ventricles; Elastix has no label
-        channels."""
-        traced = self.fit_section in TRACED
-        if self.fit_section == TRACED_BORDERS:
-            labels = "model"
-        elif not traced and self.engine == "ants":
-            labels = "auto"
-        else:
-            labels = "none"
+        """The engine settings."""
+        traced = self.fit_section == TRACED_BORDERS
         return FitSettings(
-            engine=self.engine,  # type: ignore[arg-type]
             stiffness=self.stiffness,  # type: ignore[arg-type]
             detail=DETAIL_LEVEL,  # type: ignore[arg-type]
             atlas_image=FIT_ATLASES[self.fit_atlas],  # type: ignore[arg-type]
             section_image="lines" if traced else "stain",
-            labels=labels,  # type: ignore[arg-type]
+            labels="model" if traced else "none",
             exclude=exclude, structures=include,
         )
 
     def echo(self) -> dict[str, str]:
-        return {"engine": self.engine, "stiffness": self.stiffness,
+        return {"stiffness": self.stiffness,
                 "fit_section": self.fit_section, "fit_atlas": self.fit_atlas}
 
 
@@ -365,11 +351,7 @@ class RecordStore:
         if record is None:
             folder = self.directory(section_id, key)
             if (folder / "record.json").exists():
-                try:
-                    record = DeformableRecord.load(folder)
-                except Exception:  # an unreadable record is recomputed, not trusted
-                    logger.warning("Could not load %s", folder, exc_info=True)
-                    return None
+                record = DeformableRecord.load(folder)
         if record is not None:
             self.put(key, record)
         return record
@@ -397,8 +379,8 @@ class RecordStore:
 
 def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict[str, Any]:
     """Compact per-candidate numbers: displacement, folds, flags."""
-    tissue = record.tissue
-    magnitude = np.linalg.norm(record.field_mm, axis=-1)[tissue]
+    footprint = record.footprint
+    magnitude = np.linalg.norm(record.field_mm, axis=-1)[footprint]
     result: dict[str, Any] = {
         "displacement_mm": {
             "max": round(float(magnitude.max()), 3) if magnitude.size else 0.0,
@@ -407,7 +389,7 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
         "fold_fraction": round(float(record.diagnostics.get("fold_fraction", 0.0)), 5),
     }
     if previous is not None and previous.field_mm.shape == record.field_mm.shape:
-        step = np.linalg.norm(record.field_mm - previous.field_mm, axis=-1)[tissue]
+        step = np.linalg.norm(record.field_mm - previous.field_mm, axis=-1)[footprint]
         result["step_displacement_mm"] = {
             "max": round(float(step.max()), 3) if step.size else 0.0,
             "median": round(float(np.median(step)), 3) if step.size else 0.0,
@@ -538,6 +520,8 @@ class Style:
     color: tuple[int, int, int]
     thickness: float
     atlas_opacity: float
+    #: Ontology depth of the regions whose boundaries are drawn.
+    depth: int
     #: Long edge of the picture (of the zoomed crop when zoomed), in pixels;
     #: never more than the fit image's own pixels.
     long_edge: int = 512
@@ -588,15 +572,16 @@ def picture(
     native = native_labels(ctx.atlas, record.placement)
     drawn = draw_warped_borders(
         base, small, ctx.atlas, highlight=style.highlight, marked=style.marked, warped=warped,
-        outlines=style.outlines, width_px=style.thickness, color=style.color,
-        native=native,
+        outlines=style.outlines, depth=style.depth, width_px=style.thickness,
+        color=style.color, native=native,
     )
     captioned = caption(drawn, title)
     if note is not None:
         layers.note(captioned, **note, warp=layers.WarpNote(
             record=small, band=0, warped=warped,
             highlight=tuple(style.highlight), marked=tuple(style.marked),
-            outlines=style.outlines, width_px=float(style.thickness), native=native))
+            outlines=style.outlines, depth=style.depth, width_px=float(style.thickness),
+            native=native))
     return captioned
 
 

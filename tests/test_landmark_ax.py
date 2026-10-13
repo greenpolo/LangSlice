@@ -260,25 +260,25 @@ def test_undo_and_redo_name_the_tool_and_the_sections(tmp_path):
 
     job, ws, record = setup(tmp_path)
     try:
-        box = build_tools(job.state, ws, job.spec, job=job, gates=False)
+        box = build_tools(job.state, ws, job.spec, job=job)
         tools = {tool.__name__: tool for tool in box.tools}
         tools["set_landmarks"](section=record.id, pairs=saved_pairs(job, ws, record), view=False)
         tools["landmark_triangulation"](section=record.id, view=False)
         undone = tools["undo"]()
-        assert undone["undone"] == {"tool": "landmark_triangulation", "sections": [record.id]}
+        assert undone["undone"] == {"sections": [record.id], "fields": ["deformation"]}
         assert [row["id"] for row in undone["changed"]] == [record.id]
         assert "rows" not in undone and "interval_breaks" not in undone
         assert undone["undo_depth"] >= 1
         redone = tools["redo"]()
-        assert redone["redone"] == {"tool": "landmark_triangulation", "sections": [record.id]}
-        assert tools["undo"]()["undone"]["tool"] == "landmark_triangulation"
-        assert tools["undo"]()["undone"]["tool"] == "set_landmarks"
+        assert redone["redone"] == {"sections": [record.id], "fields": ["deformation"]}
+        assert tools["undo"]()["undone"]["fields"] == ["deformation"]
+        assert tools["undo"]()["undone"]["fields"] == ["landmarks"]
         other = job.state.in_order()[1]
         moved = tools["position_sections"](positions={other.id: float(other.position_mm) + 0.02}
                                            ) if "position_sections" in tools else None
         if moved is not None and moved.get("status") == "ok":
             back = tools["undo"]()
-            assert back["undone"]["tool"] == "position_sections"
+            assert "placement" in back["undone"]["fields"]
             assert other.id in back["undone"]["sections"]
             assert "cutting_angles_deg" in back
     finally:
@@ -376,7 +376,7 @@ def test_the_triangulation_picture_takes_a_resolution(tmp_path):
 
     job, ws, record = setup(tmp_path)
     try:
-        box = build_tools(job.state, ws, job.spec, job=job, gates=False, level="auto")
+        box = build_tools(job.state, ws, job.spec, job=job, level="auto")
         tools = {tool.__name__: tool for tool in box.tools}
         tools["set_landmarks"](section=record.id, pairs=saved_pairs(job, ws, record), view=False)
         from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY

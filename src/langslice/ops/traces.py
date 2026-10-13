@@ -12,8 +12,7 @@ and the edit is prepared by ``registration_tool.start_correction``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from langslice.core import deformation, handoff
@@ -52,73 +51,8 @@ class TraceStarted:
     landed: bool = False
 
 
-#: Prepares one section's edit: ``(state, workspace, section id, calls_dir)``
-#: -> ``(record, call or None)`` (``registration_tool.start_correction`` or
-#: ``start_atlas_correction`` with the call's own arguments bound).
-Prepare = Callable[[Any, Any, str, Any], tuple[dict[str, Any], Any]]
-
 _STALE_MESSAGE = ("The section's placement changed while the image call was prepared; "
                   "nothing was started or written for it.")
-
-
-@dataclass(frozen=True)
-class _Prepared:
-    """One section's edit prepared outside the lock, or why there is none."""
-
-    id: str
-    result: dict[str, Any] = field(default_factory=dict)
-    call: Any = None
-    #: The call at this geometry is already running (nothing prepared).
-    running: bool = False
-    #: ``(code, facts)`` when the section cannot be traced.
-    problem: tuple[str, dict[str, Any]] | None = None
-
-
-def _prepare(job: Job, workspace: Workspace, ref: object, prepare: Prepare) -> _Prepared:
-    """Resolve *ref*, refuse a frozen deformation and prepare its edit
-    (outside the job's write lock)."""
-    record = job.state.resolve(ref)
-    if record is None:
-        facts = unknown_sections(job.state, [str(ref)]).details
-        return _Prepared(id=str(ref), problem=("UNKNOWN_SLICE_IDS", facts))
-    frozen = frozen_row(job, record.id, "deformation")
-    if frozen is not None:
-        return _Prepared(id=record.id, problem=(frozen["error"], {
-            "properties": frozen["properties"], "message": frozen["message"]}))
-    try:
-        current = handoff.correction_fingerprint(job.state, workspace, record.id)
-        if job.image_job_running(record.id, current):
-            return _Prepared(id=record.id, running=True)
-        result, call = prepare(job.state, workspace, record.id,
-                               job.layout.image_correction_dir(record.id))
-    except ValueError as exc:
-        return _Prepared(id=record.id, problem=("INVALID_LINEAR_PLACEMENT",
-                                                {"message": str(exc)}))
-    except OSError as exc:
-        return _Prepared(id=record.id, problem=("IMAGE_CORRECTION_IO_ERROR",
-                                                {"message": str(exc)}))
-    return _Prepared(id=record.id, result=result, call=call)
-
-
-def _apply(job: Job, workspace: Workspace, prepared: _Prepared, workers: int,
-           ) -> tuple[dict[str, Any], bool] | None:
-    """Under the job's write lock: start the prepared call and set the
-    section's record. ``(record as stored, changed)``, or None when the
-    section's geometry changed since it was prepared (nothing started or set)."""
-    now = job.state.by_id(prepared.id)
-    fingerprint = prepared.result["geometry_fingerprint"]
-    if now is None or handoff.correction_fingerprint(
-            job.state, workspace, prepared.id) != fingerprint:
-        return None
-    if prepared.call is not None:
-        job.start_image_job(prepared.id, fingerprint, prepared.call, workers=workers)
-    portable = job.portable(prepared.result)
-    # A saved reply reused as it stands differs only by its ``cached`` flag:
-    # nothing to write, so no undo step.
-    changed = _without_cached(portable) != _without_cached(now.image_correction)
-    if changed:
-        now.image_correction = portable
-    return portable, changed
 
 
 def _without_cached(record: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -136,33 +70,46 @@ def _start_trace(
     workers: int,
 ) -> TraceStarted:
     """Start one section's image correction in the background, or reuse it
-    (the trace alone; :func:`trace_borders` adds the fit)."""
-
-    def prepare(state: Any, ctx: Any, section_id: str, calls_dir: Any,
-                ) -> tuple[dict[str, Any], Any]:
-        kept, dropped = exclusions(state.by_id(section_id), chosen, ())
-        return registration_tool.start_correction(
-            state, ctx, section_id, prompt=prompt, image_model=image_model,
-            calls_dir=calls_dir, include=kept, exclude=dropped)
-
-    prepared = _prepare(job, workspace, ref, prepare)
-    if prepared.problem is not None:
-        code, facts = prepared.problem
-        raise Refused(code, **({} if "unknown" in facts else {"id": prepared.id}), **facts)
-    if prepared.running:
-        record = job.state.by_id(prepared.id)
-        return TraceStarted(id=prepared.id, running=True,
-                            record=dict((record.image_correction if record else None) or {}))
+    (the trace alone; :func:`trace_borders` adds the fit). The call is
+    prepared outside the job's write lock and started under it."""
+    record = job.state.resolve(ref)
+    if record is None:
+        raise Refused("UNKNOWN_SLICE_IDS", **unknown_sections(job.state, [str(ref)]).details)
+    section_id = record.id
+    frozen = frozen_row(job, section_id, "deformation")
+    if frozen is not None:
+        raise Refused(frozen["error"], id=section_id, properties=frozen["properties"],
+                      message=frozen["message"])
+    try:
+        current = handoff.correction_fingerprint(job.state, workspace, section_id)
+        if job.image_job_running(section_id, current):
+            return TraceStarted(id=section_id, running=True,
+                                record=dict(record.image_correction or {}))
+        kept, dropped = exclusions(record, chosen)
+        result, call = registration_tool.start_correction(
+            job.state, workspace, section_id, prompt=prompt, image_model=image_model,
+            calls_dir=job.layout.image_correction_dir(section_id), include=kept, exclude=dropped)
+    except ValueError as exc:
+        raise Refused("INVALID_LINEAR_PLACEMENT", id=section_id, message=str(exc)) from exc
+    except OSError as exc:
+        raise Refused("IMAGE_CORRECTION_IO_ERROR", id=section_id, message=str(exc)) from exc
     with job.writing():  # prepared outside the lock; written under it
         before = job.snapshot()
-        applied = _apply(job, workspace, prepared, workers)
-        if applied is None:
-            raise Refused(STALE_INPUT, id=prepared.id,
+        now = job.state.by_id(section_id)
+        fingerprint = result["geometry_fingerprint"]
+        if now is None or handoff.correction_fingerprint(
+                job.state, workspace, section_id) != fingerprint:
+            raise Refused(STALE_INPUT, id=section_id,
                           message=_STALE_MESSAGE + " Run trace_borders again.")
-        result, changed = applied
-        if changed:
+        if call is not None:
+            job.start_image_job(section_id, fingerprint, call, workers=workers)
+        portable = job.portable(result)
+        # A saved reply reused as it stands differs only by its ``cached`` flag:
+        # nothing to write, so no undo step.
+        if _without_cached(portable) != _without_cached(now.image_correction):
+            now.image_correction = portable
             job.commit(before)
-    return TraceStarted(id=prepared.id, record=result, started=prepared.call is not None)
+    return TraceStarted(id=section_id, record=portable, started=call is not None)
 
 
 #: The background work's kind (:mod:`langslice.job.background`).
@@ -170,7 +117,7 @@ TRACE_WORK = "trace_borders"
 #: The fit a landed trace gets: the traced lines as named regions against the
 #: atlas borders, ANTs at medium stiffness.
 TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
-                               engine="ants", stiffness="medium")
+                               stiffness="medium")
 #: Fit rows that mean the section or its trace changed before the fit applied.
 _STALE_CODES = (STALE_INPUT, "TRACE_STALE", "TRACE_RUNNING", "NO_TRACE")
 
@@ -222,7 +169,7 @@ def trace_borders(
     section's deformation is frozen), ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
     ``STALE_INPUT`` (the geometry changed while the call was prepared).
     """
-    from langslice.ops.deformable import START_LATEST, refuse_without_ants, region_entries
+    from langslice.ops.deformable import refuse_without_ants, region_entries
 
     refuse_without_ants()
     regions = region_entries(workspace, job.state, restrict_to)
@@ -243,7 +190,7 @@ def trace_borders(
 
     def land() -> Landed:
         return land_trace(job, workspace, section_id, expected, regions=regions,
-                          start=START_LATEST, options=options)
+                          options=options)
 
     work = job.background.start(TRACE_WORK, (section_id,), land)
     return replace(started, work=work.id)
@@ -256,7 +203,6 @@ def land_trace(
     expected: str,
     *,
     regions: tuple[str, ...] = (),
-    start: str = "linear",
     options: DisplayOptions | None = None,
 ) -> Landed:
     """A packaged trace's landing (background work, after the image call):
@@ -285,7 +231,7 @@ def land_trace(
     if section_inputs(state, record, deformation=True) != expected or held.get("status") != "ok":
         return _stale(trace)
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
-                          start=start, options=options)
+                          options=options)
     row: dict[str, Any] = (done.rows[0] if done.rows
                            else {"status": "error", "error": "FIT_FAILED"})
     if row.get("status") == "error":
@@ -333,93 +279,3 @@ def _stale(trace: dict[str, Any]) -> Landed:
                   "channel, damage, deformation or trace changed before the trace landed; "
                   "nothing was applied. Run trace_borders again.",
                   result={"error": STALE_INPUT, "trace": trace})
-
-
-@dataclass(frozen=True)
-class AtlasTraces:
-    """What :func:`trace_from_atlas` did: one row per section asked for."""
-
-    #: Per section, in call order: ``id``, ``status`` ("running", "ok" for a
-    #: reused reply, or "error" with ``error`` / ``message``), ``cached``,
-    #: ``attempt``, ``started``.
-    rows: list[dict[str, Any]]
-    #: The sections whose image-correction record this call wrote.
-    written: list[str]
-
-
-def trace_from_atlas(
-    job: Job,
-    workspace: Workspace,
-    refs: list[object],
-    *,
-    image_model: ImageModel,
-    passes: int = 1,
-    workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
-) -> AtlasTraces:
-    """The placement-free trace (route "atlas") of each section in *refs*.
-
-    A scripting verb, hidden from every listing (``registry.Verb.hidden``):
-    the model is shown each clean section and the outlined grayscale atlas
-    plane at its position and its own cutting angles (the section's, not
-    the stack's: sections supplied per section keep each their plane), never
-    its placement
-    (``registration_tool.start_atlas_correction``; *passes* 2 adds the
-    corrective second call). The result is the section's
-    ``image_correction`` record exactly as :func:`trace_borders` writes it,
-    so :func:`langslice.ops.deformable.fit_deformable` with a traced fit
-    section (from the section's written linear placement), the submit gate
-    and the maps read it unchanged; no verb fits it: a script does.
-    Each section needs a position and a written transform.
-
-    Long-verb semantics, as :func:`trace_borders`: every edit is prepared
-    outside the job's write lock; under it each section's geometry is
-    checked again (a changed one is its row ``STALE_INPUT``), its call
-    started on the job's image executor and its record written; every
-    changed record is ONE undo step. A call already running for a section
-    at its geometry is not started again (``running``). Per-section problems
-    are rows: ``UNKNOWN_SLICE_IDS``, ``FROZEN``, ``INVALID_LINEAR_PLACEMENT``,
-    ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``. Refused (nothing
-    written): ``BAD_ARGS`` (no sections, or *passes* not 1 or 2).
-    """
-    if passes not in (1, 2):
-        raise Refused("BAD_ARGS", message="passes must be 1 or 2.")
-    if not refs:
-        raise Refused("BAD_ARGS", message="Name the sections to trace (slices).")
-    rows: list[dict[str, Any]] = []
-    pending: list[tuple[int, _Prepared]] = []
-    for ref in refs:
-        prepared = _prepare(job, workspace, ref, lambda state, ctx, section_id, calls_dir:
-                            registration_tool.start_atlas_correction(
-                                state, ctx, section_id, passes=passes,
-                                image_model=image_model, calls_dir=calls_dir))
-        if prepared.problem is not None:
-            code, facts = prepared.problem
-            rows.append({"id": prepared.id, "status": "error", "error": code,
-                         **{key: value for key, value in facts.items()
-                            if key in ("message", "properties")}})
-        elif prepared.running:
-            rows.append({"id": prepared.id, "status": "running", "started": False,
-                         "message": "This section's image correction is already running."})
-        else:
-            rows.append({"id": prepared.id})
-            pending.append((len(rows) - 1, prepared))
-    written: list[str] = []
-    if not pending:
-        return AtlasTraces(rows=rows, written=written)
-    with job.writing():  # prepared outside the lock; started and written under it
-        before = job.snapshot()
-        for index, prepared in pending:
-            applied = _apply(job, workspace, prepared, workers)
-            if applied is None:
-                rows[index] = {"id": prepared.id, "status": "error", "error": STALE_INPUT,
-                               "message": _STALE_MESSAGE}
-                continue
-            result, changed = applied
-            if changed:
-                written.append(prepared.id)
-            rows[index] = {"id": prepared.id, "started": prepared.call is not None, **{
-                key: result[key] for key in ("status", "error", "message", "cached", "attempt")
-                if key in result}}
-        if written:
-            job.commit(before)
-    return AtlasTraces(rows=rows, written=written)

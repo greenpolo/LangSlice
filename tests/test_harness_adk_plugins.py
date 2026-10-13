@@ -8,7 +8,6 @@ from google.adk.flows.llm_flows.functions import (
 from google.adk.models import BaseLlm
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
-from google.adk.tools import FunctionTool
 from google.genai import types
 from PIL import Image
 
@@ -17,13 +16,10 @@ from langslice.agent.plugins import (
     DEFAULT_MAX_IMAGES,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
-    RetiredToolsPlugin,
-    StrictArgumentsPlugin,
     WorkingSetImages,
 )
-from langslice.agent.session import build_plugins, run_agent_session
+from langslice.agent.session import run_agent_session
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.ops.registry import RETIRED, retired_payload
 
 
 class _FakeTool:
@@ -252,51 +248,6 @@ def test_working_set_never_touches_the_seed_strip():
 # --- retired tool names --------------------------------------------------------
 
 
-class _Placeholder:
-    """What ADK hands ``before_tool_callback`` for a name it does not know:
-    a tool of that name with no function."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-
-def _retired_answer(tool) -> dict | None:
-    return asyncio.run(RetiredToolsPlugin().before_tool_callback(
-        tool=tool, tool_args={}, tool_context=None))
-
-
-def test_a_retired_name_answers_with_the_tool_to_use():
-    answer = _retired_answer(_Placeholder("fit_affine"))
-    assert answer == retired_payload("fit_affine")
-    assert answer is not None
-    assert answer["error"] == "RETIRED_TOOL" and answer["use"] == "elastix_affine"
-    for old, (new, _hint) in RETIRED.items():
-        answer = _retired_answer(_Placeholder(old))
-        assert answer is not None and answer["error"] == "RETIRED_TOOL", old
-        assert answer.get("use") == (new or None), old
-    # Nothing replaces search_position: no tool to use is named.
-    answer = _retired_answer(_Placeholder("search_position"))
-    assert answer is not None and "use" not in answer
-
-
-def test_a_real_tool_and_an_unknown_name_are_left_to_adk():
-    def look() -> dict:
-        return {"status": "ok"}
-
-    assert _retired_answer(FunctionTool(look)) is None
-    assert _retired_answer(_Placeholder("no_such_tool")) is None
-    # A real tool runs as itself, whatever its name.
-    real = FunctionTool(look)
-    real.name = "fit_affine"
-    assert _retired_answer(real) is None
-
-
-def test_the_session_answers_retired_names_before_the_argument_check():
-    kinds = [type(plugin) for plugin in build_plugins("unit")]
-    assert RetiredToolsPlugin in kinds and StrictArgumentsPlugin in kinds
-    assert kinds.index(RetiredToolsPlugin) < kinds.index(StrictArgumentsPlugin)
-
-
 # --- a scripted model through a whole session -----------------------------------------
 
 
@@ -346,19 +297,6 @@ def _responses(request: LlmRequest) -> list[types.FunctionResponse]:
 
 def _texts(content: types.Content) -> list[str]:
     return [part.text for part in content.parts or [] if part.text]
-
-
-def test_a_model_calling_a_retired_tool_gets_the_tool_to_use(monkeypatch):
-    monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
-    model, submitted = _session([
-        [_call("fit_affine", slices=["a.tif"])],
-        [_call("submit", summary="done")],
-    ])
-    assert submitted == {"summary": "done"}
-    answer, = _responses(model.requests[1])
-    assert answer.name == "fit_affine"
-    assert answer.response == retired_payload("fit_affine")
-    assert answer.response["use"] == "elastix_affine"
 
 
 def test_a_turn_ended_while_work_runs_gets_its_notice_as_the_next_message(monkeypatch):

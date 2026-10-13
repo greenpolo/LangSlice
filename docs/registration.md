@@ -55,8 +55,7 @@ work is refused with one line saying why:
   section points (`look:section` or `look:overlay`), the second `look:overlay`;
 - a tool needs the pictures it returns: the linear and nonlinear fitting
   tools and `interactive_transform` need `look:overlay`, and
-  `position_sections` needs `look:positioning` or `look:overlay`;
-- `position.gated` needs `look:positioning`, which `submit` waits for.
+  `position_sections` needs `look:positioning` or `look:overlay`.
 
 What a job disables is absent from every door: the tool is not built, an
 option is not in the tool's schema (`look`'s `mode` offers the modes that are
@@ -65,9 +64,7 @@ refused (`OPTION_OFF` from `look`). A reply that would use a disabled option
 uses another: `position_sections` returns an overlay of each written section
 when `look:positioning` is off. The job statement, tool descriptions,
 reference card, `status` reply and `error.fix` texts leave out every
-sentence that needs what is off, or word it another way. Specs saved with
-the older switches (`agent_damage`, `transform.interactive`,
-`transform.automatic`, `transform.flip` false) read as the names above.
+sentence that needs what is off, or word it another way.
 
 Sections are addressed by filename, or by a stem unique within the job.
 Positions are millimetres along the atlas's slicing axis; in a coronal atlas
@@ -206,14 +203,15 @@ mode, unplaced sections appear at the right, labelled "no position", with
 no line to the ruler; `positions_mm` selects candidate atlas planes above it.
 Supplied positions and saved registrations are preserved.
 
-Section scale comes from supplied calibration or TIFF/OME metadata, else an
-estimate from tissue width (reported as `estimated`). Positioning pictures and paired
+Section scale comes from supplied calibration or TIFF/OME metadata, else the
+section image's width is mapped onto the atlas plane's width (reported as `uncalibrated`). Positioning pictures and paired
 opening tiles use the same micrometres per pixel for section and atlas
 panels. Tissue can therefore appear smaller than the atlas. The stored
-affine contributes its isotropic scale, `sqrt(abs(det))`; each thumbnail
-is framed around its anatomy without being stretched to fill the tile.
+affine contributes its isotropic scale, `sqrt(abs(det))`. Each section
+thumbnail is the whole image; each atlas thumbnail is framed around the
+atlas anatomy. Neither is stretched to fill the tile.
 
-Overlay pictures show the applied deformation unless `warp="none"`. The footer of a picture drawn at other than canvas pixels gives both scales: `canvas` (micrometres per canvas pixel) and `view` (micrometres per picture pixel, the number the reply's caption calls um/px).
+Overlay pictures show the applied deformation unless `warp="none"`. Their atlas borders are the boundaries between regions at one depth of the atlas ontology (`depth`, default 6; 0 = root, as in BrainGlobe's `structure_id_path`); a highlighted region is outlined from the leaf annotation, whatever its depth. The footer of a picture drawn at other than canvas pixels gives both scales: `canvas` (micrometres per canvas pixel) and `view` (micrometres per picture pixel, the number the reply's caption calls um/px).
 Where the agent chooses the picture size, `resolution` applies to every mode:
 a section is never drawn past its source pixels, an atlas plane at most four
 times past its voxels (as an atlas zoom is). Picture resolution affects
@@ -405,9 +403,8 @@ with `FROZEN`.
 placement. The agent is responsible for anatomical coverage. Before the mesh is
 built it adds **automatic holds** between the pairs: a regular lattice over the
 section frame, spaced one seventh of its longer side (about 35 points on a
-typical frame), keeping only the lattice points on the tissue (the fits' filled
-tissue estimate on the section; the whole lattice when no tissue can be told
-from the slide) and leaving out every lattice point within 0.7 spacings of the
+typical frame), keeping only the lattice points on the placed atlas footprint
+(the deformable fit's fixed mask) and leaving out every lattice point within 0.7 spacings of the
 section point of any pair, so a pair moves its own neighbourhood freely and the
 holds fill only the gaps between pairs. Each hold corresponds to itself against
 the baseline the warp is applied on (the linear placement, or the earlier
@@ -489,9 +486,7 @@ Custom models and prompts are described in the [library guide](library.md#image-
 
 Writes checkpoint the job and form undo steps; `undo` and `redo` persist
 across sessions. Their reply says which step it took back or forward: `undone`
-(or `redone`) holds the `tool` that wrote it and the `sections` it touched
-(the tool is read off what the step changed, so it holds after a reload and
-for background work; `null` with the changed `fields` when no tool fits),
+(or `redone`) holds the `sections` it touched and the `fields` it changed,
 then the status rows of those sections and the remaining depth. Change tools return review pictures unless `view=False`;
 a host's `force_view=True` forces `view=True`. It defaults to false, so
 the agent may suppress a picture. Long fits compute outside
@@ -509,18 +504,10 @@ produces `STALE_INPUT` for that section; unaffected results still apply.
   `nonlinear.require_deformation=True` disallows leaving sections linear.
   Host-excluded sections are exempt. An image-model trace is never required.
 
-Optional `position.gated` (`--gates`) requires agents to inspect a section
-in overlay or positioning mode before changing its position (positioning
-mode also accepts unplaced sections), and review
-every section in positioning mode after the last write before submitting.
-These viewing gates apply to native agent and MCP tools; CLI and Python
-calls still enforce the registration requirements above.
-
 Results are [coordinate maps, labels and registration exports](file_formats.md).
 
 `--playbook` adds optional positioning guidance using candidate planes,
-region lookup, incremental placement and stack review. It defaults off and
-adds no gates. Thickness and nominal interval are optional protocol facts,
+region lookup, incremental placement and stack review. It defaults off. Thickness and nominal interval are optional protocol facts,
 with no lab-specific defaults. When either is omitted, the prompt marks it
 as not supplied and asks the agent to infer positions and spacing from
 anatomy, estimate missing protocol values where evidence supports them,

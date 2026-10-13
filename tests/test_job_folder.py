@@ -14,6 +14,7 @@ import tifffile
 from PIL import Image
 
 from langslice.agent.engine import build_context
+from langslice.core.atlas.render import region_boundaries
 from langslice.core.jpeg import encode_jpeg
 from langslice.core.layers import coordinate_map
 from langslice.core.spec import JobSpec
@@ -21,7 +22,7 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import STATE_FORMAT_VERSION
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.job import Job
-from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, section_dirname
+from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, job_folder_for, section_dirname
 from langslice.job.views import flush_all
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import tool_named as _tool
@@ -54,7 +55,7 @@ def test_section_folders_are_stems_unless_two_images_share_one(tmp_path: Path):
     assert section_dirname("s1.png", ["s1.png", "s1.tif"]) == "s1.png"
     assert section_dirname("S1.png", ["S1.png", "s1.tif"]) == "S1.png"
     assert section_dirname("odd:name?.tif") == "odd_name_"
-    layout = JobLayout.for_images(tmp_path)
+    layout = JobLayout(job_folder_for(tmp_path), tmp_path)
     assert layout.folder == tmp_path / "langslice"
     assert layout.relative(layout.folder / "sections" / "s0" / "x") == "sections/s0/x"
     outside = tmp_path.parent / "elsewhere" / "file"
@@ -200,6 +201,45 @@ def test_a_checkpoint_of_an_older_format_is_refused(tmp_path: Path, version: int
     assert fresh.state.notes[0].startswith("ingest:")
 
 
+def test_saved_settings_with_an_unknown_key_are_refused_naming_it_and_the_file(tmp_path: Path):
+    """``state.json`` and ``job.json`` refuse a key this version does not
+    write; the error names the key and the file."""
+    from langslice.doors.jobs import read_spec
+
+    folder = _folder(tmp_path / "stack")
+    _open(folder)
+    state = folder / "langslice" / "state.json"
+    record = json.loads(state.read_text())
+    record["slices"][0]["retired"] = 1
+    state.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match=r"state\.json: Unknown stack state key\(s\) "
+                                         r"\['slices\.retired'\]"):
+        _open(folder)
+    job_file = folder / "langslice" / "job.json"
+    held = json.loads(job_file.read_text())
+    held["spec"]["position"]["gated"] = False
+    held["spec"]["agent_damage"] = True
+    job_file.write_text(json.dumps(held))
+    with pytest.raises(ValueError, match=r"job\.json: Unknown job setting\(s\) "
+                                         r"\['agent_damage', 'position\.gated'\]"):
+        read_spec(folder / "langslice")
+
+
+def test_every_saved_settings_reader_names_an_unknown_key():
+    from langslice.core.channels import ChannelProperties
+    from langslice.core.deformable.settings import FitSettings
+    from langslice.core.look import LookRequest
+
+    with pytest.raises(ValueError, match=r"Unknown channel property key\(s\) \['level'\]"):
+        ChannelProperties.from_dict({"gamma": 1.0, "level": 2})
+    with pytest.raises(ValueError, match=r"Unknown fit setting key\(s\) \['preprocess'\]"):
+        FitSettings.from_dict({**FitSettings().to_dict(), "preprocess": "none"})
+    with pytest.raises(ValueError, match=r"Unknown picture recipe key\(s\) \['mode_hint'\]"):
+        LookRequest.from_args({**LookRequest("atlas").args(), "mode_hint": 1})
+    with pytest.raises(ValueError, match=r"Unknown job setting\(s\) \['transform\.flip'\]"):
+        JobSpec.from_dict({"image_folder": ".", "transform": {"flip": False}})
+
+
 # --- the saved pictures ---------------------------------------------------------------------
 
 
@@ -281,11 +321,7 @@ def test_the_layers_agree_with_the_borders_drawn_on_a_picture(tmp_path: Path):
     # one-pixel-wide line's yellow one pixel to the side).
     layer = cv2.dilate((borders > 0).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     assert (yellow & layer).sum() / yellow.sum() > 0.98
-    change = np.zeros(labels.shape, dtype=bool)
-    change[:-1] |= labels[:-1] != labels[1:]
-    change[1:] |= labels[:-1] != labels[1:]
-    change[:, :-1] |= labels[:, :-1] != labels[:, 1:]
-    change[:, 1:] |= labels[:, :-1] != labels[:, 1:]
+    change = region_boundaries(labels)[0]
     near = cv2.dilate(change.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
     assert (strong & near).sum() / strong.sum() > 0.98  # the lines are label boundaries
 
@@ -333,17 +369,6 @@ def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[fl
     hit = voxel[inside].astype(int)
     found[inside] = annotation[hit[:, 0], hit[:, 1], hit[:, 2]]
     assert (found == labels[:bottom]).mean() > 0.99
-
-
-def test_saving_does_not_hold_up_a_tool(tmp_path: Path):
-    box, _ctx = _golden_toolbox(tmp_path / "stack")
-    _place(box)
-    for _ in range(5):
-        _tool(box, "look")("overlay", sections=["s0.png"])
-    views = box.job.views
-    assert views.queue_seconds / 5 < 0.02  # numbering and queueing only
-    flush_all()
-    assert views.write_seconds > 0
 
 
 # --- where the job folder goes: an explicit folder, a read-only image folder ----------------

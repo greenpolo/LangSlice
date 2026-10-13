@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from langslice.core import appearance as looks
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.needs import render
 from langslice.core.toolset import OPTION_SEPARATOR, TOOLS, is_off, options_on
 from langslice.doors.tools.arguments import (
@@ -85,6 +86,7 @@ def look(
     atlas_opacity: float = 0.5,
     warp: Warp = "applied",
     resolution: int = 0,
+    depth: int = OVERLAY_DEPTH,
 ) -> dict[str, Any]:
     """Draw pictures of sections and the atlas. Writes nothing.
 
@@ -98,8 +100,8 @@ def look(
     deformation against internal anatomy.]]
 
     Args:
-        mode: [[?look:section "section": each section alone, as oriented, framed to its
-            tissue. ]][[?look:atlas "atlas": the atlas plane alone at each of positions_mm,
+        mode: [[?look:section "section": each section alone, as oriented, the whole
+            image. ]][[?look:atlas "atlas": the atlas plane alone at each of positions_mm,
             at the stack's cutting angles, or with one section at that
             section's own plane (positions_mm may be empty). ]]~
             [[?look:overlay "overlay": each section under its
@@ -138,6 +140,8 @@ def look(
         resolution: The long edge of each picture in pixels; 0 is the
             default size. A section picture is never drawn larger than its
             source, an atlas plane at most four times larger.
+        depth: Atlas ontology depth whose region boundaries "borders"
+            draws (0 = root, as in BrainGlobe; larger is finer).
 
     Returns:
         Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -342,14 +346,13 @@ def status() -> dict[str, Any]:
     """The stack as it stands, and what this run lets you change. Writes nothing.
 
     Returns:
-        One row per section in stack order: filename, position
-        (position_source "default": an unconfirmed starting position
-        from a saved job), distance to the next placed section, flip
-        and quarter turn, transform, damaged regions and damage note,
-        deformation steps. Also the cutting angles, the interval breaks, the
-        raw channels' display settings ("auto": automatic contrast limits),
-        the preprocessed channel's recipe, the background work still
-        running, and what this run lets you change.
+        One row per section in stack order: filename, position, distance
+        to the next placed section, flip and quarter turn, transform,
+        damaged regions and damage note, deformation steps. Also the
+        cutting angles, the interval breaks, the raw channels' display
+        settings ("auto": automatic contrast limits), the preprocessed
+        channel's recipe, the background work still running, and what this
+        run lets you change.
     """
     ...
 
@@ -579,9 +582,7 @@ def elastix_affine(
         view: True returns the picture described below; false returns none.
 
     Returns:
-        Per section the overlap of the fitted shapes (iou; it compares
-        outlines, not the anatomy inside, so a turned section can score as
-        high as a correct one) and the transform (rotation_deg, scale_x,
+        Per section the transform (rotation_deg, scale_x,
         scale_y, shear, translate_x_mm, translate_y_mm about the canvas
         centre); and a picture of each fitted section
         under its new transform with the atlas borders on it. With
@@ -626,7 +627,7 @@ def ants_syn(
         view: True returns the picture described below; false returns none.
 
     Returns:
-        Per section the displacement (median and max, mm, over the tissue),
+        Per section the displacement (median and max, mm, over the placed atlas),
         the fold fraction and plausibility flags (regions compressed,
         expanded, vanished or folded beyond limits; displacement outsized
         for the section); and a picture of each section under its new
@@ -703,7 +704,8 @@ def undo() -> dict[str, Any]:
     """Undo the last write. A tool call, or a finished piece of background work, is one step.
 
     Returns:
-        The tool and sections undone, and the rows of those sections.
+        The sections undone and the fields that changed, and the rows of
+        those sections.
     """
     ...
 
@@ -712,7 +714,8 @@ def redo() -> dict[str, Any]:
     """Redo the write that ``undo`` reversed.
 
     Returns:
-        The tool and sections redone, and the rows of those sections.
+        The sections redone and the fields that changed, and the rows of
+        those sections.
     """
     ...
 
@@ -742,26 +745,6 @@ def submit(
 
 
 # --- for scripts only -----------------------------------------------------------------
-
-
-def trace_from_atlas(slices: list[str], passes: int = 1) -> dict[str, Any]:
-    """Trace sections' atlas borders with the image model, shown no placement.
-
-    The model sees each clean section and the outlined atlas plane at its
-    position and cutting angles; passes=2 adds a corrective second call. The
-    reply is recorded[[?trace_borders  as trace_borders records its own]]; a script fits it
-    with langslice.ops.deformable.fit_deformable (fit_section
-    "traced_borders"), from the section's linear transform.
-
-    Args:
-        slices: Filenames (the extension may be left off), each with a
-            position and linear transform.
-        passes: 1, or 2 for the corrective second call.
-
-    Starts the image calls in the background and returns at once; the
-    results are saved, and submit waits for them. Does not fit a deformation.
-    """
-    ...
 
 
 def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[str, Any]:
@@ -898,7 +881,7 @@ STUBS: dict[str, Callable[..., Any]] = {
         grep_atlas, grep_atlas_view, status, list_files, search_files, read_file,
         position_sections, interactive_transform, mark_damage,
         elastix_affine, ants_syn, set_landmarks, landmark_triangulation,
-        trace_borders, trace_from_atlas,
+        trace_borders,
         note, undo, redo, submit, export_maps,
     )
 }
@@ -975,13 +958,6 @@ _DOOR_DOCS: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
         "        tool reply starts with its notice:",
         {"cli": "The command answers once the work has finished (with --background\n"
                 "        at once, and `wait` collects the answer), with its notice:"},
-    ),),
-    "trace_from_atlas": ((
-        "Starts the image calls in the background and returns at once; the\n"
-        "        results are saved, and submit waits for them.",
-        {"cli": "Runs the image calls and answers once they have landed (with\n"
-                "        --background at once; `wait` collects the answer); the results\n"
-                "        are saved, and submit waits for them."},
     ),),
 }
 

@@ -4,8 +4,10 @@
   "status": "ok",
   "undo_depth": 6,
   "undone": {
-   "sections": [],
-   "tool": "position_sections"
+   "fields": [
+    "placement"
+   ],
+   "sections": []
   }
  },
  "door": "tools",

@@ -97,7 +97,7 @@ def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
         assert recipe["state"]["sections"] == {} and "view_angles" in recipe["state"]
         assert "layers template + borders" in picture.caption
     # The old name of the template is still read.
-    assert look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=("ara",)))
+    assert look(ws, state, LookRequest("atlas", positions_mm=(0.1,), atlas_layers=("template",)))
 
 
 def test_overlay_keeps_the_placement_frame_for_the_layers(tmp_path: Path):
@@ -157,4 +157,3 @@ def test_request_round_trips_through_recipe_args():
     assert LookRequest.from_args(json.loads(json.dumps(request.args()))) == request
     part = LookRequest("positioning", positions_mm=(2.0,), part=3)
     assert LookRequest.from_args(json.loads(json.dumps(part.args()))) == part
-    assert LookRequest.from_args({"mode": "positioning"}).part is None  # an older recipe

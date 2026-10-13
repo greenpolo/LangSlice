@@ -6,19 +6,16 @@ import logging
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from langslice.core.toolset import TOOLS
+
 logger = logging.getLogger(__name__)
 
-#: Tools whose targets the viewer shows: the change and fit tools, look,
-#: and marking damage and setting a section's preprocessed channel (both
-#: about which sections).
-_FOLLOWED = {
-    "interactive_transform", "elastix_affine", "ants_syn", "trace_borders",
-    "look", "position_sections", "undo", "redo", "mark_damage",
-    "set_preprocessed_channel_properties",
-}
 #: Tools after whose end the viewer refreshes its targets (ABBA has applied
-#: the checkpoint's rows by then): everything that changes a placement.
-_WRITES = _FOLLOWED - {"look", "set_preprocessed_channel_properties"}
+#: the checkpoint's rows by then): every write tool of the catalog.
+_WRITES = frozenset(name for name, tool in TOOLS.items() if tool.kind == "write")
+#: Tools whose targets the viewer shows: the write tools, and the two that
+#: look at sections.
+_FOLLOWED = _WRITES | {"look", "zoom"}
 
 
 def _on_edt(callback: Callable[[], None]) -> None:

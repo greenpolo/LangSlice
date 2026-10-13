@@ -52,16 +52,16 @@ class Workspace:
     emit: Callable[[str], None] = log_progress
     #: Atlas accessor, injectable so tests (and offline hosts) can supply one.
     atlas_loader: Callable[[str], Any] = load_atlas
-    #: Rendered sections, keyed ``(id, flip, rotation, long_edge, preprocess,
-    #: frame)``. The user's files never change during a run, and a correction
+    #: Rendered sections, keyed ``(id, flip, rotation, long_edge, preprocess)``.
+    #: The user's files never change during a run, and a correction
     #: or a different size is a different key. Cached images are shared —
     #: callers read them, never mutate them.
-    render_cache: dict[tuple[str, bool, int, int, str, bool], Image.Image] = field(
+    render_cache: dict[tuple[str, bool, int, int, str], Image.Image] = field(
         default_factory=dict, repr=False
     )
     #: Same keys as ``render_cache``: how much that render shrank the file's
     #: pixels, so a known micrometres-per-pixel can follow the image down.
-    render_scale: dict[tuple[str, bool, int, int, str, bool], float] = field(
+    render_scale: dict[tuple[str, bool, int, int, str], float] = field(
         default_factory=dict, repr=False
     )
     #: Each file's working copy (:func:`langslice.core.image_prep.read_working_image`)
@@ -182,7 +182,7 @@ class Workspace:
         The host's ``inputs["pixel_size_um"]`` wins when it is given — that is
         what ``--pixel-size-um`` is for — otherwise the file's own tags answer
         (:func:`langslice.core.image_prep.read_pixel_size_um`). ``(None, "")`` when
-        nothing says; the caller estimates and says that it estimated.
+        nothing says; the caller then reports the section as uncalibrated.
         """
         host = (self.spec.inputs or {}).get("pixel_size_um")
         if host:

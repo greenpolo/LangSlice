@@ -7,8 +7,8 @@ reads the atlas or the section files, the core
 its write as ONE undo step through the job (``snapshot`` before, ``commit``
 after: one step and the checkpoint), and returns a plain record of what
 changed. Pictures are the core's: a verb given display options returns the
-pictures the core draws, never drawing its own. No wording for a model and
-no look-before-commit gates: those belong to the doors (the agent tools,
+pictures the core draws, never drawing its own. No wording for a model:
+that belongs to the doors (the agent tools,
 MCP, the CLI), which call these and add them. A refusal is
 :class:`~langslice.ops.refusal.Refused`, carrying its code and the plain
 facts behind it.

@@ -65,8 +65,9 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         assert len(job.undo_stack) == depth + 1 and record.deformation is None
         derived = job.layout.section_dir(record.id) / "landmarks.json"
         assert json.loads(derived.read_text())["pairs"] == record.landmarks["pairs"]
-        checkpoint = json.loads(Path(job.checkpoint_path).read_text())
-        restored = StackState.from_dict(checkpoint)
+        from langslice.job.checkpoint import read_checkpoint
+
+        restored = StackState.from_dict(read_checkpoint(job.checkpoint_path))
         assert restored.by_id(record.id).landmarks == record.landmarks
         landmarks.set_landmarks(job, ws, record.id, delete=["L2"])
         assert job.undo()
@@ -325,7 +326,7 @@ def test_doors_have_typed_landmarks_and_apply_through_normal_tools(tmp_path):
     try:
         spec = replace(job.spec, tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"))
         job.spec = spec
-        box = build_tools(job.state, ws, spec, job=job, gates=False)
+        box = build_tools(job.state, ws, spec, job=job)
         assert "set_landmarks" in box.names and "landmark_triangulation" in box.names
         tools = {tool.__name__: tool for tool in box.tools}
         schema = arguments_schema("set_landmarks")

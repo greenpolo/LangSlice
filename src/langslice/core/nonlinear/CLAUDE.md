@@ -16,12 +16,13 @@ returned separately, no atlas search or rejection. The fit of the extracted
 lines is the traced ANTs fit (`ops.traces.land_trace`), in `core/deformation.py` and the
 `core/deformable/` package. The prompt sentence review is below.
 
-Exactly two border-based routes, chosen by whether a placement is supplied.
-No model is ever shown a colored region map: the model-facing atlas is a
-grayscale plate with thin yellow family borders.
+One border-based route, which needs a written linear placement. No model
+is ever shown a colored region map: the model sees the section with the
+placed borders of the regions at `core.atlas.levels.MODEL_DEPTH` in thin
+yellow.
 
 - **Route "supplied"** — a written linear placement exists.
-  `start_correction` draws the placed family borders on the tissue (Image 1
+  `start_correction` draws the placed region borders on the tissue (Image 1
   the clean tissue and Image 2 the borders for a GPT-lineage prompt, the
   other way round for the Gemini wording; `_GPT_ATTACHMENTS` /
   `_GEMINI_ATTACHMENTS`) and makes ONE model call with
@@ -30,21 +31,8 @@ grayscale plate with thin yellow family borders.
   (`ImageModel.prompt` / `photograph_first`, `providers/profiles.py`) replace
   the base prompt (`profile_prompt`) and join the call key; an untested
   profile marks its request and result `untested` (`profile_marks`).
-- **Route "atlas"** — the job's HIDDEN scripting verb `trace_from_atlas`
-  (`ops/traces.py`; the agent CLI and the library call it by name, no listing
-  shows it), `start_atlas_correction`. Image 1 is the clean tissue, Image 2
-  the outlined grayscale atlas (`outlined_atlas_template`: grayscale plate
-  plus yellow family borders). ONE model call with
-  `prompts.pass1_atlas_prompt(plane, provider)`; with `passes=2` a second call
-  with `prompts.pass2_atlas_prompt` sends Image 1 clean tissue, Image 2 pass
-  1's extracted lines redrawn on the tissue, Image 3 the outlined atlas. The
-  calls are `draw_from_atlas`. The reply is recorded as `trace_borders`
-  records its own (`trace_route: "atlas"`, `passes`, `model_calls`;
-  `request.json`'s `atlas_to_canvas` is the section's written linear
-  placement, never shown to the model). It needs a written transform.
-
-Both routes keep the call-key folders and attempts, take the image model as
-an argument, and leave fitting to the ops layer.
+It keeps the call-key folders and attempts, takes the image model as an
+argument, and leaves fitting to the ops layer.
 
 Atlas labels and grayscale references use the same position, plane, cutting
 angles and orientation. Reflection is explicit, never guessed from a
@@ -56,11 +44,10 @@ residual alone is never exported.
 ## File map
 
 - `registration_tool.py` — `start_correction` (route "supplied"),
-  `start_atlas_correction` and `draw_from_atlas` (route "atlas", `AtlasDrawing`),
   the call-key folders and attempts, `profile_prompt`, `profile_marks`,
   `prompt_diff`.
 - `image_gen_registration.py` — model-facing canvas geometry (`prepare_canvas`,
-  aspect helpers) and `outlined_atlas_template`.
+  aspect helpers).
 - `border_refinement.py` — the yellow lines of a trace: `smooth_border_overlay`
   and `border_overlay` draw them on a section, `extract_thinned_lines`
   (`yellow_mask`, `thin`) reads the model's lines off a raw reply. It fits
@@ -77,8 +64,6 @@ residual alone is never exported.
   imports the transport.
 - `image_frames.py` — canvas and aspect facts only (`image_model_family`,
   `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
-- `image_gen_helpers.py` — label-map helpers: families (`_merge_classified`),
-  crisp label borders, line widths.
 
 ## Visual review is essential
 
@@ -148,6 +133,5 @@ interpretation each was checked against:
 ## Known limits
 
 One draw per model call. Yellow tissue can contaminate line extraction; the
-border fit does not itself certify region identity or topology. Route "atlas"
-cannot detect a mirrored section. Full details and output frame meanings are
+border fit does not itself certify region identity or topology. Full details and output frame meanings are
 in the design doc.

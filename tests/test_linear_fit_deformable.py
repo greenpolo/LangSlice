@@ -17,16 +17,17 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.agent.prompt import build_job_statement
 from langslice.core import deformation
+from langslice.core.atlas.render import region_boundaries
 from langslice.core.deformable import DeformableRecord
 from langslice.core.display import default_options
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.state import StackState
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.checkpoint import load_checkpoint
 from langslice.job.job import ingest
 from langslice.ops import deformable as ops_deformable
 from tests.deformable_synthetic import HY, SMOOTH_FIELD, TH, SyntheticAtlas, render_section
+from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
@@ -38,11 +39,10 @@ needs_ants = pytest.mark.skipif(not ops_deformable.ants_ready(),
 def _choice(fit_section: str = deformation.FIT_LOOK, fit_atlas: str = "template",
             stiffness: str = "medium") -> deformation.Choice:
     """One fit setting for ``ops.deformable.fit_deformable`` (ANTs SyN)."""
-    return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas, engine="ants",
-                              stiffness=stiffness)
+    return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas, stiffness=stiffness)
 
 
-TRACED = _choice(fit_section=deformation.TRACED_LINES, fit_atlas="borders")
+TRACED = _choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders")
 
 
 @pytest.fixture(autouse=True)
@@ -113,10 +113,6 @@ def test_ants_syn_takes_sections_regions_atlas_image_and_stiffness(tmp_path: Pat
     schema = declaration["parameters"] or declaration["parameters_json_schema"]
     assert set(schema["properties"]) == {"sections", "restrict_to", "atlas_image",
                                          "stiffness", "view"}
-    # A job saved with the older engine setting still opens: it is ignored.
-    saved = JobSpec(image_folder=".").to_dict()
-    saved["nonlinear"]["engine"] = "elastix"
-    assert JobSpec.from_dict(saved) == JobSpec(image_folder=".")
 
 
 @needs_ants
@@ -149,14 +145,13 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     result = _ants(box, stiffness="soft", view=False)
     row = result["results"][0]
     assert row["written"] is True and row["steps"] == 1
-    assert row["settings"] == {"engine": "ants", "stiffness": "soft", "fit_section": "fit",
+    assert row["settings"] == {"stiffness": "soft", "fit_section": "fit",
                                "fit_atlas": "template"}
     assert row["displacement_mm"]["max"] > 0 and "fold_fraction" in row
     assert [changed["id"] for changed in result["changed"]] == [ID]
     assert TOOL_MEDIA_PARTS_KEY not in result and "pictures" not in result
     held = state.slices[0].deformation
     assert held is not None and held["steps"][0]["stiffness"] == "soft"
-    assert held["steps"][0]["engine"] == "ants"
     assert not Path(held["record"]).is_absolute()  # relative to the job folder
     record_dir = Path(ctx.job_folder) / held["record"]
     assert record_dir.parent == Path(ctx.job_folder) / "sections" / Path(ID).stem / "deformable"
@@ -228,24 +223,47 @@ def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
 
 
 @needs_ants
-def test_one_setting_applies_and_the_same_again_writes_nothing(tmp_path: Path, atlas):
+def test_a_fit_builds_on_the_applied_deformation_and_a_redo_reuses_the_result(
+        tmp_path: Path, atlas):
     state, ctx, _, box = _setup(tmp_path, atlas)
     row = _fit(box, ctx, _choice(stiffness="soft")).rows[0]
     assert row["status"] == "ok" and row["written"] is True and row["steps"] == 1
     depth = len(box.job.undo_stack)
     again = _fit(box, ctx, _choice(stiffness="soft")).rows[0]
-    assert again["written"] is False and again["cached"] is True
-    assert len(box.job.undo_stack) == depth
+    assert again["written"] is True and again["steps"] == 2 and again["cached"] is False
+    assert len(box.job.undo_stack) == depth + 1
+    # The same chain fitted again (after an undo) reuses the saved result.
+    assert _tool(box, "undo")()["status"] == "ok"
+    reused = _fit(box, ctx, _choice(stiffness="soft")).rows[0]
+    assert reused["steps"] == 2 and reused["cached"] is True
 
 
 @needs_ants
-def test_start_current_needs_an_applied_deformation(tmp_path: Path, atlas):
-    _, ctx, _, box = _setup(tmp_path, atlas)
-    assert _fit(box, ctx, start="current").rows[0]["error"] == "NO_DEFORMATION"
+def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_last(
+        tmp_path: Path, atlas, monkeypatch):
+    """NONLINEAR-5: a fit does not silently restart from linear over an applied
+    deformation it cannot read, and an interrupted save leaves no record.json."""
+    from langslice.core.deformable import record as record_module
+
+    state, ctx, _, box = _setup(tmp_path, atlas)
     _fit(box, ctx)
-    latest = _fit(box, ctx, _choice(stiffness="soft"),
-                  start=ops_deformable.START_LATEST).rows[0]
-    assert latest["status"] == "ok" and latest["steps"] == 2
+    held = state.slices[0].deformation
+    folder = box.job.layout.resolve(held["record"])
+    saved = DeformableRecord.load(folder)
+
+    def interrupted(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("interrupted")
+
+    monkeypatch.setattr(record_module.np, "savez_compressed", interrupted)
+    with pytest.raises(RuntimeError):
+        saved.save(tmp_path / "copy")
+    assert not (tmp_path / "copy" / "record.json").exists()
+    monkeypatch.undo()
+    (folder / "arrays.npz").unlink()  # the record of the applied deformation is unreadable
+    box.job.deformations.cache.clear()
+    row = _fit(box, ctx).rows[0]
+    assert row["status"] == "error" and row["error"] == "DEFORMATION_UNREADABLE", row
+    assert state.slices[0].deformation == held
 
 
 @needs_ants
@@ -369,9 +387,7 @@ def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
     atlas_to_canvas = scale @ grid.placement.atlas_to_section
     labels = ctx.atlas.annotation[0].astype(np.float32)
     placed = cv2.warpAffine(labels, atlas_to_canvas[:2], canvas_size, flags=cv2.INTER_NEAREST)
-    edges = np.zeros(placed.shape, dtype=np.uint8)
-    edges[:, 1:] |= (placed[:, 1:] != placed[:, :-1]).astype(np.uint8)
-    edges[1:, :] |= (placed[1:, :] != placed[:-1, :]).astype(np.uint8)
+    edges = region_boundaries(placed)[0].astype(np.uint8)
     folder.mkdir(parents=True)
     Image.fromarray(edges * 255).save(folder / "extracted_lines.png")
     (folder / "request.json").write_text(json.dumps({"atlas_to_canvas": atlas_to_canvas.tolist()}))
@@ -618,7 +634,6 @@ def test_keep_linear_satisfies_submit_until_the_placement_moves(tmp_path: Path, 
     assert held["keep_linear"] == "The linear placement already matches."
     assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
     assert box.job.submit_errors([]) is None
-    assert _fit(box, ctx, start="current").rows[0]["error"] == "NO_DEFORMATION"
     # A placement change clears it, like an applied fit.
     moved = _tool(box, "interactive_transform")([{"id": ID, "rotation_deg": 2.0}], view=False)
     assert moved["deformation_cleared"] == [ID]

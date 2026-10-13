@@ -12,6 +12,7 @@ from PIL import Image
 from langslice.core import look as looks
 from langslice.core import zoom as zooms
 from langslice.core.atlas.render import atlas_um_per_px
+from langslice.core.atlas.tree import ancestry, path, structure_table
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.atlas_grep import GREP_ATLAS_LIMIT, grep_structures, plane_structure_ids
 from langslice.core.captions import angles_label, caption, view_angles_label
@@ -73,8 +74,7 @@ def grep_atlas(job: Job, workspace: Workspace, query: str = "", section: object 
 
 
 def _grep_regions(job: Job, workspace: Workspace, text: str, section: object) -> dict[str, Any]:
-    structures = getattr(workspace.atlas, "structures", None)
-    entries = list(structures.values()) if structures else []
+    entries = list(structure_table(workspace.atlas).values())
     if not entries:
         raise Refused("NO_STRUCTURES", message="This atlas has no region hierarchy.")
     state = job.state
@@ -112,15 +112,15 @@ def _label_layer(job: Job, record: Any) -> Any:
         return None
 
 
-def _chain(structures: Any, region_id: int) -> list[str]:
+def _chain(table: dict[int, Any], region_id: int) -> list[str]:
     """The regions containing *region_id*, nearest first, as ``acronym (name)``."""
-    entry = structures.get(region_id)
+    entry = table.get(region_id)
     if entry is None:
         return []
     out = []
-    for parent in reversed([int(v) for v in entry["structure_id_path"][:-1]]):
-        held = structures.get(parent)
-        if held is None or len(held["structure_id_path"]) <= 1:
+    for parent in reversed(ancestry(entry)):
+        held = table.get(parent)
+        if held is None or len(path(held)) <= 1:
             continue  # the root says nothing
         out.append(f"{held['acronym']} ({held['name']})")
     return out[:MAX_CHAIN]
@@ -139,7 +139,7 @@ def region_at_points(job: Job, workspace: Workspace, points: Sequence[dict[str, 
     ``NO_ATLAS_IN_PICTURE`` (a picture that draws no atlas)."""
     from langslice.core.picture_geometry import source_frame
 
-    structures = getattr(workspace.atlas, "structures", None)
+    structures = structure_table(workspace.atlas)
     if not structures:
         raise Refused("NO_STRUCTURES", message="This atlas has no region hierarchy.")
     if (isinstance(points, (str, bytes)) or not isinstance(points, Sequence)
@@ -275,7 +275,7 @@ def _resolved(workspace: Workspace, state: StackState, regions: Any,
         raise Refused("BAD_ARGS", message=str(exc)) from exc
     if not names:
         raise Refused("BAD_ARGS", message="Name at least one region.")
-    if not getattr(workspace.atlas, "structures", None):
+    if not structure_table(workspace.atlas):
         raise Refused("NO_STRUCTURES", message="This atlas has no region hierarchy.")
     try:
         found = resolve_entries(workspace.atlas, names)

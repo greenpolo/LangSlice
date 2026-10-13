@@ -8,13 +8,13 @@ from pathlib import Path
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
 from langslice.job.job import Job
-from langslice.job.layout import JobLayout
+from langslice.job.layout import JobLayout, job_folder_for
 
 
 def _job(tmp_path: Path) -> Job:
     state = StackState(slices=[SliceState(id="a.png", index_original=0, index_corrected=0)])
     spec = JobSpec(image_folder=str(tmp_path), preprocess="none")
-    return Job(state, spec, layout=JobLayout.for_images(tmp_path))
+    return Job(state, spec, layout=JobLayout(job_folder_for(tmp_path), tmp_path))
 
 
 def _write(job: Job, note: str) -> None:

@@ -22,19 +22,6 @@ DEFAULT_VLM_MAX_PIXELS = 12_000_000
 DEFAULT_VLM_MAX_LONG_EDGE = 4096
 
 
-@dataclass(frozen=True)
-class PreparedImage:
-    image: Image.Image
-    original_size: tuple[int, int]
-    output_size: tuple[int, int]
-    scale_factor: float
-    effective_pixel_size_um: float | None = None
-
-    @property
-    def downsampled(self) -> bool:
-        return self.scale_factor < 0.999999
-
-
 #: Length units an image tag may name, in micrometres. Micron spellings are
 #: matched separately: a file written by tifffile carries "µm" whose UTF-8
 #: bytes routinely reach us as "Âµm", and a plain "m" lookup would read that
@@ -54,12 +41,13 @@ def _unit_to_um(unit: str) -> float | None:
 def read_pixel_size_um(path: str | Path) -> float | None:
     """Micrometres per pixel of an image file, or None when it does not say.
 
-    Two sources, in order: the OME-XML in the TIFF ImageDescription
-    (``PhysicalSizeX`` plus its unit) and the TIFF resolution tags
-    (``XResolution`` interpreted through ``ResolutionUnit``: 2 = inch,
-    3 = centimetre; 1 means "no unit", i.e. no calibration). Anything else —
-    a PNG export, a JPEG, a TIFF written without resolution — answers None,
-    and the caller says so rather than inventing a scale.
+    Three sources, in order: the OME-XML in the TIFF ImageDescription
+    (``PhysicalSizeX`` plus its unit), ImageJ's calibration (the
+    ImageDescription's ``unit=`` with ``XResolution`` pixels per that unit),
+    and ``XResolution`` with ``ResolutionUnit`` 3 (centimetre). Anything else —
+    inch dpi or no unit (editors write 72/300 dpi placeholders), a PNG, a
+    JPEG, a TIFF written without resolution — answers None, and the caller
+    reports the section as uncalibrated.
     """
     try:
         with Image.open(path) as handle:
@@ -77,8 +65,12 @@ def read_pixel_size_um(path: str | Path) -> float | None:
             if size > 0:
                 return size
 
-    resolution, unit_code = tags.get(282), int(tags.get(296, 2) or 2)
-    per_unit_um = {2: 25400.0, 3: 10000.0}.get(unit_code)
+    resolution, unit_code = tags.get(282), int(tags.get(296, 0) or 0)
+    per_unit_um = 10000.0 if unit_code == 3 else None
+    if isinstance(description, str) and description.startswith("ImageJ="):
+        unit = re.search(r"^unit=(.+)$", description, re.MULTILINE)
+        if unit is not None and unit.group(1).strip():
+            per_unit_um = _unit_to_um(unit.group(1))
     if resolution is None or per_unit_um is None:
         return None
     try:
@@ -107,133 +99,18 @@ def normalize_image(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
-#: Brightfield CLAHE strength: stronger clip and finer tiles than the
-#: fluorescence path, because absorbance stains (Nissl, ISH) carry their
-#: structure in low-contrast density variations.
-_BRIGHTFIELD_CLAHE_CLIP = 6.0
-_BRIGHTFIELD_CLAHE_TILE = (16, 16)
-#: Optical-density blend: violet/purple stains absorb green light most, so
-#: the green channel carries the sharpest stain-density signal.
-_BRIGHTFIELD_DENSITY_WEIGHTS = (0.2, 0.6, 0.2)
-#: Densities at or below this are slide background; CLAHE output is not
-#: applied there, so empty regions stay clean instead of amplifying slide
-#: texture into gray blotches.
-_BRIGHTFIELD_BG_DENSITY = 8
-
-
-def _brightfield_preprocess(arr: np.ndarray) -> Image.Image:
-    """Brightfield (absorbance) variant: CLAHE on optical density.
-
-    Structure in brightfield is stain DENSITY, not brightness, so the image
-    is inverted to per-channel optical density, blended green-heavy, contrast
-    enhanced, and re-inverted — output keeps the native dark-tissue-on-light
-    polarity.
-    """
-    import cv2
-
-    od = 255.0 - arr.astype(np.float32)
-    wr, wg, wb = _BRIGHTFIELD_DENSITY_WEIGHTS
-    density = np.clip(wr * od[..., 0] + wg * od[..., 1] + wb * od[..., 2], 0, 255).astype(
-        np.uint8
-    )
-    clahe = cv2.createCLAHE(
-        clipLimit=_BRIGHTFIELD_CLAHE_CLIP, tileGridSize=_BRIGHTFIELD_CLAHE_TILE
-    )
-    enhanced = clahe.apply(density)
-    enhanced = np.where(density > _BRIGHTFIELD_BG_DENSITY, enhanced, density)
-    out = (255 - enhanced).astype(np.uint8)
-    return Image.fromarray(np.stack([out, out, out], axis=-1))
-
-
-def adaptive_preprocess(
-    image: Image.Image,
-    *,
-    mode: str = "auto",
-    clahe_clip: float = 4.0,
-    clahe_tile: tuple[int, int] = (8, 8),
-    target_brightness: float = 90.0,
-    max_boost: float = 3.0,
-    channel_weights: tuple[float, float, float] | None = None,
-) -> Image.Image:
+def adaptive_preprocess(image: Image.Image) -> Image.Image:
     """Adaptive preprocessing for VLM input: CLAHE + weighted blend + brightness.
 
-    Two paths, selected by ``mode``:
-
-    - ``"fluorescence"`` — per-channel CLAHE, a blend weighted toward the
-      STRUCTURAL channel (auto-selected by tissue coverage when
-      *channel_weights* is None: DAPI-blue, YFP-green, whatever lights the
-      whole tissue; sparse tracer channels get little weight), brightness
-      boost toward *target_brightness*.
-    - ``"brightfield"`` — absorbance stains (Nissl, ISH): CLAHE runs on
-      optical density with stronger clip and finer tiles
-      (:func:`_brightfield_preprocess`), keeping dark-on-light polarity.
-    - ``"auto"`` (default) — brightfield when the image border is bright
-      (a light slide background), fluorescence otherwise.
+    The image's three planes through :func:`_blend_channels` at the
+    automatic clip (``HOST_CLAHE_CLIP["medium"]``), weighted toward the
+    STRUCTURAL channel by :func:`coverage_weights` (DAPI-blue, YFP-green,
+    whatever lights the whole tissue; sparse tracer channels get little
+    weight), brightness boost toward 90.
     """
-    import cv2
-
     arr = np.asarray(normalize_image(image), dtype=np.uint8)
-
-    if mode not in ("auto", "fluorescence", "brightfield"):
-        raise ValueError(f"Unknown adaptive_preprocess mode: {mode!r}")
-    if mode == "auto":
-        ring = max(2, int(round(0.02 * max(arr.shape[:2]))))
-        border = np.concatenate(
-            [
-                arr[:ring].reshape(-1, 3),
-                arr[-ring:].reshape(-1, 3),
-                arr[:, :ring].reshape(-1, 3),
-                arr[:, -ring:].reshape(-1, 3),
-            ]
-        )
-        mode = "brightfield" if float(np.median(border)) > 140.0 else "fluorescence"
-    if mode == "brightfield":
-        return _brightfield_preprocess(arr)
-
-    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
-
-    # Structural-channel selection: the structural stain (DAPI, YFP fills,
-    # autofluorescence) lights up MOST of the tissue; sparse tracer channels
-    # light small patches brightly. Weight channels by squared tissue
-    # coverage so broad channels dominate regardless of which color they
-    # are; the DAPI-blue default only held for DAPI-stained images.
-    tissue = arr.max(axis=2) > 15
-    if channel_weights is None:
-        if tissue.any():
-            cov = np.array(
-                [float((c[tissue] > 40).mean()) for c in (r, g, b)], dtype=np.float64
-            )
-            w = cov**2
-            if w.sum() > 0:
-                wn = w / w.sum()
-                channel_weights = (float(wn[0]), float(wn[1]), float(wn[2]))
-            else:
-                channel_weights = (1 / 3, 1 / 3, 1 / 3)
-        else:
-            channel_weights = (1 / 3, 1 / 3, 1 / 3)
-
-    clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=clahe_tile)
-    r_enh = clahe.apply(r).astype(np.float32)
-    g_enh = clahe.apply(g).astype(np.float32)
-    b_enh = clahe.apply(b).astype(np.float32)
-
-    wr, wg, wb = channel_weights
-    blended = wr * r_enh + wg * g_enh + wb * b_enh
-    blended = np.clip(blended, 0, 255)
-
-    brain_mask = blended > 10
-    if brain_mask.sum() > 0:
-        current_mean = float(blended[brain_mask].mean())
-        boost = min(target_brightness / max(current_mean, 1.0), max_boost)
-    else:
-        boost = 1.0
-
-    if boost > 1.05:
-        blended = blended * boost
-
-    blended = np.clip(blended, 0, 255).astype(np.uint8)
-    gray_rgb = np.stack([blended, blended, blended], axis=-1)
-    return Image.fromarray(gray_rgb)
+    planes = [arr[:, :, k] for k in range(3)]
+    return _blend_channels(planes, coverage_weights(planes), clahe_clip=HOST_CLAHE_CLIP["medium"])
 
 
 # --- host preprocessing: N exported channels -> the one image shown ---
@@ -427,8 +304,8 @@ def _blend_channels(
     max_boost: float = 3.0,
 ) -> Image.Image:
     """Per-channel CLAHE (unless *clahe_clip* is None), weighted blend,
-    brightness boost: :func:`adaptive_preprocess`'s fluorescence path for any
-    number of channels."""
+    brightness boost: :func:`adaptive_preprocess` for any number of
+    channels."""
     import cv2
 
     total = float(sum(weights))
@@ -464,10 +341,9 @@ def host_preprocess(
 
     - auto, one page: exactly :func:`adaptive_preprocess` on that page read
       the way a single image file is read.
-    - auto, several pages: the same method over N channels — brightfield
-      (optical-density CLAHE on the mean channel) when the image border is
-      bright, else per-channel CLAHE blended by squared tissue coverage (the
-      channel lighting most of the tissue dominates) with the brightness boost.
+    - auto, several pages: the same method over N channels — per-channel
+      CLAHE blended by squared tissue coverage (the channel lighting most of
+      the tissue dominates) with the brightness boost.
     - custom: per-channel CLAHE at the chosen strength (or none), blended by
       the user's weights, with the same brightness boost.
 
@@ -491,15 +367,6 @@ def host_preprocess(
             clahe_clip=clip,
         )
 
-    stack = np.stack(channels, axis=-1)
-    ring = max(2, int(round(0.02 * max(stack.shape[:2]))))
-    border = np.concatenate([
-        stack[:ring].reshape(-1), stack[-ring:].reshape(-1),
-        stack[:, :ring].reshape(-1), stack[:, -ring:].reshape(-1),
-    ])
-    if float(np.median(border)) > 140.0:
-        gray = np.round(stack.astype(np.float32).mean(axis=-1)).astype(np.uint8)
-        return _brightfield_preprocess(np.stack([gray, gray, gray], axis=-1))
     return _blend_channels(channels, coverage_weights(channels), clahe_clip=4.0)
 
 
@@ -521,13 +388,6 @@ def coverage_weights(channels: list[np.ndarray]) -> list[float]:
         if squared.sum() > 0:
             weights = [float(value) for value in squared / squared.sum()]
     return weights
-
-
-def host_preprocess_file(
-    path: str | Path, settings: dict[str, object] | None = None
-) -> Image.Image:
-    """:func:`host_preprocess` over every page of the file at *path*."""
-    return host_preprocess(read_pages(path), settings)
 
 
 # --- raw channels and the agent-chosen appearance ---------------------------
@@ -842,7 +702,7 @@ def custom_appearance(
     planes: list[np.ndarray],
     *,
     channel_weights: list[float] | None = None,
-    clahe_clip: float = 4.0,
+    clahe_clip: float = HOST_CLAHE_CLIP["medium"],
     clahe_tiles: int = HOST_CLAHE_TILE[0],
     n4: bool = False,
     denoise: bool = False,
@@ -868,33 +728,18 @@ def custom_appearance(
     )
 
 
-#: Margin left around the foreground when framing, as a fraction of the
-#: foreground's long side.
+#: Margin left around the atlas anatomy when framing it, as a fraction of
+#: the anatomy's long side.
 FRAME_MARGIN = 0.06
-
-#: Long edge of the proxy the tissue silhouette is measured on. Otsu at full
-#: whole-slide resolution costs seconds and buys nothing: a bounding box is a
-#: bounding box.
-_FRAME_PROXY_EDGE = 256
-
-
-def crop_to_mask(
-    image: Image.Image, mask: np.ndarray, *, margin: float = FRAME_MARGIN
-) -> Image.Image:
-    """Crop *image* to *mask*'s bounding box plus *margin*.
-
-    *mask* may be measured at any resolution; its coordinates are scaled onto
-    *image*. Returns *image* untouched when the mask is empty or the resulting
-    box is degenerate.
-    """
-    box = mask_box(image.size, mask, margin=margin)
-    return image if box is None else image.crop(box)
 
 
 def mask_box(
     size: tuple[int, int], mask: np.ndarray, *, margin: float = FRAME_MARGIN
 ) -> tuple[int, int, int, int] | None:
-    """The crop box :func:`crop_to_mask` uses on an image of *size*, or None.
+    """The bounding box of *mask* plus *margin*, on an image of *size*, or None.
+
+    *mask* may be measured at any resolution; its coordinates are scaled onto
+    *size*.
 
     None when the mask is empty or the box would be degenerate (the image is
     then kept whole).
@@ -907,7 +752,7 @@ def mask_box(
     x0, x1 = float(xs.min()) * scale_x, (float(xs.max()) + 1.0) * scale_x
     y0, y1 = float(ys.min()) * scale_y, (float(ys.max()) + 1.0) * scale_y
     # One padding distance for both axes so framing cannot change the apparent
-    # aspect ratio of the tissue.
+    # aspect ratio.
     pad = margin * max(x1 - x0, y1 - y0)
     box = (
         max(0, int(x0 - pad)),
@@ -918,106 +763,6 @@ def mask_box(
     if box[2] - box[0] < 2 or box[3] - box[1] < 2:
         return None
     return box
-
-
-#: A blob at least this fraction of the biggest one's area is part of the
-#: section (a second olfactory bulb, a cerebellum parted from the brainstem, a
-#: torn-off piece); anything smaller is debris.
-SECTION_PIECE_FRACTION = 0.2
-
-
-def _largest_component(mask: np.ndarray) -> np.ndarray:
-    """The section's blobs in *mask*: the biggest plus any piece of comparable size.
-
-    A slide carries more than the section: a dust speck, a pen mark, a sliver
-    of a neighbouring section. The global bounding box stretches around all of
-    it and the section comes back rendered at a fraction of the frame, which
-    costs the position estimate. But a
-    section is often in pieces (bulbs cut apart, the cerebellum parted from
-    the brainstem, a tear): keeping only the biggest blob showed the model one
-    bulb, or a cerebellum with no brainstem, and those sections were placed
-    200-400 um off. So every blob of at least :data:`SECTION_PIECE_FRACTION`
-    of the biggest one's area is kept.
-    """
-    import cv2
-
-    try:
-        count, labels, stats, _ = cv2.connectedComponentsWithStats(
-            mask.astype(np.uint8), connectivity=8
-        )
-        if count <= 2:  # background plus at most one blob: nothing to choose
-            return mask
-        areas = stats[1:, cv2.CC_STAT_AREA]
-        keep = 1 + np.flatnonzero(areas >= SECTION_PIECE_FRACTION * areas.max())
-        return np.isin(labels, keep)
-    except Exception:  # a labeling failure must not cost us the framing
-        return mask
-
-
-def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image.Image:
-    """Crop a histology section to its tissue plus a margin.
-
-    Framing, not enhancement: histology arrives filling most of its frame while
-    a fixed-canvas atlas render leaves the brain small and centred, and that
-    difference in apparent scale is itself a cue a model will read as anatomy.
-    Cropping both to their foreground makes the two comparable.
-
-    Foreground is "different from the background", with the background level
-    read off the frame's own border — which works for dark-on-light brightfield
-    and light-on-dark fluorescence alike, and (unlike an Otsu split) will not
-    mistake a dim half of the tissue for background. The box is then taken
-    around the section's own pieces (every blob of at least
-    :data:`SECTION_PIECE_FRACTION` of the biggest one), so a speck of debris
-    cannot drag the frame open while a section in two pieces stays whole.
-    Falls back to the untouched image when the result would be degenerate.
-    """
-    box = tissue_box(image, margin=margin)
-    return image if box is None else image.crop(box)
-
-
-def tissue_box(
-    image: Image.Image, *, margin: float = FRAME_MARGIN
-) -> tuple[int, int, int, int] | None:
-    """The crop box :func:`crop_to_tissue` uses, or None to keep the image whole."""
-    mask = foreground_mask(image)
-    if mask is None:
-        return None
-    return mask_box(image.size, mask, margin=margin)
-
-
-def foreground_mask(
-    image: Image.Image, *, proxy_edge: int = _FRAME_PROXY_EDGE
-) -> np.ndarray | None:
-    """Boolean tissue mask for *image*, or None when detection is degenerate.
-
-    The mask is measured on a small proxy (long edge *proxy_edge*, by default
-    ``_FRAME_PROXY_EDGE``) and returned at that proxy resolution — scale it
-    onto whatever frame you need, as :func:`crop_to_mask` does. Foreground
-    rule and section-piece selection are shared with :func:`crop_to_tissue`.
-    The deformable fit asks for a finer proxy, because its masks bound a
-    metric rather than a framing box.
-    """
-    proxy = image.convert("L")
-    long_edge = max(proxy.size)
-    if long_edge > proxy_edge:
-        scale = proxy_edge / float(long_edge)
-        proxy = proxy.resize(
-            (max(1, round(proxy.width * scale)), max(1, round(proxy.height * scale))),
-            Image.Resampling.BILINEAR,
-        )
-    arr = np.asarray(proxy, dtype=np.float32)
-    if arr.size == 0:
-        return None
-    border = np.concatenate(
-        [arr[0, :], arr[-1, :], arr[:, 0], arr[:, -1]]
-    )
-    background = float(np.median(border))
-    spread = max(float(arr.max()) - float(arr.min()), 1.0)
-    mask = np.abs(arr - background) > max(8.0, 0.12 * spread)
-    covered = float(mask.mean())
-    if covered < 0.005 or covered > 0.98:
-        return None
-    return _largest_component(mask)
 
 
 def prepared_size(
@@ -1045,36 +790,10 @@ def prepared_size(
 def prepare_image_for_vlm(
     image: Image.Image,
     *,
-    pixel_size_um: float | None = None,
     max_pixels: int = DEFAULT_VLM_MAX_PIXELS,
     max_long_edge: int = DEFAULT_VLM_MAX_LONG_EDGE,
-) -> PreparedImage:
-    """Downsample an image for VLM use while preserving aspect ratio."""
-    if max_pixels <= 0 or max_long_edge <= 0:
-        raise ValueError("max_pixels and max_long_edge must be positive")
-
-    width, height = image.size
-    new_width, new_height = prepared_size(
-        (width, height), max_pixels=max_pixels, max_long_edge=max_long_edge)
-    if (new_width, new_height) == (width, height):
-        return PreparedImage(
-            image=image,
-            original_size=(width, height),
-            output_size=(width, height),
-            scale_factor=1.0,
-            effective_pixel_size_um=float(pixel_size_um) if pixel_size_um is not None else None,
-        )
-
-    resized = image.resize((new_width, new_height), _RESAMPLE_LANCZOS)
-
-    effective_pixel_size_um = None
-    if pixel_size_um is not None:
-        effective_pixel_size_um = float(pixel_size_um) * (float(width) / float(new_width))
-
-    return PreparedImage(
-        image=resized,
-        original_size=(width, height),
-        output_size=(new_width, new_height),
-        scale_factor=float(new_width) / float(width),
-        effective_pixel_size_um=effective_pixel_size_um,
-    )
+) -> Image.Image:
+    """Downsample an image for VLM use while preserving aspect ratio
+    (:func:`prepared_size`)."""
+    size = prepared_size(image.size, max_pixels=max_pixels, max_long_edge=max_long_edge)
+    return image if size == image.size else image.resize(size, _RESAMPLE_LANCZOS)

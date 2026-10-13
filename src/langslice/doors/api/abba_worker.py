@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -21,7 +22,16 @@ if TYPE_CHECKING:
 
 Emit = Callable[[dict[str, Any]], None]
 logger = logging.getLogger(__name__)
-_SUPPORTED_ATLASES = {"allen_mouse_10um", "allen_mouse_25um", "allen_mouse_50um"}
+#: The keys of a ``linear.run`` request (``mcp.prepare`` adds ``host_channel``);
+#: any other is refused.
+REQUEST_KEYS = ("image_folder", "pixel_size_um", "positions_mm", "z_offset_mm", "angles_deg",
+                "existing_warp", "damaged", "channel_names", "spec", "preprocessing")
+#: Why a run stopped before submitting (``agent.session``'s stop reasons),
+#: as the connector's final message says it.
+STOP_REASONS = {
+    "quota_budget": "it used this run's share of the usage window (max_quota_percent)",
+    "input_context_limit": "a request exceeded the context limit (max_input_tokens)",
+}
 
 
 #: Why an ABBA door refuses a job whose sections carry different cutting
@@ -172,26 +182,25 @@ class PreparedLinear:
     spec: JobSpec
     geometry: dict[str, tuple[int, int]]
     calibration: float
-    final_updates: list[dict[str, Any]]
-    trace_dir: Path | None
     #: The ABBA session's facts the job keeps for reproducibility (stored in
-    #: ``job.json`` under ``host.abba`` and returned as the result's
-    #: ``abba``): ``angles_deg``, ``z_offset_mm`` (the connector converts
-    #: positions with it; the worker's positions are BrainGlobe AP mm),
-    #: ``existing_warp``.
+    #: ``job.json`` under ``host.abba``): ``angles_deg``, ``z_offset_mm`` (the
+    #: connector converts positions with it; the worker's positions are
+    #: BrainGlobe AP mm), ``existing_warp``.
     abba: dict[str, Any] = field(default_factory=dict)
-    #: The stack-wide angles at the end, when they differ from the ingested
-    #: ones (``{"pitch_deg", "yaw_deg"}``), else None.
-    final_angles: dict[str, float] | None = None
 
 
 def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
-    """Validate host snapshots and build their job identically for ADK and MCP."""
+    """Validate host snapshots and build their job identically for ADK and MCP.
+
+    ``ValueError`` naming any key not in :data:`REQUEST_KEYS`."""
     from PIL import Image
 
     from langslice.core.discovery import discover_slices
     from langslice.core.spec import JobSpec
 
+    unknown = sorted(set(params) - set(REQUEST_KEYS))
+    if unknown:
+        raise ValueError(f"Unknown request key(s) {unknown}")
     folder = Path(params["image_folder"]).expanduser().resolve(strict=True)
     if not folder.is_dir():
         raise ValueError("Snapshot folder must be a directory")
@@ -239,12 +248,11 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     if channel_names:
         inputs["channel_names"] = channel_names
     spec_data.update(image_folder=str(folder), resume=False, inputs=inputs)
-    spec_data.setdefault("debrief", False)
     spec = JobSpec.from_dict(spec_data)
     unknown = [name for name in spec.frozen if name != "*" and name not in geometry]
     if unknown:
         raise ValueError(f"frozen names must identify exported snapshots; got {unknown}")
-    if spec.plane != "coronal" or spec.atlas not in _SUPPORTED_ATLASES:
+    if spec.plane != "coronal" or spec.atlas != "allen_mouse_25um":
         raise ValueError("The Fiji connector currently requires coronal Allen Mouse snapshots")
     if not spec.tasks:
         raise ValueError("Select at least one LangSlice task")
@@ -253,40 +261,33 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     spec.host_preprocessing = _host_appearance(paths, preprocessing)
     abba: dict[str, Any] = {"angles_deg": {"pitch_deg": pitch, "yaw_deg": yaw},
                             "z_offset_mm": z_offset, "existing_warp": sorted(set(existing_warp))}
-    return PreparedLinear(folder, spec, geometry, calibration, [],
-                          _trace_dir(params.get("trace_dir")), abba)
+    return PreparedLinear(folder, spec, geometry, calibration, abba)
 
 
 def _host_angles(params: dict[str, Any]) -> tuple[float, float]:
     """ABBA's stack-wide cutting angles: ``angles_deg`` (``{"pitch_deg",
-    "yaw_deg"}``, read from ``ReslicedAtlas`` with :mod:`langslice.core.abba_angles`'
-    signs), else flat."""
-    value, keys = params.get("angles_deg") or {}, ("pitch_deg", "yaw_deg")
-    if not isinstance(value, dict) or set(value) - set(keys):
+    "yaw_deg"}`` in degrees, converted from ``ReslicedAtlas`` by the Fiji
+    connector, ``AbbaHostSession.anglesDeg``)."""
+    value, keys = params["angles_deg"], ("pitch_deg", "yaw_deg")
+    if not isinstance(value, dict) or set(value) != set(keys):
         raise ValueError(f"The host's cutting angles must be {{{keys[0]!r}, {keys[1]!r}}} "
                          "in degrees")
     angles = []
     for key in keys:
-        angle = float(value.get(key, 0.0))
+        angle = float(value[key])
         if not math.isfinite(angle):
             raise ValueError("The host's cutting angles must be finite")
         angles.append(angle)
     return angles[0], angles[1]
 
 
-#: A section's warp did not change: no ``warp`` key in its row.
-_UNCHANGED = object()
-
-
-def _stack_angles(data: dict[str, Any]) -> dict[str, float] | None:
-    """A serialized state's stack-wide angles as ``{"pitch_deg", "yaw_deg"}``."""
+def _stack_angles(data: dict[str, Any]) -> dict[str, float]:
+    """A serialized state's stack-wide angles as ``{"pitch_deg", "yaw_deg"}``
+    (one angle for the stack: :func:`refuse_mixed_angles` ran first)."""
     from langslice.core.state import ANGLES_KEY
 
-    angles = data.get(ANGLES_KEY) or {"pitch": 0.0, "yaw": 0.0}
-    if not isinstance(angles, dict):
-        return None
-    return {"pitch_deg": float(angles.get("pitch") or 0.0),
-            "yaw_deg": float(angles.get("yaw") or 0.0)}
+    angles = data[ANGLES_KEY]
+    return {"pitch_deg": float(angles["pitch"]), "yaw_deg": float(angles["yaw"])}
 
 
 class HostCheckpoints:
@@ -296,11 +297,11 @@ class HostCheckpoints:
 
     Every checkpoint refuses a state whose sections differ in cutting angle
     (:func:`refuse_mixed_angles`) before emitting anything: ABBA shows one
-    angle for the whole stack. Rows (``host_updates``, ``updates_since_start``,
-    ``prepared.final_updates``) are :func:`_host_updates`' linear rows plus,
-    in a job with the ``nonlinear`` task, each section's ``warp``
-    (:meth:`_warps`; a section whose deformation is frozen has none); ``host_angles`` is added
-    when the stack-wide angles changed since the previous checkpoint.
+    angle for the whole stack. Rows (``host_updates``) are
+    :func:`_host_updates`' linear rows plus, in a job with the ``nonlinear``
+    task, each section's ``warp`` (:meth:`_warps`; a section whose
+    deformation is frozen has none); ``host_angles`` is added when the
+    stack-wide angles changed since the previous checkpoint.
 
     :meth:`attach` hands it the opened job and its workspace (the engine's
     ``on_open``; the MCP door after opening): the warp rows read applied
@@ -314,9 +315,9 @@ class HostCheckpoints:
         self.job: Any = None
         self.workspace: Any = None
         self.previous: dict[str, Any] | None = None
-        self.start: dict[str, Any] | None = None
-        #: (section, record key, linear key) -> the warp row value.
-        self._warp_cache: dict[tuple[str, str, str], dict[str, Any] | None] = {}
+        #: (section, record key, linear key) -> the warp row (failures are
+        #: not kept: the next checkpoint tries again).
+        self._warp_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
 
     def attach(self, job: Any, workspace: Any) -> None:
         self.job, self.workspace = job, workspace
@@ -341,26 +342,19 @@ class HostCheckpoints:
         # Before anything reaches ABBA: a stack with an angle per section
         # cannot be shown there (the run's own final call raises it too).
         refuse_mixed_angles(current)
-        prepared = self.prepared
         payload: dict[str, Any] = {"kind": "checkpoint"}
-        if self.previous is None or self.start is None:
-            self.start = current
+        if self.previous is None:
             updates: list[dict[str, Any]] = []
-            since_start: list[dict[str, Any]] = []
             payload["initial"] = True
         else:
             payload["initial"] = False
             updates = self._rows(current, self.previous)
-            since_start = self._rows(current, self.start)
             angles = _stack_angles(current)
-            if angles is not None and angles != _stack_angles(self.previous):
+            if angles != _stack_angles(self.previous):
                 payload["host_angles"] = angles
-            prepared.final_angles = (angles if angles is not None
-                                     and angles != _stack_angles(self.start) else None)
-        payload.update(state=current, host_updates=updates, updates_since_start=since_start)
+        payload["host_updates"] = updates
         self.emit(payload)
         self.previous = current
-        prepared.final_updates = since_start
 
     # --- rows -----------------------------------------------------------------------
 
@@ -383,8 +377,9 @@ class HostCheckpoints:
                ) -> dict[str, dict[str, Any] | None]:
         """``{section: warp}`` for the sections whose warp row changes: the
         new deformation's pairs when one was applied or replaced (or its
-        placement moved under it), ``None`` when it was cleared, undone or
-        kept linear, and whenever the placement changed."""
+        placement moved under it; ``{"error": reason}`` when they cannot be
+        made), ``None`` when it was cleared, undone or kept linear, and
+        whenever the placement changed."""
         from langslice.core.deformation import linear_key
         from langslice.core.state import StackState
         from langslice.job.formats import applied_deformation
@@ -409,10 +404,12 @@ class HostCheckpoints:
                 warps[record.id] = None
         return warps
 
-    def _warp(self, state: Any, record: Any, key: str) -> dict[str, Any] | None:
+    def _warp(self, state: Any, record: Any, key: str) -> dict[str, Any]:
         """The warp row of *record*'s applied deformation *key*, its measured
-        error logged; None, with a log message, when its record cannot be
-        read or its thin-plate spline folds at every grid."""
+        error logged; ``{"error": reason}``, with a log message, when its
+        record cannot be read or its thin-plate spline folds at every grid
+        (the connector keeps that row as a failed update and names it; the
+        warp ABBA holds is left as it is)."""
         from langslice.core.deformation import linear_key
 
         cache_key = (record.id, key, linear_key(state, record))
@@ -421,10 +418,9 @@ class HostCheckpoints:
         try:
             row = self._warp_row(state, record, key)
         except (OSError, ValueError) as exc:
-            row = None
             self.emit({"kind": "log", "message": (
-                f"{record.id}: its deformation is not sent to ABBA ({exc}); ABBA shows "
-                "the linear placement for this section.")})
+                f"{record.id}: its deformation is not sent to ABBA ({exc}).")})
+            return {"error": f"its deformation could not be converted ({exc})"}
         else:
             self.emit({"kind": "log", "message": (
                 f"{record.id}: deformation sent to ABBA as {row['points']} landmarks; "
@@ -471,76 +467,61 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     flags the agent may not clear) and preprocessing (``preprocess.preview``
     settings for multi-page snapshots: the default appearance; the pages
     stay readable as channels), channel_names (one name per exported page),
-    trace_dir (save this run's full agent trace there; the result then names
-    the files written), angles_deg (ABBA's stack-wide ``{"pitch_deg",
+    angles_deg (ABBA's stack-wide ``{"pitch_deg",
     "yaw_deg"}``: the job's ``inputs.angles``), z_offset_mm (ABBA's
     slicing-axis offset, kept with the job; the connector converts positions
     with it) and existing_warp (snapshot filenames already carrying the
     user's own warp, kept with the job's ABBA facts).
-    The run ends with one more checkpoint of the final state (the connector
-    applies its rows; it does not apply ``final_updates`` again).
+    Any other key is refused (:data:`REQUEST_KEYS`). The run keeps its full
+    agent trace as ``langslice linear run`` does: in the job folder's
+    ``trace/`` unless ``LANGSLICE_TRACE_DIR`` names another folder.
+    The run ends with one more checkpoint of the final state.
     Checkpoint events carry initial=True with no mutations for ingestion.
     Later host_updates are replacement corrections relative to the previous
-    checkpoint, never cumulative transforms; every checkpoint also carries
-    updates_since_start (from the ingested state), and the result carries
-    final_updates (ingested state -> final state), in the same row format.
-    In a job with the ``nonlinear`` task a row may carry ``warp`` (the
-    applied deformation as landmark pairs on top of the affine step, or
-    null to remove LangSlice's warp step; :class:`HostCheckpoints`), and a
-    checkpoint ``host_angles`` when the stack-wide angles changed. The
-    result adds ``abba`` (the session facts kept with the job) and
-    ``host_angles`` when the final angles differ from the ingested ones.
+    checkpoint, never cumulative transforms. In a job with the ``nonlinear``
+    task a row may carry ``warp`` (the applied deformation as landmark pairs
+    on top of the affine step, ``{"error": reason}`` when they cannot be
+    made, or null to remove LangSlice's warp step; :class:`HostCheckpoints`),
+    and a checkpoint ``host_angles`` when the stack-wide angles changed. The
+    result is ``state``, ``output_dir`` and, when the agent stopped before
+    submitting for a budget, ``stopped`` (:data:`STOP_REASONS`).
     """
     from langslice.agent import engine
+    from langslice.agent.trace import TRACE_DIR_ENV, job_trace_dir
+    from langslice.job.layout import locate_job_folder
 
     prepared = prepare_linear(params)
     folder, spec = prepared.folder, prepared.spec
     checkpoint = checkpoint_callback(prepared, emit)
-    trace_dir = prepared.trace_dir
-    before = set(trace_dir.glob("*.jsonl")) if trace_dir is not None else set()
-    with _tracing(trace_dir):
+    # The run's files: the job folder the engine uses (the spec's job_dir,
+    # else next to the snapshots, else the read-only fallback under
+    # ~/.langslice/jobs/), found as the engine finds it.
+    output_dir, _fallback = locate_job_folder(folder, spec.job_dir, register=False)
+    stopped: list[str] = []
+
+    def on_event(event: dict[str, Any]) -> None:
+        if event.get("kind") == "complete" and event.get("stopped"):
+            stopped.append(str(event["stopped"]))
+        emit({"kind": "agent_event", "event": public_event(event)})
+
+    with _tracing(None if os.environ.get(TRACE_DIR_ENV) else job_trace_dir(output_dir)):
         state = asyncio.run(engine.run(
             spec, on_write=checkpoint, on_open=checkpoint.attach,
             emit=lambda message: emit({"kind": "log", "message": message}),
-            on_event=lambda event: emit({"kind": "agent_event", "event": public_event(event)}),
+            on_event=on_event,
         ))
     # Observers are deliberately isolated by the engine. A final explicit
     # conversion ensures a failed native geometry export cannot report success.
     checkpoint(state)
-    from langslice.job.layout import locate_job_folder
-
-    # The run's files: the job folder the engine used (the spec's job_dir,
-    # else next to the snapshots, else the read-only fallback under
-    # ~/.langslice/jobs/), found as the engine found it.
-    output_dir, _fallback = locate_job_folder(folder, spec.job_dir, register=False)
-    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(output_dir),
-                              "final_updates": prepared.final_updates,
-                              "abba": dict(prepared.abba)}
-    if prepared.final_angles is not None:
-        result["host_angles"] = prepared.final_angles
-    if trace_dir is not None:
-        result["trace_files"] = sorted(
-            str(path) for path in set(trace_dir.glob("*.jsonl")) - before
-        )
+    result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(output_dir)}
+    if stopped and stopped[-1] in STOP_REASONS:
+        result["stopped"] = STOP_REASONS[stopped[-1]]
     return result
-
-
-def _trace_dir(value: Any) -> Path | None:
-    """The folder a host asked traces to be saved in, created; None when off."""
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return None
-    if not isinstance(value, str):
-        raise ValueError("trace_dir must be a folder path")
-    folder = Path(value).expanduser().resolve()
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
 
 
 @contextmanager
 def _tracing(folder: Path | None) -> Iterator[None]:
     """Point the session trace at *folder* for one run, then restore."""
-    import os
-
     from langslice.agent.trace import TRACE_DIR_ENV
 
     if folder is None:

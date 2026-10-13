@@ -13,9 +13,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
-from langslice.core.display import canonical_atlas_name
-
-Engine = Literal["ants", "elastix", "landmark_triangulation"]
+Engine = Literal["ants", "elastix"]
 #: There is no ``stiff``: it never gave the best-looking fit and left
 #: enlarged ventricles unfilled.
 Stiffness = Literal["soft", "medium", "firm"]
@@ -26,15 +24,15 @@ Detail = Literal["coarse", "standard"]
 #: ``template``: the atlas's own BrainGlobe reference (for Allen, the ARA average
 #: template). ``nissl``: a Nissl template aligned to the Allen CCFv3 (``nissl.py``).
 #: ``borders``: every region boundary from the annotation. ``borders_merged``:
-#: the color-family set the image model is shown (``trace_borders``). The
+#: the boundaries of the regions at ``levels.MODEL_DEPTH``, the set the image
+#: model is shown (``trace_borders``). The
 #: grayscale images pair with the stain, the border images with model lines
 #: (:func:`metric_for`).
 AtlasImage = Literal["template", "nissl", "borders", "borders_merged"]
 #: ``stain``: the preprocessed section photograph. ``lines``: the image
 #: model's extracted boundary lines on that photograph's grid.
 SectionImage = Literal["stain", "lines"]
-Metric = Literal["local_correlation", "mutual_information", "normalized_correlation",
-                 "mean_squares"]
+Metric = Literal["local_correlation", "mutual_information", "mean_squares"]
 #: The similarity metric of a stain fit. ``local_correlation``: ANTs'
 #: neighbourhood cross-correlation (``CC``) over a small window
 #: (:data:`CORRELATION_RADIUS_UM`); Elastix has no local correlation metric
@@ -42,14 +40,10 @@ Metric = Literal["local_correlation", "mutual_information", "normalized_correlat
 #: joint histogram over the whole masked section.
 StainMetric = Literal["local_correlation", "mutual_information"]
 #: Label-map channels added to the image pair (ANTs only). ``none``: the image
-#: pair alone. ``auto``: what can be detected from the stain without a model —
-#: the tissue footprint and empty interior holes near atlas ventricles, paired
-#: with the placed atlas footprint and ventricular system. ``model``: the image
-#: model's lines turned into named regions (:mod:`langslice.core.deformable.regions`),
-#: paired with the placed merged atlas regions.
-Labels = Literal["none", "auto", "model"]
-#: Optional ANTs preprocessing of the section stain image before the fit.
-Preprocess = Literal["n4", "denoise"]
+#: pair alone. ``model``: the image model's lines turned into named regions
+#: (:mod:`langslice.core.deformable.regions`), paired with the placed merged
+#: atlas regions.
+Labels = Literal["none", "model"]
 
 BORDER_IMAGES: frozenset[str] = frozenset({"borders", "borders_merged"})
 
@@ -144,7 +138,6 @@ class FitSettings:
     structures: tuple[str | int, ...] = field(default_factory=tuple)
     #: Margin around *structures* the restricted fit may see and move, in um.
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
-    preprocess: tuple[Preprocess, ...] = field(default_factory=tuple)
     #: Stain fits only (lines ignore it): the intensity metric.
     stain_metric: StainMetric = "local_correlation"
     #: Stain fits only (lines ignore it): add an edge channel, the smoothed
@@ -161,20 +154,13 @@ class FitSettings:
                 raise ValueError(f"{name} must be one of {get_args(kind)}, got {value!r}")
         if not (self.neighbourhood_um >= 0 and self.neighbourhood_um < 5000):
             raise ValueError("neighbourhood_um must be a non-negative width below 5 mm")
-        for name in ("exclude", "structures", "preprocess"):
+        for name in ("exclude", "structures"):
             object.__setattr__(self, name, tuple(getattr(self, name)))
-        unknown = [step for step in self.preprocess if step not in get_args(Preprocess)]
-        if unknown:
-            raise ValueError(f"Unknown preprocessing steps: {unknown}")
-        if self.preprocess and self.section_image != "stain":
-            raise ValueError("Preprocessing applies to the stain image only")
         if self.labels != "none" and self.engine != "ants":
             raise ValueError(
                 "Label-map channels are ANTs-only: Elastix has no multi-label metric "
                 "with per-channel masks that matches ANTs' label registration"
             )
-        if self.labels == "auto" and self.section_image != "stain":
-            raise ValueError("Automatic labels are detected from the stain image")
         metric_for(self.section_image, self.atlas_image)
 
     @property
@@ -185,20 +171,18 @@ class FitSettings:
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
-        for name in ("exclude", "structures", "preprocess"):
+        for name in ("exclude", "structures"):
             result[name] = list(getattr(self, name))
         return result
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> FitSettings:
+        """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any unknown key."""
+        unknown = sorted(set(value) - set(cls.__dataclass_fields__))
+        if unknown:
+            raise ValueError(f"Unknown fit setting key(s) {unknown}")
         data = dict(value)
-        # A record without these fields was fitted with mutual information
-        # and no edge channel; the softening it may carry is fixed now.
-        data.pop("line_softening_um", None)
-        data["atlas_image"] = canonical_atlas_name(data.get("atlas_image", "template"))
-        data.setdefault("stain_metric", "mutual_information")
-        data.setdefault("stain_edges", False)
-        for name in ("exclude", "structures", "preprocess"):
+        for name in ("exclude", "structures"):
             data[name] = tuple(data.get(name, ()))
         return cls(**cast(dict[str, Any], data))
 

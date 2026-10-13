@@ -19,6 +19,7 @@ import numpy as np
 
 from langslice.core import appearance as looks
 from langslice.core import layers
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.captions import caption
 from langslice.core.channels import stack_display
 from langslice.core.display import default_options
@@ -34,9 +35,6 @@ from langslice.ops import files as ops_files
 from langslice.ops import look as ops_look
 from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
-
-#: look modes a gate counts as comparing a section with the atlas.
-COMPARING_MODES = ("overlay", "positioning")
 
 
 def can_change(door: Door) -> list[str]:
@@ -86,7 +84,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def look(mode: str, sections: list[str], channels: list[str],
              positions_mm: list[float] | None = None, atlas_layers: list[str] | None = None,
              atlas_opacity: float = 0.5, warp: str = "applied",
-             resolution: int = 0) -> dict[str, Any]:
+             resolution: int = 0, depth: int = OVERLAY_DEPTH) -> dict[str, Any]:
         note = ""
         edge: int | None = None
         if resolution and door.level == AUTO_RESOLUTION:
@@ -101,18 +99,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 job, ctx, str(mode or "").strip().lower(), sections=as_list(sections),
                 positions_mm=as_list(positions_mm), channels=as_list(channels),
                 atlas_layers=layers_asked or None, atlas_opacity=atlas_opacity,
-                warp=str(warp or "applied").strip().lower(), resolution=edge)
+                warp=str(warp or "applied").strip().lower(), resolution=edge, depth=depth)
         except Refused as refusal:
             return refusal.payload()
-        if door.gated and str(mode).strip().lower() in COMPARING_MODES:
-            named, _unknown = door.resolve_many(as_list(sections))
-            drawn = named or job.state.in_order()
-            for record in drawn:
-                door.box.compared.setdefault(record.id, set()).add(
-                    round(float(record.position_mm), 2) if record.position_mm is not None else None)
-            if (str(mode).strip().lower() == "positioning"
-                    and len(drawn) == len(job.state.slices)):
-                door.box.reviewed = True
         result: dict[str, Any] = {"status": "ok"}
         if note:
             result["resolution_note"] = note

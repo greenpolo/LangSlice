@@ -26,8 +26,8 @@ FILE as stored (no rotation or flip applied: those are part of the mapping).
 - :func:`native_points`: native atlas-plane ``(x, y)`` of section points,
   linear or through an applied deformation.
 - :func:`section_maps`: the per-pixel maps on a grid (the working copy by
-  default, or the file's own pixels): coordinates (NaN outside the footprint or
-  the atlas volume), atlas ids (nearest neighbour on the native plane, as the
+  default, or the file's own pixels): coordinates (NaN outside the atlas
+  volume), atlas ids (nearest neighbour on the native plane, as the
   pictures' labels layer and the deformable record's labels), and the
   residual ``d`` such that ``coords[p] = pixel_to_atlas_um @ [p + d(p), 1]``.
 - :func:`residual_markers`: VisuAlign-style ``[x, y, nx, ny]`` markers of
@@ -201,16 +201,16 @@ def placement_problem(state: StackState, record: SliceState) -> str | None:
     return None
 
 
-#: ``registration.json``'s ``problem`` for a section mapped at an estimated
-#: scale: neither the file nor the host gives a pixel size.
+#: ``registration.json``'s ``problem`` for an uncalibrated section: neither
+#: the file nor the host gives a pixel size.
 SCALE_UNKNOWN = ("pixel size unknown: neither the file nor the host gives one, so the "
-                 "scale is estimated from the tissue width at this position, as the "
-                 "pictures draw it")
+                 "section image's width is mapped onto the atlas plane's width at this "
+                 "position (uncalibrated), as the pictures draw it")
 
 
 def scale_problem(frame: SectionFrame) -> str | None:
     """Why *frame*'s scale is not a calibration (None: it is one)."""
-    return SCALE_UNKNOWN if frame.calibration_source == "estimated" else None
+    return SCALE_UNKNOWN if frame.calibration_source == "uncalibrated" else None
 
 
 #: Sections whose frame :func:`section_frame` keeps (least recently used
@@ -240,8 +240,6 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
         stored_params(record),
         json.dumps((spec.inputs or {}).get("pixel_size_um"), default=str),
         json.dumps(spec.host_preprocessing, sort_keys=True, default=str),
-        # An estimated scale is measured on the default appearance's render.
-        str(spec.preprocess),
     )
     cache = workspace.frame_cache
     held = cache.get(record.id)
@@ -309,9 +307,9 @@ def _section_frame(state: StackState, workspace: Workspace, record: SliceState) 
         render_um = float(file_um) * render_scale
     else:
         # Neither the file nor the host gives a pixel size: the scale every
-        # placement picture draws this section at, estimated from its tissue
-        # width at its CURRENT position (core.transform.calibrate), never the
-        # one stored with a transform written at another position.
+        # placement picture draws this section at, the image width mapped onto
+        # the atlas plane's width at its CURRENT position (core.transform.calibrate),
+        # never the one stored with a transform written at another position.
         from langslice.core.transform import calibrate
 
         working_frame = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
@@ -385,12 +383,10 @@ class SectionMaps:
     """One section's maps on one grid (the file resized to ``grid_size``).
 
     ``coords`` (rows, cols, 3) float32 atlas micrometres, NaN outside the
-    section's footprint or the atlas volume; ``labels`` (rows, cols) uint32
-    atlas ids, 0 there; ``residual`` (rows, cols, 2) float32 ``(drow, dcol)``
-    in grid pixels, None without a deformation, such that ``coords[r, c] =
-    pixel_to_atlas_um @ [r + drow, c + dcol, 1]``; ``footprint`` the filled
-    outline the maps cover, ``tissue`` the threshold's own tissue estimate
-    (saved as ``tissue.png`` for scripts that mask with it).
+    atlas volume; ``labels`` (rows, cols) uint32 atlas ids, 0 there;
+    ``residual`` (rows, cols, 2) float32 ``(drow, dcol)`` in grid pixels, None
+    without a deformation, such that ``coords[r, c] =
+    pixel_to_atlas_um @ [r + drow, c + dcol, 1]``.
     """
 
     section_id: str
@@ -401,58 +397,6 @@ class SectionMaps:
     coords: np.ndarray
     labels: np.ndarray
     residual: np.ndarray | None
-    footprint: np.ndarray
-    tissue: np.ndarray
-    tissue_found: bool
-
-
-#: A gap in the section's outline narrower than twice this is closed when
-#: the footprint is drawn (a tear, a fissure, a fringe of dim white matter
-#: the threshold dropped at the edge of a ventricle), while the outline's
-#: real notches stay open: on a fluorescent section with dim fibre tracts and
-#: tears, 0.06 mm left the tears as notches and 0.4 mm began to fill the
-#: real ventral notches.
-FOOTPRINT_CLOSING_MM = 0.15
-
-
-def section_footprint(
-    workspace: Workspace, frame: SectionFrame, size: tuple[int, int],
-) -> tuple[np.ndarray, np.ndarray, bool]:
-    """``(footprint, tissue, found)`` on a grid of *size* (nearest).
-
-    *tissue* is the foreground rule of the deformable fit
-    (:func:`langslice.core.deformable.masks.tissue_masks`, its raw mask) on the
-    working copy; dim tissue (fibre tracts, white matter) may fall outside
-    it. *footprint* is the section's filled outline: that mask closed over
-    gaps of up to ``2 * FOOTPRINT_CLOSING_MM`` and every hole filled, so
-    nothing inside the outline is cut, dark regions and tears included.
-    Every pixel when no tissue separates from the background (*found*
-    False)."""
-    import cv2
-    from scipy import ndimage as ndi
-
-    from langslice.core.deformable.masks import tissue_masks
-
-    source, _factor = workspace.working_source(frame.section_id)
-    try:
-        _filled, raw = tissue_masks(source)
-    except ValueError:
-        full = np.ones((size[1], size[0]), dtype=bool)
-        return full, full, False
-    working_um = frame.file_um_per_px * frame.working_factor
-    radius = max(1, int(round(FOOTPRINT_CLOSING_MM * 1000.0 / working_um)))
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1,) * 2)
-    padded = np.pad(raw.astype(np.uint8), radius + 1)
-    closed = cv2.morphologyEx(padded, cv2.MORPH_CLOSE, kernel)
-    footprint = ndi.binary_fill_holes(closed[radius + 1:-radius - 1, radius + 1:-radius - 1] > 0)
-
-    def on_grid(mask: np.ndarray) -> np.ndarray:
-        if mask.shape[::-1] != tuple(size):
-            mask = cv2.resize(mask.astype(np.uint8), tuple(size),
-                              interpolation=cv2.INTER_NEAREST) > 0
-        return np.asarray(mask, dtype=bool)
-
-    return on_grid(np.asarray(footprint)), on_grid(raw), True
 
 
 def section_maps(
@@ -466,7 +410,6 @@ def section_maps(
 
     size = frame.file_size if full_resolution else frame.working_size
     width, height = int(size[0]), int(size[1])
-    footprint, tissue, found = section_footprint(workspace, frame, (width, height))
     to_file = frame.grid_to_file((width, height))
     grid_to_native = frame.grid_to_native((width, height))
     native_to_grid = np.linalg.inv(grid_to_native)
@@ -484,7 +427,7 @@ def section_maps(
                  + frame.native_to_index[:, 1:2, None] * nx[None]
                  + frame.native_to_index[:, 2:3, None])
         inside = np.all((index >= -0.5) & (index < shape[:, None, None] - 0.5), axis=0)
-        keep = inside & footprint[r0:r1]
+        keep = inside
         um = (frame.native_to_um[:, 0:1, None] * ny[None] + frame.native_to_um[:, 1:2, None]
               * nx[None] + frame.native_to_um[:, 2:3, None])
         block = np.moveaxis(um, 0, -1).astype(np.float32)
@@ -501,8 +444,7 @@ def section_maps(
         section_id=frame.section_id, grid_size=(width, height),
         full_resolution=bool(full_resolution), um_per_px=frame.grid_um_per_px((width, height)),
         pixel_to_atlas_um=frame.pixel_to_atlas_um((width, height)), coords=coords,
-        labels=labels, residual=residual, footprint=footprint, tissue=tissue,
-        tissue_found=found,
+        labels=labels, residual=residual,
     )
 
 

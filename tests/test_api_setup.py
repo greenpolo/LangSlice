@@ -21,7 +21,7 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_status_without_credentials(isolated_home: Path) -> None:
     status = setup.setup_status()
-    assert status["protocol_version"] == 1
+    assert status["protocol_version"] == 2
     assert status["python_executable"]
     assert not status["providers"]["openai-oauth"]["configured"]
     assert not status["providers"]["gemini-api"]["configured"]
@@ -191,8 +191,7 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     monkeypatch.setenv("OPENAI_API_KEY", "from-the-environment")
     folder = isolated_home / "stack"
     write_sections(folder)
-    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"),
-                               agent_preprocessing=False)
+    spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"))
     create(spec, atlas_loader=atlas_loader()).close()
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())

@@ -10,17 +10,18 @@
     "position_mm": 0.15,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 0.992,
     "transform_mirrored": false
    }
   ],
   "status": "ok",
   "undo_depth": 13,
   "undone": {
+   "fields": [
+    "linear"
+   ],
    "sections": [
     "s1.png"
-   ],
-   "tool": "elastix_affine"
+   ]
   }
  },
  "door": "tools",

@@ -23,7 +23,7 @@ whose imports are core-only:
   `is_off`, `options_on`) and `refusal(spec)`, the one-line reason a list
   cannot work (an unknown or essential name, every `look` mode off, a task
   with every tool that writes its answer off, a tool without the pictures it
-  needs, `position.gated` without `look:positioning`), which the spec raises
+  needs), which the spec raises
   as a `ValueError` when it is made. `needs.py`: `render(text, off)`, text
   written with what it needs (`[[?NAMES text||other]]`, `[[#NAMES=item||...]]`
   lists), dropped or swapped for the disabled list; with nothing off a text
@@ -35,9 +35,7 @@ whose imports are core-only:
   the `"*"` key for every section, `clean` (validates and canonicalizes a
   freeze), `for_section` / `everywhere` / `sections_of` / `groups`,
   `TASK_PROPERTIES` (what each task writes), `derived` (what a task that is
-  off freezes on every section), `from_legacy` (the older `inputs.locked`,
-  `keep_warp`, `nonlinear_skip` read as freezes, called by
-  `JobSpec.migrated`), the model-facing `statement` (sections sharing a freeze
+  off freezes on every section), the model-facing `statement` (sections sharing a freeze
   are one clause: every section, their filenames, or their count) and
   `message` (a refusal's sentence), and the `FROZEN` code. A frozen property
   keeps the value `inputs` supplies, else its "none": the flat plane, no flip
@@ -68,9 +66,7 @@ whose imports are core-only:
   past 33x33 the pairs are sent anyway with the error measured
   (`max_error_mm`, `p99_error_mm`, `within_tolerance`), favouring speed
   over accuracy; the largest grid whose TPS does not fold is sent, and only
-  a TPS folding at every grid is refused). `abba_angles.py`: ABBA's
-  `ReslicedAtlas` rotations <-> pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`,
-  `YAW_TO_ROTATE_Y_SIGN`, both -1; `angles_to_rotate`, `rotate_to_angles`).
+  a TPS folding at every grid is refused).
 
 Protocol metadata: `PositionSpec.thickness_um` and `interval_um`, and the
 state's millimetre equivalents, are optional (`None` when not supplied).
@@ -98,7 +94,7 @@ an interval. Atlas reference sampling uses atlas extent when none is given.
   validates against it and `nonlinear/` picks the GPT or Gemini prompt
   wording with it. A model call is only ever the `image_call` a door
   passes in; the border routes refuse a call without one.
-- No undo, no checkpoint, no look-before-commit gates, no wording for a
+- No undo, no checkpoint, no wording for a
   model beyond the captions burned into a picture. Something that writes the
   stack is an operation (`ops/`); something that words a reply is a door.
 - A picture is returned, never encoded: the doors package it (the ADK agent
@@ -159,17 +155,14 @@ the angles in a caption (empty for the flat plane).
   exactly; the Elastix affine and every deformable fit
   (`deformation.stain_image`) and the image-model routes
   (`handoff.prepare_linear_registration(preprocessed=True)`; a recipe joins
-  the call key) read it. Geometry (calibration, the tissue pivot, the maps)
-  is measured on the default render. `migrated` (called by
-  `job.checkpoint.current_state`) reads an older saved `"fit"` as
-  `"preprocessed"` and drops an older saved `"view"` look. `channels.py`: each raw
+  the call key) read it. Geometry (calibration, the maps)
+  is measured on the default render. `channels.py`: each raw
   channel name's display properties (`appearance["channels"]`,
   `ChannelProperties`: `contrast_limits` in FILE intensities, `gamma`,
   `colormap` from `COLORMAPS`; `validate_properties`, `set_properties`,
   `with_properties` adds them to a raw look so the render cache keys them),
   applied where raw channels are drawn (`composite`: the raw pictures; a
-  channel with contrast limits is not dimmed by
-  `fine_detail`; one without is drawn between its automatic limits,
+  channel without contrast limits is drawn between its automatic limits,
   `auto_limits`, per section: on a dark background black at its background
   median and full colour at its `TISSUE_WHITE_PERCENTILE` (95) inside the
   tissue, Otsu on the mean of the section's channels; on a light background
@@ -218,7 +211,7 @@ the angles in a caption (empty for the flat plane).
   `section`, `template`), `normalize_border_style`, `line_coverage` (the
   one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
   `pivot_on_canvas`, `placement_matrices`, `PanelFrame`, `physical_views`
-  (the alignment picture in a view mode) and `estimate_um_per_px`.
+  (the alignment picture in a view mode).
 - `scale.py` — one micrometres per pixel for a section and its atlas drawn
   as separate panels (the positioning picture, the opening strips): the
   section at the scale its overlay draws it
@@ -230,8 +223,7 @@ the angles in a caption (empty for the flat plane).
   `display.framed_atlas(um_per_px=)`) draw at exactly that scale.
 - `status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
-  `status_rows` (`position_source` "default" on a section still
-  at the starting position the job gave it), `compact_rows` (a model's:
+  `status_rows`, `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
@@ -253,7 +245,7 @@ the angles in a caption (empty for the flat plane).
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
-  highlight=, region_only=), store=)`
+  highlight=, region_only=, depth=), store=)`
   returns one `LookPicture` per section (`section`:
   `display.framed_section`; `overlay`: `placement.placement_pictures` mode
   `overlay`, the applied deformation unless `warp` is `none`), per position
@@ -352,7 +344,7 @@ the angles in a caption (empty for the flat plane).
   towards the gain fitted over the whole region), so a plain channel
   display is carried exactly and CLAHE's local contrast at the working
   copy's scale. `framed_window(ws, record, look, window, long_edge)`: a
-  window of the tissue-framed, turned picture read so. `unoriented_points`
+  window of the whole, turned picture read so. `unoriented_points`
   / `unoriented_fractions` / `unorient` undo a render's quarter turn and
   flip. `deformable.warp_source_points` carries a warped picture's points
   back to the section's.
@@ -379,9 +371,9 @@ the angles in a caption (empty for the flat plane).
   everything it depends on (one frame per section, least recently used out
   past `FRAME_CACHE_SECTIONS`). A section with no pixel size (neither the file
   nor the host gives one) is mapped at the scale its placement pictures draw
-  it at, `core.transform.calibrate` on its working frame (estimated from the
-  tissue width at its CURRENT position, never the scale stored with a
-  transform written elsewhere; the one decode), and `scale_problem` /
+  it at, `core.transform.calibrate` on its working frame (uncalibrated: the
+  image width mapped onto the atlas plane's width at its CURRENT position,
+  never the scale stored with a transform written elsewhere; the one decode), and `scale_problem` /
   `SCALE_UNKNOWN` says so in `registration.json`'s `problem`. No transform: the identity, as the pictures
   draw it (`IDENTITY_PARAMS`, `stored_params`); `placement_problem` says
   why a section has no map. `native_points(frame, warp, x, y)`: native
@@ -390,10 +382,7 @@ the angles in a caption (empty for the flat plane).
   field, bilinear with replicated edges, then its placement undone).
   `section_maps(workspace, frame, warp, full_resolution=)`: `SectionMaps`
   on the working copy's grid (or the file's): coordinates (NaN off the
-  section's footprint or off the atlas volume: `section_footprint`, the
-  deformable fit's foreground rule closed over `FOOTPRINT_CLOSING_MM` and
-  hole-filled, so dark tissue and tears inside the outline keep their
-  coordinates; the raw rule is kept as `tissue` for `tissue.png`), atlas ids (`core.deformable.geometry.sample_native`, nearest, as the
+  atlas volume), atlas ids (`core.deformable.geometry.sample_native`, nearest, as the
   pictures' labels layer), and the residual `(drow, dcol)` such that
   `coords = pixel_to_atlas_um @ [p + d, 1]`; computed in `BLOCK_ROWS`
   blocks. `residual_markers(frame, warp)`: VisuAlign `[x, y, nx, ny]`
@@ -420,7 +409,7 @@ the angles in a caption (empty for the flat plane).
 - `jpeg.py` — the doors' one JPEG encoding (below).
 - `handoff.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
-  long_edge=, transform=, preprocessed=)` (the oriented, unframed section
+  long_edge=, transform=, preprocessed=)` (the oriented section
   render, or with `preprocessed` the section's preprocessed channel in the
   same frame, and the
   3x3 from native atlas-plane pixel centres onto it, calibration checked,

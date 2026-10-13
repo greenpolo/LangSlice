@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "redo"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"redone\": {\"sections\": [], \"fields\": [\"notes\"]}, \"redo_depth\": 0}"
+  }
+ ],
+ "door": "resume",
+ "images": []
+}

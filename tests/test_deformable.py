@@ -3,31 +3,30 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 from scipy import ndimage as ndi
 
-from langslice.core.atlas.render import family_labels
+from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
+from langslice.core.atlas.render import region_boundaries
 from langslice.core.deformable import (
     CandidateFailure,
     DeformableRecord,
     FitSettings,
     NisslAtlas,
     diagnose,
-    excluded_ids,
-    fit_section,
     prepare_fit,
     ventricle_ids,
 )
-from langslice.core.deformable.engines import FIT_THREADS, RANDOM_SEED, invert_field, run_engine
+from langslice.core.deformable.atlas_images import whole_region_ids
+from langslice.core.deformable.engines import FIT_THREADS, RANDOM_SEED, run_engine
 from langslice.core.deformable.fit import finish_fit, fit_prepared
-from langslice.core.deformable.masks import torn_edge_band
 from langslice.core.deformable.nissl import AP_OFFSET_MM, NISSL_SHAPE, NISSL_VOXEL_MM
 from langslice.core.deformable.record import jacobian_determinant
 from langslice.core.deformable.regions import named_regions
-from langslice.core.nonlinear.image_gen_helpers import _merge_classified
 from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
 from tests.deformable_synthetic import (
     CTX,
@@ -38,6 +37,7 @@ from tests.deformable_synthetic import (
     VS,
     SyntheticAtlas,
     bump_field,
+    fit_section,
     placement,
     render_section,
 )
@@ -90,52 +90,17 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped)
     # The inverse maps placed-atlas points back: v(p + u(p)) = -u(p).
     assert record.inverse_field_mm is not None
     assert record.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
-    linear = np.mean(record.placed_labels(atlas.annotation[0])[truth > 0] == truth[truth > 0])
+    from langslice.core.deformable.geometry import sample_native
+
+    inverse = np.linalg.inv(record.placement.atlas_to_section)
+    yy, xx = np.indices(truth.shape, dtype=np.float64)
+    coords = np.stack([inverse[k, 0] * xx + inverse[k, 1] * yy + inverse[k, 2]
+                       for k in range(2)], axis=-1)
+    placed = sample_native(np.asarray(atlas.annotation[0]), coords)
+    linear = np.mean(placed[truth > 0] == truth[truth > 0])
     fitted = np.mean(record.labels[truth > 0] == truth[truth > 0])
     assert fitted > linear
     assert record.inverse_source == "engine"
-
-
-@needs_ants
-def test_labels_are_clipped_to_tissue(atlas):
-    remove = np.zeros((260, 340), dtype=bool)
-    remove[:, 250:] = True  # the right side of the section is missing
-    image, truth = render_section(atlas, np.zeros((260, 340, 2)), remove=remove)
-    record = fit_section(image, atlas, placement(), _settings(detail="coarse"))
-    assert not record.labels[~record.tissue].any()
-    assert not record.labels[:, 260:].any()
-    assert record.labels[truth > 0].astype(bool).mean() > 0.95
-
-
-def test_torn_edge_band_marks_the_cut_not_the_real_outline(atlas):
-    remove = np.zeros((260, 340), dtype=bool)
-    remove[:, 230:] = True
-    image, _ = render_section(atlas, np.zeros((260, 340, 2)), remove=remove)
-    prepared = prepare_fit(image, atlas, placement(), _settings(detail="coarse"))
-    band = prepared.torn_band
-    assert band[100:160, 226:234].mean() > 0.9  # the straight cut through the brain
-    assert not band[:, :120].any()  # the intact left outline stays informative
-    assert not (prepared.inputs.fixed_mask & (ndi.zoom(band.astype(float), (
-        prepared.grid.size[1] / 260, prepared.grid.size[0] / 340), order=0) > 0)).any()
-
-
-def test_torn_edge_band_override_is_used(atlas, warped):
-    _, image, _ = warped
-    band = np.zeros((260, 340), dtype=bool)
-    band[50:60, 50:60] = True
-    prepared = prepare_fit(image, atlas, placement(), _settings(detail="coarse"),
-                           torn_band=band)
-    assert np.array_equal(prepared.torn_band, band)
-
-
-def test_torn_edge_rule_on_a_plain_mask():
-    footprint = np.zeros((100, 100), dtype=bool)
-    footprint[10:90, 10:90] = True
-    tissue = footprint.copy()
-    tissue[:, 60:] = False  # torn at x = 60, deep inside the footprint
-    band = torn_edge_band(tissue, footprint, mm_per_px=0.02)
-    assert band[50, 59] and band[50, 62]
-    assert not band[50, 11] and not band[11, 30]
 
 
 @needs_ants
@@ -158,10 +123,10 @@ def test_excluded_region_does_not_drive_the_fit(atlas):
 
 def test_exclusion_blanks_intensity_images_and_includes_descendants(atlas, warped):
     _, image, _ = warped
-    assert excluded_ids(atlas, ["VS"]) == frozenset({VS, VL})
-    assert excluded_ids(atlas, [STR]) == frozenset({STR})
-    with pytest.raises(ValueError, match="Unknown atlas structures"):
-        excluded_ids(atlas, ["NOPE"])
+    assert whole_region_ids(atlas, ["VS"]) == frozenset({VS, VL})
+    assert whole_region_ids(atlas, [STR]) == frozenset({STR})
+    with pytest.raises(ValueError):
+        whole_region_ids(atlas, ["NOPE"])
     prepared = prepare_fit(image, atlas, placement(),
                            _settings(detail="coarse", exclude=("STR",)))
     grid_to_native = np.linalg.inv(prepared.grid.section_to_working @ placement().atlas_to_section)
@@ -208,20 +173,12 @@ def test_folds_are_reported():
     assert any(f["code"] == "FOLDS" for f in report["flags"])
 
 
-def test_numerical_inverse_undoes_a_smooth_field():
-    field = bump_field([(40, 40, 15, 0.05, -0.03)], size=(80, 80)).astype(np.float32)
-    inverse, residual = invert_field(field, (0.02, 0.02))
-    assert residual < 1e-3
-
-
 @needs_ants
 def test_lines_against_borders_and_model_regions(atlas):
     field = SMOOTH_FIELD()
     image, truth = render_section(atlas, field)
-    merged = family_labels(truth, atlas)
-    lines = np.zeros(merged.shape, dtype=bool)
-    lines[:, 1:] |= merged[:, 1:] != merged[:, :-1]
-    lines[1:, :] |= merged[1:, :] != merged[:-1, :]
+    merged = labels_at(truth, atlas, MODEL_DEPTH)
+    lines = region_boundaries(merged)[0]
     # Lines only constrain the field at boundaries; interiors follow the
     # regularization, so the tolerance is looser than for the stain image.
     borders = fit_section(image, atlas, placement(), _settings(
@@ -256,7 +213,7 @@ def test_named_regions_drop_a_bubble_loop():
 
 def test_label_channels_are_ants_only():
     with pytest.raises(ValueError, match="ANTs-only"):
-        FitSettings(engine="elastix", labels="auto")
+        FitSettings(engine="elastix", labels="model")
     with pytest.raises(ValueError, match="borders"):
         _settings(section_image="lines", atlas_image="template")
 
@@ -270,18 +227,7 @@ def test_trimmed_settings_refuse_what_the_ceiling_test_dropped():
         FitSettings(stiffness="stiff")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="detail"):
         FitSettings(detail="fine")  # type: ignore[arg-type]
-    # A record saved while line softening was a setting still loads.
-    old = {**FitSettings().to_dict(), "line_softening_um": 60.0}
-    assert FitSettings.from_dict(old) == FitSettings()
-    # Records saved before the stain metric was a setting were fitted with
-    # mutual information and no edge channel, and load as such.
-    older = {k: v for k, v in FitSettings().to_dict().items()
-             if k not in ("stain_metric", "stain_edges")}
-    loaded = FitSettings.from_dict(older)
-    assert loaded.stain_metric == "mutual_information" and not loaded.stain_edges
-    # A record saved while the template was called "ara" loads as the template.
-    named = FitSettings.from_dict({**FitSettings().to_dict(), "atlas_image": "ara"})
-    assert named.atlas_image == "template" and named == FitSettings()
+    assert FitSettings.from_dict(FitSettings().to_dict()) == FitSettings()
 
 
 def test_stain_metric_per_engine_and_pairing():
@@ -330,13 +276,7 @@ def test_identical_inputs_give_identical_fields(atlas, warped):
         assert np.array_equal(record.field_mm, in_process.field_mm)
 
 
-@needs_ants
-def test_auto_labels_detect_the_ventricle_hole(atlas, warped):
-    _, image, _ = warped
-    prepared = prepare_fit(image, atlas, placement(),
-                           _settings(detail="coarse", labels="auto"))
-    assert prepared.details["label_channels"] == ["tissue", "ventricles"]
-    assert 0.1 < prepared.details["detected_ventricle_area_mm2"] < 0.5
+def test_ventricle_ids_are_the_ventricular_system(atlas):
     assert ventricle_ids(atlas) == frozenset({VS, VL})
 
 
@@ -348,7 +288,7 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     second = fit_section(image, atlas, placement(),
                          _settings(detail="coarse", structures=("STR",),
                                    neighbourhood_um=250, **MI), previous=first)
-    assert second.step == 1 and second.undo() is first
+    assert second.step == 1 and second.parent is first
     assert second.engine["step_details"]["structures"] == [STR]
     # Far from the striatum the second step leaves the first one's field alone.
     far = np.zeros(truth.shape, dtype=bool)
@@ -361,22 +301,16 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     loaded = DeformableRecord.load(tmp_path / "rec")
     assert loaded.step == 1 and loaded.parent is not None and loaded.parent.step == 0
     assert np.array_equal(loaded.labels, second.labels)
-    assert np.allclose(loaded.native_coordinates(), second.native_coordinates())
+    assert np.allclose(loaded.field_mm, second.field_mm)
+    assert np.allclose(loaded.placement.atlas_to_section, second.placement.atlas_to_section)
+    meta = json.loads((tmp_path / "rec" / "record.json").read_text())
+    meta["placement"]["origin"] = 0
+    (tmp_path / "rec" / "record.json").write_text(json.dumps(meta))
+    with pytest.raises(ValueError, match=r"record\.json: Unknown placement key\(s\) \['origin'\]"):
+        DeformableRecord.load(tmp_path / "rec")
     with pytest.raises(ValueError, match="None of the chosen structures"):
         fit_section(image, atlas, placement(), _settings(detail="coarse",
                                                            structures=("VS",), exclude=("VS",)))
-
-
-@needs_ants
-def test_record_carries_volume_coordinates(atlas, warped):
-    _, image, _ = warped
-    record = fit_section(image, atlas, placement(), _settings(detail="coarse"))
-    volume = record.volume_coordinates()
-    native = record.native_coordinates()
-    # Coronal asr: volume axes (AP, DV, ML) = (slice index, native y, native x).
-    assert np.allclose(volume[..., 1], native[..., 1])
-    assert np.allclose(volume[..., 2], native[..., 0])
-    assert np.allclose(volume[..., 0], round(0.1 / 0.05))
 
 
 @needs_ants
@@ -391,11 +325,6 @@ def test_candidates_run_concurrently_and_all_return(atlas, warped):
         assert not isinstance(result, CandidateFailure), result
         error, flipped, magnitude = _errors(result, field, truth)
         assert error < 0.4 * magnitude
-
-
-def test_family_labels_match_the_image_tool_merge(atlas):
-    labels = atlas.annotation[0]
-    assert np.array_equal(family_labels(labels, atlas), _merge_classified(labels, atlas))
 
 
 def test_plane_coordinates_match_the_samplers(atlas):

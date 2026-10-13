@@ -13,17 +13,18 @@
     "position_mm": 0.2,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 0.911,
     "transform_mirrored": false
    }
   ],
   "status": "ok",
   "undo_depth": 18,
   "undone": {
+   "fields": [
+    "deformation"
+   ],
    "sections": [
     "s2.png"
-   ],
-   "tool": "ants_syn"
+   ]
   }
  },
  "door": "tools",

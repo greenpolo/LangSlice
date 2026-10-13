@@ -52,7 +52,6 @@ import logging
 import queue
 import re
 import threading
-import time
 import weakref
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field, replace
@@ -332,10 +331,6 @@ class ViewStore:
         self.step_source: Callable[[], int] | None = None
         #: Bytes of the views index already read for the numbering.
         self._index_read = 0
-        #: Seconds the calling threads spent in :meth:`save` (numbering and
-        #: queueing), and the writer spent per call: kept for measuring.
-        self.queue_seconds = 0.0
-        self.write_seconds = 0.0
 
     # --- numbering ----------------------------------------------------------------
 
@@ -418,7 +413,6 @@ class ViewStore:
         """
         if not pictures:
             return []
-        started = time.perf_counter()
         step = self._step(step)
         with self._lock, self._numbering() as (seq, call):
             call += 1
@@ -441,7 +435,6 @@ class ViewStore:
                 _STORES.add(self)
                 threading.Thread(target=self._work, name="langslice-views",
                                  daemon=True).start()
-        self.queue_seconds += time.perf_counter() - started
         return [item.name for item in items]
 
     def _step(self, step: int | None) -> int | None:
@@ -525,9 +518,7 @@ class ViewStore:
                     self._running = False
                     return
             try:
-                started = time.perf_counter()
                 self._write_call(item)
-                self.write_seconds += time.perf_counter() - started
             except Exception:
                 logger.warning("Could not save the pictures of a %s call", item.tool,
                                exc_info=True)

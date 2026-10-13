@@ -28,6 +28,7 @@ from PIL import Image
 
 from langslice.core import look as looks
 from langslice.core import zoom as zooms
+from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.layers import PictureNote, collecting, note_for
 from langslice.core.picture_geometry import source_frame
 from langslice.core.sizes import MAX_IMAGES_PER_CALL, MIN_RESOLUTION
@@ -156,6 +157,7 @@ def look(
     atlas_opacity: float | None = None,
     warp: str = "applied",
     resolution: int | None = None,
+    depth: int = OVERLAY_DEPTH,
 ) -> Looked:
     """Draw *mode* (``section``, ``atlas``, ``overlay`` or ``positioning``;
     :func:`langslice.core.look.look`) and save every picture with its recipe
@@ -201,11 +203,13 @@ def look(
     if atlas_opacity is not None and not 0.0 <= float(atlas_opacity) <= 1.0:
         raise Refused("BAD_ARGS", message="atlas_opacity is between 0 and 1.")
     edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
+    if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
+        raise Refused("BAD_ARGS", message="depth is a whole number, 0 or more.")
     request = looks.LookRequest(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
         channels=tuple(str(c) for c in _strings(channels, "channels")), atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
-        warp=str(warp or "applied"), long_edge=edge)
+        warp=str(warp or "applied"), long_edge=edge, depth=depth)
     try:
         with collecting() as notes:
             drawn = looks.look(workspace, state, request, store=job.deformations)

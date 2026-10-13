@@ -95,7 +95,6 @@ class _Panel:
         self.stacks: list[Any] = []
         self.sources: list[Any] = []
         self.target: Any = None
-        self.last_geometry: Any = None
         self.last_content: Any = None
         self.attached = False
         self.focus_index = 1
@@ -137,7 +136,6 @@ class _Panel:
                 self.container.add(self.handle.getViewerPanel(), "Center")
                 self.attached = True
             self.handle.getViewerPanel().state().setDisplayMode(j("bdv.viewer.DisplayMode").FUSED)
-            self.last_geometry = None
         name = str(target.getName())
         z = float(target.getSlicingAxisPosition())
         self.label.setText(f"{self.focus_index} · {name}  ·  ABBA {z:.3f} mm")
@@ -157,7 +155,6 @@ class _Panel:
             # The agent panes keep their calibrated frame even if BDV's late
             # source initialization replaces a camera set on an earlier tick.
             ensure_camera(panel, affine)
-            self.last_geometry = geometry
         # BDV requestRepaint cancels its current progressive render. Polling
         # unchanged sources must not continually restart it at coarse resolution.
         # Affine fingerprints detect position/pre-transform edits made in place;
@@ -316,9 +313,10 @@ class ComparisonWindow:
             return
         try:
             self.refresh()
-        except Exception:
+        except Exception as exc:
             logger.warning("Native comparison could not refresh", exc_info=True)
             self.timer.stop()
+            self.status.setText(f"Stopped updating: {exc}")
 
     def hide(self) -> None:
         self.timer.stop()

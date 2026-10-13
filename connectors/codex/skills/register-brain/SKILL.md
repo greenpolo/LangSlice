@@ -45,8 +45,9 @@ langslice-job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
 It prints one JSON object (`ok`, `result`, `artifacts` with the job's `card`
 and `state`, `warnings`). Report any warning to the user (for example what a
 `--registration` file did not place). A job already in the folder is
-continued; changed inputs are refused with `INPUTS_CHANGED`, which names
-`--fresh`: ask the user before starting over.
+continued; changed inputs are refused with `INPUTS_CHANGED` and other job
+settings with `SETTINGS_CHANGED`, which both name `--fresh`: ask the user
+before starting over.
 
 ## 3. Launch exactly one registration subagent
 

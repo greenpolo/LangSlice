@@ -59,28 +59,12 @@ def test_root_mask_produces_binary_alpha_at_target_size(monkeypatch):
     assert (mask[-1] == 0).all()
 
 
-def test_canvas_pad_grows_working_canvas_and_reports_offsets():
-    from langslice.core.nonlinear.image_gen_registration import prepare_canvas
-
-    canvas, unpadded, ox, oy, pad_px = prepare_canvas(
-        _make_slice(),  # 12x8
-        canvas_pad=0.25, native_canvas=False,
-    )
-
-    # pad = round(0.25 * 12) = 3 px per side -> 18x14 (aspect within range,
-    # so no further clamp).
-    assert pad_px == 3
-    assert unpadded == (12, 8)
-    assert canvas.size == (18, 14)
-    assert (ox, oy) == (3.0, 3.0)
-
-
 def test_extreme_aspect_ratio_clamps_into_the_supported_range():
     """gpt-image-2.5-sunburst accepts 1:3..3:1; a 4:1 strip black-pads down to 3:1."""
     from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
-    canvas, unpadded, ox, oy, _pad_px = prepare_canvas(
-        _make_slice((48, 12)), native_canvas=False, image_model="gpt-image-2.5-sunburst",
+    canvas, unpadded, ox, oy = prepare_canvas(
+        _make_slice((48, 12)), provider="none", image_model="gpt-image-2.5-sunburst",
     )
 
     assert canvas.size == (48, 16)  # ceil(48 / 3)
@@ -91,8 +75,8 @@ def test_extreme_aspect_ratio_clamps_into_the_supported_range():
 def test_in_range_aspect_ratio_is_left_untouched():
     from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
-    canvas, unpadded, ox, oy, _pad_px = prepare_canvas(
-        _make_slice((24, 9)), native_canvas=False, image_model="gpt-image-2.5-sunburst",
+    canvas, unpadded, ox, oy = prepare_canvas(
+        _make_slice((24, 9)), provider="none", image_model="gpt-image-2.5-sunburst",
     )
 
     assert canvas.size == (24, 9)

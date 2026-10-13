@@ -24,7 +24,7 @@
  ],
  "kwargs": {
   "atlas_layers": [
-   "ara"
+   "template"
   ],
   "positions_mm": [
    0.1

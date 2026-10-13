@@ -17,7 +17,7 @@ function markdown(text){
     if(list)flush();if(line.startsWith('> ')){flush();out.push('<blockquote>'+inline(line.slice(2))+'</blockquote>');}else para.push(line);
   }flush();if(code!==null)out.push('<pre><code>'+esc(code.join('\n'))+'</code></pre>');return out.join('');
 }
-function labelTarget(ids){return(ids||[]).slice(0,5).map(s=>String(s).replace(/^section_0*(\d+)\.[^.]+$/,'Slice $1')).join(', ')+((ids||[]).length>5?' …':'');}
+function labelTarget(ids){return(ids||[]).slice(0,5).map(String).join(', ')+((ids||[]).length>5?' …':'');}
 function title(name){return String(name||'tool');}
 function note(text,cls='notice'){const el=document.createElement('div');el.className=cls;el.textContent=text;messages.append(el);return el;}
 function toolCard(event){
@@ -35,7 +35,7 @@ function toolCard(event){
 }
 function resultCard(card,event){
   card.root.classList.remove('running');
-  const response=event.response||{};const bad=response.status&& !['ok','success','submitted'].includes(String(response.status).toLowerCase());
+  const response=event.response||{};const bad=Boolean(event.failed);
   card.root.classList.toggle('failed',Boolean(bad));
   card.root.querySelector('.tool-state').textContent=bad?'['+String(response.status)+']':'[done]';
   let pre=card.detail.querySelector('.result-payload');
@@ -81,6 +81,7 @@ function render(event){
   else if(event.kind==='seed')imageEvent(event);
   else if(event.kind==='complete')note(event.submitted?'Registration submitted to ABBA.':'Agent stopped before submission.');
   else if(event.kind==='error')note(event.text,'notice error');
+  else if(event.kind==='progress')note(event.text);
 }
 conversation.addEventListener('scroll',()=>{follow=conversation.scrollHeight-conversation.scrollTop-conversation.clientHeight<70;$('jump').hidden=follow;});
 $('jump').onclick=()=>{follow=true;conversation.scrollTop=conversation.scrollHeight;$('jump').hidden=true;};

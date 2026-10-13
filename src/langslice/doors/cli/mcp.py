@@ -8,6 +8,7 @@ import argparse
 
 from langslice.doors.cli.linear import (
     add_linear_arguments,
+    add_trace_argument,
     apply_trace_dir,
     build_linear_spec,
     spec_from_args,
@@ -36,12 +37,12 @@ def add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Open this saved job at startup, so its tools are listed from the "
         "first request (for hosts that do not follow tool-list changes)",
     )
-    # The same job flags as `linear run`; they make the job of a folder that
-    # holds none (a folder's own job keeps its saved settings; with --fresh
-    # they start every folder over). --model,
-    # --reasoning and the budget flags are the host's business here and are
-    # ignored.
+    # The same job flags as `linear run`, less --fresh and the agent session's
+    # (the host runs its own model); they make the job of a folder that holds
+    # none (a folder's own job keeps its saved settings).
     add_linear_arguments(p)
+    add_trace_argument(p)
+    p.set_defaults(resume=True)
 
 
 def run_mcp(args: argparse.Namespace) -> None:
@@ -58,5 +59,4 @@ def run_mcp(args: argparse.Namespace) -> None:
     except ValueError as exc:
         raise SystemExit(f"langslice mcp: {exc}") from exc
     apply_trace_dir(args)
-    serve(lambda folder: build_linear_spec(args, folder), args.image_folder, args.job,
-          fresh=args.fresh)
+    serve(lambda folder: build_linear_spec(args, folder), args.image_folder, args.job)
