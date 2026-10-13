@@ -22,12 +22,11 @@ wording; `registry.py` lists which.
   write lock (`Job.writing`: lock, sync, apply, commit): the doors hold it
   around every verb except the long ones (`registry.Verb.long`:
   `elastix_affine`, `ants_syn`, `trace_borders`, and the scripting
-  verbs `trace_from_atlas` and `export_maps`), which compute outside
+  verb `export_maps`), which compute outside
   it from the state they read and take it themselves to apply, comparing
   each section's `inputs.section_inputs` with the value they computed from:
   a changed section is that section's row `STALE_INPUT`
-  (`inputs.stale_row`; `trace_borders` raises it, `trace_from_atlas`
-  compares the geometry fingerprint), the others apply.
+  (`inputs.stale_row`; `trace_borders` raises it), the others apply.
   `set_transforms` takes it itself too. A read (`views.py`, `atlas.py`, `look.py`)
   writes nothing.
 - Pictures are the core's, never drawn here: a read verb, or a write that
@@ -38,14 +37,12 @@ wording; `registry.py` lists which.
   (`set_preprocessed`: the BEFORE picture), it is drawn first. The change
   tools' pictures of what they wrote are `look.show_result`'s, drawn by the
   tool door after the write.
-- It never words anything for a model and never applies the
-  look-before-commit gates (`compared`/`reviewed`): those are the tool
-  door's (`submit` takes the door's gate as a callable). Job rules (frozen
+- It never words anything for a model. Job rules (frozen
   properties, host damage marks, the spec's flip switch, the submit gates)
   are the job's and are applied here; the transform cap (`Job.over_cap`)
   is checked by the tool door with its other arguments.
-- A model is passed in, never chosen here: `traces.trace_borders` (and
-  `traces.trace_from_atlas`) takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
+- A model is passed in, never chosen here: `traces.trace_borders`
+  takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
   (`core.handoff.correction_fingerprint`).
 - A write to a property the job froze (`JobSpec.frozen`, `core/frozen.py`) is
@@ -74,10 +71,7 @@ wording; `registry.py` lists which.
 
 - `positions.py` — `position_sections(job, workspace, [{id, position_mm}],
   cutting_angles={pitch_deg, yaw_deg})`: both writes in ONE undo step
-  (each value clamped into `workspace.position_range` and reported; a
-  written position is the writer's own, so it drops the section's
-  starting-position mark, `position_source` "default", even when the value
-  is the starting one; new angles give every section the one plane, so a
+  (each value clamped into `workspace.position_range` and reported; new angles give every section the one plane, so a
   stack whose sections carried different angles is flattened, undo
   restoring them, and drop the render cache), then the stack is numbered by
   position (`order_by_position`: placed sections by increasing position take
@@ -99,14 +93,13 @@ wording; `registry.py` lists which.
   agent's note after it. With *options*, `core.damage.damage_picture` (a
   picture that fails is `render_failed`, the write standing). Returns
   `DamageRegions`.
-- `appearance.py` — `set_appearance(job, targets, ids, settings)`,
+- `appearance.py` — `set_appearance(job, ids, settings)`,
   `planned_settings` (what a write would leave, written nowhere) and
-  `preprocess(job, workspace, targets, ids, settings, shown=, options=)`:
-  per shown section the first target's BEFORE and AFTER pictures (uncaptioned,
+  `preprocess(job, workspace, ids, settings, shown=, options=)`:
+  per shown section its preprocessed channel's BEFORE and AFTER pictures (uncaptioned,
   `BeforeAfter`), drawn before the write; a failure refuses the call
-  (`RENDER_FAILED`), nothing written. The target is `preprocessed` (or its
-  older name `fit`): the preprocessed channel every fit and the image model
-  read, `core/appearance.py`. `set_preprocessed(job, workspace, ids,
+  (`RENDER_FAILED`), nothing written. The preprocessed channel is the one
+  every fit and the image model read, `core/appearance.py`. `set_preprocessed(job, workspace, ids,
   channel_weights=, clahe_clip=, clahe_tiles=, n4=, denoise=, reset=,
   shown=, options=)`: the preprocessed channel's recipe, checked first
   (`UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `CHANNEL_COUNT_MISMATCH`, `UNAVAILABLE`
@@ -181,7 +174,7 @@ wording; `registry.py` lists which.
   `interactive_transform(job, workspace, sections)`: orientation
   (`flip`, `rotate_quarter` 0/90/180/270) and the knobs together, absolute
   values, a value left out keeps what the section has (identity without a
-  transform, the stored pivot too; an entry's `pivot`, "canvas", "tissue" or
+  transform, the stored pivot too; an entry's `pivot`, "canvas" or
   `[fx, fy]`, is the operation's, no tool takes one), ONE undo step for the
   call. A changed orientation keeps the knob values: the transform is
   rebuilt on the new orientation, not dropped, and the entry's `kept` and
@@ -196,8 +189,7 @@ wording; `registry.py` lists which.
   `orientation`, `kept`); the verb `interactive_transform`.
   `elastix_affine(job, workspace, sections=(), restrict_to=(),
   atlas_image="template"|"nissl")`: per section `core.transform.fit_elastix`
-  refining its current placement against the atlas image (`ara` read as
-  `template`), by the *restrict_to* regions only, its marked damage regions
+  refining its current placement against the atlas image, by the *restrict_to* regions only, its marked damage regions
   left out on their own (`core.damage.exclusions`); the named sections, else
   `fit_targets(job)` (every positioned section whose affine is not frozen);
   `FROZEN` per section (a frozen affine, or a fit that turns over a section
@@ -211,17 +203,16 @@ wording; `registry.py` lists which.
   zoom). Refused: `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. Returns `AffineFit`
   (`rows`, `fitted`).
 - `deformable.py` — `fit_deformable(job, workspace, records, choice,
-  restrict_to=, start=, options=)`: one deformation (a resolved
-  `deformation.Choice`) on top of each section's linear placement (*start*
-  `linear`), its applied deformation (`current`), or per section whichever it
-  holds (`START_LATEST` "latest"), each section's marked regions excluded
-  (`core.damage.exclusions`), applied as ONE undo step (an unchanged key
-  writes nothing, `written: false`). It runs the fit (the fit grid, the
+  restrict_to=, options=)`: one deformation (a resolved
+  `deformation.Choice`) on top of each section's applied deformation, or its
+  linear placement when it holds none (the step's `start`: `current` or
+  `linear`), each section's marked regions excluded
+  (`core.damage.exclusions`), applied as ONE undo step. It runs the fit (the fit grid, the
   image the fit reads, a traced fit section waiting for its running trace
   under one `TRACE_WAIT_S` deadline and adding the trace's regions to the
   call's (`traced_regions`; the row's `trace_regions`, and the record keeps
   the regions each fit ran with), the record cache, the engine). Per-section
-  problems (`INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`,
+  problems (`INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`,
   `NO_TRACE`/`TRACE_*`, `BAD_SETTINGS`, `FIT_FAILED`, `RECORD_WRITE_FAILED`,
   `STALE_INPUT`) are rows, not refusals. Returns `DeformableFit`: `rows`
   (call order), `fitted` (each row with its fit and record), `traced` (per
@@ -239,8 +230,8 @@ wording; `registry.py` lists which.
   `ants_syn(job, workspace, sections, restrict_to=, atlas_image=,
   stiffness=)`: the ANTs SyN fit, applied as ONE undo step:
   on the preprocessed channel (`fit`) against `template` or
-  `nissl` (`ara` read as `template`), `soft`/`medium`/`firm`, from
-  `START_LATEST` (undo is how to start over); *restrict_to*
+  `nissl`, `soft`/`medium`/`firm`, on top of the applied deformation
+  (undo is how to start over); *restrict_to*
   checked against the atlas (`region_entries`); refused, nothing done:
   `ANTS_MISSING` (`refuse_without_ants`: antspyx must import, `ants_ready`),
   `BAD_ARGS` (no sections, more than `MAX_ANTS_SYN_SECTIONS` (4), an unknown
@@ -255,7 +246,7 @@ wording; `registry.py` lists which.
   section whose packaged trace still runs gets that work, `running`). When
   the reply lands, `land_trace` (the work's callable) fits the traced
   borders (`TRACE_FIT`: traced borders against the atlas borders, ANTs,
-  medium; from `START_LATEST`; by *restrict_to*'s regions only) with
+  medium; on top of the applied deformation; by *restrict_to*'s regions only) with
   `fit_deformable` and applies it as its own undo step, its notice saying so
   and that undo removes it while it is the latest step, with the
   displacement, fold fraction and flags; with *options* the fit and the
@@ -284,24 +275,6 @@ wording; `registry.py` lists which.
   `INVALID_LINEAR_PLACEMENT`,
   `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT` (the geometry changed while the
   call was prepared). Returns `TraceStarted`.
-  `trace_from_atlas(job, workspace, refs, image_model=, passes=1,
-  workers=)`: the placement-free route "atlas" as a job verb, a HIDDEN
-  scripting verb (kept for experiments, called by name, listed nowhere):
-  per section `registration_tool.start_atlas_correction` (the model shown
-  the clean section and the outlined atlas plane at its position and
-  angles, never its placement; `passes` 2 adds the corrective call), the
-  record and its artifacts exactly as `trace_borders` writes them, so
-  `fit_deformable` with a traced fit section (from the section's written
-  linear placement), the submit gate and the maps read it unchanged; no
-  verb fits it (a script does). Needs a position and a
-  written transform. Prepared outside the lock; under it each section's
-  geometry is checked again (`STALE_INPUT` row), its call started, its
-  record written; every changed record ONE undo step. Per-section rows
-  (`UNKNOWN_SLICE_IDS`, `FROZEN`,
-  `INVALID_LINEAR_PLACEMENT`, `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT`,
-  `running`); `BAD_ARGS` for no sections or `passes` not 1/2. Returns
-  `AtlasTraces` (`rows`, `written`). Both verbs share one prepare step
-  (outside the lock) and one apply step (under it).
 - `inputs.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
   position, plane, angles, flip, rotation, transform; its fit appearance;
@@ -319,7 +292,7 @@ wording; `registry.py` lists which.
   `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
   `NO_SIDES`.
 - `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
-  channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=)` and
+  channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=, depth=6)` and
   `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
   save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
@@ -354,9 +327,9 @@ wording; `registry.py` lists which.
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
   "Nonlinear", tool, limits)`, in the order every door lists them; `tool` is
   the verb's `core.toolset.ToolDef` (`when`, `long`, `scripting`,
-  `image_model`, `hidden`, `options`, `essential`, `needs`: the core's list of
+  `image_model`, `options`, `essential`, `needs`: the core's list of
   what a spec can switch, which the registry binds to the operations);
-  `enabled(spec, scripting=, image_model=, hidden=)`: the verbs a run of the
+  `enabled(spec, scripting=, image_model=)`: the verbs a run of the
   spec has, less the ones its `disabled` list names. The gating (`when`):
   `look`, `zoom`, both channel tools, `grep_atlas`, `grep_atlas_view`,
   `status`, the job-folder tools (`list_files`, `search_files`, `read_file`),
@@ -376,12 +349,7 @@ wording; `registry.py` lists which.
   door that cannot reach it (MCP with none connected). A `scripting` verb
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the
   library's only (`build_tools(scripting=True)`), never offered to a model.
-  A `hidden` verb (always a scripting verb; `trace_from_atlas`) is in
-  `enabled` only with `hidden=True` (what `build_tools(scripting=True)`
-  passes, so the CLI and the library call it by name) and in no listing:
-  `listed()` (every verb but the hidden ones) is what `langslice-job ops`,
-  `langslice-job schema` without a verb, the job folder's card, the
-  library's `verbs` and the CLI's `verbs` lists show. `limits`: the most one
+  `limits`: the most one
   call takes, by what it counts (`look`, `grep_atlas_view` and
   `set_preprocessed_channel_properties` show at most four `pictures`;
   `interactive_transform` and `ants_syn` take at most four `sections`); the
@@ -390,22 +358,7 @@ wording; `registry.py` lists which.
   door's `readOnlyHint` is `kind == "read"`, and the agent CLI
   (`langslice-job ops`, `schema`, `job FOLDER VERB`), the library's job
   methods and the job folder's reference card list it
-  (`src/langslice/doors/`). A tool that was replaced keeps answering by its
-  old name: `RETIRED` maps each retired name to `(replacement, hint)`
-  (`view_slices`, `view_atlas`, `view_placement`, `view_stack` -> `look`;
-  `preprocess` -> `set_preprocessed_channel_properties`; `set_positions`,
-  `set_cutting_angles`, `reorder_slices` -> `position_sections`;
-  `orient_slices`, `adjust_transforms` -> `interactive_transform`;
-  `mark_damaged` -> `mark_damage`; `fit_affine` -> `elastix_affine`;
-  `fit_deformable` -> `ants_syn`; `search_position` -> none), and every door
-  answers a call by one with `retired_payload(name, disabled)` (`RETIRED_TOOL`, `use`,
-  a message naming the replacement and how to call it; nothing done), every
-  time it is called: the ADK plugin `agent.plugins.RetiredToolsPlugin`, the
-  agent CLI (`cli/job.py` `call`, `cli/catalog.py` `schema`), the MCP
-  server (`mcp/server.py` `LangSliceServer.call_tool`) and the library
-  (`JobHandle.__getattr__`'s `AttributeError`). A retired name never becomes
-  a verb again. `tests/test_ops_registry.py` and
-  `tests/test_doors_declarations.py` check it.
+  (`src/langslice/doors/`).
 
 The pictures are drawn by the core (`src/langslice/core/`, its own
 `CLAUDE.md`), and the job saves every one a door shows, with its layers, in
@@ -450,8 +403,8 @@ a `warp` block (the pairs the current warp was built from, those not in it, thos
 deleted but still shaping it, and that `landmark_triangulation` must run again),
 and with no pairs and no delete writes nothing; the apply reply lists
 `built_from` and says which displacement figure is the whole deformation; `delete=["all"]` clears the section.
-`history.undo/redo` report `step` (`describe_step`: the tool read off the
-changed field groups, the sections touched). `look.show_result` takes
+`history.undo/redo` report `step` (`describe_step`: the sections touched
+and the changed field groups). `look.show_result` takes
 `resolution`; `look.zoom`'s entries carry `content_box` and `covers` (the whole
 picture's pixels a zoom shows). Every zoom carries a coordinate grid
 (`core/zoom_grid.py`) labelled in the whole picture's pixels; on a zoom,

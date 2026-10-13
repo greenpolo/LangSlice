@@ -18,19 +18,18 @@
      "source": "host"
     },
     "id": "s1.png",
-    "iou": 1.0,
     "mirrored": false,
     "physical": {
      "pivot": [
       0.5,
       0.5
      ],
-     "rotation_deg": 0.973,
-     "scale_x": 1.0099,
+     "rotation_deg": 0.977,
+     "scale_x": 1.0105,
      "scale_y": 0.9946,
      "shear": -0.0106,
-     "translate_x_mm": -0.0603,
-     "translate_y_mm": -0.0232
+     "translate_x_mm": -0.061,
+     "translate_y_mm": -0.0228
     },
     "position_mm": 0.15,
     "regions": {
@@ -63,7 +62,7 @@
   }
  ],
  "kwargs": {
-  "atlas_image": "ara",
+  "atlas_image": "template",
   "restrict_to": [
    "TH"
   ]

@@ -20,28 +20,20 @@ run, in this order, each one declared by
 :mod:`langslice.doors.declarations`), the agent CLI (``langslice-job ops``,
 ``langslice-job schema``, ``langslice-job FOLDER VERB``), the library's job
 methods and the job folder's reference card.
-
-A tool that has been replaced keeps answering by its old name: :data:`RETIRED`
-maps each retired name to its replacement and a hint, and every door answers
-a call by a retired name with :func:`retired_payload` (``RETIRED_TOOL``:
-which tool to use instead; nothing was done), every time it is called. A
-retired name never becomes a verb again.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from langslice.core.needs import render
 from langslice.core.toolset import (
     GROUPS,
     TOOLS,
     Group,
     Kind,
     ToolDef,
-    is_off,
     positions_on,
 )
 from langslice.ops import (
@@ -62,8 +54,7 @@ from langslice.ops import (
     views,
 )
 
-__all__ = ["GROUPS", "RETIRED", "VERBS", "Group", "Kind", "Verb", "enabled", "listed",
-           "positions_on", "retired_payload"]
+__all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on"]
 
 
 @dataclass(frozen=True)
@@ -105,22 +96,10 @@ class Verb:
 
     @property
     def image_model(self) -> bool:
-        """The verb calls the run's image model (``trace_borders``,
-        ``trace_from_atlas``): a door that cannot reach one leaves it out
+        """The verb calls the run's image model (``trace_borders``): a door
+        that cannot reach one leaves it out
         (:func:`enabled` with ``image_model`` False)."""
         return self.tool.image_model
-
-    @property
-    def hidden(self) -> bool:
-        """A hidden verb (always a scripting verb) is in no listing: not in
-        :func:`enabled`'s answer unless asked for (``hidden=True``), not in
-        ``langslice-job ops``, the ``langslice-job schema`` of every verb, the job
-        folder's card, the library's ``verbs`` or the public docs. The
-        scripting doors still build it, so the agent CLI (``langslice-job
-        FOLDER VERB``) and the library call it by name (``trace_from_atlas``:
-        kept reachable for experiments, not advertised)."""
-        return self.tool.hidden
-
 
 #: Pictures one call of a picture verb shows; the rest are named, not shown.
 _PICTURES: dict[str, int] = {"pictures": look.MAX_LOOK_PICTURES}
@@ -145,7 +124,6 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "set_landmarks": landmarks.set_landmarks,
     "landmark_triangulation": landmarks.landmark_triangulation,
     "trace_borders": traces.trace_borders,
-    "trace_from_atlas": traces.trace_from_atlas,
     "note": notes.add_note,
     "undo": history.undo,
     "redo": history.redo,
@@ -173,72 +151,7 @@ VERBS: dict[str, Verb] = {
     for name, tool in TOOLS.items()
 }
 
-#: Every retired tool name: ``(replacement, hint)``. The replacement is the
-#: verb that does the retired tool's job now ("" when none does); the hint
-#: says how to call it. Every door answers a call by one of these names with
-#: :func:`retired_payload`.
-RETIRED: dict[str, tuple[str, str]] = {
-    "view_slices": ("look", '[[?look:section mode "section" shows sections alone'
-                    "[[?zoom ; zoom shows detail]]]]"),
-    "view_atlas": ("look", '[[?look:atlas mode "atlas" with positions_mm shows the atlas '
-                   "alone]]"),
-    "view_placement": ("look", '[[?look:overlay mode "overlay" shows a section under its '
-                       "registration[[?look:positioning ; ]]]]"
-                       '[[?look:positioning mode "positioning" shows sections against '
-                       "atlas positions]]"),
-    "view_stack": ("look", '[[?look:positioning mode "positioning" without sections shows '
-                   "the whole stack along the slicing axis]]"),
-    "preprocess": ("set_preprocessed_channel_properties",
-                   "it sets the channel that fits and the image model read"
-                   "[[?set_channel_properties ; set_channel_properties sets how a raw "
-                   "channel is displayed]]"),
-    "set_positions": ("position_sections", "sections=[{id, position_mm}]"),
-    "set_cutting_angles": ("position_sections", "cutting_angles={pitch_deg, yaw_deg}"),
-    "reorder_slices": ("position_sections", "the stack's order follows the positions, so "
-                       "writing the positions sets the order"),
-    "orient_slices": ("interactive_transform", "sections=[{id[[?interactive_transform:flip , flip]]"
-                      "[[?interactive_transform:rotate , rotate_quarter]]}]"),
-    "adjust_transforms": ("interactive_transform",
-                          "sections=[{id, rotation_deg, scale_x, scale_y, shear, "
-                          "translate_x_mm, translate_y_mm}]; a value left out keeps the "
-                          "section's current one"),
-    "mark_damaged": ("mark_damage", "section and regions: the atlas regions the section "
-                     "has lost"),
-    "fit_affine": ("elastix_affine", "sections, restrict_to, atlas_image"),
-    "fit_deformable": ("ants_syn", "sections, restrict_to, atlas_image, stiffness; "
-                       "[[?trace_borders a fit of traced borders is part of trace_borders, "
-                       "and ]]a section left without a deformation is named in submit's "
-                       "left_linear"),
-    "search_position": ("", "no tool searches for positions[[?look:positioning ; compare a "
-                        'section with atlas positions in look mode "positioning"]]'),
-}
-
-
-def retired_payload(name: str, disabled: Collection[str] = ()) -> dict[str, Any] | None:
-    """The answer to a call of a retired tool (:data:`RETIRED`), or None when
-    *name* is not retired: ``RETIRED_TOOL``, the tool to use (``use``) and a
-    message naming it and how to call it. Nothing was done. A job's
-    *disabled* list takes out of the hint what it names; a replacement the
-    job has disabled (or whose hint is left empty by it) is no replacement
-    there."""
-    held = RETIRED.get(str(name))
-    if held is None:
-        return None
-    replacement, hint = held
-    hint = render(hint, disabled)
-    if replacement and (is_off(disabled, replacement) or not hint):
-        replacement, hint = "", "this job does not have it"
-    if replacement:
-        message = f"{name} is no longer a tool. Use {replacement} instead: {hint}."
-    else:
-        message = f"{name} is no longer a tool, and nothing replaces it: {hint}."
-    return {"status": "error", "error": "RETIRED_TOOL", "tool": str(name),
-            **({"use": replacement} if replacement else {}),
-            "message": message + " Nothing was done."}
-
-
-def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True,
-            hidden: bool = False) -> list[str]:
+def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
     """The verbs a run of *spec* (a :class:`~langslice.core.spec.JobSpec`)
     has, in :data:`VERBS` order: the tools every door builds for it: those
     its tasks give, less the ones its ``disabled`` list names. The scripting
@@ -246,15 +159,7 @@ def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True,
     CLI's and the library's toolbox, never the agent tools or MCP.
     *image_model* False: the door cannot reach the spec's image model (MCP
     with none connected), so the verbs that call it (``Verb.image_model``)
-    are left out. The hidden verbs (``Verb.hidden``) only with *hidden* as
-    well as *scripting*: a door builds them, a listing never shows them."""
+    are left out."""
     return [name for name, verb in VERBS.items()
             if verb.tool.is_on(spec) and (scripting or not verb.scripting)
-            and (hidden or not verb.hidden)
             and (image_model or not verb.image_model)]
-
-
-def listed() -> dict[str, Verb]:
-    """Every verb a listing shows (``langslice-job ops``, ``langslice-job schema``,
-    the job folder's card): :data:`VERBS` without the hidden ones."""
-    return {name: verb for name, verb in VERBS.items() if not verb.hidden}

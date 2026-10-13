@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from langslice.core.display import available_atlas_channels, canonical_atlas_name, default_options
+from langslice.core.display import available_atlas_channels, default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.doors.tools.door import Door, as_list, pictured
 from langslice.doors.tools.view_options import clamp_resolution
@@ -38,7 +38,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return bool(view) or bool(spec.force_view)
 
     def atlas_refusal(atlas_image: str) -> dict[str, Any] | None:
-        kind = canonical_atlas_name(str(atlas_image or "template").strip().lower())
+        kind = str(atlas_image or "template").strip().lower()
         offered = [name for name in available_atlas_channels(ctx) if name != "borders"]
         if kind in ("template", "nissl") and kind not in offered:
             return {"status": "error", "error": "FIT_ATLAS_UNAVAILABLE",
@@ -73,8 +73,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             if turn is not None:
                 row["warning"] = (
                     f"This fit turns the section {turn:.0f} degrees from its previous "
-                    "transform. The overlap compares shapes, not the anatomy inside, so a "
-                    "turned or upside-down section can score as high as a correct one.")
+                    "transform.")
         result: dict[str, Any] = {
             "status": "ok" if fits else "error",
             **({} if fits else {"error": "NOTHING_FITTED"}),
@@ -153,21 +152,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 + ". Carry on; its notice comes at the head of a later reply, and "
                 "submit waits for it."}
 
-    def trace_from_atlas(slices: list[str], passes: int) -> dict[str, Any]:
-        assert door.image_model is not None  # the verb exists only when traces are on
-        try:
-            done = ops_traces.trace_from_atlas(job, ctx, as_list(slices),
-                                               image_model=door.image_model, passes=passes)
-        except Refused as refusal:
-            return refusal.payload()
-        failed = [row for row in done.rows if row.get("status") == "error"]
-        return {
-            "status": "error" if len(failed) == len(done.rows) else "ok",
-            **({"error": "NOTHING_TRACED"} if len(failed) == len(done.rows) else {}),
-            "results": done.rows,
-            "message": "Image calls run in the background; submit waits for them.",
-        }
-
     def export_maps(slices: list[str], full_resolution: bool) -> dict[str, Any]:
         try:
             done = ops_exports.export_maps(job, ctx, as_list(slices),
@@ -241,6 +225,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     return {
         "set_landmarks": set_landmarks, "landmark_triangulation": landmark_triangulation,
         "elastix_affine": elastix_affine, "ants_syn": ants_syn,
-        "trace_borders": trace_borders, "trace_from_atlas": trace_from_atlas,
+        "trace_borders": trace_borders,
         "export_maps": export_maps,
     }

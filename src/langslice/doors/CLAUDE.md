@@ -12,27 +12,10 @@ every door is generated from them and from the registry (`ops/registry.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, the hidden `trace_from_atlas`) and `brief` | Claude Code, Codex |
+| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps` and `brief` | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included | a script |
 
-A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
-placement-free image-model trace kept for experiments) is built by the
-scripting doors and called by name (`langslice-job FOLDER trace_from_atlas`,
-`job.trace_from_atlas(...)`), but listed nowhere: not in `langslice-job ops`,
-`langslice-job schema` without a verb (`schema trace_from_atlas` answers by
-name), the card, the library's `verbs`, the CLI's `verbs` lists, the job
-statement, nor the public docs (`registry.listed()`).
-
-A replaced verb's old name keeps answering on every door
-(`ops.registry.RETIRED`, `retired_payload`): a call by a retired name gets
-`RETIRED_TOOL` with the verb to use instead (`use`) and how to call it, and
-nothing is done, every time. The ADK agent through
-`agent.plugins.RetiredToolsPlugin` (a `before_tool_callback`, which ADK
-runs for an unknown name before its "tool not found" answer), MCP through
-`mcp/server.py` `LangSliceServer.call_tool`, the agent CLI through
-`cli/job.py` `call` and `cli/catalog.py` `schema` (exit 2), and the library
-through `JobHandle.__getattr__` (an `AttributeError` naming the
-replacement). A retired name never becomes a verb again. The goldens
+The goldens
 (`tests/golden/linear_tools/*_declarations_*`) pin what the ADK and MCP
 doors declare, byte for byte.
 
@@ -58,8 +41,7 @@ image-model check (`jobs.provider_connected`, `jobs.image_model_off`), and in
 the `ToolBox` the opening-read gate (`require_opening`, `opening_read`, `opening_refusal`;
 armed by the MCP door only). Deliberately different: the host owns the loop
 for MCP and the CLI (no turn budget, nudges, debrief, image working set or
-quota accounting there); the look-before-commit gates are the agent and MCP
-tools' only; pictures are files and artifacts in the CLI, inline elsewhere;
+quota accounting there); pictures are files and artifacts in the CLI, inline elsewhere;
 the CLI is a process per call.
 
 ## Files
@@ -97,7 +79,7 @@ the CLI is a process per call.
   without a job (LangSlice's coronal base prompt for the OpenAI models).
 - `statement.py` — the job statement every door gives a registration agent:
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
-  max_resolution=, image_model_off=, auto=, gates=)` (`agent.prompt.build_job_statement`
+  max_resolution=, image_model_off=, auto=)` (`agent.prompt.build_job_statement`
   worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF`
   (`image_model_off_text(disabled)`) when the image model is not connected,
   the user's notes, `status_and_notes`).
@@ -116,7 +98,7 @@ the CLI is a process per call.
   date; the model keys loaded by `api.setup.load_credentials`),
   `create(spec)` (`Job.open`, the ingest every host uses; the card), both
   taking `image_model=`. `Opened.tools()`
-  (the toolbox with `gates=False`, `level="auto"`, `scripting=True`,
+  (the toolbox with `level="auto"`, `scripting=True`,
   `max_view_edge` the viewer's or `OPEN_MAX_VIEW_EDGE` for a script; one per
   open job), `Opened.listed_verbs()`, `Opened.image_model_connected` (a model
   handed in, else `provider_connected(spec)`; never with
@@ -128,7 +110,7 @@ the CLI is a process per call.
   model that is not connected. `door` (`agent`, or `cli`: its declarations
   worded for the CLI) and `viewer` (the CLI's: `job_viewer(layout)`,
   `job.json` `viewer`, default `claude`; `core.opening.VIEWER_LIMITS`).
-  `with_registration(spec, file, target=, atlas_loader=, emit=)`: the spec
+  `with_registration(spec, file, atlas_loader=, emit=)`: the spec
   with a registration made elsewhere as its supplied inputs
   (`job.imports.registration_inputs`) and the import report; refuses a spec
   that already supplies any of `REGISTRATION_EXCLUDES`. Every door that
@@ -136,8 +118,7 @@ the CLI is a process per call.
 - `library.py` — `open_job(folder, image_model=, atlas_loader=, emit=)` ->
   `JobHandle`: every verb the job has as a method (the tool, same
   arguments, run inside `job.views.captured()`, then the pictures flushed,
-  so a method returns once its pictures are on disk; the hidden verb by
-  name), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
+  so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
   `imported`, `close` (image-model calls settled, pictures flushed), a
   context manager. A method's reply is `library_reply`: a `Reply` (a dict
   of JSON values, `plain`; its status rows `core.status.with_uniform_rows`;
@@ -177,8 +158,7 @@ the CLI is a process per call.
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
   file per job folder) and `log_call` (`logs/calls.jsonl`).
-- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`: the
-  look-before-commit gates `compared` / `reviewed`; every tool wrapped,
+- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`; every tool wrapped,
   innermost first, by the opening gate (writes), `_strict`,
   `_clears_stale_deformations`, `_saves_views` (the pictures a body returns
   saved and numbered, their numbers and captions under `pictures`; a reply
@@ -187,13 +167,13 @@ the CLI is a process per call.
   finished since the last reply first, under `background`, and its pictures
   after the reply's own) and `_serialized`; `_tool_target_ids`), `door.py`
   (`Door`, what every tool body of a run shares: the job, the workspace,
-  the gates, the picture level, the image model, `rows`, `changed`,
-  `answered`, `resolve_many`, `forget_looks`; `pictured`, `as_list`), the
+  the picture level, the image model, `rows`, `changed`,
+  `answered`, `resolve_many`; `pictured`, `as_list`), the
   tool bodies (`looking.py`: `look`, `zoom`, the two channel tools,
   `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
   `mark_damage`, `note`, `undo`, `redo`, `submit`; `fitting.py`:
-  `elastix_affine`, `ants_syn`, `trace_borders`, `trace_from_atlas`,
+  `elastix_affine`, `ants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
   force it; `interactive_transform` and `elastix_affine` drop the
@@ -223,14 +203,13 @@ the CLI is a process per call.
   (a saved ABBA job by id), `open_folder` (the job of a named image or job
   folder as saved: `doors.jobs.find` / `read_spec`, its notes; a folder
   without one gets a new job from the server's job flags), `build_server`,
-  `serve`. `LangSliceServer` (FastMCP) answers a retired tool's name with
-  `RETIRED_TOOL` where FastMCP would raise "Unknown tool". `EventRelay` forwards a saved ABBA job's
+  `serve`. `EventRelay` forwards a saved ABBA job's
   tool events (and one `seed` per `show_stack` page) over its host channel
   (`host_channel.py`) as `agent_event`s; `tool_end` events carry `views`,
   the saved pictures' paths.
 - `api/` — what the MCP door, the CLI and the engine service share (the
   service itself is `hosts/api/`): `models.py` (the engine contract's
-  Pydantic models, `export_schema_bundle`), `runtime.py` (`version`),
+  Pydantic models, `export_schema_bundle`),
   `setup.py` (offline setup status, saved credentials, login;
   `load_credentials`: `.env`, then the keys saved by setup, an explicit
   environment setting winning, an unknown or unreadable entry skipped with a
@@ -273,7 +252,7 @@ the CLI is a process per call.
     anything else `FOLDER VERB`; returns the exit code.
   - `envelope.py` — the `FIXES` texts are written with `[[?needs ...]]`
     marks and rendered for the job's disabled list (`DISABLED`, set by
-    `job.call` once the job is open; `disabled_for`);
+    `job.call` once the job is open);
     `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
     `next`, `error` {code, message, fix}), `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
     `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
@@ -289,8 +268,9 @@ the CLI is a process per call.
     `long`; `JOB_COMMANDS`) and `schema [VERB] [--job FOLDER]`
     (`SCHEMA_VERSION` 3; `canonical_verb` accepts kebab-case; per verb
     `Declared.entry`: `summary`, `description`, `kind`, `group`, `long`,
-    `arguments`; a retired verb's name answers `RETIRED_TOOL`; declared for the
-    job given or of the current folder, else `FULL` with a `hint`; a job
+    `arguments`; declared for the
+    job given or of the current folder, only its verbs (`Opened.listed_verbs`;
+    another answers `VERB_OFF`), else `FULL` with a `hint`; a job
     that cannot be read answers `JOB_UNREADABLE`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
     `init`'s read off `job.init_parser` by `flags_table`). Both return the
@@ -318,9 +298,8 @@ the CLI is a process per call.
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`). `CHECKED_ONLY`:
-    `trace_borders`, `trace_from_atlas`, `elastix_affine` and `ants_syn`
-    are checked, not run, by `--dry-run`. A retired verb's name answers
-    `RETIRED_TOOL` (`registry.retired_payload`).
+    `trace_borders`, `elastix_affine` and `ants_syn`
+    are checked, not run, by `--dry-run`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
     --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish` (in the
@@ -337,7 +316,7 @@ one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job
 folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
-`elastix_affine`, `ants_syn`, `trace_borders`, `trace_from_atlas`,
+`elastix_affine`, `ants_syn`, `trace_borders`,
 `export_maps`), which compute outside it and take it to apply, refusing a
 section whose inputs changed (`ops.inputs`, `STALE_INPUT`); the lock timing
 out is `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write
@@ -361,7 +340,7 @@ comma-separated flag (`--box 960,230,1300,940`) and returns `grep_atlas`'s rows
 unshortened (`ROW_VERBS`). `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /
-`redone` (tool, sections), the rows of those sections and the depth, not the
+`redone` (sections, fields), the rows of those sections and the depth, not the
 whole table.
 
 MCP reply-budget shrinking saves each delivered JPEG with a distinct immutable

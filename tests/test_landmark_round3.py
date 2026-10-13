@@ -245,7 +245,7 @@ def test_too_many_landmark_views_says_what_to_send(tmp_path):
     try:
         edits = saved_pairs(job, ws, record)
         tools = {t.__name__: t for t in build_tools(
-            job.state, ws, job.spec, job=job, gates=False, level="auto").tools}
+            job.state, ws, job.spec, job=job, level="auto").tools}
         reply = tools["set_landmarks"](section=record.id, pairs=edits * 2, view=True)
         assert reply["error"] == "TOO_MANY_LANDMARK_VIEWS"
         assert "6 pairs" in reply["message"] and "view false" in reply["message"]

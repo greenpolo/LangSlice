@@ -20,7 +20,6 @@ import tempfile
 from collections.abc import Callable
 from typing import Any
 
-from langslice.core.appearance import migrated
 from langslice.core.state import StackState
 
 #: The key a job-folder file carries its format version under.
@@ -129,12 +128,7 @@ def current_state(data: dict[str, Any]) -> dict[str, Any]:
             f"This checkpoint was made by an older pre-release LangSlice (format {version}; "
             f"this version reads format {STATE_FORMAT_VERSION}). Start a new job: open it "
             "fresh (`--fresh`, resume=False) or remove the job folder.")
-    fields = {key: value for key, value in data.items() if key != FORMAT_KEY}
-    if "appearance" in fields:
-        # An older recipe key read under its current one; the preprocess
-        # tool's view look is not carried over (core.appearance.migrated).
-        fields["appearance"] = migrated(fields["appearance"])
-    return fields
+    return {key: value for key, value in data.items() if key != FORMAT_KEY}
 
 
 def read_checkpoint(path: str) -> dict[str, Any] | None:
@@ -147,9 +141,3 @@ def read_checkpoint(path: str) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not hold a stack state")
     return current_state(data)
-
-
-def load_checkpoint(path: str) -> StackState | None:
-    """Load a checkpoint, or ``None`` if there isn't one at *path*."""
-    data = read_checkpoint(path)
-    return None if data is None else StackState.from_dict(data)

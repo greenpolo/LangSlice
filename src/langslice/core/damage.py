@@ -71,15 +71,14 @@ def normalized_entries(entries: Iterable[str | int]) -> list[str]:
 
 
 def exclusions(
-    record: SliceState, restrict_to: Sequence[str] = (), exclude: Sequence[str] = (),
+    record: SliceState, restrict_to: Sequence[str] = (),
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """``(restrict_to, exclude)`` one fit of *record* runs with.
 
     *restrict_to* (a fit by these regions only; empty: every region) is
-    kept as given. The section's marked regions are added to *exclude* (the
-    older per-call exclusions, still taken), except a marked entry that
-    *restrict_to* names exactly (same region, same side or none): an
-    explicit request for that region wins. Repeats are dropped
+    kept as given. *exclude* is the section's marked regions, except a
+    marked entry that *restrict_to* names exactly (same region, same side
+    or none): an explicit request for that region wins. Repeats are dropped
     (case-insensitive). Every fit (``ops.transforms.elastix_affine``,
     ``ops.deformable.fit_deformable``) and the image model's trace
     (``ops.traces.trace_borders``) take their regions through here.
@@ -89,7 +88,7 @@ def exclusions(
     marked = [name for name in record.damaged_regions if entry_key(name) not in named]
     seen: set[tuple[str, str | None]] = set()
     excluded: list[str] = []
-    for name in (*exclude, *marked):
+    for name in marked:
         text = str(name).strip()
         if not text or entry_key(text) in seen:
             continue

@@ -4,7 +4,6 @@ model read (``core.channels``, ``core.appearance``, ``ops.appearance``)."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -23,11 +22,11 @@ from langslice.core.image_prep import IntensityRange, working_intensity_ranges
 from langslice.core.sections import render_slice
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
-from langslice.job.checkpoint import FORMAT_KEY, STATE_FORMAT_VERSION, load_checkpoint
 from langslice.job.job import Job
 from langslice.ops import appearance as ops_appearance
 from langslice.ops.refusal import Refused
 from tests.deformable_synthetic import SyntheticAtlas
+from tests.linear_tool_helpers import load_checkpoint
 
 POSITION = 0.1
 UM = 25.0
@@ -227,14 +226,14 @@ def test_the_default_preprocessed_channel_is_the_default_render(tmp_path: Path, 
     record = state.slices[0]
     record.transform = {"params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
     assert (looks.preprocessed_image(ctx, state, record, long_edge=512)
-            is render_slice(ctx, record, long_edge=512, frame=False))
+            is render_slice(ctx, record, long_edge=512))
     default = prepare_linear_registration(state, ctx, record.id, long_edge=512)
     shown = prepare_linear_registration(state, ctx, record.id, long_edge=512,
                                         preprocessed=True)
     assert np.array_equal(np.asarray(shown.image), np.asarray(default.image))
     assert "preprocessed" not in shown.metadata
 
-    looks.set_settings(state, looks.PREPROCESSED, None, dict(RECIPE))
+    looks.set_settings(state, None, dict(RECIPE))
     recipe = prepare_linear_registration(state, ctx, record.id, long_edge=512,
                                          preprocessed=True)
     assert not np.array_equal(np.asarray(recipe.image), np.asarray(default.image))
@@ -253,9 +252,9 @@ def test_recipes_override_per_section_and_reset(tmp_path: Path, atlas):
     options = default_options("section")
     done = ops_appearance.set_preprocessed(job, ctx, None, clahe_clip=2.0,
                                            shown=state.in_order()[:1], options=options)
-    assert done.written.in_force == {"preprocessed": {"stack": {
+    assert done.written.in_force == {"stack": {
         "channel_weights": None, "clahe_clip": 2.0, "clahe_tiles": 8,
-        "n4": False, "denoise": False}}}
+        "n4": False, "denoise": False}}
     assert len(done.pictures) == 1 and done.pictures[0].before_settings is None
     assert done.pictures[0].after_settings == looks.preprocessed_settings(state, "s0.png")
     assert not np.array_equal(np.asarray(done.pictures[0].before),
@@ -284,29 +283,6 @@ def test_recipes_override_per_section_and_reset(tmp_path: Path, atlas):
     assert state.appearance == {} and len(job.undo_stack) == 4
 
 
-def test_old_saved_states_load_fit_as_preprocessed_and_drop_view(tmp_path: Path):
-    state = StackState(atlas="x", slices=[SliceState(id="a.png", index_original=0,
-                                                     index_corrected=0)])
-    fit = {"stack": dict(RECIPE), "sections": {}}
-    view = {"stack": {**RECIPE, "clahe_clip": 9.0}, "sections": {}}
-    shown = {"red": {"contrast_limits": [1, 2], "gamma": 1.0, "colormap": None}}
-    state.appearance = {"fit": fit, "view": view, "channels": shown}
-    path = tmp_path / "state.json"
-    path.write_text(json.dumps({FORMAT_KEY: STATE_FORMAT_VERSION, **state.to_dict()}))
-    loaded = load_checkpoint(str(path))
-    assert loaded is not None
-    assert loaded.appearance == {"preprocessed": fit, "channels": shown}
-    assert looks.preprocessed_settings(loaded, "a.png") == RECIPE
-
-    # In memory, a state still holding "fit" reads it as the preprocessed
-    # channel, and the next write moves it under its own name.
-    assert looks.preprocessed_settings(state, "a.png") == RECIPE
-    looks.set_settings(state, "fit", ["a.png"], None)
-    assert "fit" not in state.appearance
-    assert state.appearance["preprocessed"]["stack"] == RECIPE
-    assert looks.migrated({"preprocessed": 1, "fit": 2, "view": 3}) == {"preprocessed": 1}
-
-
 # --- what the algorithms read ------------------------------------------------------
 
 
@@ -332,7 +308,7 @@ def test_the_elastix_affine_reads_the_preprocessed_channel(tmp_path: Path, atlas
     for _ in range(2):
         with pytest.raises(_Stop):
             tr.elastix_affine(state, ctx, record, start)
-        looks.set_settings(state, looks.PREPROCESSED, None, dict(RECIPE))
+        looks.set_settings(state, None, dict(RECIPE))
     grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
     default = np.asarray(grid.image)
     assert np.array_equal(seen[0], default)  # the default recipe: the default render
@@ -364,7 +340,7 @@ def test_the_ants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, 
         np.asarray(item.image).copy() for item in jobs))
     monkeypatch.setattr(ops_deformable, "refuse_without_ants", lambda: None)
     ops_deformable.ants_syn(job, ctx, [record.id])
-    looks.set_settings(state, looks.PREPROCESSED, None, dict(RECIPE))
+    looks.set_settings(state, None, dict(RECIPE))
     ops_deformable.ants_syn(job, ctx, [record.id])
     grid = deformation.fit_grid(state, ctx, record)
     wanted = looks.preprocessed_image(ctx, state, record, long_edge=deformation.FIT_LONG_EDGE)
@@ -405,8 +381,7 @@ def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(tool, "prepare_linear_registration", prepared)
     monkeypatch.setattr(tool, "annotation_slice", lambda *a, **k: labels)
-    monkeypatch.setattr(tool, "_merge_classified", lambda ids, atlas: ids)
-    monkeypatch.setattr(tool, "prepare_canvas", lambda image, **k: (image, image.size, 0, 0, 0))
+    monkeypatch.setattr(tool, "prepare_canvas", lambda image, **k: (image, image.size, 0, 0))
     monkeypatch.setattr(tool, "correction_fingerprint", lambda *a, **k: "geometry")
     model = ImageModel("openai-oauth", resolve_image_model("openai-oauth").model,
                        lambda request: SimpleNamespace(image=original, route="test"))
@@ -416,9 +391,6 @@ def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypa
     metadata["preprocessed"] = dict(RECIPE)  # a recipe: a new call key
     tool.start_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
     assert len([path for path in calls.iterdir() if path.is_dir()]) == 2
-    monkeypatch.setattr(tool, "outlined_atlas_template", lambda *a, **k: original)
-    tool.start_atlas_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
-    assert asked[-1]["preprocessed"] is True
 
 
 def test_automatic_limits_read_the_background_and_the_tissue():

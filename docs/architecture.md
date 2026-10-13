@@ -61,7 +61,6 @@ The contract is `doors/api/models.py`, preparation and translation are in
 
 | Method | Purpose |
 |---|---|
-| `version` | Package and protocol versions |
 | `setup.status`, `setup.login`, `setup.api_key` | Offline setup status (including `tools`: what a job can switch off), OAuth and saved API keys |
 | `linear.run`, `linear.estimate` | Run the agent on snapshots; estimate cost |
 | `preprocess.preview` | Preview snapshot preprocessing |
@@ -73,8 +72,9 @@ V3/V3p1 ABBA sessions are accepted. Position and angle conversion uses ABBA's
 atlas offset and centred world coordinates.
 
 The first checkpoint describes the snapshots. Later checkpoints carry
-replacement `host_updates` and changed `host_angles`; the final result has
-`final_updates`. Each checkpoint becomes an undoable ABBA step. The connector
+replacement `host_updates` and changed `host_angles`; a warp that cannot be
+converted is sent as `{"error": …}` and kept as a failed update. Each
+checkpoint becomes an undoable ABBA step. The connector
 owns at most one affine and one BigWarp registration per section, above its
 pre-existing registrations. Deformations become thin-plate splines sampled
 on a 9×9 to 33×33 grid, refined toward a 5 µm error target. Reported spline

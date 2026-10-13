@@ -208,10 +208,11 @@ def draw_canvas(
         shown, shown_um, ws.atlas, position, cast(Plane, state.plane),
         record.pitch_deg, record.yaw_deg, params,
         mode=drawn_mode, zoom=window, zoom_pixels=options.zoom,
-        atlas_opacity=options.atlas_opacity, outlines=options.layer,
+        atlas_opacity=options.atlas_opacity, outlines=options.layer, depth=options.depth,
         border_color=options.border_color, border_thickness=options.border_thickness,
         pivot=frame.pivot, pivot_in_section=in_section,
-        label=canvas_label(label or record.id, options, state), long_edge=edge,
+        label=canvas_label(label or record.id, options, state)
+        + ("  uncalibrated" if ws.calibration(record.id)[0] is None else ""), long_edge=edge,
         atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position,
                                           angles=record.angles),
         atlas_name=options.atlas_name(), regions=options.regions,
@@ -229,8 +230,8 @@ def _file_detail(
     ws: Workspace, record: SliceState, look: Look, size: tuple[int, int], warp: Any,
 ) -> SectionDetail:
     """A zoom's section pixels from the image file (:mod:`langslice.core.native`):
-    points of the *size* render the canvas is drawn from (turned and flipped,
-    unframed; with *warp*, its warped picture), carried back through the warp
+    points of the *size* render the canvas is drawn from (turned and flipped;
+    with *warp*, its warped picture), carried back through the warp
     and the turn to the working copy and read from the file at its own
     resolution, in *look*. None (the render's own pixels) when the file cannot
     be read."""
@@ -398,8 +399,6 @@ class Staged:
     pivot: tuple[float, float] | None
     #: The same pivot as fractions of the canvas, for the payload.
     pivot_frac: list[float] = field(default_factory=list)
-    #: What was asked for: "canvas", "tissue" or "fractions".
-    pivot_mode: str = "canvas"
 
     @property
     def pivot_in_section(self) -> tuple[float, float] | None:
@@ -434,8 +433,8 @@ def stage(
     ws: Workspace, state: StackState, record: SliceState, params: dict[str, float], pivot: Any,
 ) -> Staged:
     """*record* (which has a position) with the knobs *params*, its working
-    frame, calibration and canvas, and *pivot* ("canvas", "tissue" or
-    ``[fx, fy]`` fractions of the canvas) resolved onto it.
+    frame, calibration and canvas, and *pivot* ("canvas" or ``[fx, fy]``
+    fractions of the canvas) resolved onto it.
 
     Raises :class:`StageFailure` when the atlas plane cannot be drawn there
     or the pivot is not one of those.
@@ -456,16 +455,11 @@ def stage(
         logger.warning("transform: atlas render failed for %s: %s", record.id, exc)
         raise StageFailure("ATLAS_RENDER_FAILED", str(exc)) from exc
     try:
-        point = pivot_on_canvas(pivot, section, geometry)
+        point = pivot_on_canvas(pivot, geometry)
     except ValueError as exc:
         raise StageFailure("BAD_PIVOT", str(exc)) from exc
     width, height = geometry.size
     centre = point or (width / 2.0, height / 2.0)
-    mode = "canvas"
-    if isinstance(pivot, str):
-        mode = (pivot.strip().lower() or "canvas")
-    elif pivot:
-        mode = "fractions"
     return Staged(
         record=record,
         section=section,
@@ -475,5 +469,4 @@ def stage(
         params=params,
         pivot=point,
         pivot_frac=[round(centre[0] / width, 4), round(centre[1] / height, 4)],
-        pivot_mode=mode,
     )

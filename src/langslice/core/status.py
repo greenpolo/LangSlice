@@ -33,11 +33,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 
     ``delta_to_next_mm`` is the SIGNED distance to the next section in
     corrected order that carries a position, and null when this section has
-    none or no placed section follows it. ``transform_iou`` and
-    ``transform_mirrored`` come off the recorded transform. Data only: no
-    comparison against the nominal interval, no verdict. ``position_source``
-    ``"default"``: the section still holds the starting position the job gave
-    it in a legacy checkpoint. ``damaged_regions``
+    none or no placed section follows it. ``transform_mirrored`` comes off
+    the recorded transform. Data only: no comparison against the nominal
+    interval, no verdict. ``damaged_regions``
     are the section's marked regions (``damaged``: it has some); a
     ``damage_note`` may stand alone (a host's note). When the sections'
     cutting angles differ (a registration supplied per section), each row
@@ -71,8 +69,6 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
             {
                 "id": record.id,
                 "position_mm": round(here, 3) if here is not None else None,
-                **({"position_source": record.position_source}
-                   if record.position_source else {}),
                 "delta_to_next_mm": delta,
                 "flip": record.flip,
                 "rotation_deg": record.rotation_deg,
@@ -81,7 +77,6 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "damaged_regions": list(record.damaged_regions),
                 "damage_note": record.damage_note,
                 "transform": transform.get("kind"),
-                "transform_iou": transform.get("iou"),
                 "transform_mirrored": transform.get("mirrored"),
                 **({"keep_linear": record.deformation["keep_linear"]}
                    if record.deformation and "keep_linear" in record.deformation
@@ -98,10 +93,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 #: their null and empty fields (:func:`compact_rows`); a script or a coding
 #: agent gets every row with all of them (:func:`uniform_rows`).
 ROW_FIELDS: tuple[str, ...] = (
-    "id", "position_mm", "position_source", "delta_to_next_mm", "flip",
+    "id", "position_mm", "delta_to_next_mm", "flip",
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
-    "transform_iou",
     "transform_mirrored", "keep_linear", "deformation_steps", "landmarks", "caveats",
     "frozen", "damage_by_user",
 )
@@ -168,7 +162,7 @@ def status_text(state: StackState) -> str:
     """The status rows as one line per section, for a text message."""
     lines = [
         "filename  position_mm  delta_to_next_mm  flags  "
-        "transform(kind, iou, mirrored)"
+        "transform(kind, mirrored)"
     ]
     for row in status_rows(state):
         flags: list[str] = []
@@ -183,7 +177,6 @@ def status_text(state: StackState) -> str:
         flags.extend(row["caveats"])
         position = (
             "unplaced" if row["position_mm"] is None else f"{row['position_mm']:.3f} mm"
-            + (" (starting position)" if row.get("position_source") == "default" else "")
         )
         delta = (
             "-" if row["delta_to_next_mm"] is None else f"{row['delta_to_next_mm']:.3f}"
@@ -191,8 +184,6 @@ def status_text(state: StackState) -> str:
         transform = ""
         if row["transform"]:
             transform = f"  transform={row['transform']}"
-            if row["transform_iou"] is not None:
-                transform += f" iou={float(row['transform_iou']):.3f}"
             if row["transform_mirrored"] is not None:
                 transform += f" mirrored={bool(row['transform_mirrored'])}"
         if row.get("deformation_steps"):

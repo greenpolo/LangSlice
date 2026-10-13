@@ -78,7 +78,6 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     state.slices[0].transform = {
         "kind": "silhouette",
         "params": [],
-        "iou": 0.9,
         "mirrored": True,
     }
 
@@ -90,7 +89,6 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     assert rows[2]["position_mm"] is None
     assert rows[2]["damage_note"] == "half the section is gone"
     assert rows[0]["transform"] == "silhouette"
-    assert rows[0]["transform_iou"] == 0.9
     assert rows[0]["transform_mirrored"] is True
     assert rows[1]["transform_mirrored"] is None
 
@@ -106,7 +104,7 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     assert "s2.png" in text and "unplaced" in text
     assert "damaged [CTX, OB]: half the section is gone" in text
     assert "delta_to_next_mm" in text
-    assert "iou=0.900" in text and "mirrored=True" in text
+    assert "mirrored=True" in text
 
 
 def test_the_delta_to_the_next_section_is_signed(tmp_path: Path):
@@ -139,9 +137,9 @@ def test_compact_rows_drops_null_and_empty_fields_only():
 
     rows = [
         {"index": 0, "id": "a", "position_mm": None, "flip": False, "caveats": [],
-         "damage_note": "", "transform_iou": 0.0}
+         "damage_note": "", "rotation_deg": 0.0}
     ]
-    assert compact_rows(rows) == [{"index": 0, "id": "a", "flip": False, "transform_iou": 0.0}]
+    assert compact_rows(rows) == [{"index": 0, "id": "a", "flip": False, "rotation_deg": 0.0}]
     assert rows[0]["position_mm"] is None  # the input is not mutated
 
 
@@ -159,6 +157,6 @@ def test_render_scale_counts_file_pixels_through_the_working_copy(tmp_path: Path
 
     render = render_slice(ctx, record, long_edge=512)
     assert ctx.working_source(record.id)[0].width == WORKING_MAX_EDGE
-    key = render_cache_key(ctx, record, long_edge=512, frame=False)
+    key = render_cache_key(ctx, record, long_edge=512)
     assert render.width == 512
     assert abs(ctx.render_scale[key] - width / 512) < 1e-9

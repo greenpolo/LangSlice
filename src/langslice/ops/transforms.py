@@ -21,7 +21,6 @@ import numpy as np
 
 from langslice.core.affine import normalized_physical_affine
 from langslice.core.damage import exclusions
-from langslice.core.display import canonical_atlas_name
 from langslice.core.frozen import FROZEN
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
@@ -43,7 +42,6 @@ def transform_record(
     pivot: tuple[float, float] | None,
     pivot_frac: Sequence[float],
     knobs: Mapping[str, float],
-    note: str = "",
 ) -> dict[str, Any]:
     """The stored record of a transform given as knobs (``interactive_transform``).
 
@@ -64,7 +62,7 @@ def transform_record(
         "physical": {**knobs, "pivot": list(pivot_frac)},
         "calibration": dict(calibration),
         "mirrored": physical_decomposition(six, size)["mirrored"],
-        "note": str(note or "").strip(),
+        "note": "",
     }
 
 
@@ -89,12 +87,10 @@ def fit_transform(
     Regions and a non-default atlas image are recorded only when they were
     used.
     """
-    fit_atlas = canonical_atlas_name(fit_atlas)
     return {
         "kind": "elastix",
         "params": list(fit["params"]),
         "physical": fit["physical"],
-        "iou": fit["iou"],
         "calibration": fit["calibration"],
         "mirrored": fit["mirrored"],
         **({"regions": {"include": list(include), "exclude": list(exclude)}}
@@ -104,8 +100,7 @@ def fit_transform(
 
 
 #: A fit that turns a section further than this from its previous transform
-#: reports the turn in its row (``turn_deg``): the overlap it reports cannot
-#: tell such a turn from a correct one.
+#: reports the turn in its row (``turn_deg``).
 LARGE_TURN_DEG = 45.0
 
 
@@ -190,7 +185,7 @@ class AffineFit:
     """What :func:`elastix_affine` did.
 
     ``rows``: one per section asked, in order: the fit's payload (``id``,
-    ``status: ok``, ``iou``, ``physical``, ``params`` (the six stored
+    ``status: ok``, ``physical``, ``params`` (the six stored
     numbers), ``calibration``, ``mirrored``, ``regions`` when restricted)
     or ``{"id", "status": "error", "error", ...}`` (``FROZEN``, the fitter's
     code, ``STALE_INPUT``). ``fitted``: the sections written.
@@ -235,7 +230,7 @@ def _fit_elastix(
         if frozen is not None:
             rows.append(frozen)
             continue
-        kept, dropped = exclusions(record, restrict_to, ())
+        kept, dropped = exclusions(record, restrict_to)
         try:
             outcome = fit_elastix(state, workspace, record, include=kept, exclude=dropped,
                                   atlas_image=fit_atlas)
@@ -341,7 +336,7 @@ def interactive_transform(
 
     A section is ``{"id", "flip"?, "rotate_quarter"? (0, 90, 180 or 270),
     "rotation_deg"?, "scale_x"?, "scale_y"?, "shear"?, "translate_x_mm"?,
-    "translate_y_mm"?, "pivot"?, "note"?}``. Values are absolute and a value
+    "translate_y_mm"?}``. Values are absolute and a value
     left out keeps what the section has now (identity without a transform;
     the pivot a stored transform used stays). The quarter turn is applied
     first, then the flip (the renderer's order).
@@ -450,7 +445,7 @@ def interactive_transform(
         twin = replace(record, flip=flip, rotation_deg=rotation)
         try:
             staged = stage(workspace, state, twin, knobs,
-                           entry.get("pivot", pivot if pivot else "canvas"))
+                           pivot if pivot else "canvas")
         except StageFailure as failure:
             refuse(failure.code, message=str(failure))
             continue
@@ -458,7 +453,6 @@ def interactive_transform(
             size=staged.section.size, um_per_px=staged.um_per_px,
             calibration=staged.calibration, pivot=staged.pivot_in_section,
             pivot_frac=staged.pivot_frac, knobs=staged.params,
-            note=str(entry.get("note", "")),
         )
         if "affine" in frozen_now:
             wrote, written_transform = changed, held  # nothing of the affine moves
@@ -560,8 +554,8 @@ def elastix_affine(
 ) -> AffineFit:
     """Fit an in-plane affine with Elastix, per section; ONE undo step for the fits.
 
-    Each section's current placement is refined against *atlas_image* (``template`` or ``nissl``;
-    ``ara`` is still read as ``template``). *sections* are filenames
+    Each section's current placement is refined against *atlas_image* (``template`` or ``nissl``).
+    *sections* are filenames
     (``StackState.resolve``); empty, every section :func:`fit_targets` names.
     *restrict_to* fits by those atlas regions only (sides allowed; empty:
     every region). Each section's marked damage regions are left out
@@ -574,7 +568,7 @@ def elastix_affine(
     fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not one of
     :data:`ELASTIX_ATLAS_IMAGES`, a region that is not text).
     """
-    image = canonical_atlas_name(str(atlas_image))
+    image = str(atlas_image)
     if image not in ELASTIX_ATLAS_IMAGES:
         raise Refused("BAD_ARGS", message=f"atlas_image is one of {list(ELASTIX_ATLAS_IMAGES)}")
     if any(not isinstance(name, str) for name in restrict_to):

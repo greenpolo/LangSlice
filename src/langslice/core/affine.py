@@ -56,6 +56,17 @@ def pixel_center_map(
     ])
 
 
+def pixel_fraction_map(
+    size: tuple[int, int], box: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0),
+) -> np.ndarray:
+    """3x3 map from the pixel centres of a *size* image onto fractions of the
+    *box* (x0, y0, x1, y1) it shows: pixel ``x`` sits at
+    ``x0 + (x + 0.5) * (x1 - x0) / width``."""
+    (cols, rows), (x0, y0, x1, y1) = size, box
+    sx, sy = (x1 - x0) / cols, (y1 - y0) / rows
+    return np.array([[sx, 0.0, x0 + 0.5 * sx], [0.0, sy, y0 + 0.5 * sy], [0.0, 0.0, 1.0]])
+
+
 def resize_long_edge(image: Image.Image, long_edge: int) -> Image.Image:
     """Scale *image* so its long edge is exactly *long_edge* px."""
     width, height = image.size

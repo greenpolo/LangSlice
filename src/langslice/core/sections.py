@@ -15,12 +15,11 @@ import numpy as np
 from PIL import Image
 
 from langslice.core import channels
-from langslice.core.appearance import Look, look_token
+from langslice.core.appearance import DEFAULT_CLAHE_CLIP, DEFAULT_CLAHE_TILES, Look, look_token
 from langslice.core.image_prep import (
     adaptive_preprocess,
     custom_appearance,
     prepare_image_for_vlm,
-    tissue_box,
 )
 from langslice.core.state import SliceState
 from langslice.core.workspace import Workspace
@@ -38,15 +37,15 @@ _ROTATE_OPS = {
 
 
 def render_cache_key(
-    ctx: Workspace, record: SliceState, *, long_edge: int, frame: bool, look: Look = None,
-) -> tuple[str, bool, int, int, str, bool]:
+    ctx: Workspace, record: SliceState, *, long_edge: int, look: Look = None,
+) -> tuple[str, bool, int, int, str]:
     """The key a render is cached under: the section plus everything it shows.
 
     The default appearance keeps ``spec.preprocess`` in the look slot, so its
     keys are the ones every earlier caller computed.
     """
     return (record.id, record.flip, record.rotation_deg, long_edge,
-            look_token(ctx, look), frame)
+            look_token(ctx, look))
 
 
 def render_slice(
@@ -54,10 +53,9 @@ def render_slice(
     record: SliceState,
     *,
     long_edge: int = PREVIEW_LONG_EDGE,
-    frame: bool = False,
     look: Look = None,
 ) -> Image.Image:
-    """One section as the run sees it: normalized, framed, enhanced, corrected.
+    """One section as the run sees it: normalized, enhanced, corrected.
 
     *look* None is the DEFAULT appearance: with ``spec.preprocess == "auto"``
     the section is run through
@@ -66,14 +64,9 @@ def render_slice(
     instead of like a black field; a host's multi-channel snapshot arrives
     already blended (``spec.host_preprocessing``). Any other look
     (:mod:`langslice.core.appearance`) is drawn from the section's raw
-    channels over the SAME frame, crop and size, so geometry never depends on
-    appearance. Display only: the user's file is never touched.
-
-    *frame* crops to the tissue plus a small margin before the resize, so the
-    section fills its frame about as much as a cropped atlas render does. It is
-    off by default because it changes the image's coordinate frame: only the
-    paths that SHOW a section to a model set it, never a fit, whose parameters
-    are normalized against the render they were computed on.
+    channels at the SAME size, so geometry never depends on appearance.
+    Display only: the user's file is never touched. The whole image frame is
+    always drawn.
 
     *long_edge* is a ceiling, never a target: a source smaller than it is
     returned at its own size (nothing is upsampled).
@@ -81,7 +74,7 @@ def render_slice(
     Renders are cached on *ctx*, so the returned image is shared: read it,
     never mutate it in place.
     """
-    key = render_cache_key(ctx, record, long_edge=long_edge, frame=frame, look=look)
+    key = render_cache_key(ctx, record, long_edge=long_edge, look=look)
     cached = ctx.render_cache.get(key)
     if cached is not None:
         return cached
@@ -89,15 +82,12 @@ def render_slice(
     # The working copy, not the file: a whole-slide scan is read once, small.
     source, file_px_per_px = ctx.working_source(record.id)
     working_size = source.size
-    box = tissue_box(source) if frame else None
-    if box is not None:
-        source = source.crop(box)
-    prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
+    prepped = prepare_image_for_vlm(source, max_long_edge=long_edge)
     # How many FILE pixels one render pixel spans, before any quarter-turn:
     # the section's own micrometres per pixel times this is the canvas's.
     ctx.render_scale[key] = file_px_per_px * source.width / float(prepped.width)
     if look is not None:
-        prepped = _look_image(ctx, record, look, working_size, box, prepped.size)
+        prepped = _look_image(ctx, record, look, working_size, prepped.size)
     elif ctx.spec.preprocess == "auto" and ctx.spec.host_preprocessing is None:
         prepped = adaptive_preprocess(prepped)
     rotate = _ROTATE_OPS.get(int(record.rotation_deg) % 360)
@@ -105,15 +95,11 @@ def render_slice(
         prepped = prepped.transpose(rotate)
     if record.flip:
         prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    from langslice.core.affine import pixel_fraction_map
     from langslice.core.landmarks import orientation
 
-    x0, y0, x1, y1 = box or (0, 0, *working_size)
-    crop_to_file = np.array([[(x1-x0)/working_size[0], 0, x0/working_size[0]],
-                             [0, (y1-y0)/working_size[1], y0/working_size[1]], [0, 0, 1]])
-    to_fraction = np.array([[1/prepped.width, 0, .5/prepped.width],
-                            [0, 1/prepped.height, .5/prepped.height], [0, 0, 1]])
-    prepped.info["pixel_to_file_fraction"] = (crop_to_file @ orientation(record)
-                                                @ to_fraction).tolist()
+    prepped.info["pixel_to_file_fraction"] = (
+        orientation(record) @ pixel_fraction_map(prepped.size)).tolist()
     ctx.render_cache[key] = prepped
     return prepped
 
@@ -123,10 +109,9 @@ def _look_image(
     record: SliceState,
     look: dict[str, Any],
     working_size: tuple[int, int],
-    box: tuple[int, int, int, int] | None,
     size: tuple[int, int],
 ) -> Image.Image:
-    """*look* drawn from the raw channels, cropped and sized like the default."""
+    """*look* drawn from the raw channels, sized like the default."""
     names, planes = ctx.section_channels(record.id)
 
     def at_working(plane: np.ndarray) -> Image.Image:
@@ -136,8 +121,6 @@ def _look_image(
         return image
 
     def framed(image: Image.Image) -> Image.Image:
-        if box is not None:
-            image = image.crop(box)
         if image.size != size:
             image = image.resize(size, Image.Resampling.LANCZOS)
         return image
@@ -163,8 +146,8 @@ def _look_image(
         return channels.composite([(name, whole)], framed=framed, size=size,
                                   properties=properties, ranges=ranges, single=True)
     if "overlay" in look:
-        # Each channel stretched on its WHOLE working plane (so a framed and
-        # an unframed picture share one stretch), then added in its colour.
+        # Each channel stretched on its whole working plane, then added in
+        # its colour.
         shown = [(str(name), np.asarray(at_working(named(str(name))), dtype=np.float32))
                  for name in look["overlay"]]
         return channels.composite(shown, framed=framed, size=size,
@@ -172,8 +155,8 @@ def _look_image(
     return custom_appearance(
         [placed(plane) for plane in planes],
         channel_weights=look.get("channel_weights"),
-        clahe_clip=float(look.get("clahe_clip", 4.0)),
-        clahe_tiles=int(look.get("clahe_tiles", 8)),
+        clahe_clip=float(look.get("clahe_clip", DEFAULT_CLAHE_CLIP)),
+        clahe_tiles=int(look.get("clahe_tiles", DEFAULT_CLAHE_TILES)),
         n4=bool(look.get("n4")),
         denoise=bool(look.get("denoise")),
     )
@@ -184,7 +167,6 @@ def canvas_um_per_px(
     record: SliceState,
     *,
     long_edge: int = PREVIEW_LONG_EDGE,
-    frame: bool = False,
 ) -> tuple[float | None, str]:
     """``(micrometres per pixel of the RENDER, source)`` for one section.
 
@@ -195,9 +177,9 @@ def canvas_um_per_px(
     from_file, source = ctx.calibration(record.id)
     if from_file is None:
         return None, source
-    key = render_cache_key(ctx, record, long_edge=long_edge, frame=frame)
+    key = render_cache_key(ctx, record, long_edge=long_edge)
     if key not in ctx.render_scale:
-        render_slice(ctx, record, long_edge=long_edge, frame=frame)
+        render_slice(ctx, record, long_edge=long_edge)
     return from_file * ctx.render_scale.get(key, 1.0), source
 
 

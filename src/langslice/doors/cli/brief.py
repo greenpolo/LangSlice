@@ -82,7 +82,7 @@ def build(opened: Any, *, pictures: bool = True) -> Brief:
         spec, job.state, opened.ctx, door="cli", tool_names=opened.listed_verbs(),
         opening=opening_for_cli(folder, len(saved) if pictures else None, spec.switched_off),
         notes=read_notes(job.layout), max_resolution=box.max_view_edge,
-        image_model_off=image_model_off(spec, connected), auto=True, gates=False,
+        image_model_off=image_model_off(spec, connected), auto=True,
     )
     brief = Brief(statement=statement, facts={
         "viewer": viewer, "resolution": resolution_range(opened),

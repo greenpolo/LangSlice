@@ -103,7 +103,7 @@ def linear_placement_matrix(
     *atlas_to_slice* (3x3) maps native atlas-plane pixel centres ``[x, y, 1]``
     (the plane :func:`langslice.core.atlas.render.annotation_slice` draws at
     *position_mm*, *plane* and the cutting angles) onto pixel centres of the
-    oriented, unframed section render of *image_size* that the six stored
+    oriented section render of *image_size* that the six stored
     numbers *params* are normalized against, at *um_per_px* (the render's).
     The one geometry path from a stored placement to the atlas: the
     image-correction handoff, the deformable fit grid and the job folder's
@@ -190,18 +190,18 @@ def prepare_linear_registration(
         raise ValueError("The written affine must contain six finite parameters")
 
     look = preprocessed_settings(state, record.id) if preprocessed else None
-    image = render_slice(ctx, record, long_edge=long_edge, frame=False, look=look)
+    image = render_slice(ctx, record, long_edge=long_edge, look=look)
     with Image.open(ctx.image_path(record.id)) as source_image:
         original_size = list(source_image.size)
 
-    um_per_px, source = canvas_um_per_px(ctx, record, long_edge=long_edge, frame=False)
+    um_per_px, source = canvas_um_per_px(ctx, record, long_edge=long_edge)
     if um_per_px is None:
         from langslice.core.transform import calibrate
 
-        working = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
+        working = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
         preview_um_per_px, source = calibrate(state, ctx, record, working)
-        preview_key = render_cache_key(ctx, record, long_edge=PREVIEW_LONG_EDGE, frame=False)
-        target_key = render_cache_key(ctx, record, long_edge=long_edge, frame=False)
+        preview_key = render_cache_key(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+        target_key = render_cache_key(ctx, record, long_edge=long_edge)
         um_per_px = preview_um_per_px * ctx.render_scale[target_key] / ctx.render_scale[preview_key]
     if not np.isfinite(um_per_px) or um_per_px <= 0:
         raise ValueError("Section calibration must be finite and positive")

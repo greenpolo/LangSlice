@@ -17,6 +17,8 @@ import javax.swing.*;
 /** Opens the Registration dialog and runs the worker; every saved step of the agent lands live in ABBA. */
 public final class AgentRunner {
     private static final Set<MultiSlicePositioner> RUNNING = Collections.newSetFromMap(new WeakHashMap<>());
+    /** ABBA sessions a LangSlice run has changed: their slice positions may be LangSlice's own, not ABBA's import. */
+    private static final Set<MultiSlicePositioner> RAN = Collections.newSetFromMap(new WeakHashMap<>());
     private AgentRunner() { }
 
     /** Where run messages go: the log window, the compact status window, or a test. */
@@ -58,10 +60,9 @@ public final class AgentRunner {
     }
 
     private static void open(MultiSlicePositioner mp, List<SliceSources> selected, boolean chosen, JsonObject status) {
-        RegistrationSettings settings = RegistrationSettings.load(RegistrationSettings.PREFS);
-        int[] protocol = protocolDefaults(mp);
-        if (protocol[0] > 0) settings.interval = protocol[0];
-        if (protocol[1] > 0) settings.thickness = protocol[1];
+        RegistrationSettings settings = RegistrationSettings.load(RegistrationSettings.PREFS, status.getAsJsonObject("spec_defaults"));
+        int[] protocol = protocolDefaults(selected, RAN.contains(mp));
+        settings.abbaInterval = protocol[0]; settings.abbaThickness = protocol[1];
         List<RegistrationDialog.SliceRow> rows = new ArrayList<>();
         int channels = Integer.MAX_VALUE;
         for (SliceSources slice : selected) {
@@ -78,17 +79,20 @@ public final class AgentRunner {
         new RegistrationDialog(status, rows, caption, names, settings, new AbbaHost(mp, selected, names)).setVisible(true);
     }
 
-    /** Section interval and thickness in µm from ABBA's slices; 0 when ABBA gives no value. */
-    static int[] protocolDefaults(MultiSlicePositioner mp) {
+    /**
+     * Section interval and thickness in µm from the selected slices in ABBA; 0 when ABBA gives no value. No interval
+     * after a LangSlice run in this session: the positions may then be the agent's own placement.
+     */
+    static int[] protocolDefaults(List<SliceSources> slices, boolean ran) {
         List<Double> positions = new ArrayList<>(), thicknesses = new ArrayList<>();
-        mp.getSlices().forEach(slice -> {
+        slices.forEach(slice -> {
             double p = slice.getSlicingAxisPosition(), t = slice.getThicknessInMm();
             if (Double.isFinite(p)) positions.add(p);
             if (Double.isFinite(t) && t > 0) thicknesses.add(t);
         });
         Collections.sort(positions); List<Double> gaps = new ArrayList<>();
         for (int i = 1; i < positions.size(); i++) if (positions.get(i) - positions.get(i - 1) > 1e-6) gaps.add(positions.get(i) - positions.get(i - 1));
-        return new int[]{medianMicrons(gaps, 0), medianMicrons(thicknesses, 0)};
+        return new int[]{ran ? 0 : medianMicrons(gaps, 0), medianMicrons(thicknesses, 0)};
     }
 
     static int medianMicrons(List<Double> values, int fallback) {
@@ -158,7 +162,7 @@ public final class AgentRunner {
         params.add("preprocessing", preprocessing);
         params.addProperty("output_path", output.toString());
         JsonObject result = worker.request("preprocess.preview", params, null, Duration.ofSeconds(120));
-        Path written = Paths.get(result.has("output_path") ? result.get("output_path").getAsString() : output.toString());
+        Path written = Paths.get(result.get("output_path").getAsString());
         try {
             BufferedImage image = ImageIO.read(written.toFile());
             if (image == null) throw new IOException("LangSlice did not write a readable preview.");
@@ -229,14 +233,14 @@ public final class AgentRunner {
     }
 
     private static String outputs(JsonObject result) {
-        String outputs = result.has("output_dir") ? " Run files: " + result.get("output_dir").getAsString() : "";
-        if (result.has("trace_files") && result.getAsJsonArray("trace_files").size() > 0) {
-            StringBuilder saved = new StringBuilder(" Trace saved: ");
-            for (int i = 0; i < result.getAsJsonArray("trace_files").size(); i++)
-                saved.append(i == 0 ? "" : ", ").append(result.getAsJsonArray("trace_files").get(i).getAsString());
-            outputs += saved;
-        }
-        return outputs;
+        return " Run files: " + result.get("output_dir").getAsString();
+    }
+
+    /** A new run folder under ~/.langslice/snapshots (both modes; never the system temp folder, which may be cleaned). */
+    private static Path snapshotFolder(String prefix) throws java.io.IOException {
+        Path root = Paths.get(System.getProperty("user.home"), ".langslice", "snapshots");
+        Files.createDirectories(root);
+        return Files.createTempDirectory(root, prefix);
     }
 
     /** Prepares snapshots and the request shared by both modes; registers the run with event listeners. */
@@ -246,7 +250,6 @@ public final class AgentRunner {
         JsonObject request = host.prepare(settings.spec(), selected, settings.exportChannels(channelNames.size()), channelNames,
                 settings.pixelSize, damaged, !settings.overwrite);
         request.add("preprocessing", settings.preprocessing(channelNames.size()));
-        if (settings.saveTraces) request.addProperty("trace_dir", settings.traceDir);
         JsonObject sent = request.getAsJsonObject("spec");
         host.slices.forEach((file, slice) -> { if (nonlinearSkip.contains(slice)) Frozen.add(sent, file, Frozen.DEFORMATION); });
         JsonObject started = new JsonObject();
@@ -269,7 +272,7 @@ public final class AgentRunner {
         final Path environment;
         try { environment = environment(); } catch (IllegalStateException missing) { JOptionPane.showMessageDialog(null, missing.getMessage()); return; }
         if (settings.claude) { startClaude(mp, environment, settings, selected, damaged, nonlinearSkip, channelNames); return; }
-        RUNNING.add(mp);
+        RUNNING.add(mp); RAN.add(mp);
         RunWindow window = new RunWindow(settings.showLog);
         window.open();
         AtomicReference<WorkerClient> client = new AtomicReference<>();
@@ -281,7 +284,7 @@ public final class AgentRunner {
             protected String doInBackground() throws Exception {
                 runningThread.set(Thread.currentThread());
                 if (stopping.get()) throw new CancellationException();
-                Path folder = Files.createTempDirectory("langslice-abba-");
+                Path folder = snapshotFolder("abba-");
                 window.status("Preparing calibrated snapshots…");
                 window.line("Preparing calibrated snapshots in " + folder);
                 window.line("The agent's changes appear in ABBA as it saves them; each saved step is one ABBA Undo. "
@@ -296,12 +299,12 @@ public final class AgentRunner {
                     client.set(connection);
                     result = runLinear(connection, request, window, stopping, payload -> applyLive(host, payload, window));
                 } finally { client.set(null); }
-                if (result.has("output_dir")) jobDir.set(result.get("output_dir").getAsString());
+                jobDir.set(result.get("output_dir").getAsString());
                 // Every checkpoint, the final one included, has already reached ABBA; retry what did not, once.
                 if (host.hasPending()) host.applyCheckpoint(null, null);
-                boolean submitted = result.has("state") && result.getAsJsonObject("state").has("submitted")
-                        && result.getAsJsonObject("state").get("submitted").getAsBoolean();
-                return (submitted ? "Finished. " : "The agent stopped before submitting; review the result. ")
+                boolean submitted = result.getAsJsonObject("state").get("submitted").getAsBoolean();
+                String stopped = result.has("stopped") ? " (" + result.get("stopped").getAsString() + ")" : "";
+                return (submitted ? "Finished. " : "The agent stopped before submitting" + stopped + "; review the result. ")
                         + "The agent's changes are in ABBA; each saved step is one ABBA Undo."
                         + pendingText(host) + " Save the project with ABBA's normal Save command." + outputs(result);
             }
@@ -313,11 +316,10 @@ public final class AgentRunner {
                 catch (Exception e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
                     boolean stopped = stopping.get() || e instanceof CancellationException || cause instanceof CancellationException;
-                    message = (stopped ? "Stopped." : "Run stopped: " + cause.getMessage())
+                    message = (stopped ? "Stopped." : "Run stopped: " + RegistrationDialog.reason(cause))
                             + (host == null ? " Your ABBA session was not changed."
                                 : " The changes the agent saved before that are in ABBA; each saved step is one ABBA Undo.")
                             + pendingText(host);
-                    if (settings.saveTraces) message += " The trace so far is in " + settings.traceDir + ".";
                 }
                 window.finish(message);
                 ended(message, jobDir.get());
@@ -334,7 +336,7 @@ public final class AgentRunner {
 
     private static void startClaude(MultiSlicePositioner mp, Path environment, RegistrationSettings settings,
             List<SliceSources> selected, Map<SliceSources, String> damaged, Set<SliceSources> nonlinearSkip, List<String> channelNames) {
-        RUNNING.add(mp);
+        RUNNING.add(mp); RAN.add(mp);
         RunWindow window = new RunWindow(settings.showLog);
         AtomicReference<McpHostChannel> listener = new AtomicReference<>();
         AtomicReference<AbbaHostSession> session = new AtomicReference<>();
@@ -353,14 +355,11 @@ public final class AgentRunner {
         window.open();
         new SwingWorker<String, Void>() {
             protected String doInBackground() throws Exception {
-                Path root = Paths.get(System.getProperty("user.home"), ".langslice", "snapshots");
-                Files.createDirectories(root);
-                Path folder = Files.createTempDirectory(root, "mcp-");
+                Path folder = snapshotFolder("mcp-");
                 window.status("Preparing calibrated snapshots…");
                 AbbaHostSession host = new AbbaHostSession(mp, folder);
                 JsonObject request = prepareRun(host, settings, selected, damaged, nonlinearSkip, channelNames, "claude");
                 session.set(host);
-                request.addProperty("notes", "");
                 if (stopping.get()) throw new CancellationException();
                 try (McpHostChannel channel = new McpHostChannel()) {
                     listener.set(channel);
@@ -372,7 +371,7 @@ public final class AgentRunner {
                     }
                     if (stopping.get()) throw new CancellationException();
                     JsonObject job = new JsonObject();
-                    if (prepared.has("job_id")) job.add("job_id", prepared.get("job_id"));
+                    job.add("job_id", prepared.get("job_id"));
                     job.add("job_dir", prepared.get("job_dir"));
                     jobDir.set(prepared.get("job_dir").getAsString());
                     LangSliceEvents.publish("job", job);
@@ -399,7 +398,7 @@ public final class AgentRunner {
                     try { message = get(); }
                     catch (Exception e) {
                         Throwable cause = e.getCause() == null ? e : e.getCause();
-                        message = "Claude connection ended: " + cause.getMessage()
+                        message = "Claude connection ended: " + RegistrationDialog.reason(cause)
                                 + " Applied changes remain in ABBA; results remain in the saved job directory." + pendingText(host);
                     }
                 }
@@ -431,20 +430,18 @@ public final class AgentRunner {
     }
 
     /**
-     * The run log's text for one agent event. A tool's failure is read from its tool_end (sent in both modes:
-     * the worker's toolbox emits it around every executed tool), so a refusal shows once, with its reason.
+     * The run log's text for one agent event. A tool's failure is its tool_end's "failed" (the worker's one rule,
+     * toolbox.FAILED_STATUSES; sent in both modes around every executed tool), so a refusal shows once, with its reason.
      */
     static String agentText(JsonObject event) {
         String kind = event.has("kind") ? event.get("kind").getAsString() : "";
         if ((kind.equals("text") || kind.equals("reasoning")) && event.has("text")) return event.get("text").getAsString();
         if (kind.equals("tool_start")) return "\nWorking: " + (event.has("name") ? event.get("name").getAsString().replace('_', ' ') : "registration") + "\n";
-        if (kind.equals("tool_end") && event.has("response") && event.get("response").isJsonObject()) {
+        if (kind.equals("tool_end") && event.get("failed").getAsBoolean()) {
             JsonObject response = event.getAsJsonObject("response");
-            String status = response.has("status") ? response.get("status").getAsString() : "";
-            if (!status.isEmpty() && !status.equals("ok") && !status.equals("success")) {
-                String reason = response.has("message") ? response.get("message").getAsString() : response.has("reason") ? response.get("reason").getAsString() : status;
-                return "\n" + reason.substring(0, Math.min(500, reason.length())) + "\n";
-            }
+            String reason = response.has("message") ? response.get("message").getAsString()
+                    : response.has("reason") ? response.get("reason").getAsString() : response.get("status").getAsString();
+            return "\n" + reason.substring(0, Math.min(500, reason.length())) + "\n";
         }
         if (kind.equals("error") && event.has("text")) return "\nRun failed: " + event.get("text").getAsString() + "\n";
         return "";

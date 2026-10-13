@@ -14,7 +14,7 @@ from langslice.core.atlas.sides import (
     native_left,
     split_side,
 )
-from langslice.core.deformable import FitSettings, draw_warped_borders, fit_section, prepare_fit
+from langslice.core.deformable import FitSettings, draw_warped_borders, prepare_fit
 from langslice.core.deformable.atlas_images import regions_mask, whole_region_ids
 from langslice.core.deformable.record import (
     OUTSIZED_MAX_FRACTION,
@@ -28,6 +28,7 @@ from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     STR,
     SyntheticAtlas,
+    fit_section,
     placement,
     render_section,
 )

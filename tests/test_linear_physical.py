@@ -16,7 +16,8 @@ from PIL import Image
 
 from langslice.agent.engine import build_context
 from langslice.core.affine import normalized_physical_affine, physical_affine_matrix
-from langslice.core.atlas.render import family_mapping, family_outlines
+from langslice.core.atlas.levels import OVERLAY_DEPTH
+from langslice.core.atlas.render import annotation_slice, region_boundaries, region_outlines
 from langslice.core.canvas import canvas_geometry, physical_views
 from langslice.core.captions import scale_bar_px
 from langslice.core.image_prep import read_pixel_size_um
@@ -81,11 +82,23 @@ _IDENTITY = {
 # --- reading the pixel size off a file -----------------------------------
 
 
-def test_pixel_size_comes_off_the_resolution_tags(tmp_path: Path):
+def test_pixel_size_comes_off_centimetre_tags_and_imagej_calibration(tmp_path: Path):
+    """IMAGING-8: inch dpi (72/300 placeholders, or no unit) is not a calibration;
+    a centimetre ResolutionUnit and ImageJ's unit + XResolution are."""
+    import tifffile
+
     path = tmp_path / "tagged.tif"
-    Image.new("RGB", (32, 32)).save(path, dpi=(300.0, 300.0))
-    # 300 pixels per inch: 25400 um / 300
-    assert read_pixel_size_um(path) == pytest.approx(25400.0 / 300.0, rel=1e-6)
+    Image.new("RGB", (32, 32)).save(path, resolution_unit=3, x_resolution=1000.0,
+                                    y_resolution=1000.0)
+    assert read_pixel_size_um(path) == pytest.approx(10.0, rel=1e-6)  # 1000 px per cm
+    for dpi in (72.0, 300.0):
+        inch = tmp_path / f"dpi{int(dpi)}.tif"
+        Image.new("RGB", (32, 32)).save(inch, dpi=(dpi, dpi))
+        assert read_pixel_size_um(inch) is None
+    fiji = tmp_path / "fiji.tif"
+    tifffile.imwrite(fiji, np.zeros((32, 32), np.uint8), imagej=True,
+                     resolution=(1 / 0.65, 1 / 0.65), metadata={"unit": "micron"})
+    assert read_pixel_size_um(fiji) == pytest.approx(0.65, rel=1e-6)
 
 
 def test_pixel_size_is_none_when_the_file_does_not_say(tmp_path: Path):
@@ -160,8 +173,8 @@ def test_a_known_atlas_width_lands_at_the_pixel_width_it_should():
     geometry = canvas_geometry((300, 300), 10.0, TwoRegionAtlas(), 0.2, "coronal")
     assert geometry.atlas_scale == pytest.approx(ATLAS_UM / 10.0)
 
-    outlines = family_outlines(TwoRegionAtlas(), 0.2, plane="coronal")
-    points = np.concatenate([poly for _color, poly in outlines])
+    outlines = region_outlines(TwoRegionAtlas(), 0.2, depth=OVERLAY_DEPTH, plane="coronal")
+    points = np.concatenate(outlines)
     drawn = (points[:, 0].max() - points[:, 0].min()) * geometry.atlas_scale
     # 40 voxels x 25 um = 1.000 mm, and 1 mm on a 10 um/px canvas is 100 px.
     # Contours run along the voxels' outer edges, so the span is the region's.
@@ -192,10 +205,6 @@ def test_the_canvas_grows_when_the_atlas_would_not_fit():
     small = canvas_geometry((40, 40), 10.0, TwoRegionAtlas(), 0.2, "coronal")
     assert small.size[0] >= 100 and small.size[1] >= 100
     assert small.section_offset[0] == (small.size[0] - 40) // 2
-    fixed = canvas_geometry(
-        (40, 40), 10.0, TwoRegionAtlas(), 0.2, "coronal", pad_to_fit_atlas=False
-    )
-    assert fixed.size == (40, 40)
 
 
 def test_the_scale_bar_is_one_millimetre_long():
@@ -223,34 +232,18 @@ def test_the_template_only_shows_when_it_is_asked_for():
 # --- the outlines --------------------------------------------------------
 
 
-def test_outlines_follow_the_family_boundaries_of_the_filled_map():
+def test_outlines_follow_the_region_boundaries_of_the_filled_map():
     atlas = TwoRegionAtlas()
     labels = atlas.annotation[0]
-    mapping = family_mapping(np.unique(labels), atlas)
-    assert len({mapping[1], mapping[2]}) == 2, "the two regions must not merge"
-
-    families = np.zeros_like(labels)
-    for uid, rep in mapping.items():
-        families[labels == uid] = rep
-    # Every pixel whose neighbour is in a different family is a boundary.
-    boundary = np.zeros(families.shape, dtype=bool)
-    boundary[:, 1:] |= families[:, 1:] != families[:, :-1]
-    boundary[1:, :] |= families[1:, :] != families[:-1, :]
+    boundary = region_boundaries(labels)[0]
     import cv2
 
     near = cv2.dilate(boundary.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
 
-    points = np.concatenate(
-        [poly for _color, poly in family_outlines(atlas, 0.2, plane="coronal")]
-    )
+    points = np.concatenate(region_outlines(atlas, 0.2, depth=OVERLAY_DEPTH, plane="coronal"))
     rows = np.clip(np.round(points[:, 1]).astype(int), 0, near.shape[0] - 1)
     cols = np.clip(np.round(points[:, 0]).astype(int), 0, near.shape[1] - 1)
     assert near[rows, cols].mean() > 0.98
-
-
-def test_outlines_are_drawn_in_each_family_own_color():
-    colors = {color for color, _poly in family_outlines(TwoRegionAtlas(), 0.2)}
-    assert len(colors) == 2  # one per family, not one loud line color for all
 
 
 # --- calibration in a run ------------------------------------------------
@@ -268,7 +261,8 @@ def _ctx(folder: Path, **inputs):
 
 
 def test_calibration_reads_the_file_and_follows_the_downsample(tmp_path: Path):
-    _section((1024, 1024)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))  # 10 um/px
+    _section((1024, 1024)).save(tmp_path / "s.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
 
@@ -280,12 +274,13 @@ def test_calibration_reads_the_file_and_follows_the_downsample(tmp_path: Path):
 
 
 def test_the_host_pixel_size_overrides_the_file(tmp_path: Path):
-    _section((512, 512)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))
+    _section((512, 512)).save(tmp_path / "s.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path, pixel_size_um=3.0)
     assert ctx.calibration(state.slices[0].id) == (3.0, "host")
 
 
-def test_no_pixel_size_anywhere_is_estimated_never_fatal(tmp_path: Path):
+def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
     _section((512, 512)).save(tmp_path / "s.png")
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
@@ -296,17 +291,18 @@ def test_no_pixel_size_anywhere_is_estimated_never_fatal(tmp_path: Path):
 
     section = render_slice(ctx, record, long_edge=512)
     um, source = calibrate(state, ctx, record, section)
-    assert source == "estimated"
-    # The tissue square is 80 px of a 512 px section; the atlas anatomy is
-    # 1 mm wide, so the estimate is around 1000/80 um per pixel.
-    assert 8.0 < um < 16.0
+    assert source == "uncalibrated"
+    # The section image's width is mapped onto the atlas plane's width.
+    plane = annotation_slice(ctx.atlas, 0.2, plane=state.plane)
+    assert um == pytest.approx(plane.shape[1] * 25.0 / section.width)
 
 
 def test_the_hand_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
     from langslice.doors.tools.toolbox import build_tools
 
-    _section((512, 512)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))  # 10 um/px
+    _section((512, 512)).save(tmp_path / "s.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
     record.position_mm = 0.2
@@ -360,7 +356,8 @@ def _half_section(tmp_path: Path):
 
     arr = np.zeros((120, 120, 3), dtype=np.uint8)
     arr[10:110, 10:60] = 200  # left half of the centred 100 px (= 1 mm) square
-    Image.fromarray(arr, mode="RGB").save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))
+    Image.fromarray(arr, mode="RGB").save(tmp_path / "s.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
     record.position_mm = 0.2

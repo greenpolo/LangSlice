@@ -68,6 +68,9 @@ class Placement:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> Placement:
+        unknown = sorted(set(value) - set(cls.__dataclass_fields__))
+        if unknown:
+            raise ValueError(f"Unknown placement key(s) {unknown}")
         return cls(
             atlas_name=str(value["atlas_name"]), position_mm=float(value["position_mm"]),
             plane=cast(Plane, value["plane"]), pitch_deg=float(value["pitch_deg"]),

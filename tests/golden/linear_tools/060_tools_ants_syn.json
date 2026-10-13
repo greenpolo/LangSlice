@@ -15,7 +15,6 @@
     "position_mm": 0.15,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 1.0,
     "transform_mirrored": false
    }
   ],
@@ -29,8 +28,8 @@
    {
     "cached": false,
     "displacement_mm": {
-     "max": 0.144,
-     "median": 0.037
+     "max": 0.195,
+     "median": 0.049
     },
     "engine_settings": {
      "correlation_radius_um": 80.0,
@@ -40,7 +39,6 @@
       50,
       25
      ],
-     "label_map": "auto",
      "metric": "local_correlation",
      "total_sigma_mm": 0.02,
      "update_sigma_mm": 0.08,
@@ -51,7 +49,6 @@
     "id": "s1.png",
     "runtime_s": "<seconds>",
     "settings": {
-     "engine": "ants",
      "fit_atlas": "template",
      "fit_section": "fit",
      "stiffness": "medium"

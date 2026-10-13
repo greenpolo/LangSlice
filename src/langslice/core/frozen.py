@@ -55,15 +55,6 @@ WORDS: dict[str, str] = {
     "deformation": "deformation",
 }
 
-#: ``inputs`` keys older specs used for what is now a freeze: key -> the
-#: properties it froze. Read from a saved spec (:func:`from_legacy`), never
-#: written.
-LEGACY_INPUTS: dict[str, tuple[str, ...]] = {
-    "locked": ("orientation", "affine"),
-    "keep_warp": ("deformation",),
-    "nonlinear_skip": ("deformation",),
-}
-
 #: How many sections a statement lists by name before it counts them.
 LISTED_SECTIONS = 8
 
@@ -97,28 +88,6 @@ def clean(value: Any) -> dict[str, list[str]]:
         if names:
             out[key] = list(_ordered(names))
     return out
-
-
-def from_legacy(inputs: Mapping[str, Any] | None) -> tuple[dict[str, Any], dict[str, list[str]]]:
-    """``(inputs without the older keys, the freeze they stood for)``. A key
-    lists filenames (or maps them)."""
-    held = dict(inputs or {})
-    frozen: dict[str, set[str]] = {}
-    for key, properties in LEGACY_INPUTS.items():
-        if key not in held:
-            continue
-        for name in held.pop(key) or []:
-            frozen.setdefault(str(name), set()).update(properties)
-    return held, {name: list(_ordered(found)) for name, found in frozen.items()}
-
-
-def merge(*frozens: Mapping[str, Collection[str]]) -> dict[str, list[str]]:
-    """The union of several freezes."""
-    joined: dict[str, set[str]] = {}
-    for frozen in frozens:
-        for key, names in frozen.items():
-            joined.setdefault(key, set()).update(names)
-    return {key: list(_ordered(names)) for key, names in joined.items()}
 
 
 def for_section(frozen: Mapping[str, Collection[str]], section_id: str) -> frozenset[str]:

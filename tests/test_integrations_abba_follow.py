@@ -106,7 +106,7 @@ def test_proposed_calls_and_unrelated_events_are_ignored(setup):
     follower.on_event(_event(kind="tool_call", name="position_sections"))
     follower.on_event(_event(kind="tool_end", name="position_sections"))
     follower.on_event(_event(targets=("not-in-run",)))
-    follower.on_event(_event(name="note"))
+    follower.on_event(_event(name="status"))
     assert not setup.comparison.batches
 
 
@@ -130,7 +130,9 @@ def test_finished_follower_ignores_later_events(setup):
 @pytest.mark.parametrize("name, refreshed", [
     ("ants_syn", True), ("trace_borders", True), ("mark_damage", True),
     ("elastix_affine", True), ("position_sections", True), ("undo", True), ("redo", True),
-    ("set_preprocessed_channel_properties", False),
+    ("set_landmarks", True), ("landmark_triangulation", True),
+    ("set_preprocessed_channel_properties", True), ("set_channel_properties", True),
+    ("look", False), ("zoom", False),
 ])
 def test_nonlinear_damage_and_appearance_tools_are_followed(setup, name, refreshed):
     follower = _follower(setup)

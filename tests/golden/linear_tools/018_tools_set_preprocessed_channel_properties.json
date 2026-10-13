@@ -17,19 +17,17 @@
    }
   ],
   "recipe": {
-   "preprocessed": {
-    "sections": {
-     "s1.png": {
-      "channel_weights": [
-       1.0,
-       0.5,
-       0.0
-      ],
-      "clahe_clip": 2.0,
-      "clahe_tiles": 8,
-      "denoise": false,
-      "n4": false
-     }
+   "sections": {
+    "s1.png": {
+     "channel_weights": [
+      1.0,
+      0.5,
+      0.0
+     ],
+     "clahe_clip": 2.0,
+     "clahe_tiles": 8,
+     "denoise": false,
+     "n4": false
     }
    }
   },
@@ -47,16 +45,16 @@
    "file": "018_tools_set_preprocessed_channel_properties.0.png",
    "mode": "RGB",
    "size": [
-    258,
-    239
+    272,
+    246
    ]
   },
   {
    "file": "018_tools_set_preprocessed_channel_properties.1.png",
    "mode": "RGB",
    "size": [
-    258,
-    239
+    272,
+    246
    ]
   }
  ],

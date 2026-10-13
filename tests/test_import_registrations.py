@@ -305,7 +305,7 @@ def test_quicknii_json_round_trip_with_per_section_angles(stack: Path, tmp_path:
     assert result.source.format == "quicknii-json"
     assert (result.unmatched, result.missing, result.refused) == ([], [], {})
     assert result.pixel_size_source == "host" and result.pixel_size_um == PIXEL_SIZE_UM
-    found = result.by_section()
+    found = _by_section(result)
     for given in PER_SECTION:
         placement = found[given.section_id]
         assert placement.match == "exact" and placement.problems == []
@@ -333,7 +333,7 @@ def test_quicknii_on_a_downsampled_copy_carries_over(stack: Path, tmp_path: Path
     path = write_export(tmp_path / "small.json", job_export(rows, atlas_facts(atlas)))
     result = imports.import_placements(path, workspace)
     for given in PER_SECTION:
-        placement = result.by_section()[given.section_id]
+        placement = _by_section(result)[given.section_id]
         assert placement.match == "stem"
         # half sizes are floored: a slightly different aspect, said, same fractions
         assert all("fractions" in problem for problem in placement.problems)
@@ -352,7 +352,7 @@ def test_allen_target_grid_round_trip(stack: Path, tmp_path: Path):
     result = imports.import_placements(write_export(tmp_path / "allen.json", document),
                                        workspace)
     for given in PER_SECTION:
-        assert_recovered(result.by_section()[given.section_id], given,
+        assert_recovered(_by_section(result)[given.section_id], given,
                          params_for(workspace, given), ROUNDED)
     # Another target for this atlas is refused, section by section.
     document["target"] = "WHS_Rat_v4_39um.cutlas"
@@ -370,7 +370,7 @@ def test_visualign_markers_come_back_on_the_file(stack: Path, tmp_path: Path):
     result = imports.import_placements(write_export(tmp_path / "visualign.json", document),
                                        workspace)
     assert result.source.format == "visualign-json"
-    found = result.by_section()
+    found = _by_section(result)
     assert found[ID0].markers == markers[ID0] and found[ID0].markers_raw == markers[ID0]
     assert found[ID1].markers is None and found[ID1].markers_raw == []
     assert_recovered(found[ID0], PER_SECTION[0], params_for(workspace, PER_SECTION[0]),
@@ -395,7 +395,7 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
         result = imports.import_placements(path, workspace)
         assert result.source.format == "langslice-registration"
         for given in sections:
-            placement = result.by_section()[given.section_id]
+            placement = _by_section(result)[given.section_id]
             assert_recovered(placement, given, params_for(workspace, given))
             record = state.by_id(given.section_id)
             assert record is not None and record.transform is not None
@@ -476,7 +476,7 @@ def test_deepslice_files_round_trip(stack: Path, tmp_path: Path, name: str):
     assert (result.unmatched, result.missing, result.refused) == ([], [], {})
     assert result.source.aligner == (None if name.endswith(".csv") else "prerelease_1.0.0")
     for given in DEEPSLICE_SECTIONS:
-        placement = result.by_section()[given.section_id]
+        placement = _by_section(result)[given.section_id]
         assert placement.match == "section number"
         # The export rounds anchorings to 1e-6 voxels.
         assert (placement.rotation_deg, placement.flip) == (given.rotation_deg, given.flip)
@@ -591,3 +591,7 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
         frame = section_frame(state, redrawn, state.slices[0])
         assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
                            atol=1e-6, rtol=0)
+
+
+def _by_section(result):
+    return {placement.section_id: placement for placement in result.placements}

@@ -67,7 +67,7 @@ def _record(frame: SectionFrame, field: np.ndarray) -> DeformableRecord:
     return DeformableRecord(
         placement=placement, section_size=fit_size, settings=FitSettings(),
         field_mm=field.astype(np.float32), inverse_field_mm=None, inverse_source="none",
-        labels=np.zeros(shape, dtype=np.uint32), tissue=empty, torn_band=empty,
+        labels=np.zeros(shape, dtype=np.uint32), footprint=empty,
         excluded_ids=[], engine={}, diagnostics={}, atlas={})
 
 

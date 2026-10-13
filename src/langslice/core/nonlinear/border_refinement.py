@@ -1,6 +1,6 @@
 """The yellow lines of a border trace: drawn onto a section, and read back off a reply.
 
-:func:`smooth_border_overlay` draws a placed atlas plane's family borders
+:func:`smooth_border_overlay` draws a placed atlas plane's region borders
 on the section (route "supplied"'s Image 1 or 2), :func:`border_overlay`
 draws a line mask on it, and :func:`extract_thinned_lines` reads the
 model's yellow lines off a raw reply onto the canvas. Nothing here calls a
@@ -106,8 +106,7 @@ def border_overlay(image: Image.Image, mask: np.ndarray, width: int = 1) -> Imag
 def extract_thinned_lines(raw: Image.Image, canvas_size: tuple[int, int]) -> np.ndarray:
     """Boolean thinned yellow-line mask from a raw model reply, on *canvas_size*.
 
-    Every trace's line extraction, and route "atlas"'s pass 2 input (pass
-    1's lines redrawn on the clean tissue at the same canvas). Extracts
+    Every trace's line extraction. Extracts
     before any interpolation, so tissue colors cannot blend into yellow;
     crops back to the canvas aspect first: a lane with a fixed output frame
     answers at its own aspect, ours letterboxed inside it, so crop back

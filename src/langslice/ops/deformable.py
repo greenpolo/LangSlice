@@ -8,8 +8,8 @@ deformation: one undo step for the call. Its callers are :func:`ants_syn`
 each section holds) and the landing of a packaged trace
 (:func:`langslice.ops.traces.land_trace`: the traced borders fitted).
 
-What can go wrong per section (no valid placement, ``start="current"``
-with nothing to compose onto, a trace that is missing, stale or failed, a
+What can go wrong per section (no valid placement, an applied deformation
+that cannot be read, a trace that is missing, stale or failed, a
 fit that failed, a record that cannot be saved) is that section's row, not
 a refusal of the call. With display options, :func:`pictures` draws each
 fit and each traced section's trace through the core.
@@ -39,11 +39,6 @@ if TYPE_CHECKING:
     from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
-
-#: :func:`fit_deformable`'s *start* that builds on each section's applied
-#: deformation where it has one, else on its linear placement.
-START_LATEST = "latest"
-
 
 @dataclass(frozen=True)
 class Fitted:
@@ -109,7 +104,6 @@ def fit_deformable(
     choice: deformation.Choice,
     *,
     restrict_to: tuple[str, ...] = (),
-    start: str = "linear",
     options: DisplayOptions | None = None,
 ) -> DeformableFit:
     """Fit *choice* on every section and apply each result.
@@ -117,16 +111,13 @@ def fit_deformable(
     *restrict_to* are region entries (the engine's ``structures``, sides
     allowed; empty: every region). Each section's marked regions are
     excluded on their own (:func:`langslice.core.damage.exclusions`).
-    *start* is ``linear`` (from the linear
-    placement), ``current`` (composed onto the section's applied
-    deformation) or :data:`START_LATEST` (``current`` for a section that
-    holds an applied deformation, else ``linear``). A traced choice waits
+    Each fit builds on the section's applied deformation where it holds one
+    (composed onto it), else on its linear placement. A traced choice waits
     for the section's trace still running (one
     :data:`~langslice.core.deformation.TRACE_WAIT_S` deadline for the call;
     a trace that lands is checkpointed without an undo step) and adds the
     trace's own regions (:func:`traced_regions`; the row's ``trace_regions``).
-    Identical inputs reuse a cached or saved result; applying a section's own
-    current key again writes nothing (``written: false``). With *options*,
+    Identical inputs reuse a cached or saved result. With *options*,
     every fit and every traced section's trace is then drawn (:func:`pictures`).
     A section whose deformation is frozen is refused (its row ``FROZEN``).
 
@@ -142,7 +133,7 @@ def fit_deformable(
     jobs: list[deformation.Job] = []
     traced: dict[str, tuple[Image.Image, Any]] = {}
     trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
-    traced_choice = choice.fit_section in deformation.TRACED
+    traced_choice = choice.fit_section == deformation.TRACED_BORDERS
     expected: dict[str, str] = {}
     starts: dict[str, str] = {}
     for record in records:
@@ -156,9 +147,21 @@ def fit_deformable(
             # result lands under the job's lock, which may reload the state.
             running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
             record = state.by_id(record.id) or record
-        own_start = start
-        if start == START_LATEST:
-            own_start = "current" if store.current(state, record) is not None else "linear"
+        held = record.deformation or {}
+        try:
+            current = store.current(state, record)
+            unreadable = False
+        except ValueError:  # its record.json does not load (the error names it)
+            logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
+            current, unreadable = None, True
+        if unreadable or (current is None and held and "keep_linear" not in held
+                          and held.get("linear_key") == deformation.linear_key(state, record)):
+            rows.append({"id": record.id, "status": "error", "error": "DEFORMATION_UNREADABLE",
+                         "message": "The section's applied deformation record cannot be read "
+                         f"({held.get('record')}); it is not replaced by a fit from the "
+                         "linear placement."})
+            continue
+        own_start = "current" if current is not None else "linear"
         starts[record.id] = own_start
         expected[record.id] = section_inputs(state, record, deformation=own_start == "current",
                                              trace=traced_choice)
@@ -168,17 +171,9 @@ def fit_deformable(
             rows.append({"id": record.id, "status": "error",
                          "error": "INVALID_LINEAR_PLACEMENT", "message": str(exc)})
             continue
-        previous = None
-        previous_key: str | None = None
-        if own_start == "current":
-            previous = store.current(state, record)
-            if previous is None:
-                rows.append({"id": record.id, "status": "error", "error": "NO_DEFORMATION",
-                             "message": "start='current' composes onto the section's "
-                             "applied deformation; this section has none."})
-                continue
-            previous_key = str((record.deformation or {}).get("key"))
-        own = exclusions(record, tuple(restrict_to), ())
+        previous = current
+        previous_key = None if current is None else str((record.deformation or {}).get("key"))
+        own = exclusions(record, tuple(restrict_to))
         failure = {"id": record.id, "status": "error", "settings": choice.echo()}
         regions = traced_regions(record, *own) if traced_choice else own
         try:
@@ -251,7 +246,7 @@ def _apply(
         now = state.by_id(record.id)
         if now is None or section_inputs(
                 state, now, deformation=start == "current",
-                trace=fit.choice.fit_section in deformation.TRACED) != expected[record.id]:
+                trace=fit.choice.fit_section == deformation.TRACED_BORDERS) != expected[record.id]:
             row.update(stale_row(record.id))
             continue
         record = now
@@ -263,27 +258,24 @@ def _apply(
         outcome.provenance = deformation.provenance(
             fit.grid, fit.choice, include, exclude, start, fit.image_identity, linear)
         held = record.deformation or {}
-        if held.get("key") == fit.key:
-            row["written"] = False
-        else:
-            try:
-                folder = store.save(record.id, fit.key, outcome)
-            except OSError as exc:
-                row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
-                continue
-            record.deformation = deformation.reference(
-                folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
-                choice=fit.choice, include=include, exclude=exclude, start=start,
-                previous=held, numbers=numbers,
-            )
-            traced = (fit.image_identity or {}).get("trace") if isinstance(
-                fit.image_identity, dict) else None
-            if traced:
-                # The trace this step fitted (its artifact directory):
-                # a packaged trace called again on it reuses this step.
-                record.deformation["steps"][-1]["trace"] = traced
-            row["written"] = True
-            written.append(record.id)
+        try:
+            folder = store.save(record.id, fit.key, outcome)
+        except OSError as exc:
+            row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
+            continue
+        record.deformation = deformation.reference(
+            folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
+            choice=fit.choice, include=include, exclude=exclude, start=start,
+            previous=held, numbers=numbers,
+        )
+        traced = (fit.image_identity or {}).get("trace") if isinstance(
+            fit.image_identity, dict) else None
+        if traced:
+            # The trace this step fitted (its artifact directory):
+            # a packaged trace called again on it reuses this step.
+            record.deformation["steps"][-1]["trace"] = traced
+        row["written"] = True
+        written.append(record.id)
         row["steps"] = len((record.deformation or {}).get("steps") or [])
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
@@ -313,14 +305,14 @@ def pictures(
         zoom=() if options.full_view else tuple(options.zoom),
         highlight=tuple(name for name, _ids in options.regions), marked=(),
         outlines=options.layer, color=color, thickness=thickness,
-        atlas_opacity=options.atlas_opacity, long_edge=options.long_edge,
+        atlas_opacity=options.atlas_opacity, depth=options.depth, long_edge=options.long_edge,
     )
     for fitted in done.fitted:
         row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
         record = fit.grid.record
         include, exclude = fit_regions(fit)
         fit_style = replace(style, highlight=style.highlight or include, marked=exclude)
-        heading = f"{record.id}  applied: {fit.choice.engine} {fit.choice.stiffness}"
+        heading = f"{record.id}  applied: {outcome.engine['name']} {fit.choice.stiffness}"
         start = "current" if fit.previous is not None else "linear"
         detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
                        + (f", include {','.join(include)}" if include else "")
@@ -381,7 +373,8 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
     numbers = row.get("displacement_mm") or {}
     facts = (f"displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
              f"fold fraction {row.get('fold_fraction')}") if numbers else ""
-    return (f"{record.id} deformation fit ({choice.engine} {choice.stiffness}, {read} "
+    engine = getattr(fit.result, "engine", {}).get("name")
+    return (f"{record.id} deformation fit ({engine} {choice.stiffness}, {read} "
             f"against the atlas {choice.fit_atlas}){at}; the fitted atlas borders on the "
             "image the fit read"
             + (f"; regions {', '.join(include)} drawn thick, the other borders faint"
@@ -460,7 +453,7 @@ def ants_syn(
     or ``nissl`` where the atlas covers the CCFv3), at *stiffness*
     (``soft`` / ``medium`` / ``firm``), on top of each section's applied
     deformation where it holds one, else its linear placement
-    (:data:`START_LATEST`; undo is how to start over). *restrict_to*: warp by
+    (undo is how to start over). *restrict_to*: warp by
     these regions only (descendants included, ``"CTX:left"`` for one side;
     empty: every region); each section's marked regions are left out on
     their own (:func:`langslice.core.damage.exclusions`). The fit runs as
@@ -475,7 +468,7 @@ def ants_syn(
     an atlas that does not cover the CCFv3); ``UNKNOWN_SLICE_IDS``;
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
-    from langslice.core.display import available_atlas_channels, canonical_atlas_name
+    from langslice.core.display import available_atlas_channels
 
     refs = list(sections or [])
     if not refs:
@@ -483,7 +476,7 @@ def ants_syn(
     if len(refs) > MAX_ANTS_SYN_SECTIONS:
         raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_ANTS_SYN_SECTIONS} "
                       "sections.", max_sections=MAX_ANTS_SYN_SECTIONS)
-    kind = canonical_atlas_name(str(atlas_image or "template").strip().lower())
+    kind = str(atlas_image or "template").strip().lower()
     if kind not in ANTS_SYN_ATLASES:
         raise Refused("BAD_ARGS", message=f"atlas_image is one of {list(ANTS_SYN_ATLASES)}.")
     level = str(stiffness or "medium").strip().lower()
@@ -506,6 +499,5 @@ def ants_syn(
     if unknown:
         raise unknown_sections(job.state, unknown)
     choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas=kind,
-                                engine="ants", stiffness=level)
-    return fit_deformable(job, workspace, records, choice, restrict_to=regions,
-                          start=START_LATEST)
+                                stiffness=level)
+    return fit_deformable(job, workspace, records, choice, restrict_to=regions)

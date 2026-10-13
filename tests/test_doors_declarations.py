@@ -136,7 +136,7 @@ _BOOKKEEPING = ["note", "undo", "redo", "submit"]
                "elastix_affine", *_BOOKKEEPING]),
     (_spec(tasks=["transform"], disabled=["elastix_affine", "mark_damage"]),
      [*_EVERY_RUN, "interactive_transform", *_BOOKKEEPING]),
-    (_spec(tasks=["position"], agent_preprocessing=True),
+    (_spec(tasks=["position"]),
      [*_EVERY_RUN, "position_sections", "mark_damage", *_BOOKKEEPING]),
     (_spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none")),
      [*_EVERY_RUN, "mark_damage", "ants_syn", "set_landmarks",

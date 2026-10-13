@@ -41,7 +41,7 @@ request; that every saved checkpoint (not the initial one) reaches the live hook
 while the run goes on, including after a stop; that event listeners receive
 checkpoints and agent events in order and that a failing listener harms nothing;
 native affine registration geometry and serialization; the warp step's
-direction, both coordinate layouts, its serialization and that BigWarp can reopen
+direction, its coordinate rows, its serialization and that BigWarp can reopen
 it; the cutting-angle signs; and how a kept row merges with a newer one.
 
 `HostSessionSmokeTest` is opt-in and needs ABBA's cached Allen V3p1 atlas (normally
@@ -73,8 +73,7 @@ Setup.
 
 `DialogWiringCheck` (needs a display, no ABBA) asserts the Advanced list in the real
 dialog: each simple checkbox and its list entry move together, a catalog checkbox
-reaches `spec.disabled`, the choices persist between dialogs, and the section is hidden
-when the service sends no tool catalog. It prints "Dialog wiring checks passed." and
+reaches `spec.disabled`, and the choices persist between dialogs. It prints "Dialog wiring checks passed." and
 exits non-zero on failure.
 
 Copy `target/langslice-fiji-0.2.0.jar` into your Fiji `jars` folder and restart
@@ -117,16 +116,14 @@ in Claude mode).
 - **Top:** provider (ChatGPT or Claude), agent model (from the worker's `setup.status`
   list, editable), reasoning
   level, image resolution (Low/Medium/High/Auto), **Show agent log**, **Open agent
-  viewer**, the image model, and **Save traces to** a folder (default
-  `~/LangSlice/traces`), which keeps the run's full agent trace; the final message names
-  the file. The image model list comes from `setup.status` (`image_models`, in the
+  viewer**, and the image model. The image model list comes from `setup.status` (`image_models`, in the
   worker's order, **None (fit to the stain only)** included); an entry whose account is not connected says "(not set up)". It
   is enabled whenever Nonlinear is ticked, in both modes. **Open agent viewer** is
   enabled only when ABBA was started from Python (`langslice abba`), which registers a
   `LangSliceEvents` listener; otherwise it is disabled with the tooltip "Available when
   ABBA is started with `langslice abba`".
-- **Tasks tab:** *Positioning* (section thickness and interval prefilled from ABBA's
-  slices, notes for the agent).
+- **Tasks tab:** *Positioning* (section thickness and interval: the user's own values,
+  else ABBA's for the selected slices, notes for the agent).
   *Linear* (**Enable hemisphere flipping** with an optional hemisphere cue, the affine
   tool, max parallel slice transforms 1–4, **Enable slice angle estimation**, notes for
   the agent). *Nonlinear* (notes for the agent; ANTs SyN is the one deformable fit). Any combination of the three may run, Nonlinear alone included. When
@@ -135,7 +132,7 @@ in Claude mode).
   switches Linear on; No leaves them out of Nonlinear (out of the run entirely when
   Positioning is off too; otherwise their `frozen` entry gains `deformation`).
   **Advanced: tools** (a collapsed panel, built from the service's `tools` catalog in
-  `setup.status`; hidden when the service sends none) lists every tool that can be switched
+  `setup.status`) lists every tool that can be switched
   off and every tool option, grouped as the catalog groups them (Common, Positioning,
   Linear, Nonlinear), each checked when it runs. The Linear and Slices checkboxes for the
   affine tool, hemisphere flipping and damage marks mirror the same choice in this panel.
@@ -146,21 +143,26 @@ in Claude mode).
   affine), so the agent keeps its in-plane alignment while its position may still move;
   a slice that carries the user's own spline or BigWarp step also freezes its deformation).
 - **Preprocessing tab:** Auto or Custom; in Custom a weight from 0 to 1 per channel,
-  CLAHE on/off and CLAHE strength; **Let the agent drive preprocessing**; the snapshot
+  CLAHE on/off and CLAHE strength; the snapshot
   pixel size (µm); the tip "Try to maximize contrast between different regions."; and a
-  before/after preview of a chosen slice. Before is the snapshot as exported from ABBA
-  (one channel in gray, several as a coloured overlay); after is the worker's
+  before/after preview of a chosen slice. Before is the snapshot as exported from ABBA,
+  auto-contrasted (one channel in gray, several as a coloured overlay); after is the worker's
   `preprocess.preview` output, the grayscale image the agent sees.
 - **Bottom:** the estimated cost from `linear.estimate`; when the worker gives no
   number, its plain reason ("Estimated cost: no estimate (…)"). **Setup…**, **Cancel**
   and **Run**.
 
 Dialog settings are saved, the Advanced list's unchecked names included; per-slice damage notes are not. Settings are stored (Java preferences, node
-`org/langslice/fiji/registration`) when a run starts, and restored next time; section
-thickness and interval come from ABBA whenever ABBA's slices give them.
-Otherwise saved user settings are used; a new dialog leaves them at zero
-(unspecified). Zero omits the value from the job, allowing the agent to infer
-what the anatomy supports. There are no fixed lab protocol defaults.
+`org/langslice/fiji/registration`) when a run starts, and restored next time. A
+new dialog starts from the worker's job defaults (`setup.status` `spec_defaults`:
+`JobSpec`'s defaults, the ones `langslice linear run`, the MCP door and the library
+use). Section thickness and interval: a value the user entered is kept, 0 included
+(0 omits it from the job, allowing the agent to infer what the anatomy supports);
+until the user enters one, the dialog shows and sends ABBA's (the median gap of the
+selected slices' positions, and their thickness; no interval after a LangSlice run
+in the same ABBA session, whose positions may be the agent's own), and never saves
+it. There are no fixed lab protocol defaults. A run keeps its full agent trace in the
+job folder's `trace/`, as `langslice linear run` does.
 
 | Control | Request |
 | --- | --- |
@@ -174,10 +176,8 @@ what the anatomy supports. There are no fixed lab protocol defaults.
 | Advanced: tools (each unchecked tool or option) | `spec.disabled` += its name (`tool` or `tool:option`), once |
 | Allow the agent to overwrite existing transforms (off) | off: each listed slice with registrations gets `spec.frozen[name]` += `orientation`, `affine`; += `deformation` when it carries the user's own warp |
 | Nonlinear left out for a slice without linear registration (No) | `spec.frozen[name]` += `deformation` |
-| Let the agent drive preprocessing | `spec.agent_preprocessing`; every channel is exported |
-| Auto/Custom, weights, CLAHE, strength | `preprocessing`; Custom exports only weighted channels unless the agent drives preprocessing |
+| Auto/Custom, weights, CLAHE, strength | `preprocessing`; Custom exports only weighted channels |
 | Snapshot pixel size (µm) | `pixel_size_um` |
-| Save traces to | `trace_dir` |
 
 The connector also sends, from ABBA: `positions_mm` (ABBA's `toAtlasZ` of each slice,
 BrainGlobe AP millimetres), `z_offset_mm` (`ReslicedAtlas.getZOffset()`), `angles_deg`
@@ -186,7 +186,7 @@ BrainGlobe AP millimetres), `z_offset_mm` (`ReslicedAtlas.getZOffset()`), `angle
 BigWarp step that is not LangSlice's) and `channel_names` (one per exported page).
 
 Snapshots are multi-page TIFFs with one page per exported channel: every channel in
-Auto or when the agent drives preprocessing, only channels with a weight above 0 in
+Auto, only channels with a weight above 0 in
 Custom, in channel order, matching the request's `channel_weights`.
 
 ## The run: live in ABBA
@@ -208,7 +208,9 @@ connector's own, since ABBA's own angle command cannot be undone.
 
 A slice whose registrations were changed in ABBA during the run (a registration added,
 removed or undone) is refused and named in the log. Rows ABBA could not take are kept,
-merged with the next checkpoint and retried; a failure never ends the run. At the end
+merged with the next checkpoint and retried; a failure never ends the run. A warp the
+worker could not convert (`"warp": {"error": …}`) is such a row: ABBA keeps the warp it
+had, and the row is named in the final message. At the end
 the kept rows get one more try, and the run window offers **Retry failed updates**.
 **Stop run** ends the agent; everything it saved before the stop is already in ABBA.
 
@@ -226,13 +228,14 @@ normally the Python launcher's JPype proxy when ABBA was started with `langslice
 `addListener(Consumer<String>)`, `removeListener`, `hasListeners()` and `slices()` (the
 run's snapshot filename to ABBA slice map). In both modes the connector passes
 on every worker message verbatim (`checkpoint`, `agent_event`, `log`, each a JSON object
-with its `kind`) and adds `run_started` (mode `openai-oauth` or `claude`, viewer, image folder, sections), `job`
+with its `kind`; a run's worker stderr lines arrive as `log` messages too) and adds `run_started` (mode `openai-oauth` or `claude`, viewer, image folder, sections), `job`
 (Claude mode), `applied` (what reached ABBA) and `run_finished`. Delivery runs on one
 background thread, in order; a failing listener is logged and never affects the run.
 
 ## Protocol
 
-The connector uses protocol version 1. A request is one JSON line sent to
+The connector uses protocol version 2 (`setup.status` `protocol_version`; Setup refuses
+any other). A request is one JSON line sent to
 `python -m langslice serve --stdio`; the worker streams events and then a result or
 error. Images and registration outputs remain local files. No local HTTP server or
 listening port is required for ChatGPT mode; Claude mode listens on one loopback port

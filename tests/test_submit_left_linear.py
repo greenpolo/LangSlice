@@ -1,5 +1,5 @@
 """``submit``'s ``left_linear`` and the host's ``require_deformation``; the
-unplaced sections and legacy starting-position gates."""
+unplaced sections and the starting positions."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from PIL import Image
 
 from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec, NonlinearSpec
-from langslice.job.job import DEFAULT_POSITION, Job
+from langslice.job.job import Job
 from langslice.ops import submit as ops_submit
 from langslice.ops.refusal import Refused
 from tests.fakes import SlabAtlas
@@ -100,7 +100,6 @@ def test_left_linear_is_for_nonlinear_runs(tmp_path: Path):
 def test_ingest_leaves_sections_unplaced_and_submit_refuses(tmp_path: Path):
     job, _ = _open(tmp_path, tasks=["position"])
     assert all(record.position_mm is None for record in job.state.slices)
-    assert all(record.position_source == "" for record in job.state.slices)
     refused = _refused(job)
     assert refused.code == "MISSING_POSITIONS"
     assert refused.payload()["missing_ids"] == ["s0.png", "s1.png", "s2.png"]
@@ -111,22 +110,6 @@ def test_supplied_positions_do_not_place_other_sections(tmp_path: Path):
                    inputs={"positions": {"s1.png": 2.0, "s3.png": 3.0}})
     assert [record.position_mm for record in sorted(
         job.state.slices, key=lambda record: record.index_original)] == [None, 2.0, None, 3.0, None]
-    assert all(record.position_source == "" for record in job.state.slices)
-
-
-def test_legacy_starting_positions_remain_unconfirmed(tmp_path: Path):
-    job, _ = _open(tmp_path, tasks=["position"])
-    for record in job.state.slices:
-        record.position_mm, record.position_source = 2.0, DEFAULT_POSITION
-    assert _refused(job).payload()["at_default"] == ["s0.png", "s1.png", "s2.png"]
-    with job.writing():
-        before = job.snapshot()
-        job.state.by_id("s1.png").position_mm = 5.0
-        job.commit(before)
-    assert job.state.by_id("s1.png").position_source == ""
-    assert _refused(job).payload()["at_default"] == ["s0.png", "s2.png"]
-    assert job.undo()
-    assert job.state.by_id("s1.png").position_source == DEFAULT_POSITION
 
 
 def test_without_positioning_no_starting_positions(tmp_path: Path):

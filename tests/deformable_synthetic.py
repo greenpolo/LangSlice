@@ -115,3 +115,12 @@ def render_section(
     brightness = np.clip(brightness + rng.normal(0, 2.0, brightness.shape), 0, 255)
     gray = brightness.astype(np.uint8)
     return Image.fromarray(np.stack([gray] * 3, axis=-1)), labels
+
+
+def fit_section(section_image, atlas, placement, settings=None, **options):
+    """Prepare, run and record one fit (options as ``prepare_fit``)."""
+    from langslice.core.deformable import FitSettings, finish_fit, prepare_fit
+    from langslice.core.deformable.engines import run_engine
+
+    prepared = prepare_fit(section_image, atlas, placement, settings or FitSettings(), **options)
+    return finish_fit(prepared, run_engine(prepared.inputs, prepared.settings))

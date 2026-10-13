@@ -141,7 +141,6 @@ def test_submit_waits_and_the_work_gives_way_under_the_lock(tmp_path: Path):
     assert done.summary == "placed" and job.state.submitted
     assert landed_on == [threading.current_thread().name]
     assert job.background.get(work.id).status == "done"  # type: ignore[union-attr]
-    assert not any(record.position_source for record in job.state.slices)
 
 
 def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):

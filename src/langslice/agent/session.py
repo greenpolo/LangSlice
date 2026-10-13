@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from contextlib import aclosing
 from typing import Any, cast
 
@@ -35,7 +35,6 @@ from langslice.agent.model_resolver import (
 from langslice.agent.plugins import (
     ModelCallPacingPlugin,
     RequestCapturePlugin,
-    RetiredToolsPlugin,
     StrictArgumentsPlugin,
     WorkingSetImages,
 )
@@ -47,9 +46,8 @@ _APP_NAME = "langslice"
 _USER_ID = "langslice-user"
 
 
-def build_plugins(run_label: str, disabled: Collection[str] = ()) -> list[BasePlugin]:
-    """The ADK plugins every LangSlice session runs with; *disabled* is the
-    job's disabled list (what a retired tool's answer may name)."""
+def build_plugins(run_label: str) -> list[BasePlugin]:
+    """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
         # One working set per session: the instance remembers its cut.
         ContextFilterPlugin(custom_filter=WorkingSetImages()),
@@ -60,8 +58,6 @@ def build_plugins(run_label: str, disabled: Collection[str] = ()) -> list[BasePl
     capture_dir = env_value("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
-    # A retired tool's name answers with the tool to use instead.
-    plugins.append(RetiredToolsPlugin(disabled=disabled))
     # Unknown or misplaced arguments are refused, never silently dropped.
     plugins.append(StrictArgumentsPlugin())
     return plugins
@@ -202,7 +198,6 @@ async def run_agent_session(
     max_quota_percent: int | None = None,
     on_event: LiveCallback | None = None,
     background: Callable[[], list[Any] | None] | None = None,
-    disabled: Collection[str] = (),
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -229,7 +224,7 @@ async def run_agent_session(
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=build_plugins(run_label, disabled),
+        plugins=build_plugins(run_label),
     )
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None
@@ -400,5 +395,5 @@ async def run_agent_session(
             stopped=stopped,
         )
     if live is not None:
-        live.emit("complete", submitted=done(), tokens=tokens.as_dict())
+        live.emit("complete", submitted=done(), tokens=tokens.as_dict(), stopped=stopped)
     return tool_calls, turns

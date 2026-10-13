@@ -5,7 +5,7 @@ Every other picture is drawn from the section's working copy (at most
 ``section`` and ``overlay`` pictures, and every change tool's picture) is
 drawn again from the image file itself: :func:`section_pixels` takes, for
 each pixel of the zoomed picture, the working-copy point it shows (the
-caller's geometry: framing, quarter turn and flip, placement, deformation)
+caller's geometry: quarter turn and flip, placement, deformation)
 and returns the file's pixels there, read only around those points
 (:func:`read_region`: a tiled or pyramidal TIFF through tifffile's zarr
 store, never decoded whole; any other file decoded and cut).
@@ -313,7 +313,7 @@ def working_look(ws: Workspace, record: SliceState, look: Look) -> np.ndarray:
     from langslice.core.sections import render_slice
 
     source, _factor = ws.working_source(record.id)
-    drawn = render_slice(ws, record, long_edge=max(source.size), frame=False, look=look)
+    drawn = render_slice(ws, record, long_edge=max(source.size), look=look)
     flat = unorient(drawn, record.rotation_deg, record.flip).convert("RGB")
     if flat.size != source.size:  # never expected: the render is the working copy
         flat = flat.resize(source.size, Image.Resampling.BILINEAR)
@@ -406,22 +406,18 @@ def framed_window(
     ws: Workspace, record: SliceState, look: Look, window: tuple[float, ...], long_edge: int,
 ) -> tuple[Image.Image, float]:
     """``(picture, enlarged)``: *window* (``[x0, y0, x1, y1]`` fractions of
-    the section's tissue-framed picture, turned and flipped as it is shown)
+    the section's whole picture, turned and flipped as it is shown)
     read from the image file, its long side *long_edge* pixels, in *look*
     (:func:`section_pixels`); *enlarged*, how many picture pixels one file
     pixel spans (above 1: the file has fewer pixels than the picture)."""
-    from langslice.core.image_prep import tissue_box
-
     source, _factor = ws.working_source(record.id)
     width, height = source.size
-    bx0, by0, bx1, by1 = tissue_box(source) or (0, 0, width, height)
-    box_w, box_h = bx1 - bx0, by1 - by0
     x0, y0, x1, y1 = (float(v) for v in window)
     corners_x, corners_y = unoriented_fractions(np.array([x0, x1]), np.array([y0, y1]),
                                                 record.rotation_deg, record.flip)
     file_w, file_h = _file_size(ws.image_path(record.id))
-    native_w = abs(corners_x[1] - corners_x[0]) * box_w * file_w / float(width)
-    native_h = abs(corners_y[1] - corners_y[0]) * box_h * file_h / float(height)
+    native_w = abs(corners_x[1] - corners_x[0]) * file_w
+    native_h = abs(corners_y[1] - corners_y[0]) * file_h
     if int(record.rotation_deg) % 180:
         native_w, native_h = native_h, native_w
     scale = long_edge / max(native_w, native_h, 1e-9)
@@ -430,16 +426,14 @@ def framed_window(
     fy = y0 + (np.arange(rows, dtype=np.float64) + 0.5) / rows * (y1 - y0)
     grid_x, grid_y = np.meshgrid(fx, fy)
     ux, uy = unoriented_fractions(grid_x, grid_y, record.rotation_deg, record.flip)
-    found = section_pixels(ws, record, look, bx0 + ux * box_w - 0.5, by0 + uy * box_h - 0.5)
+    found = section_pixels(ws, record, look, ux * width - 0.5, uy * height - 0.5)
     from langslice.core.landmarks import orientation
 
     image = Image.fromarray(found.rgb)
-    crop_to_file = np.array([[box_w/width, 0, bx0/width],
-                             [0, box_h/height, by0/height], [0, 0, 1]])
-    pixel_to_window = np.array([[(x1-x0)/cols, 0, x0+.5*(x1-x0)/cols],
-                                [0, (y1-y0)/rows, y0+.5*(y1-y0)/rows], [0, 0, 1]])
-    image.info["pixel_to_file_fraction"] = (crop_to_file @ orientation(record)
-                                            @ pixel_to_window).tolist()
+    from langslice.core.affine import pixel_fraction_map
+
+    image.info["pixel_to_file_fraction"] = (
+        orientation(record) @ pixel_fraction_map((cols, rows), (x0, y0, x1, y1))).tolist()
     return image, found.enlarged
 
 

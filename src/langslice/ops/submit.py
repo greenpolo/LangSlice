@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -129,7 +129,6 @@ def submit(
     left_linear: Any = (),
     traces: bool = False,
     workspace: Workspace | None = None,
-    gate: Callable[[], Mapping[str, Any] | None] | None = None,
 ) -> Submitted:
     """Check the job's submit gates, then end the run: ONE undo step.
 
@@ -142,10 +141,7 @@ def submit(
     on every section, ``NonlinearSpec.require_deformation``).
     The gates, in order: the job's (:meth:`~langslice.job.job.Job.submit_errors`:
     positions, interval breaks, transforms, deformations, *left_linear*
-    counted as covered), then
-    *gate*, when given, before anything is written: a door's own check (the
-    tool door's "look at the whole stack in mode positioning first"); a
-    payload it returns refuses the call.
+    counted as covered).
     A refusal is :class:`Refused` with the gate's payload, nothing written.
     With *traces* (the image model is part of the run), image-model traces
     still running are waited for and recorded first; tracing is the agent's
@@ -171,10 +167,6 @@ def submit(
     refusal = job.submit_errors(breaks, left)
     if refusal is not None:
         raise Refused.of(refusal)
-    if gate is not None:
-        held = gate()
-        if held is not None:
-            raise Refused.of(held)
 
     state = job.state
     before = job.snapshot()

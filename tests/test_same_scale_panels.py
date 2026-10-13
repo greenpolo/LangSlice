@@ -60,7 +60,7 @@ def _job(tmp_path: Path, pixel_size_um: float = 25.0) -> tuple[Any, Any]:
     return state, ctx
 
 
-def _tissue_box(picture: Image.Image) -> tuple[int, int]:
+def _stain_box(picture: Image.Image) -> tuple[int, int]:
     """``(width, height)`` in pixels of the stained tissue on a brightfield panel."""
     gray = np.asarray(picture.convert("L"), dtype=np.float32)
     mask = (gray > 40) & (gray < 205)  # the slide is ~236, a caption band black
@@ -82,7 +82,7 @@ def _assert_true_size(section: Image.Image, atlas: Image.Image, *, kept: float =
                       ratio: float = 1.0) -> None:
     """The section's tissue against the atlas brain: the height in *ratio*,
     the width in *ratio* times the fraction *kept*."""
-    tissue_w, tissue_h = _tissue_box(section)
+    tissue_w, tissue_h = _stain_box(section)
     brain_w, brain_h = _brain_box(atlas)
     assert abs(tissue_h - ratio * brain_h) <= TOLERANCE_PX, (tissue_h, brain_h)
     assert abs(tissue_w - ratio * kept * brain_w) <= TOLERANCE_PX + 0.02 * brain_w, (
@@ -100,8 +100,8 @@ def test_opening_tiles_draw_a_section_and_its_atlas_at_one_scale(
     section, atlas = pair_tiles(ctx, state, state.by_id(name), 0.1, 256)
     assert max(*section.size, *atlas.size) <= 256
     _assert_true_size(section, atlas, kept=kept)
-    # The atlas, the larger panel here, fills the tile.
-    assert max(atlas.size) >= 254
+    # The larger panel (the whole section image here) fills the tile.
+    assert max(section.size) >= 254
 
 
 def test_a_wrong_pixel_size_shows_as_a_wrong_size(tmp_path: Path):

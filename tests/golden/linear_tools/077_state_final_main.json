@@ -53,7 +53,6 @@
      "record": "sections/s0/deformable/<hex>",
      "steps": [
       {
-       "engine": "ants",
        "exclude": [],
        "fit_atlas": "borders",
        "fit_section": "traced_borders",
@@ -65,8 +64,8 @@
      ],
      "summary": {
       "displacement_mm": {
-       "max": 0.208,
-       "median": 0.022
+       "max": 0.224,
+       "median": 0.027
       },
       "flags": [],
       "fold_fraction": 0.0
@@ -91,7 +90,7 @@
      "geometry_fingerprint": "<hex>",
      "id": "s0.png",
      "model": "gpt-image-2.5-sunburst",
-     "model_border_pixels": 7436,
+     "model_border_pixels": 7416,
      "output_kind": "border_annotation",
      "prompt_edited": false,
      "provider": "openai-oauth",
@@ -107,34 +106,32 @@
     "index_original": 0,
     "landmarks": {},
     "position_mm": 0.1,
-    "position_source": "",
     "rotation_deg": 0,
     "transform": {
      "calibration": {
       "section_um_per_px": 31.25,
       "source": "host"
      },
-     "iou": 0.989,
      "kind": "elastix",
      "mirrored": false,
      "params": [
-      1.001393692992846,
-      0.00045068498858011607,
-      -0.0032746221412246527,
-      -0.00779177774567784,
-      1.0045951285810455,
-      -0.009030841638644201
+      1.0009436034199828,
+      0.0005202818222520978,
+      -0.0030703343616229305,
+      -0.007810795748377115,
+      1.004092811576128,
+      -0.008774502264045555
      ],
      "physical": {
       "pivot": [
        0.5,
        0.5
       ],
-      "rotation_deg": 0.341,
-      "scale_x": 1.0014,
-      "scale_y": 1.0046,
-      "shear": -0.0054,
-      "translate_x_mm": -0.02,
+      "rotation_deg": 0.342,
+      "scale_x": 1.001,
+      "scale_y": 1.0041,
+      "shear": -0.0053,
+      "translate_x_mm": -0.0199,
       "translate_y_mm": -0.0691
      }
     }
@@ -150,7 +147,6 @@
      "record": "sections/s1/deformable/<hex>",
      "steps": [
       {
-       "engine": "ants",
        "exclude": [],
        "fit_atlas": "template",
        "fit_section": "fit",
@@ -159,7 +155,6 @@
        "stiffness": "medium"
       },
       {
-       "engine": "ants",
        "exclude": [],
        "fit_atlas": "template",
        "fit_section": "fit",
@@ -170,7 +165,6 @@
        "stiffness": "soft"
       },
       {
-       "engine": "ants",
        "exclude": [],
        "fit_atlas": "borders",
        "fit_section": "traced_borders",
@@ -184,14 +178,14 @@
      ],
      "summary": {
       "displacement_mm": {
-       "max": 0.201,
-       "median": 0.051
+       "max": 0.196,
+       "median": 0.055
       },
       "flags": [],
       "fold_fraction": 0.0,
       "step_displacement_mm": {
-       "max": 0.183,
-       "median": 0.001
+       "max": 0.204,
+       "median": 0.0
       }
      }
     },
@@ -217,7 +211,7 @@
       "TH"
      ],
      "model": "gpt-image-2.5-sunburst",
-     "model_border_pixels": 1200,
+     "model_border_pixels": 1196,
      "output_kind": "border_annotation",
      "prompt_edited": true,
      "provider": "openai-oauth",
@@ -233,35 +227,33 @@
     "index_original": 1,
     "landmarks": {},
     "position_mm": 0.15,
-    "position_source": "",
     "rotation_deg": 0,
     "transform": {
      "calibration": {
       "section_um_per_px": 31.25,
       "source": "host"
      },
-     "iou": 1.0,
      "kind": "elastix",
      "mirrored": false,
      "params": [
-      1.0097750761415503,
-      0.0047262741218024925,
-      -0.014345808550973106,
-      -0.02242086042173003,
-      0.9945996175475558,
-      0.010338807234242934
+      1.0103844286997286,
+      0.004820035258405236,
+      -0.014779357209555167,
+      -0.022541068440734193,
+      0.9946844192908434,
+      0.010417555672348033
      ],
      "physical": {
       "pivot": [
        0.5,
        0.5
       ],
-      "rotation_deg": 0.973,
-      "scale_x": 1.0099,
+      "rotation_deg": 0.977,
+      "scale_x": 1.0105,
       "scale_y": 0.9946,
       "shear": -0.0106,
-      "translate_x_mm": -0.0603,
-      "translate_y_mm": -0.0232
+      "translate_x_mm": -0.061,
+      "translate_y_mm": -0.0228
      },
      "regions": {
       "exclude": [],
@@ -288,35 +280,33 @@
     "index_original": 2,
     "landmarks": {},
     "position_mm": 0.2,
-    "position_source": "",
     "rotation_deg": 0,
     "transform": {
      "calibration": {
       "section_um_per_px": 31.25,
       "source": "host"
      },
-     "iou": 0.911,
      "kind": "elastix",
      "mirrored": false,
      "params": [
-      1.0071986487184268,
-      -0.004295060371306138,
-      -0.00183785199010385,
-      0.005619990182850775,
-      1.0036665335151937,
-      -0.01623242981682699
+      1.0052382295908497,
+      -0.00454141050121671,
+      -0.0008298822022684152,
+      0.004537597841279259,
+      1.0026604021132384,
+      -0.015673749560150014
      ],
      "physical": {
       "pivot": [
        0.5,
        0.5
       ],
-      "rotation_deg": -0.244,
-      "scale_x": 1.0072,
-      "scale_y": 1.0037,
-      "shear": -0.0013,
-      "translate_x_mm": -0.0033,
-      "translate_y_mm": -0.0753
+      "rotation_deg": -0.198,
+      "scale_x": 1.0052,
+      "scale_y": 1.0027,
+      "shear": -0.0025,
+      "translate_x_mm": -0.0041,
+      "translate_y_mm": -0.0785
      },
      "regions": {
       "exclude": [
@@ -328,7 +318,6 @@
    }
   ],
   "spec": {
-   "agent_preprocessing": true,
    "atlas": "allen_mouse_25um",
    "debrief": true,
    "facts": [],
@@ -349,7 +338,6 @@
    "out": null,
    "plane": "coronal",
    "position": {
-    "gated": false,
     "interval_um": null,
     "notes": "",
     "playbook": false,

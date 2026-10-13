@@ -2,14 +2,14 @@
 
 The physical canvas (:func:`langslice.core.canvas.physical_views`) puts the
 atlas on the section's frame at true scale. The pictures that show the two
-as separate panels (the positioning picture, the opening strips) frame each
-to its own anatomy; this module sizes both panels at ONE micrometres per
-pixel, so the section reads at its true size against the atlas, as on the
-canvas:
+as separate panels (the positioning picture, the opening strips) draw the
+whole section image and the atlas framed to its anatomy; this module sizes
+both panels at ONE micrometres per pixel, so the section reads at its true
+size against the atlas, as on the canvas:
 
 - the section's scale is the one its placement pictures draw it at: its
   calibration (:func:`langslice.core.transform.calibrate`: the file, the
-  host, or the estimate) times the isotropic scale of its stored transform
+  host, or the uncalibrated frame mapping) times the isotropic scale of its stored transform
   (:func:`stored_scale`), on the :data:`PREVIEW_LONG_EDGE` working frame;
 - the atlas plane is at its voxel size (:func:`atlas_um_per_px`);
 - the common scale puts the larger of the panels at the picture's long
@@ -62,20 +62,18 @@ def section_um_per_px(
 def framed_um_per_px(
     ws: Workspace, record: SliceState, working_um: float, *, long_edge: int, look: Look = None,
 ) -> float:
-    """Micrometres per pixel of the tissue-framed render at *long_edge*,
-    given *working_um*, that of the unframed working frame."""
+    """Micrometres per pixel of the render at *long_edge*, given
+    *working_um*, that of the working frame."""
     render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
-    render_slice(ws, record, long_edge=long_edge, frame=True, look=look)
-    working = ws.render_scale[render_cache_key(ws, record, long_edge=PREVIEW_LONG_EDGE,
-                                               frame=False)]
-    framed = ws.render_scale[render_cache_key(ws, record, long_edge=long_edge, frame=True,
-                                              look=look)]
-    return float(working_um) * framed / working
+    render_slice(ws, record, long_edge=long_edge, look=look)
+    working = ws.render_scale[render_cache_key(ws, record, long_edge=PREVIEW_LONG_EDGE)]
+    shown = ws.render_scale[render_cache_key(ws, record, long_edge=long_edge, look=look)]
+    return float(working_um) * shown / working
 
 
 def section_extent_um(ws: Workspace, record: SliceState, working_um: float) -> float:
-    """The long edge of the tissue-framed section, in micrometres."""
-    picture = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE, frame=True)
+    """The long edge of the whole section picture, in micrometres."""
+    picture = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     return max(picture.size) * framed_um_per_px(ws, record, working_um,
                                                 long_edge=PREVIEW_LONG_EDGE)
 
@@ -93,8 +91,7 @@ def finest_um_per_px(ws: Workspace, record: SliceState, working_um: float) -> fl
     *working_um* (the working frame's): no picture draws the section finer."""
     render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     _source, file_px_per_px = ws.working_source(record.id)
-    working = ws.render_scale[render_cache_key(ws, record, long_edge=PREVIEW_LONG_EDGE,
-                                               frame=False)]
+    working = ws.render_scale[render_cache_key(ws, record, long_edge=PREVIEW_LONG_EDGE)]
     return float(working_um) * float(file_px_per_px) / working
 
 
@@ -111,7 +108,7 @@ def pair_scale(
     *, um_per_px: float | None = None,
 ) -> tuple[float, float]:
     """``(picture um/px, working um/px)`` of *record* drawn with the atlas at
-    *position_mm* (its own angles): the larger of the two framed panels at
+    *position_mm* (its own angles): the larger of the two panels at
     *long_edge*. *um_per_px* is the section's calibration when the caller
     holds it (None: :func:`section_um_per_px` calibrates)."""
     working_um = section_um_per_px(ws, state, record, um_per_px)
@@ -127,14 +124,14 @@ def section_at(
     ws: Workspace, record: SliceState, um_per_px: float, *, working_um: float,
     long_edge: int, look: Look = None,
 ) -> Image.Image:
-    """The section tissue-framed at exactly *um_per_px*.
+    """The whole section picture at exactly *um_per_px*.
 
-    Drawn from the framed render at *long_edge* (the call's size, so the
+    Drawn from the render at *long_edge* (the call's size, so the
     render cache keeps its usual entries), then resized by the one factor
     that brings it to *um_per_px*: never stretched, at most *long_edge*
     when *um_per_px* is :func:`pair_um_per_px` of a pair it belongs to.
     """
-    picture = render_slice(ws, record, long_edge=int(long_edge), frame=True, look=look)
+    picture = render_slice(ws, record, long_edge=int(long_edge), look=look)
     have = framed_um_per_px(ws, record, working_um, long_edge=int(long_edge), look=look)
     return resized(picture, have / float(um_per_px))
 

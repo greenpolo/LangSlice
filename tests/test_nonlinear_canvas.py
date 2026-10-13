@@ -41,38 +41,28 @@ def test_gemini_frame_is_the_measured_fixed_frame_for_the_nearest_aspect() -> No
 
 def test_unknown_lane_keeps_the_long_edge_rule() -> None:
     assert native_output_size(None, "none", (4000, 3000)) is None
-    canvas, unpadded, ox, oy, pad = prepare_canvas(Image.new("RGB", (4000, 3000)), provider="none")
+    canvas, unpadded, ox, oy = prepare_canvas(Image.new("RGB", (4000, 3000)), provider="none")
     assert canvas.size == (2048, 1536) and unpadded == (2048, 1536)
-    assert (ox, oy, pad) == (0.0, 0.0, 0)
+    assert (ox, oy) == (0.0, 0.0)
 
 
 def test_native_canvas_is_exactly_the_output_frame_and_keeps_the_slide_box() -> None:
     image = Image.new("RGB", (3137, 2353), (20, 20, 20))
-    canvas, unpadded, ox, oy, pad = prepare_canvas(
-        image, canvas_pad=0.0365, provider="openai-oauth"
-    )
-    assert canvas.size == native_output_size(None, "openai-oauth", canvas.size)
+    canvas, unpadded, ox, oy = prepare_canvas(image, provider="openai-oauth")
+    # The frame of the long-edge layout (2047 x 1536), padded out to exactly.
+    assert canvas.size == native_output_size(None, "openai-oauth", (2047, 1536))
     # The slide box scales with the canvas: its aspect is the slide's, and
     # origin + box stay inside the frame.
     assert math.isclose(unpadded[0] / unpadded[1], 3137 / 2353, rel_tol=0.01)
     assert ox >= 0 and oy >= 0 and ox + unpadded[0] <= canvas.width + 1
     assert oy + unpadded[1] <= canvas.height + 1
-    assert pad == round(ox) or abs(pad - ox) <= 1
 
 
 def test_gemini_canvas_is_padded_to_the_fixed_frame_never_cropped() -> None:
     image = Image.new("RGB", (3137, 2353), (20, 20, 20))
-    canvas, unpadded, ox, oy, _ = prepare_canvas(
+    canvas, unpadded, ox, oy = prepare_canvas(
         image, image_model="gemini-3.1-flash-lite-image", provider="gemini-api"
     )
     assert canvas.size == (1200, 896)
     assert unpadded[0] <= 1200 and unpadded[1] <= 896
     assert ox + unpadded[0] <= 1200 + 1 and oy + unpadded[1] <= 896 + 1
-
-
-def test_canvas_long_edge_overrides_the_native_frame() -> None:
-    canvas, unpadded, *_ = prepare_canvas(
-        Image.new("RGB", (3137, 2353)), provider="openai-oauth", canvas_long_edge=1024
-    )
-    assert canvas.width == 1024 or canvas.width == 1023
-    assert unpadded == canvas.size

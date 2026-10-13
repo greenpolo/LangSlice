@@ -30,10 +30,10 @@ def section_inputs(
     (position, plane, cutting angles, flip, rotation, transform), its fit
     appearance, its damage (the marked regions, which every fit leaves
     out), and with *deformation* its applied deformation
-    (``start="current"``), with *trace* its image correction."""
+    (a fit on top of it), with *trace* its image correction."""
     held: dict[str, Any] = {
         "linear": linear_key(state, record),
-        "fit_look": looks.section_settings(state, "fit", record.id),
+        "fit_look": looks.preprocessed_settings(state, record.id),
         "damage": {"regions": list(record.damaged_regions)},
     }
     if deformation:

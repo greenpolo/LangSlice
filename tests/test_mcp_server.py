@@ -19,8 +19,10 @@ from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCH
 from langslice.core.spec import JobSpec
 from langslice.doors.mcp.server import build_server
 from langslice.doors.tools.arguments import CuttingAngles, SectionPosition, normalize_arguments
-from langslice.ops.registry import RETIRED, retired_payload
 from tests.fakes import SlabAtlas
+
+#: ABBA's stack-wide angles as the connector always sends them (flat).
+FLAT = {"pitch_deg": 0.0, "yaw_deg": 0.0}
 
 _ATLAS = SlabAtlas()
 
@@ -67,8 +69,6 @@ def test_a_folder_given_at_startup_lists_the_toolbox_without_adk_context(tmp_pat
     tools = {tool.name: tool for tool in _session(server, body)}
     assert {"start_job", "status", "look", "zoom", "position_sections", "elastix_affine",
             "submit"} <= set(tools)
-    # A retired name is never listed; it only answers when called.
-    assert not set(tools) & set(RETIRED)
     for tool in tools.values():
         assert "tool_context" not in tool.inputSchema.get("properties", {})
     assert tools["status"].annotations.readOnlyHint is True
@@ -211,31 +211,6 @@ def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
     assert _text(stray)["error"] == "UNKNOWN_ARGUMENTS"
 
 
-def test_a_retired_tool_answers_with_the_tool_to_use_over_mcp(tmp_path: Path):
-    server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
-
-    async def body(client: Any) -> Any:
-        return (
-            await client.call_tool("fit_affine", {"slices": ["s0.png"]}),
-            await client.call_tool("fit_affine", {}),
-            await client.call_tool("view_slices", {"slices": ["s0.png"]}),
-            await client.call_tool("search_position", {"slice": "s0.png"}),
-            await client.call_tool("no_such_tool", {}),
-        )
-
-    first, again, view, search, unknown = _session(server, body)
-    for reply in (first, again):
-        assert not reply.isError
-        assert _text(reply) == retired_payload("fit_affine")
-        assert _text(reply)["error"] == "RETIRED_TOOL" and _text(reply)["use"] == "elastix_affine"
-    assert _text(view)["use"] == "look"
-    assert not any(isinstance(block, ImageContent) for block in view.content)
-    assert _text(search)["error"] == "RETIRED_TOOL" and "use" not in _text(search)
-    # A name that never was a tool is still FastMCP's unknown tool.
-    assert unknown.isError
-    assert "RETIRED_TOOL" not in unknown.content[0].text
-
-
 def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path: Path):
     def spec_for(folder: str) -> JobSpec:
         return JobSpec(image_folder=folder, preprocess="none", tasks=["position"],
@@ -245,10 +220,9 @@ def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path:
 
     async def body(client: Any) -> Any:
         return ((await client.list_tools()).tools,
-                await client.call_tool("view_stack", {}),
                 await client.call_tool("look", {"mode": "positioning"}))
 
-    tools, view, looked = _session(server, body)
+    tools, looked = _session(server, body)
     by_name = {tool.name: tool for tool in tools}
     assert "zoom" not in by_name and "mark_damage" not in by_name
     assert by_name["look"].inputSchema["properties"]["mode"]["enum"] == [
@@ -256,10 +230,6 @@ def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path:
     for tool in tools:
         text = json.dumps(tool.inputSchema) + (tool.description or "")
         assert "zoom takes" not in text and "positioning mode" not in text
-    # A retired tool whose replacement is a mode that is off says nothing replaces it.
-    answer = _text(view)
-    assert answer["error"] == "RETIRED_TOOL" and "use" not in answer
-    assert "nothing replaces it" in answer["message"] and "positioning" not in answer["message"]
     # A mode the schema does not offer is refused before the tool runs.
     assert looked.isError or _text(looked).get("error") in ("OPTION_OFF", "UNKNOWN_ARGUMENTS")
 
@@ -358,29 +328,23 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
 
     folder = _folder(tmp_path)
     monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25,
+    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
               "spec": {"tasks": ["transform"], "transform": {"angles": False},
                        "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}},
               "damaged": {"s0.png": "torn"},
-              "preprocessing": {"mode": "auto"}, "notes": "Keep the supplied positions."}
+              "preprocessing": {"mode": "auto"}}
     prepared = saved_jobs.prepare_saved_job(params)
     path = Path(prepared["job_dir"])
     assert path == folder / "langslice"  # the job folder next to the snapshots
     record = json.loads((path / "job.json").read_text())
-    assert record["host"]["params"] == {key: value for key, value in params.items()
-                                        if key != "notes"}
+    assert record["host"]["params"] == params
     assert record["format_version"] == 1 and record["host"]["format"] == 2
     assert record["job_id"] == prepared["job_id"]
     entry = json.loads((tmp_path / "jobs" / f"{prepared['job_id']}.json").read_text())
     assert entry["job_folder"] == str(path)
     assert prepared["job_id"] in prepared["prompt"]
-    # The user's notes live in job.json, read by every door; the statement
-    # carries them, the copy prompt does not repeat them.
-    assert record["notes"] == "Keep the supplied positions."
-    assert "Keep the supplied positions." not in prepared["prompt"]
     job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
-    assert job.notes == "Keep the supplied positions."
     assert job.spec.tasks == ["transform"]
     # The host's damage note is kept with the section; it does not mark it
     # damaged (damaged regions do).
@@ -391,11 +355,34 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     submit = next(tool for tool in job.box.tools if tool.__name__ == "submit")
     result = asyncio.run(host_tool(job, submit)(summary="done", notes=[], interval_breaks=[]))
     assert result and job.state.submitted
-    saved = json.loads((path / "exports" / "result.json").read_text())
-    assert saved["state"]["submitted"] is True
-    assert saved["final_updates"] == []
     assert (path / "state.json").exists()
     assert (path / "exports" / "linear_results.json").exists()
+
+
+def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any):
+    """DOORS-1: a second open of the same saved job keeps its writes and undo history."""
+    from langslice.doors.api import saved_jobs
+    from langslice.doors.mcp.server import host_tool, open_saved_job
+
+    folder = _folder(tmp_path)
+    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
+              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
+              "spec": {"tasks": ["position", "transform"]}}
+    prepared = saved_jobs.prepare_saved_job(params)
+    first = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    tools = {tool.__name__: tool for tool in first.box.tools}
+    asyncio.run(host_tool(first, tools["note"])(text="kept"))
+    asyncio.run(host_tool(first, tools["position_sections"])(
+        sections=[{"id": "s0.png", "position_mm": 1.5}], view=False))
+    depth = len(first.job.undo_stack)
+    assert depth > 0
+    first.close()
+    again = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    assert "kept" in again.state.notes
+    assert again.state.by_id("s0.png").position_mm == 1.5
+    assert len(again.job.undo_stack) == depth
+    again.close()
 
 
 def test_host_channel_loopback_envelopes_and_disconnect():
@@ -415,7 +402,7 @@ def test_host_channel_loopback_envelopes_and_disconnect():
             event = json.loads(stream.readline())
             assert event["id"] == "abc" and event["type"] == "event"
             assert event["event"]["payload"]["host_updates"][0]["position_mm"] == 1
-            channel.send({"type": "result", "result": {"final_updates": []}})
+            channel.send({"type": "result", "result": {"output_dir": "out"}})
             assert json.loads(stream.readline())["type"] == "result"
         channel.close()
         channel.event({"kind": "checkpoint"})
@@ -481,7 +468,7 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     monkeypatch.setattr(setup, "apply_saved_credentials", lambda: (_ for _ in ()).throw(
         AssertionError("Saving a job must not load model credentials")))
     folder = _folder(tmp_path)
-    params = {"image_folder": str(folder), "pixel_size_um": 25,
+    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
               "spec": {"tasks": ["transform"], "transform": {"angles": False},
                        "frozen": {f"s{i}.png": ["orientation", "affine"] for i in range(3)}}}
@@ -560,29 +547,30 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     assert any("checked s0" in line for line in saved["notes"])
 
 
-def test_a_fresh_server_starts_a_folder_job_over_from_its_own_flags(tmp_path: Path):
-    """``langslice mcp --fresh``: the server's job flags make the job even
-    where one was saved."""
-    folder = _folder(tmp_path)
-    _init(folder, "--tasks", "position", "--preprocess", "none")
-    server = build_server(lambda image_folder: JobSpec(
-        image_folder=image_folder, tasks=["transform"], preprocess="none", resume=False),
-        str(folder), atlas_loader=lambda _n: _ATLAS, fresh=True)
+def test_the_mcp_server_starts_and_takes_no_fresh_flag(monkeypatch: Any):
+    """DOORS-5: ``langslice mcp`` has no --fresh, and starts (it read ``args.fresh``)."""
+    import argparse
 
-    async def body(client: Any) -> Any:
-        return {tool.name for tool in (await client.list_tools()).tools}
+    import pytest
 
-    tools = _session(server, body)
-    assert "interactive_transform" in tools and "position_sections" not in tools
-    saved = json.loads((folder / "langslice" / "job.json").read_text())
-    assert saved["spec"]["tasks"] == ["transform"]
+    from langslice.doors.cli.mcp import add_mcp_parser, run_mcp
+    from langslice.doors.mcp import server
+
+    parser = argparse.ArgumentParser()
+    add_mcp_parser(parser.add_subparsers())
+    with pytest.raises(SystemExit):
+        parser.parse_args(["mcp", "--fresh"])
+    served: list[Any] = []
+    monkeypatch.setattr(server, "serve", lambda *args, **kwargs: served.append((args, kwargs)))
+    run_mcp(parser.parse_args(["mcp"]))
+    assert len(served) == 1 and not served[0][1]
 
 
 def test_a_folder_job_opened_at_startup_lists_its_tools_from_the_first_request(
     tmp_path: Path,
 ):
     folder = _folder(tmp_path)
-    _init(folder, "--tasks", "reorder,position", "--preprocess", "none")
+    _init(folder, "--tasks", "position", "--preprocess", "none")
     server = build_server(lambda _folder: (_ for _ in ()).throw(AssertionError()),
                           str(folder), atlas_loader=lambda _n: _ATLAS)
 
@@ -602,7 +590,7 @@ def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, m
 
     folder = _folder(tmp_path)
     monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
-    params = {"image_folder": str(folder), "pixel_size_um": 25,
+    params = {"image_folder": str(folder), "pixel_size_um": 25, "angles_deg": FLAT,
               "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
               "spec": {"tasks": ["position", "transform"]}, "z_offset_mm": 5.7}
     prepared = saved_jobs.prepare_saved_job(params)

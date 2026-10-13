@@ -90,6 +90,9 @@ class ChannelProperties:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ChannelProperties:
+        unknown = sorted(set(data) - {"contrast_limits", "gamma", "colormap"})
+        if unknown:
+            raise ValueError(f"Unknown channel property key(s) {unknown}")
         limits = data.get("contrast_limits")
         return cls(
             contrast_limits=None if limits is None else (float(limits[0]), float(limits[1])),
@@ -231,17 +234,6 @@ def channel_summary(
 # --- drawing ------------------------------------------------------------------
 
 
-def fine_detail(stretched: np.ndarray) -> float:
-    """Fine structure of one stretched channel (0..1): the spread of what a
-    3 px blur removes, over the pixels brighter than the background. Nuclei,
-    layers and fibre edges score high; flat autofluorescence scores low."""
-    tissue = stretched > 0.05
-    if not tissue.any():
-        return 0.0
-    fine = stretched - cv2.GaussianBlur(stretched, (0, 0), 3.0)
-    return float(fine[tissue].std())
-
-
 def auto_limits(planes: Sequence[np.ndarray]) -> list[tuple[float, float]]:
     """Each plane's automatic contrast limits, as plane values.
 
@@ -325,17 +317,12 @@ def composite(
     """Raw channels drawn together: an RGB picture of *size*.
 
     *planes* are ``(name, plane)`` at working size (float32, 0..255 values);
-    *framed* crops and sizes a working-size picture as the render does.
-    Each channel is stretched on its WHOLE working plane (so a framed and an
-    unframed picture share one stretch): between its contrast limits when
+    *framed* sizes a working-size picture as the render does.
+    Each channel is stretched on its whole working plane: between its contrast limits when
     it has them, else (an overlay) its automatic limits (:func:`auto_limits`,
     measured on all of *planes*) or (*single*, the ``channels`` strip) as
     read; then raised to its gamma and added in its
-    colormap (gray alone, else :func:`channel_colors`). Among several
-    channels, each one without contrast limits is dimmed by its fine detail
-    relative to the most detailed of them, so a flat autofluorescence
-    channel (stretched to full brightness on its own) cannot wash out the
-    stain under it.
+    colormap (gray alone, else :func:`channel_colors`).
     """
     props = {str(name): ChannelProperties.from_dict(value)
              for name, value in (properties or {}).items()}
@@ -344,7 +331,6 @@ def composite(
                 else channel_colors(names))
     total = np.zeros((size[1], size[0], 3), dtype=np.float32)
     stretched_planes: list[np.ndarray] = []
-    detail: list[float | None] = []
     colors: list[tuple[int, int, int]] = []
     automatic = None if single else auto_limits([plane for _name, plane in planes])
     for index, ((name, plane), (_name, _word, rgb)) in enumerate(
@@ -354,16 +340,12 @@ def composite(
         stretched = _stretched(plane, held, limits if limits is not None else
                                None if automatic is None else automatic[index])
         stretched_planes.append(stretched)
-        detail.append(None if limits is not None else fine_detail(stretched))
         colors.append(COLORMAPS[held.colormap] if held is not None and held.colormap
                       else rgb)
-    measured = [amount for amount in detail if amount is not None]
-    top = max(measured) if len(planes) > 1 and measured else 0.0
-    for rgb, stretched, amount in zip(colors, stretched_planes, detail, strict=True):
-        gain = amount / top if amount is not None and top > 0 else 1.0
+    for rgb, stretched in zip(colors, stretched_planes, strict=True):
         shown = np.asarray(framed(Image.fromarray(stretched_to_u8(stretched))),
                            dtype=np.float32) / 255.0
-        total += gain * shown[..., None] * np.asarray(rgb, dtype=np.float32)
+        total += shown[..., None] * np.asarray(rgb, dtype=np.float32)
     return Image.fromarray(np.clip(total, 0.0, 255.0).astype(np.uint8), mode="RGB")
 
 
@@ -419,13 +401,6 @@ def display_words(
         else:
             groups.append((setting, [shown]))
     return "; ".join(f"{', '.join(shown)} {setting}" for setting, shown in groups)
-
-
-def describe_shown(state: StackState, names: Sequence[str],
-                   colours: Mapping[str, str] | None = None) -> str:
-    """Every channel in *names* with its display setting, for a caption
-    (:func:`display_words`)."""
-    return display_words(names, all_properties(state), colours)
 
 
 def stack_display(ctx: Workspace, state: StackState) -> str:

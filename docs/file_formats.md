@@ -74,10 +74,10 @@ Each section:
 | `order` | its index in the stack's order |
 | `folder` | its folder, relative to the job folder (`sections/<name>`) |
 | `parameters` | Registration settings in public units (below) |
-| `image` | `file`, `size` (`[width, height]` of the file), `pixel_size_um` (of the file), `pixel_size_source` (`host`, `file`, or `estimated`: neither gives one, so the scale is the one every placement picture draws the section at, estimated from its tissue width at its current position) |
+| `image` | `file`, `size` (`[width, height]` of the file), `pixel_size_um` (of the file), `pixel_size_source` (`host`, `file`, or `uncalibrated`: neither gives one, so the scale is the one every placement picture draws the section at, the image width mapped onto the atlas plane's width at its current position) |
 | `pixel_to_atlas_um` | 3x3: a file pixel `[row, col, 1]` -> atlas micrometres (3 rows, the atlas axes), the linear placement; null without a placement |
 | `mapping` | `linear`, `linear (identity in-plane: no transform written)`, `linear + residual` (the maps hold the complete mapping), or null |
-| `problem` | why there is no matrix (`no position`, an unreadable file, ...), or, with a matrix, that the pixel size is unknown (the scale `estimated`, as the pictures draw it); else null |
+| `problem` | why there is no matrix (`no position`, an unreadable file, ...), or, with a matrix, that the pixel size is unknown (`uncalibrated`, as the pictures draw it); else null |
 | `parameters_digest` | SHA-256 of the parameters, the matrix and the image facts |
 | `maps` | null before any maps were written; else `files` (kind -> relative path), `grid_size`, `full_resolution`, the grid's `pixel_to_atlas_um`, and `current` (false once the section changed after the maps were written) |
 
@@ -109,24 +109,16 @@ own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
 (`langslice.core.affine.pixel_center_map`); `maps.json` gives the grid's own
 `pixel_to_atlas_um`.
 
-The maps cover the section's footprint, its filled outline: the deformable
-fit's foreground rule (`core.deformable.masks.tissue_masks`, against the slide
-background) on the working copy, closed over gaps up to 0.3 mm wide
-(`core.maps.FOOTPRINT_CLOSING_MM` 0.15 mm, a radius) and with every hole
-filled. Nothing inside the outline is cut: dim fibre tracts, enlarged
-ventricles, tears and fissures all get coordinates and labels; only the
-slide outside it is NaN / 0. The threshold's own tissue estimate is written
-beside the maps as `tissue.png`, for a script that wants to mask with it.
+The maps cover every pixel that maps into the atlas volume.
 
 | File | Content |
 |---|---|
-| `coords.tif` | float32, ImageJ hyperstack, axes CYX, shape `(3, rows, cols)`: channel k is atlas axis k in micrometres. NaN outside the footprint and outside the atlas volume. Calibrated in µm per grid pixel; the channel labels are `axis0_um`..`axis2_um`; the ImageJ Info property holds the grid facts as JSON. |
+| `coords.tif` | float32, ImageJ hyperstack, axes CYX, shape `(3, rows, cols)`: channel k is atlas axis k in micrometres. NaN outside the atlas volume. Calibrated in µm per grid pixel; the channel labels are `axis0_um`..`axis2_um`; the ImageJ Info property holds the grid facts as JSON. |
 | `labels.tif` | uint32, `(rows, cols)`: the atlas annotation id under each pixel (nearest neighbour on the atlas plane, as the pictures' labels layer and the deformable record do), 0 where `coords.tif` is NaN and where the atlas has no region. Deflate with the horizontal predictor; not an ImageJ file (Fiji turns uint32 into float32, which loses the larger Allen ids). |
-| `tissue.png` | uint8, `(rows, cols)`: 255 where the foreground rule finds tissue, 0 elsewhere (the raw rule: no hole filling, no closing, so dim tissue and gaps inside the footprint may be 0). Not used to cut the maps. |
 | `labels_fiji.tif` | uint16, ImageJ, `(rows, cols)`: a dense index of the section's regions (1..n in the order of their atlas ids, 0 none), with an ImageJ lookup table giving each index its atlas colour (display range 0-255; a section with more than 255 regions shows the rest without their colour). Opens in Fiji as is. |
 | `labels.csv` | `index,id,acronym,name,r,g,b`: the dense index -> atlas id, acronym, name and RGB colour (the atlas structure tree's). |
 | `residual.tif` | only with an applied deformation. float32, ImageJ, axes CYX, `(2, rows, cols)`: `(d_row, d_col)` in grid pixels, defined on the whole grid, such that `atlas_um = pixel_to_atlas_um @ [row + d_row, col + d_col, 1]` (`maps.json`'s matrix). Its source is the deformation record named in `registration.json`. |
-| `maps.json` | `format_version` 1, `section`, `grid_size` (`[width, height]`), `full_resolution`, `um_per_px`, `pixel_to_atlas_um` (the grid's), `parameters_digest` (what they were written from; `registration.json` compares it), `tissue_found`, `footprint_fraction` and `tissue_fraction` (of the grid), `deformation_record`, `files`. |
+| `maps.json` | `format_version` 1, `section`, `grid_size` (`[width, height]`), `full_resolution`, `um_per_px`, `pixel_to_atlas_um` (the grid's), `parameters_digest` (what they were written from; `registration.json` compares it), `deformation_record`, `files`. |
 
 Float maps are deflate-compressed without TIFF's floating-point predictor,
 which ImageJ 1.x cannot decode. At working size a section's `coords.tif` is
@@ -230,8 +222,7 @@ endpoints, what `applied` / `pending` is read from) and `landmark_folds`
 (`area_fraction` and the pair ids of each folded triangle, empty when none); the saved `DeformableRecord` includes its source/target vertices
 and mesh connectivity in `engine.native_parameters`, and its full pair set
 in `provenance`, with `automatic_holds_xy` (the automatic holds' section pixels
-on the working grid), `hold_spacing_px`, `hold_clearance_spacings` and
-`holds_on_tissue_only` (false when no tissue could be told from the slide); the
+on the working grid), `hold_spacing_px` and `hold_clearance_spacings`; the
 mesh vertices of `native_parameters` are the four fixed corners, then the
 pairs, then the holds (`pair_count`, `hold_count`), each hold's target equal to its
 source. The section's deformation reference lists the holds as `landmark_holds`

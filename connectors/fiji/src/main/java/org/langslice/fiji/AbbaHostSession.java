@@ -88,7 +88,7 @@ final class AbbaHostSession {
         for (int index = 0; index < selected.size(); index++) {
             checkInterrupted();
             SliceSources slice = selected.get(index);
-            String name = String.format(Locale.ROOT, "section_%04d.tif", index + 1);
+            String name = snapshotName(index);
             ImagePlus image = snapshot(slice, channels, half[0], half[1], pixelSize / 1000.0);
             try { save(image, folder.resolve(name)); } finally { image.close(); }
             slices.put(name, slice);
@@ -132,7 +132,7 @@ final class AbbaHostSession {
         return out;
     }
 
-    /** ABBA's rotations (radians) as the job's stack-wide angles; signs pinned by tests/test_abba_angles.py. */
+    /** ABBA's rotations (radians) as the job's stack-wide angles: pitch_deg = -deg(rotateX), yaw_deg = -deg(rotateY). */
     static JsonObject anglesDeg(double rotateX, double rotateY) {
         JsonObject angles = new JsonObject();
         angles.addProperty("pitch_deg", -Math.toDegrees(rotateX));
@@ -378,6 +378,9 @@ final class AbbaHostSession {
         SliceSources slice = slices.get(id);
         if (slice == null) throw new IllegalArgumentException("Unknown section in the worker's result.");
         if (!mp.getSlices().contains(slice)) throw new IllegalStateException("The slice was removed from ABBA.");
+        // A warp the worker could not convert: the row is kept as a failed update, ABBA's warp is left as it is.
+        if (update.has("warp") && update.get("warp").isJsonObject() && update.getAsJsonObject("warp").has("error"))
+            throw new IllegalStateException(update.getAsJsonObject("warp").get("error").getAsString());
         boolean placement = update.has("flip") || update.has("rotation_deg") || update.has("affine_mm");
         boolean warpChange = update.has("warp");
         Registration<SourceAndConverter<?>[]> previousAffine = ownedAffine.get(id), previousWarp = ownedWarp.get(id);
@@ -430,11 +433,11 @@ final class AbbaHostSession {
         if (ownedWarp.containsKey(id)) owned.add(ownedWarp.get(id));
         boolean counted = slice.getNumberOfRegistrations() == baseline.get(id) + owned.size();
         List<Registration<SourceAndConverter<?>[]>> active = activeRegistrations(slice);
-        boolean newest = owned.isEmpty();
-        if (!newest && active.size() == slice.getNumberOfRegistrations())
-            // The same objects LangSlice appended, on top (identity, not equality of transforms).
-            newest = active.size() >= owned.size() && active.subList(active.size() - owned.size(), active.size()).equals(owned);
-        else if (!newest) newest = counted; // ABBA's action list disagrees with its count: rely on the count alone.
+        // The same objects LangSlice appended, on top (identity, not equality of transforms). When ABBA's
+        // action list disagrees with its count, LangSlice cannot tell whose step is newest, so it refuses.
+        boolean newest = owned.isEmpty() || (active.size() == slice.getNumberOfRegistrations()
+                && active.size() >= owned.size()
+                && active.subList(active.size() - owned.size(), active.size()).equals(owned));
         if (!counted || !newest)
             throw new IllegalStateException("Its registrations were changed in ABBA during the run, so LangSlice's steps are no longer "
                     + "the newest; LangSlice leaves this slice alone.");
@@ -534,12 +537,12 @@ final class AbbaHostSession {
         return tps(target, source);
     }
 
-    /** XY coordinates as [[x...],[y...]] (two rows) or as [[x, y], ...] (one pair per point); at least three points. */
+    /** XY coordinates as [[x...],[y...]] (two rows, as the worker sends them); at least three points. */
     static double[][] coordinates(JsonArray value) {
-        boolean rows = value.size() == 2 && value.get(0).isJsonArray() && value.get(0).getAsJsonArray().size() >= 3;
-        if (!rows) return points(value);
+        if (value.size() != 2) throw new IllegalArgumentException("Warp coordinates must be two rows, [[x...],[y...]].");
         JsonArray xs = value.get(0).getAsJsonArray(), ys = value.get(1).getAsJsonArray();
         if (xs.size() != ys.size()) throw new IllegalArgumentException("Warp coordinate rows differ in length.");
+        if (xs.size() < 3) throw new IllegalArgumentException("At least three paired points are required.");
         double[][] output = new double[2][xs.size()];
         for (int i = 0; i < xs.size(); i++) { output[0][i] = finite(xs.get(i)); output[1][i] = finite(ys.get(i)); }
         return output;
@@ -553,20 +556,8 @@ final class AbbaHostSession {
         } catch (Exception e) { throw new IllegalStateException("ABBA registration plugin is unavailable.", e); }
     }
 
-    static double[][] points(JsonArray rows) {
-        if (rows.size() < 3) throw new IllegalArgumentException("At least three paired points are required.");
-        double[][] output = new double[2][rows.size()];
-        for (int i = 0; i < rows.size(); i++) {
-            JsonArray point = rows.get(i).getAsJsonArray();
-            if (point.size() != 2) throw new IllegalArgumentException("Expected XY points.");
-            output[0][i] = finite(point.get(0)); output[1][i] = finite(point.get(1));
-        }
-        return output;
-    }
-
     static InvertibleRealTransform tps(double[][] source, double[][] target) {
         ThinplateSplineTransform spline = new ThinplateSplineTransform(source, target);
-        if (!interpolates(spline, source, target)) spline = new ThinplateSplineTransform(target, source);
         if (!interpolates(spline, source, target)) throw new IllegalArgumentException("Spline does not reproduce its paired coordinates.");
         return new InvertibleWrapped2DTransformAs3D(new WrappedIterativeInvertibleRealTransform<>(spline));
     }
@@ -580,6 +571,9 @@ final class AbbaHostSession {
         }
         return true;
     }
+
+    /** The snapshot file of the slice at *index* in the selection (atlas order): section_0001.tif, ... (one place). */
+    static String snapshotName(int index) { return String.format(Locale.ROOT, "section_%04d.tif", index + 1); }
 
     static void checkInterrupted() {
         if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Run cancelled.");

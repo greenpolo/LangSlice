@@ -1,10 +1,9 @@
-"""``JobSpec.frozen``: the setting, its validation and its translation from the
-older keys, the refusals of every write, the partial freezes, the tools and
-tasks it switches off, and the model-facing text, which names none of them."""
+"""``JobSpec.frozen``: the setting, its validation, the refusals of every
+write, the partial freezes, the tools and tasks it switches off, and the
+model-facing text, which names none of them."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,7 @@ from langslice.core import frozen as freeze
 from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
 from langslice.core.toolset import TOOLS
 from langslice.doors import jobs
-from langslice.job.job import InputsChanged, changed_inputs, submit_errors
+from langslice.job.job import submit_errors
 from langslice.ops import deformable as ops_deformable
 from langslice.ops import positions, submit, transforms
 from langslice.ops.refusal import Refused
@@ -109,63 +108,6 @@ def test_a_freeze_naming_no_section_is_refused_at_ingest(tmp_path: Path):
         _stack(tmp_path, n=2, frozen={"nope.png": ["affine"]})
 
 
-# --- the older keys, read from saved specs -----------------------------------------------
-
-
-def test_the_older_inputs_keys_are_read_as_a_freeze():
-    saved = {"image_folder": "/stack", "inputs": {
-        "locked": ["a.tif", "b.tif"], "keep_warp": ["b.tif"], "nonlinear_skip": ["c.tif"],
-        "pixel_size_um": 25.0}}
-    spec = JobSpec.from_dict(saved)
-    assert spec.frozen == {"a.tif": ["orientation", "affine"],
-                           "b.tif": ["orientation", "affine", "deformation"],
-                           "c.tif": ["deformation"]}
-    assert spec.inputs == {"pixel_size_um": 25.0}
-    # written as today's, never as the older keys
-    written = spec.to_dict()
-    assert not {"locked", "keep_warp", "nonlinear_skip"} & set(written["inputs"])
-    assert JobSpec.from_dict(written) == spec
-    # a spec that names them directly is refused as any unknown key is
-    with pytest.raises(ValueError, match="Unknown inputs key"):
-        _spec(inputs={"locked": ["a.tif"]})
-
-
-def test_an_older_saved_job_resumes_without_its_inputs_counting_as_changed(tmp_path: Path):
-    old = {"image_folder": "/stack", "inputs": {"locked": ["a.tif"], "pixel_size_um": 25.0}}
-    new = JobSpec(image_folder="/stack", inputs={"pixel_size_um": 25.0},
-                  frozen={"a.tif": ALIGNED})
-    assert changed_inputs(old, new) == []
-    other = JobSpec(image_folder="/stack", inputs={"pixel_size_um": 25.0},
-                    frozen={"a.tif": ["affine"]})
-    assert changed_inputs(old, other) == ["frozen"]
-    assert issubclass(InputsChanged, ValueError)
-
-
-def test_an_older_job_folder_opens_and_refuses_what_it_locked(tmp_path: Path):
-    folder = tmp_path / "images"
-    folder.mkdir()
-    from tests.linear_tool_helpers import stack as make_stack
-
-    make_stack(folder, n=2, placed=True)
-    created = jobs.create(
-        JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
-                tasks=["position", "transform"], frozen={"s0.png": ALIGNED}),
-        atlas_loader=lambda _n: SLAB)
-    layout = created.job.layout
-    created.close()
-    # Rewrite job.json as an older version wrote it: the freeze as inputs.locked.
-    path = Path(layout.job_file)
-    held = json.loads(path.read_text())
-    spec = held["spec"]
-    spec.pop("frozen")
-    spec["inputs"]["locked"] = ["s0.png"]
-    path.write_text(json.dumps(held))
-    with langslice.open_job(str(folder), atlas_loader=lambda _n: SLAB) as job:
-        assert job.job.spec.frozen == {"s0.png": ALIGNED}
-        rows = job.interactive_transform(sections=[{"id": "s0.png", "flip": True}], view=False)
-        assert rows["results"][0]["error"] == "FROZEN"
-
-
 # --- the refusals ---------------------------------------------------------------------
 
 
@@ -254,7 +196,7 @@ def _ok_fit(determinant: float) -> dict[str, Any]:
             "physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
                          "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
                          "pivot": [0.5, 0.5]},
-            "iou": 0.9, "calibration": {}, "mirrored": determinant < 0}
+            "calibration": {}, "mirrored": determinant < 0}
 
 
 @pytest.mark.parametrize("determinant, kept", [(1.0, True), (-1.0, False)])
@@ -421,9 +363,9 @@ def test_a_tool_is_off_when_everything_it_writes_is_frozen_everywhere():
         spec = _spec(tasks=["position", "transform", "nonlinear"],
                      nonlinear=NonlinearSpec(provider="openai-oauth"),
                      frozen={"*": list(held)}, inputs={})
-        built = set(enabled(spec, scripting=True, hidden=True))
+        built = set(enabled(spec, scripting=True))
         gone = {name for name in TOOLS if TOOLS[name].writes and name not in built}
-        assert gone == off | ({"trace_from_atlas"} if "deformation" in held else set()), held
+        assert gone == off, held
 
 
 def test_the_flip_goes_with_a_frozen_orientation_and_a_tool_with_its_other_property_stays():

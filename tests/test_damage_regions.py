@@ -1,5 +1,5 @@
 """Damage by atlas region: the mark, its automatic exclusion from every fit
-path, saved states with the older flag, and the host's damage notes."""
+path, and the host's damage notes."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from langslice.agent.engine import build_context
 from langslice.core.damage import exclusions, normalized_entries
 from langslice.core.display import default_options
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.core.state import SliceState, StackState
+from langslice.core.state import SliceState
 from langslice.core.status import status_rows, status_text, uniform_rows
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
@@ -46,8 +46,6 @@ def _box(folder: Path, *, inputs: dict[str, Any] | None = None, plane: str = "co
 def test_exclusions_add_the_marked_regions_and_an_explicit_request_wins():
     record = SliceState(ID, 0, 0, damaged_regions=["CTX:left", "OB"])
     assert exclusions(record) == ((), ("CTX:left", "OB"))
-    # The older per-call exclusions are kept, repeats dropped case-insensitively.
-    assert exclusions(record, (), ("HPF", "ob")) == ((), ("HPF", "ob", "CTX:left"))
     # restrict_to naming a marked entry exactly takes it back; another side does not.
     assert exclusions(record, ("ctx:LEFT",)) == (("ctx:LEFT",), ("OB",))
     assert exclusions(record, ("CTX:right",)) == (("CTX:right",), ("CTX:left", "OB"))
@@ -72,30 +70,6 @@ def test_damaged_is_read_only_and_follows_the_marks():
     # A note alone does not make a section damaged.
     record.damage_note = "left hemisphere torn"
     assert not record.damaged
-
-
-@pytest.mark.parametrize("flag", ["damaged", "damage_marked"])
-def test_a_saved_state_with_the_older_flag_loads_as_its_note_alone(flag: str):
-    old = {"slices": [
-        {"id": "a.png", "index_original": 0, "index_corrected": 0, flag: True,
-         "damage_note": "left hemisphere torn"},
-        {"id": "b.png", "index_original": 1, "index_corrected": 1, flag: False,
-         "damage_note": ""},
-    ]}
-    state = StackState.from_dict(old)
-    first, second = state.slices
-    assert not first.damaged and first.damaged_regions == []
-    assert first.damage_note == "left hemisphere torn"
-    assert not second.damaged and second.damage_note == ""
-    # Written back, neither flag is kept; the note and the regions are.
-    rows = state.to_dict()["slices"]
-    assert "damaged" not in rows[0] and "damage_marked" not in rows[0]
-    assert rows[0]["damaged_regions"] == [] and rows[0]["damage_note"] == "left hemisphere torn"
-    # Regions make the section damaged, and survive another load.
-    state.slices[1].damaged_regions = ["R"]
-    again = StackState.from_dict(json.loads(json.dumps(state.to_dict())))
-    assert not again.slices[0].damaged
-    assert again.slices[1].damaged and again.slices[1].damaged_regions == ["R"]
 
 
 # --- mark_damage ----------------------------------------------------------------------

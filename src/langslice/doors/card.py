@@ -5,7 +5,7 @@ opens a job folder reads this first: what the folder holds, which file is
 the truth and which are derived, how to get atlas coordinates for a
 picture, the CLI verbs, their per-call limits, the Python import path and
 what a method returns, and where the agent keeps its own files. Generated
-from code (the listed verbs, :func:`langslice.ops.registry.listed`, their
+from code (the verbs, :data:`langslice.ops.registry.VERBS`, their
 declarations and ``Verb.limits``, the job's own transform cap, less the tools
 its ``disabled`` list names), so it
 cannot drift from what the doors offer; written when a job folder is
@@ -25,7 +25,7 @@ from langslice.core.needs import render
 from langslice.core.toolset import is_off
 from langslice.doors.declarations import summary
 from langslice.job.layout import JobLayout, read_job_file
-from langslice.ops.registry import listed
+from langslice.ops.registry import VERBS
 
 logger = logging.getLogger(__name__)
 
@@ -49,15 +49,11 @@ def limits_note(limits: Mapping[str, int]) -> str:
 
 
 def disabled_names(layout: JobLayout) -> list[str]:
-    """The tools and options the job disables (``JobSpec.disabled``, older
-    switches read as they became), as its settings hold them; none when the
-    folder holds no readable settings."""
+    """The tools and options the job disables (``JobSpec.disabled``), as its
+    settings hold them."""
     from langslice.core.spec import JobSpec
 
-    try:
-        return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {}).switched_off
-    except (OSError, ValueError, TypeError, AttributeError):
-        return []
+    return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {}).switched_off
 
 
 def transform_cap_line(layout: JobLayout) -> str:
@@ -65,11 +61,8 @@ def transform_cap_line(layout: JobLayout) -> str:
     (``transform.max_parallel``), when its settings set one."""
     from langslice.core.spec import MAX_PARALLEL_TRANSFORMS
 
-    try:
-        held = (read_job_file(layout) or {}).get("spec") or {}
-        cap = int((held.get("transform") or {}).get("max_parallel") or MAX_PARALLEL_TRANSFORMS)
-    except (OSError, ValueError, TypeError, AttributeError):
-        return ""
+    held = (read_job_file(layout) or {}).get("spec") or {}
+    cap = int((held.get("transform") or {}).get("max_parallel") or MAX_PARALLEL_TRANSFORMS)
     if cap >= MAX_PARALLEL_TRANSFORMS:
         return ""
     return render(f"\nThis job: at most {cap} sections per [[?elastix_affine `elastix_affine`"
@@ -84,7 +77,7 @@ def card_text(layout: JobLayout) -> str:
     verbs = "\n".join(
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): {summary(name)}"
-        for name, verb in listed().items() if not is_off(disabled, name)
+        for name, verb in VERBS.items() if not is_off(disabled, name)
     ) + transform_cap_line(layout)
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
                      'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)
@@ -112,9 +105,8 @@ written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
   records), `image_correction/<key>/` (image-model traces), `views/`, and the
   maps written at submit{exported} (on the image's working copy):
-  - `coords.tif`: float32 (3, rows, cols) atlas um per pixel over the section's filled
-    outline, NaN outside it; `tissue.png`: the tissue estimate (0/255), to mask with.
-  - `labels.tif`: uint32 atlas ids per pixel (0 outside the outline); `labels_fiji.tif`
+  - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN outside the atlas.
+  - `labels.tif`: uint32 atlas ids per pixel (0 outside the atlas); `labels_fiji.tif`
     + `labels.csv`: a uint16 index Fiji opens, and index -> id, acronym, name, RGB.
   - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation;
     `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.

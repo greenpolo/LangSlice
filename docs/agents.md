@@ -156,14 +156,14 @@ flag reference. The main choices are:
 |---|---|
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`) |
+| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--max-quota-percent`, `--max-input-tokens`, `--no-debrief` |
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
 | Constraints and context | `--hemisphere-cue`, `--frozen`, `--damaged`, `--fact` |
 | Tools and options off | `--disable NAME[,NAME...]`: a tool (`zoom`) or `tool:option` (`look:positioning`, `interactive_transform:flip`); [valid names](registration.md#switching-tools-and-options-off) |
 | Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
-| Storage | `--job-dir`, `--out`, `--trace-dir`, `--fresh` |
+| Storage | `--job-dir`, `--out`, `--fresh` (`linear run`), `--trace-dir` (`linear run`, `mcp`) |
 
 `--thickness` and `--interval` are optional, in micrometres. Omit unknown
 values: the agent infers positions and spacing from anatomy and records
@@ -177,7 +177,8 @@ explains these constraints. `init --notes TEXT` saves instructions for the
 agent with the job.
 
 An interrupted job resumes from its checkpoint. Resuming with different
-supplied inputs is refused with `INPUTS_CHANGED`; `--fresh` starts the job
+supplied inputs is refused with `INPUTS_CHANGED`, and `init` with other job
+settings than the saved job's with `SETTINGS_CHANGED`; `--fresh` starts the job
 over. Every write is checkpointed and undoable. Calls through different
 interfaces pick up each other's saved changes.
 

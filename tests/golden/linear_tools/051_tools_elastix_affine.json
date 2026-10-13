@@ -3,15 +3,15 @@
  "data": {
   "pictures": [
    {
-    "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.005, shift -0.02/-0.07 mm, shear -0.005), no deformation; 31.2 um/px; raw gray auto; atlas borders",
+    "caption": "s0.png overlay, at 0.10 mm; elastix transform (rot 0.3, scale 1.001/1.004, shift -0.02/-0.07 mm, shear -0.005), no deformation; 31.2 um/px; raw gray auto; atlas borders",
     "id": 40
    },
    {
-    "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 0.0, scale 1.005/1.005, shift -0.04/-0.06 mm, shear +0.001), no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
+    "caption": "s1.png overlay, at 0.15 mm; elastix transform (rot 0.0, scale 1.004/1.004, shift -0.04/-0.06 mm, shear +0.001), no deformation; 31.2 um/px; raw red 20-200 gamma 1.4 in magenta; green, blue auto; atlas borders",
     "id": 41
    },
    {
-    "caption": "s2.png overlay, at 0.20 mm; elastix transform (rot -0.2, scale 1.007/1.004, shift -0.00/-0.08 mm, shear -0.001), no deformation; 31.2 um/px; raw gray auto; atlas borders",
+    "caption": "s2.png overlay, at 0.20 mm; elastix transform (rot -0.2, scale 1.005/1.003, shift -0.00/-0.08 mm, shear -0.003), no deformation; 31.2 um/px; raw gray auto; atlas borders",
     "id": 42
    }
   ],
@@ -22,18 +22,17 @@
      "source": "host"
     },
     "id": "s0.png",
-    "iou": 0.989,
     "mirrored": false,
     "physical": {
      "pivot": [
       0.5,
       0.5
      ],
-     "rotation_deg": 0.341,
-     "scale_x": 1.0014,
-     "scale_y": 1.0046,
-     "shear": -0.0054,
-     "translate_x_mm": -0.02,
+     "rotation_deg": 0.342,
+     "scale_x": 1.001,
+     "scale_y": 1.0041,
+     "shear": -0.0053,
+     "translate_x_mm": -0.0199,
      "translate_y_mm": -0.0691
     },
     "position_mm": 0.1,
@@ -45,19 +44,18 @@
      "source": "host"
     },
     "id": "s1.png",
-    "iou": 0.992,
     "mirrored": false,
     "physical": {
      "pivot": [
       0.5,
       0.5
      ],
-     "rotation_deg": 0.025,
-     "scale_x": 1.0049,
-     "scale_y": 1.0054,
-     "shear": 0.0013,
-     "translate_x_mm": -0.0351,
-     "translate_y_mm": -0.0579
+     "rotation_deg": 0.031,
+     "scale_x": 1.0038,
+     "scale_y": 1.004,
+     "shear": 0.0008,
+     "translate_x_mm": -0.036,
+     "translate_y_mm": -0.0582
     },
     "position_mm": 0.15,
     "status": "ok"
@@ -68,19 +66,18 @@
      "source": "host"
     },
     "id": "s2.png",
-    "iou": 0.911,
     "mirrored": false,
     "physical": {
      "pivot": [
       0.5,
       0.5
      ],
-     "rotation_deg": -0.244,
-     "scale_x": 1.0072,
-     "scale_y": 1.0037,
-     "shear": -0.0013,
-     "translate_x_mm": -0.0033,
-     "translate_y_mm": -0.0753
+     "rotation_deg": -0.198,
+     "scale_x": 1.0052,
+     "scale_y": 1.0027,
+     "shear": -0.0025,
+     "translate_x_mm": -0.0041,
+     "translate_y_mm": -0.0785
     },
     "position_mm": 0.2,
     "regions": {

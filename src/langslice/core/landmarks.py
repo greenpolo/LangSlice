@@ -61,14 +61,7 @@ def applied_pairs(record: SliceState) -> dict[str, str] | None:
     held = record.deformation or {}
     if not held.get("landmark_revision"):
         return None
-    built = held.get("landmark_pairs") or {}
-    if not built:  # a record from before the pairs were listed in it
-        from langslice.core.handoff import digest
-
-        pairs = record.landmarks.get("pairs", [])
-        if digest(pairs) == held["landmark_revision"]:
-            built = {pair["id"]: pair_key(pair) for pair in pairs}
-    return dict(built)
+    return dict(held.get("landmark_pairs") or {})
 
 
 def pair_states(state: StackState, record: SliceState) -> dict[str, str]:

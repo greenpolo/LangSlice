@@ -5,20 +5,13 @@
   OpenAI providers get :data:`_SUPPLIED_GPT` (Image 1 the clean photograph),
   every other provider :func:`border_refinement_prompt` (Image 1 the placed
   borders).
-- :func:`pass1_atlas_prompt` — route "atlas", pass 1: yellow family borders
-  drawn from nothing onto the clean tissue, the grayscale atlas template
-  (its own borders drawn in yellow) the only reference.
-- :func:`pass2_atlas_prompt` — route "atlas", optional pass 2: pass 1's lines,
-  redrawn on the clean tissue, corrected against the same atlas template.
 
 ``canonical_provider(provider)`` starting with ``"openai"`` (``openai-api``,
 ``openai-oauth``) gets the GPT twin; everything else (``gemini-api``,
 ``none``, ...) the Gemini twin. ``plane`` substitutes for the word "coronal";
 the texts were written and checked on coronal sections. Every sentence of
 these texts was audited for a second reading (``CLAUDE.md`` in this package,
-"Prompt review"); the damage block (slide features, missing tissue,
-faint-vs-missing, displaced pieces) is there because route "atlas" has no
-agent to describe a section's defects.
+"Prompt review").
 """
 
 from __future__ import annotations
@@ -68,12 +61,9 @@ def border_refinement_prompt(plane: Plane = "coronal") -> str:
     )
 
 
-#: Route "supplied" for the GPT image models, as the stack agent's tool sends it:
-#: ``_PASS2_GPT`` with the atlas reference removed. The placed lines of Image 2 now carry the region
-#: arrangement the atlas image carried, so "no counterpart" removal and "add a
-#: missing boundary" go; everything else, including the damage block, is kept.
+#: Route "supplied" for the GPT image models, as the stack agent's tool sends it.
 #: Image 1 is the clean photograph (the edit target), Image 2 the same
-#: photograph with the linearly placed boundaries — pass 2's attachment order.
+#: photograph with the linearly placed boundaries.
 _SUPPLIED_GPT = (
     "Image 1: the photograph of a brain coronal section to edit. Image 2: the same "
     "photograph in exactly the same frame, carrying thin yellow region boundaries placed "
@@ -122,137 +112,3 @@ def border_correction_tool_prompt(plane: Plane = "coronal", provider: str | None
         _for_plane(_SUPPLIED_GPT, plane) if _is_gpt_twin(provider)
         else border_refinement_prompt(plane)
     )
-
-
-# --------------------------------------------------------------- route "atlas"
-
-_PASS1_GPT = (
-    "Image 1: the photograph of a brain coronal section to edit. Image 2: the grayscale "
-    "atlas reference for the corresponding sectioning plane, its region boundaries drawn "
-    "in thin yellow lines; Image 2 alone decides which boundaries exist.\n\n"
-    "Task: return Image 1 with the boundaries of Image 2 drawn on this specimen's anatomy "
-    "in thin bright yellow. Use Image 2 to identify each region and the arrangement of the "
-    "regions. Each boundary follows the edge of its region where that edge shows in the "
-    "photograph; where the region is faint or indistinct, the boundary takes its position "
-    "and shape from Image 2, fitted to the structures around it. Adapt the boundaries to "
-    "this specimen's shapes and asymmetry, including a piece of tissue that has shifted or "
-    "turned: its boundaries are drawn on the piece where it lies. Bubbles, stains, debris, "
-    "cracks and folds are features of the slide, not of the brain: no line follows or "
-    "encircles them, and a boundary that meets one continues along the anatomy beneath it. "
-    "Tissue that is physically torn away or missing from the section, where slide "
-    "background shows in place of brain, is the only place a boundary of Image 2 is left "
-    "out: the part of a boundary that would lie over missing tissue is omitted and the rest "
-    "of that boundary is drawn; a torn or cut edge is not a region edge and gets no line of "
-    "its own. A region that is present but faint is not missing, and its boundary is "
-    "drawn.\n\n"
-    "This is an annotation overlay on a photograph. Change only by adding the yellow "
-    "lines; the lines are the only new thing in the image. Preserve everything else "
-    "exactly: every tissue pixel and its texture, the background, the brain's size and "
-    "position, the frame and aspect. The lines are thin bright yellow and form exactly "
-    "the partition of Image 2 on the tissue: every boundary of Image 2, no other line, "
-    "no fill, no label. Output one image."
-)
-
-_PASS1_GEMINI = (
-    "Image 1 is a photograph of a brain coronal section. Image 2 is a grayscale atlas "
-    "reference of the corresponding sectioning plane with its region boundaries drawn in "
-    "thin yellow lines; Image 2 alone decides which boundaries exist.\n\n"
-    "Draw on Image 1 the boundaries of Image 2, placed on this specimen's anatomy in thin "
-    "bright yellow. Use Image 2 to identify each region and the arrangement of the "
-    "regions. Each boundary follows the edge of its region where that edge shows in the "
-    "photograph, and where the region is faint or indistinct the boundary takes its "
-    "position and shape from Image 2, fitted to the structures around it. Adapt the "
-    "boundaries to this specimen's shapes and asymmetry, including a piece of tissue that "
-    "has shifted or turned: its boundaries are drawn on the piece where it lies. Bubbles, "
-    "stains, debris, cracks and folds are features of the slide, not of the brain: the "
-    "lines mark brain regions only, and a boundary that meets one of these features "
-    "continues along the anatomy beneath it. Tissue that is physically torn away or "
-    "missing from the section, where slide background shows in place of brain, is the one "
-    "place a boundary of Image 2 is left out: the part of a boundary that would lie over "
-    "missing tissue is omitted and the rest of that boundary is drawn; a torn or cut edge "
-    "is not a region edge and gets no line of its own. A region that is present but faint "
-    "is not missing, and its boundary is drawn.\n\n"
-    "This is an annotation overlay on a photograph. Using Image 1, change only by adding "
-    "the yellow lines and keep everything else exactly the same: every tissue pixel and "
-    "its texture, the background, the same brain size and position, the same frame; the "
-    "lines are the only new thing in the image. The lines are thin bright yellow, and the "
-    "set of lines is exactly the set of boundaries in Image 2, each drawn once on the "
-    "tissue. The output is one image: Image 1 with the yellow anatomical boundaries."
-)
-
-_PASS2_GPT = (
-    "Image 1: the photograph of a brain coronal section to edit. Image 2: the same "
-    "photograph in exactly the same frame, carrying thin yellow region boundaries from a "
-    "previous attempt to draw the atlas partition on this specimen. Image 3: the "
-    "grayscale atlas reference for the corresponding sectioning plane, its region "
-    "boundaries drawn in thin yellow lines; Image 3 alone decides which boundaries "
-    "exist.\n\n"
-    "Task: return Image 1 with the boundaries of Image 3 drawn on this specimen's "
-    "anatomy, using Image 2 as the starting point. Each boundary follows the edge of its "
-    "region where that edge shows in the photograph; where the region is faint or "
-    "indistinct, the boundary takes its position and shape from Image 3, fitted to the "
-    "structures around it. Correct Image 2 three ways. A line that has no counterpart in "
-    "Image 3 is removed. The drawing carries no line around a feature of the slide rather "
-    "than of the brain, such as a bubble, a stain or debris; the feature itself stays in "
-    "the photograph as it is. A line that has a counterpart in Image 3 but does not hug "
-    "its region's edge is adjusted by a small shift or bend until it does. A boundary of "
-    "Image 3 that Image 2 lacks is added, unless the tissue it would cross is missing. "
-    "Cracks and folds are likewise features of the slide: a boundary that meets one "
-    "continues along the anatomy beneath it. Tissue that is physically torn away or "
-    "missing from the section, where slide background shows in place of brain, is the "
-    "only place a boundary of Image 3 is left out: the part of a boundary that would lie "
-    "over missing tissue is omitted and the rest of that boundary is drawn; a torn or cut "
-    "edge is not a region edge and gets no line of its own. A region that is present but "
-    "faint is not missing, and its boundary is drawn. A piece of tissue that has shifted "
-    "or turned keeps its boundaries, drawn on the piece where it lies.\n\n"
-    "This is an annotation overlay on a photograph. Change only the yellow lines; the "
-    "corrected lines are the only difference from Image 1. Preserve everything else "
-    "exactly: every tissue pixel and its texture, the background, the brain's size and "
-    "position, the frame and aspect. The lines are thin bright yellow and form exactly "
-    "the partition of Image 3 on the tissue: every boundary of Image 3, no other line, no "
-    "fill, no label. Output one image."
-)
-
-_PASS2_GEMINI = (
-    "Image 1 is a photograph of a brain coronal section. Image 2 is the same photograph "
-    "in exactly the same frame, with thin yellow region boundaries from a previous "
-    "attempt to draw the atlas partition on this specimen. Image 3 is a grayscale atlas "
-    "reference of the corresponding sectioning plane with its region boundaries drawn in "
-    "thin yellow lines; Image 3 alone decides which boundaries exist.\n\n"
-    "Draw on Image 1 the boundaries of Image 3, placed on this specimen's anatomy: each "
-    "boundary follows the edge of its region where that edge shows in the photograph, and "
-    "where the region is faint or indistinct the boundary takes its position and shape "
-    "from Image 3, fitted to the structures around it. Image 2 is the starting point; "
-    "correct it three ways. A line that exists in Image 2 and nowhere in Image 3 is "
-    "removed. Lines around features of the slide rather than of the brain, such as a "
-    "bubble, a stain or debris, are left out of the drawing; the feature itself stays in "
-    "the photograph as it is. A line that has a counterpart in Image 3 but sits off its "
-    "region's edge is adjusted by a small shift or bend until it hugs that edge. A "
-    "boundary of Image 3 that Image 2 lacks is added, unless the tissue it would cross is "
-    "missing. Cracks and folds are likewise features of the slide: a boundary that meets "
-    "one continues along the anatomy beneath it. Tissue that is physically torn away or "
-    "missing from the section, where slide background shows in place of brain, is the one "
-    "place a boundary of Image 3 is left out: the part of a boundary that would lie over "
-    "missing tissue is omitted and the rest of that boundary is drawn; a torn or cut edge "
-    "is not a region edge and gets no line of its own. A region that is present but faint "
-    "is not missing, and its boundary is drawn. A piece of tissue that has shifted or "
-    "turned keeps its boundaries, drawn on the piece where it lies.\n\n"
-    "This is an annotation overlay on a photograph. Using Image 1, change only the yellow "
-    "lines and keep everything else exactly the same: every tissue pixel and its texture, "
-    "the background, the same brain size and position, the same frame; the corrected "
-    "lines are the only difference from Image 1. The lines are thin bright yellow, and "
-    "the set of lines is exactly the set of boundaries in Image 3, each drawn once on the "
-    "tissue. The output is one image: Image 1 with the corrected yellow boundaries."
-)
-
-
-def pass1_atlas_prompt(plane: Plane = "coronal", provider: str | None = None) -> str:
-    """Route "atlas", pass 1: draw the outlined atlas's boundaries on clean tissue."""
-    text = _PASS1_GPT if _is_gpt_twin(provider) else _PASS1_GEMINI
-    return _for_plane(text, plane)
-
-
-def pass2_atlas_prompt(plane: Plane = "coronal", provider: str | None = None) -> str:
-    """Route "atlas", pass 2: correct pass 1's lines against the outlined atlas."""
-    text = _PASS2_GPT if _is_gpt_twin(provider) else _PASS2_GEMINI
-    return _for_plane(text, plane)

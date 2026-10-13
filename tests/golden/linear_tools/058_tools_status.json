@@ -2,7 +2,7 @@
  "args": [],
  "data": {
   "background": [
-   "w1 trace_borders of s0.png finished: the trace landed and ANTs fitted the traced borders (medium stiffness) on top of its linear placement. The deformation is applied as its own undo step: undo removes it while it is the latest step. Displacement median 0.022 mm, max 0.208 mm; fold fraction 0.0. Pictures #44, #45."
+   "w1 trace_borders of s0.png finished: the trace landed and ANTs fitted the traced borders (medium stiffness) on top of its linear placement. The deformation is applied as its own undo step: undo removes it while it is the latest step. Displacement median 0.027 mm, max 0.224 mm; fold fraction 0.0. Pictures #44, #45."
   ],
   "can_change": [
    "positions (the order follows them)",
@@ -21,7 +21,7 @@
   "interval_breaks": [],
   "pictures": [
    {
-    "caption": "s0.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.10 mm; the fitted atlas borders on the image the fit read; displacement median 0.022 mm, max 0.208 mm; fold fraction 0.0",
+    "caption": "s0.png deformation fit (ants medium, the image model's traced borders against the atlas borders), at 0.10 mm; the fitted atlas borders on the image the fit read; displacement median 0.027 mm, max 0.224 mm; fold fraction 0.0",
     "id": 44,
     "work": "w1"
    },
@@ -51,7 +51,6 @@
     "position_mm": 0.1,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 0.989,
     "transform_mirrored": false
    },
    {
@@ -62,7 +61,6 @@
     "position_mm": 0.15,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 1.0,
     "transform_mirrored": false
    },
    {
@@ -76,7 +74,6 @@
     "position_mm": 0.2,
     "rotation_deg": 0,
     "transform": "elastix",
-    "transform_iou": 0.911,
     "transform_mirrored": false
    }
   ],

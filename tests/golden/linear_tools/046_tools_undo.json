@@ -14,10 +14,12 @@
   "status": "ok",
   "undo_depth": 9,
   "undone": {
+   "fields": [
+    "linear"
+   ],
    "sections": [
     "s1.png"
-   ],
-   "tool": "interactive_transform"
+   ]
   }
  },
  "door": "tools",
