@@ -61,6 +61,7 @@ from langslice.core.deformable.atlas_images import (
     normalize_intensity,
 )
 from langslice.core.deformable.engines import run_engine
+from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
 from langslice.core.deformable.render import composed_native_grid
 from langslice.core.deformable.settings import (
     ANTS_STIFFNESS,
@@ -321,6 +322,9 @@ def cache_key(
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
         "placement": grid.placement.to_dict(), "image": image_identity,
         "settings": settings.to_dict(), "start": previous_key or "linear",
+        # A restricted step is tapered outside its region (fit.RESTRICTED_TAPER_MM);
+        # results saved before the taper are not reused.
+        **({"restricted_taper_mm": RESTRICTED_TAPER_MM} if settings.structures else {}),
     })
 
 

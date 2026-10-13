@@ -266,7 +266,10 @@ its current linear placement and any applied deformation. Each fit builds
 on the previous one and can be undone. It accepts one to four sections,
 `stiffness="soft"|"medium"|"firm"` and optional `restrict_to` regions.
 The restricted atlas mask includes a 300 µm neighbourhood around them;
-marked damage is excluded automatically.
+marked damage is excluded automatically. A restricted fit moves only that
+neighbourhood: ANTs' masks limit where the fit is measured, not where its
+smooth field reaches, so the step's displacement fades to none over a further
+0.3 mm and the tissue beyond keeps its earlier fit.
 
 Both registration engines accept any of the atlas's own images as
 `atlas_image`: BrainGlobe's `"template"` (the default) and every additional
