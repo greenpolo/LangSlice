@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import numpy as np
-from scipy.ndimage import map_coordinates
+from scipy.ndimage import map_coordinates, spline_filter
 from scipy.spatial.transform import Rotation
 
 from langslice.core.atlas.core import orient_slice_for_display
@@ -67,6 +67,25 @@ def build_rotation_matrix(
 
 
 _volume_cache: dict[tuple[str, str, int, int], tuple[np.ndarray, tuple[float, float, float]]] = {}
+#: Spline-prefiltered volumes per (atlas, kind, downsample, order, id): :func:`_filtered_volume`.
+_filtered_cache: dict[tuple[str, str, int, int, int], np.ndarray] = {}
+
+
+def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.ndarray:
+    """:func:`_scaled_volume` pre-filtered for a spline of *order* > 1, cached.
+
+    ``map_coordinates`` with ``order > 1`` spline-filters its whole input on
+    every call (about 13 s for the 1024 x 512 x 512 rat template), so sampling
+    one plane per section re-filtered the volume once per section. Filtering
+    once and sampling with ``prefilter=False`` gives the same values.
+    """
+    key = (str(getattr(atlas, "atlas_name", "?")), kind, int(downsample), int(order), id(atlas))
+    hit = _filtered_cache.get(key)
+    if hit is None:
+        vol, _res = _scaled_volume(atlas, kind, downsample)
+        hit = spline_filter(vol, order=order, mode="constant", output=np.float32)
+        _filtered_cache[key] = hit
+    return hit
 
 
 def _scaled_volume(
@@ -284,7 +303,11 @@ def sample_oblique_plane(
         vol.shape, res_mm, (normal_axis, row_axis, col_axis),
         position_mm / res_mm[normal_axis], pitch_deg, yaw_deg,
     )
-    sampled = map_coordinates(vol, coords, order=order, mode="constant", cval=0.0)
+    if isinstance(volume, str) and order > 1:
+        sampled = map_coordinates(_filtered_volume(atlas, volume, downsample, order), coords,
+                                  order=order, mode="constant", cval=0.0, prefilter=False)
+    else:
+        sampled = map_coordinates(vol, coords, order=order, mode="constant", cval=0.0)
     return np.asarray(orient_slice_for_display(sampled, plane), dtype=np.float32)
 
 

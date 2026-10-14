@@ -50,6 +50,11 @@ abba = [
 mcp = [
     "mcp>=1.24,<2",
 ]
+# Claude agent models via an Anthropic API key (``anthropic-api/<model>``,
+# providers/anthropic_api.py, on ADK's AnthropicLlm).
+anthropic = [
+    "anthropic>=1.13",
+]
 dev = [
     "mcp>=1.24,<2",
     "pytest",

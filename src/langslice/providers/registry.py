@@ -6,6 +6,8 @@ product name. Canonical names:
 - ``gemini-api``: Gemini models via a Google API key.
 - ``openai-api``: the OpenAI API (or a compatible endpoint,
   ``OPENAI_BASE_URL``) via an API key.
+- ``anthropic-api``: Claude models via an Anthropic API key (agent model
+  only; transport in ``providers/anthropic_api.py``).
 - ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login
   (``langslice login``; transport lives in ``providers/openai_oauth.py``).
 - ``none``: no image model; ANTs fits to the stain directly. There is
