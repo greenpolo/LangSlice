@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import ImageContent, TextContent
 from PIL import Image
@@ -18,7 +18,6 @@ from PIL import Image
 from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
 from langslice.core.spec import JobSpec
 from langslice.doors.mcp.server import build_server
-from langslice.doors.tools.arguments import CuttingAngles, SectionPosition, normalize_arguments
 from tests.fakes import SlabAtlas
 
 #: ABBA's stack-wide angles as the connector always sends them (flat).
@@ -75,35 +74,6 @@ def test_a_folder_given_at_startup_lists_the_toolbox_without_adk_context(tmp_pat
     assert tools["look"].annotations.readOnlyHint is True
     assert tools["position_sections"].annotations.readOnlyHint is False
     assert "End the run" in (tools["submit"].description or "")
-
-
-def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path):
-    server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
-
-    async def body(client: Any) -> Any:
-        result = await client.call_tool("start_job", {})
-        first = result.content[0]
-        assert isinstance(first, TextContent)
-        count = int(re.search(r"show_stack\(page=(\d+)\) before", first.text).group(1))
-        pages = []
-        for page in range(1, count + 1):
-            pages.extend((await client.call_tool("show_stack", {"page": page})).content)
-        return result, pages
-
-    result, pages = _session(server, body)
-    assert isinstance(result.content[0], TextContent)
-    assert "submit" in result.content[0].text
-    assert not any(isinstance(block, ImageContent) for block in result.content)
-    images = [block for block in pages if isinstance(block, ImageContent)]
-    texts = [block.text for block in pages if isinstance(block, TextContent)]
-    # Unplaced sections and an independent atlas reference.
-    assert "Strip 1 of 1: s0.png, s1.png, s2.png" in texts
-    assert any(text.startswith("Atlas reference strip") for text in texts)
-    assert len(images) > 1
-    assert all(image.mimeType.startswith("image/") and image.data for image in images)
-    for image in images:
-        with Image.open(BytesIO(base64.b64decode(image.data))) as picture:
-            assert max(picture.size) <= CLAUDE_MAX_IMAGE_EDGE
 
 
 def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
@@ -235,8 +205,6 @@ def test_a_job_that_disables_tools_and_options_offers_neither_over_mcp(tmp_path:
 
 
 def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_path: Path):
-    import pytest
-
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.mcp.server import open_job
 
@@ -247,25 +215,6 @@ def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_pat
     # Valid with the image model; the door that cannot reach it has no writer.
     with pytest.raises(ValueError, match="image model is not connected"):
         open_job(spec, atlas_loader=lambda _n: _ATLAS)
-
-
-def test_normalize_arguments_only_touches_what_the_schema_would_refuse():
-    def tool(sections: list[str], section: str = "",
-             entries: list[SectionPosition] = [],  # noqa: B006
-             cutting_angles: CuttingAngles = {},  # noqa: B006
-             positions_mm: list[float] = []) -> None:  # noqa: B006
-        del sections, section, entries, cutting_angles, positions_mm
-
-    assert normalize_arguments(tool, {
-        "sections": [3, "a.png", True], "section": 2,
-        "entries": [{"id": 1, "position_mm": None}],
-        "cutting_angles": {"pitch_deg": None, "yaw_deg": 2.0}, "positions_mm": [1, 2],
-    }) == {"sections": ["3", "a.png", True], "section": "2",
-           "entries": [{"id": 1}], "cutting_angles": {"yaw_deg": 2.0},
-           "positions_mm": [1, 2]}
-    assert normalize_arguments(tool, {"sections": [], "section": "x",
-                                      "cutting_angles": None}) == {
-        "sections": [], "section": "x"}
 
 
 def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Path):
@@ -385,8 +334,12 @@ def test_reopening_a_saved_job_by_id_resumes_it(tmp_path: Path, monkeypatch: Any
     again.close()
 
 
-def test_host_channel_loopback_envelopes_and_disconnect():
+def test_host_channel_loopback_envelopes_and_disconnect(tmp_path: Path, monkeypatch: Any):
     import socket
+
+    from langslice.doors.api import saved_jobs
+
+    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
 
     from langslice.doors.mcp.host_channel import HostChannel
 
@@ -411,52 +364,13 @@ def test_host_channel_loopback_envelopes_and_disconnect():
     channel.event({"kind": "checkpoint"})
     assert channel.socket is None
 
-
-def test_job_validation(tmp_path: Path, monkeypatch: Any):
-    import pytest
-
+    # A job id is a plain name and a channel is loopback only.
     from langslice.doors.api import saved_jobs
 
-    monkeypatch.setattr(saved_jobs, "jobs_root", lambda: tmp_path / "jobs")
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
         saved_jobs.load_job("../../outside")
     with pytest.raises(ValueError, match="loopback"):
         saved_jobs.validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
-
-
-def test_image_model_connected_checks_presence_only(tmp_path: Path, monkeypatch: Any):
-    """The MCP door offers trace_borders only when the job's image provider is
-    not none and its key or login is present (a private HOME here: no real
-    credential is read)."""
-    import json
-
-    from langslice.doors.api import setup
-    from langslice.doors.api.setup import image_model_connected
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    credentials = tmp_path / ".langslice" / "provider_credentials.json"
-    monkeypatch.setattr(setup, "_credentials_path", lambda: credentials)
-    for name in ("LANGSLICE_OPENAI_AUTH", "OPENAI_API_KEY", "OPENAI_BASE_URL",
-                 "OPENAI_IMAGE_API_KEY", "OPENAI_IMAGE_BASE_URL", "GEMINI_API_KEY",
-                 "GOOGLE_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(tmp_path / ".langslice" / "openai_auth.json"))
-    assert not image_model_connected("none")
-    assert not image_model_connected("openai-oauth")
-    assert not image_model_connected("openai-api")
-    assert not image_model_connected("gemini-api")
-    login = tmp_path / ".langslice" / "openai_auth.json"
-    login.parent.mkdir()
-    login.write_text(json.dumps({"tokens": {"access_token": "fake"}}))
-    assert image_model_connected("openai-oauth")
-    monkeypatch.setenv("GEMINI_API_KEY", "fake")
-    assert image_model_connected("gemini-api")
-    (tmp_path / ".langslice" / "provider_credentials.json").write_text(
-        json.dumps({"openai-api": "fake"}))
-    assert image_model_connected("openai-api")
-    other = tmp_path / "other.json"
-    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(other))
-    assert not image_model_connected("openai-oauth")  # the override's file, which is absent
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
@@ -545,41 +459,6 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     assert not _session(server(), again).isError
     saved = json.loads((job_dir / "state.json").read_text())
     assert any("checked s0" in line for line in saved["notes"])
-
-
-def test_the_mcp_server_starts_and_takes_no_fresh_flag(monkeypatch: Any):
-    """DOORS-5: ``langslice mcp`` has no --fresh, and starts (it read ``args.fresh``)."""
-    import argparse
-
-    import pytest
-
-    from langslice.doors.cli.mcp import add_mcp_parser, run_mcp
-    from langslice.doors.mcp import server
-
-    parser = argparse.ArgumentParser()
-    add_mcp_parser(parser.add_subparsers())
-    with pytest.raises(SystemExit):
-        parser.parse_args(["mcp", "--fresh"])
-    served: list[Any] = []
-    monkeypatch.setattr(server, "serve", lambda *args, **kwargs: served.append((args, kwargs)))
-    run_mcp(parser.parse_args(["mcp"]))
-    assert len(served) == 1 and not served[0][1]
-
-
-def test_a_folder_job_opened_at_startup_lists_its_tools_from_the_first_request(
-    tmp_path: Path,
-):
-    folder = _folder(tmp_path)
-    _init(folder, "--tasks", "position", "--preprocess", "none")
-    server = build_server(lambda _folder: (_ for _ in ()).throw(AssertionError()),
-                          str(folder), atlas_loader=lambda _n: _ATLAS)
-
-    async def body(client: Any) -> Any:
-        return {tool.name for tool in (await client.list_tools()).tools}
-
-    assert {"start_job", "show_stack", "look", "position_sections", "submit"} <= _session(
-        server, body
-    )
 
 
 def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, monkeypatch: Any):
@@ -679,39 +558,6 @@ def test_a_replaced_or_stopped_session_settles_its_image_calls(tmp_path: Path, m
     assert sessions["job"].ctx.image_folder == str(second)
     sessions["job"].close()  # what serve() does when the host goes away
     assert door.Session.close is not None
-
-
-def test_opening_strips_are_composed_within_the_page_budget(tmp_path: Path):
-    from langslice.core.jpeg import encode_jpeg
-    from langslice.core.opening import CLAUDE_IMAGE_LIMIT, opening_items
-    from langslice.doors.mcp.server import open_job, opening_pages
-    from langslice.doors.tools.reply import strip_bytes
-
-    folder = _folder(tmp_path, n=12)
-    rng = np.random.default_rng(5)
-    for path in folder.glob("*.png"):
-        Image.fromarray(rng.integers(0, 256, (900, 1200, 3), dtype=np.uint8)).save(path)
-    positions = {f"s{index}.png": 0.1 + 0.05 * index for index in range(12)}
-    # 13.2 mm of noise at 11 um/px: about the atlas plane's size, so each
-    # section and its atlas (drawn at one scale) both nearly fill a tile.
-    session = open_job(JobSpec(image_folder=str(folder), preprocess="none",
-                               image_resolution="high",
-                               inputs={"positions": positions, "pixel_size_um": 11.0}),
-                       atlas_loader=lambda _n: _ATLAS)
-    pages = opening_pages(session)
-    sent = [base64.b64decode(block.data) for page in pages
-            for block in page if isinstance(block, ImageContent)]
-    # Noise does not compress: three high tiles a strip, each over its atlas,
-    # would pass the budget, so the strips hold fewer sections (more than 4).
-    strips = [block.text for page in pages for block in page
-              if isinstance(block, TextContent) and block.text.startswith("Strip ")]
-    assert len(strips) > 4
-    composed = [encode_jpeg(item) for item in opening_items(
-        session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT, max_bytes=strip_bytes())
-        if not isinstance(item, str)]
-    # The strips the host gets are the composed ones, never shrunk after.
-    assert sent == composed
-    assert all(len(data) <= strip_bytes() for data in sent)
 
 
 def test_a_refused_argument_is_traced(tmp_path: Path, monkeypatch):

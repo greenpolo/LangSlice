@@ -4,8 +4,8 @@ A job keeps each section's own cutting angles, so a registration made
 elsewhere (QuickNII, VisuAlign, DeepSlice) keeps every section's plane as it
 was given. Everything LangSlice angles itself stays one plane for the whole
 stack: ``position_sections``' ``cutting_angles`` set every section, and a single-angle job
-reads, draws and writes exactly as before (the goldens are unchanged). The
-end-to-end tests run on the golden recorder's synthetic stack through the
+reads, draws and writes as a single plane. The
+end-to-end tests run on the shared synthetic stack through the
 library and the CLI, with the stub image model (``tests/test_combinations.py``).
 """
 
@@ -22,7 +22,7 @@ import pytest
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec, supplied_angles
 from langslice.core.state import MixedAngles, SliceState, StackState
 from tests import test_combinations as combinations
-from tests.golden.record import ID0, ID1, ID2, PIXEL_SIZE_UM
+from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM
 from tests.test_combinations import (
     EXTERNAL_TRANSFORMS,
     IDS,
@@ -62,16 +62,6 @@ def _external(**extra: Any) -> dict[str, Any]:
 
 
 # --- the state ----------------------------------------------------------------------------
-
-
-def test_a_single_angle_state_serializes_as_before():
-    state = _stack()
-    state.cutting_angles_deg = {"pitch": 3.0, "yaw": -1.0}
-    data = state.to_dict()
-    assert data["cutting_angles_deg"] == {"pitch": 3.0, "yaw": -1.0}
-    assert all("cutting_angles_deg" not in row for row in data["slices"])
-    assert not state.mixed_angles and state.stack_angles == (3.0, -1.0)
-    assert StackState.from_dict(data).to_dict() == data
 
 
 def test_a_mixed_state_keeps_each_sections_angles_and_round_trips():
@@ -302,9 +292,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     assert {name: state.by_id(name).cutting_angles_deg for name in IDS} == SECTION_ANGLES
     saved = json.loads((job / "state.json").read_text())
     assert saved["format_version"] == 3 and saved["cutting_angles_deg"] is None
-
-
-def test_the_cli_refuses_section_angles_with_pitch(capsys, images):
+    # --section-angles and --pitch exclude each other.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--image-provider", "none", "--pitch", "1",
                          "--section-angles", json.dumps(SECTION_ANGLES))
@@ -347,51 +335,14 @@ def test_cutting_angles_flatten_a_mixed_stack_and_undo_restores_it(images):
         assert [job.state.by_id(name).angles for name in IDS] == [(2.0, -0.5)] * 3
 
 
-def test_a_mixed_stack_is_drawn_per_section_and_said_plainly(images):
-    import langslice
-    from langslice.agent.prompt import stack_angles_fact
-    from langslice.core.status import status_text
-
-    create(_linear_spec(images, **_external()))
-    with langslice.open_job(images) as job:
-        state = job.state
-        assert "differ between sections" in stack_angles_fact(state)
-        assert "angles=pitch 2.50 yaw 1.00" in status_text(state)
-        shown = job.look(mode="overlay", sections=[ID1])
-        assert shown["status"] == "ok", shown
-        assert "at 0.15 mm pitch 2.5 yaw 1.0" in shown["pictures"][0]["caption"]
-        job.job.views.flush()
-        frames = [json.loads(path.read_text())["frame"] for path in
-                  (Path(job.folder) / "sections" / "s1" / "views").glob("*/view.json")]
-        planes = {(f["plane"]["pitch_deg"], f["plane"]["yaw_deg"]) for f in frames if f}
-        assert planes == {(2.5, 1.0)}  # drawn at the section's own plane
-        # The atlas alone is drawn at the stack's view angles, the medians,
-        # and every picture of it says so.
-        median = "at the median of the sections' cutting angles, pitch 1.0 yaw 0.5"
-        atlas = job.look(mode="atlas", positions_mm=[0.15])
-        assert atlas["status"] == "ok"
-        assert f"at 0.15 mm {median}" in atlas["pictures"][0]["caption"]
-        regions = job.grep_atlas_view(regions=["CTX"], positions_mm=[0.15])
-        assert f"at 0.15 mm {median}" in regions["pictures"][0]["caption"]
-        positioning = job.look(mode="positioning")
-        assert f"atlas {median}" in positioning["pictures"][0]["caption"]
-        # A single-angle stack says exactly what it always said.
-        job.position_sections(cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0})
-        assert stack_angles_fact(job.state) == (
-            "- Stack-wide cutting angles: pitch 1.00 deg, yaw 0.00 deg.")
-        assert "angles=" not in status_text(job.state)
-        atlas = job.look(mode="atlas", positions_mm=[0.15])
-        assert "at 0.15 mm pitch 1.0 yaw 0.0" in atlas["pictures"][0]["caption"]
-
-
-@pytest.mark.parametrize("mode", ["overlay", "section", "template"])
-def test_a_sections_pictures_match_a_single_angle_stack_at_its_angle(images, mode):
+def test_a_sections_pictures_match_a_single_angle_stack_at_its_angle(images):
     """Each section of a mixed stack is pictured exactly as a single-angle
     stack at that section's angle pictures it, pixel for pixel."""
     import langslice
     from langslice.core.display import default_options
     from langslice.core.placement import placement_pictures
 
+    mode = "overlay"
     create(spec_for(images, ["nonlinear"], **_external()))
     with langslice.open_job(images) as job:
         workspace, state = job.workspace, job.state

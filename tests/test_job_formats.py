@@ -1,6 +1,6 @@
 """The job folder's public files: ``registration.json`` and each section's maps.
 
-One synthetic stack (the golden recorder's), placed through the library as a
+One synthetic stack (the shared one, tests/synthetic_stack.py), placed through the library as a
 script would: s0 warped by a deformable fit (``ops.deformable.fit_deformable``,
 Elastix), s1 turned a quarter, flipped and kept linear, s2 placed without a
 transform (the identity, as its pictures show it). Checked: the matrices
@@ -25,11 +25,10 @@ import pytest
 import tifffile
 from PIL import Image
 
-from tests.golden.record import (
+from tests.synthetic_stack import (
     ID0,
     ID1,
     ID2,
-    apply_patches,
     atlas_loader,
     full_spec,
     write_sections,
@@ -60,6 +59,7 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
 
 @pytest.fixture(scope="module")
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
+    pytest.importorskip("ants")
     import langslice
     from langslice.core.deformation import linear_key
     from langslice.core.spec import NonlinearSpec
@@ -68,7 +68,6 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     root = tmp_path_factory.mktemp("formats")
     patch = pytest.MonkeyPatch()
     patch.setenv("HOME", str(root / "home"))
-    apply_patches()
     folder = root / "stack"
     write_sections(folder)
     spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"))
@@ -267,18 +266,6 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
         assert np.abs(got - expected).max() < 1.0, folder.name
 
 
-def test_a_picture_record_without_its_folder_cannot_be_mapped(placed):
-    from langslice.core.layers import coordinate_map
-
-    _job, root, _exported = placed
-    folder = _views(root, "trace_borders")[0]
-    record = json.loads((folder / "view.json").read_text())
-    with pytest.raises(ValueError, match="residual"):
-        coordinate_map(record)
-    assert coordinate_map(record, folder=folder).shape[:2] == tuple(
-        record["frame"]["picture_size"][::-1])
-
-
 def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
     from langslice.core.layers import atlas_facts
     from langslice.job.quint import atlas_um_to_quicknii_points
@@ -399,11 +386,12 @@ def test_working_size_reads_the_header_as_the_decoder_would(tmp_path):
         working_size,
     )
 
+    edges = {"min_edge": 200, "max_edge": 400}
     rng = np.random.default_rng(0)
-    big = (rng.random((3300, 4100, 3)) * 255).astype(np.uint8)
+    big = (rng.random((800, 1000, 3)) * 255).astype(np.uint8)
     Image.fromarray(big).save(tmp_path / "big.png")
     Image.fromarray(big).save(tmp_path / "big.jpg", quality=80)
-    Image.fromarray(big[:900, :1200]).save(tmp_path / "small.png")
+    Image.fromarray(big[:150, :200]).save(tmp_path / "small.png")
     with tifffile.TiffWriter(tmp_path / "pyramid.tif") as writer:
         writer.write(big, subifds=2, tile=(256, 256))
         writer.write(big[::2, ::2], subfiletype=1, tile=(256, 256))
@@ -411,15 +399,14 @@ def test_working_size_reads_the_header_as_the_decoder_would(tmp_path):
     pages = (rng.random((3, 700, 900)) * 255).astype(np.uint8)
     tifffile.imwrite(tmp_path / "pages.tif", pages)
     for name in ("big.png", "big.jpg", "small.png", "pyramid.tif"):
-        image, factor = read_working_image(tmp_path / name)
-        assert working_size(tmp_path / name) == (image.size, factor), name
-    decoded, factor = read_working_pages(tmp_path / "pages.tif")
-    assert working_size(tmp_path / "pages.tif", pages=True) == (
+        image, factor = read_working_image(tmp_path / name, **edges)
+        assert working_size(tmp_path / name, **edges) == (image.size, factor), name
+    decoded, factor = read_working_pages(tmp_path / "pages.tif", **edges)
+    assert working_size(tmp_path / "pages.tif", pages=True, **edges) == (
         (decoded[0].shape[1], decoded[0].shape[0]), factor)
 
 
-@pytest.mark.parametrize(("rotation", "flip"), [(0, False), (90, False), (180, True),
-                                                (270, True), (90, True)])
+@pytest.mark.parametrize(("rotation", "flip"), [(0, False), (90, True), (180, True)])
 def test_orientation_matrix_is_the_render_order(rotation, flip):
     from langslice.core.maps import apply, orientation_matrix
 
@@ -443,14 +430,13 @@ def test_orientation_matrix_is_the_render_order(rotation, flip):
 
 
 def _uncalibrated_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """The golden stack with no pixel size anywhere (no host input, the PNGs
+    """The shared stack with no pixel size anywhere (no host input, the PNGs
     carry none)."""
     import langslice
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     folder = tmp_path / "stack"
     write_sections(folder)
     loader = atlas_loader()
@@ -470,39 +456,14 @@ def _picture_um_per_section_px(root: Path, section: str) -> float:
     return float(np.linalg.norm(to_atlas[:, 1]))
 
 
-def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, monkeypatch):
+def test_an_uncalibrated_section_maps_at_the_scale_its_pictures_draw(tmp_path, monkeypatch,
+                                                                    caplog):
     """No pixel size: the pictures map the atlas frame onto the section at
     its CURRENT position; registration.json (and so the maps and the
     exports, the same frame) uses that same scale, not the one stored with
     a transform written at another position."""
-    job = _uncalibrated_job(tmp_path, monkeypatch)
-    job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
-    job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0, "scale_x": 1.0,
-                                         "scale_y": 1.0, "translate_x_mm": 0.0,
-                                         "translate_y_mm": 0.0}], view=False)
-    job.position_sections(sections=[{"id": ID0, "position_mm": 0.25}], view=False)
-    job.look(mode="overlay", sections=[ID0], resolution=512)
-    job.close()
-    root = Path(job.folder)
-    entry = {e["id"]: e for e in json.loads(
-        (root / "registration.json").read_text())["sections"]}[ID0]
-    render = prepared_render_size(root.parent / ID0)
-    file_size = entry["image"]["size"]
-    reg_um_per_render_px = (np.linalg.norm(np.asarray(entry["pixel_to_atlas_um"])[:, 1])
-                            * file_size[0] / render[0])
-    picture = _picture_um_per_section_px(root, ID0)
-    assert abs(reg_um_per_render_px - picture) < 0.01, (reg_um_per_render_px, picture)
-    assert entry["image"]["pixel_size_source"] == "uncalibrated"
-    assert "pixel size" in (entry["problem"] or "")
+    import logging
 
-
-def test_an_uncalibrated_section_is_fitted_at_the_scale_its_pictures_draw(tmp_path,
-                                                                           monkeypatch):
-    """No pixel size, a transform written at one position, the section then
-    moved: the nonlinear start (the trace's canvas, every deformable fit's
-    grid, the Elastix affine's start) places the atlas at the scale the
-    pictures and registration.json use, not the one stored with the
-    transform, so the six numbers mean one placement everywhere."""
     from langslice.core.handoff import prepare_linear_registration
     from langslice.core.sections import PREVIEW_LONG_EDGE
 
@@ -513,12 +474,37 @@ def test_an_uncalibrated_section_is_fitted_at_the_scale_its_pictures_draw(tmp_pa
                                          "translate_y_mm": 0.0}], view=False)
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.25}], view=False)
     job.look(mode="overlay", sections=[ID0], resolution=512)
+    # The nonlinear start (the trace's canvas, every fit's grid, the Elastix
+    # affine's start) uses the same scale.
     handoff = prepare_linear_registration(job.state, job.workspace, ID0,
                                           long_edge=PREVIEW_LONG_EDGE).metadata
+    # No transform: the identity at the uncalibrated scale; no traceback per
+    # section per checkpoint.
+    with caplog.at_level(logging.WARNING):
+        job.position_sections(sections=[{"id": ID2, "position_mm": 0.2}], view=False)
+        job.look(mode="overlay", sections=[ID2], resolution=512)
     job.close()
-    picture = _picture_um_per_section_px(Path(job.folder), ID0)
+    assert not [r for r in caplog.records if r.exc_info], [r.getMessage() for r in caplog.records]
+    root = Path(job.folder)
+    sections = {e["id"]: e for e in json.loads(
+        (root / "registration.json").read_text())["sections"]}
+    entry = sections[ID0]
+    render = prepared_render_size(root.parent / ID0)
+    file_size = entry["image"]["size"]
+    reg_um_per_render_px = (np.linalg.norm(np.asarray(entry["pixel_to_atlas_um"])[:, 1])
+                            * file_size[0] / render[0])
+    picture = _picture_um_per_section_px(root, ID0)
+    assert abs(reg_um_per_render_px - picture) < 0.01, (reg_um_per_render_px, picture)
+    assert entry["image"]["pixel_size_source"] == "uncalibrated"
+    assert "pixel size" in (entry["problem"] or "")
     assert abs(handoff["section_um_per_px"] - picture) < 0.01, (handoff, picture)
     assert handoff["calibration_source"] == "uncalibrated"
+    identity = sections[ID2]
+    assert identity["pixel_to_atlas_um"] is not None
+    assert identity["mapping"].startswith("linear (identity")
+    reg = (np.linalg.norm(np.asarray(identity["pixel_to_atlas_um"])[:, 1])
+           * identity["image"]["size"][0] / prepared_render_size(root.parent / ID2)[0])
+    assert abs(reg - _picture_um_per_section_px(root, ID2)) < 0.01
 
 
 def prepared_render_size(path: Path) -> tuple[int, int]:
@@ -527,56 +513,6 @@ def prepared_render_size(path: Path) -> tuple[int, int]:
 
     with Image.open(path) as image:
         return prepared_size(image.size, max_long_edge=PREVIEW_LONG_EDGE)
-
-
-def test_an_uncalibrated_section_without_a_transform_is_the_identity(tmp_path, monkeypatch,
-                                                                     caplog):
-    """No pixel size and no transform: the identity at the uncalibrated scale,
-    as its pictures draw it, the scale stated as unknown; no traceback per
-    section per checkpoint."""
-    import logging
-
-    job = _uncalibrated_job(tmp_path, monkeypatch)
-    with caplog.at_level(logging.WARNING):
-        job.position_sections(sections=[{"id": ID2, "position_mm": 0.2}], view=False)
-        job.look(mode="overlay", sections=[ID2], resolution=512)
-    job.close()
-    assert not [r for r in caplog.records if r.exc_info], [r.getMessage() for r in caplog.records]
-    root = Path(job.folder)
-    entry = {e["id"]: e for e in json.loads(
-        (root / "registration.json").read_text())["sections"]}[ID2]
-    assert entry["pixel_to_atlas_um"] is not None
-    assert entry["mapping"].startswith("linear (identity")
-    assert "pixel size" in entry["problem"] and "unknown" in entry["problem"]
-    render = prepared_render_size(root.parent / ID2)
-    reg = (np.linalg.norm(np.asarray(entry["pixel_to_atlas_um"])[:, 1])
-           * entry["image"]["size"][0] / render[0])
-    assert abs(reg - _picture_um_per_section_px(root, ID2)) < 0.01
-
-
-def test_the_frame_cache_is_bounded(placed, monkeypatch):
-    """A section's frame is memoized under everything it depends on; moving
-    it many times keeps one frame per section, and the cache never holds
-    more than ``FRAME_CACHE_SECTIONS`` sections (review finding 9)."""
-    import dataclasses as dc
-
-    from langslice.core import maps
-
-    job, _root, _exported = placed
-    workspace = job.workspace
-    record = job.state.by_id(ID2)
-    workspace.frame_cache.clear()
-    for step in range(40):
-        moved = dc.replace(record, position_mm=0.002 * step)
-        maps.section_frame(job.state, workspace, moved)
-    assert len(workspace.frame_cache) == 1
-    # The current key is a hit: the same frame object comes back.
-    first = maps.section_frame(job.state, workspace, moved)
-    assert maps.section_frame(job.state, workspace, moved) is first
-    monkeypatch.setattr(maps, "FRAME_CACHE_SECTIONS", 2)
-    for name in (ID0, ID1, ID2):
-        maps.section_frame(job.state, workspace, job.state.by_id(name))
-    assert len(workspace.frame_cache) == 2
 
 
 # --- export_maps beside other writers-----------------

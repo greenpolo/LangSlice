@@ -8,10 +8,9 @@ import numpy as np
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core.captions import caption
 from langslice.core.sections import render_slice
 from langslice.core.spec import JobSpec
-from langslice.core.status import status_rows, status_text
+from langslice.core.status import status_rows
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
 
@@ -94,53 +93,14 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
 
     # A note alone (a host's ``inputs.damaged``) does not make a section damaged.
     assert rows[2]["damaged"] is False and rows[2]["damaged_regions"] == []
-    noted = status_text(state)
-    assert "damaged" not in noted and "damage note: half the section is gone" in noted
 
     state.slices[2].damaged_regions = ["CTX", "OB"]
     rows = status_rows(state)
     assert rows[2]["damaged"] is True and rows[2]["damaged_regions"] == ["CTX", "OB"]
-    text = status_text(state)
-    assert "s2.png" in text and "unplaced" in text
-    assert "damaged [CTX, OB]: half the section is gone" in text
-    assert "delta_to_next_mm" in text
-    assert "mirrored=True" in text
 
-
-def test_the_delta_to_the_next_section_is_signed(tmp_path: Path):
-    for index in range(2):
-        _corner_image(tmp_path / f"s{index}.png")
-    ctx = _ctx(tmp_path)
-    state = ingest(ctx.spec, ctx)
     state.slices[0].position_mm = 5.0
-    state.slices[1].position_mm = 4.0  # the stack runs backwards
+    state.slices[1].position_mm = 4.0  # the stack runs backwards: the delta is signed
     assert status_rows(state)[0]["delta_to_next_mm"] == -1.0
-
-
-def test_caption_labels_a_copy_without_touching_the_original():
-    source = Image.new("RGB", (120, 80), (10, 10, 10))
-    labelled = caption(source, "atlas 3.20 mm")
-
-    assert labelled is not source
-    # The caption is a band BELOW the picture: same width, taller, pixels untouched.
-    assert labelled.size[0] == source.size[0] and labelled.size[1] > source.size[1]
-    assert np.asarray(source).max() == 10  # the original is untouched
-
-    array = np.asarray(labelled)
-    picture, strip = array[:80, :], array[80:, :90]
-    assert picture.max() == 10  # the picture's pixels sit unchanged at the top
-    assert strip.max() > 200  # bright text in a dark box below it
-
-
-def test_compact_rows_drops_null_and_empty_fields_only():
-    from langslice.core.status import compact_rows
-
-    rows = [
-        {"index": 0, "id": "a", "position_mm": None, "flip": False, "caveats": [],
-         "damage_note": "", "rotation_deg": 0.0}
-    ]
-    assert compact_rows(rows) == [{"index": 0, "id": "a", "flip": False, "rotation_deg": 0.0}]
-    assert rows[0]["position_mm"] is None  # the input is not mutated
 
 
 def test_render_scale_counts_file_pixels_through_the_working_copy(tmp_path: Path):

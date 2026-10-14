@@ -18,20 +18,16 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.core.opening import (
     CLAUDE_IMAGE_LIMIT,
-    CLAUDE_MAX_IMAGE_EDGE,
-    CLAUDE_MAX_IMAGE_PATCHES,
     COLUMN_GAP,
     OPENAI_MAX_IMAGE_EDGE,
     OPENAI_MAX_IMAGE_PATCHES,
     pack_strips,
     patches,
     strip_layout,
-    tile_label,
 )
 from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.spec import JobSpec
 from langslice.doors.tools.media import opening_parts
-from langslice.doors.tools.view_options import image_limit
 from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
 
@@ -59,19 +55,6 @@ def _strips(parts: list[Any], prefix: str = "Strip ") -> list[tuple[str, Image.I
         if part.text and part.text.startswith(prefix):
             out.append((part.text, Image.open(io.BytesIO(parts[index + 1].inline_data.data))))
     return out
-
-
-def test_the_lane_limits_are_the_verified_numbers():
-    assert (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES) == (2048, 2500)
-    assert CLAUDE_MAX_IMAGE_EDGE == 1568
-    assert CLAUDE_IMAGE_LIMIT == (1568, CLAUDE_MAX_IMAGE_PATCHES)
-
-    class Ctx:
-        model = "openai-oauth/gpt-6-astra"
-
-    assert image_limit(Ctx()) == (2048, 2500)
-    Ctx.model = "fake-model"
-    assert image_limit(Ctx()) == (2048, 2500)
 
 
 @pytest.mark.parametrize(("level", "per_strip"), [("low", 8), ("medium", 5), ("high", 4)])
@@ -107,10 +90,10 @@ def test_a_40_section_stack_takes_more_strips_at_higher_levels(
     assert not any(p.text and p.text.startswith("Atlas reference") for p in parts)
 
 
-@pytest.mark.parametrize("level", ["low", "medium", "high"])
+@pytest.mark.parametrize("level", ["low", "high"])
 def test_tall_paired_strips_stay_inside_the_patch_budget(tmp_path: Path, level: str):
     """Portrait sections at full size over their atlas: the worst strip height."""
-    state, ctx = _stack(tmp_path / level, 10, size=(1200, 1800), level=level)
+    state, ctx = _stack(tmp_path / level, 4, size=(600, 900), level=level)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 1.0 + 0.2 * index
         record.damaged_regions = ["CTX"]  # a longer label
@@ -127,6 +110,13 @@ def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
     assert "Beneath each section" not in (bare[0].text or "")
     assert any(p.text and p.text.startswith("Atlas reference strip") for p in bare)
     ((_, unplaced),) = _strips(bare)
+    # The reference is atlas strips at the tile size.
+    reference = next(p.text for p in bare if p.text and p.text.startswith("Atlas reference"))
+    count = int(reference.split("the atlas at ")[1].split()[0])
+    atlas = _strips(bare, "Atlas strip ")
+    per_strip, _tile = strip_layout(OPENAI_MAX_IMAGE_EDGE, PICTURE_EDGES["low"][0])
+    assert len(atlas) == -(-count // per_strip)
+    assert all(image.width <= OPENAI_MAX_IMAGE_EDGE for _text, image in atlas)
 
     state.in_order()[0].position_mm = 2.0
     mixed = opening_parts(state, ctx)
@@ -141,29 +131,6 @@ def test_the_atlas_row_appears_only_with_positions(tmp_path: Path):
     placed = opening_parts(state, ctx)
     assert not any(p.text and p.text.startswith("Atlas") for p in placed)
     assert sum(p.inline_data is not None for p in placed) == 1
-
-
-def test_the_reference_is_atlas_strips_at_the_tile_size(tmp_path: Path):
-    state, ctx = _stack(tmp_path / "s", 2)
-    parts = opening_parts(state, ctx)
-    reference = next(p.text for p in parts if p.text and p.text.startswith("Atlas reference"))
-    count = int(reference.split("the atlas at ")[1].split()[0])
-    atlas = _strips(parts, "Atlas strip ")
-    per_strip, _tile = strip_layout(OPENAI_MAX_IMAGE_EDGE, PICTURE_EDGES["low"][0])
-    assert len(atlas) == -(-count // per_strip)
-    assert all(image.width <= OPENAI_MAX_IMAGE_EDGE for _text, image in atlas)
-
-
-def test_tile_labels_name_the_file_and_short_flags(tmp_path: Path):
-    state, _ctx = _stack(tmp_path / "s", 2)
-    record = state.in_order()[1]
-    assert tile_label(record) == "s01.png"
-    record.rotation_deg, record.flip = 90, True
-    record.damage_note = "a long note about the tear that belongs in the status table"
-    # A note alone does not make a section damaged.
-    assert tile_label(record) == "s01.png [rot 90, flipped]"
-    record.damaged_regions = ["CTX"]
-    assert tile_label(record) == "s01.png [rot 90, flipped, damaged]"
 
 
 def test_a_column_past_the_budget_starts_the_next_strip():

@@ -5,6 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import pytest
+from PIL import Image
 
 from langslice.core.atlas.render import region_boundaries
 from langslice.core.deformable import (
@@ -12,6 +13,7 @@ from langslice.core.deformable import (
     draw_warped_borders,
     warped_border_layers,
 )
+from langslice.core.nonlinear.border_refinement import smooth_border_overlay
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -38,10 +40,34 @@ def case():
     return atlas, image, record
 
 
-def test_without_highlight_every_border_is_strong(case):
-    atlas, _, record = case
+def test_border_layers_strong_faint_and_marked(case):
+    atlas, image, record = case
+    # Without a highlight every border is strong.
     faint, strong = warped_border_coverage(record, atlas)
     assert strong.max() > 0.5 and not faint.any()
+    # A highlight is strong over a faint outline of the rest.
+    h_faint, h_strong = warped_border_coverage(record, atlas, highlight=["STR"])
+    assert h_faint.max() > 0.2 and h_strong.max() > 0.5
+    assert h_strong.sum() < strong.sum()  # only the selected region's edges
+    assert ((h_faint + h_strong) > 0.5).sum() >= 0.9 * (strong > 0.5).sum()
+    out = draw_warped_borders(image, record, atlas, highlight=["STR"])
+    assert out.size == image.size
+    with pytest.raises(ValueError):
+        warped_border_coverage(record, atlas, highlight=["NOPE"])
+    # Marked regions get their own layer; no edge is drawn twice.
+    layers = warped_border_layers(record, atlas, highlight=["STR"], marked=["HY"])
+    assert layers["marked"].max() > 0.5 and layers["strong"].max() > 0.5
+    assert ((layers["marked"] > 0.5) & (layers["strong"] > 0.5)).sum() == 0
+    plain = draw_warped_borders(image, record, atlas)
+    none = draw_warped_borders(image, record, atlas, outlines="none")
+    base = np.asarray(image.convert("RGB"), dtype=int)
+
+    def inked(drawn) -> int:
+        return int((np.abs(np.asarray(drawn, dtype=int) - base).sum(axis=-1) > 30).sum())
+
+    assert inked(none) == 0 < inked(plain)
+    with pytest.raises(ValueError):
+        draw_warped_borders(image, record, atlas, outlines="some")
 
 
 def test_smooth_borders_follow_the_nearest_label_edges(case):
@@ -52,38 +78,6 @@ def test_smooth_borders_follow_the_nearest_label_edges(case):
     drawn = strong > 0.5
     assert drawn.sum() > 100
     assert (drawn & near).sum() / drawn.sum() > 0.9  # drawn lines sit on the label edges
-
-
-def test_highlight_is_strong_over_a_faint_outline(case):
-    atlas, image, record = case
-    faint, strong = warped_border_coverage(record, atlas, highlight=["STR"])
-    both_faint, both_strong = warped_border_coverage(record, atlas)
-    assert faint.max() > 0.2 and strong.max() > 0.5
-    assert strong.sum() < both_strong.sum()  # only the selected region's edges
-    # Together the two layers still draw every edge.
-    assert ((faint + strong) > 0.5).sum() >= 0.9 * (both_strong > 0.5).sum()
-    out = draw_warped_borders(image, record, atlas, highlight=["STR"])
-    assert out.size == image.size
-    with pytest.raises(ValueError):
-        warped_border_coverage(record, atlas, highlight=["NOPE"])
-
-
-def test_marked_regions_get_their_own_layer_and_outlines_limit_the_rest(case):
-    atlas, image, record = case
-    layers = warped_border_layers(record, atlas, highlight=["STR"], marked=["HY"])
-    assert layers["marked"].max() > 0.5 and layers["strong"].max() > 0.5
-    # No edge is drawn twice: marked edges leave the strong and faint layers.
-    assert ((layers["marked"] > 0.5) & (layers["strong"] > 0.5)).sum() == 0
-    plain = draw_warped_borders(image, record, atlas)
-    none = draw_warped_borders(image, record, atlas, outlines="none")
-    base = np.asarray(image.convert("RGB"), dtype=int)
-
-    def inked(out) -> int:
-        return int((np.abs(np.asarray(out, dtype=int) - base).sum(axis=-1) > 30).sum())
-
-    assert inked(none) == 0 < inked(plain)
-    with pytest.raises(ValueError):
-        draw_warped_borders(image, record, atlas, outlines="some")
 
 
 def test_resampled_record_draws_the_same_borders_smaller(case):
@@ -115,3 +109,17 @@ def test_warping_the_section_by_a_zero_field_changes_nothing(case):
     assert np.array_equal(np.asarray(out), np.asarray(image.convert("RGB")))
     moved = warp_section_image(image, record)
     assert not np.array_equal(np.asarray(moved), np.asarray(image.convert("RGB")))
+
+
+def test_smooth_borders_draw_one_antialiased_line_per_shared_edge():
+    labels = np.zeros((20, 20), dtype=np.int64)
+    labels[4:16, 4:10] = 1
+    labels[4:16, 10:16] = 2
+    photo = Image.new("RGB", (100, 100), (0, 0, 0))
+    atlas_to_image = np.array([[5.0, 0, 2.0], [0, 5.0, 2.0], [0, 0, 1]])  # 5x magnification
+    drawn = np.asarray(smooth_border_overlay(photo, labels, atlas_to_image, width_px=2.0))
+    row = drawn[50, 30:70, 0].astype(int)  # across the shared edge at x ~ 52
+    lit = np.flatnonzero(row > 0)
+    # One stroke about two pixels wide, not one line per region an atlas pixel apart.
+    assert lit.size and lit.max() - lit.min() <= 3
+    assert ((row > 0) & (row < 255)).any()  # antialiased edge pixels

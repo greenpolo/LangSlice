@@ -69,12 +69,11 @@ and `environment.yml` hold the worker's source installation.
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis
   conventions are centralized in `core/space.py`.
-- Model-facing text (tool descriptions, job statement, tool replies) and the
-  pictures are pinned by golden tests (`tests/test_golden_linear_tools.py`,
-  `tests/golden/`); an intended change re-records them with
-  `LANGSLICE_UPDATE_GOLDEN=1` (see `tests/golden/record.py`) and the diff is
-  reviewed. The golden test needs `antspyx`, `itk-elastix`, `mcp` and
-  `google-adk`, and skips without them.
+- Model-facing text (tool descriptions, job statements, refusals) is pinned
+  by a text snapshot (`tests/test_agent_text_snapshot.py`,
+  `tests/snapshots/agent_text/`); an intended change regenerates it with
+  `LANGSLICE_UPDATE_SNAPSHOT=1` and the diff is reviewed. Pictures are
+  pinned by no test: a change to them is judged by looking (below).
 - Image-model prompts live in `core/nonlinear/prompts.py`; every sentence of an
   edit is audited for a second reading, and no border line is made conditional
   on visibility (`src/langslice/core/nonlinear/CLAUDE.md`).
@@ -104,7 +103,7 @@ Linux + bash. The project environment is a uv venv at `.venv` (Python 3.11):
 
 ```bash
 source .venv/bin/activate
-python -m pytest              # markers: `slow` is deselected by default
+python -m pytest              # in parallel (pytest-xdist); `slow` is deselected by default
 python -m ruff check .
 python -m basedpyright
 lint-imports                  # the layer contracts

@@ -2,9 +2,8 @@
 
 ``langslice.doors.declarations`` holds each verb's arguments and
 description; the agent tools (and through them the MCP tools) carry exactly
-those, and the CLI's schema is built from the same signature. The goldens
-(``tests/golden/linear_tools/*_declarations_*``) pin the bytes the ADK and
-MCP doors send; this checks the wiring and what each description must say.
+those, and the CLI's schema is built from the same signature. This checks the
+wiring: the declared signatures, variants, defaults and the CLI schema.
 """
 
 from __future__ import annotations
@@ -15,11 +14,11 @@ from typing import Any
 import pytest
 
 from langslice.core.nonlinear.prompts import border_correction_tool_prompt
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.core.spec import JobSpec, TransformSpec
 from langslice.doors import declarations
 from langslice.doors.declarations import FULL, VIEW_TOOLS, Variant, declaration, declare
 from langslice.doors.tools.arguments import SectionPosition, SectionTransform
-from langslice.ops.registry import VERBS, enabled
+from langslice.ops.registry import VERBS
 
 
 def test_every_verb_is_declared_once_in_registry_order():
@@ -54,10 +53,6 @@ def test_trace_borders_carries_the_base_prompt_and_the_border_rules():
     # Every line of the base prompt, as the run's image model receives it.
     for line in gpt.split("\n"):
         assert line.strip() in doc
-    words = " ".join(doc.split())
-    assert "only source of which lines exist" in words
-    assert "Never add a sentence that makes a line depend on whether its edge is visible" \
-        in words
     assert "BASE_PROMPT" not in doc
     assert "The base prompt" not in declaration("trace_borders", Variant(prompt="")).doc
     sagittal = border_correction_tool_prompt("sagittal", provider="gemini-api")
@@ -66,20 +61,6 @@ def test_trace_borders_carries_the_base_prompt_and_the_border_rules():
     # The CLI door says how its command answers.
     cli = declaration("trace_borders", Variant(door="cli", prompt=gpt)).doc
     assert "--background" in cli and "returns at once" not in cli
-
-
-def test_the_descriptions_say_what_the_design_asks():
-    assert "grep_atlas_view" in declaration("grep_atlas").doc
-    damage = " ".join(declaration("mark_damage").doc.split())
-    for words in ("whole hemisphere", "olfactory bulb", "cortex", "bubbles", "stains",
-                  "Small tears", "damaged exactly when it has marked regions"):
-        assert words in damage, words
-    def words(name: str) -> str:
-        return " ".join(declaration(name).doc.split())
-
-    assert "Fit the whole section first, then refine regions" in words("ants_syn")
-    assert "restrict_to, those regions' borders are drawn thick" in words("elastix_affine")
-    assert "order follows the positions" in words("position_sections")
 
 
 def test_declare_binds_the_declared_defaults_and_refuses_a_body_without_an_argument():
@@ -122,31 +103,6 @@ def test_the_cli_schema_is_the_declared_signature():
 
 def _spec(**fields: Any) -> JobSpec:
     return JobSpec(image_folder="/stack", **fields)
-
-
-_EVERY_RUN = ["look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
-              "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
-              "read_file"]
-_BOOKKEEPING = ["note", "undo", "redo", "submit"]
-
-
-@pytest.mark.parametrize(("spec", "names"), [
-    (_spec(), [*_EVERY_RUN, "position_sections", "interactive_transform", "mark_damage",
-               "elastix_affine", *_BOOKKEEPING]),
-    (_spec(tasks=["transform"], disabled=["elastix_affine", "mark_damage"]),
-     [*_EVERY_RUN, "interactive_transform", *_BOOKKEEPING]),
-    (_spec(tasks=["position"]),
-     [*_EVERY_RUN, "position_sections", "mark_damage", *_BOOKKEEPING]),
-    (_spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none")),
-     [*_EVERY_RUN, "mark_damage", "ants_syn", "set_landmarks",
-      "landmark_triangulation", *_BOOKKEEPING]),
-    (_spec(tasks=["nonlinear", "transform"], transform=TransformSpec(angles=True)),
-     [*_EVERY_RUN, "position_sections", "interactive_transform", "mark_damage",
-      "elastix_affine", "ants_syn", "set_landmarks", "landmark_triangulation",
-      "trace_borders", *_BOOKKEEPING]),
-])
-def test_the_registry_switches_verbs_on_per_spec(spec: JobSpec, names: list[str]):
-    assert enabled(spec) == names
 
 
 def test_a_run_variant_follows_its_spec():

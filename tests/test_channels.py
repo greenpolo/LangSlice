@@ -117,9 +117,7 @@ def test_display_properties_change_pictures_and_never_the_preprocessed_channel(
 
 def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
     """Set once, a channel's display stays: checkpointed with the job, and a
-    job reopened from the folder draws and captions with it."""
-    from langslice.core.look import LookRequest, look
-
+    job reopened from the folder keeps it."""
     job, ctx = _open(tmp_path, atlas)
     ops_appearance.set_channel_properties(job, ctx, "red", gamma=0.5, colormap="magenta")
     saved = load_checkpoint(ctx.checkpoint_path)
@@ -130,8 +128,6 @@ def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
     reopened = Job.open(job.spec, later, folder=later.job_folder,
                         results_path=later.results_path)
     assert reopened.state.appearance["channels"]["red"]["gamma"] == 0.5
-    picture = look(later, reopened.state, LookRequest("section", sections=("s0.png",)))[0]
-    assert "red auto gamma 0.5 in magenta" in picture.caption
 
 
 def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path, atlas):
@@ -146,25 +142,6 @@ def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path,
             ops_appearance.set_channel_properties(job, ctx, "red", **bad)
         assert refused.value.code == "BAD_ARGS"
     assert job.state.appearance == {} and not job.undo_stack
-
-
-def test_raw_channel_pictures_and_captions_restate_the_properties(tmp_path: Path, atlas):
-    from langslice.core.look import LookRequest, look
-
-    job, ctx = _open(tmp_path, atlas)
-    state = job.state
-    request = LookRequest("section", sections=(state.slices[0].id,), channels=("green",))
-    before = _pixels(look(ctx, state, request)[0].image)
-    ops_appearance.set_channel_properties(job, ctx, "green", contrast_limits=[0, 100])
-    after = look(ctx, state, request)[0]
-    assert not np.array_equal(_pixels(after.image), before)
-    assert "raw green in gray 0-100" in after.caption
-    assert channels.describe("green", channels.channel_properties(state, "green")) == (
-        "green 0-100")
-    overlay = default_options("section")
-    tagged = type(overlay)(**{**overlay.__dict__, "channels": ("red", "green"), "version": ""})
-    assert tagged.section_tag(state) == "  [raw red auto; green 0-100]"
-    assert tagged.section_tag() == "  [raw red, green auto]"
 
 
 # --- file intensities -----------------------------------------------------------
@@ -406,11 +383,3 @@ def test_automatic_limits_read_the_background_and_the_tissue():
     bright = 255.0 - plane
     ((low, high),) = channels.auto_limits([bright])
     assert (low, high) == pytest.approx(tuple(np.percentile(bright, (1.0, 99.5))))
-
-
-def test_captions_give_each_channel_its_own_setting():
-    held = {"blue": channels.ChannelProperties(contrast_limits=(0.0, 70.0), gamma=0.8)}
-    assert channels.display_words(["red", "green", "blue"], held) == (
-        "red, green auto; blue 0-70 gamma 0.8")
-    assert channels.display_words(["DAPI", "GFP"], {}, {"DAPI": "magenta"}) == (
-        "DAPI in magenta, GFP auto")

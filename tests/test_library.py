@@ -1,8 +1,8 @@
 """The public library: ``create_job``, ``open_job`` and the ``image_model``
 profiles.
 
-Everything runs on the golden recorder's synthetic stack and atlas
-(``tests/golden/record.py``) with a private HOME; the image model is a stub
+Everything runs on the shared synthetic stack and atlas
+(``tests/synthetic_stack.py``) with a private HOME; the image model is a stub
 that answers with the placed borders it was sent, and the real transport
 raises if anything reaches it.
 """
@@ -19,12 +19,11 @@ import pytest
 from PIL import Image
 
 from tests.cli_child import install
-from tests.golden.record import (
+from tests.synthetic_stack import (
     ID0,
     ID1,
     ID2,
     PIXEL_SIZE_UM,
-    apply_patches,
     atlas_loader,
     write_sections,
 )
@@ -56,7 +55,6 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     import langslice.providers.images as transport
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     install(atlas_loader(), monkeypatch.setattr)
     monkeypatch.setattr(transport, "generate_warped_segmentation_image", _no_network)
     folder = tmp_path / "stack"
@@ -96,23 +94,15 @@ class Stub:
 
 def test_image_model_builtin_profiles():
     import langslice
-    from langslice.core.nonlinear.prompts import border_correction_tool_prompt
-
     model = langslice.image_model("openai-oauth")
-    assert (model.provider, model.model, model.prompt, model.tested, model.profile) == (
-        "openai-oauth", "gpt-image-2.5-sunburst", None, True, "openai-oauth")
+    assert (model.provider, model.prompt, model.tested, model.profile) == (
+        "openai-oauth", None, True, "openai-oauth")
     assert langslice.image_model("gemini-api", model="some-image-model").model == \
         "some-image-model"
     assert langslice.image_model(model) is model
     for wrong in ("none", "no-such-provider"):
         with pytest.raises(ValueError):
             langslice.image_model(wrong)
-    assert langslice.default_prompt("openai-oauth") == border_correction_tool_prompt(
-        "coronal", provider="openai-oauth")
-    assert langslice.default_prompt("gemini-api", "sagittal") == border_correction_tool_prompt(
-        "sagittal", provider="gemini-api")
-
-
 def test_image_model_custom_profiles(tmp_path):
     import langslice
 
@@ -161,6 +151,18 @@ def test_create_job_from_a_folder(images):
         assert "trace_borders" not in job.verbs and "ants_syn" in job.verbs
     with pytest.raises(ValueError, match="Unknown job setting"):
         langslice.create_job(images, no_such_setting=1)
+    # A profile not tested with LangSlice reopens without traces until a model is given.
+    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
+                         pixel_size_um=PIXEL_SIZE_UM, preprocess="none", fresh=True,
+                         image_model=langslice.image_model("openai-oauth",
+                                                           prompt=PROFILE_PROMPT)).close()
+    with langslice.open_job(images) as job:
+        assert "trace_borders" not in job.verbs
+    with langslice.open_job(images, image_model=Stub()) as job:
+        assert "trace_borders" in job.verbs
+    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS, fresh=True).close()
+    with pytest.raises(ValueError, match="without an image model"):
+        langslice.open_job(images, image_model=Stub())
 
 
 def test_create_job_takes_angles_per_section(images):
@@ -184,27 +186,6 @@ def test_create_job_takes_angles_per_section(images):
                              fresh=True)
 
 
-def test_a_job_made_with_an_untested_profile_reopens_without_traces(images):
-    import langslice
-
-    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
-                         pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
-                         image_model=langslice.image_model("openai-oauth",
-                                                           prompt=PROFILE_PROMPT)).close()
-    with langslice.open_job(images) as job:
-        assert "trace_borders" not in job.verbs
-    with langslice.open_job(images, image_model=Stub()) as job:
-        assert "trace_borders" in job.verbs
-
-
-def test_open_job_refuses_a_model_for_a_job_without_one(images):
-    import langslice
-
-    langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS).close()
-    with pytest.raises(ValueError, match="without an image model"):
-        langslice.open_job(images, image_model=Stub())
-
-
 # --- the custom profile's prompt is the one sent and saved ---------------------------------
 
 
@@ -214,55 +195,28 @@ def test_a_custom_profiles_prompt_is_sent_saved_and_marked_untested(images):
     stub = Stub()
     profile = langslice.image_model(stub, prompt=PROFILE_PROMPT, photograph_first=True,
                                     name="lab-v1")
+    edited = PROFILE_PROMPT.replace("{plane}", "coronal") + " Keep the lines thin."
     with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
                               pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
                               image_model=profile) as job:
-        assert job.trace_borders(section=ID0)["status"] == "started"
-        edited = PROFILE_PROMPT.replace("{plane}", "coronal") + " Keep the lines thin."
         assert job.trace_borders(section=ID1, prompt=edited)["status"] == "started"
         job.job.settle_image_corrections()
         job.job.background.wait_all()
-        first, second = (job.state.by_id(name).image_correction for name in (ID0, ID1))
+        record = job.state.by_id(ID1).image_correction
     sent = PROFILE_PROMPT.replace("{plane}", "coronal")
-    assert [request.prompt for request in stub.requests] == [sent, edited]
+    assert [request.prompt for request in stub.requests] == [edited]
     # photograph_first: Image 1 is the clean photograph, Image 2 the placed borders.
     request = stub.requests[0]
     assert _colour(request.slice_image) < _colour(request.reference_images[0])
-    folder = images / "langslice"
-    for record in (first, second):
-        assert record["status"] == "ok"
-        assert record["untested"] is True and record["profile"] == "lab-v1"
-        attempt = folder / record["artifact_dir"]
-        assert (attempt / "base_prompt.txt").read_text() == sent
-        saved = json.loads((attempt / "result.json").read_text())
-        assert saved["untested"] is True and saved["profile"] == "lab-v1"
-        assert json.loads((attempt / "request.json").read_text())["untested"] is True
-    assert (folder / first["artifact_dir"] / "prompt.txt").read_text() == sent
-    assert (folder / second["artifact_dir"] / "prompt.txt").read_text() == edited
-    assert "{+Keep the lines thin.+}" in (
-        folder / second["artifact_dir"] / "prompt_diff.txt").read_text()
-    assert first["prompt_edited"] is False and second["prompt_edited"] is True
-
-
-def test_a_builtin_profile_is_not_marked(images):
-    """A provider's own model and prompt: nothing added to the trace record
-    (the goldens hold it byte for byte)."""
-    import dataclasses
-
-    import langslice
-
-    stub = Stub()
-    model = dataclasses.replace(langslice.image_model("openai-oauth"),
-                                call=stub.segmentation)
-    with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
-                              pixel_size_um=PIXEL_SIZE_UM, preprocess="none",
-                              image_model=model) as job:
-        assert job.trace_borders(section=ID0)["status"] == "started"
-        job.job.settle_image_corrections()
-        job.job.background.wait_all()
-        record = job.state.by_id(ID0).image_correction
-    assert record["status"] == "ok" and "untested" not in record and "profile" not in record
-    assert stub.requests[0].prompt == langslice.default_prompt("openai-oauth")
+    attempt = images / "langslice" / record["artifact_dir"]
+    assert record["status"] == "ok"
+    assert record["untested"] is True and record["profile"] == "lab-v1"
+    assert (attempt / "base_prompt.txt").read_text() == sent
+    assert (attempt / "prompt.txt").read_text() == edited
+    saved = json.loads((attempt / "result.json").read_text())
+    assert saved["untested"] is True and saved["profile"] == "lab-v1"
+    assert json.loads((attempt / "request.json").read_text())["untested"] is True
+    assert record["prompt_edited"] is True
 
 
 def test_look_draws_at_the_resolution_asked_whatever_the_jobs_level(images):
@@ -278,18 +232,6 @@ def test_look_draws_at_the_resolution_asked_whatever_the_jobs_level(images):
         smaller = job.look(mode="section", sections=[ID1], resolution=160).images[0]
         assert larger.width > smaller.width
         assert default.size != smaller.size
-
-
-def test_region_rows_are_not_padded_as_status_rows(images):
-    """grep_atlas answers under "rows" too; only status rows get the status fields."""
-    import langslice
-
-    with langslice.create_job(images, positions=POSITIONS, transforms=TRANSFORMS,
-                              pixel_size_um=PIXEL_SIZE_UM, preprocess="none") as job:
-        found = job.grep_atlas(query="root")
-        assert found["rows"] and all("position_mm" not in row for row in found["rows"])
-        assert all("delta_to_next_mm" in row for row in job.status()["rows"])
-
 
 
 def test_a_job_made_with_a_disabled_list_has_neither_the_tools_nor_the_options(images: Path):

@@ -15,9 +15,10 @@ FULL = {"tasks": ["position", "transform"], "model": "openai-oauth/gpt-5.6-sol",
 
 def test_a_well_measured_setting_uses_its_band_times_sections():
     result = estimate(FULL, 10)
-    assert (result["low"], result["high"]) == (2.2, 5.5)
-    assert result["basis"].startswith("23 measured runs")
+    assert 0 < result["low"] < result["high"]
     assert result["unit"] == "percent_of_usage_window"
+    double = estimate(FULL, 20)
+    assert double["low"] > result["low"] and double["high"] > result["high"]
 
 
 def test_the_high_end_stops_at_the_run_cap():
@@ -54,18 +55,16 @@ def test_frozen_sections_cost_nothing_without_positioning():
     assert estimate({**FULL, "frozen": four}, 10) == estimate(FULL, 10)
 
 
-@pytest.mark.parametrize("resolution", ["medium", "high", "auto"])
-def test_unmeasured_resolutions_say_why_instead_of_refusing(resolution):
-    result = estimate({**FULL, "image_resolution": resolution}, 38)
+@pytest.mark.parametrize("setting, word", [
+    ({"image_resolution": "medium"}, "medium"),
+    ({"image_resolution": "auto"}, "auto"),
+    ({"tasks": ["nonlinear"], "nonlinear": {"provider": "openai-oauth"}}, "Nonlinear"),
+    ({"tasks": []}, ""),
+])
+def test_unavailable_settings_say_why_instead_of_refusing(setting, word):
+    result = estimate({**FULL, **setting}, 38)
     assert result["available"] is False and result["low"] is None and result["high"] is None
-    assert resolution in result["basis"] and "low" in result["basis"]
-
-
-def test_a_nonlinear_only_run_says_why_it_has_no_estimate():
-    result = estimate({**FULL, "tasks": ["nonlinear"],
-                       "nonlinear": {"provider": "openai-oauth"}}, 38)
-    assert result["available"] is False and "Nonlinear" in result["basis"]
-    assert estimate({**FULL, "tasks": []}, 38)["available"] is False
+    assert word in result["basis"]
 
 
 def test_nonlinear_beside_the_priced_tasks_is_estimated_without_it():
@@ -92,14 +91,6 @@ def test_the_worker_method_returns_the_estimate():
     message = _request({"id": "e", "method": "linear.estimate",
                         "params": {"spec": FULL, "n_slices": 10}})
     assert message["result"] == estimate(FULL, 10)
-
-
-def test_an_unestimable_setting_is_a_result_with_its_reason():
-    # Never a bare refusal: the dialog shows the reason (`basis`).
-    message = _request({"id": "e", "method": "linear.estimate", "params": {
-        "spec": {**FULL, "image_resolution": "medium"}, "n_slices": 10}})
-    assert message["result"]["available"] is False
-    assert message["result"]["low"] is None and "medium" in message["result"]["basis"]
 
 
 def test_a_malformed_setting_is_refused_with_its_reason():

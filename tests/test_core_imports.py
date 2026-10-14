@@ -1,14 +1,14 @@
 """The core library (and the job layer on it) imports without the agent
 framework or any model client.
 
-Each core module is imported in a fresh interpreter (a module another test
-loaded would hide the leak) and must leave no ``google.adk``,
-``google.genai``, ``litellm`` or ``openai`` module behind. Those belong to
-the ADK and MCP doors (``langslice.doors.tools``, the MCP server), the agent driver
-and the providers; the tool door itself (the toolbox, the ``view`` options)
-returns plain pictures and is checked too. The operations
-(``langslice.ops``) must also leave no door module behind, and the job
-layer's files (``langslice.job``) neither a door nor an operation.
+One fresh interpreter (a module another test loaded would hide the leak)
+imports the core, job, ops and plain-door modules in turn and must leave no
+``google.adk``, ``google.genai``, ``litellm`` or ``openai`` module behind;
+the first module to load one is named. Those belong to the ADK and MCP
+doors, the agent driver and the providers. A second interpreter runs the
+library path (``open_job``, a few verbs, ``create_job`` with a script's own
+model). Which layer imports which is checked statically by
+``tests/test_import_layers.py``.
 """
 
 from __future__ import annotations
@@ -17,8 +17,6 @@ import json
 import os
 import subprocess
 import sys
-
-import pytest
 
 CORE_MODULES = (
     "langslice.core.workspace",
@@ -80,15 +78,6 @@ CORE_MODULES = (
     "langslice.ops.inputs",
 )
 
-#: The doors: an operation (``langslice.ops``) must load none of them.
-DOORS = (
-    "langslice.doors.tools.toolbox",
-    "langslice.doors.tools.view_options",
-    "langslice.doors.tools",
-    "langslice.doors.mcp",
-    "langslice.doors",
-)
-
 FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 
 #: Doors that return plain pictures and data (the ADK driver and the MCP
@@ -117,41 +106,27 @@ _SOURCES = {**os.environ, "PYTHONPATH": os.pathsep.join(
 
 _PROBE = """
 import importlib, json, sys
-importlib.import_module(sys.argv[1])
-forbidden = tuple(sys.argv[2:])
-print(json.dumps(sorted(
-    name for name in sys.modules
-    if any(name == root or name.startswith(root + ".") for root in forbidden)
-)))
+forbidden = tuple(sys.argv[1].split(","))
+bad = {}
+for module in sys.argv[2:]:
+    importlib.import_module(module)
+    loaded = sorted(name for name in sys.modules
+                    if any(name == root or name.startswith(root + ".") for root in forbidden))
+    if loaded:
+        bad[module] = loaded[:5]
+        break
+print(json.dumps(bad))
 """
 
 
-@pytest.mark.parametrize("module", CORE_MODULES + PLAIN_DOORS)
-def test_core_module_loads_no_agent_or_model_client(module: str):
+def test_core_modules_load_no_agent_or_model_client():
     done = subprocess.run(
-        [sys.executable, "-c", _PROBE, module, *FORBIDDEN],
+        [sys.executable, "-c", _PROBE, ",".join(FORBIDDEN), *CORE_MODULES, *PLAIN_DOORS],
         capture_output=True, text=True, timeout=300, check=False, env=_SOURCES,
     )
     assert done.returncode == 0, done.stderr
-    loaded = json.loads(done.stdout.strip().splitlines()[-1])
-    assert loaded == [], f"{module} loads {loaded[:5]}"
-
-
-#: What the job layer's own package may not load: a door or an operation.
-OPERATIONS = ("langslice.ops",)
-
-
-@pytest.mark.parametrize("module", [name for name in CORE_MODULES
-                                    if name.startswith(("langslice.ops", "langslice.job"))])
-def test_operations_and_job_files_load_no_door(module: str):
-    forbidden = DOORS + (OPERATIONS if module.startswith("langslice.job") else ())
-    done = subprocess.run(
-        [sys.executable, "-c", _PROBE, module, *forbidden],
-        capture_output=True, text=True, timeout=300, check=False, env=_SOURCES,
-    )
-    assert done.returncode == 0, done.stderr
-    loaded = json.loads(done.stdout.strip().splitlines()[-1])
-    assert loaded == [], f"{module} loads {loaded[:5]}"
+    bad = json.loads(done.stdout.strip().splitlines()[-1])
+    assert bad == {}, f"first module to load a forbidden one: {bad}"
 
 
 _LIBRARY = """
@@ -159,7 +134,7 @@ import json, os, sys
 from pathlib import Path
 
 import langslice
-from tests.golden.record import PIXEL_SIZE_UM, apply_patches, atlas_loader, write_sections
+from tests.synthetic_stack import PIXEL_SIZE_UM, apply_patches, atlas_loader, write_sections
 from langslice.doors.jobs import create
 from langslice.core.spec import JobSpec
 
@@ -175,7 +150,7 @@ job.position_sections(sections=[{"id": "s0.png", "position_mm": 0.1}])
 job.interactive_transform(sections=[{"id": "s0.png", "rotation_deg": 1.0}])
 job.look(mode="overlay", sections=["s0.png"])
 job.close()
-apply_patches()
+apply_patches()  # child interpreter: conftest's patches do not reach it
 model = langslice.image_model(lambda request: request.slice_image, prompt="Image 1 ... {plane}")
 made = langslice.create_job(images, tasks=["nonlinear"], positions={"s0.png": 0.1},
                             transforms={"s0.png": [1, 0, 0, 0, 1, 0]},

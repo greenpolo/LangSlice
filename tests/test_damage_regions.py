@@ -12,7 +12,6 @@ import pytest
 
 from langslice.agent.engine import build_context
 from langslice.core.damage import exclusions, normalized_entries
-from langslice.core.display import default_options
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.state import SliceState
 from langslice.core.status import status_rows, status_text, uniform_rows
@@ -83,6 +82,13 @@ def test_mark_damage_is_one_undo_step_and_empty_regions_clear(tmp_path: Path):
     record = state.by_id(ID)
     assert record.damaged_regions == ["R"] and record.damage_note == "right half missing"
     assert len(job.undo_stack) == 1
+    # Status and registration.json carry the regions.
+    row = status_rows(state)[0]
+    assert row["damaged"] is True and row["damaged_regions"] == ["R"]
+    assert "damaged [R]: right half missing" in status_text(state)
+    assert uniform_rows([{"id": "x"}])[0]["damaged_regions"] == []
+    document = json.loads((job.folder / "registration.json").read_text())
+    assert document["sections"][0]["parameters"]["damaged_regions"] == ["R"]
     # The same mark again writes nothing.
     assert not damage.mark_damage(job, ctx, ID, ["R"], "right half missing").written
     assert len(job.undo_stack) == 1
@@ -125,51 +131,6 @@ def test_a_users_damage_note_is_a_note_alone_and_stays_first(tmp_path: Path):
     assert record.damage_note == "torn by the user"
     row = next(t for t in box.tools if t.__name__ == "status")()["rows"][0]
     assert row["damage_note"] == "torn by the user" and not row.get("damaged")
-
-
-def test_the_mark_damage_tool_answers_with_the_marks_and_their_picture(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-
-    state, _ctx, box = _box(tmp_path)
-    mark = next(t for t in box.tools if t.__name__ == "mark_damage")
-    result = mark(ID, ["R"], "right half missing")
-    assert result["status"] == "ok", result
-    assert result["regions"] == ["R"] and result["damaged"] is True
-    assert result["note"] == "right half missing" and result["written"] is True
-    assert [row["id"] for row in result["changed"]] == [ID]
-    assert len(result["pictures"]) == 1 and len(result[TOOL_MEDIA_PARTS_KEY]) == 1
-    assert state.by_id(ID).damaged_regions == ["R"]
-    assert mark(ID, ["nope"])["error"] == "UNKNOWN_REGIONS"
-    cleared = mark(ID, [])
-    assert cleared["damaged"] is False and "pictures" not in cleared
-
-
-def test_status_and_registration_carry_the_regions(tmp_path: Path):
-    state, ctx, box = _box(tmp_path)
-    damage.mark_damage(box.job, ctx, ID, ["R"], "right half missing")
-    row = status_rows(state)[0]
-    assert row["damaged"] is True and row["damaged_regions"] == ["R"]
-    assert "damaged [R]: right half missing" in status_text(state)
-    assert uniform_rows([{"id": "x"}])[0]["damaged_regions"] == []
-    document = json.loads((box.job.folder / "registration.json").read_text())
-    assert document["sections"][0]["parameters"]["damaged_regions"] == ["R"]
-    status = next(t for t in box.tools if t.__name__ == "status")()
-    assert status["rows"][0]["damaged_regions"] == ["R"]
-
-
-def test_the_reply_picture_shows_the_marks_on_section_and_atlas(tmp_path: Path):
-    _state, ctx, box = _box(tmp_path)
-    done = damage.mark_damage(box.job, ctx, ID, ["R"], "right half missing",
-                              options=default_options("overlay", long_edge=256))
-    assert done.render_failed is None and len(done.pictures) == 1
-    picture = done.pictures[0]
-    # Two panels side by side: wider than tall.
-    assert picture.width > picture.height
-    # Without a position the write stands and the picture says why not.
-    _state.slices[0].position_mm = None
-    unplaced = damage.mark_damage(box.job, ctx, ID, ["L"], options=default_options("overlay"))
-    assert unplaced.written and unplaced.pictures == []
-    assert unplaced.render_failed and unplaced.render_failed["error"] == "NO_POSITION"
 
 
 # --- every fit path leaves the marked regions out -------------------------------------

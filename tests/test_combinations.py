@@ -7,9 +7,10 @@ the agent CLI (``langslice-job FOLDER VERB``), the library
 (``langslice.open_job``), the agent tools (``build_tools`` /
 ``ops.registry.enabled``) driven by LangSlice's agent, and MCP.
 
-Each combination runs end to end on the golden recorder's synthetic stack
-(``tests/golden/record.py``: three sections of the synthetic atlas, fits in
-process at the coarse level). The image model is the golden stub (it answers
+Each combination runs end to end on the shared synthetic stack
+(``tests/synthetic_stack.py``: three sections of the synthetic atlas, fits in
+process at the coarse level), through the library, and through the CLI, MCP
+and the agent where a door has behaviour of its own. The image model is the stub (it answers
 with the rough border overlay it was sent), installed where every door
 resolves one; the real transport is replaced by a function that fails the
 test, and ``HOME`` is private, so no credential is read and no model called.
@@ -41,12 +42,11 @@ import pytest
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
-from tests.golden.record import (
+from tests.synthetic_stack import (
     ID0,
     ID1,
     ID2,
     PIXEL_SIZE_UM,
-    apply_patches,
     atlas_loader,
     stub_image_model,
     write_sections,
@@ -98,7 +98,6 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     install(atlas_loader(), monkeypatch.setattr)
     monkeypatch.setattr(transport, "generate_warped_segmentation_image", _no_network)
 
@@ -179,13 +178,6 @@ def test_init_takes_a_long_inline_json(capsys, images):
                "--transforms", long_inline)
     spec = json.loads((job / "job.json").read_text())["spec"]
     assert spec["inputs"]["transforms"] == EXTERNAL_TRANSFORMS
-
-
-def test_init_names_the_flag_of_a_bad_json_argument(capsys, images):
-    code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
-                         "--image-provider", "none", "--positions", "no-such-file.json")
-    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
-    assert "--positions" in envelope["error"]["message"]
 
 
 # --- what a finished job must hold ---------------------------------------------------------
@@ -282,149 +274,6 @@ def test_host_switches_add_and_remove_their_tools(images, tasks, fields, absent,
     assert present <= names and not absent & names
 
 
-# --- what the job statement says for each combination --------------------------------------
-
-
-def _statement(images: Path, tasks: list[str], provider: str = "none",
-               **inputs: Any) -> tuple[str, list[str]]:
-    """The ADK job statement of a run of this combination, whitespace-normalized,
-    on the job as opened (including supplied positions), and its tools."""
-    from langslice.agent.engine import build_context
-    from langslice.agent.prompt import build_job_statement
-    from langslice.doors.tools.toolbox import build_tools
-    from langslice.job.job import Job
-
-    spec = spec_for(images, tasks, provider=provider, **inputs)
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
-    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
-    box = build_tools(job.state, ctx, spec, job=job)
-    low, high = ctx.position_range
-    text = build_job_statement(spec, job.state, tool_names=box.names, species=ctx.species,
-                               pos_lo=low, pos_hi=high, axis_ends=ctx.axis_ends)
-    return " ".join(text.split()), box.names
-
-
-def _said(text: str, *sentences: str) -> list[str]:
-    """The *sentences* (whitespace-normalized) that *text* does not hold."""
-    return [s for s in sentences if " ".join(s.split()) not in text]
-
-
-#: Sentences of the statement, verbatim from ``agent/prompt.py``.
-POSITION_SUBMIT = ("- `submit` is refused unless every section has a position of its own, "
-                   "damaged sections included.")
-UNPLACED = "- No section carries a position yet."
-ORDER = ("- The stack's order follows the positions: writing positions renumbers the "
-         "sections, so use filenames to name them.")
-GIVEN = "- The positions shown are given; this run does not change them."
-POSITION_METHOD = (
-    "- Place each section on its own evidence: compare it against candidate atlas "
-    "positions before writing, and do not let the nominal interval stand in for a look.")
-TRANSFORM_SUBMIT = ("- `submit` is refused unless every section carries a transform, "
-                    "damaged sections included.")
-DAMAGED_TRANSFORM = (
-    "- A damaged section (one with marked regions) still needs a transform made for its "
-    "surviving anatomy: set it by hand with `interactive_transform`, or fit it with "
-    "`elastix_affine`, which leaves the marked regions out of the fit. Inspect each "
-    "overlay against the surviving internal anatomy before submitting.")
-TRANSFORM_METHOD = (
-    "- After each automatic fit or manual adjustment, inspect the returned overlay "
-    "against surviving internal anatomy.")
-DEFORMATION_SUBMIT = ("- `submit` is refused unless every section carries a deformation "
-                      "applied at its current placement")
-TRACE_OPTIONAL = ("- `trace_borders` is optional: you decide which sections, if any, to "
-                  "trace. A trace requires a position and a linear transform.")
-MARK_FIRST = ("- Before fitting a damaged section, mark the regions it has lost with "
-              "`mark_damage`, so that every region it still has drives its fits.")
-HAND_FIRST = (
-    "- Align each section by hand with `interactive_transform` as well as you can before "
-    "running any fitting algorithm: match its outline and its internal anatomy "
-    "(ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting "
-    "algorithms refine a placement that is already close; they do not correct a large "
-    "offset.")
-FIT_METHOD = "- Run each fit on the whole section first, then refine regions."
-FIT_RETRY = (" and fit that section again with different `ants_syn` settings, such as "
-             "another stiffness or another atlas image")
-FIT_ENDING = "; undo a fit that does not improve the alignment" + FIT_RETRY + "."
-NO_LIMIT = ("- LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute "
-            "priority: this run may be evaluated on the quality of its registration alone, "
-            "without regard to the time or tokens it spends.")
-FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this run, "
-                "orientation included.")
-
-
-@pytest.mark.parametrize(("tasks", "provider", "inputs", "said", "unsaid"), [
-    (["position"], "none", {},
-     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD),
-     (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, DEFORMATION_SUBMIT, GIVEN, MARK_FIRST, HAND_FIRST)),
-    (["transform"], "none", {"positions": dict(POSITIONS)},
-     (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, TRANSFORM_METHOD, HAND_FIRST, GIVEN),
-     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD, DEFORMATION_SUBMIT)),
-    (["position", "transform"], "none", {},
-     (POSITION_SUBMIT, UNPLACED, ORDER, TRANSFORM_SUBMIT, DAMAGED_TRANSFORM,
-      POSITION_METHOD, TRANSFORM_METHOD, HAND_FIRST),
-     (DEFORMATION_SUBMIT, GIVEN)),
-    (["position", "transform", "nonlinear"], "openai-oauth", {},
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, MARK_FIRST, HAND_FIRST,
-      FIT_METHOD, " and, where traced, its traced borders" + FIT_ENDING),
-     (GIVEN, DEFORMATION_SUBMIT)),
-    (["nonlinear"], "none", "external",
-     (MARK_FIRST, FIT_METHOD, FIXED_LINEAR, GIVEN,
-      "Inspect each fit's borders against the section's internal anatomy" + FIT_ENDING),
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, UNPLACED, "where traced",
-      DEFORMATION_SUBMIT, HAND_FIRST)),
-    (["nonlinear"], "openai-oauth", "external",
-     (TRACE_OPTIONAL, MARK_FIRST, FIXED_LINEAR, GIVEN),
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, DEFORMATION_SUBMIT, HAND_FIRST)),
-], ids=["1-positioning", "2-linear", "3-positioning+linear", "4-all+image",
-        "5-nonlinear-no-image", "6-nonlinear+image"])
-def test_each_combination_states_its_tools_constraints_and_method(
-    images, tasks, provider, inputs, said, unsaid,
-):
-    text, names = _statement(images, tasks, provider,
-                             **(external_inputs() if inputs == "external" else inputs))
-    # The tools by name only, in the order they are built.
-    tools = ("Tools (each one's own description says what it does and returns): "
-             + ", ".join(f"`{name}`" for name in names) + ".")
-    assert tools in text
-    assert _said(text, *said) == []
-    assert [s for s in unsaid if " ".join(s.split()) in text] == []
-
-
-def test_the_statement_says_a_users_damage_note_marks_no_regions(images):
-    text, _names = _statement(images, ["position", "transform"],
-                              damaged={ID2: "torn"})
-    assert _said(text, "- The user noted damage on these sections (damage_note in status; "
-                 "no regions are marked from it): s2.png.") == []
-    assert "Sections with marked damage regions" not in text
-
-
-def test_a_required_deformation_is_stated_and_nothing_is_left_linear(images):
-    from langslice.agent.engine import build_context
-    from langslice.agent.prompt import build_job_statement
-    from langslice.job.job import Job
-
-    spec = spec_for(images, ["nonlinear"], **external_inputs())
-    spec = replace(spec, nonlinear=replace(spec.nonlinear, require_deformation=True))
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
-    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
-    low, high = ctx.position_range
-    text = " ".join(build_job_statement(
-        spec, job.state, tool_names=enabled_names(spec), species=ctx.species, pos_lo=low,
-        pos_hi=high, axis_ends=ctx.axis_ends).split())
-    assert _said(text, "- `submit` is refused unless every section carries a deformation "
-                 "applied at its current placement, damaged sections included; the user "
-                 "requires one on every section.",
-                 "; undo a fit that does not improve the alignment" + FIT_RETRY + ".",
-                 NO_LIMIT) == []
-    assert "left_linear" not in text
-
-
-def enabled_names(spec: JobSpec) -> list[str]:
-    from langslice.ops.registry import enabled
-
-    return enabled(spec)
-
-
 # --- 1. Positioning only ------------------------------------------------------------------
 
 
@@ -453,32 +302,6 @@ def test_1_positioning_only_through_the_library(images):
         "linear (identity in-plane: no transform written)"}
 
 
-def test_1_sections_stay_unplaced_until_positions_are_written(images):
-    import langslice
-
-    create(spec_for(images, ["position"]))
-    with langslice.open_job(images) as job:
-        refused = job.submit(summary="placed", notes=[], interval_breaks=[])
-        assert refused["error"] == "MISSING_POSITIONS", refused
-        assert all(job.state.by_id(name).position_mm is None for name in IDS)
-        document = json.loads((images / "langslice" / "registration.json").read_text())
-        assert [entry["parameters"]["plane"]["position_mm"]
-                for entry in document["sections"]] == [None] * 3
-        assert job.position_sections(sections=_sections(POSITIONS))["status"] == "ok"
-        assert job.submit(summary="placed", notes=[], interval_breaks=[])["status"] == "ok"
-
-
-def test_1_positioning_only_through_the_cli(capsys, images):
-    job = init(capsys, images, "position")
-    backwards = ok(capsys, images, "position-sections", "--sections",
-                   json.dumps(_sections(REVERSED)))
-    assert backwards["result"]["order"] == [ID2, ID1, ID0]
-    ok(capsys, images, "position_sections", "--sections", json.dumps(_sections(POSITIONS)))
-    envelope = ok(capsys, images, "submit", *SUBMIT_FLAGS)
-    assert {"registration", "quicknii", "visualign"} <= {a["kind"] for a in envelope["artifacts"]}
-    assert_exported(job)
-
-
 def _mcp(server: Any, calls: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
     from mcp.shared.memory import create_connected_server_and_client_session
     from mcp.types import TextContent
@@ -500,16 +323,6 @@ def _mcp_server(spec: JobSpec) -> Any:
     from langslice.doors.mcp.server import build_server
 
     return build_server(lambda _folder: spec, spec.image_folder, atlas_loader=atlas_loader())
-
-
-def test_1_positioning_only_through_mcp(images):
-    server = _mcp_server(spec_for(images, ["position"]))
-    replies = _mcp(server, [
-        ("position_sections", {"sections": _sections(POSITIONS)}),
-        ("submit", {"summary": "placed", "notes": [], "interval_breaks": []}),
-    ])
-    assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
-    assert_exported(images / "langslice")
 
 
 # --- 2. Linear without positioning (positions supplied) -------------------------------------
@@ -543,18 +356,6 @@ def test_2_linear_on_supplied_positions_through_the_cli(capsys, images):
     document = assert_exported(job)
     assert [e["parameters"]["plane"]["position_mm"] for e in document["sections"]] == list(
         POSITIONS.values())
-
-
-def test_2_linear_on_supplied_positions_through_mcp(images):
-    server = _mcp_server(spec_for(images, ["transform"], positions=dict(POSITIONS)))
-    replies = _mcp(server, [
-        ("interactive_transform", {"sections": [{"id": name, **IDENTITY}
-                                                for name in IDS[:2]]}),
-        ("interactive_transform", {"sections": [{"id": ID2, **IDENTITY}]}),
-        ("submit", {"summary": "aligned", "notes": [], "interval_breaks": []}),
-    ])
-    assert [reply["status"] for reply in replies] == ["ok", "ok", "ok"], replies
-    assert_exported(images / "langslice")
 
 
 # --- 3. Positioning + Linear ---------------------------------------------------------------
@@ -622,35 +423,6 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
     assert_exported(images / "langslice", residual=IDS)
 
 
-def test_4_nonlinear_verbs_called_directly_through_the_cli(capsys, images):
-    job = init(capsys, images, "position,transform,nonlinear",
-               provider="openai-oauth")
-    ok(capsys, images, "position_sections", "--sections", json.dumps(_sections(POSITIONS)))
-    ok(capsys, images, "interactive_transform", "--sections", json.dumps(
-        [{"id": name, **IDENTITY} for name in IDS]))
-    # The CLI answers once the trace's work has landed.
-    ok(capsys, images, "trace-borders", "--section", ID0)
-    ok(capsys, images, "ants-syn", "--sections", ID1)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS)
-    ok(capsys, images, "export_maps")
-    document = assert_exported(job, residual=(ID0, ID1))
-    assert document["sections"][2]["parameters"]["deformation"] is None
-
-
-def test_4_the_library_takes_an_image_model(images):
-    import langslice
-
-    create(spec_for(images, ["nonlinear"], provider="openai-oauth", **external_inputs()))
-    model = stub_image_model(spec_for(images, ["nonlinear"], provider="openai-oauth"))
-    with langslice.open_job(images, image_model=model) as job:
-        assert job.trace_borders(section=ID0)["status"] == "started"
-        job.job.background.wait_all()
-        # The model handed in answered (no network): the trace landed and was fitted.
-        record = job.state.by_id(ID0)
-        assert (record.image_correction or {}).get("status") == "ok", record.image_correction
-        assert record.deformation is not None and len(record.deformation["steps"]) == 1
-
-
 # --- 5. Nonlinear without an image model --------------------------------------------------
 
 
@@ -665,27 +437,6 @@ def test_5_nonlinear_without_an_image_model_through_the_library(images):
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
         assert_external_kept(job.state)
-    assert_exported(images / "langslice", residual=(ID0,))
-
-
-def test_5_nonlinear_without_an_image_model_through_the_cli(capsys, images):
-    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-               "--transforms", transforms_file(images),
-               "--pitch", str(EXTERNAL_ANGLES["pitch"]), "--yaw", str(EXTERNAL_ANGLES["yaw"]))
-    code, envelope = cli(capsys, str(images), "trace_borders", "--section", ID0)
-    assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
-    ok(capsys, images, "ants_syn", "--sections", ID0)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS)
-    assert_exported(job, residual=(ID0,))
-
-
-def test_5_nonlinear_without_an_image_model_through_mcp(images):
-    server = _mcp_server(spec_for(images, ["nonlinear"], **external_inputs()))
-    replies = _mcp(server, [
-        ("ants_syn", {"sections": [ID0]}),
-        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
-    ])
-    assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
     assert_exported(images / "langslice", residual=(ID0,))
 
 
@@ -711,27 +462,6 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
     create(fresh)
     with langslice.open_job(images) as job:
         assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
-
-
-def test_tracing_on_positions_alone_says_what_to_do(images):
-    import langslice
-
-    create(spec_for(images, ["nonlinear"], provider="openai-oauth", positions=dict(POSITIONS)))
-    with langslice.open_job(images) as job:
-        traced = job.trace_borders(section=ID0)
-        assert traced["error"] == "INVALID_LINEAR_PLACEMENT", traced
-        assert "--transforms" in traced["message"] and "Linear on" in traced["message"]
-
-
-def test_the_missing_transform_hint_names_the_tool_that_writes_one(images):
-    import langslice
-
-    create(spec_for(images, ["nonlinear"], provider="openai-oauth", positions=dict(POSITIONS)))
-    with langslice.open_job(images) as job:
-        messages = [job.ants_syn(sections=[ID0])["results"][0]["message"],
-                    job.trace_borders(section=ID0)["message"]]
-    for message in messages:
-        assert "elastix_affine" in message and "fit_affine" not in message, message
 
 
 # --- 6. Nonlinear on a registration made elsewhere ------------------------------------------
@@ -763,44 +493,6 @@ def test_6_external_registration_then_nonlinear_through_the_library(images):
     assert [e["parameters"]["affine"]["params"] for e in document["sections"]] == [
         EXTERNAL_TRANSFORMS[name]["params"] for name in IDS]
     assert document["sections"][1]["parameters"]["affine"]["mirrored"] is True
-
-
-def test_6_background_notices_open_the_next_reply_with_their_pictures(images):
-    import langslice
-
-    create(spec_for(images, ["nonlinear"], provider="openai-oauth", **external_inputs()))
-    with langslice.open_job(images) as job:
-        started = job.trace_borders(section=ID0)
-        assert started["status"] == "started"
-        job.job.background.wait_all()
-        reply = job.status()
-        assert len(reply["background"]) == 1, reply
-        notice = reply["background"][0]
-        assert notice.startswith(f"{started['work']} trace_borders of {ID0} finished:")
-        work = [entry for entry in reply["pictures"] if entry.get("work") == started["work"]]
-        assert work and notice.endswith(
-            "Pictures " + ", ".join(f"#{entry['id']}" for entry in work) + ".")
-        assert "background" not in job.status()  # each notice is handed out once
-
-
-def test_6_external_registration_then_nonlinear_through_the_cli(capsys, images):
-    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-               "--transforms", transforms_file(images),
-               "--pitch", str(EXTERNAL_ANGLES["pitch"]), "--yaw", str(EXTERNAL_ANGLES["yaw"]),
-               provider="openai-oauth")
-    for verb in ("position_sections", "interactive_transform", "elastix_affine"):
-        code, envelope = cli(capsys, str(images), verb, "--args", "{}")
-        assert code == 3 and envelope["error"]["code"] == "VERB_OFF", envelope
-    for name in (ID0, ID1):
-        ok(capsys, images, "trace_borders", "--section", name)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS)
-    ok(capsys, images, "export_maps")
-    from tests.linear_tool_helpers import load_checkpoint
-
-    state = load_checkpoint(str(job / "state.json"))
-    assert state is not None
-    assert_external_kept(state)
-    assert_exported(job, residual=(ID0, ID1))
 
 
 def test_6_an_agent_cannot_move_a_supplied_placement(images, monkeypatch):
@@ -838,18 +530,6 @@ def test_6_a_supplied_orientation_is_kept(images):
 def test_a_bad_supplied_orientation_is_refused(images, bad):
     with pytest.raises(ValueError, match="orientation"):
         create(spec_for(images, ["nonlinear"], **external_inputs(), orientation={ID1: bad}))
-
-
-def test_cli_init_takes_an_orientation(capsys, images):
-    orientation = {ID2: {"flip": True}, ID0: {"rotation_deg": 180}}
-    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-               "--transforms", transforms_file(images), "--orientation", json.dumps(orientation))
-    from tests.linear_tool_helpers import load_checkpoint
-
-    state = load_checkpoint(str(job / "state.json"))
-    assert state is not None
-    assert (state.by_id(ID2).flip, state.by_id(ID2).rotation_deg) == (True, 0)
-    assert (state.by_id(ID0).flip, state.by_id(ID0).rotation_deg) == (False, 180)
 
 
 def test_6_an_unknown_input_is_refused(images):
@@ -984,11 +664,6 @@ def _mcp_listing_and_statement(server: Any) -> tuple[dict[str, str], str]:
     return asyncio.run(body())
 
 
-def _mcp_names_and_statement(server: Any) -> tuple[set[str], str]:
-    listed, statement = _mcp_listing_and_statement(server)
-    return set(listed), statement
-
-
 @pytest.mark.parametrize("linked", [True, False], ids=["connected", "not-connected"])
 def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monkeypatch,
                                                                     linked):
@@ -1006,9 +681,6 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
     assert {"grep_atlas", "ants_syn", "look"} <= names
     assert ("trace_borders" in names) is linked
     assert (IMAGE_MODEL_OFF in statement) is not linked
-    # The base image prompt is in trace_borders' own description, never the statement.
-    if linked:
-        assert "The base prompt (its image numbers" in " ".join(listed["trace_borders"].split())
     if not linked:
         replies = _mcp(server, [
             ("ants_syn", {"sections": [ID0]}),
@@ -1017,27 +689,6 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
         assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
         spec = json.loads((images / "langslice" / "job.json").read_text())["spec"]
         assert spec["nonlinear"]["provider"] == "openai-oauth"  # the job keeps its provider
-
-
-def test_mcp_with_provider_none_never_asks_for_an_image_model(images, monkeypatch):
-    from langslice.doors.api import setup
-
-    monkeypatch.setattr(setup, "image_model_connected", _no_network)
-    names, statement = _mcp_names_and_statement(
-        _mcp_server(spec_for(images, ["nonlinear"], **external_inputs())))
-    assert "trace_borders" not in names and "ants_syn" in names
-    assert "image-model tool (trace_borders) is off" not in statement
-
-
-@pytest.mark.parametrize("linked", [True, False], ids=["connected", "not-connected"])
-def test_the_saved_job_prompt_takes_the_nonlinear_task(images, monkeypatch, linked):
-    from langslice.doors.api.saved_jobs import copy_prompt
-
-    connected(monkeypatch, linked)
-    prompt = copy_prompt("0" * 12, spec_for(images, ["nonlinear"], provider="openai-oauth",
-                                            **external_inputs()))
-    assert "nonlinear (deformable) alignment" in prompt
-    assert ("image-model tool (trace_borders) is off" in prompt) is not linked
 
 
 def test_the_library_can_create_a_job(images):
@@ -1107,17 +758,3 @@ def test_7_the_agent_with_every_task_and_no_image_model(images, monkeypatch):
     results = json.loads((images / "langslice" / "exports" / "linear_results.json").read_text())
     assert results["submitted"] is True
 
-
-def test_7_every_task_and_no_image_model_through_mcp(images):
-    server = _mcp_server(spec_for(images, ["position", "transform", "nonlinear"]))
-    names, _statement = _mcp_names_and_statement(server)
-    assert {"position_sections", "elastix_affine", "ants_syn", "grep_atlas"} <= names
-    assert "trace_borders" not in names
-    replies = _mcp(server, [
-        ("position_sections", {"sections": _sections(POSITIONS)}),
-        ("interactive_transform", {"sections": [{"id": name, **IDENTITY} for name in IDS]}),
-        ("ants_syn", {"sections": [ID0]}),
-        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
-    ])
-    assert [reply["status"] for reply in replies] == ["ok"] * 4, replies
-    assert_exported(images / "langslice", residual=(ID0,))

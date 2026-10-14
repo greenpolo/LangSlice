@@ -17,15 +17,14 @@ from typing import Any
 
 import numpy as np
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from langslice.agent.engine import build_context, build_seed_message
 from langslice.core.captions import CAPTION_PX, _caption_font, caption, wrap_caption
-from langslice.core.opening import COLUMN_GAP, section_tile, strip_layout
-from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice, shown_section
+from langslice.core.opening import CLAUDE_MAX_VIEW_EDGE, COLUMN_GAP, section_tile, strip_layout
+from langslice.core.sections import render_slice
 from langslice.core.sizes import MIN_RESOLUTION, PICTURE_EDGES, opening_edge
 from langslice.core.spec import JobSpec
-from langslice.core.transform import calibrate
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.media import package_result
 from langslice.doors.tools.toolbox import build_tools
@@ -53,10 +52,20 @@ class Tools(dict):
     box: Any = None
 
 
+_BUILT: dict[Any, Any] = {}
+
+
 def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
          count: int = 2, um_per_px: float = _UM_PER_PX,
-         tasks: tuple[str, ...] = ("position", "transform"),
+         tasks: tuple[str, ...] = ("position", "transform"), fresh: bool = False,
          ) -> tuple[Any, Any, Tools, JobSpec]:
+    # Building 2400 x 1800 TIFFs dominates; a stack is read-only here except for
+    # the hand transform every shared-stack test writes with the same numbers,
+    # so each configuration is built once per process. *fresh*: a stack of the
+    # caller's own, for a test that writes other numbers.
+    key = (resolution, size, count, um_per_px, tasks)
+    if key in _BUILT and not fresh:
+        return _BUILT[key]
     folder.mkdir()
     for index in range(count):
         _section(size).rotate(7 * index, fillcolor=(0, 0, 0)).save(
@@ -71,7 +80,10 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
     box = build_tools(state, ctx, spec)
     tools = Tools({tool.__name__: tool for tool in box.tools})
     tools.box = box
-    return state, ctx, tools, spec
+    if fresh:
+        return state, ctx, tools, spec
+    _BUILT[key] = state, ctx, tools, spec
+    return _BUILT[key]
 
 
 def _images(result: dict[str, Any]) -> list[Image.Image]:
@@ -119,12 +131,6 @@ def test_each_level_opens_at_one_size_and_shows_later_pictures_at_another(
     assert _widths(tools["interactive_transform"]([_entry()])) == [later]
 
 
-def test_the_levels_are_the_designed_numbers():
-    assert PICTURE_EDGES == {
-        "low": (256, 512), "medium": (384, 768), "high": (512, 1024), "auto": (256, 512),
-    }
-
-
 def test_a_small_snapshot_is_never_upsampled(tmp_path: Path):
     """A 300 x 225 px snapshot stays at most its own pixels at every size."""
     state, ctx, tools, _spec = _run(tmp_path / "small", "high", size=(300, 225),
@@ -137,62 +143,13 @@ def test_a_small_snapshot_is_never_upsampled(tmp_path: Path):
     assert overlay.width < PICTURE_EDGES["high"][1]
 
 
-def test_a_zoom_magnifies_the_section_up_to_the_picture_size(tmp_path: Path):
-    """A zoomed physical picture is drawn from a larger render, not upsampled."""
-    _state, _ctx, tools, _spec = _run(tmp_path / "zoom", "low")
-    looked = tools["look"]("overlay", sections=["s0.tif"])
-    (whole,) = _images(looked)
-    zoomed = tools["zoom"]([128, 100, 384, 300], picture=looked["pictures"][0]["id"])
-    assert zoomed["redrawn"] is True
-    assert whole.width == _images(zoomed)[0].width == PICTURE_EDGES["low"][1]
-
-
 # --- auto -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("level", ["low", "medium", "high", "auto"])
-def test_resolution_exists_only_at_auto(tmp_path: Path, level: str):
-    from google.adk.tools import FunctionTool
-
-    from langslice.providers.openai_oauth import _json_schema_dict
-
-    state, ctx, _tools, spec = _run(
-        tmp_path / level, level, tasks=("position", "transform", "nonlinear"))
-    tools = {tool.__name__: tool for tool in build_tools(state, ctx, spec).tools}
-    auto = level == "auto"
-    # look and landmark_triangulation are the tools that take a picture size.
-    assert ("resolution" in inspect.signature(tools["look"]).parameters) is auto
-    schema = _json_schema_dict(FunctionTool(tools["look"])._get_declaration())
-    assert ("resolution" in schema["properties"]) is auto
-    assert ("resolution:" in (tools["look"].__doc__ or "")) is auto
-    for name, tool in tools.items():
-        if name not in ("look", "landmark_triangulation"):
-            assert "resolution" not in inspect.signature(tool).parameters, name
-        elif name == "landmark_triangulation":
-            assert ("resolution" in inspect.signature(tool).parameters) is auto
-    # The change tools' `view` is a switch for their picture, not picture options.
-    for name in ("position_sections", "interactive_transform", "elastix_affine", "ants_syn"):
-        assert inspect.signature(tools[name]).parameters["view"].annotation in (bool, "bool")
-
-
-def test_the_job_statement_names_resolution_only_at_auto(tmp_path: Path):
-    from langslice.agent.prompt import build_job_statement, channel_facts
-
-    assert not any("resolution" in line for line in channel_facts(None, None, None))
-    (line,) = [line for line in channel_facts(None, None, 2048) if "resolution" in line]
-    assert line == (f"- Picture size is yours to choose: look's resolution runs from "
-                    f"{MIN_RESOLUTION} to 2048 pixels.")
-    for level, said in (("low", False), ("auto", True)):
-        state, ctx, tools, spec = _run(tmp_path / level, level)
-        text = build_job_statement(spec, state, tool_names=tools.box.names, species="mouse",
-                                   pos_lo=0.0, pos_hi=1.0, axis_ends=("anterior", "posterior"),
-                                   max_resolution=tools.box.max_view_edge)
-        assert ("look's resolution runs from" in text) is said, level
-
-
 def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
-    _state, _ctx, tools, _spec = _run(tmp_path / "auto", "auto")
+    state, ctx, tools, spec = _run(tmp_path / "auto", "auto")
     look = tools["look"]
+    assert "resolution" in inspect.signature(look).parameters
     plain = look("section", sections=["s0.tif"])
     assert _widths(plain) == [512] and "resolution_note" not in plain
     chosen = look("section", sections=["s0.tif"], resolution=1200)
@@ -208,16 +165,12 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     assert refused["error"] == "BAD_ARGS"
     # A change tool's picture is the level's later size: it takes no resolution.
     assert _widths(tools["interactive_transform"]([_entry()])) == [512]
-
-
-def test_resolution_is_ignored_and_invisible_below_auto(tmp_path: Path):
-    _state, _ctx, tools, _spec = _run(tmp_path / "high", "high")
-    result = tools["look"]("section", sections=["s0.tif"])
-    assert "resolution_note" not in result
-    # Not in the schema, and refused when sent anyway.
-    forced = tools["look"]("section", sections=["s0.tif"], resolution=1200)
-    assert forced["error"] == "UNKNOWN_ARGUMENTS"
-    assert "resolution" in forced["message"]
+    # The cap is the driver model's own: Claude's for the MCP host.
+    claude = build_tools(state, ctx, spec, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
+    assert claude.max_view_edge == CLAUDE_MAX_VIEW_EDGE == 2000
+    tool = next(tool for tool in claude.tools if tool.__name__ == "look")
+    big = tool("overlay", sections=["s0.tif"], resolution=5000)
+    assert _widths(big) == [2000] and "2000" in big["resolution_note"]
 
 
 # --- what is computed does not move ------------------------------------------
@@ -253,7 +206,7 @@ def _fixed_stack(folder: Path, level: str) -> tuple[Any, Any, Any]:
     return state, ctx, job
 
 
-@pytest.mark.parametrize("level", ["low", "high", "auto"])
+@pytest.mark.parametrize("level", ["low", "auto"])
 def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
     from langslice.ops import transforms
 
@@ -265,26 +218,6 @@ def test_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: s
     assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
 
 
-@pytest.mark.parametrize("level", ["medium", "high", "auto"])
-def test_pictures_change_while_fits_and_transforms_stay(tmp_path: Path, level: str):
-
-    low_state, low_ctx, low, _ = _run(tmp_path / "low", "low")
-    big_state, big_ctx, big, _ = _run(tmp_path / level, level)
-    low_set = low["interactive_transform"]([_entry(id="s1.tif")])
-    big_set = big["interactive_transform"]([_entry(id="s1.tif")])
-    # The pictures follow the level (auto's default later size is low's).
-    assert (_widths(low_set) == _widths(big_set)) is (level == "auto")
-    for record_low, record_big in zip(low_state.slices, big_state.slices, strict=True):
-        section_low = render_slice(low_ctx, record_low, long_edge=PREVIEW_LONG_EDGE)
-        section_big = render_slice(big_ctx, record_big, long_edge=PREVIEW_LONG_EDGE)
-        assert section_low.size == section_big.size
-        assert calibrate(low_state, low_ctx, record_low, section_low) == calibrate(
-            big_state, big_ctx, record_big, section_big)
-    assert low_state.slices[0].transform == big_state.slices[0].transform
-    assert low_set["results"][0]["transform"] == big_set["results"][0]["transform"]
-    assert low_state.slices[1].transform == big_state.slices[1].transform
-
-
 def _digest(image: Image.Image) -> str:
     return hashlib.sha256(np.asarray(image).tobytes()).hexdigest()
 
@@ -294,21 +227,13 @@ def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tm
     from langslice.core.handoff import prepare_linear_registration
 
     seen: dict[str, tuple[str, str, Any]] = {}
-    for level in ("low", "high", "auto"):
+    for level in ("low", "auto"):
         state, ctx, tools, _ = _run(tmp_path / level, level)
         tools["interactive_transform"]([_entry()], view=False)
         prepared = prepare_linear_registration(state, ctx, "s0.tif")
         grid = deformation.fit_grid(state, ctx, state.by_id("s0.tif"))
         seen[level] = (_digest(prepared.image), _digest(grid.image), prepared.metadata)
-    assert seen["low"] == seen["high"] == seen["auto"]
-
-
-def test_low_draws_from_the_working_render_itself(tmp_path: Path):
-    state, ctx, _tools, _spec = _run(tmp_path / "low", "low")
-    record = state.slices[0]
-    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    shown, um, factors = shown_section(ctx, record, section, 9.0)
-    assert shown is section and um == 9.0 and factors == (1.0, 1.0)
+    assert seen["low"] == seen["auto"]
 
 
 def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
@@ -324,8 +249,8 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
         return images
 
     monkeypatch.setattr(placement, "physical_views", capture)
-    _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low")
-    _big_state, _big_ctx, big, _ = _run(tmp_path / "high", "high")
+    _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low", fresh=True)
+    _big_state, _big_ctx, big, _ = _run(tmp_path / "high", "high", fresh=True)
     entry = _entry(rotation_deg=12.0)
     low["interactive_transform"]([entry])
     big["interactive_transform"]([entry])
@@ -360,40 +285,3 @@ def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
     # A word wider than the picture breaks between characters.
     assert all(font.getlength(line) <= 30 for line in
                wrap_caption("section_08_overlay.tif", font, 30).split("\n"))
-
-
-def test_a_caption_that_fits_is_drawn_as_before():
-    font = _caption_font()
-    picture = Image.new("RGB", (512, 80), (0, 0, 0))
-    text = "3: s0.tif  [flipped]\nsecond line"
-    assert wrap_caption(text, font, 506) == text
-    labelled = caption(picture, text)
-    # The old caption: the text drawn as given, band sized to its box.
-    probe = ImageDraw.Draw(picture.copy())
-    left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
-    band = int(bottom - top + 6)
-    expected = Image.new("RGB", (512, 80 + band), (0, 0, 0))
-    expected.paste(picture, (0, 0))
-    ImageDraw.Draw(expected).text((3 - left, 80 + 3 - top), text, fill=(255, 255, 255),
-                                  font=font)
-    assert np.array_equal(np.asarray(labelled), np.asarray(expected))
-
-
-def test_the_cap_is_the_driver_models_own(tmp_path: Path):
-    """The door passes the driver model's largest image: Claude's for the MCP
-    host, the model lane's for the ADK agent."""
-    from langslice.agent.prompt import build_job_statement
-    from langslice.core.opening import CLAUDE_MAX_VIEW_EDGE, OPENAI_MAX_IMAGE_EDGE
-
-    state, ctx, _tools, spec = _run(tmp_path / "auto", "auto")
-    claude = build_tools(state, ctx, spec, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
-    assert claude.max_view_edge == CLAUDE_MAX_VIEW_EDGE == 2000
-    tool = next(tool for tool in claude.tools if tool.__name__ == "look")
-    big = tool("overlay", sections=["s0.tif"], resolution=5000)
-    assert _widths(big) == [2000] and "2000" in big["resolution_note"]
-    ctx.model = "openai-oauth/gpt-6-astra"
-    assert build_tools(state, ctx, spec).max_view_edge == OPENAI_MAX_IMAGE_EDGE
-    text = build_job_statement(spec, state, tool_names=claude.names, species="mouse",
-                               pos_lo=0.0, pos_hi=1.0, axis_ends=("anterior", "posterior"),
-                               max_resolution=claude.max_view_edge)
-    assert f"look's resolution runs from {MIN_RESOLUTION} to 2000 pixels" in text

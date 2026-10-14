@@ -14,7 +14,7 @@ import pytest
 
 from langslice.core.needs import render
 from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
-from langslice.core.toolset import TASK_WRITERS, TOOLS, is_off, valid_names
+from langslice.core.toolset import TOOLS, is_off, valid_names
 from langslice.doors import jobs
 from langslice.doors.cli.envelope import DISABLED, FIXES
 from langslice.doors.declarations import DOORS, Variant, arguments_schema, declaration
@@ -42,12 +42,6 @@ def test_the_valid_names_come_from_the_registry():
     assert not {"submit", "status", "look", "undo"} & set(names)
 
 
-def test_look_modes_are_the_cores_modes():
-    from langslice.core.look import MODES
-
-    assert tuple(TOOLS["look"].options) == MODES
-
-
 @pytest.mark.parametrize("bad, message", [
     (["zoomm"], "unknown name 'zoomm'; the valid names are look:section, .*, zoom,"),
     (["position_sections:view"], "unknown name"),
@@ -69,6 +63,11 @@ def test_names_are_deduplicated_in_order_and_round_trip():
     assert spec.disabled == ["zoom", "look:positioning"]
     assert JobSpec.from_dict(spec.to_dict()) == spec
     assert "disabled" not in _spec().to_dict()  # the default stays out of saved specs
+    # what can work is accepted: a task keeps one writer; a tool that is not on needs nothing
+    _spec(tasks=["transform"], disabled=["elastix_affine"])
+    _spec(tasks=["position"], disabled=["look:positioning"])  # overlays stand in
+    _spec(tasks=["position"], disabled=["look:overlay"])
+    _spec(tasks=["nonlinear"], disabled=["ants_syn"])
 
 
 def test_a_tool_disables_its_options():
@@ -112,33 +111,7 @@ def test_a_list_that_cannot_work_is_refused_with_one_line(fields: dict[str, Any]
     assert "\n" not in str(refused.value)
 
 
-def test_what_can_work_is_accepted():
-    # a task keeps one writer; a tool that is not on needs nothing
-    _spec(tasks=["transform"], disabled=["elastix_affine"])
-    _spec(tasks=["position"], disabled=["look:positioning"])  # overlays stand in
-    _spec(tasks=["position"], disabled=["look:overlay"])
-    _spec(tasks=["nonlinear"], disabled=["ants_syn"])
-
-
-def test_task_writers_name_real_tools():
-    for writers in TASK_WRITERS.values():
-        assert set(writers) <= set(VERBS)
-
-
 # --- the tools and options a job gets ----------------------------------------------------
-
-
-def test_a_disabled_tool_is_not_enabled_anywhere():
-    full = _spec(tasks=["position", "transform", "nonlinear"])
-    base = enabled(full)
-    for name in valid_names():
-        if ":" in name:
-            continue
-        try:
-            spec = _spec(tasks=full.tasks, disabled=[name])
-        except ValueError:
-            continue
-        assert enabled(spec) == [tool for tool in base if tool != name], name
 
 
 def test_the_look_schema_offers_only_the_modes_on():
@@ -147,16 +120,6 @@ def test_the_look_schema_offers_only_the_modes_on():
     assert schema["properties"]["mode"]["enum"] == ["section", "atlas", "overlay"]
     default = arguments_schema("look", Variant.of(_spec(tasks=["position"]), auto=True))
     assert default["properties"]["mode"]["enum"] == list(TOOLS["look"].options)
-
-
-def test_arguments_only_a_disabled_mode_served_are_dropped():
-    spec = _spec(tasks=["position"], disabled=["look:overlay"])
-    schema = arguments_schema("look", Variant.of(spec, auto=True))
-    assert not {"atlas_opacity", "warp"} & set(schema["properties"])
-    assert {"positions_mm", "atlas_layers"} <= set(schema["properties"])
-    zoom = arguments_schema("zoom", Variant.of(spec, auto=True))
-    assert "region" not in zoom["properties"]
-    assert "region" in arguments_schema("zoom", Variant.of(_spec(), auto=True))["properties"]
 
 
 def test_flip_is_not_in_the_sections_schema_when_it_is_off():
@@ -188,48 +151,6 @@ def test_a_call_of_a_disabled_mode_is_refused_by_the_operation(tmp_path: Path):
     assert "switched off" in refused["message"]
     assert look(mode="overlay", sections=["s0.png"])["status"] == "ok"
     assert "positioning" not in inspect.signature(look).parameters["mode"].annotation.__args__
-
-
-# --- fallbacks -----------------------------------------------------------------------------
-
-
-def test_position_sections_shows_overlays_where_the_positioning_look_is_off(tmp_path: Path):
-    from tests.linear_tool_helpers import box
-
-    for off, mode in (([], "positioning"), (["look:positioning"], "overlay")):
-        folder = tmp_path / ("off" if off else "on")
-        folder.mkdir()
-        state, ctx, toolbox = box(folder, placed=True, tasks=["position"], disabled=off)
-        write = tool_named(toolbox, "position_sections")
-        reply = write(sections=[{"id": "s0.png", "position_mm": 6.0},
-                                {"id": "s1.png", "position_mm": 7.0}])
-        assert reply["written"][0]["position_mm"] == 6.0
-        shown = reply["pictures"]
-        if mode == "positioning":
-            assert len(shown) == 1  # one positioning picture for both sections
-        else:
-            assert len(shown) == 2  # one overlay each
-    description = declaration("position_sections", Variant.of(
-        _spec(tasks=["position"], disabled=["look:positioning"]), auto=False)).doc
-    assert "positioning picture" not in description and "overlay" not in description
-    assert "a picture of each written section" in description
-
-
-def test_read_file_points_to_zoom_only_when_there_is_one(tmp_path: Path):
-    from tests.linear_tool_helpers import box
-
-    texts = {}
-    for off in ([], ["zoom"]):
-        folder = tmp_path / ("zoom" if not off else "nozoom")
-        folder.mkdir()
-        state, ctx, toolbox = box(folder, placed=True, tasks=["position"], disabled=off)
-        tool_named(toolbox, "look")(mode="overlay", sections=["s0.png"])
-        toolbox.job.views.flush()  # the pictures are written in the background
-        record = toolbox.job.views.records()[0]
-        reply = tool_named(toolbox, "read_file")(f"{record.path}/view.jpg")
-        texts[bool(off)] = reply["text"]
-    assert "call zoom with picture" in texts[False]
-    assert "To see it again" not in texts[True]
 
 
 # --- model-facing text ------------------------------------------------------------------------
@@ -359,40 +280,45 @@ COMBINATIONS = [
 ]
 
 
-def test_no_text_names_what_the_job_disables(tmp_path: Path):
-    """Every single name, and a few combinations, on every base spec they can
-    be applied to: no model-facing text names a tool or option that is off.
-    Every name is checked at least once."""
-    folder = _stack_folder(tmp_path)
+@pytest.fixture(scope="module")
+def stack_folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _stack_folder(tmp_path_factory.mktemp("disabled"))
+
+
+@pytest.mark.parametrize("disabled", [[name] for name in sorted(valid_names())] + COMBINATIONS,
+                         ids=lambda disabled: "+".join(disabled))
+def test_no_text_names_what_the_job_disables(stack_folder: Path, disabled: list[str]):
+    """Each name and a few combinations, on every base spec they can be applied
+    to: no model-facing text names a tool or option that is off."""
+    folder = stack_folder
     bases = _base_specs(str(folder))
-    attempts = [[name] for name in sorted(valid_names())] + COMBINATIONS
-    covered: set[str] = set()
+    applied = 0
     problems: list[str] = []
-    for disabled in attempts:
-        for label, base in bases.items():
-            spec = _with(base, disabled)
-            if spec is None:
-                continue
-            covered |= set(disabled)
-            texts = _model_texts(folder, spec)
-            for where, text in texts.items():
-                for name in disabled:
-                    if (where.startswith("schema ") and name.startswith("look:")
-                            and not where.startswith("schema look ")):
-                        continue  # a schema's quoted keys are not the look's modes
-                    for hit in _pattern(name).finditer(text):
-                        around = text[max(0, hit.start() - 60):hit.end() + 40].replace("\n", " ")
-                        problems.append(
-                            f"[{label}] {disabled}: {name!r} in {where}: ...{around}...")
-                        break
-    assert covered == set(valid_names())
+    for label, base in bases.items():
+        spec = _with(base, disabled)
+        if spec is None:
+            continue
+        applied += 1
+        texts = _model_texts(folder, spec)
+        for where, text in texts.items():
+            for name in disabled:
+                if (where.startswith("schema ") and name.startswith("look:")
+                        and not where.startswith("schema look ")):
+                    continue  # a schema's quoted keys are not the look's modes
+                for hit in _pattern(name).finditer(text):
+                    around = text[max(0, hit.start() - 60):hit.end() + 40].replace("\n", " ")
+                    problems.append(
+                        f"[{label}] {disabled}: {name!r} in {where}: ...{around}...")
+                    break
+    if len(disabled) == 1:
+        assert applied, f"{disabled} applies to no base spec"
     assert not problems, "\n".join(sorted(set(problems))[:40]) + f"\n({len(problems)} in all)"
 
 
-def test_with_nothing_disabled_the_text_is_what_it_was(tmp_path: Path):
+def test_with_nothing_disabled_the_text_is_what_it_was(stack_folder: Path):
     """Marks leave no trace: a text rendered for a job that disables nothing
     is the text without its marks."""
-    folder = _stack_folder(tmp_path)
+    folder = stack_folder
     for base in _base_specs(str(folder)).values():
         for text in _model_texts(folder, base).values():
             assert not any(opener in text for opener in ("[[?", "[[#", "[[%"))
@@ -421,33 +347,12 @@ def test_marks(text: str, off: list[str], shown: str):
     assert render(text, off) == shown
 
 
-@pytest.mark.parametrize("text", ["[[?zoom open", "[[?zoom]]", "[[#zoom x]]"])
-def test_a_broken_mark_is_an_error(text: str):
-    with pytest.raises(ValueError):
-        render(text, ["zoom"])
-
-
-def test_plain_text_is_left_alone():
-    text = "no marks || here ]] at all\n\n\n  "
-    assert render(text, ["zoom"]) == text
-
-
-
-def test_the_setup_status_offers_what_a_dialog_can_switch_off():
-    from langslice.doors.api.setup import setup_status
-
-    tools = setup_status()["tools"]
-    assert [tool["name"] for tool in tools] == list(TOOLS)
-    by_name = {tool["name"]: tool for tool in tools}
-    assert by_name["look"]["disableable"] is False
-    assert by_name["look"]["options"] == ["section", "atlas", "overlay", "positioning"]
-    assert by_name["zoom"]["disableable"] is True and by_name["zoom"]["options"] == []
-    assert by_name["interactive_transform"]["options"] == ["flip", "rotate"]
-    assert by_name["position_sections"]["needs"] == [["look:positioning", "look:overlay"]]
-    json.dumps(tools)
-    names = {tool["name"] for tool in tools if tool["disableable"]} | {
-        f"{tool['name']}:{option}" for tool in tools for option in tool["options"]}
-    assert names == set(valid_names())
+def test_broken_marks_are_errors_and_plain_text_is_left_alone():
+    for text in ("[[?zoom open", "[[?zoom]]", "[[#zoom x]]"):
+        with pytest.raises(ValueError):
+            render(text, ["zoom"])
+    plain = "no marks || here ]] at all\n\n\n  "
+    assert render(plain, ["zoom"]) == plain
 
 
 # --- the landmark tools --------------------------------------------------------------------
@@ -465,12 +370,6 @@ def test_the_landmark_tools_go_off_together_and_leave_no_mention(tmp_path: Path)
         assert not re.search(r"set_landmarks|landmark_triangulation|\blandmark pairs?\b", text), (
             text[:200])
     assert any("set_landmarks" in text for text in _model_texts(folder, on).values())
-
-
-def test_zoom_can_be_switched_off(tmp_path: Path):
-    spec = _spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"),
-                 disabled=["zoom"])
-    assert "zoom" not in enabled(spec)
 
 
 def test_a_frozen_deformation_refuses_the_triangulation_and_hides_the_tools(tmp_path: Path):

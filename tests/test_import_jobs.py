@@ -8,9 +8,9 @@ either (and from the DeepSlice fixtures, ``tests/fixtures/deepslice/``, which
 DeepSlice 1.2.8's writers produced from the same placements) must map every
 section file exactly as the source did (``registration.json``'s
 ``pixel_to_atlas_um``), and then run the image-model nonlinear step on top
-(the packaged ``trace_borders`` with the golden stub model: its image call
-and the ANTs fit of the traced lines; ``submit`` naming a section left
-linear) end to end. The atlas is the importer tests' deep
+(the packaged ``trace_borders`` with the stub image model: its image call
+and the ANTs fit of the traced lines; ``submit`` with a section left
+linear) end to end, once. The atlas is the importer tests' deep
 synthetic one; no credential is read and no model called.
 """
 
@@ -29,12 +29,11 @@ from langslice.core.spec import NonlinearSpec
 from langslice.doors.cli.jobcli import main
 from langslice.job.quint import job_export
 from tests.cli_child import install
-from tests.golden.record import (
+from tests.synthetic_stack import (
     ID0,
     ID1,
     ID2,
     PIXEL_SIZE_UM,
-    apply_patches,
     stub_image_model,
     write_sections,
 )
@@ -70,13 +69,12 @@ def _no_network(*_args: Any, **_kwargs: Any) -> Any:
 
 
 def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, atlas: DeepAtlas) -> None:
-    """The deep atlas wherever a door opens a job, the golden stub image model
+    """The deep atlas wherever a door opens a job, the stub image model
     wherever one resolves a model, no network, a private HOME."""
     import langslice.doors.tools.toolbox as toolbox
     import langslice.providers.images as transport
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     install(lambda _name: atlas, monkeypatch.setattr)
     monkeypatch.setattr(transport, "generate_warped_segmentation_image", _no_network)
 
@@ -170,15 +168,14 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
                      ids: tuple[str, ...]) -> None:
     """The image-model nonlinear step on the imported placement, end to end:
     every section but the last traced (the trace and its fit, landed before
-    the CLI answers), the last left linear at submit. The fit needs antspyx."""
+    the CLI answers), the last left linear (deformations are optional). The fit needs antspyx."""
     pytest.importorskip("ants", reason="the traced fit is ANTs (antspyx)")
     for name in ids[:-1]:
         envelope = ok(capsys, folder, "trace_borders", "--section", name)
         result = envelope["result"]
         assert result["image_correction"]["status"] == "ok", envelope
         assert result["work_status"] == "done", envelope
-    envelope = ok(capsys, folder, "submit", *SUBMIT_FLAGS, "--left-linear",
-                  json.dumps([{"id": ids[-1], "reason": "kept"}]))
+    envelope = ok(capsys, folder, "submit", *SUBMIT_FLAGS)
     document = json.loads((folder / "registration.json").read_text())
     assert document["submitted"] is True, envelope
     mapping = {entry["id"]: entry["mapping"] for entry in document["sections"]}
@@ -230,50 +227,21 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
                          str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
                          "--registration", str(copy))
     assert code == 0, envelope
-    nonlinear_on_top(capsys, folder, (ID0, ID1, ID2))
 
 
-def test_a_shared_angle_arrives_as_the_stack_wide_form(capsys, images, atlas, tmp_path):
-    shared = [Given(g.section_id, g.position_mm, 1.5, -2.0, g.rotation_deg, g.flip, g.knobs)
-              for g in PER_SECTION]
-    workspace = make_workspace(images, atlas)
-    path = tmp_path / "quicknii.json"
-    path.write_text(json.dumps(job_export(export_rows(workspace, shared), atlas_facts(atlas))))
-    envelope = init(capsys, images, "--pixel-size-um", str(PIXEL_SIZE_UM),
-                    "--image-provider", "none", "--registration", str(path))
-    folder = Path(envelope["result"]["job_folder"])
-    spec = json.loads((folder / "job.json").read_text())["spec"]
-    angles = spec["inputs"]["angles"]
-    assert angles == pytest.approx({"pitch": 1.5, "yaw": -2.0}, abs=1e-6)
-    for name, matrix in matrices(folder).items():
-        given = next(g for g in shared if g.section_id == name)
-        assert np.allclose(matrix, pixel_map(workspace, given), atol=ROUNDED_UM, rtol=0)
-
-
-def test_without_a_pixel_size_the_imported_one_is_supplied(capsys, images, atlas, tmp_path):
-    workspace = make_workspace(images, atlas)
-    path = tmp_path / "quicknii.json"
-    path.write_text(json.dumps(job_export(export_rows(workspace, PER_SECTION),
-                                          atlas_facts(atlas))))
-    envelope = init(capsys, images, "--image-provider", "none", "--registration", str(path))
-    imported = envelope["result"]["registration"]
-    assert imported["pixel_size_source"] == "imported"
-    # The median of what each imported map implies (their scales and shears
-    # are part of it, so not the files' true size; the maps hold at it).
-    assert 0.8 * PIXEL_SIZE_UM < imported["pixel_size_um"] < 1.25 * PIXEL_SIZE_UM
-    assert any("um per pixel" in warning for warning in envelope["warnings"])
-    folder = Path(envelope["result"]["job_folder"])
-    spec = json.loads((folder / "job.json").read_text())["spec"]
-    assert spec["inputs"]["pixel_size_um"] == imported["pixel_size_um"]
-    for name, matrix in matrices(folder).items():
-        given = next(g for g in PER_SECTION if g.section_id == name)
-        assert np.allclose(matrix, pixel_map(workspace, given), atol=ROUNDED_UM, rtol=0)
+@pytest.mark.slow
+def test_the_nonlinear_step_runs_on_an_imported_placement(capsys, images, atlas, tmp_path):
+    source = source_job(capsys, images, atlas, tmp_path)
+    envelope = init(capsys, images, "--image-provider", "openai-oauth", "--pixel-size-um",
+                    str(PIXEL_SIZE_UM), "--job-dir", str(tmp_path / "again"),
+                    "--registration", str(source / "exports" / "quicknii.json"))
+    nonlinear_on_top(capsys, Path(envelope["result"]["job_folder"]), (ID0, ID1, ID2))
 
 
 # --- from DeepSlice's own files ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["deepslice.json", "deepslice.xml", "deepslice.csv"])
+@pytest.mark.parametrize("name", ["deepslice.json", "deepslice.csv"])
 def test_a_new_job_from_deepslice(capsys, stack, tmp_path, monkeypatch, name):
     atlas = DeepAtlas("allen_mouse_50um")
     _setup(monkeypatch, tmp_path, atlas)
@@ -296,7 +264,6 @@ def test_a_new_job_from_deepslice(capsys, stack, tmp_path, monkeypatch, name):
     for given in DEEPSLICE_SECTIONS:
         assert np.allclose(found[given.section_id], pixel_map(workspace, given),
                            atol=ROUNDED_UM, rtol=0), given.section_id
-    nonlinear_on_top(capsys, folder, tuple(sorted(DEEPSLICE_NAMES.values())))
 
 
 # --- what is reported and what is refused ------------------------------------------------

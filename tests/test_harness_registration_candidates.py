@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import numpy as np
+import pytest
 from PIL import Image
+
+from tests.fakes import SlabAtlas
 
 
 def _make_slice(size: tuple[int, int] = (12, 8)) -> Image.Image:
@@ -16,69 +17,27 @@ def _make_slice(size: tuple[int, int] = (12, 8)) -> Image.Image:
     return image
 
 
-def test_root_mask_produces_binary_alpha_at_target_size(monkeypatch):
-    """`get_root_mask` slices annotation at the AP index for the requested
-    plane, marks non-zero structure IDs as opaque (255) and zeros as
-    transparent (0), and NEAREST-resizes to *target_size* so alpha stays
-    binary (bilinear interpolation would halo the silhouette)."""
-    from langslice.core.atlas import core as atlas_core
+def test_root_mask_is_binary_alpha_at_target_size():
+    """Non-zero annotation is opaque (255), the background transparent (0), and
+    resizing is NEAREST so the silhouette gets no halo."""
+    from langslice.core.atlas.core import get_root_mask
 
-    # Annotation slab: top half has tissue (non-zero IDs), bottom half is bg.
-    annotation = np.array(
-        [
-            [
-                [1, 2, 3, 4],
-                [1, 2, 3, 4],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ]
-        ],
-        dtype=np.int32,
-    )
-    atlas = SimpleNamespace(annotation=annotation)
-
-    monkeypatch.setattr(
-        atlas_core, "position_mm_to_index", lambda a, p, plane="coronal": 0
-    )
-    monkeypatch.setattr(atlas_core, "slice_axis_index", lambda ctx, plane: 0)
-    monkeypatch.setattr(atlas_core, "atlas_space_context", lambda a: SimpleNamespace())
-    monkeypatch.setattr(atlas_core, "orient_slice_for_display", lambda a, plane: a)
-
-    target_size = (8, 8)  # (W, H) per PIL convention
-    mask = atlas_core.get_root_mask(
-        atlas, position_mm=0.0, target_size=target_size, plane="coronal"
-    )
-
-    assert mask.shape == (8, 8)  # numpy (H, W)
-    assert mask.dtype == np.uint8
-    unique_vals = set(np.unique(mask).tolist())
-    assert unique_vals.issubset({0, 255})
-    assert 0 in unique_vals and 255 in unique_vals
-    # Top half opaque (was non-zero), bottom half transparent (was zero).
-    assert (mask[0] == 255).all()
-    assert (mask[-1] == 0).all()
+    mask = get_root_mask(SlabAtlas(), 5.0, (32, 24), plane="coronal")
+    assert mask.shape == (24, 32) and mask.dtype == np.uint8
+    assert set(np.unique(mask).tolist()) == {0, 255}
+    assert mask[12, 16] == 255 and mask[0, 0] == 0
 
 
-def test_extreme_aspect_ratio_clamps_into_the_supported_range():
-    """gpt-image-2.5-sunburst accepts 1:3..3:1; a 4:1 strip black-pads down to 3:1."""
+@pytest.mark.parametrize(("size", "padded", "offset"), [
+    # gpt-image-2.5-sunburst accepts 1:3..3:1: a 4:1 strip black-pads down to 3:1,
+    # centred; an in-range section is left untouched.
+    ((48, 12), (48, 16), (0.0, 2.0)),
+    ((24, 9), (24, 9), (0.0, 0.0)),
+])
+def test_canvas_aspect_clamps_into_the_supported_range(size, padded, offset):
     from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
     canvas, unpadded, ox, oy = prepare_canvas(
-        _make_slice((48, 12)), provider="none", image_model="gpt-image-2.5-sunburst",
+        _make_slice(size), provider="none", image_model="gpt-image-2.5-sunburst",
     )
-
-    assert canvas.size == (48, 16)  # ceil(48 / 3)
-    assert (ox, oy) == (0.0, 2.0)  # centered pad
-    assert unpadded == (48, 12)
-
-
-def test_in_range_aspect_ratio_is_left_untouched():
-    from langslice.core.nonlinear.image_gen_registration import prepare_canvas
-
-    canvas, unpadded, ox, oy = prepare_canvas(
-        _make_slice((24, 9)), provider="none", image_model="gpt-image-2.5-sunburst",
-    )
-
-    assert canvas.size == (24, 9)
-    assert unpadded == (24, 9)
-    assert (ox, oy) == (0.0, 0.0)
+    assert canvas.size == padded and unpadded == size and (ox, oy) == offset

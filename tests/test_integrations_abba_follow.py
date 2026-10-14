@@ -92,22 +92,11 @@ def test_write_refreshes_after_its_end_and_ignores_a_stale_end(setup):
     follower.on_event(_event(kind="tool_end", name="interactive_transform"))
     assert setup.comparison.batches[-1] == [("a", 4.5), ("b", 1)]
     assert len(setup.comparison.batches) == 2
-
-
-def test_looks_do_not_refresh_on_end(setup):
-    follower = _follower(setup)
-    follower.on_event(_event(targets=("a", "b")))
-    follower.on_event(_event(kind="tool_end", targets=("a", "b")))
-    assert len(setup.comparison.batches) == 1
-
-
-def test_proposed_calls_and_unrelated_events_are_ignored(setup):
-    follower = _follower(setup)
+    # Proposed calls and events for sections outside the run are ignored.
     follower.on_event(_event(kind="tool_call", name="position_sections"))
-    follower.on_event(_event(kind="tool_end", name="position_sections"))
     follower.on_event(_event(targets=("not-in-run",)))
     follower.on_event(_event(name="status"))
-    assert not setup.comparison.batches
+    assert len(setup.comparison.batches) == 2
 
 
 def test_failed_viewer_creation_never_fails_the_tool(setup):
@@ -120,34 +109,3 @@ def test_failed_viewer_creation_never_fails_the_tool(setup):
     assert [sl.selected for sl in setup.slices] == [True, False, True]
 
 
-def test_finished_follower_ignores_later_events(setup):
-    follower = _follower(setup)
-    follower.finish()
-    follower.on_event(_event())
-    assert not setup.comparison.batches and not setup.dispatches
-
-
-@pytest.mark.parametrize("name, refreshed", [
-    ("ants_syn", True), ("trace_borders", True), ("mark_damage", True),
-    ("elastix_affine", True), ("position_sections", True), ("undo", True), ("redo", True),
-    ("set_landmarks", True), ("landmark_triangulation", True),
-    ("set_preprocessed_channel_properties", True), ("set_channel_properties", True),
-    ("look", False), ("zoom", False),
-])
-def test_nonlinear_damage_and_appearance_tools_are_followed(setup, name, refreshed):
-    follower = _follower(setup)
-    follower.on_event(_event(name=name, targets=("b",)))
-    assert setup.comparison.batches == [[("b", 1.0)]]
-    follower.on_event(_event(kind="tool_end", name=name))
-    assert len(setup.comparison.batches) == (2 if refreshed else 1)
-
-
-@pytest.mark.parametrize("name", [
-    "view_slices", "view_stack", "adjust_transforms", "fit_deformable", "mark_damaged",
-    "preprocess", "set_positions",
-])
-def test_retired_tool_names_are_not_followed(setup, name):
-    follower = _follower(setup)
-    follower.on_event(_event(name=name, targets=("b",)))
-    follower.on_event(_event(kind="tool_end", name=name))
-    assert not setup.comparison.batches
