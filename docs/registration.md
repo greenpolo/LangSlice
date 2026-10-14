@@ -479,7 +479,8 @@ ANTs deformation to the extracted lines. It requires a linear placement.
 The model receives two images in the same frame: the preprocessed section
 and that section with thin yellow atlas borders. `restrict_to` selects the
 borders shown and fitted; empty uses all eligible regions. Marked damage
-is excluded.
+is excluded. The model's outer line sets the section's extent: the fit pulls
+the atlas in or out to it, wherever the linear placement left the atlas edge.
 
 The agent can edit the base prompt for a section; blank uses it unchanged.
 The atlas determines which borders exist even when tissue boundaries are

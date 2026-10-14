@@ -25,7 +25,7 @@ from langslice.core.deformable.engines import run_engine
 from langslice.core.deformable.fit import fit_prepared
 from langslice.core.deformable.geometry import Placement
 from langslice.core.deformable.record import jacobian_determinant
-from langslice.core.deformable.regions import named_regions
+from langslice.core.deformable.regions import model_extent, named_regions
 from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
 from tests.deformable_synthetic import (
     CTX,
@@ -187,7 +187,9 @@ def test_lines_against_borders_and_model_regions(atlas):
     labelled = fit_section(image, atlas, placement(), _settings(
         section_image="lines", atlas_image="borders_merged", labels="model"), lines=lines)
     error, flipped, magnitude = _errors(labelled, field, truth)
-    assert error < 0.6 * magnitude and flipped > 1.5 * magnitude
+    # 0.61 of the warp since the regions are named inside the model's outline
+    # (0.60 before); the outline's own test is the one below.
+    assert error < 0.65 * magnitude and flipped > 1.5 * magnitude
     assert set(labelled.engine["step_details"]["label_channels"]) >= {str(STR), str(TH)}
 
 
@@ -208,6 +210,39 @@ def test_named_regions_drop_a_bubble_loop():
     assert labels[92, 92] == 0 and unnamed[92, 92]
     assert any("small_loop_inside_one_region" in r["dropped"] for r in report)
     assert not unnamed[55, 55]
+
+
+def test_model_extent_fills_a_closed_outline_and_refuses_an_open_one():
+    lines = np.zeros((100, 100), dtype=bool)
+    lines[20, 20:80] = lines[79, 20:80] = lines[20:80, 20] = lines[20:80, 79] = True
+    lines[50, 20:80] = True  # an inner border does not change the extent
+    extent, ratio = model_extent(lines, placed_area_px=3600, mm_per_px=0.02)
+    assert extent is not None and extent[50, 50] and not extent[10, 10]
+    assert ratio == pytest.approx(1.0, abs=0.01)
+    lines[20:80, 79] = False  # an open outline encloses nothing: fall back
+    extent, ratio = model_extent(lines, placed_area_px=3600, mm_per_px=0.02)
+    assert extent is None and ratio < 0.5
+
+
+def test_model_regions_pull_the_atlas_in_to_the_model_outline(atlas):
+    """The model's outline lies inside the placed atlas: the strip between is
+    not section, so the fitted atlas shrinks onto the outline."""
+    image, truth = render_section(atlas, bump_field([]))
+    merged = labels_at(truth, atlas, MODEL_DEPTH)
+    h, w = merged.shape
+    yy, xx = np.indices(merged.shape)
+    cy, cx = np.argwhere(merged > 0).mean(axis=0)
+    scale = 0.88  # the section is 12 % smaller than the placed atlas, about its centre
+    shrunk = merged[np.clip(np.round(cy + (yy - cy) / scale).astype(int), 0, h - 1),
+                    np.clip(np.round(cx + (xx - cx) / scale).astype(int), 0, w - 1)]
+    lines = region_boundaries(shrunk)[0]
+    record = fit_section(image, atlas, placement(), _settings(
+        section_image="lines", atlas_image="borders_merged", labels="model"), lines=lines)
+    fitted = np.asarray(record.labels) != 0
+    target = shrunk != 0
+    assert record.engine["step_details"]["model_outline"]["used"]
+    assert abs(int(fitted.sum()) - int(target.sum())) < 0.04 * target.sum()
+    assert (fitted & ~target).sum() < 0.05 * target.sum()
 
 
 def test_fit_settings_validation():

@@ -61,6 +61,12 @@ and returns a `record.DeformableRecord`. No custom solver.
   model's lines enclose after the placed merged region it overlaps most
   (`regions.named_regions`, small loops around bubbles dropped, joint
   one-to-one renaming) and pairs each region's indicator with the atlas's.
+  The areas are named inside the model's outline (`regions.model_extent`:
+  what the outermost line encloses, gaps up to ~0.2 mm closed), not inside
+  the placed footprint; outside the outline is not section, and an `outline`
+  channel pairs the enclosed area with the atlas's foreground. An outline
+  enclosing less than half or more than twice the placed atlas area is open
+  or broken: the fit falls back to the footprint (`step_details.model_outline`).
   Built as `ants.registration`
   `multivariate_extras` (the same per-label MeanSquares construction
   `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
@@ -146,6 +152,12 @@ one side, excluding RSP/VIS/PTLp by name also drops the intact hemisphere;
 
 Fixed mask = placed atlas footprint widened by `MASK_MARGIN_MM`. Moving:
 placed footprint widened by the margin, minus excluded regions and
+`EXCLUSION_MARGIN_MM` around them. Route B with the model's outline: fixed =
+footprint plus the outline's area, both widened by the margin, minus unnamed
+areas inside the outline (the strip between the outline and the placed atlas
+stays in, so atlas left there costs); moving widened by
+`TRACE_MOVING_MARGIN_MM` (drawn borders, nothing to fence off), so an outline
+beyond the atlas can draw it out. Excluded regions keep
 `EXCLUSION_MARGIN_MM` around them (blanking alone left an edge that still
 pulled tissue). Excluded regions are blanked on the native plane
 for EVERY atlas image kind before placement (one-sided entries: that half

@@ -30,6 +30,35 @@ SMALL_LOOP_SHARE = 0.05
 MIN_NAME_PURITY = 0.1
 #: Minimum normalized overlap for the joint name assignment to rename an area.
 MIN_JOINT_SCORE = 0.02
+#: Gaps in the model's outermost line up to about twice this are closed before
+#: the area it encloses is filled (the section's extent, :func:`model_extent`).
+OUTLINE_GAP_CLOSING_MM = 0.1
+#: The enclosed area stands for the section's extent only when it is within
+#: these multiples of the placed atlas area; otherwise the outline is open or
+#: broken and the fit falls back to the placed footprint.
+OUTLINE_AREA_LIMITS = (0.5, 2.0)
+
+
+def model_extent(
+    lines: np.ndarray, placed_area_px: int, mm_per_px: float,
+) -> tuple[np.ndarray | None, float]:
+    """(extent, area ratio): everything the model's outermost line encloses.
+
+    The model draws the section's outline as a border like any other; the area
+    inside it is the section, the area outside it is not, whatever the linear
+    placement covered. ``None`` when the filled area is outside
+    :data:`OUTLINE_AREA_LIMITS` of the placed atlas area (an open outline fills
+    nothing). The ratio is returned either way, for the fit's report.
+    """
+    lines = np.asarray(lines, dtype=bool)
+    radius = max(1, round(OUTLINE_GAP_CLOSING_MM / mm_per_px))
+    padded = np.pad(lines, radius)
+    closed = np.asarray(ndi.binary_closing(padded, iterations=radius),
+                        dtype=bool)[radius:-radius, radius:-radius] | lines
+    extent = np.asarray(ndi.binary_fill_holes(closed), dtype=bool)
+    ratio = float(extent.sum()) / float(max(placed_area_px, 1))
+    low, high = OUTLINE_AREA_LIMITS
+    return (extent if low <= ratio <= high else None), ratio
 
 
 def named_regions(

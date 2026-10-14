@@ -54,7 +54,7 @@ from langslice.core.deformable.masks import (
     dilate,
 )
 from langslice.core.deformable.record import DeformableRecord, diagnose
-from langslice.core.deformable.regions import named_regions
+from langslice.core.deformable.regions import model_extent, named_regions
 from langslice.core.deformable.settings import (
     CORRELATION_RADIUS_UM,
     DETAIL,
@@ -69,6 +69,10 @@ from langslice.core.space import atlas_space_context
 #: Metric weight of each label-map channel; ANTs' own label registration
 #: weights every label pair 1.0, next to 1.0 for the image pair.
 LABEL_CHANNEL_WEIGHT = 1.0
+#: Route B's moving mask reaches this far past the placed atlas when the
+#: model's outline is used, so an outline beyond the atlas can draw it out
+#: (the moving image there is drawn borders, with no slide artifacts to fence off).
+TRACE_MOVING_MARGIN_MM = 1.0
 #: Stain normalization percentiles inside the fixed mask.
 STAIN_PERCENTILES = (1.0, 99.0)
 #: A region-restricted step keeps its full displacement inside the region's
@@ -263,11 +267,20 @@ def prepare_fit(
         fixed = _normalize_stain(fixed, footprint)
 
     kept = (current != 0) & ~excluded_w
-    fixed_mask = footprint.copy()
+    # Route B with named regions: the section's extent is what the model's
+    # outline encloses. Outside it is not section, and that is information the
+    # fit uses: the masks cover it, so atlas left there costs, and an outline
+    # beyond the placed atlas can pull the atlas out to it.
+    extent = extent_ratio = None
+    if settings.labels == "model":
+        assert lines_w is not None
+        extent, extent_ratio = model_extent(lines_w, int((current != 0).sum()), spacing)
+    fixed_mask = footprint.copy() if extent is None else footprint | dilate(extent, margin_px)
     # Blanking leaves an edge where an excluded region was; a margin around
     # it stays out of the moving mask so that edge cannot attract the tissue.
     excluded_zone = dilate(excluded_w, EXCLUSION_MARGIN_MM / spacing)
-    moving_mask = dilate(current != 0, margin_px) & ~excluded_zone
+    moving_margin_px = margin_px if extent is None else TRACE_MOVING_MARGIN_MM / spacing
+    moving_mask = dilate(current != 0, moving_margin_px) & ~excluded_zone
 
     details: dict[str, Any] = {}
     region: np.ndarray | None = None
@@ -303,8 +316,11 @@ def prepare_fit(
         assert lines_w is not None
         merged = labels_at(current, atlas, MODEL_DEPTH)
         merged = np.where(kept, merged, 0)
-        section_regions, unnamed, report = named_regions(lines_w, merged, footprint, spacing)
+        tissue = footprint if extent is None else extent
+        section_regions, unnamed, report = named_regions(lines_w, merged, tissue, spacing)
         fixed_mask &= ~unnamed
+        if extent is not None:
+            add_channel("outline", extent, current != 0)
         allowed = set(np.unique(section_regions)) & set(np.unique(merged))
         allowed.discard(0)
         if region is not None:
@@ -315,6 +331,8 @@ def prepare_fit(
             "named": len([r for r in report if not r["dropped"]]),
             "dropped": [r for r in report if r["dropped"]],
         }
+        details["model_outline"] = {"used": extent is not None,
+                                    "area_ratio": round(float(extent_ratio or 0.0), 3)}
     details["label_channels"] = channel_names
     if not fixed_mask.any() or not moving_mask.any():
         raise ValueError("The fit masks are empty")
