@@ -192,10 +192,22 @@ picture not tied to a section. `grep_atlas:points` switches the argument off.
 
 For an overlay, `zoom(region="CA1:left")` crops to the entire selected
 region with a small margin and shows only that region's border. It accepts
-one acronym or numeric id, including descendants, optionally `:left` or
-`:right`. It uses the saved picture's placement, deformation and display
+one acronym or numeric id, including descendants, optionally with a
+[side](#sides). It uses the saved picture's placement, deformation and display
 settings. The region must occur in that plane; `region` and `box` are
 mutually exclusive.
+
+### Sides
+
+A region may be named with one half of the brain, `"CTX:left"`. The halves
+come from the atlas's midline carried through the section's placement, never
+from the tissue, so a mirrored placement swaps them. Where the midline runs
+closer to vertical on the picture, the halves are `left` and `right`; where it
+runs closer to horizontal, as on a horizontal section shown with the
+anterior-posterior axis across, they are `top` and `bottom`. Naming the pair
+the picture does not have, or a side on a midline at exactly 45 degrees, is
+refused with `SIDES_AMBIGUOUS`, whose message names the pair to use. A
+sagittal plane lies in one hemisphere and has no sides (`NO_SIDES`).
 
 New jobs leave sections without supplied positions unplaced. The opening
 shows those sections alongside a separate overview of the atlas. No positions
@@ -204,7 +216,7 @@ mode, unplaced sections appear at the right, labelled "no position", with
 no line to the ruler; `positions_mm` selects candidate atlas planes above it.
 Supplied positions and saved registrations are preserved.
 
-Section scale comes from supplied calibration or TIFF/OME metadata, else the
+Section scale comes from supplied calibration (one size for the stack, or one per file) or TIFF/OME metadata, else the
 section image's width is mapped onto the atlas plane's width (reported as `uncalibrated`). Positioning pictures and paired
 opening tiles use the same micrometres per pixel for section and atlas
 panels. Tissue can therefore appear smaller than the atlas. The stored
@@ -249,7 +261,7 @@ their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
 `elastix_affine` refines a placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
-include descendants and may specify a side, such as `"CTX:left"`.
+include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
 
@@ -496,7 +508,7 @@ Writes checkpoint the job and form undo steps; `undo` and `redo` persist
 across sessions. Their reply says which step it took back or forward: `undone`
 (or `redone`) holds the `sections` it touched and the `fields` it changed,
 then the status rows of those sections and the remaining depth. Change tools return review pictures unless `view=False`;
-a host's `force_view=True` forces `view=True`. It defaults to false, so
+a host's `force_view=True` (`linear run --force-view`) forces `view=True`, and the argument is not offered. It defaults to false, so
 the agent may suppress a picture. Long fits compute outside
 the write lock and recheck inputs before applying. A conflicting edit
 produces `STALE_INPUT` for that section; unaffected results still apply.

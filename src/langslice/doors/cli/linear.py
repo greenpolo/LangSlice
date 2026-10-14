@@ -100,10 +100,11 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--pixel-size-um",
-        type=float,
         default=None,
-        metavar="UM",
-        help="Micrometres per pixel of the section images. Default: read from "
+        metavar="UM|JSON",
+        help="Micrometres per pixel of the section images: one number for every "
+        "file, or a JSON file or inline mapping of filenames to micrometres per "
+        "pixel. Default (and for a file the mapping does not name): read from "
         "each file's TIFF/OME tags",
     )
     p.add_argument(
@@ -258,6 +259,13 @@ def add_session_arguments(p: argparse.ArgumentParser) -> None:
         action="store_false",
         help="Skip the post-submit debrief question (what tools the agent missed)",
     )
+    p.add_argument(
+        "--force-view",
+        dest="force_view",
+        action="store_true",
+        help="The change and fitting tools always return their picture: their view "
+        "argument is not offered (JobSpec.force_view)",
+    )
 
 
 def add_trace_argument(p: argparse.ArgumentParser) -> None:
@@ -379,7 +387,10 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         if value is not None:
             inputs[key] = value
     if args.pixel_size_um:
-        inputs["pixel_size_um"] = float(args.pixel_size_um)
+        try:
+            inputs["pixel_size_um"] = float(args.pixel_size_um)
+        except ValueError:
+            inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
     if args.pitch is not None or args.yaw is not None:
         inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
     section_angles = load_json_arg(getattr(args, "section_angles", None), "--section-angles")
@@ -423,6 +434,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         frozen=frozen or {},
         resume=args.resume,
         debrief=getattr(args, "debrief", True),
+        force_view=bool(getattr(args, "force_view", False)),
         **({"max_input_tokens": args.max_input_tokens}
            if getattr(args, "max_input_tokens", None) else {}),
         **({"max_quota_percent": args.max_quota_percent}

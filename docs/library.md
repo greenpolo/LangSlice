@@ -66,7 +66,7 @@ untouched.
 | `transforms` | `{filename: [a,b,tx,c,d,ty]}` or saved transform dictionaries; normalized in-plane affine on the oriented section |
 | `angles` | `{"pitch": degrees, "yaw": degrees}`, or `{filename: {"pitch": ..., "yaw": ...}}` |
 | `orientation` | Per filename: a `rotation_deg` quarter turn and `flip` boolean; rotation then left-right flip |
-| `pixel_size_um` | Source pixel size; otherwise file metadata, else uncalibrated (image width mapped onto the atlas plane's width) |
+| `pixel_size_um` | Source pixel size in µm: one number for every file, or `{filename: um}` (a file it does not name uses its metadata); otherwise file metadata, else uncalibrated (image width mapped onto the atlas plane's width) |
 | `inputs` | Other `JobSpec.inputs`, including `order`, `damaged`, `channel_names` |
 | `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`; see [freezing](registration.md#freezing-what-the-agent-may-not-change) |
 | `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](registration.md#switching-tools-and-options-off) |

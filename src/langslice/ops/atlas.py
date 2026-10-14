@@ -383,7 +383,8 @@ def grep_atlas_view(
     so it can be zoomed. At most :data:`~langslice.ops.look.MAX_LOOK_PICTURES`
     are shown; the rest are ``not_shown``. ``regions_not_in_plane`` names, per
     position, the regions with no pixel in that plane. Refused: ``BAD_ARGS``,
-    ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``.
+    ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``, ``SIDES_AMBIGUOUS``
+    (a side the picture does not have: its message names the pair to use).
     """
     state = job.state
     resolved = _resolved(workspace, state, regions)
@@ -399,8 +400,14 @@ def grep_atlas_view(
     used = [min(max(v, low), high) for v in asked]
     angles = state.view_angles
     edge = picture_edge(workspace)
-    with collecting() as notes:
-        drawn = [_region_picture(workspace, state, resolved, mm, edge, angles) for mm in used]
+    from langslice.core.atlas.sides import SideError
+
+    try:
+        with collecting() as notes:
+            drawn = [_region_picture(workspace, state, resolved, mm, edge, angles)
+                     for mm in used]
+    except SideError as exc:
+        raise Refused(exc.code, message=str(exc)) from exc
     shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
     names = [name for name, _ids in resolved]
     entries = save_pictures(job, workspace, "grep_atlas_view", shown, notes,
@@ -409,7 +416,10 @@ def grep_atlas_view(
                       regions=tuple(resolved))
     absent: dict[str, list[str]] = {}
     for mm in used[:MAX_LOOK_PICTURES]:
-        present = regions_in_plane(workspace, state, mm, options, angles=angles)
+        try:
+            present = regions_in_plane(workspace, state, mm, options, angles=angles)
+        except SideError as exc:
+            raise Refused(exc.code, message=str(exc)) from exc
         missing = [name for name in names if name not in present]
         if missing:
             absent[f"{mm:.2f}"] = missing

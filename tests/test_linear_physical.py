@@ -280,6 +280,23 @@ def test_the_host_pixel_size_overrides_the_file(tmp_path: Path):
     assert ctx.calibration(state.slices[0].id) == (3.0, "host")
 
 
+def test_the_host_pixel_size_can_be_given_per_file(tmp_path: Path):
+    _section((512, 512)).save(tmp_path / "a.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
+    _section((512, 512)).save(tmp_path / "b.tif",
+        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)
+    ctx, state = _ctx(tmp_path, pixel_size_um={"a.tif": 3.0})
+    sizes = {record.id: ctx.calibration(record.id) for record in state.slices}
+    assert sizes == {"a.tif": (3.0, "host"), "b.tif": (pytest.approx(10.0), "file")}
+
+
+@pytest.mark.parametrize("bad", [0, -1.0, float("nan"), "x", {"a.tif": 0.0}])
+def test_a_pixel_size_that_is_not_a_positive_number_is_refused(tmp_path: Path, bad):
+    _section((512, 512)).save(tmp_path / "a.tif")
+    with pytest.raises(ValueError, match="pixel_size_um"):
+        _ctx(tmp_path, pixel_size_um=bad)
+
+
 def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
     _section((512, 512)).save(tmp_path / "s.png")
     ctx, state = _ctx(tmp_path)

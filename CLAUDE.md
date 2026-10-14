@@ -93,7 +93,8 @@ and `environment.yml` hold the worker's source installation.
 ## Docs
 
 `docs/` (built by MkDocs, `mkdocs.yml`, strict): `index.md`, `agents.md`,
-`abba.md`, `registration.md`, `library.md`, `file_formats.md`, `architecture.md`.
+`abba.md`, `registration.md`, `library.md`, `plugins.md`, `file_formats.md`,
+`architecture.md`.
 
 ## Environment and checks
 

@@ -32,7 +32,7 @@ from langslice.core.image_prep import (
     read_working_pages,
 )
 from langslice.core.space import Plane, atlas_space_context, slice_axis_ends
-from langslice.core.spec import JobSpec
+from langslice.core.spec import JobSpec, supplied_pixel_sizes
 
 logger = logging.getLogger(__name__)
 
@@ -159,18 +159,16 @@ class Workspace:
         """``(micrometres per pixel of the FILE, source)`` for one section.
 
         The host's ``inputs["pixel_size_um"]`` wins when it is given — that is
-        what ``--pixel-size-um`` is for — otherwise the file's own tags answer
-        (:func:`langslice.core.image_prep.read_pixel_size_um`). ``(None, "")`` when
-        nothing says; the caller then reports the section as uncalibrated.
+        what ``--pixel-size-um`` is for — for the whole stack or per file
+        (:func:`langslice.core.spec.supplied_pixel_sizes`); otherwise the file's
+        own tags answer (:func:`langslice.core.image_prep.read_pixel_size_um`).
+        ``(None, "")`` when nothing says; the caller then reports the section as
+        uncalibrated.
         """
-        host = (self.spec.inputs or {}).get("pixel_size_um")
-        if host:
-            try:
-                value = float(host)
-            except (TypeError, ValueError):
-                value = 0.0
-            if value > 0:
-                return value, "host"
+        stack, per_file = supplied_pixel_sizes((self.spec.inputs or {}).get("pixel_size_um"))
+        host = per_file.get(slice_id, stack)
+        if host is not None:
+            return host, "host"
         if slice_id not in self._pixel_sizes:
             self._pixel_sizes[slice_id] = read_pixel_size_um(self.image_path(slice_id))
         from_file = self._pixel_sizes[slice_id]

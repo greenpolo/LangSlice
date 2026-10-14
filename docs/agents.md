@@ -161,7 +161,7 @@ flag reference. The main choices are:
 |---|---|
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--max-quota-percent`, `--max-input-tokens`, `--no-debrief` |
+| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--max-quota-percent`, `--max-input-tokens`, `--no-debrief`, `--force-view` (change and fitting tools always return their picture) |
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
@@ -170,7 +170,7 @@ flag reference. The main choices are:
 | Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
 | Storage | `--job-dir`, `--out`, `--fresh` (`linear run`), `--trace-dir` (`linear run`, `mcp`) |
 
-`--thickness` and `--interval` are optional, in micrometres. Omit unknown
+`--pixel-size-um` is one number for every file, or a JSON mapping (inline or a file) of filenames to micrometres per pixel; a file it does not name reads its own TIFF/OME tags. `--thickness` and `--interval` are optional, in micrometres. Omit unknown
 values: the agent infers positions and spacing from anatomy and records
 estimates or uncertainty. Supplied values are advisory unless
 `--strict-interval` is enabled; that option requires `--interval`.
