@@ -1,7 +1,13 @@
 """Pytest configuration and shared fixtures."""
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Tests never write the atlas disk cache in the user's home; the cache's own
+# tests point it at a temporary folder.
+os.environ.setdefault("LANGSLICE_ATLAS_CACHE", "off")
 
 
 @pytest.fixture(scope="module")
