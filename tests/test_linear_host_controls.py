@@ -167,7 +167,7 @@ def _no_fit(monkeypatch) -> list[list[str]]:
     asked: list[list[str]] = []
 
     def fit(job, ctx, sections, regions, atlas_image):
-        names = list(sections) or [record.id for record in ops_transforms.fit_targets(job)]
+        names = list(sections)
         asked.append(names)
         return AffineFit(rows=[{"id": name, "status": "error", "error": "FIT_FAILED"}
                                for name in names])
@@ -188,8 +188,6 @@ def test_over_cap_transform_calls_are_refused_naming_the_cap(tmp_path: Path, mon
     refused = tools["elastix_affine"](["s0.png", "s1.png", "s2.png"])
     assert refused == {"status": "error", "error": "TOO_MANY_SECTIONS",
                        "max_sections": 2, "requested": 3}
-    # An empty list means every placed section, which is five here.
-    assert tools["elastix_affine"]([])["requested"] == 5
     assert asked == []
 
     allowed = tools["interactive_transform"]([_entry("s0.png"), _entry("s1.png")])
@@ -198,16 +196,18 @@ def test_over_cap_transform_calls_are_refused_naming_the_cap(tmp_path: Path, mon
     assert asked == [["s0.png", "s1.png"]]
 
 
-def test_at_four_elastix_affine_keeps_taking_any_number(tmp_path: Path, monkeypatch):
+def test_elastix_affine_takes_one_to_four_sections_like_interactive_transform(
+        tmp_path: Path, monkeypatch):
     asked = _no_fit(monkeypatch)
     _state, _spec, tools = _stack(tmp_path)
     names = ["s0.png", "s1.png", "s2.png", "s3.png", "s4.png"]
-    result = tools["elastix_affine"](names)
-    assert result.get("error") != "TOO_MANY_SECTIONS"
-    assert len(result["results"]) == 5 and asked == [names]
-    # interactive_transform keeps its own limit of four.
-    assert tools["interactive_transform"]([_entry(name) for name in names]) == {
-        "status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
+    refused = {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
+    assert tools["elastix_affine"](names) == refused
+    assert tools["interactive_transform"]([_entry(name) for name in names]) == refused
+    assert tools["elastix_affine"]([])["error"] == "BAD_ARGS"
+    assert asked == []
+    assert len(tools["elastix_affine"](names[:4])["results"]) == 4
+    assert asked == [names[:4]]
 
 
 # --- damage ----------------------------------------------------------------
@@ -274,13 +274,6 @@ def test_frozen_geometry_is_refused_per_section_and_positions_still_move(tmp_pat
 
     moved = tools["position_sections"]([{"id": "s1.png", "position_mm": 2.6}], view=False)
     assert moved["written"] == [{"id": "s1.png", "position_mm": 2.6}]
-
-
-def test_the_default_fit_targets_leave_out_frozen_affines(tmp_path: Path, monkeypatch):
-    asked = _no_fit(monkeypatch)
-    _state, _spec, tools = _stack(tmp_path, frozen={"s1.png": ALIGNED})
-    tools["elastix_affine"]([])
-    assert asked == [["s0.png", "s2.png", "s3.png", "s4.png"]]
 
 
 def test_frozen_transforms_count_at_submit(tmp_path: Path):

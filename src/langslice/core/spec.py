@@ -165,9 +165,8 @@ class TransformSpec:
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
     #: Most sections one transform-tool call (``elastix_affine``,
-    #: ``interactive_transform``) may take, 1..4. At 4, the default, the tools
-    #: keep their own limits (``interactive_transform`` four, ``elastix_affine``
-    #: any number); below 4 both refuse a call naming more sections.
+    #: ``interactive_transform``) may take, 1..4. Both tools take at most four
+    #: (the default); below 4 both refuse a call naming more sections.
     max_parallel: int = MAX_PARALLEL_TRANSFORMS
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
@@ -201,8 +200,9 @@ class NonlinearSpec:
     image_model: str | None = None
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
-    #: The host requires a deformation on every section: ``submit`` refuses
-    #: ``left_linear`` (sections left without one, each with its reason).
+    #: The host requires a deformation on every section: ``submit`` is refused
+    #: until each section carries one at its current placement. Off, a
+    #: deformation is the agent's choice, section by section.
     require_deformation: bool = False
 
     def __post_init__(self) -> None:

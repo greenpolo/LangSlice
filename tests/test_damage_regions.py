@@ -18,7 +18,7 @@ from langslice.core.state import SliceState
 from langslice.core.status import status_rows, status_text, uniform_rows
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
-from langslice.ops import damage, deformable, traces, transforms
+from langslice.ops import damage, deformable, traces
 from langslice.ops.refusal import Refused
 from tests.test_linear_fit_affine_regions import HalvesAtlas, _left_half_section
 
@@ -114,8 +114,7 @@ def test_a_users_damage_note_is_a_note_alone_and_stays_first(tmp_path: Path):
     record = state.by_id(ID)
     assert not record.damaged and record.damaged_regions == []
     assert record.damage_note == "torn by the user"
-    # Not damaged: a default fit target, with nothing to leave out.
-    assert [r.id for r in transforms.fit_targets(job)] == [ID]
+    # Not damaged: nothing to leave out of a fit.
     assert exclusions(record) == ((), ())
     added = damage.mark_damage(job, ctx, ID, ["R"], "right half gone")
     assert added.by_user and added.regions == ["R"] and added.damaged
@@ -179,17 +178,6 @@ def test_the_reply_picture_shows_the_marks_on_section_and_atlas(tmp_path: Path):
 # the trace's ANTs fit: tests/test_linear_fit_deformable.py (the engine's
 # settings) and tests/test_ants_syn.py (the recorded step); the image model's
 # trace: below.
-
-
-def test_a_marked_section_is_still_a_default_fit_target(tmp_path: Path):
-    state, ctx, box = _box(tmp_path)
-    damage.mark_damage(box.job, ctx, ID, ["R"])
-    # The marked section needs no regions in the call: its marks are left out.
-    assert [r.id for r in transforms.fit_targets(box.job)] == [ID]
-    # A note alone has nothing to leave out.
-    damage.mark_damage(box.job, ctx, ID, [])
-    state.by_id(ID).damage_note = "torn"
-    assert [r.id for r in transforms.fit_targets(box.job)] == [ID]
 
 
 def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, monkeypatch):

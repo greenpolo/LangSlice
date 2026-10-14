@@ -1,4 +1,4 @@
-"""``submit``'s ``left_linear`` and the host's ``require_deformation``; the
+"""The host's ``require_deformation`` at ``submit``; the
 unplaced sections and the starting positions."""
 
 from __future__ import annotations
@@ -47,54 +47,23 @@ def _refused(job: Job, **kwargs: Any) -> Refused:
     return refused.value
 
 
-def test_left_linear_covers_the_sections_it_names(tmp_path: Path):
+def test_no_deformation_is_required_by_default(tmp_path: Path):
     job = _placed(tmp_path)
-    missing = _refused(job, summary="done")
-    assert missing.code == "MISSING_DEFORMATIONS"
-    assert "left_linear" in missing.payload()["message"]
-    partial = _refused(job, left_linear=[{"id": "s0.png", "reason": "torn"}])
-    assert [row["id"] for row in partial.payload()["sections"]] == ["s1.png", "s2.png"]
-    done = ops_submit.submit(job, summary="done", left_linear=[
-        {"id": "s0.png", "reason": "torn"}, {"id": "s1", "reason": "too faint"},
-        {"id": "s2.png", "reason": "fits already"}])
-    assert done.left_linear == {"s0.png": "torn", "s1.png": "too faint",
-                                "s2.png": "fits already"}
-    assert job.state.submitted
-    held = job.state.by_id("s1.png").deformation  # type: ignore[union-attr]
-    assert held is not None and held["keep_linear"] == "too faint"
-    assert job.undo() and job.state.by_id("s1.png").deformation is None  # type: ignore[union-attr]
-
-
-@pytest.mark.parametrize("entries,code", [
-    ([{"id": "s0.png"}], "BAD_ARGS"),
-    ([{"id": "s0.png", "reason": " "}], "BAD_ARGS"),
-    ([{"id": "s0.png", "reason": "a", "extra": 1}], "BAD_ARGS"),
-    ("s0.png", "BAD_ARGS"),
-    ([{"id": "s0.png", "reason": "a"}, {"id": "s0", "reason": "b"}], "BAD_ARGS"),
-    ([{"id": "nope.png", "reason": "a"}], "UNKNOWN_SLICE_IDS"),
-    ([{"id": "0", "reason": "a"}], "UNKNOWN_SLICE_IDS"),
-])
-def test_bad_left_linear_is_refused(tmp_path: Path, entries, code):
-    job = _placed(tmp_path)
-    assert _refused(job, left_linear=entries).code == code
-    assert not job.state.submitted
+    done = ops_submit.submit(job, summary="done")
+    assert done.summary == "done" and job.state.submitted
+    assert all(record.deformation is None for record in job.state.slices)
 
 
 def test_the_host_can_require_a_deformation_on_every_section(tmp_path: Path):
     job = _placed(tmp_path, require_deformation=True)
-    refused = _refused(job, left_linear=[{"id": "s0.png", "reason": "torn"}])
-    assert refused.code == "DEFORMATION_REQUIRED"
-    assert _refused(job).code == "MISSING_DEFORMATIONS"
+    refused = _refused(job)
+    assert refused.code == "MISSING_DEFORMATIONS"
+    assert [row["id"] for row in refused.payload()["sections"]] == ["s0.png", "s1.png", "s2.png"]
+    assert "left_linear" not in refused.payload()["message"]
+    assert not job.state.submitted
     spec = JobSpec.from_dict(job.spec.to_dict())
     assert spec.nonlinear.require_deformation is True
     assert "require_deformation" not in JobSpec(image_folder=".").to_dict()["nonlinear"]
-
-
-def test_left_linear_is_for_nonlinear_runs(tmp_path: Path):
-    job, _ = _open(tmp_path, tasks=["transform"])
-    for record in job.state.slices:
-        record.position_mm, record.transform = 2.0, dict(IDENTITY)
-    assert _refused(job, left_linear=[{"id": "s0.png", "reason": "a"}]).code == "BAD_ARGS"
 
 
 def test_ingest_leaves_sections_unplaced_and_submit_refuses(tmp_path: Path):

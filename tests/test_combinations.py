@@ -329,19 +329,22 @@ DAMAGED_TRANSFORM = (
 TRANSFORM_METHOD = (
     "- After each automatic fit or manual adjustment, inspect the returned overlay "
     "against surviving internal anatomy.")
-LEFT_LINEAR = (
-    "- `submit` is refused unless every section carries a deformation applied at its "
-    "current placement, or is named in its `left_linear` with the reason its linear "
-    "placement stands, damaged sections included.")
+DEFORMATION_SUBMIT = ("- `submit` is refused unless every section carries a deformation "
+                      "applied at its current placement")
 TRACE_OPTIONAL = ("- `trace_borders` is optional: you decide which sections, if any, to "
                   "trace. A trace requires a position and a linear transform.")
 MARK_FIRST = ("- Before fitting a damaged section, mark the regions it has lost with "
               "`mark_damage`, so that every region it still has drives its fits.")
-FIT_METHOD = "- Fit each section whole first, then refine regions."
+HAND_FIRST = (
+    "- Align each section by hand with `interactive_transform` as well as you can before "
+    "running any fitting algorithm: match its outline and its internal anatomy "
+    "(ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting "
+    "algorithms refine a placement that is already close; they do not correct a large "
+    "offset.")
+FIT_METHOD = "- Run each fit on the whole section first, then refine regions."
 FIT_RETRY = (" and fit that section again with different `ants_syn` settings, such as "
              "another stiffness or another atlas image")
-FIT_ENDING = ("; undo a fit that does not improve the alignment" + FIT_RETRY + ", and name in "
-              "submit's `left_linear` only a section that no fit improves.")
+FIT_ENDING = "; undo a fit that does not improve the alignment" + FIT_RETRY + "."
 NO_LIMIT = ("- LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute "
             "priority: this run may be evaluated on the quality of its registration alone, "
             "without regard to the time or tokens it spends.")
@@ -352,25 +355,26 @@ FIXED_LINEAR = ("- Existing linear transforms are supplied and fixed for this ru
 @pytest.mark.parametrize(("tasks", "provider", "inputs", "said", "unsaid"), [
     (["position"], "none", {},
      (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD),
-     (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, LEFT_LINEAR, GIVEN, MARK_FIRST)),
+     (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, DEFORMATION_SUBMIT, GIVEN, MARK_FIRST, HAND_FIRST)),
     (["transform"], "none", {"positions": dict(POSITIONS)},
-     (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, TRANSFORM_METHOD, GIVEN),
-     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD, LEFT_LINEAR)),
+     (TRANSFORM_SUBMIT, DAMAGED_TRANSFORM, TRANSFORM_METHOD, HAND_FIRST, GIVEN),
+     (POSITION_SUBMIT, UNPLACED, ORDER, POSITION_METHOD, DEFORMATION_SUBMIT)),
     (["position", "transform"], "none", {},
      (POSITION_SUBMIT, UNPLACED, ORDER, TRANSFORM_SUBMIT, DAMAGED_TRANSFORM,
-      POSITION_METHOD, TRANSFORM_METHOD),
-     (LEFT_LINEAR, GIVEN)),
+      POSITION_METHOD, TRANSFORM_METHOD, HAND_FIRST),
+     (DEFORMATION_SUBMIT, GIVEN)),
     (["position", "transform", "nonlinear"], "openai-oauth", {},
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, LEFT_LINEAR, TRACE_OPTIONAL, MARK_FIRST,
+     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, MARK_FIRST, HAND_FIRST,
       FIT_METHOD, " and, where traced, its traced borders" + FIT_ENDING),
-     (GIVEN,)),
+     (GIVEN, DEFORMATION_SUBMIT)),
     (["nonlinear"], "none", "external",
-     (LEFT_LINEAR, MARK_FIRST, FIT_METHOD, FIXED_LINEAR, GIVEN,
+     (MARK_FIRST, FIT_METHOD, FIXED_LINEAR, GIVEN,
       "Inspect each fit's borders against the section's internal anatomy" + FIT_ENDING),
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, UNPLACED, "where traced")),
+     (POSITION_SUBMIT, TRANSFORM_SUBMIT, TRACE_OPTIONAL, UNPLACED, "where traced",
+      DEFORMATION_SUBMIT, HAND_FIRST)),
     (["nonlinear"], "openai-oauth", "external",
-     (LEFT_LINEAR, TRACE_OPTIONAL, MARK_FIRST, FIXED_LINEAR, GIVEN),
-     (POSITION_SUBMIT, TRANSFORM_SUBMIT)),
+     (TRACE_OPTIONAL, MARK_FIRST, FIXED_LINEAR, GIVEN),
+     (POSITION_SUBMIT, TRANSFORM_SUBMIT, DEFORMATION_SUBMIT, HAND_FIRST)),
 ], ids=["1-positioning", "2-linear", "3-positioning+linear", "4-all+image",
         "5-nonlinear-no-image", "6-nonlinear+image"])
 def test_each_combination_states_its_tools_constraints_and_method(
@@ -394,7 +398,7 @@ def test_the_statement_says_a_users_damage_note_marks_no_regions(images):
     assert "Sections with marked damage regions" not in text
 
 
-def test_a_required_deformation_drops_left_linear_from_the_statement(images):
+def test_a_required_deformation_is_stated_and_nothing_is_left_linear(images):
     from langslice.agent.engine import build_context
     from langslice.agent.prompt import build_job_statement
     from langslice.job.job import Job
@@ -595,10 +599,6 @@ def test_3_positioning_and_linear_through_mcp(images):
 # --- 4. Nonlinear with an image model, no agent -------------------------------------------
 
 
-def _left_linear(*names: str) -> list[dict[str, str]]:
-    return [{"id": name, "reason": "kept"} for name in names]
-
-
 def test_4_nonlinear_verbs_called_directly_through_the_library(images):
     import langslice
 
@@ -628,16 +628,13 @@ def test_4_nonlinear_verbs_called_directly_through_the_cli(capsys, images):
     ok(capsys, images, "position_sections", "--sections", json.dumps(_sections(POSITIONS)))
     ok(capsys, images, "interactive_transform", "--sections", json.dumps(
         [{"id": name, **IDENTITY} for name in IDS]))
-    code, envelope = cli(capsys, str(images), "submit", *SUBMIT_FLAGS)
-    assert code == 3 and envelope["error"]["code"] == "MISSING_DEFORMATIONS"
     # The CLI answers once the trace's work has landed.
     ok(capsys, images, "trace-borders", "--section", ID0)
     ok(capsys, images, "ants-syn", "--sections", ID1)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS, "--left-linear", json.dumps(_left_linear(ID2)))
+    ok(capsys, images, "submit", *SUBMIT_FLAGS)
     ok(capsys, images, "export_maps")
     document = assert_exported(job, residual=(ID0, ID1))
-    assert document["sections"][2]["parameters"]["deformation"] == {
-        "kind": "none", "reason": "kept"}
+    assert document["sections"][2]["parameters"]["deformation"] is None
 
 
 def test_4_the_library_takes_an_image_model(images):
@@ -665,10 +662,8 @@ def test_5_nonlinear_without_an_image_model_through_the_library(images):
         assert "trace_borders" not in job.verbs
         fit = job.ants_syn(sections=[ID0])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
-        submitted = job.submit(summary="done", notes=[], interval_breaks=[],
-                               left_linear=_left_linear(ID1, ID2))
+        submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
-        assert submitted["left_linear"] == {ID1: "kept", ID2: "kept"}
         assert_external_kept(job.state)
     assert_exported(images / "langslice", residual=(ID0,))
 
@@ -680,8 +675,7 @@ def test_5_nonlinear_without_an_image_model_through_the_cli(capsys, images):
     code, envelope = cli(capsys, str(images), "trace_borders", "--section", ID0)
     assert code == 3 and envelope["error"]["code"] == "VERB_OFF"
     ok(capsys, images, "ants_syn", "--sections", ID0)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS,
-       "--left-linear", json.dumps(_left_linear(ID1, ID2)))
+    ok(capsys, images, "submit", *SUBMIT_FLAGS)
     assert_exported(job, residual=(ID0,))
 
 
@@ -689,8 +683,7 @@ def test_5_nonlinear_without_an_image_model_through_mcp(images):
     server = _mcp_server(spec_for(images, ["nonlinear"], **external_inputs()))
     replies = _mcp(server, [
         ("ants_syn", {"sections": [ID0]}),
-        ("submit", {"summary": "done", "notes": [], "interval_breaks": [],
-                    "left_linear": _left_linear(ID1, ID2)}),
+        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ])
     assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
     assert_exported(images / "langslice", residual=(ID0,))
@@ -717,19 +710,7 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
     fresh.resume = False  # a new job on the same images, not the one above
     create(fresh)
     with langslice.open_job(images) as job:
-        assert job.submit(summary="done", notes=[], interval_breaks=[],
-                          left_linear=_left_linear(*IDS))["status"] == "ok"
-
-
-def test_leaving_a_section_linear_on_positions_alone_is_refused(images):
-    import langslice
-
-    create(spec_for(images, ["nonlinear"], positions=dict(POSITIONS)))
-    with langslice.open_job(images) as job:
-        kept = job.submit(summary="done", notes=[], interval_breaks=[],
-                          left_linear=_left_linear(*IDS))
-        assert kept["status"] != "ok" and not job.state.submitted, kept
-        assert "--transforms" in json.dumps(kept) and "Linear on" in json.dumps(kept), kept
+        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
 
 
 def test_tracing_on_positions_alone_says_what_to_do(images):
@@ -771,8 +752,7 @@ def test_6_external_registration_then_nonlinear_through_the_library(images):
             [started["work"]], [])  # it may land before status reads it
         fit = job.ants_syn(sections=[ID1])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
-        submitted = job.submit(summary="done", notes=[], interval_breaks=[],
-                               left_linear=_left_linear(ID2))
+        submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
         assert_external_kept(job.state)  # the linear placement, verbatim, after submit
         # A trace whose fit has landed is not fitted again.
@@ -813,7 +793,7 @@ def test_6_external_registration_then_nonlinear_through_the_cli(capsys, images):
         assert code == 3 and envelope["error"]["code"] == "VERB_OFF", envelope
     for name in (ID0, ID1):
         ok(capsys, images, "trace_borders", "--section", name)
-    ok(capsys, images, "submit", *SUBMIT_FLAGS, "--left-linear", json.dumps(_left_linear(ID2)))
+    ok(capsys, images, "submit", *SUBMIT_FLAGS)
     ok(capsys, images, "export_maps")
     from tests.linear_tool_helpers import load_checkpoint
 
@@ -829,8 +809,7 @@ def test_6_an_agent_cannot_move_a_supplied_placement(images, monkeypatch):
     angles; only ``undo`` past the first step could, and there is none."""
     assert "position_sections" not in tool_names(images, ["nonlinear"])
     install_script(monkeypatch, [
-        ("submit", {"summary": "done", "notes": [], "interval_breaks": [],
-                    "left_linear": _left_linear(*IDS)}),
+        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ])
     state = run_agent(spec_for(images, ["nonlinear"], **external_inputs()))
     assert state.submitted is True
@@ -848,8 +827,7 @@ def test_6_a_supplied_orientation_is_kept(images):
         assert job.state.by_id(ID1).rotation_deg == 90
         assert job.state.by_id(ID1).transform == EXTERNAL_TRANSFORMS[ID1]  # kept as supplied
         assert job.state.by_id(ID0).flip is False and job.state.by_id(ID0).rotation_deg == 0
-        assert job.submit(summary="done", notes=[], interval_breaks=[],
-                          left_linear=_left_linear(*IDS))["status"] == "ok"
+        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
     document = assert_exported(images / "langslice")
     oriented = document["sections"][1]["parameters"]["orientation"]
     assert (oriented["flip"], oriented["rotation_deg"]) == (True, 90)
@@ -934,8 +912,7 @@ def test_6_cli_init_takes_frozen_and_damaged_sections(capsys, images):
     rows = {row["id"]: row for row in ok(capsys, images, "status")["result"]["rows"]}
     assert rows[ID2]["damage_note"] == "torn" and rows[ID2]["damaged"] is False
     # Sections with a frozen affine carry the host identity: they can be left linear and submitted.
-    ok(capsys, images, "submit", *SUBMIT_FLAGS,
-       "--left-linear", json.dumps(_left_linear(*IDS)))
+    ok(capsys, images, "submit", *SUBMIT_FLAGS)
 
 
 def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
@@ -1035,8 +1012,7 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
     if not linked:
         replies = _mcp(server, [
             ("ants_syn", {"sections": [ID0]}),
-            ("submit", {"summary": "done", "notes": [], "interval_breaks": [],
-                        "left_linear": _left_linear(ID1, ID2)}),
+            ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
         ])
         assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
         spec = json.loads((images / "langslice" / "job.json").read_text())["spec"]
@@ -1121,12 +1097,12 @@ def test_7_the_agent_with_every_task_and_no_image_model(images, monkeypatch):
         ("position_sections", {"sections": _sections(POSITIONS)}),
         ("interactive_transform", {"sections": [{"id": name, **IDENTITY} for name in IDS]}),
         ("ants_syn", {"sections": [ID0]}),
-        ("submit", {"summary": "done", "notes": [], "interval_breaks": [],
-                    "left_linear": _left_linear(ID1, ID2)}),
+        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ])
     state = run_agent(spec_for(images, ["position", "transform", "nonlinear"]))
     assert state.submitted is True
-    assert all(record.deformation for record in state.slices)
+    assert state.by_id(ID0).deformation
+    assert not any(state.by_id(name).deformation for name in (ID1, ID2))
     assert_exported(images / "langslice", residual=(ID0,))
     results = json.loads((images / "langslice" / "exports" / "linear_results.json").read_text())
     assert results["submitted"] is True
@@ -1141,8 +1117,7 @@ def test_7_every_task_and_no_image_model_through_mcp(images):
         ("position_sections", {"sections": _sections(POSITIONS)}),
         ("interactive_transform", {"sections": [{"id": name, **IDENTITY} for name in IDS]}),
         ("ants_syn", {"sections": [ID0]}),
-        ("submit", {"summary": "done", "notes": [], "interval_breaks": [],
-                    "left_linear": _left_linear(ID1, ID2)}),
+        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ])
     assert [reply["status"] for reply in replies] == ["ok"] * 4, replies
     assert_exported(images / "langslice", residual=(ID0,))

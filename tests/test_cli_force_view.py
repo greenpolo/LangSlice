@@ -16,3 +16,8 @@ def _spec(tmp_path, *extra):
 def test_force_view_is_off_by_default_and_on_with_the_flag(tmp_path):
     assert _spec(tmp_path).force_view is False
     assert _spec(tmp_path, "--force-view", "--disable", "elastix_affine").force_view is True
+
+
+def test_require_deformation_is_off_by_default_and_on_with_the_flag(tmp_path):
+    assert _spec(tmp_path).nonlinear.require_deformation is False
+    assert _spec(tmp_path, "--require-deformation").nonlinear.require_deformation is True

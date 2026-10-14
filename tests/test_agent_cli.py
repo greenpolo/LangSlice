@@ -234,7 +234,8 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " brief`", "BRIEF.md", "STALE_INPUT",
-                   "- `elastix_affine` (write, Linear, long):",
+                   f"- `elastix_affine` (write, Linear, long; at most {MAX_LOOK_PICTURES} "
+                   "sections per call):",
                    f"- `look` (read, Common; at most {MAX_LOOK_PICTURES} pictures per call):",
                    f"- `interactive_transform` (write, Linear; at most {MAX_LOOK_PICTURES} "
                    "sections per call):",
@@ -833,6 +834,7 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         "set_preprocessed_channel_properties": {"pictures": limits["look"]["pictures"]},
         "grep_atlas_view": {"pictures": limits["look"]["pictures"]},
         "interactive_transform": {"sections": limits["interactive_transform"]["sections"]},
+        "elastix_affine": {"sections": limits["elastix_affine"]["sections"]},
         "ants_syn": {"sections": limits["ants_syn"]["sections"]},
     }
     with langslice.open_job(images) as job:
@@ -844,6 +846,9 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         most = limits["interactive_transform"]["sections"]
         refused = job.interactive_transform(
             sections=[{"id": ID0, "rotation_deg": 0}] * (most + 1))
+        assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
+        most = limits["elastix_affine"]["sections"]
+        refused = job.elastix_affine(sections=[ID0] * (most + 1))
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
         most = limits["ants_syn"]["sections"]
         refused = job.ants_syn(sections=[ID0] * (most + 1))

@@ -28,6 +28,7 @@ from langslice.ops import landmarks as ops_landmarks
 from langslice.ops import look as ops_look
 from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
+from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
 
 
@@ -57,8 +58,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if refusal is not None:
             return refusal
         named = as_list(sections)
-        count = len(named) if named else len(ops_transforms.fit_targets(job))
-        refusal = door.over_cap(count)
+        if not named:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "sections must name one or more sections"}
+        if len(named) > MAX_LOOK_PICTURES:
+            return {"status": "error", "error": "TOO_MANY_SECTIONS",
+                    "max_sections": MAX_LOOK_PICTURES}
+        refusal = door.over_cap(len(named))
         if refusal is not None:
             return refusal
         try:

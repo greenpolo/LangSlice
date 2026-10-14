@@ -107,8 +107,7 @@ def test_every_tool_declares_a_plain_schema_with_closed_objects(tmp_path: Path):
     assert set(turned["properties"]) == {
         "id", "flip", "rotate_quarter", "rotation_deg", "scale_x", "scale_y", "shear",
         "translate_x_mm", "translate_y_mm"}
-    left = schemas["submit"]["properties"]["left_linear"]["items"]
-    assert set(left["properties"]) == {"id", "reason"}
+    assert set(schemas["submit"]["properties"]) == {"summary", "notes", "interval_breaks"}
     pair = schemas["set_landmarks"]["properties"]["pairs"]["items"]
     assert pair["additionalProperties"] is False
     assert set(pair["properties"]) == {"id", "atlas", "section"}
@@ -268,8 +267,7 @@ def test_host_display_targets_follow_each_tools_scope():
     }) == ["c", "a"]
     assert _tool_target_ids(state, "set_preprocessed_channel_properties",
                             {"sections": []}) == every
-    # elastix_affine with no sections fits the placed sections the host did not align.
-    assert _tool_target_ids(state, "elastix_affine", {"sections": []}) == ["a"]
+    assert _tool_target_ids(state, "elastix_affine", {"sections": ["b", "a"]}) == ["b", "a"]
     assert _tool_target_ids(state, "interactive_transform", {
         "sections": [{"id": "b"}, {"id": "a"}, {"id": "1"}, {"id": "a"}],
     }) == ["b", "a"]

@@ -123,15 +123,14 @@ partial cases:
   replaces (positive without one, negative for a supplied mirrored
   transform). `elastix_affine` and `interactive_transform` refuse a fit or
   a scale that would mirror the section.
-- A frozen `affine` is never rewritten: `elastix_affine` leaves the section
-  out of its default list and refuses it by name, `interactive_transform`
+- A frozen `affine` is never rewritten: `elastix_affine` refuses it by name, `interactive_transform`
   refuses a changed knob (the same numbers again write nothing, and the
   orientation may change under it when it is free). A section whose
   `deformation` is free is still deformed on its supplied transform.
 - The cutting angles are one plane for the stack, so `position_sections`
   refuses its `cutting_angles` while any section has `angles` frozen.
-- A frozen `deformation` needs no entry in `submit`'s `left_linear` and no
-  deformation to submit; naming it there is refused.
+- A frozen `deformation` needs no deformation to submit, even where the host
+  requires one on every section.
 
 A task whose properties are all frozen on every section is off
 (`position`: position and angles; `transform`: orientation and affine;
@@ -260,7 +259,7 @@ shifts for up to four sections. Values are absolute; omitted values keep
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` refines a placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes one to four sections per call, as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -519,10 +518,13 @@ produces `STALE_INPUT` for that section; unaffected results still apply.
   permits at most 10% deviation from the interval. Reported interval breaks
   must exceed 1.5 times the median spacing.
 - Linear requires a transform for every section, including damaged ones.
-- Nonlinear requires a deformation at the current placement, or an entry
-  in `left_linear=[{"id":"s01.tif","reason":"..."}]`. A host setting
-  `nonlinear.require_deformation=True` disallows leaving sections linear.
-  Host-excluded sections are exempt. An image-model trace is never required.
+- Nonlinear asks for no deformation by default: the agent gives a section one
+  where it improves on the linear placement. A host setting
+  `nonlinear.require_deformation=True` (`linear run --require-deformation`)
+  requires a deformation at the current placement on every section; the job
+  statement then says so, and `submit` is refused with `MISSING_DEFORMATIONS`
+  until each has one. Host-excluded sections are exempt. An image-model trace
+  is never required.
 
 Results are [coordinate maps, labels and registration exports](file_formats.md).
 

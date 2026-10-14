@@ -161,7 +161,7 @@ flag reference. The main choices are:
 |---|---|
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--max-quota-percent`, `--max-input-tokens`, `--no-debrief`, `--force-view` (change and fitting tools always return their picture) |
+| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--max-quota-percent`, `--max-input-tokens`, `--no-debrief`, `--force-view` (change and fitting tools always return their picture), `--require-deformation` (Nonlinear: `submit` is refused until every section carries a deformation) |
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |

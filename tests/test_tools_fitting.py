@@ -101,7 +101,7 @@ def _run(tmp_path: Path, atlas: SyntheticAtlas, *, n: int = 1, transformed: bool
 
 def test_elastix_affine_fits_writes_one_step_and_shows_each_section(tmp_path: Path, atlas):
     state, _, box, _ = _run(tmp_path, atlas, n=2)
-    result = _tool(box, "elastix_affine")()
+    result = _tool(box, "elastix_affine")(["s0.png", "s1.png"])
     assert result["status"] == "ok", result
     rows = result["results"]
     assert [row["id"] for row in rows] == ["s0.png", "s1.png"]
@@ -151,6 +151,9 @@ def test_elastix_affine_without_a_picture_and_its_refusals(tmp_path: Path, atlas
     assert unavailable["error"] == "BAD_ARGS"
     assert unavailable["atlas_image"] == ["template"]
     assert fit(["s0.png"], [], "spline")["error"] == "BAD_ARGS"
+    assert fit([])["error"] == "BAD_ARGS"
+    many = fit(["s0.png"] * 5)
+    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
     assert state.slices[0].transform is None and box.job.undo_stack == []
     quiet = fit(["s0.png"], view=False)
     assert quiet["status"] == "ok" and quiet["results"][0]["status"] == "ok"
@@ -225,20 +228,14 @@ def test_a_changed_placement_clears_the_deformation_in_the_same_step(tmp_path: P
 
 
 @needs_ants
-def test_submit_takes_left_linear_in_a_nonlinear_run(tmp_path: Path, atlas):
+def test_submit_needs_no_deformation_in_a_nonlinear_run(tmp_path: Path, atlas):
     state, _, box, _ = _run(tmp_path, atlas, n=2, transformed=True, tasks=("nonlinear",))
     _tool(box, "ants_syn")(["s1.png"], view=False)
     submit = _tool(box, "submit")
-    refused = submit("done", [], [], left_linear=[{"id": "s1.png", "reason": "fitted"}],
-                     tool_context=ToolContext())
-    assert refused["error"] == "HAS_DEFORMATION" and refused["ids"] == ["s1.png"]
-    stray = submit("done", [], [], left_linear=[{"id": "s0.png", "why": "flat"}])
+    stray = submit("done", [], [], left_linear=[{"id": "s0.png", "reason": "flat"}])
     assert stray["error"] == "UNKNOWN_ARGUMENTS"
-    assert stray["problems"][0]["argument"] == "left_linear[0]"
-    done = submit("done", [], [], left_linear=[{"id": "s0.png", "reason": "torn tissue"}],
-                  tool_context=ToolContext())
+    done = submit("done", [], [], tool_context=ToolContext())
     assert done["status"] == "ok", done
-    assert done["left_linear"] == {"s0.png": "torn tissue"}
     assert state.submitted is True
 
 

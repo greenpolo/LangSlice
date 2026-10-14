@@ -464,8 +464,8 @@ def test_a_budget_stop_is_named_in_the_result(params, monkeypatch):
 
 
 def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
-    """The "linear placement stands" record (what submit's ``left_linear``
-    writes) and a moved placement each send ABBA no warp for the section."""
+    """The "linear placement stands" record (older jobs hold
+    it) and a moved placement each send ABBA no warp for the section."""
     from langslice.core.deformation import linear_key
     from tests.golden.record import ID0
 

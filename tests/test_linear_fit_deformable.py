@@ -1,5 +1,5 @@
 """The deformation on top of a section's linear placement: the ``ants_syn`` tool,
-``submit``'s ``left_linear``, and the fit underneath (``ops.deformable``:
+``submit``'s deformation gate, and the fit underneath (``ops.deformable``:
 ``fit_deformable``, which ``ants_syn`` and the packaged ``trace_borders``
 fit with)."""
 
@@ -365,8 +365,7 @@ def test_the_job_statement_names_the_tools_and_says_when_ants_is_missing(
     assert "ANTs is not installed" not in text
     monkeypatch.setattr(deformation, "ants_available", lambda: False)
     assert ("- ANTs is not installed on this host, so ants_syn and trace_borders cannot "
-            "run; a section left without a deformation is named in submit's left_linear."
-            ) in statement()
+            "run.") in statement()
 
 
 # --- traced section images (the fit a trace gets) ----------------------------------
@@ -514,7 +513,7 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]
 
 
-# --- the nonlinear goal: a deformation (or left_linear) per section ----------------
+# --- the nonlinear goal: a deformation where it improves the linear placement -----
 
 
 def _statement(spec: JobSpec, state: StackState, box: Any) -> str:
@@ -523,31 +522,27 @@ def _statement(spec: JobSpec, state: StackState, box: Any) -> str:
     return " ".join(text.split())
 
 
-def test_the_job_is_a_deformation_per_section_with_or_without_the_image_model(
+def test_the_job_is_a_deformation_where_it_helps_with_or_without_the_image_model(
         tmp_path: Path, atlas):
     state, _, spec, box = _setup(tmp_path, atlas)
     text = _statement(spec, state, box)
-    assert ("give every section a deformation onto the atlas, on top of its linear "
+    assert ("give a section a deformation onto the atlas where it improves on its linear "
             "placement, with the section's stain as the evidence, or, for a section you "
             "choose to trace, the borders the image model traces on it.") in text
-    assert ("- `submit` is refused unless every section carries a deformation applied at "
-            "its current placement, or is named in its `left_linear` with the reason its "
-            "linear placement stands, damaged sections included.") in text
+    assert "`submit` is refused unless every section carries a deformation" not in text
     assert ("- `trace_borders` is optional: you decide which sections, if any, to trace. "
             "A trace requires a position and a linear transform.") in text
-    assert ("- Fit each section whole first, then refine regions. Inspect each fit's "
-            "borders against the section's internal anatomy and, where traced, its traced "
-            "borders; undo a fit that does not improve the alignment and fit that section "
-            "again with different `ants_syn` settings, such as another stiffness or another "
-            "atlas image, and name in submit's `left_linear` only a section that no fit "
-            "improves.") in text
+    assert ("- Run each fit on the whole section first, then refine regions. Inspect each "
+            "fit's borders against the section's internal anatomy and, where traced, its "
+            "traced borders; undo a fit that does not improve the alignment and fit that "
+            "section again with different `ants_syn` settings, such as another stiffness or "
+            "another atlas image.") in text
 
     (tmp_path / "none").mkdir()
     none_state, _, none_spec, none_box = _setup(tmp_path / "none", atlas, provider="none")
     text = _statement(none_spec, none_state, none_box)
-    assert ("give every section a deformation onto the atlas, on top of its linear "
+    assert ("give a section a deformation onto the atlas where it improves on its linear "
             "placement, with the section's stain as the evidence.") in text
-    assert "or is named in its `left_linear` with the reason" in text
     for absent in ("trace", "image model"):
         assert absent not in text, absent
 
@@ -555,6 +550,8 @@ def test_the_job_is_a_deformation_per_section_with_or_without_the_image_model(
     req_state, _, req_spec, req_box = _setup(tmp_path / "required", atlas,
                                              require_deformation=True)
     text = _statement(req_spec, req_state, req_box)
+    assert ("give every section a deformation onto the atlas, on top of its linear "
+            "placement, with the section's stain as the evidence") in text
     assert ("- `submit` is refused unless every section carries a deformation applied at "
             "its current placement, damaged sections included; the user requires one on "
             "every section.") in text
@@ -565,7 +562,7 @@ def test_the_job_is_a_deformation_per_section_with_or_without_the_image_model(
 def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monkeypatch):
     from langslice.core import handoff
 
-    _, _, spec, box = _setup(tmp_path, atlas, provider="none")
+    _, _, spec, box = _setup(tmp_path, atlas, provider="none", require_deformation=True)
     assert spec.nonlinear.uses_image_model is False
     assert "trace_borders" not in box.names
     assert {"grep_atlas", "ants_syn"} <= set(box.names)
@@ -577,8 +574,7 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
     submit = _tool(box, "submit")
     first = submit("Done", [], [])
     assert first["error"] == "MISSING_DEFORMATIONS"
-    assert first["sections"] == [{"id": ID,
-                                  "reason": "no deformation, and not in left_linear"}]
+    assert first["sections"] == [{"id": ID, "reason": "no deformation"}]
     _ants(box, view=False)
     assert submit("Done", [], [])["status"] == "ok"
     with pytest.raises(ValueError, match="nonlinear.provider"):
@@ -586,47 +582,32 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
     assert JobSpec.from_dict(spec.to_dict()).nonlinear.provider == "none"
 
 
-def test_submit_left_linear_records_why_the_placement_stands(tmp_path: Path, atlas,
-                                                              monkeypatch):
-    from langslice.core import handoff
-
-    state, ctx, _, box = _setup(tmp_path, atlas)
-    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
-    submit = _tool(box, "submit")
-    assert submit("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
-    assert submit("Done", [], [], left_linear=[{"id": ID}])["error"] == "BAD_ARGS"
-    assert submit("Done", [], [], left_linear=[{"id": "nope.png", "reason": "x"}])[
-        "error"] == "UNKNOWN_SLICE_IDS"
-    refused = submit("Done", [], [], left_linear=[{"id": ID, "reason": "x", "why": "y"}])
-    assert refused["status"] == "error" and not state.submitted
-    reply = submit("Done", [], [], left_linear=[{"id": ID, "reason": "Matches already."}])
-    assert reply["status"] == "ok", reply
-    assert reply["left_linear"] == {ID: "Matches already."}
-    assert state.submitted
-    held = state.slices[0].deformation
-    assert held["keep_linear"] == "Matches already."
-    assert held["linear_key"] == deformation.linear_key(state, state.slices[0])
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
-
-
-def test_left_linear_is_not_offered_when_the_user_requires_a_deformation(tmp_path: Path,
-                                                                         atlas):
+def test_submit_needs_no_deformation_unless_the_user_requires_one(tmp_path: Path, atlas,
+                                                                   monkeypatch):
     from google.adk.tools import FunctionTool
 
-    state, *_, box = _setup(tmp_path, atlas, require_deformation=True)
+    from langslice.core import handoff
+
+    state, _, _, box = _setup(tmp_path, atlas)
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     declaration = FunctionTool(_tool(box, "submit"))._get_declaration().model_dump()
     schema = declaration["parameters"] or declaration["parameters_json_schema"]
     assert "left_linear" not in schema["properties"]
     assert "left_linear" not in (_tool(box, "submit").__doc__ or "")
-    refused = _tool(box, "submit")("Done", [], [], left_linear=[{"id": ID, "reason": "x"}])
-    assert refused["status"] == "error" and not state.submitted
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok" and state.submitted
+
+    (tmp_path / "required").mkdir()
+    req_state, *_, req_box = _setup(tmp_path / "required", atlas, require_deformation=True)
+    refused = _tool(req_box, "submit")("Done", [], [])
+    assert refused["error"] == "MISSING_DEFORMATIONS" and not req_state.submitted
+    assert "left_linear" not in refused["message"]
 
 
 @needs_ants
 def test_keep_linear_satisfies_submit_until_the_placement_moves(tmp_path: Path, atlas):
-    """The "linear placement stands" record (what submit's left_linear writes)
-    is cleared by a placement change like an applied fit."""
-    state, ctx, _, box = _setup(tmp_path, atlas, provider="none")
+    """A saved "linear placement stands" record (older jobs hold them) is
+    cleared by a placement change like an applied fit."""
+    state, ctx, _, box = _setup(tmp_path, atlas, provider="none", require_deformation=True)
     before = box.job.snapshot()
     state.slices[0].deformation = {
         "keep_linear": "The linear placement already matches.",

@@ -224,10 +224,6 @@ def assert_planes_as_supplied(job_folder: Path, job: Any) -> None:
             assert abs(float(np.dot(normals[i], normals[j]))) < 1 - 1e-6
 
 
-def _left_linear(*names: str) -> list[dict[str, str]]:
-    return [{"id": name, "reason": "kept"} for name in names]
-
-
 def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images):
     import langslice
     from langslice.core.handoff import prepare_linear_registration
@@ -248,8 +244,7 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         assert job.trace_borders(section=ID1)["status"] == "started"
         fit = job.ants_syn(sections=[ID0])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
-        submitted = job.submit(summary="done", notes=[], interval_breaks=[],
-                               left_linear=_left_linear(ID2))
+        submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
         assert job.state.by_id(ID1).image_correction["status"] == "ok"
         assert {name: job.state.by_id(name).cutting_angles_deg for name in IDS} == (
@@ -275,8 +270,7 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
 
     create(spec_for(images, ["nonlinear"], **_external()))
     with langslice.open_job(images) as job:
-        assert job.submit(summary="done", notes=[], interval_breaks=[],
-                          left_linear=_left_linear(*IDS))["status"] == "ok"
+        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
         folder = Path(job.folder)
         flat_differs = 0
         for name, stem in zip(IDS, STEMS, strict=True):

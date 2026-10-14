@@ -193,8 +193,8 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   user:", only when that task is on and the note is non-empty. Global
   `facts` stay in the run facts.
 - **`transform.max_parallel`** (1..4, default 4): below 4,
-  `interactive_transform` and `elastix_affine` (an empty list counts every
-  eligible section) refuse a call naming more sections (`Job.over_cap`)
+  `interactive_transform` and `elastix_affine` (each takes one to four
+  sections) refuse a call naming more sections (`Job.over_cap`)
   and the statement states the cap.
 - **`disabled`** (default empty): tools and tool options the job does
   without, `--disable NAME[,NAME...]`. A host's `inputs["damaged"]` note is
@@ -214,8 +214,10 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   everywhere; a tool that writes only frozen properties is not built
   (`JobSpec.switched_off`). The statement's frozen line and each status row's
   `frozen` tell the agent.
-- **`nonlinear.require_deformation`**: every section needs a deformation;
-  `submit` takes no `left_linear` (not declared, refused when sent).
+- **`nonlinear.require_deformation`** (`--require-deformation`, default off):
+  every section needs a deformation, and `submit` is refused
+  (`MISSING_DEFORMATIONS`) until it has one; off, a deformation is the
+  agent's choice and the job line says so.
 - **`force_view`**: the change tools always return their picture (their
   `view` argument is not declared).
 - **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`):
@@ -274,12 +276,13 @@ run's cost. The rules that follow:
 
 ## The Nonlinear task
 
-The job line asks for a deformation per section on top of its linear
-placement, with the section's stain (and, with an image model, the borders
-it traces) as the evidence. `submit` refuses `MISSING_DEFORMATIONS` until
-every section holds a deformation at its current `linear_key`, or is named
-in its `left_linear` with the reason its linear placement stands (unless
-the host requires a deformation on every section).
+The job line asks for a deformation on a section where it improves on its
+linear placement, with the section's stain (and, with an image model, the
+borders it traces) as the evidence. When the host requires a deformation on
+every section (`require_deformation`), the line says every section and
+`submit` refuses `MISSING_DEFORMATIONS` until every section holds a
+deformation at its current `linear_key`; otherwise `submit` has no
+deformation gate.
 
 - `ants_syn(sections, restrict_to=, atlas_image=, stiffness=, view=)`:
   ANTs SyN on the preprocessed channel against one of the atlas's images, on
@@ -312,12 +315,14 @@ the host requires a deformation on every section).
 
 **Lean harness.** Tools return data, no interpretation in any payload. The
 job statement carries the job, the facts, the tools by name, the
-constraints and a short Method per task that is on: place each section on
+constraints and a short Method per task that is on (with
+`interactive_transform`, the alignment lines open by aligning each section by
+hand before any fitting algorithm runs): place each section on
 its own evidence and compare before writing; review the whole stack and
 re-check both sides of a gap before reporting a break; inspect each fit or
 adjustment against surviving internal anatomy and keep only changes that
 improve it; mark a damaged section's lost regions before fitting it; fit
-whole sections first, then regions. Grouping work is the model's choice.
+the whole section first, then regions. Grouping work is the model's choice.
 Still out: rules of thumb, failure-mode warnings and region names in the
 statement (the same text runs against every BrainGlobe atlas, species and
 plane). Each tool's description is the only place it is described.

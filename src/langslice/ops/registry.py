@@ -143,6 +143,7 @@ _LIMITS: dict[str, dict[str, int]] = {
     "set_preprocessed_channel_properties": _PICTURES,
     "grep_atlas_view": _PICTURES,
     "interactive_transform": {"sections": look.MAX_LOOK_PICTURES},
+    "elastix_affine": {"sections": look.MAX_LOOK_PICTURES},
     "ants_syn": {"sections": deformable.MAX_ANTS_SYN_SECTIONS},
 }
 
