@@ -147,13 +147,118 @@ def _as_3x3(matrix: np.ndarray) -> np.ndarray:
     return np.vstack([np.asarray(matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
 
 
+#: ``border_color`` sentinel: resolved per picture by :func:`resolve_border_color`
+#: rather than a fixed colour (the default everywhere a picture is drawn).
+AUTO_BORDER_COLOR = "auto"
+
+#: What :func:`pick_border_color` chooses from, in tie-break order (first
+#: wins a near-tie). Excludes every colour a picture's OTHER drawing already
+#: gives a fixed meaning: cyan #00ffff and orange #ffaa00 (landmark markers,
+#: fresh/stale), white and black (marker rings, label chips, fold/hold
+#: outlines), magenta in both its shades here (FOLD_COLOUR #ff2bd6 in
+#: core.landmarks and MARKED_COLOR/HATCH_COLOR (255,64,160) in
+#: core.deformable.render/core.damage, the "second ink" for excluded
+#: regions), and the zoom grid's lime green #7dff3a (picked in
+#: core.zoom_grid specifically as a colour nothing else uses). Green here is
+#: a darker, more saturated green than that lime so the two read as
+#: distinct colours rather than two shades of the same one.
+BORDER_CANDIDATES: tuple[tuple[str, tuple[int, int, int]], ...] = (
+    ("yellow", (255, 255, 0)),
+    ("green", (0, 170, 0)),
+    ("red", (255, 0, 0)),
+    ("blue", (0, 0, 255)),
+)
+#: CIELAB dE76 gap under which the automatic choice keeps yellow (the first
+#: candidate) rather than a marginally higher-scoring one, so sections that
+#: already read fine are not changed for a sliver of extra contrast.
+BORDER_COLOR_TIE_EPSILON = 4.0
+
+#: Caption words for colours this module can produce or that a caller might
+#: pass explicitly; anything else is named by its hex.
+_COLOR_WORDS: dict[tuple[int, int, int], str] = {
+    rgb: name for name, rgb in BORDER_CANDIDATES
+} | {
+    (0, 255, 255): "cyan", (255, 0, 255): "magenta",
+    (255, 255, 255): "white", (0, 0, 0): "black", (255, 165, 0): "orange",
+}
+
+
+def color_word(rgb: tuple[int, int, int]) -> str:
+    """A caption word for a concrete border colour: a known name, else ``#rrggbb``."""
+    key = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+    if key in _COLOR_WORDS:
+        return _COLOR_WORDS[key]
+    return rgb_to_hex(key)
+
+
+def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    """A concrete RGB as ``#rrggbb``, to hand an already-resolved colour to a
+    second call as an explicit ``border_color`` (so a multi-panel picture
+    draws every panel in the one colour its first panel picked)."""
+    return f"#{int(rgb[0]):02x}{int(rgb[1]):02x}{int(rgb[2]):02x}"
+
+
+def _lab(rgb: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(np.ascontiguousarray(rgb, dtype=np.uint8), cv2.COLOR_RGB2LAB).astype(
+        np.float64)
+
+
+def pick_border_color(
+    rgb: np.ndarray, coverage: np.ndarray,
+) -> tuple[tuple[int, int, int], str]:
+    """The :data:`BORDER_CANDIDATES` entry with the largest CIELAB dE76 against
+    *rgb*'s own pixels under and around where the lines fall (*coverage* in
+    [0, 1], same height/width as *rgb*; dilated a little here for "around").
+
+    dE76 (Euclidean distance in CIELAB) is used rather than plain RGB
+    distance or a WCAG luminance-only contrast ratio because it separates
+    colours by perceived hue and chroma as well as lightness: a pale pink
+    Nissl section and yellow can sit at similar luminance, where a
+    luminance-only measure would call them high-contrast when they read as
+    washed out. Ties within :data:`BORDER_COLOR_TIE_EPSILON` of the best
+    score keep yellow.
+    """
+    if coverage.shape != rgb.shape[:2]:
+        coverage = cv2.resize(coverage.astype(np.float32), (rgb.shape[1], rgb.shape[0]))
+    weights = cv2.dilate(coverage.astype(np.float32), np.ones((5, 5), np.float32))
+    total = float(weights.sum())
+    default_name, default_rgb = BORDER_CANDIDATES[0]
+    if total <= 0:
+        return default_rgb, default_name
+    lab = _lab(rgb[..., :3])
+    sample = (lab * weights[..., None]).sum(axis=(0, 1)) / total
+    scores = {
+        name: float(np.linalg.norm(_lab(np.array([[candidate]]))[0, 0] - sample))
+        for name, candidate in BORDER_CANDIDATES
+    }
+    best_name = max(scores, key=lambda name: scores[name])
+    if scores[best_name] - scores[default_name] < BORDER_COLOR_TIE_EPSILON:
+        return default_rgb, default_name
+    return dict(BORDER_CANDIDATES)[best_name], best_name
+
+
+def validate_border_thickness(thickness: float) -> float:
+    """*thickness* in 0.25..8 output-image pixels, or a ``ValueError``."""
+    if (
+        isinstance(thickness, bool) or not isinstance(thickness, (int, float))
+        or not math.isfinite(thickness) or not 0.25 <= thickness <= 8
+    ):
+        raise ValueError("border_thickness must be a number from 0.25 to 8 output pixels")
+    return float(thickness)
+
+
 def normalize_border_style(
-    color: str = "yellow", thickness: float = 0.5,
+    color: str = AUTO_BORDER_COLOR, thickness: float = 0.5,
 ) -> tuple[tuple[int, int, int], float]:
-    """Validate display-only atlas borders; width is in output-image pixels."""
+    """Validate an EXPLICIT display-only atlas border colour; width is in
+    output-image pixels. :data:`AUTO_BORDER_COLOR` is not valid here (there
+    are no pixels to judge contrast from) -- resolve it with
+    :func:`resolve_border_color` instead."""
     if not isinstance(color, str):
         raise ValueError("border_color must be a named color or #RRGGBB")
     value = color.strip().lower()
+    if value == AUTO_BORDER_COLOR:
+        raise ValueError("border_color 'auto' must be resolved with resolve_border_color")
     if not re.fullmatch(r"[a-z]+|#[0-9a-f]{6}", value):
         raise ValueError("border_color must be a named color or #RRGGBB")
     try:
@@ -162,12 +267,32 @@ def normalize_border_style(
         raise ValueError("border_color must be a named color or #RRGGBB") from None
     if len(rgb) != 3:
         raise ValueError("border_color must be an opaque RGB color")
-    if (
-        isinstance(thickness, bool) or not isinstance(thickness, (int, float))
-        or not math.isfinite(thickness) or not 0.25 <= thickness <= 8
-    ):
-        raise ValueError("border_thickness must be a number from 0.25 to 8 output pixels")
-    return (rgb[0], rgb[1], rgb[2]), float(thickness)
+    return (rgb[0], rgb[1], rgb[2]), validate_border_thickness(thickness)
+
+
+def resolve_border_color(
+    color: str, thickness: float, *,
+    rgb: np.ndarray | None = None, coverage: np.ndarray | None = None,
+) -> tuple[tuple[int, int, int], float, str]:
+    """*color* resolved to a concrete RGB, a validated thickness, and the
+    caption word for it. :data:`AUTO_BORDER_COLOR` picks the highest-contrast
+    candidate (:func:`pick_border_color`) from *rgb*/*coverage* -- the
+    picture's own pixels and where its lines fall; any other value is
+    validated as :func:`normalize_border_style` does. *rgb*/*coverage* may be
+    omitted only when no line will actually be drawn (falls back to yellow,
+    unused).
+    """
+    if not isinstance(color, str):
+        raise ValueError("border_color must be a named color, #RRGGBB or 'auto'")
+    if color.strip().lower() != AUTO_BORDER_COLOR:
+        rgb_out, valid_thickness = normalize_border_style(color, thickness)
+        return rgb_out, valid_thickness, color_word(rgb_out)
+    valid_thickness = validate_border_thickness(thickness)
+    if rgb is None or coverage is None or not coverage.any():
+        name, rgb_out = BORDER_CANDIDATES[0]
+        return rgb_out, valid_thickness, name
+    rgb_out, name = pick_border_color(rgb, coverage)
+    return rgb_out, valid_thickness, name
 
 
 def _draw_polys(
@@ -452,7 +577,8 @@ class PanelFrame:
     *section_matrix* (3x3, the section render's frame -> canvas,
     :func:`placement_matrices`), and the atlas *lines* and *highlighted*
     region outlines drawn on it (native plane pixels, x/y; empty when none
-    were drawn) at *line_width*. *from_file*: a zoom whose section pixels
+    were drawn) at *line_width*, in *border_color* (resolved from "auto" if
+    that is what was asked for). *from_file*: a zoom whose section pixels
     were read from the image file, how many picture pixels one file pixel
     spans (None: drawn from the render).
     """
@@ -468,6 +594,9 @@ class PanelFrame:
     line_width: float
     mode: str
     from_file: float | None = None
+    #: The concrete RGB any drawn line used (``resolve_border_color``'s
+    #: choice); None when nothing was drawn, so "auto" had nothing to judge.
+    border_color: tuple[int, int, int] | None = None
 
 
 def physical_views(
@@ -484,7 +613,7 @@ def physical_views(
     zoom: list[float] | None = None,
     zoom_pixels: Sequence[float] = (),
     atlas_opacity: float = 0.0,
-    border_color: str = "yellow",
+    border_color: str = AUTO_BORDER_COLOR,
     border_thickness: float = 0.5,
     outlines: str = "all",
     depth: int = OVERLAY_DEPTH,
@@ -525,7 +654,10 @@ def physical_views(
     *outlines* picks which atlas lines are drawn: every boundary between
     regions at ontology *depth* (``all``, :func:`langslice.core.atlas.levels.labels_at`)
     or none (``none``). *border_color*
-    is a named color or #RRGGBB (default yellow); *border_thickness* is 0.25..8
+    is a named color, #RRGGBB, or :data:`AUTO_BORDER_COLOR` ("auto", the default):
+    resolved per picture to whichever candidate (:data:`BORDER_CANDIDATES`) has
+    the highest CIELAB contrast against the picture's own pixels under the lines
+    (:func:`resolve_border_color`). *border_thickness* is 0.25..8
     output-image pixels (default 0.5), unchanged by zoom or canvas resolution.
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
@@ -553,7 +685,6 @@ def physical_views(
     where its pixels sit, for the picture's layers. Returns the images, each
     captioned.
     """
-    line_color, line_width = normalize_border_style(border_color, border_thickness)
     geometry = canvas_geometry(
         section.size,
         section_um_per_px,
@@ -638,6 +769,21 @@ def physical_views(
             )
         panels = [(warped, label or "section")]
 
+    # One colour for the whole picture: resolved once, against the one
+    # background panel this call draws (never per zoom crop or per line
+    # layer), before anything is drawn on it.
+    drawn_polys = (list(atlas_lines) if lines else []) + list(highlighted)
+    coverage = (
+        line_coverage(
+            panels[0][0].shape[:2], drawn_polys, thickness=max(float(border_thickness), 1.0),
+            scale=geometry.atlas_scale, offset=geometry.atlas_offset,
+        )
+        if drawn_polys else None
+    )
+    line_color, line_width, border_word = resolve_border_color(
+        border_color, border_thickness, rgb=np.asarray(panels[0][0]), coverage=coverage,
+    )
+
     knobs = matrix_label if isinstance(params, np.ndarray) else knob_words(params)
 
     # The crop happens first, then the screen is sized: *long_edge*, or, for
@@ -694,6 +840,11 @@ def physical_views(
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
         labelled = caption(Image.fromarray(screen, mode="RGB"), text,
                            min_width=edge if zoomed and edge is not None else 0)
+        if drawn_polys:
+            # Carried on the image itself (as `pixel_to_native` etc. already
+            # are), so any caller building a caption after this call can
+            # name the colour without re-threading it through every layer.
+            labelled.info["border_word"] = border_word
         if panel_frames is not None:
             panel_frames.append(PanelFrame(
                 size=labelled.size,
@@ -702,7 +853,7 @@ def physical_views(
                 section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
                 lines=tuple(atlas_lines) if lines else (),
                 highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
-                from_file=from_file,
+                from_file=from_file, border_color=line_color if drawn_polys else None,
             ))
         images.append(labelled)
     return images
