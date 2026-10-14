@@ -100,27 +100,12 @@ def test_a_far_region_is_unchanged_by_one_moved_pair(tmp_path):
         job.close()
 
 
-def test_a_fold_through_holds_names_pairs_and_says_automatic_hold():
-    folds = {"area_fraction": 0.01, "triangles": [["L2", "~0", "~3"], ["L1", "L2", "L3"]]}
-    reply = landmarks._folds_reply(folds)["folds"]
-    assert reply["pairs"] == ["L1", "L2", "L3"]
-    assert reply["triangles"][0] == ["L2", "automatic hold", "automatic hold"]
-    assert "~" not in str(reply)
-    assert "automatic hold" in reply["note"]
-
-
-def test_the_result_picture_draws_unlabelled_holds(tmp_path):
-    from langslice.ops import look
-
-    job, ws, record = setup(tmp_path)
-    try:
-        landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
-        landmarks.landmark_triangulation(job, ws, record.id)
-        shown = look.show_result(job, ws, "landmark_triangulation", "overlay", [record.id])
-        image = np.asarray(shown.pictures[0]).astype(int)
-        white_ringed = (image == 255).all(axis=-1)
-        assert white_ringed.sum() > 0
-        assert record.deformation is not None
-        assert len(record.deformation["landmark_holds"]) > 5
-    finally:
-        job.close()
+def test_holds_are_kept_only_on_the_placed_footprint():
+    size = (700, 500)
+    footprint = np.zeros((size[1], size[0]), bool)
+    footprint[100:400, 150:550] = True
+    everywhere = automatic_holds(np.empty((0, 2)), size)
+    holds = automatic_holds(np.empty((0, 2)), size, footprint=footprint)
+    assert 0 < len(holds) < len(everywhere)
+    rows, cols = np.rint(holds[:, 1]).astype(int), np.rint(holds[:, 0]).astype(int)
+    assert footprint[rows, cols].all()

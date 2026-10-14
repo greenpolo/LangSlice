@@ -21,9 +21,8 @@ the native ones on every door: the toolbox (agent and MCP), `ops` / `schema`
 per-spec view (`registry.verbs_for(spec)`).
 A job without plugins declares, replies and draws exactly as before.
 
-The goldens
-(`tests/golden/linear_tools/*_declarations_*`) pin what the ADK and MCP
-doors declare, byte for byte.
+The text snapshot (`tests/snapshots/agent_text/`) pins what the doors
+declare.
 
 ## The layer rule
 

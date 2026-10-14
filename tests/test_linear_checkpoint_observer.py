@@ -23,22 +23,16 @@ def _write(job: Job, note: str) -> None:
     job.commit(before)
 
 
-def test_an_observer_fires_with_the_state_after_every_write(tmp_path: Path):
+def test_observers_fire_per_write_and_are_removed_on_exit(tmp_path: Path):
     job = _job(tmp_path)
     seen: list[list[str]] = []
-    with job.observe(lambda state: seen.append(list(state.notes))):
+    other: list[StackState] = []
+    with job.observe(lambda state: seen.append(list(state.notes))), job.observe(other.append):
         _write(job, "first")
         _write(job, "second")
-    assert seen == [["first"], ["first", "second"]]
-
-
-def test_an_observer_is_removed_on_context_exit(tmp_path: Path):
-    job = _job(tmp_path)
-    seen: list[StackState] = []
-    with job.observe(seen.append):
-        _write(job, "observed")
     _write(job, "not observed")
-    assert len(seen) == 1
+    assert seen == [["first"], ["first", "second"]]
+    assert len(other) == 2
 
 
 def test_an_observer_exception_does_not_break_the_write(tmp_path: Path):
@@ -51,12 +45,3 @@ def test_an_observer_exception_does_not_break_the_write(tmp_path: Path):
         _write(job, "kept")
     assert Path(job.checkpoint_path).exists()
     assert job.state.notes == ["kept"]
-
-
-def test_two_observers_can_be_attached_at_once(tmp_path: Path):
-    job = _job(tmp_path)
-    a: list[StackState] = []
-    b: list[StackState] = []
-    with job.observe(a.append), job.observe(b.append):
-        _write(job, "both")
-    assert len(a) == 1 and len(b) == 1

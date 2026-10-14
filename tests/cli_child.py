@@ -1,8 +1,8 @@
 """The agent CLI on the synthetic atlas, in a process of its own.
 
 ``python -m tests.cli_child job FOLDER VERB ...`` is ``langslice-job FOLDER
-VERB ...`` with the golden recorder's synthetic atlas and fit settings
-(``tests/golden/record.py``): what a background run starts in the tests
+VERB ...`` with the shared synthetic atlas and fit settings
+(``tests/synthetic_stack.py``): what a background run starts in the tests
 (``langslice.doors.cli.background.CHILD_COMMAND``), where BrainGlobe's
 atlases are not available.
 """
@@ -40,7 +40,7 @@ def main() -> int:
     import os
     import time
 
-    from tests.golden.record import apply_patches, atlas_loader
+    from tests.synthetic_stack import apply_patches, atlas_loader
 
     apply_patches()
     install(atlas_loader())

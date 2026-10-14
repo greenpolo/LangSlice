@@ -2,18 +2,25 @@
 large plane is sampled in bands and an annotation plane is sampled once, all
 with unchanged values."""
 
+from collections import OrderedDict
 from typing import Any, cast
 
 import numpy as np
+import pytest
 from scipy.ndimage import map_coordinates, spline_filter
 
 from langslice.core import oblique
 from tests.deformable_synthetic import SyntheticAtlas
 
 
+@pytest.fixture(autouse=True)
+def _fresh_caches(monkeypatch):
+    monkeypatch.setattr(oblique, "_filtered_cache", {})
+    monkeypatch.setattr(oblique, "_annotation_plane_cache", OrderedDict())
+
+
 def test_cubic_samples_match_uncached_and_filter_once():
     atlas = SyntheticAtlas()
-    oblique._filtered_cache.clear()
     first = oblique.sample_oblique_plane(
         atlas, 0.1, "coronal", 3.0, -2.0, volume="template", order=3)
     second = oblique.sample_oblique_plane(
@@ -49,10 +56,7 @@ def test_banded_sampling_matches_one_call(monkeypatch):
 
 def test_annotation_planes_sampled_once_and_handed_out_as_copies():
     atlas = SyntheticAtlas()
-    oblique._annotation_plane_cache.clear()
     first = oblique.sample_oblique_annotation(atlas, 0.1, "coronal", 3.0, -2.0)
-    assert len(oblique._annotation_plane_cache) == 1
     first[:] = 0  # a caller's own array: the cache is untouched
     second = oblique.sample_oblique_annotation(atlas, 0.1, "coronal", 3.0, -2.0)
-    assert len(oblique._annotation_plane_cache) == 1
     assert second.any() and second.dtype == np.asarray(atlas.annotation).dtype

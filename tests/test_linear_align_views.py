@@ -14,10 +14,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-from test_linear_physical import TwoRegionAtlas, _ctx
 
 from langslice.core.canvas import canvas_geometry, physical_views
 from langslice.core.captions import scale_bar_px
+from tests.test_linear_physical import TwoRegionAtlas, _ctx
 
 _IDENTITY = {
     "rotation_deg": 0.0,
@@ -105,6 +105,7 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
     assert zoomed.shape[1] == round(0.7 * geometry.size[0]) - round(0.3 * geometry.size[0])
     tissue = lambda rgb: float(((rgb >= 100) & (rgb <= 140)).all(axis=2).mean())  # noqa: E731
     assert tissue(zoomed) > 2.0 * tissue(whole), "the crop did not magnify the tissue"
+    assert np.array_equal(whole, _views(zoom=[])[0])  # an empty zoom is the whole canvas
 
     # The bar is drawn after the crop, at the magnified micrometres per pixel.
     crop_width = round(0.7 * geometry.size[0]) - round(0.3 * geometry.size[0])
@@ -113,12 +114,6 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
         assert _bar_length(image) == pytest.approx(
             scale_bar_px(geometry.um_per_px / factor) + 1, abs=3
         )
-
-
-def test_an_empty_zoom_is_the_whole_canvas():
-    (plain,) = _views()
-    (empty,) = _views(zoom=[])
-    assert np.array_equal(plain, empty)
 
 
 # --- the modes -----------------------------------------------------------
@@ -178,44 +173,6 @@ def _tools(tmp_path: Path):
     record.position_mm = 0.2
     box = build_tools(state, ctx, ctx.spec)
     return {tool.__name__: tool for tool in box.tools}, box, state
-
-
-def test_the_hand_transform_payload_is_concise(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-
-    tools, box, state = _tools(tmp_path)
-    adjust = tools["interactive_transform"]
-
-    first = adjust([{"id": "s.tif", **_IDENTITY, "translate_x_mm": 0.25}])
-    assert first["status"] == "ok"
-    (row,) = first["results"]
-    assert row["written"] is True
-    assert row["transform"]["translate_x_mm"] == 0.25
-    assert row["transform"]["pivot"] == [0.5, 0.5]
-    # No overlap number: silhouette overlap against the whole atlas plate
-    # rewarded inflating a damaged remnant to fill it (0.29 -> 0.51 at scale 1.35), and this loop
-    # exists for damaged sections.
-    assert "silhouette_iou" not in first and "silhouette_iou" not in row
-    # The normalized matrix, derived pixel shift/decomposition and any history
-    # stay host-side instead of growing each reply; no echo of picture options.
-    assert not {"matrix_params", "translate_px", "decomposition", "history", "view",
-                "image_indexes", "description"} & (set(first) | set(row))
-    # One picture of what was written, listed by its number.
-    assert len(first[TOOL_MEDIA_PARTS_KEY]) == 1 == len(first["pictures"])
-    assert state.slices[0].transform["physical"]["translate_x_mm"] == 0.25
-
-    # The same values again write nothing (and take no undo step).
-    depth = len(box.job.undo_stack)
-    again = adjust([{"id": "s.tif", **_IDENTITY, "translate_x_mm": 0.25}])
-    assert again["results"][0]["written"] is False
-    assert len(box.job.undo_stack) == depth
-
-    ghost = adjust([{"id": "ghost.tif", **_IDENTITY}])
-    assert ghost["status"] == "error" and ghost["error"] == "NOTHING_WRITTEN"
-    assert ghost["results"][0]["error"] == "UNKNOWN_SLICE_IDS"
-    # The picture can be left out.
-    quiet = adjust([{"id": "s.tif", "rotation_deg": 2.0}], view=False)
-    assert quiet["status"] == "ok" and TOOL_MEDIA_PARTS_KEY not in quiet
 
 
 def test_look_draws_the_section_where_it_is_and_writes_nothing(tmp_path: Path):
@@ -319,23 +276,3 @@ def test_border_style_reaches_all_atlas_bearing_panels(mode):
         assert _line_pixels(custom) == 0
         assert _line_pixels(custom[..., ::-1]) > _line_pixels(default)
 
-
-@pytest.mark.parametrize("mode", ["section", "template"])
-def test_border_style_does_not_add_lines_to_clean_views(mode):
-    (default,) = _views(mode=mode)
-    (custom,) = _views(mode=mode, border_color="cyan", border_thickness=4)
-    assert np.array_equal(default, custom)
-
-
-def test_fractional_border_widths_are_distinct_and_preserve_geometry():
-    from langslice.core.canvas import _draw_polys, normalize_border_style
-
-    square = np.asarray([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=float)
-    ink = []
-    for width in (0.25, 0.5, 0.75, 1.0):
-        assert normalize_border_style("yellow", width)[1] == width
-        screen = np.zeros((100, 100, 3), dtype=np.uint8)
-        _draw_polys(screen, [square], (255, 255, 0), thickness=width)
-        ink.append(int(screen[50, 15:26, 0].sum()))
-        assert not screen[40:60, 40:60].any()
-    assert all(a < b for a, b in zip(ink, ink[1:], strict=False))

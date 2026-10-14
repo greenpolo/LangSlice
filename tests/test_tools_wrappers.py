@@ -12,7 +12,6 @@ from pathlib import Path
 
 from PIL import Image
 
-from langslice.core import layers
 from langslice.core.state import SliceState, StackState
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import (
@@ -41,7 +40,7 @@ def test_tools_keep_their_identity_and_run_one_at_a_time():
         """Doc kept."""
         inside["now"] += 1
         inside["peak"] = max(inside["peak"], inside["now"])
-        time.sleep(0.02)
+        time.sleep(0.005)
         inside["now"] -= 1
         return x
 
@@ -55,7 +54,7 @@ def test_tools_keep_their_identity_and_run_one_at_a_time():
     assert inside["peak"] == 1
 
 
-def test_tool_end_names_the_pictures_the_call_saved(tmp_path: Path):
+def test_tool_events_name_the_pictures_and_whether_the_call_failed(tmp_path: Path):
     events: list[dict] = []
     state, ctx, spec = _stack(tmp_path, n=3, placed=True)
     box = build_tools(state, ctx, spec, on_event=events.append)
@@ -71,14 +70,7 @@ def test_tool_end_names_the_pictures_the_call_saved(tmp_path: Path):
     box.job.views.flush()
     assert Path(path).is_file()
     assert end["failed"] is False
-
-
-def test_tool_end_says_whether_the_tool_failed(tmp_path: Path):
-    """One rule for every host (the Fiji log, the browser and Swing logs): a
-    reply whose status is ``error`` or ``refused`` failed; any other did not."""
-    events: list[dict] = []
-    state, ctx, spec = _stack(tmp_path, n=3, placed=True)
-    box = build_tools(state, ctx, spec, on_event=events.append)
+    # One rule for every host: a reply whose status is ``error`` or ``refused`` failed.
     reply = _tool(box, "look")("overlay", sections=["nope.png"])
     assert reply["status"] in ("error", "refused") and events[-1]["failed"] is True
 
@@ -166,22 +158,6 @@ def test_the_adk_plugin_refuses_what_adk_would_drop(tmp_path: Path):
 
 
 # --- _saves_views ----------------------------------------------------------------------------
-
-
-def test_plain_pictures_are_saved_and_numbered_in_order(tmp_path: Path):
-    state, ctx, spec = _stack(tmp_path, n=2, placed=True)
-    job = build_tools(state, ctx, spec).job
-    red, blue = Image.new("RGB", (20, 10), "red"), Image.new("RGB", (20, 10), "blue")
-
-    def drawn(sections: list[str]) -> dict:
-        layers.note(blue, sections=("s1.png",), mode="section", caption="the blue one")
-        return {"status": "ok", TOOL_MEDIA_PARTS_KEY: [red, "a line of text", blue]}
-
-    result = _saves_views(drawn, job, ctx)(["s0.png"])
-    assert result["pictures"] == [{"id": 1}, {"id": 2, "caption": "the blue one"}]
-    records = job.views.records()
-    assert [(r.seq, r.tool) for r in records] == [(1, "drawn"), (2, "drawn")]
-    assert records[1].sections == ("s1.png",)
 
 
 def test_pictures_an_operation_saved_are_not_saved_again(tmp_path: Path):

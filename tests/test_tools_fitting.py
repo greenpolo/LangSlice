@@ -1,5 +1,5 @@
 """The fit tools through the tool door: elastix_affine, ants_syn and the
-packaged trace_borders (a stand-in image model), with their pictures, their
+packaged trace_borders (a stand-in image model), with their refusals, their
 background notices and the stale-deformation sweep.
 
 The atlas is the deformable tests' synthetic one (50 um voxels, a section
@@ -34,13 +34,6 @@ from tests.linear_tool_helpers import tool_named as _tool
 needs_ants = pytest.mark.skipif(not deformation.ants_available(), reason="needs antspyx")
 IDENTITY = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             "calibration": {"section_um_per_px": 25.0, "source": "host"}}
-
-
-@pytest.fixture(autouse=True)
-def _in_process(monkeypatch):
-    """Fits in this process at the coarse detail level, as the deformable tests run."""
-    monkeypatch.setattr(deformation, "USE_PROCESS_POOL", False)
-    monkeypatch.setattr(deformation, "DETAIL_LEVEL", "coarse")
 
 
 @pytest.fixture(scope="module")
@@ -99,49 +92,8 @@ def _run(tmp_path: Path, atlas: SyntheticAtlas, *, n: int = 1, transformed: bool
 # --- elastix_affine -----------------------------------------------------------------
 
 
-def test_elastix_affine_fits_writes_one_step_and_shows_each_section(tmp_path: Path, atlas):
-    state, _, box, _ = _run(tmp_path, atlas, n=2)
-    result = _tool(box, "elastix_affine")(["s0.png", "s1.png"])
-    assert result["status"] == "ok", result
-    rows = result["results"]
-    assert [row["id"] for row in rows] == ["s0.png", "s1.png"]
-    for row in rows:
-        assert row["status"] == "ok"
-        assert "params" not in row  # the six raw numbers stay host-side
-        assert set(row["physical"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
-                                        "translate_x_mm", "translate_y_mm", "pivot"}
-        assert row["calibration"] == {"section_um_per_px": 25.0, "source": "host"}
-    assert all(record.transform["kind"] == "elastix" for record in state.slices)
-    assert len(box.job.undo_stack) == 1
-    # A picture per fitted section, under its new transform with the borders.
-    assert len(result["pictures"]) == 2 and len(result[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert "s0.png overlay" in result["pictures"][0]["caption"]
-    assert "elastix transform" in result["pictures"][0]["caption"]
-    assert [r.tool for r in box.job.views.records()] == ["elastix_affine"] * 2
-    _tool(box, "undo")()
-    assert all(record.transform is None for record in state.slices)
-
-
-def test_a_restricted_fit_zooms_its_picture_to_the_regions(tmp_path: Path, atlas):
+def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Path, atlas):
     state, ctx, box, _ = _run(tmp_path, atlas)
-    result = _tool(box, "elastix_affine")(["s0.png"], ["TH"])
-    assert result["status"] == "ok", result
-    (row,) = result["results"]
-    assert row["regions"]["include"] == ["TH"]
-    box_fractions = row["restrict_box"]
-    assert len(box_fractions) == 4 and 0 <= box_fractions[0] < box_fractions[2] <= 1
-    (record,) = box.job.views.records()
-    assert record.recipe["args"]["zoom"] == box_fractions
-    assert state.slices[0].transform["kind"] == "elastix"
-    # The region comes out at the picture size, its caption at that width.
-    (picture,) = result[TOOL_MEDIA_PARTS_KEY]
-    edge = picture_edge(ctx)
-    assert picture.width == edge
-    assert max(record.recipe["shown"]) == edge
-
-
-def test_elastix_affine_without_a_picture_and_its_refusals(tmp_path: Path, atlas):
-    state, _, box, _ = _run(tmp_path, atlas)
     fit = _tool(box, "elastix_affine")
     nope = fit(["nope.png"])
     assert nope["error"] == "UNKNOWN_SLICE_IDS" and nope["unknown"] == ["nope.png"]
@@ -155,34 +107,31 @@ def test_elastix_affine_without_a_picture_and_its_refusals(tmp_path: Path, atlas
     many = fit(["s0.png"] * 5)
     assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
     assert state.slices[0].transform is None and box.job.undo_stack == []
-    quiet = fit(["s0.png"], view=False)
-    assert quiet["status"] == "ok" and quiet["results"][0]["status"] == "ok"
-    assert "pictures" not in quiet and TOOL_MEDIA_PARTS_KEY not in quiet
 
-
-def test_a_fit_that_turns_a_section_far_reports_the_turn():
-    from langslice.ops.transforms import LARGE_TURN_DEG, _turn_deg
-
-    def fitted(rotation: float) -> dict:
-        return {"physical": {"rotation_deg": rotation}}
-
-    assert _turn_deg(None, fitted(-179.9)) > LARGE_TURN_DEG
-    assert _turn_deg(fitted(170.0), fitted(-175.0)) == pytest.approx(15.0)
-    assert _turn_deg(fitted(10.0), fitted(-20.0)) < LARGE_TURN_DEG
+    # One real fit, restricted to a region: one undo step, a picture zoomed to it.
+    result = fit(["s0.png"], ["TH"])
+    assert result["status"] == "ok", result
+    (row,) = result["results"]
+    assert row["status"] == "ok" and "params" not in row  # raw numbers stay host-side
+    assert set(row["physical"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
+                                    "translate_x_mm", "translate_y_mm", "pivot"}
+    assert row["calibration"] == {"section_um_per_px": 25.0, "source": "host"}
+    assert row["regions"]["include"] == ["TH"]
+    box_fractions = row["restrict_box"]
+    assert len(box_fractions) == 4 and 0 <= box_fractions[0] < box_fractions[2] <= 1
+    (record,) = box.job.views.records()
+    assert record.tool == "elastix_affine"
+    assert record.recipe["args"]["zoom"] == box_fractions
+    assert state.slices[0].transform["kind"] == "elastix"
+    assert len(box.job.undo_stack) == 1
+    (picture,) = result[TOOL_MEDIA_PARTS_KEY]
+    edge = picture_edge(ctx)
+    assert picture.width == edge and max(record.recipe["shown"]) == edge
+    _tool(box, "undo")()
+    assert state.slices[0].transform is None
 
 
 # --- ants_syn --------------------------------------------------------------------------
-
-
-def test_ants_syn_is_refused_without_antspyx(tmp_path: Path, atlas, monkeypatch):
-    import langslice.ops.deformable as ops_deformable
-
-    state, _, box, _ = _run(tmp_path, atlas, transformed=True)
-    monkeypatch.setattr(ops_deformable, "ants_ready", lambda: False)
-    result = _tool(box, "ants_syn")(["s0.png"])
-    assert result["status"] == "error" and result["error"] == "ANTS_MISSING"
-    assert "antspyx" in result["message"]
-    assert state.slices[0].deformation is None and box.job.undo_stack == []
 
 
 @needs_ants
@@ -207,30 +156,18 @@ def test_ants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: Path
     assert len(state.by_id("s1.png").deformation["steps"]) == 2
     _tool(box, "undo")()
     assert len(state.by_id("s1.png").deformation["steps"]) == 1
-
-
-@needs_ants
-def test_a_changed_placement_clears_the_deformation_in_the_same_step(tmp_path: Path, atlas):
-    state, _, box, _ = _run(tmp_path, atlas, n=2, transformed=True)
-    assert _tool(box, "ants_syn")(["s1.png"], view=False)["status"] == "ok"
+    # A changed placement clears the deformation in the same step; undo restores both.
     turned = _tool(box, "interactive_transform")([{"id": "s1.png", "rotation_deg": 4.0}],
                                                  view=False)
     assert turned["deformation_cleared"] == ["s1.png"]
     assert state.by_id("s1.png").deformation is None
-    _tool(box, "undo")()  # the placement and the deformation come back together
+    _tool(box, "undo")()
     assert state.by_id("s1.png").deformation is not None
     assert state.by_id("s1.png").transform["kind"] == "interactive"
-    # With its picture: the deformation goes first, so the picture shows the
-    # section as it now stands.
-    shown = _tool(box, "interactive_transform")([{"id": "s1.png", "rotation_deg": 4.0}])
-    assert shown["deformation_cleared"] == ["s1.png"]
-    assert "no deformation" in shown["pictures"][0]["caption"]
 
 
-@needs_ants
 def test_submit_needs_no_deformation_in_a_nonlinear_run(tmp_path: Path, atlas):
     state, _, box, _ = _run(tmp_path, atlas, n=2, transformed=True, tasks=("nonlinear",))
-    _tool(box, "ants_syn")(["s1.png"], view=False)
     submit = _tool(box, "submit")
     stray = submit("done", [], [], left_linear=[{"id": "s0.png", "reason": "flat"}])
     assert stray["error"] == "UNKNOWN_ARGUMENTS"

@@ -134,7 +134,7 @@ def test_submit_waits_and_the_work_gives_way_under_the_lock(tmp_path: Path):
         return Landed(status=DONE, text="positions written.")
 
     work = job.background.start("positions", ["s0.png", "s1.png", "s2.png"], land)
-    timer = threading.Timer(0.3, release.set)
+    timer = threading.Timer(0.02, release.set)
     with job.writing():  # as the door holds it around submit
         timer.start()
         done = ops_submit.submit(job, summary="placed")
@@ -170,7 +170,7 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
 def test_close_waits_for_the_work(tmp_path: Path):
     job, _ = _open(tmp_path, tasks=["position"])
     release = threading.Event()
-    threading.Timer(0.2, release.set).start()
+    threading.Timer(0.02, release.set).start()
     job.background.start("note", ["s0.png"],
                          lambda: Landed(status=DONE, text="ok") if release.wait(5) else
                          Landed(status=FAILED, text="timeout"))

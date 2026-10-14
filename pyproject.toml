@@ -58,6 +58,7 @@ anthropic = [
 dev = [
     "mcp>=1.24,<2",
     "pytest",
+    "pytest-xdist",
     "ruff",
     "basedpyright",
     # The layer contracts below (tests/test_import_layers.py runs them).
@@ -107,7 +108,8 @@ forbidden_modules = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "-ra -m 'not slow'"
+# Tests run in parallel; an idle worker takes queued tests from a busy one.
+addopts = "-ra -m 'not slow' -n auto --dist worksteal"
 markers = [
     "slow: integration tests that load real atlases or start a real JVM",
 ]

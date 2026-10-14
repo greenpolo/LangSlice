@@ -16,8 +16,8 @@ The description is the stub's docstring, which a model reads verbatim (ADK
 and FastMCP send a function's ``__doc__`` as it is), and it is the ONLY
 description of the tool: the job statement names the tools and describes
 none. Every continuation line a model reads is indented eight spaces;
-:func:`model_doc` adds the four this module level lacks (the goldens pin the
-bytes).
+:func:`model_doc` adds the four this module level lacks (the text snapshot pins
+the text).
 
 A run varies a declaration in the ways a :class:`Variant` names: ``look``'s and
 ``landmark_triangulation``'s ``resolution`` exist only where the agent chooses

@@ -110,9 +110,11 @@ cancelling it terminates that worker and its children.
 
 ## Verification and diagnostics
 
-Tests cover layer contracts, geometry and the shared interfaces. Golden
-fixtures pin model-facing declarations, replies and pictures; intentional
-changes are recorded with `LANGSLICE_UPDATE_GOLDEN=1` and visually reviewed.
+Tests cover layer contracts, geometry and the shared interfaces, and run in
+parallel. A text snapshot pins what the agent is told (tool declarations, job
+statements, refusals); an intended change is regenerated with
+`LANGSLICE_UPDATE_SNAPSHOT=1` and its diff reviewed. Picture changes are
+reviewed by looking at them.
 Image correctness requires inspecting raw output and fitted anatomy, not
 only metrics.
 

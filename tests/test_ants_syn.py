@@ -16,13 +16,9 @@ from langslice.ops import deformable as ops_deformable
 from langslice.ops.refusal import Refused
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
+pytest.importorskip("ants", reason="ants_syn needs antspyx")
+
 ID = "s0.png"
-
-
-@pytest.fixture(autouse=True)
-def _in_process(monkeypatch):
-    monkeypatch.setattr(deformation, "USE_PROCESS_POOL", False)
-    monkeypatch.setattr(deformation, "DETAIL_LEVEL", "coarse")
 
 
 @pytest.fixture(scope="module")

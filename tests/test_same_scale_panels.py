@@ -6,7 +6,7 @@ per pixel, so the brain's width in pixels on the two panels is in the
 physical ratio (1 for a whole section at its true pixel size), never each
 fitted to the picture.
 
-The fixture is the golden run's synthetic atlas: a 7.0 x 5.2 mm ellipse
+The fixture is the shared synthetic atlas: a 7.0 x 5.2 mm ellipse
 brain (50 um voxels), and sections rendered from it at 25 um/px, whole or
 with the right third missing.
 """

@@ -1,5 +1,5 @@
-"""The job layer: persisted undo, versioned files, live shared editing, and
-the tool doors' gates kept off the job."""
+"""The job layer: undo across a reopen and live shared editing (undo files and
+format versions are in test_job_folder.py)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
@@ -16,11 +15,9 @@ from langslice.core.spec import JobSpec
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import (
     STATE_FORMAT_VERSION,
-    read_checkpoint,
     write_checkpoint,
 )
-from langslice.job.history import HISTORY_FORMAT_VERSION
-from langslice.job.job import UNDO_DEPTH, Job
+from langslice.job.job import Job
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
@@ -53,49 +50,6 @@ def _edit_on_disk(path: str, edit: Any) -> None:
 # --- undo, persisted -----------------------------------------------------------
 
 
-def test_undo_history_survives_a_reopen(tmp_path: Path):
-    folder = _folder(tmp_path)
-    job, _ = _open(folder)
-    start = job.state.by_id("s0.png").position_mm  # initially unplaced
-    assert start is None
-    before = job.snapshot()
-    job.state.by_id("s0.png").position_mm = 1.5
-    job.commit(before)
-    before = job.snapshot()
-    job.state.notes.append("second step")
-    job.commit(before)
-
-    history = json.loads(Path(job.undo_path).read_text())
-    assert history["format_version"] == HISTORY_FORMAT_VERSION
-    assert history["state_format_version"] == STATE_FORMAT_VERSION
-    assert len(history["undo"]) == 2 and history["redo"] == []
-
-    again, _ = _open(folder)  # resume is the default
-    assert again.state.by_id("s0.png").position_mm == 1.5
-    assert again.undo() and "second step" not in again.state.notes
-    assert again.undo()
-    assert again.state.by_id("s0.png").position_mm == start != 1.5
-    assert not again.undo()
-    third, _ = _open(folder)
-    assert third.state.by_id("s0.png").position_mm == start
-    assert third.redo() and third.state.by_id("s0.png").position_mm == 1.5
-
-
-def test_a_fresh_job_empties_an_old_history_and_the_depth_is_kept(tmp_path: Path):
-    folder = _folder(tmp_path)
-    job, _ = _open(folder)
-    for index in range(UNDO_DEPTH + 5):
-        before = job.snapshot()
-        job.state.notes.append(f"note {index}")
-        job.commit(before)
-    assert len(job.undo_stack) == UNDO_DEPTH
-    assert len(json.loads(Path(job.undo_path).read_text())["undo"]) == UNDO_DEPTH
-
-    fresh, _ = _open(folder, resume=False)
-    assert fresh.undo_stack == [] and not fresh.undo()
-    assert json.loads(Path(fresh.undo_path).read_text())["undo"] == []
-
-
 def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     folder = _folder(tmp_path)
     job, ctx = _open(folder, tasks=["position"])
@@ -110,34 +64,6 @@ def test_a_toolbox_undo_reaches_back_across_a_reopen(tmp_path: Path):
     undone = _tool(box, "undo")()
     assert undone["status"] == "ok" and undone["undo_depth"] == 0
     assert again.state.by_id("s1.png").position_mm == start != 2.0
-
-
-# --- versioned files ---------------------------------------------------------------
-
-
-def test_the_checkpoint_is_versioned(tmp_path: Path):
-    folder = _folder(tmp_path)
-    _job, ctx = _open(folder)
-    saved = json.loads(Path(ctx.checkpoint_path).read_text())
-    assert saved["format_version"] == STATE_FORMAT_VERSION
-    assert load_checkpoint(ctx.checkpoint_path) is not None
-
-
-def test_a_checkpoint_from_a_newer_langslice_is_refused(tmp_path: Path):
-    folder = _folder(tmp_path)
-    _job, ctx = _open(folder)
-    _edit_on_disk(ctx.checkpoint_path,
-                  lambda data: data.update(format_version=STATE_FORMAT_VERSION + 1))
-    with pytest.raises(ValueError, match="newer LangSlice"):
-        read_checkpoint(ctx.checkpoint_path)
-
-
-def test_an_unreadable_history_starts_empty(tmp_path: Path):
-    folder = _folder(tmp_path)
-    job, _ = _open(folder)
-    Path(job.undo_path).write_text("{not json")
-    again, _ = _open(folder)
-    assert again.undo_stack == []
 
 
 # --- live shared editing ------------------------------------------------------------

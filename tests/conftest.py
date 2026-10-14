@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import pytest
 
+from tests.synthetic_stack import apply_patches
+
+# Every test process fits in process at the coarse level, whatever ran before.
+apply_patches()
+
 
 @pytest.fixture(scope="module")
 def atlas() -> object:

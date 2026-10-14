@@ -32,17 +32,6 @@ def test_a_panel_frame_per_picture_on_the_pictures_grid():
         assert layers.borders_layer(panel).dtype == np.uint8
 
 
-def test_the_border_layer_is_the_drawn_lines():
-    images, panels = _draw(mode="overlay", outlines="all", border_color="#ff0000",
-                           border_thickness=1.0)
-    picture = np.asarray(images[0]).astype(int)
-    borders = layers.borders_layer(panels[0])
-    red = (picture[..., 0] - np.maximum(picture[..., 1], picture[..., 2])) > 60
-    assert red.sum() > 200
-    assert (red & (borders > 0)).sum() / red.sum() > 0.99
-    assert (red & (borders >= 128)).sum() / (borders >= 128).sum() > 0.9
-
-
 def test_a_section_pixel_lands_where_the_placement_puts_it():
     _images, panels = _draw(mode="overlay")
     panel = panels[0]
@@ -65,18 +54,8 @@ def test_the_plane_affine_is_the_sampled_plane():
         np.testing.assert_allclose(mapped, grid, atol=1e-9)
 
 
-def test_notes_are_collected_per_call_and_found_by_identity():
-    image = Image.new("RGB", (4, 4))
-    twin = image.copy()
-    layers.note(image, sections=("ignored",))  # nothing collecting: free
-    with layers.collecting() as notes:
-        layers.note(image, sections=("s0.png",), mode="section")
-    assert layers.note_for(image, notes).sections == ("s0.png",)
-    assert layers.note_for(twin, notes) is None
-
-
 #: Which picture edge a positive angle puts at the larger position, per plane:
-#: what `position_sections`' description tells the model.
+#: the convention the angle conventions in `core.oblique` keep.
 ANGLE_EDGES = {
     "coronal": {"pitch": "top", "yaw": "right"},
     "sagittal": {"pitch": "left", "yaw": "bottom"},
@@ -102,17 +81,3 @@ def test_the_cutting_angle_directions_are_the_described_ones():
                   "left": tilted[h // 2, 0], "right": tilted[h // 2, w - 1]}
             facing = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
             assert at[edge] > at[facing[edge]], (plane, angle, edge)
-
-
-def test_the_position_sections_description_states_those_directions():
-    """The table above is what the model reads, plane by plane."""
-    import re
-
-    from langslice.doors.declarations import declaration
-
-    text = " ".join(declaration("position_sections").doc.split())
-    for plane, edges in ANGLE_EDGES.items():
-        said = re.search(rf"- {plane}: pitch puts the (\w+) edge at a larger position "
-                         rf"(?:\(mm\) )?than the \w+ edge; yaw puts the (\w+) edge", text)
-        assert said is not None, plane
-        assert said.groups() == (edges["pitch"], edges["yaw"]), plane

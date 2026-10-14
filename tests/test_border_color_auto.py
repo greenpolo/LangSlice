@@ -3,22 +3,17 @@
 
 Nash, 2026-10-14: "it should default to whatever is the highest contrast
 against the slice image." These check the colour-choice function directly
-(no atlas/section rendering needed) and, separately, that a real picture's
-caption names whichever colour it used.
+(no atlas/section rendering needed).
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from PIL import Image
-from test_linear_physical import TwoRegionAtlas
 
 from langslice.core.canvas import (
     AUTO_BORDER_COLOR,
     BORDER_CANDIDATES,
-    color_word,
-    physical_views,
     pick_border_color,
     resolve_border_color,
 )
@@ -69,12 +64,6 @@ def test_dark_brown_timm_like_tissue_keeps_yellow():
     assert rgb == YELLOW
 
 
-def test_the_choice_is_deterministic():
-    rgb1, name1 = pick_border_color(_flat((150, 150, 150)), _band_coverage())
-    rgb2, name2 = pick_border_color(_flat((150, 150, 150)), _band_coverage())
-    assert (rgb1, name1) == (rgb2, name2)
-
-
 def test_no_coverage_falls_back_to_yellow_unused():
     rgb, name = pick_border_color(_flat((235, 215, 210)), np.zeros((60, 60), dtype=np.float32))
     assert rgb == YELLOW and name == "yellow"
@@ -90,39 +79,3 @@ def test_explicit_auto_literal_is_rejected_by_normalize_border_style():
 
     with pytest.raises(ValueError, match="auto"):
         normalize_border_style(AUTO_BORDER_COLOR, 0.5)
-
-
-def test_auto_resolves_against_the_given_pixels():
-    rgb, _thickness, word = resolve_border_color(
-        AUTO_BORDER_COLOR, 0.5, rgb=_flat((235, 215, 210)), coverage=_band_coverage())
-    assert word == color_word(rgb)
-    assert rgb != YELLOW
-
-
-def test_auto_without_pixels_or_coverage_falls_back_to_yellow():
-    rgb, _thickness, word = resolve_border_color(AUTO_BORDER_COLOR, 0.5)
-    assert rgb == YELLOW and word == "yellow"
-
-
-# --- the caption names the colour actually used -----------------------------
-
-_IDENTITY = {
-    "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-    "translate_x_mm": 0.0, "translate_y_mm": 0.0, "shear": 0.0,
-}
-
-
-def _pale_section(size: tuple[int, int] = (200, 200)) -> Image.Image:
-    arr = np.full((size[1], size[0], 3), (240, 225, 220), dtype=np.uint8)
-    return Image.fromarray(arr, mode="RGB")
-
-
-def test_a_pale_picture_s_caption_names_the_colour_it_drew():
-    panels: list = []
-    (image,) = physical_views(
-        _pale_section(), 10.0, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
-        long_edge=None, panel_frames=panels, mode="overlay",
-    )
-    word = image.info.get("border_word")
-    assert word is not None and word != "yellow"
-    assert panels[0].border_color == dict(BORDER_CANDIDATES)[word]

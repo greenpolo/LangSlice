@@ -1,3 +1,6 @@
+"""Model string to ADK model: the litellm, ollama and hosted-Gemma routes."""
+
+import sys
 
 import pytest
 
@@ -10,100 +13,44 @@ class _FakeLiteLlm:
         self.kwargs = kwargs
 
 
-def test_resolve_litellm_proxy_model_uses_proxy_alias(monkeypatch):
+_PROXY_ENV = {"LANGSLICE_LITELLM_PROXY_BASE": "http://127.0.0.1:4000/v1",
+              "LANGSLICE_LITELLM_PROXY_KEY": "sk-local"}
+_OLLAMA_ENV = {"LANGSLICE_OLLAMA_BASE": "http://localhost:11434"}
+
+
+@pytest.mark.parametrize(("string", "env", "model_id", "kwargs"), [
+    ("litellm-proxy:langslice-qwen36-plus", _PROXY_ENV, "openai/langslice-qwen36-plus",
+     {"api_base": "http://127.0.0.1:4000/v1", "api_key": "sk-local"}),
+    ("openrouter:qwen/qwen3.6-plus", {"OPENROUTER_API_KEY": "sk-or"},
+     "openrouter/qwen/qwen3.6-plus", {"api_key": "sk-or"}),
+    ("gpt-4.1", {"OPENAI_API_KEY": "sk-openai", "OPENAI_BASE_URL": "https://api.openai.com/v1"},
+     "openai/gpt-4.1", {"api_key": "sk-openai", "api_base": "https://api.openai.com/v1"}),
+    ("ollama:gemma4:26b", _OLLAMA_ENV, "ollama_chat/gemma4:26b",
+     {"api_base": "http://localhost:11434"}),
+    ("gemma4:31b", _OLLAMA_ENV, "ollama_chat/gemma4:31b", {"api_base": "http://localhost:11434"}),
+    ("ollama:gemma4:26b", {"LANGSLICE_OLLAMA_THINK": "false"}, "ollama_chat/gemma4:26b",
+     {"think": False}),
+])
+def test_litellm_routes(monkeypatch, string, env, model_id, kwargs):
     monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
-    monkeypatch.setenv("LANGSLICE_LITELLM_PROXY_BASE", "http://127.0.0.1:4000/v1")
-    monkeypatch.setenv("LANGSLICE_LITELLM_PROXY_KEY", "sk-local")
-
-    model = model_resolver.resolve_adk_model("litellm-proxy:langslice-qwen36-plus")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "openai/langslice-qwen36-plus"
-    assert model.kwargs["api_base"] == "http://127.0.0.1:4000/v1"
-    assert model.kwargs["api_key"] == "sk-local"
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    model = model_resolver.resolve_adk_model(string)
+    assert isinstance(model, _FakeLiteLlm) and model.model == model_id
+    assert {key: model.kwargs[key] for key in kwargs} == kwargs
 
 
+def test_hosted_gemma_and_the_failures(monkeypatch):
+    monkeypatch.setattr(model_resolver, "_load_adk_gemma_class", lambda: _FakeLiteLlm)
+    model = model_resolver.resolve_adk_model("models/gemma-4-26b-a4b-it")
+    assert model.model == "gemma-4-26b-a4b-it" and model.kwargs == {}
 
-def test_resolve_openrouter_model_uses_openrouter_key(monkeypatch):
-    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
-
-    model = model_resolver.resolve_adk_model("openrouter:qwen/qwen3.6-plus")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "openrouter/qwen/qwen3.6-plus"
-    assert model.kwargs["api_key"] == "sk-or"
-
-
-def test_resolve_plain_openai_model_uses_litellm_openai(monkeypatch):
-    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-
-    model = model_resolver.resolve_adk_model("gpt-4.1")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "openai/gpt-4.1"
-    assert model.kwargs["api_key"] == "sk-openai"
-    assert model.kwargs["api_base"] == "https://api.openai.com/v1"
-
-
-def test_resolve_ollama_model_uses_local_ollama_chat(monkeypatch):
-    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
-    monkeypatch.setenv("LANGSLICE_OLLAMA_BASE", "http://localhost:11434")
-
-    model = model_resolver.resolve_adk_model("ollama:gemma4:26b")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "ollama_chat/gemma4:26b"
-    assert model.kwargs["api_base"] == "http://localhost:11434"
-
-
-
-def test_resolve_bare_local_model_tag_uses_ollama_chat(monkeypatch):
-    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
-    monkeypatch.setenv("LANGSLICE_OLLAMA_BASE", "http://localhost:11434")
-
-    model = model_resolver.resolve_adk_model("gemma4:31b")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "ollama_chat/gemma4:31b"
-    assert model.kwargs["api_base"] == "http://localhost:11434"
-
-
-def test_resolve_ollama_model_can_disable_thinking(monkeypatch):
-    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
-    monkeypatch.setenv("LANGSLICE_OLLAMA_THINK", "false")
-
-    model = model_resolver.resolve_adk_model("ollama:gemma4:26b")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "ollama_chat/gemma4:26b"
-    assert model.kwargs["think"] is False
-
-
-def test_resolve_ollama_model_rejects_invalid_thinking_flag(monkeypatch):
     monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
     monkeypatch.setenv("LANGSLICE_OLLAMA_THINK", "sometimes")
-
     with pytest.raises(ValueError, match="LANGSLICE_OLLAMA_THINK"):
         model_resolver.resolve_adk_model("ollama:gemma4:26b")
 
-
-def test_resolve_hosted_gemma_model_uses_adk_gemma(monkeypatch):
-    monkeypatch.setattr(model_resolver, "_load_adk_gemma_class", lambda: _FakeLiteLlm)
-
-    model = model_resolver.resolve_adk_model("models/gemma-4-26b-a4b-it")
-
-    assert isinstance(model, _FakeLiteLlm)
-    assert model.model == "gemma-4-26b-a4b-it"
-    assert model.kwargs == {}
-
-
-def test_resolve_litellm_model_reports_missing_dependency(monkeypatch):
-    import sys
-
+    monkeypatch.undo()
     monkeypatch.setitem(sys.modules, "google.adk.models.lite_llm", None)  # import fails
-
     with pytest.raises(RuntimeError, match="LiteLLM support requires"):
         model_resolver.resolve_adk_model("litellm-proxy:langslice-qwen36-plus")

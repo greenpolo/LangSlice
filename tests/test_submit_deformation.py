@@ -1,5 +1,5 @@
-"""The host's ``require_deformation`` at ``submit``; the
-unplaced sections and the starting positions."""
+"""Submit gates: the host's ``require_deformation``, unplaced sections, the
+starting positions, and the history step a saved picture records."""
 
 from __future__ import annotations
 
@@ -74,16 +74,14 @@ def test_ingest_leaves_sections_unplaced_and_submit_refuses(tmp_path: Path):
     assert refused.payload()["missing_ids"] == ["s0.png", "s1.png", "s2.png"]
 
 
-def test_supplied_positions_do_not_place_other_sections(tmp_path: Path):
-    job, _ = _open(tmp_path, n=5, tasks=["position"],
-                   inputs={"positions": {"s1.png": 2.0, "s3.png": 3.0}})
+@pytest.mark.parametrize("tasks, inputs, expected", [
+    (["position"], {"positions": {"s1.png": 2.0, "s3.png": 3.0}}, [None, 2.0, None, 3.0, None]),
+    (["transform"], {}, [None] * 5),
+])
+def test_supplied_positions_place_only_their_sections(tmp_path: Path, tasks, inputs, expected):
+    job, _ = _open(tmp_path, n=5, tasks=tasks, inputs=inputs)
     assert [record.position_mm for record in sorted(
-        job.state.slices, key=lambda record: record.index_original)] == [None, 2.0, None, 3.0, None]
-
-
-def test_without_positioning_no_starting_positions(tmp_path: Path):
-    job, _ = _open(tmp_path, tasks=["transform"])
-    assert all(record.position_mm is None for record in job.state.slices)
+        job.state.slices, key=lambda record: record.index_original)] == expected
 
 
 def test_saved_pictures_record_the_history_depth(tmp_path: Path):
