@@ -108,6 +108,26 @@ the progress window disconnects live updates but leaves the MCP job usable
 and its results on disk. Each direct worker request owns its process;
 cancelling it terminates that worker and its children.
 
+## Atlas cache
+
+BrainGlobe keeps the atlases it downloads in `~/.brainglobe`. LangSlice keeps
+two volumes it derives from an atlas in `~/.langslice/atlas-cache/`, one
+folder per atlas name and version: the template's cubic spline coefficients,
+from which every tilted template plane is sampled, and the annotation as
+indices into its sorted region ids, from which every tilted label plane is
+sampled. The first run on an atlas builds them (about 1.6 GB for
+`whs_sd_rat_39um`, 0.4 GB for `allen_mouse_25um`); later processes open them
+memory-mapped, which takes about 5 s off the start of a run on an angled rat
+stack and off every `langslice-job` call that draws a tilted plane. Planes
+sampled from the cache are identical to planes sampled without it.
+
+`LANGSLICE_ATLAS_CACHE` names another folder, or `off` turns the cache off.
+Atlases of more than 500 million voxels, such as `allen_mouse_10um`, are not
+cached. A cache folder that cannot be written, or a damaged file, is never an
+error: the volume is computed in memory, and a damaged file is rewritten. A
+new BrainGlobe version of an atlas gets a new folder; old folders can be
+deleted at any time.
+
 ## Verification and diagnostics
 
 Tests cover layer contracts, geometry and the shared interfaces, and run in

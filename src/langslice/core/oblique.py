@@ -35,6 +35,7 @@ from scipy.ndimage import map_coordinates, spline_filter, spline_filter1d
 from scipy.spatial.transform import Rotation
 
 from langslice.core.atlas.core import orient_slice_for_display
+from langslice.core.atlas.disk_cache import cached_volume
 from langslice.core.space import Plane, atlas_space_context, slice_axis_index
 
 # --------------------------------------------------------------------------
@@ -81,7 +82,8 @@ _annotation_lock = threading.Lock()
 
 
 def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.ndarray:
-    """:func:`_scaled_volume` pre-filtered for a spline of *order* > 1, cached.
+    """:func:`_scaled_volume` pre-filtered for a spline of *order* > 1, cached
+    in memory and on disk (:func:`langslice.core.atlas.disk_cache.cached_volume`).
 
     ``map_coordinates`` with ``order > 1`` spline-filters its whole input on
     every call (about 13 s for the 1024 x 512 x 512 rat template), so sampling
@@ -92,8 +94,10 @@ def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.n
     with _filtered_lock:
         hit = _filtered_cache.get(key)
         if hit is None:
-            vol, _res = _scaled_volume(atlas, kind, downsample)
-            hit = _spline_filter_threaded(vol, order)
+            name = f"{kind}_spline{int(order)}" + (
+                f"_step{int(downsample)}" if int(downsample) > 1 else "")
+            hit = cached_volume(atlas, name, lambda: _spline_filter_threaded(
+                _scaled_volume(atlas, kind, downsample)[0], order))
             _filtered_cache[key] = hit
     return hit
 
@@ -339,28 +343,38 @@ def sample_oblique_plane(
     Returns:
         2D float32 array, oriented like the rest of ``langslice.core.atlas.core``.
     """
-    normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
-    if isinstance(volume, str):
-        vol, res_mm = _scaled_volume(atlas, volume, downsample)
+    if isinstance(volume, str) and order > 1:
+        # the coefficients alone: on a disk-cache hit the raw volume is never read
+        vol = _filtered_volume(atlas, volume, downsample, order)
+        prefilter = False
+    elif isinstance(volume, str):
+        vol, _res = _scaled_volume(atlas, volume, downsample)
+        prefilter = True
     else:
         step = max(1, int(downsample))
         vol = np.ascontiguousarray(np.asarray(volume)[::step, ::step, ::step], dtype=np.float32)
-        context = atlas_space_context(atlas)
-        res_mm = cast(
-            "tuple[float, float, float]",
-            tuple(r / 1000.0 * step for r in context.resolution_um),
-        )
+        prefilter = True
+    sampled = _sample_plane(atlas, vol, downsample, position_mm, plane, pitch_deg, yaw_deg,
+                            order=order, prefilter=prefilter)
+    return np.asarray(sampled, dtype=np.float32)
 
-    coords = _plane_coordinates(
-        vol.shape, res_mm, (normal_axis, row_axis, col_axis),
-        position_mm / res_mm[normal_axis], pitch_deg, yaw_deg,
+
+def _sample_plane(
+    atlas: Any, vol: np.ndarray, downsample: int, position_mm: float, plane: Plane,
+    pitch_deg: float, yaw_deg: float, *, order: int, prefilter: bool,
+) -> np.ndarray:
+    """*vol* (the atlas strided by *downsample*) sampled on the plane, in
+    display orientation, in *vol*'s own sample type."""
+    axes = plane_axes(atlas, plane)
+    step = max(1, int(downsample))
+    res_mm = cast(
+        "tuple[float, float, float]",
+        tuple(r / 1000.0 * step for r in atlas_space_context(atlas).resolution_um),
     )
-    if isinstance(volume, str) and order > 1:
-        sampled = _sample(_filtered_volume(atlas, volume, downsample, order), coords,
-                          order=order, prefilter=False)
-    else:
-        sampled = _sample(vol, coords, order=order, prefilter=True)
-    return np.asarray(orient_slice_for_display(sampled, plane), dtype=np.float32)
+    coords = _plane_coordinates(
+        vol.shape, res_mm, axes, position_mm / res_mm[axes[0]], pitch_deg, yaw_deg)
+    return orient_slice_for_display(
+        _sample(vol, coords, order=order, prefilter=prefilter), plane)
 
 
 #: Planes of at least this many pixels are sampled in row bands on
@@ -399,6 +413,7 @@ def _sample(vol: np.ndarray, coords: np.ndarray, *, order: int, prefilter: bool)
     return np.concatenate(list(_sample_pool().map(band, bands)), axis=0)
 
 
+#: Per atlas: (sorted ids, the annotation as indices into them), :func:`_compact_annotation`.
 _annotation_index_cache: dict[tuple[str, int], tuple[np.ndarray, np.ndarray]] = {}
 
 
@@ -412,19 +427,27 @@ ANNOTATION_PLANE_CACHE_SIZE = 256
 
 
 def _compact_annotation(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
-    """(sorted ids, float32 volume of their dense indices), cached per atlas."""
+    """(sorted ids, the annotation as indices into them), cached per atlas in
+    memory and on disk (:func:`langslice.core.atlas.disk_cache.cached_volume`).
+    The indices are 16-bit while the atlas has at most 65536 ids."""
     key = (str(getattr(atlas, "atlas_name", "?")), id(atlas))
     with _annotation_lock:
         hit = _annotation_index_cache.get(key)
         if hit is not None:
             return hit
-        annotation = np.asarray(atlas.annotation)
-        ids = np.unique(annotation)
-        lookup = np.zeros(int(ids.max()) + 1, dtype=np.float32)
-        lookup[ids] = np.arange(len(ids), dtype=np.float32)
+        ids = cached_volume(atlas, "annotation_ids",
+                            lambda: np.unique(np.asarray(atlas.annotation)))
+
+        def dense() -> np.ndarray:
+            dtype = np.uint16 if len(ids) <= np.iinfo(np.uint16).max + 1 else np.uint32
+            lookup = np.zeros(int(ids.max()) + 1, dtype=dtype)
+            lookup[ids] = np.arange(len(ids), dtype=dtype)
+            return lookup[np.asarray(atlas.annotation)]
+
+        index = cached_volume(atlas, "annotation_index", dense)
         _annotation_index_cache.clear()  # ponytail: one atlas at a time; these are ~300 MB
         _annotation_plane_cache.clear()
-        hit = (ids, lookup[annotation])
+        hit = (np.asarray(ids), index)
         _annotation_index_cache[key] = hit
         return hit
 
@@ -442,8 +465,8 @@ def sample_oblique_annotation(
 
     Not ``sample_oblique_plane(volume="annotation")``: that samples in
     float32, whose 24-bit mantissa cannot hold the larger Allen structure ids
-    (484682516 lands on 484682528). Compacting the volume to dense indices
-    first makes every sampled value round-trip exactly.
+    (484682516 lands on 484682528). Compacting the volume to dense integer
+    indices first makes every sampled value round-trip exactly.
     """
     ids, index_volume = _compact_annotation(atlas)
     key = (str(getattr(atlas, "atlas_name", "?")), id(atlas), float(position_mm), str(plane),
@@ -453,18 +476,13 @@ def sample_oblique_annotation(
         if index is not None:
             _annotation_plane_cache.move_to_end(key)
     if index is None:
-        sampled = sample_oblique_plane(
-            atlas,
-            position_mm,
-            plane,
-            pitch_deg,
-            yaw_deg,
-            volume=index_volume,
-            downsample=downsample,
-            order=0,
-        )
-        dtype = np.uint16 if len(ids) <= np.iinfo(np.uint16).max else np.uint32
-        index = np.rint(sampled).clip(0, len(ids) - 1).astype(dtype)
+        step = max(1, int(downsample))
+        vol = index_volume if step == 1 else np.ascontiguousarray(
+            index_volume[::step, ::step, ::step])
+        # nearest neighbour in the indices' own integer type: exact, no float32 copy
+        index = np.ascontiguousarray(_sample_plane(
+            atlas, vol, step, position_mm, plane, pitch_deg, yaw_deg,
+            order=0, prefilter=False))
         with _annotation_lock:
             _annotation_plane_cache[key] = index
             while len(_annotation_plane_cache) > ANNOTATION_PLANE_CACHE_SIZE:
