@@ -201,12 +201,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return stepped("redone", "redo_depth", step)
 
     def submit(summary: str, notes: list[str], interval_breaks: list[str],
-               left_linear: list[dict[str, Any]] = [],  # noqa: B006 (read only)
                tool_context: Any = None) -> dict[str, Any]:
         try:
             done = ops_submit.submit(
                 job, summary=summary, notes=as_list(notes),
-                interval_breaks=as_list(interval_breaks), left_linear=as_list(left_linear),
+                interval_breaks=as_list(interval_breaks),
                 traces=door.traces_on, workspace=ctx)
         except Refused as refusal:
             return refusal.payload()
@@ -214,8 +213,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                     "interval_breaks": done.interval_breaks})
         if tool_context is not None:
             tool_context.actions.escalate = True
-        return {"status": "ok", **({"left_linear": done.left_linear} if done.left_linear
-                                   else {}), **door.rows()}
+        return {"status": "ok", **door.rows()}
 
     return {
         "position_sections": position_sections,

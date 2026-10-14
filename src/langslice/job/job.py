@@ -501,21 +501,17 @@ def missing_transforms(state: StackState) -> dict[str, Any] | None:
 
 def missing_deformations(
     state: StackState, exempt: frozenset[str] | set[str] = frozenset(),
-    left_linear: Collection[str] = (),
 ) -> dict[str, Any] | None:
-    """``None`` when every section carries a deformation, or a keep_linear
-    reason, at its current linear placement; else the rejection. The
-    sections in *exempt* (their deformation frozen) need neither, and the sections in
-    *left_linear* (``submit``'s ``left_linear``: left without a deformation,
-    each with its reason) count as covered."""
+    """``None`` when every section carries a deformation at its current linear
+    placement, or else the rejection. The sections in *exempt* (their
+    deformation frozen) need none."""
     missing: list[dict[str, str]] = []
-    covered = set(exempt) | {str(name) for name in left_linear}
     for record in state.in_order():
-        if record.id in covered:
+        if record.id in exempt:
             continue
         held = record.deformation or {}
         if not held:
-            missing.append({"id": record.id, "reason": "no deformation, and not in left_linear"})
+            missing.append({"id": record.id, "reason": "no deformation"})
         elif held.get("linear_key") != deformation.linear_key(state, record):
             missing.append({"id": record.id, "reason": "made at a different linear placement"})
     if not missing:
@@ -526,17 +522,16 @@ def missing_deformations(
         "sections": missing,
         "message": (
             f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
-            "current placement. Fit a deformation on each, or list it in submit's "
-            "left_linear with the reason its linear placement stands."
+            "current placement. The user requires a deformation on every section: fit one on each."
         ),
     }
 
 
 def submit_errors(
-    state: StackState, spec: JobSpec, breaks: list[int], left_linear: Collection[str] = (),
+    state: StackState, spec: JobSpec, breaks: list[int],
 ) -> dict[str, Any] | None:
-    """Every gate that applies to this run, in order. *left_linear*: the
-    sections ``submit`` leaves without a deformation (:func:`missing_deformations`)."""
+    """Every gate that applies to this run, in order. The deformation gate
+    applies only when the host requires one (``NonlinearSpec.require_deformation``)."""
     if spec.has("position"):
         refusal = (
             missing_positions(state)
@@ -552,10 +547,10 @@ def submit_errors(
         refusal = missing_transforms(state)
         if refusal is not None:
             return refusal
-    if spec.has("nonlinear"):
+    if spec.has("nonlinear") and spec.nonlinear.require_deformation:
         frozen = {record.id for record in state.slices
                   if "deformation" in spec.frozen_for(record.id)}
-        return missing_deformations(state, frozen, left_linear)
+        return missing_deformations(state, frozen)
     return None
 
 
@@ -968,11 +963,9 @@ class Job:
             "requested": requested,
         }
 
-    def submit_errors(
-        self, breaks: list[int], left_linear: Collection[str] = (),
-    ) -> dict[str, Any] | None:
+    def submit_errors(self, breaks: list[int]) -> dict[str, Any] | None:
         """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
-        return submit_errors(self.state, self.spec, breaks, left_linear)
+        return submit_errors(self.state, self.spec, breaks)
 
     def frozen_for(self, section_id: str) -> frozenset[str]:
         """The properties frozen on one section (:meth:`JobSpec.frozen_for`)."""

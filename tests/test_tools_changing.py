@@ -487,13 +487,3 @@ def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
     for record in state.slices:
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
     assert _submit(box)["status"] == "ok"
-
-
-def test_left_linear_belongs_to_runs_with_nonlinear(tmp_path: Path):
-    state, _, box = _box(tmp_path, tasks=["position"], placed=True)
-    # Without Nonlinear the argument is not offered at all.
-    assert "left_linear" not in inspect.signature(_tool(box, "submit")).parameters
-    refused = _tool(box, "submit")("done", [], [], left_linear=[
-        {"id": "s0.png", "reason": "no deformation needed"}])
-    assert refused["error"] == "UNKNOWN_ARGUMENTS"
-    assert state.submitted is False

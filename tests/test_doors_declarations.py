@@ -42,9 +42,8 @@ def test_the_variants_change_only_what_they_declare():
     assert declaration("position_sections").annotations["sections"] == list[SectionPosition]
     angles_only = declaration("position_sections", Variant(positions=False))
     assert list(angles_only.signature.parameters) == ["cutting_angles", "view"]
-    assert "left_linear" in declaration("submit").signature.parameters
-    assert "left_linear" not in declaration(
-        "submit", Variant(left_linear=False)).signature.parameters
+    assert list(declaration("submit").signature.parameters) == [
+        "summary", "notes", "interval_breaks"]
     assert declaration("interactive_transform").annotations["sections"] == list[
         SectionTransform]
 
@@ -152,13 +151,10 @@ def test_the_registry_switches_verbs_on_per_spec(spec: JobSpec, names: list[str]
 
 def test_a_run_variant_follows_its_spec():
     plain = Variant.of(_spec(tasks=["position"]), auto=False)
-    assert plain.positions and not plain.left_linear and not plain.prompt
+    assert plain.positions and not plain.prompt
     angles = Variant.of(_spec(tasks=["transform"], transform=TransformSpec(angles=True)),
                         auto=True)
     assert not angles.positions and angles.auto
     nonlinear = Variant.of(_spec(tasks=["nonlinear"], force_view=True), auto=False)
-    assert nonlinear.left_linear and nonlinear.forced_view and nonlinear.prompt
-    required = Variant.of(_spec(tasks=["nonlinear"], nonlinear=NonlinearSpec(
-        require_deformation=True)), auto=False)
-    assert not required.left_linear
+    assert nonlinear.forced_view and nonlinear.prompt
     assert not Variant.of(_spec(tasks=["nonlinear"]), auto=False, image_model=False).prompt

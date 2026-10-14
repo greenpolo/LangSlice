@@ -56,7 +56,7 @@ the CLI is a process per call.
   (signature = the arguments, docstring = the description a model reads,
   re-indented by `model_doc`). The description is the tool's only
   description: the job statement names the tools and describes none.
-  `Variant` (`auto`, `door`, `forced_view`, `positions`, `left_linear`,
+  `Variant` (`auto`, `door`, `forced_view`, `positions`,
   `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=)`) is
   what of a run changes a declaration (`dropped_arguments`, each dropped
   argument's `Args` entry cut from the description): `off` (the job's
@@ -70,8 +70,7 @@ the CLI is a process per call.
   only where the caller sizes pictures; the change tools' `view`
   (`VIEW_TOOLS`) not offered where the host forces their pictures on
   (`JobSpec.force_view`); `position_sections`' `sections` only with the
-  Positioning task; `submit`'s `left_linear` only with Nonlinear on and no
-  deformation required; `trace_borders` carries the run's base image prompt
+  Positioning task; `trace_borders` carries the run's base image prompt
   (`base_prompt`, or the image model's profile prompt; none without an
   image model) in place of `BASE_PROMPT`; and the door that reads it
   (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: the CLI's background
@@ -212,8 +211,8 @@ the CLI is a process per call.
   highlights its `restrict_to` regions and zooms to them only past
   `ops.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
   picture with its caption), `arguments.py` (the argument shapes, typed dicts with
-  `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`,
-  `LeftLinear`; `argument_refusal`, the one strictness rule every door
+  `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
+  `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
   `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,

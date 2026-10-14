@@ -261,13 +261,13 @@ longer exist be taken over by the images it is opened with.
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
-  gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and
+  gates, `submit_errors(state, spec, breaks)`, in order and
   only for the tasks that are on: `MISSING_POSITIONS` (no position),
   `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
-  `MISSING_DEFORMATIONS`. The sections whose
-  deformation is frozen need no deformation and no image correction, and
-  the sections `submit` leaves linear (`left_linear`) count as covered.
+  `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
+  section (`NonlinearSpec.require_deformation`). The sections whose
+  deformation is frozen need no deformation and no image correction.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
   `applied_deformation`, `maps_status`, `write_registration`,

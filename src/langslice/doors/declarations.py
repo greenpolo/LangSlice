@@ -25,8 +25,7 @@ the picture size (image resolution "auto"; the CLI always); the change tools'
 ``view`` is not offered
 where the host forces their pictures on (``JobSpec.force_view``);
 ``position_sections`` takes ``sections`` only with the Positioning task;
-``submit`` takes ``left_linear`` only with Nonlinear on and no deformation
-required on every section; ``trace_borders`` carries the run's base image
+``trace_borders`` carries the run's base image
 prompt; each door words where its answers come from (``_DOOR_DOCS``); and
 what the job disables (``JobSpec.disabled``) is gone: an option from the
 argument's enum (``look``'s ``mode``), the arguments only it served
@@ -55,7 +54,6 @@ from langslice.core.toolset import OPTION_SEPARATOR, TOOLS, is_off, options_on
 from langslice.doors.tools.arguments import (
     CuttingAngles,
     LandmarkPair,
-    LeftLinear,
     PicturePoint,
     SectionPosition,
     SectionTransform,
@@ -265,8 +263,13 @@ def set_preprocessed_channel_properties(
     never changed; look draws this channel with channels ["preprocessed"].
     Undoable; another call replaces the recipe.
 
-    Tune channel weights and preprocessing to make the internal anatomy
-    useful for registration stand out. Inspect the before-and-after pictures
+    Process the sections so their detail is as visible as possible: choose
+    the channel weights and enhancement that show the internal anatomy
+    (layers, nuclei, fibre tracts, ventricles) most clearly. The
+    preprocessed channel serves both you and the fitting algorithms: look at
+    it (`look` with channels ["preprocessed"]) to judge alignment, and the
+    fits match it against the atlas. Pale or low-contrast sections
+    especially need this before you place or fit them. Inspect the before-and-after pictures
     and compare with the raw channels before fitting. Raw-channel display
     adjustments alone do not change what the fitting algorithms receive.
 
@@ -556,16 +559,17 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
 
 
 def elastix_affine(
-    sections: list[str] = [],
+    sections: list[str],
     restrict_to: list[str] = [],
     atlas_image: FitAtlas = "template",
     view: bool = True,
 ) -> dict[str, Any]:
     """Fit sections' in-plane affine transforms automatically with elastix.
 
-    Elastix refines each section's current placement (from the identity
-    when it has no transform) by matching its preprocessed channel against
-    an atlas image, inner anatomy included. It adjusts from where the
+    For a few sections at a time. Elastix refines each section's current
+    placement (from the identity when it has no transform) by matching its
+    preprocessed channel against an atlas image, inner anatomy included. It
+    adjusts from where the
     section is and does not search from scratch: it moves a section by
     small amounts and does not turn it over. The section's marked damage
     regions are left out automatically. Each fit is written as the
@@ -580,8 +584,7 @@ def elastix_affine(
     a larger region[[?interactive_transform  or interactive_transform]]. No fit is written for it.
 
     Args:
-        sections: Filenames (the extension may be left off); empty is every
-            placed section whose affine is not frozen.
+        sections: One to four filenames (the extension may be left off).
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side): only the
             atlas within 300 um of them, against the tissue the fit lays
@@ -735,7 +738,6 @@ def submit(
     summary: str,
     notes: list[str],
     interval_breaks: list[str],
-    left_linear: list[LeftLinear] = [],
 ) -> dict[str, Any]:
     """End the run. Call this exactly once, last.
 
@@ -748,9 +750,6 @@ def submit(
         interval_breaks: Filenames (the extension may be left off) of the
             sections AFTER a gap you conclude is real. Empty if there are
             none.
-        left_linear: Sections left without a deformation, each with the
-            reason its linear placement stands: [{"id": "<filename>",
-            "reason": "..."}].
     """
     ...
 
@@ -929,8 +928,6 @@ class Variant:
     forced_view: bool = False
     #: ``position_sections`` takes ``sections`` (the Positioning task is on).
     positions: bool = True
-    #: ``submit`` takes ``left_linear`` (Nonlinear on, no deformation required).
-    left_linear: bool = True
     #: The base image prompt ``trace_borders`` carries.
     prompt: str = ""
     #: What the job disables (``JobSpec.disabled``).
@@ -957,8 +954,6 @@ class Variant:
         held = tuple(of_spec(spec))
         return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
                    positions=bool(spec.has("position")),
-                   left_linear=bool(spec.has("nonlinear")
-                                    and not spec.nonlinear.require_deformation),
                    prompt=text, off=frozenset(spec.switched_off), plugins=held)
 
 
@@ -1064,8 +1059,6 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
         dropped.append("view")
     if name == "position_sections" and not variant.positions:
         dropped.append("sections")
-    if name == "submit" and not variant.left_linear:
-        dropped.append("left_linear")
     if name == "look":
         modes = set(options_on(variant.off, "look"))
         if "overlay" not in modes:  # what only an overlay uses

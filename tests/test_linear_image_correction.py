@@ -99,10 +99,8 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert state.slices[0].image_correction["status"] == "running"
     release.set()
     # submit waits for the work; the stand-in's trace has no lines to fit.
-    assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert box.job.background.running() == []
-    assert _tool(box, "submit")("Done", [], [], left_linear=[
-        {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
     assert state.slices[0].image_correction["status"] == "ok"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
     assert state.slices[0].transform == transform
@@ -132,15 +130,12 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
 }])
 def test_submit_needs_no_completed_correction(tmp_path, monkeypatch, result):
     """Tracing is the agent's choice: with or without a current trace, submit
-    asks only for the deformation (or the section named in left_linear)."""
+    asks for no deformation either unless the host requires one."""
     state, ctx, spec = _placed(tmp_path)
     state.slices[0].image_correction = result
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
-    response = _tool(box, "submit")("Done", [], [])
-    assert response["error"] == "MISSING_DEFORMATIONS"
-    assert _tool(box, "submit")("Done", [], [], left_linear=[
-        {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert state.submitted
 
 
@@ -162,8 +157,7 @@ def test_sections_with_a_frozen_deformation_need_no_trace_and_no_deformation(
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     assert _tool(box, "trace_borders")("s1.png")["error"] == code
-    assert _tool(box, "submit")("Done", [], [], left_linear=[
-        {"id": "s0.png", "reason": "The placement already fits."}])["status"] == "ok"
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert state.slices[1].deformation is None
 
 
@@ -182,7 +176,6 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
     assert response["error"] == "INVALID_LINEAR_PLACEMENT"
     assert state.slices[0].image_correction is None
     assert not box.job.undo_stack
-    assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
 
 
 def test_host_inputs_preserve_complete_transform_and_do_not_alias_it(tmp_path):

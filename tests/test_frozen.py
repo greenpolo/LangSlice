@@ -16,7 +16,7 @@ from langslice.core.toolset import TOOLS
 from langslice.doors import jobs
 from langslice.job.job import submit_errors
 from langslice.ops import deformable as ops_deformable
-from langslice.ops import positions, submit, transforms
+from langslice.ops import positions, transforms
 from langslice.ops.refusal import Refused
 from langslice.ops.registry import enabled
 from tests.linear_tool_helpers import SLAB, tool_named
@@ -171,7 +171,7 @@ def test_elastix_affine_and_set_transforms_refuse_a_frozen_affine(
     assert refused.value.code == "FROZEN" and refused.value.details["ids"] == ["s1.png"]
 
 
-def test_the_deformation_tools_and_left_linear_refuse_a_frozen_deformation(
+def test_the_deformation_tools_refuse_a_frozen_deformation(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(ops_deformable, "refuse_without_ants", lambda: None)
     job, ctx = _open(tmp_path, tasks=["nonlinear"], frozen={"s0.png": ["deformation"]},
@@ -180,12 +180,12 @@ def test_the_deformation_tools_and_left_linear_refuse_a_frozen_deformation(
         record.transform = {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]}
     fit = ops_deformable.ants_syn(job, ctx, ["s0.png"])
     assert fit.rows[0]["error"] == "FROZEN" and fit.rows[0]["properties"] == ["deformation"]
-    with pytest.raises(Refused) as refused:
-        submit.clean_left_linear(job, [{"id": "s0.png", "reason": "fits"}])
-    assert refused.value.code == "FROZEN"
-    # Neither the gate nor left_linear asks for it: it needs no deformation to submit.
-    refusal = submit_errors(job.state, job.spec, [], left_linear=["s1.png"])
-    assert refusal is None
+    # Even where the host requires a deformation on every section, the gate
+    # asks only for the section whose deformation is free.
+    required = JobSpec.from_dict({**job.spec.to_dict(), "nonlinear": {
+        **job.spec.to_dict()["nonlinear"], "require_deformation": True}})
+    refusal = submit_errors(job.state, required, [])
+    assert refusal is not None and [row["id"] for row in refusal["sections"]] == ["s1.png"]
 
 
 # --- the partial freezes ---------------------------------------------------------------
@@ -401,7 +401,8 @@ def test_a_disabled_list_cannot_empty_a_task_the_freeze_leaves_on():
 
 def test_submit_does_not_ask_a_frozen_section_for_a_deformation(tmp_path: Path):
     state, spec, _tools = _stack(
-        tmp_path, n=2, tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"),
+        tmp_path, n=2, tasks=["nonlinear"],
+        nonlinear=NonlinearSpec(provider="none", require_deformation=True),
         frozen={"s0.png": ["deformation"]},
         inputs={"transforms": {"s0.png": {"params": [1, 0, 0, 0, 1, 0]},
                                "s1.png": {"params": [1, 0, 0, 0, 1, 0]}}})

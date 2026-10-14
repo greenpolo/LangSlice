@@ -44,7 +44,7 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY, changing, fitting, looki
 from langslice.doors.tools.arguments import argument_refusal
 from langslice.doors.tools.door import Door
 from langslice.doors.tools.view_options import view_edge_limit
-from langslice.job.job import HOST_TRANSFORM_KIND, Job
+from langslice.job.job import Job
 from langslice.job.views import PICTURE_FILE as VIEW_PICTURE_FILE
 from langslice.job.views import captured as captured_views
 from langslice.ops.registry import enabled, verbs_for
@@ -75,10 +75,6 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
         return every
     if name == "look" and not sections and args.get("mode") != "atlas":
         return every
-    if name == "elastix_affine" and not sections:
-        return [record.id for record in state.in_order()
-                if record.position_mm is not None
-                and (record.transform or {}).get("kind") != HOST_TRANSFORM_KIND]
     refs: list[Any] = []
     for entry in sections if isinstance(sections, (list, tuple)) else []:
         refs.append(entry.get("id", "") if isinstance(entry, dict) else entry)
@@ -279,7 +275,7 @@ def _strict(tool: Any) -> Any:
     signature as the model sees it: stray top-level names (direct calls; ADK
     and MCP check those at their own doors, since both drop them before a
     tool runs) and stray keys inside every typed-dict argument (``sections``
-    entries, ``cutting_angles``, ``left_linear``; every caller).
+    entries, ``cutting_angles``; every caller).
     """
     names = list(inspect.signature(tool, eval_str=True).parameters)
 

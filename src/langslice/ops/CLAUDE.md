@@ -125,27 +125,21 @@ wording; `registry.py` lists which.
   sections whose position the step changed, which the tool door's gates
   forget, `depth`); `moved_positions(before, state)`.
 - `submit.py` — `submit(job, summary=, notes=, interval_breaks=,
-  left_linear=, traces=, workspace=, gate=)`: first every piece of the job's
+  traces=, workspace=, gate=)`: first every piece of the job's
   background work is waited for (`Job.background.wait_all`: under the door's
   lock, a landing that needs it runs on this thread); with *traces* (the
   image model is in the run) the running traces are waited for and recorded
   (tracing is the agent's choice: no section needs a trace); *interval_breaks*
   names the sections after each gap by filename (`clean_breaks`, kept as
-  corrected indices; `UNKNOWN_SLICE_IDS`); *left_linear*
-  (`[{id, reason}]`, `clean_left_linear`: `BAD_ARGS` for a malformed list, a
-  section named twice or a run without Nonlinear, `UNKNOWN_SLICE_IDS`,
-  `DEFORMATION_REQUIRED` when the host set
-  `NonlinearSpec.require_deformation`, `HAS_DEFORMATION` for a section
-  carrying one at its placement); then the job's gates
-  (`Job.submit_errors`, *left_linear* counted as covered), then the door's
-  *gate*; then ONE undo step: each *left_linear* section's "linear placement
-  stands" record (`{"keep_linear": reason, "linear_key"}` on its
-  `deformation`, cleared by a placement change like an applied fit), the interval
+  corrected indices; `UNKNOWN_SLICE_IDS`); then the job's gates
+  (`Job.submit_errors`; the deformation gate only where the host set
+  `NonlinearSpec.require_deformation`), then the door's
+  *gate*; then ONE undo step: the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
   `submit: <summary>` note, `submitted`; then every queued picture written
   (`job.views.flush`) and, with the workspace, every placed section's maps
   and the exports (`exports.export_maps`; a failure is logged, the submit
-  stands). Returns `Submitted` (`exported`, `left_linear`, `interval_breaks`
+  stands). Returns `Submitted` (`exported`, `interval_breaks`
   as filenames). Not a long verb: the door
   holds the job lock for the whole call, the maps included.
 - `exports.py` — `export_maps(job, workspace, ids=,
@@ -189,11 +183,11 @@ wording; `registry.py` lists which.
   (`core.placement.stage`). Returns `Adjusted` (one `Adjustment` per entry:
   `error`, `staged`, `previous`, `transform`, `written`, `id`,
   `orientation`, `kept`); the verb `interactive_transform`.
-  `elastix_affine(job, workspace, sections=(), restrict_to=(),
-  atlas_image="template")` (any of the atlas's images): per section `core.transform.fit_elastix`
+  `elastix_affine(job, workspace, sections, restrict_to=(),
+  atlas_image="template")` (any of the atlas's images; `BAD_ARGS` for no
+  sections; the tool door takes one to four, `TOO_MANY_SECTIONS` past that): per section `core.transform.fit_elastix`
   refining its current placement against the atlas image, by the *restrict_to* regions only, its marked damage regions
-  left out on their own (`core.damage.exclusions`); the named sections, else
-  `fit_targets(job)` (every positioned section whose affine is not frozen);
+  left out on their own (`core.damage.exclusions`); the named sections;
   `FROZEN` per section (a frozen affine, or a fit that turns over a section
   whose orientation is frozen); every successful fit written as ONE undo step (fits
   computed outside the lock, `STALE_INPUT` for a section that changed);
