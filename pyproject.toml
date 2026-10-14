@@ -20,6 +20,9 @@ dependencies = [
     "scipy",
     "Pillow",
     "tifffile",
+    # Windowed and pyramid-level TIFF reads (langslice.core.native) go through
+    # tifffile's zarr store; zarr 3 needs Python 3.11, so 3.10 decodes whole.
+    "zarr>=3; python_version >= '3.11'",
     "python-dotenv",
     "itk-elastix",
     # The ANTs engine (langslice.core.deformable): ants_syn and the packaged

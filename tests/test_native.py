@@ -66,15 +66,23 @@ def test_read_region_reads_a_window_of_any_tiff_layout(tmp_path: Path):
         region = read_region(tmp_path / name, box)
         assert region.file_size == (1200, 900) and region.stride == 1, name
         assert np.array_equal(region.pages[0], rgb[200:360, 100:400]), name
-    coarse = read_region(tmp_path / "pyramid.tif", box, step=2)
-    assert coarse.downsample == 2.0  # the pyramid level, not a stride over the file
-    assert np.array_equal(coarse.pages[0], rgb[::2, ::2][100:180, 50:200])
-    rx, ry = coarse.to_read(np.array([100.5]), np.array([200.5]))
-    assert (float(rx[0]), float(ry[0])) == (0.0, 0.0)
     many = read_region(tmp_path / "pages.tif", (10, 20, 60, 50))
     assert len(many.pages) == 3
     assert all(np.array_equal(got, page[20:50, 10:60])
                for got, page in zip(many.pages, pages, strict=True))
+
+
+def test_read_region_reads_a_coarser_pyramid_level(tmp_path: Path):
+    pytest.importorskip("zarr")  # without it (Python 3.10) a TIFF is decoded whole
+    rgb = (np.random.default_rng(0).random((900, 1200, 3)) * 255).astype(np.uint8)
+    with tifffile.TiffWriter(tmp_path / "pyramid.tif") as writer:
+        writer.write(rgb, tile=(256, 256), subifds=1)
+        writer.write(rgb[::2, ::2], tile=(256, 256), subfiletype=1)
+    coarse = read_region(tmp_path / "pyramid.tif", (100, 200, 400, 360), step=2)
+    assert coarse.downsample == 2.0  # the pyramid level, not a stride over the file
+    assert np.array_equal(coarse.pages[0], rgb[::2, ::2][100:180, 50:200])
+    rx, ry = coarse.to_read(np.array([100.5]), np.array([200.5]))
+    assert (float(rx[0]), float(ry[0])) == (0.0, 0.0)
 
 
 def test_fit_look_carries_a_map_of_the_channels_exactly():

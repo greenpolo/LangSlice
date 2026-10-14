@@ -501,7 +501,7 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
     reply = call(box, "read_it")
     assert reply["id"] == "s1.png" and reply["position"] == 2.5 and reply["size"] == [40, 30]
     assert reply["shape"][2] == 3 and reply["matrix"] == 3 and "annotation" in reply["planes"]
-    assert reply["work"].endswith("plugins/read_it") and Path(reply["work"]).is_dir()
+    assert Path(reply["work"]).parts[-2:] == ("plugins", "read_it") and Path(reply["work"]).is_dir()
     assert reply["spec_tasks"] == ["position", "transform"] and reply["layers"] == []
 
 
