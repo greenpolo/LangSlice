@@ -8,6 +8,9 @@ which converts ADK requests to the Messages API. Three things it adds:
 - **Reasoning effort**: LangSlice sets ``reasoning_effort`` on a resolved model
   (``agent.session._with_reasoning``); here it becomes Claude's
   ``output_config.effort`` with adaptive thinking, the API's way to set effort.
+- **Readable reasoning**: adaptive thinking asks for ``display: "summarized"``.
+  On Opus 4.7 and later the API default is ``"omitted"`` (empty thinking text,
+  only an encrypted signature), which leaves run traces with no reasoning.
 - **Prompt caching**: the Messages API caches only up to blocks marked
   ``cache_control``; ADK marks none. The system prompt and the newest message's
   last block are marked, so each turn reads the previous turn's prefix
@@ -82,6 +85,9 @@ class AnthropicApiLlm(AnthropicLlm):
                 kwargs["thinking"] = {"type": "adaptive"}
             for name in ("temperature", "top_p", "top_k"):  # not accepted with effort set
                 kwargs.pop(name, None)
+        thinking_param = kwargs.get("thinking")
+        if isinstance(thinking_param, dict) and thinking_param.get("type") == "adaptive" and "display" not in thinking_param:
+            kwargs["thinking"] = {**thinking_param, "display": "summarized"}
         system = kwargs.get("system")
         if isinstance(system, str) and system:
             kwargs["system"] = [{"type": "text", "text": system, "cache_control": _EPHEMERAL}]

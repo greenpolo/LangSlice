@@ -24,7 +24,7 @@ def test_route_and_reasoning():
     model = _with_reasoning(resolve_adk_model("anthropic-api/claude-opus-5-5"), "high")
     assert isinstance(model, AnthropicApiLlm) and model.model == "claude-opus-5-5"
     kw = _kwargs(model)
-    assert kw["output_config"] == {"effort": "high"} and kw["thinking"] == {"type": "adaptive"}
+    assert kw["output_config"] == {"effort": "high"} and kw["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert "temperature" not in kw
     assert kw["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert kw["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
