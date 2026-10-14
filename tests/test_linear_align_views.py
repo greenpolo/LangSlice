@@ -135,14 +135,11 @@ def test_the_atlas_opacity_is_a_dial_not_a_switch():
 # --- the outline layers --------------------------------------------------
 
 
-def _line_pixels(rgb: np.ndarray) -> int:
-    """Hairline pixels in the picture, above the bar, below the caption.
-
-    At canvas scale a hairline is one anti-aliased pixel wide, so the
-    threshold sits below full brightness; the tissue (120) stays under it."""
-    pixels = rgb[60:-40].astype(np.int16)
-    return int(((pixels[..., 0] - pixels[..., 2] > 80)
-                & (pixels[..., 1] - pixels[..., 2] > 80)).sum())
+def _line_pixels(rgb: np.ndarray, bare: np.ndarray) -> int:
+    """Pixels the atlas lines changed: where *rgb* differs from the same view
+    drawn without lines (cased lines are black or white, so a colour test
+    cannot find them), above the bar, below the caption."""
+    return int((rgb[60:-40] != bare[60:-40]).any(axis=-1).sum())
 
 
 def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
@@ -150,13 +147,13 @@ def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
     (every,) = _views()
     (bare,) = _views(outlines="none")
 
-    assert _line_pixels(bare) == 0, "outlines='none' still drew lines"
-    assert _line_pixels(every) > 300, "the region lines are missing"
-    # Lines are the only thing that changes: they can cover tissue, never
-    # uncover it, so the bare view shows at least as much of the section.
+    assert np.array_equal(bare, _views(mode="section")[0]), "outlines='none' still drew lines"
+    assert _line_pixels(every, bare) > 300, "the region lines are missing"
+    # Lines can cover tissue, never uncover it, so the bare view shows at
+    # least as much of the section; cased hairlines at canvas scale cover little.
     tissue = lambda rgb: int(((rgb >= 110) & (rgb <= 130)).all(axis=2).sum())  # noqa: E731
     assert tissue(bare) >= tissue(every) > 0
-    assert tissue(bare) - tissue(every) < 0.2 * tissue(bare)  # hairlines at canvas scale
+    assert tissue(bare) - tissue(every) < 0.3 * tissue(bare)
 
 
 # --- the tools, in the main toolbox --------------------------------------
@@ -214,33 +211,25 @@ def _bodies(**kwargs) -> list[np.ndarray]:
 
 
 def test_clean_section_and_template_views_carry_no_outlines():
-    # Pinned to yellow: this checks whether a line is drawn at all, not
-    # which colour the automatic choice would pick for this background.
-    (section_only,) = _bodies(mode="section", border_color="yellow")
-    (template_only,) = _bodies(mode="template", border_color="yellow")
-    (template_lined,) = _bodies(mode="template", template_lines=True, border_color="yellow")
-    (overlaid,) = _bodies(mode="overlay", border_color="yellow")
+    (section_only,) = _bodies(mode="section")
+    (template_only,) = _bodies(mode="template")
+    (template_lined,) = _bodies(mode="template", template_lines=True)
+    (overlaid,) = _bodies(mode="overlay")
 
-    # The synthetic tissue is 120 grey; anti-aliased hairlines are far brighter.
-    # Picture area only: above the scale bar (the caption band is cut off).
-    assert overlaid[:-40].max() >= 200
-    assert section_only[:-40].max() < 200
+    assert _line_pixels(overlaid, section_only) > 300
     # The template alone carries no lines unless asked for them.
     assert template_only.shape == template_lined.shape
-    assert _line_pixels(template_only) == 0 < _line_pixels(template_lined)
+    assert _line_pixels(template_lined, template_only) > 300
 
 
-@pytest.mark.parametrize("color", ["cyan", "#00ffff"])
-def test_border_color_changes_atlas_lines_without_changing_tissue(color):
-    (yellow,) = _views()
-    (cyan,) = _views(border_color=color)
-    # Both images carry the same tissue, scale bar and geometry. Only the
-    # atlas lines change; their RGB channels swap red and blue for cyan.
-    assert np.array_equal(yellow[..., 1], cyan[..., 1])
-    assert np.array_equal(yellow[..., 0], cyan[..., 2])
-    assert np.array_equal(yellow[..., 2], cyan[..., 0])
-    assert _line_pixels(yellow) > 300
-    assert _line_pixels(cyan) == 0
+@pytest.mark.parametrize("core", ["black", "white"])
+def test_border_core_changes_atlas_lines_without_changing_tissue(core):
+    (bare,) = _views(outlines="none")
+    (cased,) = _views(border_color=core)
+    (other,) = _views(border_color="white" if core == "black" else "black")
+    assert _line_pixels(cased, bare) > 300 and not np.array_equal(cased, other)
+    tissue = lambda rgb: int((rgb == 120).all(axis=2).sum())  # noqa: E731
+    assert 0.7 * tissue(bare) < tissue(cased) <= tissue(bare)
 
 
 def test_border_thickness_is_measured_after_zoom_and_resize():
@@ -254,7 +243,7 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
         # the straight vertical edge should keep the requested pixel width.
         for factor, origin in ((1.0, (0, 0)), (0.5, (0, 0)), (2.0, (10, 10))):
             screen = np.zeros((200, 200, 3), dtype=np.uint8)
-            _draw_polys(screen, [square], (255, 255, 0), factor=factor,
+            _draw_polys(screen, [square], "white", factor=factor,
                         origin=origin, thickness=thickness)
             y = round((50 - origin[1]) * factor)
             x = round((20 - origin[0]) * factor)
@@ -265,14 +254,10 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
 
 @pytest.mark.parametrize("mode", ["overlay", "template"])
 def test_border_style_reaches_all_atlas_bearing_panels(mode):
-    # "defaults" is pinned to yellow: the point of this test is that an
-    # explicit style reaches every atlas-bearing panel, not which colour
-    # the automatic default would pick for this synthetic background.
-    defaults = _views(mode=mode, template_lines=True, border_color="yellow")
-    styled = _views(mode=mode, template_lines=True, border_color="cyan", border_thickness=4)
-    for default, custom in zip(defaults, styled, strict=True):
-        assert default.shape == custom.shape
-        assert _line_pixels(default) > 0
-        assert _line_pixels(custom) == 0
-        assert _line_pixels(custom[..., ::-1]) > _line_pixels(default)
-
+    bare = _views(mode=mode, template_lines=True, outlines="none")
+    defaults = _views(mode=mode, template_lines=True)
+    styled = _views(mode=mode, template_lines=True, border_color="white", border_thickness=4)
+    for none, default, custom in zip(bare, defaults, styled, strict=True):
+        assert default.shape == custom.shape == none.shape
+        assert _line_pixels(default, none) > 0
+        assert _line_pixels(custom, none) > _line_pixels(default, none)

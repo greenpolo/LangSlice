@@ -113,9 +113,9 @@ SECTION_FIELDS: tuple[str, ...] = (
 #: The appearance entries a picture depends on (display properties and the
 #: preprocessed channel's recipe).
 APPEARANCE_KEYS: tuple[str, ...] = (CHANNELS_KEY, PREPROCESSED)
-#: Default: let `canvas.resolve_border_color` pick the per-picture
-#: highest-contrast colour (Nash, 2026-10-14: "it should default to
-#: whatever is the highest contrast against the slice image").
+#: Default: let `canvas.resolve_border_color` pick the per-picture cased
+#: arrangement (Nash, 2026-10-14: "Just have black with white outlines or
+#: white with black outlines (the outlines having outlines themselves)").
 _BORDER_COLOR = AUTO_BORDER_COLOR
 
 logger = logging.getLogger(__name__)

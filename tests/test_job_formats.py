@@ -2,7 +2,7 @@
 
 One synthetic stack (the shared one, tests/synthetic_stack.py), placed through the library as a
 script would: s0 warped by a deformable fit (``ops.deformable.fit_deformable``,
-Elastix), s1 turned a quarter, flipped and kept linear, s2 placed without a
+Elastix), s1 turned a quarter, flipped and left linear, s2 placed without a
 transform (the identity, as its pictures show it). Checked: the matrices
 agree with what every picture shows (``look`` and ``zoom`` placement
 pictures and the deformable-fit pictures ``ops.deformable.fit_deformable``
@@ -61,7 +61,6 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     pytest.importorskip("ants")
     import langslice
-    from langslice.core.deformation import linear_key
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
 
@@ -84,12 +83,6 @@ def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
         view=False)["status"] == "ok"
     fitted = _fit_and_draw(job, [ID0])
     assert fitted.written == [ID0], fitted.rows
-    with job.job.writing():  # the "linear placement stands" record submit writes
-        before = job.job.snapshot()
-        kept = job.state.by_id(ID1)
-        kept.deformation = {"keep_linear": "kept for the test",
-                            "linear_key": linear_key(job.state, kept)}
-        job.job.commit(before)
     job.look(mode="overlay", sections=[ID1], resolution=700)
     job.look(mode="overlay", sections=[ID2], resolution=300)
     job.zoom(box=[30, 25, 270, 200])

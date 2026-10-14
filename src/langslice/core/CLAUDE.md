@@ -240,8 +240,10 @@ the angles in a caption (empty for the flat plane).
 - `canvas.py` — the physical canvas: `CanvasGeometry` / `canvas_geometry`
   (the atlas section at true scale on the section's frame, anatomy centred,
   canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES` (`overlay`,
-  `section`, `template`), `normalize_border_style`, `line_coverage` (the
-  one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
+  `section`, `template`), the cased atlas borders (`resolve_border_color`
+  picks a black or white core from the lightness under the lines,
+  `CASING_PX` of the other colour on each side, `border_words` for the
+  caption; `composite_cased`), `line_coverage` (the one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
   `pivot_on_canvas`, `placement_matrices`, `PanelFrame`, `physical_views`
   (the alignment picture in a view mode).
 - `scale.py` — one micrometres per pixel for a section and its atlas drawn
@@ -479,8 +481,8 @@ them on `Canvas.panels` and notes each picture (below).
 picture's own pixel grid (caption band included, empty there):
 `labels_layer` (the atlas id under every pixel, uint32, nearest neighbour
 through the mapping the borders are drawn with), `borders_layer` (the drawn
-borders' coverage, uint8, `line_coverage` at full strength, so the layer
-and the picture's lines cannot disagree), `picture_to_native`,
+borders' coverage, uint8, `line_coverage` at full strength, the core's
+(not the casing's), so the layer and the picture's lines cannot disagree), `picture_to_native`,
 `section_to_picture` (3x3 on `[row, col, 1]`, the linear placement; a
 deformation drawn on top is not in it), `frame_record` (the JSON a saved
 picture's `view.json` carries under `frame`: atlas name, version,

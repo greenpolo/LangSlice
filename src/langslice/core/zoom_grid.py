@@ -4,9 +4,9 @@ Lines at round steps are labelled with the pixel numbers of the WHOLE
 (unzoomed) picture the zoom was cut from, so a position read off the grid is
 a coordinate that ``zoom`` boxes and ``set_landmarks`` endpoints take on the
 zoom or on its source alike. Thin dashed lines, one colour no other drawing
-uses (atlas borders are chosen per picture for contrast against the section
-and named in its caption -- never this grid's lime green; landmark markers
-are cyan with white and black rings, folds magenta, a stale marker orange),
+uses (atlas borders are black or white cased in the other, named in the
+caption; landmark markers are cyan with white and black rings, folds
+magenta, a stale marker orange),
 and labels on a dark chip at every edge. Drawn on the content only, never on
 the caption band.
 """

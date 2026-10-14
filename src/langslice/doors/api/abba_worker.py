@@ -388,7 +388,7 @@ class HostCheckpoints:
 
         def applied(stack: StackState, record: Any) -> str | None:
             held = applied_deformation(stack, record)
-            if held is None or "keep_linear" in held:
+            if held is None:
                 return None
             return str(held.get("key") or "") or None
 

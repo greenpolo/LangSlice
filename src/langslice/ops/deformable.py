@@ -154,7 +154,7 @@ def fit_deformable(
         except ValueError:  # its record.json does not load (the error names it)
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current, unreadable = None, True
-        if unreadable or (current is None and held and "keep_linear" not in held
+        if unreadable or (current is None and held
                           and held.get("linear_key") == deformation.linear_key(state, record)):
             rows.append({"id": record.id, "status": "error", "error": "DEFORMATION_UNREADABLE",
                          "message": "The section's applied deformation record cannot be read "
@@ -298,18 +298,21 @@ def pictures(
     import numpy as np
 
     from langslice.core import layers
-    from langslice.core.canvas import resolve_border_color, validate_border_thickness
+    from langslice.core.canvas import (
+        border_words,
+        resolve_border_color,
+        validate_border_thickness,
+    )
     from langslice.core.deformable.render import drawn_border_coverage
 
     parts: list[Image.Image] = []
     failed: list[dict[str, str]] = []
     thickness = validate_border_thickness(options.border_thickness)
-    # `color` here is the image model's own fixed yellow (`trace_picture`
-    # below always uses it as-is, unresolved: it stays yellow, per the
-    # image-model route's own fixed prompt and read-back). Each fitted-atlas
-    # picture overrides `color` per row below, resolved against that row's
-    # own tissue -- never one colour for the whole batch, since different
-    # sections in one call can need different ones.
+    # `color` is the image model's own fixed yellow (`trace_picture` below
+    # draws it plain: its prompt says yellow and its reply is read back by
+    # colour). Each fitted-atlas picture gets its cased core (`core`) per row
+    # below, resolved against that row's own tissue -- never one for the whole
+    # batch, since different sections in one call can need different ones.
     style = deformation.Style(
         zoom=() if options.full_view else tuple(options.zoom),
         highlight=tuple(name for name, _ids in options.regions), marked=(),
@@ -326,11 +329,11 @@ def pictures(
             warped=True, outlines=fit_style.outlines, depth=fit_style.depth,
             width_px=fit_style.thickness,
         )
-        color_rgb, _, border_word = resolve_border_color(
+        core, _ = resolve_border_color(
             options.border_color, options.border_thickness,
             rgb=np.asarray(fit.image.convert("RGB")), coverage=coverage,
         )
-        fit_style = replace(fit_style, color=color_rgb)
+        fit_style = replace(fit_style, core=core)
         heading = f"{record.id}  applied: {outcome.engine['name']} {fit.choice.stiffness}"
         start = "current" if fit.previous is not None else "linear"
         detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
@@ -343,7 +346,8 @@ def pictures(
                 workspace, fit.image, outcome, warped=True, style=fit_style,
                 atlas_images=shown_atlas, title=f"{heading}\n{detail_line}",
                 note={"sections": (record.id,), "mode": options.mode,
-                      "caption": fit_caption(record, fit, row, include, exclude, border_word)}))
+                      "caption": fit_caption(record, fit, row, include, exclude,
+                                             border_words(core))}))
         except Exception as exc:
             logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
             del parts[first:]
