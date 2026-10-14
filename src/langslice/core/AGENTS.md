@@ -73,8 +73,10 @@ whose imports are core-only:
   entries are in the linear agent environment's guide
   (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method;
 - atlas planes are cached: `oblique.py` spline-filters a
-  volume once (on threads) for every cubic plane, samples a large plane in
-  row bands on threads and keeps recent annotation planes;
+  volume once (on threads) for every cubic plane and keeps the annotation as
+  dense integer indices, both in memory and on disk
+  (`atlas/disk_cache.py`), samples a large plane in row bands on threads and
+  keeps recent annotation planes;
   `atlas_fetch.atlas_section` keeps recent template planes on
   `Workspace.plane_cache`; `opening.opening_items` draws the columns after
   the first on threads. Each gives the same pixels as the serial path
