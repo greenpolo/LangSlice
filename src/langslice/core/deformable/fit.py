@@ -19,7 +19,7 @@ import multiprocessing
 import os
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import cv2
@@ -44,14 +44,18 @@ from langslice.core.deformable.engines import (
     FIT_THREADS,
     EngineInputs,
     EngineResult,
-    ants_worker,
+    engine_worker,
+    fit_device,
     run_engine,
 )
 from langslice.core.deformable.geometry import Placement, WorkingGrid, sample_native
 from langslice.core.deformable.masks import (
-    EXCLUSION_MARGIN_MM,
+    EM_PARAMETERS,
     MASK_MARGIN_MM,
+    Masks,
     dilate,
+    em_masks,
+    footprint_masks,
 )
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.regions import named_regions
@@ -105,6 +109,11 @@ class PreparedFit:
     #: neighbourhood, fading to 0 over :data:`RESTRICTED_TAPER_MM`); None
     #: for a fit over the whole section.
     step_weight: np.ndarray | None = None
+    #: A whole-section stain fit's damage zone on the working grid: the fit
+    #: runs twice, the second time with the EM section mask
+    #: (:func:`run_prepared`, ``masks.em_masks``). None: one run with the
+    #: footprint masks (the Elastix affine, restricted steps, traced lines).
+    em_damage_zone: np.ndarray | None = None
 
 
 @dataclass
@@ -254,7 +263,6 @@ def prepare_fit(
     lines_w = None
     if lines is not None:
         lines_w = grid.to_working(np.asarray(lines, dtype=np.float32)) > 0
-    margin_px = MASK_MARGIN_MM / spacing
     if settings.section_image == "lines":
         assert lines_w is not None
         fixed = soft_lines(lines_w, softening_px)
@@ -263,11 +271,8 @@ def prepare_fit(
         fixed = _normalize_stain(fixed, footprint)
 
     kept = (current != 0) & ~excluded_w
-    fixed_mask = footprint.copy()
-    # Blanking leaves an edge where an excluded region was; a margin around
-    # it stays out of the moving mask so that edge cannot attract the tissue.
-    excluded_zone = dilate(excluded_w, EXCLUSION_MARGIN_MM / spacing)
-    moving_mask = dilate(current != 0, margin_px) & ~excluded_zone
+    masks = footprint_masks(current, excluded_w, spacing)
+    fixed_mask, moving_mask = masks.fixed.copy(), masks.moving.copy()
 
     details: dict[str, Any] = {}
     region: np.ndarray | None = None
@@ -343,13 +348,17 @@ def prepare_fit(
         edge_weight=EDGE_CHANNEL_WEIGHT if fixed_edges is not None else 0.0,
         correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM / 1000.0 / spacing)),
     )
+    whole_stain = (settings.engine == "ants" and settings.section_image == "stain"
+                   and not settings.structures)
+    if whole_stain:
+        details["section_mask"] = "em"
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
         footprint=_on_section(footprint, (width, height)),
         excluded=excluded, ventricles=ventricles,
         atlas_meta=_atlas_record(atlas, placement, native),
         previous=previous, details=details, excluded_mask=excluded_native,
-        step_weight=step_weight,
+        step_weight=step_weight, em_damage_zone=masks.damage_zone if whole_stain else None,
     )
 
 
@@ -502,6 +511,9 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
                          "origin_mm": list(grid.origin_mm)},
         "step_details": prepared.details,
     }
+    left_out = None
+    if result.left_out is not None:
+        left_out = _on_section(result.left_out, (width, height))
     return DeformableRecord(
         placement=prepared.placement, section_size=(width, height),
         settings=prepared.settings, field_mm=total.astype(np.float32),
@@ -512,29 +524,76 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
         excluded_ids=sorted(prepared.excluded), engine=engine, diagnostics=diagnostics,
         atlas={k: v for k, v in prepared.atlas_meta.items() if k != "acronyms"},
         step=0 if previous is None else previous.step + 1, parent=previous,
+        left_out=left_out,
     )
+
+
+def run_fit(
+    inputs: EngineInputs, settings: FitSettings, em_damage_zone: np.ndarray | None,
+) -> EngineResult:
+    """The engine work of one prepared fit, on plain arrays (a pool worker runs it).
+
+    With *em_damage_zone* (a whole-section stain fit): a first run with the
+    footprint masks, the EM weights of the section against the atlas image it
+    warped (``masks.em_masks``), and a second run from the same start with
+    the EM masks, whose result is the fit's. Its native parameters record the
+    EM's (``section_mask``) and ``left_out`` the section pixels it dropped.
+    """
+    first = run_engine(inputs, settings)
+    if em_damage_zone is None:
+        return first
+    spacing = np.asarray(inputs.spacing_mm, dtype=np.float32)
+    warped = _remap(inputs.moving, first.field_mm / spacing)
+    masks, facts = em_masks(inputs.fixed, warped,
+                            Masks(inputs.fixed_mask, inputs.moving_mask, em_damage_zone),
+                            float(np.mean(inputs.spacing_mm)))
+    second = run_engine(replace(inputs, fixed_mask=masks.fixed, moving_mask=masks.moving),
+                        settings)
+    second.native_parameters["section_mask"] = {
+        "kind": "em", **EM_PARAMETERS, "fitted": facts["params"],
+        "left_out_in_footprint": facts["left_out_in_footprint"],
+        "first_fit_runtime_s": first.runtime_s,
+    }
+    second.runtime_s += first.runtime_s
+    second.left_out = facts["left_out"]
+    return second
+
+
+def run_prepared(prepared: PreparedFit) -> DeformableRecord:
+    """Run one prepared fit in this process and build its record."""
+    return finish_fit(prepared, run_fit(*_engine_args(prepared)))
 
 
 def fit_prepared(
     prepared: Sequence[PreparedFit], *, max_workers: int | None = None,
 ) -> list[DeformableRecord | CandidateFailure]:
-    """Run already prepared fits concurrently (one process each), in order.
+    """Run already prepared fits, in order.
 
     The prepared fits may come from different sections, section images or
-    settings. A failing fit comes
-    back as a :class:`CandidateFailure`. Every worker fits on
+    settings. A failing fit comes back as a :class:`CandidateFailure`. On a
+    GPU the fits run one after another in this process (each takes about a
+    second there; workers would each pay for their own CUDA start). On the
+    CPU they run concurrently, one process each: every worker fits on
     :data:`~langslice.core.deformable.engines.FIT_THREADS` threads (identical
     inputs give identical fields), so by default there are as many workers as
     that leaves room for, at most one per fit.
     """
     if not prepared:
         return []
+    results: list[DeformableRecord | CandidateFailure] = []
+    if fit_device() == "cuda":
+        for item in prepared:
+            try:
+                results.append(run_prepared(item))
+            except Exception as exc:  # noqa: BLE001 - one candidate must not sink the rest
+                results.append(CandidateFailure(_engine_args(item)[1],
+                                                f"{type(exc).__name__}: {exc}"))
+        return results
     workers = max_workers or min(len(prepared), max(1, (os.cpu_count() or 2) // FIT_THREADS))
     context = multiprocessing.get_context("spawn")
-    results: list[DeformableRecord | CandidateFailure] = []
     with ProcessPoolExecutor(max_workers=workers, mp_context=context,
-                             initializer=ants_worker) as pool:
-        futures = [pool.submit(run_engine, *_engine_args(p)) for p in prepared]
+                             initializer=engine_worker) as pool:
+        futures = [pool.submit(run_fit, *_engine_args(p)) for p in prepared]
         for item, future in zip(prepared, futures, strict=True):
             try:
                 results.append(finish_fit(item, future.result()))
@@ -544,8 +603,11 @@ def fit_prepared(
     return results
 
 
-def _engine_args(prepared: PreparedFit) -> tuple[EngineInputs, FitSettings]:
-    """The engine's inputs and settings of a fit; a :func:`prepare_warp` has none."""
+def _engine_args(
+    prepared: PreparedFit,
+) -> tuple[EngineInputs, FitSettings, np.ndarray | None]:
+    """The engine's inputs, settings and EM damage zone of a fit; a
+    :func:`prepare_warp` has none."""
     if prepared.inputs is None or prepared.settings is None:
         raise ValueError("A prepared warp has no engine fit to run")
-    return prepared.inputs, prepared.settings
+    return prepared.inputs, prepared.settings, prepared.em_damage_zone

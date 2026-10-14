@@ -243,7 +243,7 @@ job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 
 `mark_damage` records atlas regions physically lost or badly displaced,
 including one hemisphere when needed. Those regions are excluded from
-elastix, ANTs and image-model tracing. Small tears, bubbles and folds do not
+elastix, `ants_syn` and image-model tracing. Small tears, bubbles and folds do not
 by themselves justify excluding an entire region. A job can disable this tool
 with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
 
@@ -278,9 +278,29 @@ on the previous one and can be undone. It accepts one to four sections,
 `stiffness="soft"|"medium"|"firm"` and optional `restrict_to` regions.
 The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically. A restricted fit moves only that
-neighbourhood: ANTs' masks limit where the fit is measured, not where its
+neighbourhood: the masks limit where the fit is measured, not where its
 smooth field reaches, so the step's displacement fades to none over a further
 0.3 mm and the tissue beyond keeps its earlier fit.
+
+The engine is the SyN (symmetric diffeomorphic) registration of
+[FireANTs](https://github.com/rohitrango/FireANTs), on the GPU when there is
+one (about a second per section) and on the CPU otherwise, with ANTs' settings
+and step rule: local correlation over an 80 µm window plus an edge channel,
+four pyramid levels, the stiffness as Gaussian smoothing of each step and of
+the whole warp. Identical inputs give identical fields.
+
+A fit over the whole section runs twice. The first run measures the section
+inside the placed atlas outline widened by 0.2 mm. Then each section pixel is
+classed as matching the atlas image the first run warped, as an artifact, or
+as background (a three-class EM after Tward et al. 2025, on a 50 µm grid with
+a linear contrast per 0.8 mm block). The second run starts again from the
+same placement, measures every section pixel that matches with probability
+at least 0.5 anywhere in the picture, and lets the atlas reach everywhere
+except the marked damage: holes, tears and debris drop out, and the outline
+no longer bounds where tissue may go. The fitted record keeps the pixels left
+out, for review pictures; the agent's replies and pictures do not change.
+The Elastix affine, restricted fits and fits of traced borders keep the
+outline masks and run once.
 
 Both registration engines accept any of the atlas's own images as
 `atlas_image`: BrainGlobe's `"template"` (the default) and every additional

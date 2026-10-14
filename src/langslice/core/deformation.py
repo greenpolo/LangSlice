@@ -49,7 +49,6 @@ from langslice.core.deformable import (
     FitSettings,
     Placement,
     draw_warped_borders,
-    finish_fit,
     fit_prepared,
     placement_from_handoff,
     prepare_fit,
@@ -60,13 +59,18 @@ from langslice.core.deformable.atlas_images import (
     native_labels,
     normalize_intensity,
 )
-from langslice.core.deformable.engines import run_engine
-from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
+from langslice.core.deformable.engines import (
+    FIREANTS_LEARNING_RATE,
+    FIREANTS_VERSION,
+    INVERSE_ITERATIONS,
+)
+from langslice.core.deformable.fit import RESTRICTED_TAPER_MM, run_prepared
+from langslice.core.deformable.masks import EM_PARAMETERS
 from langslice.core.deformable.render import composed_native_grid
 from langslice.core.deformable.settings import (
-    ANTS_STIFFNESS,
     CORRELATION_RADIUS_UM,
     DETAIL,
+    STIFFNESS,
 )
 from langslice.core.handoff import digest
 from langslice.core.state import SliceState, StackState
@@ -117,10 +121,13 @@ class FitRefusal(Exception):
         self.payload = {"status": "error", "error": code, "message": message, **extra}
 
 
-def ants_available() -> bool:
-    return importlib.util.find_spec("ants") is not None
+def engine_available() -> bool:
+    """Whether the deformable engine's libraries (FireANTs, torch) are installed."""
+    return all(importlib.util.find_spec(name) is not None for name in ("fireants", "torch"))
 
 
+#: The refusal when :func:`engine_available` is False (model-facing text,
+#: pinned by the text snapshot).
 ANTS_MISSING = (
     "ANTs (antspyx) cannot be imported on this host. It is one of LangSlice's "
     "dependencies on Python 3.13 and below: reinstall LangSlice there "
@@ -301,10 +308,10 @@ def engine_settings(settings: FitSettings) -> dict[str, Any]:
         used["correlation_radius_um"] = CORRELATION_RADIUS_UM
     if settings.section_image == "stain" and settings.stain_edges:
         used["edge_channel"] = True
-    stiffness = ANTS_STIFFNESS[settings.stiffness]
+    stiffness = STIFFNESS[settings.stiffness]
     used.update(update_sigma_mm=stiffness.update_sigma_mm,
                 total_sigma_mm=stiffness.total_sigma_mm,
-                iterations=list(level.ants_iterations))
+                iterations=list(level.iterations))
     if settings.labels != "none":
         used["label_map"] = settings.labels
     if settings.structures:
@@ -325,6 +332,12 @@ def cache_key(
         # A restricted step is tapered outside its region (fit.RESTRICTED_TAPER_MM);
         # results saved before the taper are not reused.
         **({"restricted_taper_mm": RESTRICTED_TAPER_MM} if settings.structures else {}),
+        # The engine and, for a whole-section stain fit, the EM section mask:
+        # a record from another engine or mask is not reused.
+        "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,
+                   list(DETAIL[settings.detail].iterations)],
+        **({"section_mask": EM_PARAMETERS}
+           if settings.section_image == "stain" and not settings.structures else {}),
     })
 
 
@@ -496,8 +509,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
         for item in prepared:
             try:
                 with _ENGINE_LOCK:
-                    result = run_engine(item.inputs, item.settings)
-                results.append(finish_fit(item, result))
+                    results.append(run_prepared(item))
             except Exception as exc:  # noqa: BLE001
                 results.append(CandidateFailure(item.settings, f"{type(exc).__name__}: {exc}"))
     for job, result in zip(waiting, results, strict=True):

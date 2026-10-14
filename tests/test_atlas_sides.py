@@ -169,7 +169,7 @@ def test_a_one_sided_exclusion_keeps_the_other_side(atlas):
 
 
 def test_one_sided_highlights_and_marks_are_drawn_on_that_side(atlas):
-    pytest.importorskip("ants", reason="the deformable fit needs antspyx")
+    pytest.importorskip("fireants", reason="the deformable fit needs FireANTs")
     image, _ = render_section(atlas, SMOOTH_FIELD())
     record = fit_section(image, atlas, placement(),
                          FitSettings(engine="ants", detail="coarse", exclude=("CTX:left",)))
