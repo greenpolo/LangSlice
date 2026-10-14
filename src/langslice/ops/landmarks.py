@@ -562,7 +562,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         except ValueError:  # its record.json does not load (the error names it)
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current = None
-        if held and "keep_linear" not in held and current is None:
+        if held and current is None:
             raise Refused(
                 "LANDMARK_WARP_UNAVAILABLE",
                 message="The current deformation cannot be read; undo it first.",

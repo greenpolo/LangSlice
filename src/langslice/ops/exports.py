@@ -62,7 +62,7 @@ def _warp(job: Job, state: StackState, record: SliceState,
     from langslice.job.formats import applied_deformation
 
     held = applied_deformation(state, record)
-    if held is None or "keep_linear" in held:
+    if held is None:
         return None, None
     loaded = job.deformations.get(record.id, str(held.get("key", "")))
     if loaded is None:

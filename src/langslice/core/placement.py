@@ -366,7 +366,7 @@ def placement_pictures(
     if warp is not None:
         row["deformation_drawn"] = True
     elif (options.mode in WARPED_PLACEMENT_MODES and record.deformation
-          and "keep_linear" not in record.deformation and position == record.position_mm
+          and position == record.position_mm
           and options.deformation == "applied"):
         # Held but not drawable (stale or unreadable): say so, never pretend.
         row["deformation_drawn"] = False

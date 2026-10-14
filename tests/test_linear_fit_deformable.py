@@ -434,25 +434,11 @@ def test_submit_needs_no_deformation_unless_the_user_requires_one(tmp_path: Path
     assert "left_linear" not in refused["message"]
 
 
-@needs_ants
-def test_keep_linear_satisfies_submit_until_the_placement_moves(tmp_path: Path, atlas):
-    """A saved "linear placement stands" record (older jobs hold them) is
-    cleared by a placement change like an applied fit."""
-    state, ctx, _, box = _setup(tmp_path, atlas, provider="none", require_deformation=True)
-    before = box.job.snapshot()
-    state.slices[0].deformation = {
-        "keep_linear": "The linear placement already matches.",
-        "linear_key": deformation.linear_key(state, state.slices[0])}
-    box.job.commit(before)
-    held = state.slices[0].deformation
-    assert held["keep_linear"] == "The linear placement already matches."
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
-    assert box.job.submit_errors([]) is None
-    # A placement change clears it, like an applied fit.
-    moved = _tool(box, "interactive_transform")([{"id": ID, "rotation_deg": 2.0}], view=False)
-    assert moved["deformation_cleared"] == [ID]
-    assert box.job.submit_errors([])["error"] == "MISSING_DEFORMATIONS"
-    _tool(box, "undo")()
-    assert state.slices[0].deformation == held
-    _tool(box, "undo")()
+def test_an_older_jobs_left_linear_marker_loads_as_no_deformation():
+    """Jobs saved before 2026-10-14 mark a section left linear; it loads with none."""
+    from langslice.core.state import StackState
+
+    state = StackState.from_dict({"slices": [{
+        "id": ID, "index_original": 0, "index_corrected": 0, "deformation": {
+        "keep_linear": "The linear placement already matches.", "linear_key": "x"}}]})
     assert state.slices[0].deformation is None

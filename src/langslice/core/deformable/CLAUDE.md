@@ -186,7 +186,8 @@ warped=...)` (exported from the package): it composes the linear placement and
 the residual field and draws per-region blurred indicators sampled bilinearly
 on a 3x supersampled grid (the approach of `core.atlas.render.placed_border_coverage`,
 which is affine-only, so the composed sampling lives here), one shared line per
-edge, antialiased. `highlight` (acronyms/ids, descendants
+edge, antialiased, cased (`core=` black or white, edged by the other: see
+`core.canvas.composite_cased`; the marked regions' second ink is plain). `highlight` (acronyms/ids, descendants
 included, one-sided entries drawn on that side of the record's placement)
 draws those regions' edges strongly, `core.atlas.render.HIGHLIGHT_WIDTH`
 times as thick, over a faint outline of the other regions; `marked` draws a second set (regions excluded from a

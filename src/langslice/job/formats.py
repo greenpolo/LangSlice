@@ -118,8 +118,6 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
     deformation: dict[str, Any] | None
     if held is None:
         deformation = None
-    elif "keep_linear" in held:
-        deformation = {"kind": "none", "reason": str(held.get("keep_linear") or "")}
     else:
         deformation = {"kind": "residual", "record": held.get("record"),
                        "key": held.get("key"), "steps": held.get("steps") or [],

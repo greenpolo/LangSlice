@@ -394,25 +394,12 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
 
 
 @pytest.mark.slow
-def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
-    """The "linear placement stands" record (older jobs hold
-    it) and a moved placement each send ABBA no warp for the section."""
-    from langslice.core.deformation import linear_key
+def test_a_moved_placement_removes_the_warp_step(warped):
+    """A moved placement sends ABBA no warp for the section."""
     from tests.synthetic_stack import ID0
 
     pytest.importorskip("ants", reason="ants_syn needs antspyx")
     job, tracker, events, _prepared = warped
-    if job.state.by_id(ID0).deformation is None:
-        assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
-        tracker(job.state)
-    with job.job.writing():
-        before = job.job.snapshot()
-        record = job.state.by_id(ID0)
-        record.deformation = {"keep_linear": "kept for the test",
-                              "linear_key": linear_key(job.state, record)}
-        job.job.commit(before)
-    tracker(job.state)
-    assert _row(events[-1], ID0)["warp"] is None
     assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     assert _row(events[-1], ID0)["warp"] is not None

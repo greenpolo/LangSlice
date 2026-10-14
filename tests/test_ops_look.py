@@ -228,26 +228,29 @@ def test_a_picture_that_is_not_saved_is_refused_and_a_dry_run_zooms_from_memory(
     assert zoomed.entries[0]["id"] == entry["id"] + 1
 
 
-def _border_color_mask(picture: Image.Image, caption_text: str) -> np.ndarray:
-    """Pixels close to whichever colour the caption says the borders are
-    drawn in (``resolve_border_color`` picks per picture now, not always
-    yellow): a tolerant match, since anti-aliasing blends the line into
-    the background at its edges."""
-    from langslice.core.canvas import BORDER_CANDIDATES
+def _border_color_mask(plain: Image.Image, picture: Image.Image) -> np.ndarray:
+    """The strong atlas lines of a highlight picture: where it differs a lot
+    from the plain atlas template (*plain*) at the same plane and size (the
+    faint context lines move a pixel by less). Cased lines are black or white,
+    which the tissue also is, so a colour test cannot find them."""
+    rows = 100  # the picture above its caption band, whose height varies
+    assert plain.width == picture.width
+    diff = np.abs(np.asarray(picture.convert("RGB")).astype(int)[:rows]
+                  - np.asarray(plain.convert("RGB")).astype(int)[:rows]).max(axis=-1)
+    return diff > 120
 
-    word = caption_text.rsplit("borders ", 1)[-1].split(";")[0].split(".")[0].strip()
-    target = dict(BORDER_CANDIDATES).get(word, (255, 255, 0))
-    data = np.asarray(picture.convert("RGB")).astype(int)
-    return np.linalg.norm(data - np.asarray(target), axis=-1) < 60
 
-
-def _centre_x(picture: Image.Image, caption_text: str) -> float:
-    _ys, xs = np.nonzero(_border_color_mask(picture, caption_text))
+def _centre_x(plain: Image.Image, picture: Image.Image) -> float:
+    _ys, xs = np.nonzero(_border_color_mask(plain, picture))
     assert xs.size > 20, "no highlighted border drawn"
     return float(xs.mean() / picture.width)
 
 
 def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
+    (tmp_path / "plain").mkdir()
+    plain_job, plain_ws = _job(tmp_path / "plain")
+    (plain,) = ops_look.look(plain_job, plain_ws, "atlas", positions_mm=[0.1],
+                             atlas_layers=["template"]).pictures
     job, ws = _job(tmp_path)
     view = ops_atlas.grep_atlas_view(job, ws, ["STR"], [0.1, 0.3])
     assert view.regions == ["STR"] and len(view.pictures) == 2
@@ -257,15 +260,15 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     saved = job.views.lookup(1)
     assert saved is not None and saved.tool == "grep_atlas_view" and saved.mode == "atlas"
     assert saved.recipe is not None and saved.recipe["args"]["regions"] == ["STR"]
-    striatum = _centre_x(view.pictures[0], view.entries[0]["caption"])
+    striatum = _centre_x(plain, view.pictures[0])
     thalamus_view = ops_atlas.grep_atlas_view(job, ws, ["TH"], [0.1])
-    thalamus = _centre_x(thalamus_view.pictures[0], thalamus_view.entries[0]["caption"])
+    thalamus = _centre_x(plain, thalamus_view.pictures[0])
     assert striatum < 0.45 < 0.55 < thalamus  # STR sits left of TH in the synthetic plane
     # One side of a region: the highlight is the half on that side only.
     both_view = ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1])
-    both = _border_color_mask(both_view.pictures[0], both_view.entries[0]["caption"]).sum()
+    both = _border_color_mask(plain, both_view.pictures[0]).sum()
     left_view = ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1])
-    left = _border_color_mask(left_view.pictures[0], left_view.entries[0]["caption"]).sum()
+    left = _border_color_mask(plain, left_view.pictures[0]).sum()
     assert 0 < left < both
     assert not view.regions_not_in_plane
     # More than four positions: the rest are named, and a zoom redraws through the recipe.

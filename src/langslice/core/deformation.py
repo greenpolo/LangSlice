@@ -375,8 +375,7 @@ class RecordStore:
     def current(self, state: StackState, record: SliceState) -> DeformableRecord | None:
         """The section's applied record, when it still sits on its placement."""
         held = record.deformation
-        if (not held or "keep_linear" in held
-                or held.get("linear_key") != linear_key(state, record)):
+        if not held or held.get("linear_key") != linear_key(state, record):
             return None
         return self.get(record.id, str(held.get("key", "")))
 
@@ -520,6 +519,7 @@ class Style:
     #: Regions drawn in the second color (those excluded from the fit).
     marked: tuple[str, ...]
     outlines: str
+    #: The image model's trace colour (:func:`trace_picture`: plain, read back by colour).
     color: tuple[int, int, int]
     thickness: float
     atlas_opacity: float
@@ -528,6 +528,9 @@ class Style:
     #: Long edge of the picture (of the zoomed crop when zoomed), in pixels;
     #: never more than the fit image's own pixels.
     long_edge: int = 512
+    #: Core colour of the fitted borders in :func:`picture`, ``black`` or
+    #: ``white`` (cased with the other).
+    core: str = "black"
 
 
 def picture(
@@ -576,7 +579,7 @@ def picture(
     drawn = draw_warped_borders(
         base, small, ctx.atlas, highlight=style.highlight, marked=style.marked, warped=warped,
         outlines=style.outlines, depth=style.depth, width_px=style.thickness,
-        color=style.color, native=native,
+        core=style.core, native=native,
     )
     captioned = caption(drawn, title)
     if note is not None:

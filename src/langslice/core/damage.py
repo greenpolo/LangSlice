@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.sides import SEPARATOR, split_side
-from langslice.core.canvas import AUTO_BORDER_COLOR, rgb_to_hex
+from langslice.core.canvas import AUTO_BORDER_COLOR
 
 if TYPE_CHECKING:
     from langslice.core.canvas import PanelFrame
@@ -224,13 +224,13 @@ def damage_picture(
         label=f"{record.id} damage", warp=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
-    # One colour for the whole picture: resolved from the section's own
-    # tissue (the first, "shown" panel), then forced concrete for the atlas
-    # panel so the two sides never pick different colours.
+    # One arrangement for the whole picture: resolved from the section's own
+    # tissue (the first, "shown" panel), then forced for the atlas panel so
+    # the two sides never pick different ones.
     resolved = shown.panels[0].border_color if shown.panels else None
     atlas_options = replace(options, atlas_channels=("template", "borders"))
     if resolved is not None:
-        atlas_options = replace(atlas_options, border_color=rgb_to_hex(resolved))
+        atlas_options = replace(atlas_options, border_color=resolved)
     atlas = draw_canvas(
         ws, state, record, section, um_per_px, position, params,
         atlas_options, mode="template",

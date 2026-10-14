@@ -329,7 +329,7 @@ class ToolContext:
             position_mm=record.position_mm, angles=record.angles, flip=bool(record.flip),
             rotation_deg=int(record.rotation_deg), affine=affine,
             deformation=None if held is None else {
-                key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps", "keep_linear")
+                key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps")
                 if key in held},
             damaged_regions=tuple(record.damaged_regions), damage_note=record.damage_note,
             layers=tuple(str(ref["name"]) for ref in record.layers),

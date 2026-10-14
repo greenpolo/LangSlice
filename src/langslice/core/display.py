@@ -57,6 +57,7 @@ from langslice.core.canvas import (
     AUTO_BORDER_COLOR,
     REGION_CONTEXT_ALPHA,
     _draw_polys,
+    border_words,
     line_coverage,
     region_polys,
     regions_left,
@@ -468,7 +469,7 @@ def framed_atlas(
         left = regions_left(ctx.atlas, options.regions, position_mm, plane,
                             pitch, yaw, np.eye(2))
         region_lines = region_polys(labels, options.regions, left)
-    # One colour for the whole picture, resolved against this atlas plate's
+    # One arrangement for the whole picture, resolved against this atlas plate's
     # own pixels (there is no section here to judge contrast against).
     drawn_polys = context + region_lines
     coverage = (
@@ -476,20 +477,20 @@ def framed_atlas(
                      origin=origin, factor=factor)
         if drawn_polys else None
     )
-    rgb, _, border_word = resolve_border_color(
+    core, _ = resolve_border_color(
         options.border_color, options.border_thickness, rgb=canvas, coverage=coverage,
     )
     if context:
-        _draw_polys(canvas, context, rgb, thickness=options.border_thickness, origin=origin,
+        _draw_polys(canvas, context, core, thickness=options.border_thickness, origin=origin,
                     factor=factor, alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0)
     if region_lines:
-        _draw_polys(canvas, region_lines, rgb,
+        _draw_polys(canvas, region_lines, core,
                     thickness=options.border_thickness * HIGHLIGHT_WIDTH, origin=origin,
                     factor=factor)
     result = Image.fromarray(canvas, mode="RGB")
     result.info["pixel_to_native"] = shown.info["pixel_to_native"]
     if drawn_polys:
-        result.info["border_word"] = border_word
+        result.info["border_word"] = border_words(core)
     return result
 
 

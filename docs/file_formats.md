@@ -90,7 +90,7 @@ Each section:
 | `plane` | `name`, `position_mm`, `position_um`, `pitch_deg`, `yaw_deg` |
 | `orientation` | Counter-clockwise quarter turn `rotation_deg`, followed by left-right `flip` |
 | `affine` | Null without a transform; otherwise `kind`, `params`, `physical` and `mirrored` |
-| `deformation` | Null, `{"kind":"none","reason":"..."}` for a section left linear, or a residual record with `kind`, `record`, `key`, `steps`, `inverse_source` |
+| `deformation` | Null, or a residual record with `kind`, `record`, `key`, `steps`, `inverse_source` |
 | `damaged_regions` | Atlas regions excluded from fits, optionally with a side (`"CTX:left"`) |
 | `damaged` | True exactly when `damaged_regions` is nonempty |
 
