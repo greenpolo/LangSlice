@@ -72,6 +72,15 @@ whose imports are core-only:
   `opening.py`, `transform.py`, `deformation.py`, `discovery.py`. Their
   entries are in the linear agent environment's guide
   (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method;
+- atlas planes are cached: `oblique.py` spline-filters a
+  volume once (on threads) for every cubic plane, samples a large plane in
+  row bands on threads and keeps recent annotation planes;
+  `atlas_fetch.atlas_section` keeps recent template planes on
+  `Workspace.plane_cache`; `opening.opening_items` draws the columns after
+  the first on threads. Each gives the same pixels as the serial path
+  (`tests/test_oblique_prefilter_cache.py`); `tests/test_opening_startup_budget.py`
+  holds a 100-section angled opening on an Allen-sized volume within a
+  time budget;
 - plain tables several layers share: `provider_names.py` and
   `media_keys.py` (the keys a tool's media travels under, read by the tool
   door, the ADK driver, MCP and the OAuth transport);

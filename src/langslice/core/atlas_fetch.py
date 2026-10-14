@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from typing import cast
 
 import numpy as np
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 #: Most atlas sections in the opening's atlas reference (laid out as strips by
 #: :mod:`langslice.core.opening`, sent when a section has no position).
 SEED_ATLAS_MAX_IMAGES = 48
+
+#: Most atlas planes kept on ``Workspace.plane_cache`` (one 8-bit plane is
+#: 0.5 MB on the 39 um rat atlas, about 1 MB on the 10 um mouse).
+PLANE_CACHE_SIZE = 128
+_plane_lock = threading.Lock()
 
 
 def atlas_mask(
@@ -61,6 +67,14 @@ def atlas_section(
     bounding box back at the canvas edges.
     """
     pitch, yaw = plane_angles(state, angles)
+    key = (float(position_mm), str(state.plane), float(pitch), float(yaw), bool(frame))
+    cache = ctx.plane_cache
+    with _plane_lock:
+        hit = cache.get(key)
+        if hit is not None:
+            cache.move_to_end(key)
+    if hit is not None:
+        return hit
     image = get_reference_slice(
         ctx.atlas,
         position_mm,
@@ -69,15 +83,21 @@ def atlas_section(
         yaw_deg=yaw,
     )
     image.info["pixel_to_native"] = np.eye(3).tolist()
-    if not frame:
-        return image
-    try:
-        mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
-    except Exception as exc:
-        logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)", position_mm, exc)
-        return image
-    box = mask_box(image.size, mask > 0)
-    return cropped_geometry(image.crop(box), image, box) if box else image
+    if frame:
+        try:
+            mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
+        except Exception as exc:
+            logger.warning("atlas at %.3f mm: no root mask to frame it by (%s)",
+                           position_mm, exc)
+        else:
+            box = mask_box(image.size, mask > 0)
+            if box:
+                image = cropped_geometry(image.crop(box), image, box)
+    with _plane_lock:
+        cache[key] = image
+        while len(cache) > PLANE_CACHE_SIZE:
+            cache.popitem(last=False)
+    return image
 
 
 def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
