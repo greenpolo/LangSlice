@@ -25,11 +25,18 @@ dependencies = [
     "zarr>=3; python_version >= '3.11'",
     "python-dotenv",
     "itk-elastix",
-    # The ANTs engine (langslice.core.deformable): ants_syn and the packaged
-    # trace_borders fit with it. antspyx 0.6.x pins scipy<1.16 (and 0.6.2+
-    # numpy<2.4), so installing it downgrades those two. 0.6.3 is the floor:
-    # the engine seeds fits through `ants.config`, which 0.6.1 lacks. It has
-    # no wheels for Python 3.14 yet; there the ANTs tools refuse (ANTS_MISSING).
+    # The deformable engine (langslice.core.deformable): ants_syn and the
+    # packaged trace_borders fit with FireANTs' SyN on torch (on the GPU when
+    # torch sees one). FireANTs 1.5.1 is not on PyPI; its GitHub archive at
+    # f8a9cc2 builds without the private submodule a git install trips on.
+    # SimpleITK is the one dependency of FireANTs it imports.
+    "torch>=2.3",
+    "SimpleITK>=2.2.1",
+    "fireants @ https://github.com/rohitrango/FireANTs/archive/f8a9cc259ab9113fc43bd99797000fa8fc34eb59.tar.gz",
+    # N4 bias-field correction and denoising of the preprocessed channel
+    # (langslice.core.image_prep). antspyx 0.6.x pins scipy<1.16 (and 0.6.2+
+    # numpy<2.4), so installing it downgrades those two. It has no wheels for
+    # Python 3.14 yet; there N4 and denoising are unavailable.
     "antspyx>=0.6.3,<0.7; python_version < '3.14'",
     # The job folder's cross-process write lock (langslice.job.lock).
     "filelock>=3.12",
@@ -40,7 +47,7 @@ langslice = "langslice.cli:main"
 langslice-job = "langslice.doors.cli.jobcli:main"
 
 [project.optional-dependencies]
-# HDF5 reading (h5py). The ANTs engine is a core dependency (above).
+# HDF5 reading (h5py). The deformable engine is a core dependency (above).
 registration = [
     "h5py>=3.10",
 ]

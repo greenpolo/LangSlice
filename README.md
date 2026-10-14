@@ -20,7 +20,7 @@
 LangSlice gives a vision-language agent tools to register a stack of histology
 sections to a [BrainGlobe](https://brainglobe.info) atlas. The agent inspects
 the anatomy, sets positions and cutting angles, aligns sections in-plane,
-and optionally fits ANTs deformations. It chooses regions and settings and
+and optionally fits SyN deformations. It chooses regions and settings and
 can use an image model to trace borders where useful.
 
 Source images stay unchanged. Work is checkpointed and undoable, with
@@ -42,7 +42,7 @@ On Windows, run the same `conda env create` and `conda activate` commands in
 Miniforge Prompt or PowerShell with conda initialized. Python 3.11 on Windows
 is tested in CI. Atlases are downloaded by BrainGlobe on first use into the
 user's `.brainglobe` folder. Python 3.10 or newer is required; the environment
-includes the ANTs deformable engine, the Claude Desktop server and the ABBA
+includes the deformable engine (FireANTs on torch), the Claude Desktop server and the ABBA
 launcher.
 
 ## Use LangSlice

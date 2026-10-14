@@ -116,10 +116,10 @@ def task_notes(spec: JobSpec) -> list[str]:
 def ants_fact(tool_names: list[str]) -> str | None:
     """The job statement's line when ANTs cannot run here (None when it can,
     or when no tool of the run needs it)."""
-    from langslice.core.deformation import ants_available
+    from langslice.core.deformation import engine_available
 
     needing = [name for name in ("ants_syn", "trace_borders") if name in tool_names]
-    if not needing or ants_available():
+    if not needing or engine_available():
         return None
     return f"- ANTs is not installed on this host, so {' and '.join(needing)} cannot run."
 

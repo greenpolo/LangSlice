@@ -1,6 +1,6 @@
 """External worker keeps host calibration and initial state intact without Java.
 
-The ANTs warp-row tests (real deformation fits on the synthetic stack) are `slow`."""
+The deformation warp-row tests (real deformation fits on the synthetic stack) are `slow`."""
 import copy
 import json
 from pathlib import Path
@@ -326,9 +326,9 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     from langslice.core.thin_plate import ThinPlateKernel
     from tests.synthetic_stack import ID0, ID1
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
     job, tracker, events, prepared = warped
-    # An ANTs SyN field varies on a finer scale than the 33x33 landmark cap
+    # A SyN field varies on a finer scale than the 33x33 landmark cap
     # follows, so the pairs approximate it with an error the row reports; the
     # conversion's own exactness on a smooth field is test_abba_warp's.
     assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
@@ -372,7 +372,7 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
     next checkpoint tries again."""
     from tests.synthetic_stack import ID0
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
     job, tracker, events, _prepared = warped
     if job.state.by_id(ID0).deformation is None:
         assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
@@ -398,7 +398,7 @@ def test_a_moved_placement_removes_the_warp_step(warped):
     """A moved placement sends ABBA no warp for the section."""
     from tests.synthetic_stack import ID0
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
     job, tracker, events, _prepared = warped
     assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
@@ -424,7 +424,7 @@ def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monke
         write_sections,
     )
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     folder = tmp_path / "stack"
     write_sections(folder)
@@ -475,7 +475,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
                         "positions_mm": {"a.tif": 4.0},
                         "spec": {"frozen": {"b.tif": ["deformation"]}}})
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     folder = tmp_path / "stack"
     write_sections(folder)

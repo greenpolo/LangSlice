@@ -97,9 +97,9 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
 
 
 def _needs_ants() -> None:
-    from langslice.ops.deformable import ants_ready
+    from langslice.ops.deformable import engine_ready
 
-    if not ants_ready():
+    if not engine_ready():
         pytest.skip("ants_syn needs antspyx")
 
 

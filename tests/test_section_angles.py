@@ -230,7 +230,7 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         for name in IDS:
             handoff = prepare_linear_registration(state, job.workspace, name)
             assert (handoff.pitch_deg, handoff.yaw_deg) == state.by_id(name).angles
-        # The packaged trace (image call, then its ANTs fit, in the background).
+        # The packaged trace (image call, then its SyN fit, in the background).
         assert job.trace_borders(section=ID1)["status"] == "started"
         fit = job.ants_syn(sections=[ID0])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit

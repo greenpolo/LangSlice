@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
+import os
 import re
+import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -659,23 +662,58 @@ def working_intensity_ranges(
         return [_array_range(np.asarray(page.asarray())) for page in handle.pages]
 
 
+#: Threads ANTs' bundled ITK runs N4 and denoising on: a multithreaded
+#: filter's last bits depend on the split, so the count is fixed.
+ANTS_THREADS = 8
+#: ITK's environment variable for its default thread count (read once).
+ITK_THREADS_ENV = "ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"
+_ANTS_LOCK = threading.Lock()
+
+
+def import_ants() -> Any:
+    """Import antspyx with ITK's thread count fixed at :data:`ANTS_THREADS`.
+
+    ANTs' bundled ITK reads ``ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS`` once per
+    process at first use, so the first import sets it, runs one tiny filter
+    and puts the variable back. ``RuntimeError`` with the install hint when
+    antspyx does not import.
+    """
+    with _ANTS_LOCK:
+        first = "ants" not in sys.modules
+        held = os.environ.get(ITK_THREADS_ENV)
+        if first:
+            os.environ[ITK_THREADS_ENV] = str(ANTS_THREADS)
+        try:
+            import ants
+
+            if first:
+                ants.smooth_image(ants.from_numpy(np.zeros((4, 4), np.float32)), 1.0)
+        except ImportError as exc:  # pragma: no cover - depends on the environment
+            raise RuntimeError(
+                "N4 and denoising need antspyx, one of LangSlice's dependencies on Python "
+                "3.13 and below (pip install 'antspyx>=0.6.3,<0.7')"
+            ) from exc
+        finally:
+            if first:
+                if held is None:
+                    os.environ.pop(ITK_THREADS_ENV, None)
+                else:
+                    os.environ[ITK_THREADS_ENV] = held
+    return ants
+
+
 def ants_enhance(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
     """ANTs N4 bias-field correction and/or denoising of one 8-bit plane.
 
-    antspyx ships in LangSlice's optional ``registration`` extra and is
-    imported on first use (``core.deformable.engines.import_ants``); without it
-    this raises with the install hint.
+    antspyx is imported on first use (:func:`import_ants`); without it this
+    raises with the install hint.
     Intensities are shifted positive first (N4 works on their logarithm) and
     the result is scaled back to the plane's own mean inside the tissue, so a
     dim channel stays dim; outside the tissue the plane is kept.
     """
     if not (n4 or denoise):
         return plane
-    # The deformable engine's import fixes ANTs' thread count for the process
-    # (deterministic fits), whichever of the two loads ANTs first.
-    from langslice.core.deformable.engines import import_ants
-
-    ants = import_ants("N4 and denoising")
+    ants = import_ants()
     array = plane.astype(np.float32) + 1.0
     image = ants.from_numpy(np.ascontiguousarray(array))
     tissue = plane > 15

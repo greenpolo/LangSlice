@@ -3,7 +3,8 @@
 Package guide for `src/langslice/core/deformable/`; `AGENTS.md` is a verbatim
 twin of this file. A core sub-package, like `core/affine.py`: it belongs to
 neither the linear method nor `core/nonlinear/` and imports neither. It is the
-engine behind the deformable fits (`ants_syn` and the packaged
+engine behind the deformable fits (`ants_syn`, whose name predates the
+FireANTs engine, and the packaged
 `trace_borders`' fit, through `core/deformation.py`, task `nonlinear`) and
 behind `elastix_affine` (`core/transform.elastix_affine`: `prepare_fit`
 builds its images and masks, `engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
@@ -25,9 +26,10 @@ and returns a `record.DeformableRecord`. No custom solver.
   by their BrainGlobe names; temporarily, an Allen CCFv3 atlas also gets
   `ccfv3augmented_nissl`, the Blue Brain averaged Nissl from
   `ccfv3augmented_mouse_25um` at its 0.35 mm AP offset). Metric
-  (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
-  cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
-  (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); the
+  (`stain_metric`, default `local_correlation`): neighbourhood
+  cross-correlation over a box window of radius `CORRELATION_RADIUS_UM`
+  (80 µm, rounded to working pixels: 4 at standard, 2 at coarse), each window
+  counting only its in-mask pixels (as ITK's; `engines._channel_loss`); the
   Elastix affine has no local correlation and uses `ELASTIX_STAIN_METRIC`
   (mutual information); `mutual_information` is the alternative. Plus, by
   default (`stain_edges`), an EDGE channel: the gradient
@@ -46,7 +48,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   `record.parent` is the step before. The step's own field (and its inverse,
   re-inverted: `fit._invert_step`) is tapered to none over
   `fit.RESTRICTED_TAPER_MM` beyond the neighbourhood (`PreparedFit.step_weight`;
-  `step_details.taper_um`), since ANTs' masks bound the metric, not the field.
+  `step_details.taper_um`), since the masks bound the metric, not the field.
 - Route B (image model): the model's extracted line mask (`lines=`, on the
   section grid, e.g. `trace_borders`' `extracted_lines.png` with its
   `atlas_to_canvas`) against `borders_merged` (the regions the model was shown:
@@ -57,37 +59,46 @@ and returns a `record.DeformableRecord`. No custom solver.
   (`metric_for`): lines
   against an atlas image, and the stain against borders (the pairing that
   stays at the linear placement).
-- Label-map channels (`labels=`, ANTs only): `model` names each area the
+- Label-map channels (`labels=`, SyN only): `model` names each area the
   model's lines enclose after the placed merged region it overlaps most
   (`regions.named_regions`, small loops around bubbles dropped, joint
-  one-to-one renaming) and pairs each region's indicator with the atlas's.
-  Built as `ants.registration`
-  `multivariate_extras` (the same per-label MeanSquares construction
-  `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
-  so would ignore stiffness); the edge channel is the first extra.
-- The deformable engine (`engines.run_engine`): ANTs `SyNOnly` with an
-  identity initial transform (antspyx, a core dependency below Python 3.14,
-  imported lazily with an install hint), on the working-grid images, masks,
-  spacing and origin, returning millimetre fields and ANTs' own inverse.
-  Any other `FitSettings.engine` is refused there: `engine="elastix"` exists
-  for the Elastix affine's inputs (its metric, no label channels), never a
-  deformation.
-- DETERMINISM: identical inputs give identical fields, bit for bit (test
-  `test_identical_inputs_give_identical_fields`: twice in process and in a
-  pool worker). Fixed seed `engines.RANDOM_SEED` (antsRegistration
-  `--random-seed` through `ants.config._random_seed`, restored after the
-  call; the Elastix affine's `RandomSeed`, which its random sampler reads).
-  Fixed thread count `engines.FIT_THREADS` (8), because a multithreaded
-  metric's sums depend on the split (ANTs fields moved ~2 µm between 1 and 8
-  threads). ANTs' bundled ITK reads
-  `ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` once per process at first use, so
-  `engines.import_ants` (also used by `image_prep.ants_enhance`) sets it,
-  runs one tiny filter and restores the environment; pool workers set it in
-  `engines.ants_worker`. If something outside LangSlice loaded ANTs first the
-  count is unknown: `threads` is None and a note says so. Elastix's own
+  one-to-one renaming) and pairs each region's indicator with the atlas's:
+  one mean-squares term per label pair (the construction of
+  `ants.label_image_registration`), beside the image pair's and the edge
+  channel's terms in one weighted loss (`engines._channel_loss`).
+- The deformable engine (`engines.run_engine`): FireANTs' `SyNRegistration`
+  (torch, a core dependency, imported lazily with an install hint; on the
+  GPU when torch sees one, `engines.fit_device`) on the working-grid images,
+  the masks riding as each image's last channel (FireANTs' masked mode,
+  resized but never blurred by the pyramid, warped with their image, no
+  gradient through them). Settings from the former ANTs ones: shrink factors
+  2^(n-1)..1 for the detail's iteration list (`[8, 4, 2, 1]` at standard),
+  `smooth_grad_sigma` = update sigma / voxel, `smooth_warp_sigma` = total
+  sigma / voxel, the edge channel an extra channel. Optimizer: FireANTs' SGD
+  with ANTs' step rule (`engines._global_step_sgd`: the gradient scaled so
+  its largest vector moves `FIREANTS_LEARNING_RATE` (0.8) half-pixels of the
+  level; Adam's per-pixel scaling moved excluded regions as far as any).
+  Returns millimetre fields both ways through the SyN midpoint: section ->
+  atlas = fwd o rev^-1, atlas -> section = rev o fwd^-1, each half inverted by
+  a damped fixed point (`engines._invert`, 200 sampling iterations; FireANTs'
+  own inversion is an optimization that is not reproducible on the GPU).
+  Any other `FitSettings.engine` is refused there: `engine="ants"` names the
+  SyN engine (the record's engine version names FireANTs),
+  `engine="elastix"` exists for the Elastix affine's inputs (its metric, no
+  label channels), never a deformation.
+- DETERMINISM: identical inputs give identical fields, bit for bit (tests
+  `test_identical_inputs_give_identical_fields_in_and_across_processes`,
+  `test_masks_are_deterministic`). FireANTs runs inside
+  `engines._deterministic`: torch's deterministic algorithms (warn-only: its
+  grid sampler's backward is flagged for the image's gradient, which no fit
+  takes), cuDNN off (its grid sampler's backward is not deterministic), a
+  fixed seed `engines.RANDOM_SEED`, and on the CPU `FIT_THREADS` (8) torch
+  threads; the process's own settings come back afterwards.
+  `CUBLAS_WORKSPACE_CONFIG` is set before torch's first use when nothing set
+  it. The Elastix affine's `RandomSeed` is the same seed; Elastix's own
   `SetNumberOfThreads` segfaults in itk-elastix 0.25.4, so the call sets
-  ITK's global default for its duration instead. A single fit takes seconds at 8 threads and roughly
-  doubles with each halving.
+  ITK's global default (`FIT_THREADS`) for its duration instead. A fit takes
+  about 0.7 s per run on an RTX 5090.
 - `engines.run_elastix_affine` (the linear affine, not a deformation): an
   Elastix `AffineTransform` from the identity on the same prepared inputs
   (intensity pair, edge pair, masks; `AutomaticTransformInitialization` off,
@@ -98,17 +109,25 @@ and returns a `record.DeformableRecord`. No custom solver.
   `AffineResult.matrix_mm` (section mm -> placed-atlas mm, the field's
   direction); a non-finite or singular matrix raises. `_elastix_register` is
   the one Elastix call (images, masks, extra pairs, the global thread count).
-- `fit_prepared` runs 1–8 prepared fits (different sections or settings) in
-  a spawn process pool (atlas work in the caller, engine calls in workers,
-  `cpu_count // FIT_THREADS` workers at most, one per fit); a failing
+- `fit.run_fit(inputs, settings, em_damage_zone)` is a prepared fit's
+  engine work on plain arrays: one run, or for a whole-section stain fit
+  (`PreparedFit.em_damage_zone` set) a run with the footprint masks, the EM
+  masks from the atlas image it warped (`masks.em_masks`) and a second run
+  from the same start, whose result counts (its native parameters gain
+  `section_mask`: the EM's settings, its fitted means and widths, the
+  fraction of the footprint left out, the first run's time; `left_out` the
+  dropped section pixels). `run_prepared` runs one in this process.
+  `fit_prepared` runs 1–8 prepared fits (different sections or settings):
+  on a GPU one after another in the caller, on the CPU in a spawn process
+  pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
   candidate is a `CandidateFailure`, never an exception.
 
 ## Settings (`settings.py`)
 
-Named ladders, physical units: `stiffness` soft/medium/firm (ANTs
-update/total Gaussian sigma in mm, converted to voxel variances); `detail`
-coarse/standard (working µm and pyramid depth/iterations — the extra ANTs
-levels are its capture range); `atlas_image`, `section_image`, `exclude`,
+Named ladders, physical units: `stiffness` soft/medium/firm
+(`settings.STIFFNESS`: update/total Gaussian sigma in mm, converted to
+voxels); `detail` coarse/standard (working µm and pyramid depth/iterations —
+the extra levels are SyN's capture range); `atlas_image`, `section_image`, `exclude`,
 `labels`, `structures`, `neighbourhood_um`, `preprocess`, and for stain fits
 `stain_metric` (`local_correlation` | `mutual_information`) and
 `stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
@@ -144,12 +163,31 @@ one side, excluding RSP/VIS/PTLp by name also drops the intact hemisphere;
 
 ## Masks (`masks.py`)
 
-Fixed mask = placed atlas footprint widened by `MASK_MARGIN_MM`. Moving:
-placed footprint widened by the margin, minus excluded regions and
-`EXCLUSION_MARGIN_MM` around them (blanking alone left an edge that still
-pulled tissue). Excluded regions are blanked on the native plane
-for EVERY atlas image kind before placement (one-sided entries: that half
-of the region only).
+One module builds every mask. FOOTPRINT masks (`footprint_masks`: the
+Elastix affine, restricted steps, traced lines, and a whole-section fit's
+first run): fixed = placed atlas footprint widened by `MASK_MARGIN_MM`
+(0.2); moving = that footprint minus the damage zone, the excluded regions
+widened by `EXCLUSION_MARGIN_MM` (blanking alone left an edge that still
+pulled tissue). Excluded regions are blanked on the native plane for EVERY
+atlas image kind before placement (one-sided entries: that half of the
+region only).
+
+EM masks (`em_masks`, a whole-section stain fit's second run): the section
+mask is P(match) >= `EM_MATCH_THRESHOLD` (0.5) over the whole working grid,
+the atlas mask everything except the damage zone. `em_weights` is a port of
+emlddmm's three-class EM (Tward et al. 2025, doi 10.1038/s41467-025-65317-7)
+with the warp fixed at the first run's: matching J ~ N(f(I_warped), sigmaM)
+with f linear per `EM_BLOCK_PX` (16) block of the `EM_GRID_UM` (50 µm) grid,
+artifact ~ N(muA, sigmaA), background ~ N(muB, sigmaB), `EM_ITERATIONS` (20)
+E/M alternations, emlddmm's ridge. Two departures from emlddmm's defaults,
+commented in the code: sigmas all 0.5 x std(J), fixed (its (1, 2, 5) x std
+flagged nothing, not even a 0.3 mm hole), and priors fixed at (0.9, 0.05,
+0.05) (updated priors ran away on DAPI, where dim tissue has the background's
+intensity). muB is the image's own background, muA the opposite extreme
+quantile of the tissue. `EM_PARAMETERS` (every setting) is part of the
+deformable cache key, as is the engine (`core.deformation.cache_key`). On
+flat, textureless synthetic tissue a hole of 0.5 mm or more inside one
+uniform region is absorbed by its block's contrast offset and kept.
 
 ## The record (`record.py`)
 
@@ -158,7 +196,9 @@ placed-atlas point + field (brainglobe-registration's direction); native =
 inv(atlas_to_section) @ (pixel + field/mm_per_px), the order `core/maps.native_points` composes. A sequential record's field is
 the total. Also: inverse field (or None), engine name/version/runtime/native
 parameters, working grid, warped leaf labels (unclipped), the placed
-footprint mask the fixed mask starts from, excluded ids, `native_to_volume_index` (plane pixel → atlas
+footprint mask the fixed mask starts from, `left_out` (the section pixels an
+EM section mask dropped, on the section grid, None otherwise; for review
+pictures, never read back into a fit), excluded ids, `native_to_volume_index` (plane pixel → atlas
 volume index, so exports need no atlas object), `save()`/`load()` (parent chain under `parent/`),
 and a free-form `provenance` dict saved with the metadata (the linear tool
 stores section id, linear handoff metadata and its inputs there). The job
@@ -209,7 +249,7 @@ turns thin regions into dotted blobs.
 
 ## Known limits
 
-Label-map mode is ANTs-only. Named model regions inherit the
+Label-map mode is SyN-only. Named model regions inherit the
 linear placement's naming. Composed sequential inverses carry each step's
 approximation.
 

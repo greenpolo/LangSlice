@@ -547,7 +547,7 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
                                                                    monkeypatch):
     """The packaged trace starts background work; the CLI process waits for
     it and answers with its notice and its pictures as artifacts."""
-    pytest.importorskip("ants")
+    pytest.importorskip("fireants")
     from langslice.doors.api import setup
     from langslice.doors.tools import toolbox
     from tests.synthetic_stack import stub_image_model
