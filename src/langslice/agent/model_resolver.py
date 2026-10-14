@@ -9,6 +9,7 @@ from typing import Any
 from google.genai import types
 
 _OAUTH_PREFIX = "openai-oauth/"
+_ANTHROPIC_PREFIX = "anthropic-api/"
 _PROXY_PREFIX = "litellm-proxy:"
 _OPENROUTER_PREFIX = "openrouter:"
 _OLLAMA_PREFIX = "ollama:"
@@ -137,6 +138,15 @@ def resolve_adk_model(model: str | object) -> str | object:
         from langslice.providers.openai_oauth import OpenAIOAuthLlm
 
         return OpenAIOAuthLlm(model=model_id)
+
+    # Claude through the Anthropic API with an API key (providers/anthropic_api.py).
+    if lowered.startswith(_ANTHROPIC_PREFIX):
+        model_id = stripped[len(_ANTHROPIC_PREFIX):].strip()
+        if not model_id:
+            raise ValueError("anthropic-api model strings require a model id after '/'")
+        from langslice.providers.anthropic_api import AnthropicApiLlm
+
+        return AnthropicApiLlm(model=model_id)
 
     if lowered.startswith("gemma-") or lowered.startswith(f"{_MODELS_PREFIX}gemma-"):
         model_id = stripped
