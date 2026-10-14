@@ -99,6 +99,34 @@ def supplied_angles(
                   for name, item in value.items()}
 
 
+def _micrometres(value: Any, where: str) -> float:
+    try:
+        um = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{where} must be micrometres per pixel; got {value!r}") from None
+    if not math.isfinite(um) or um <= 0:
+        raise ValueError(f"{where} must be a positive, finite µm per pixel; got {value!r}")
+    return um
+
+
+def supplied_pixel_sizes(value: Any) -> tuple[float | None, dict[str, float]]:
+    """``inputs.pixel_size_um`` read: ``(stack, per_section)``.
+
+    Two forms. One number (the CLI's ``--pixel-size-um``): every file has that
+    µm per pixel, returned as ``(um, {})``. Per file, ``{filename: um, ...}``
+    (files of one stack scanned or exported at different sizes): returned as
+    ``(None, {filename: um})``; a file it does not name falls back to its own
+    tags. Non-numeric, non-finite or non-positive sizes are refused
+    (``ValueError``). None or empty: ``(None, {})``.
+    """
+    if value is None or value == {}:
+        return None, {}
+    if isinstance(value, dict):
+        return None, {str(name): _micrometres(um, f"inputs.pixel_size_um[{name!r}]")
+                      for name, um in value.items()}
+    return _micrometres(value, "inputs.pixel_size_um"), {}
+
+
 
 @dataclass
 class PositionSpec:
@@ -267,7 +295,7 @@ class JobSpec:
     #: Host-supplied answers for tasks that are OFF, plus the optional
     #: calibration override:
     #: ``{"positions": {filename: mm}, "order": [filename, ...],
-    #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
+    #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float | {filename: float},
     #: "orientation": {filename: {"flip": bool, "rotation_deg": 0|90|180|270}},
     #: "transforms": {filename: transform_dict},
     #: "damaged": {filename: note}}``.
@@ -332,6 +360,7 @@ class JobSpec:
                     f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
                 )
             supplied_angles(self.inputs.get("angles"))
+            supplied_pixel_sizes(self.inputs.get("pixel_size_um"))
         if not isinstance(self.disabled, (list, tuple)) or not all(
                 isinstance(name, str) for name in self.disabled):
             raise ValueError("disabled must be a list of tool and option names")

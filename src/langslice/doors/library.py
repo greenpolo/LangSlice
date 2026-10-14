@@ -370,7 +370,7 @@ def create_job(
     transforms: Mapping[str, Any] | None = None,
     angles: Mapping[str, Any] | None = None,
     orientation: Mapping[str, Mapping[str, Any]] | None = None,
-    pixel_size_um: float | None = None,
+    pixel_size_um: float | Mapping[str, float] | None = None,
     inputs: Mapping[str, Any] | None = None,
     registration: str | os.PathLike[str] | None = None,
     fresh: bool = False,
@@ -394,7 +394,8 @@ def create_job(
     *angles* (``{"pitch": deg, "yaw": deg}`` for the whole stack, or
     ``{filename: {"pitch": deg, "yaw": deg}}`` for each section its own; a
     section the per-section form does not name is flat:
-    :func:`langslice.core.spec.supplied_angles`) and *pixel_size_um*; *inputs*
+    :func:`langslice.core.spec.supplied_angles`) and *pixel_size_um* (one
+    number, or ``{filename: um}``); *inputs*
     takes any other key of ``JobSpec.inputs``. *tasks* None: ``nonlinear``,
     plus ``transform`` (``elastix_affine``) unless every section has a supplied
     transform.
@@ -458,7 +459,9 @@ def create_job(
             supplied["orientation"] = {str(name): dict(value)
                                        for name, value in orientation.items()}
         if pixel_size_um is not None:
-            supplied["pixel_size_um"] = float(pixel_size_um)
+            supplied["pixel_size_um"] = (
+                {str(name): float(um) for name, um in pixel_size_um.items()}
+                if isinstance(pixel_size_um, Mapping) else float(pixel_size_um))
         if registration is not None:
             clashes = sorted(key for key in REGISTRATION_EXCLUDES if supplied.get(key))
             if clashes:

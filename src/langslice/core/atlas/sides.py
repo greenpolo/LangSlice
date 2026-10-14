@@ -23,13 +23,17 @@ anatomical left. They are derived, never guessed from the tissue:
    NOT used — its own docstring and code disagree about it, and on a
    symmetric atlas no label agreement could settle it.
 3. The linear placement (native plane -> section pixels) carries the ML
-   index gradient into the section frame; the half whose ML direction points
-   toward smaller section x is the section's left. A mirrored placement thus
-   swaps the halves, as it swaps the tissue.
+   index gradient into the section frame. When the midline is closer to
+   vertical there, the halves are ``left`` and ``right`` (the half toward
+   smaller section x is the left); when it is closer to horizontal, as on a
+   horizontal section shown with the AP axis across, they are ``top`` and
+   ``bottom`` (the half toward smaller section y is the top). A mirrored
+   placement thus swaps the halves, as it swaps the tissue.
 
-A sagittal plane lies within one hemisphere (``NO_SIDES``), and a placement
-that turns the midline closer to horizontal than vertical has no left or
-right (``SIDES_AMBIGUOUS``).
+A sagittal plane lies within one hemisphere (``NO_SIDES``). Naming the pair
+the picture does not have (``left`` where the halves are top and bottom) is
+refused with ``SIDES_AMBIGUOUS``, its message naming the pair to use; so is a
+midline at exactly 45 degrees.
 """
 
 from __future__ import annotations
@@ -38,7 +42,29 @@ from typing import Any
 
 import numpy as np
 
-SIDES: tuple[str, ...] = ("left", "right")
+SIDES: tuple[str, ...] = ("left", "right", "top", "bottom")
+#: The two names of the halves, by which way the midline runs on the picture.
+LEFT_RIGHT: tuple[str, str] = ("left", "right")
+TOP_BOTTOM: tuple[str, str] = ("top", "bottom")
+
+
+class SideMask(np.ndarray):
+    """Boolean native-plane mask of the FIRST displayed half (left or top).
+
+    ``names`` is the picture's pair, :data:`LEFT_RIGHT` or :data:`TOP_BOTTOM`;
+    the mask is the half named ``names[0]``. A plain ndarray otherwise, so it
+    survives ``~`` and indexing with its names.
+    """
+
+    names: tuple[str, str]
+
+    def __new__(cls, mask: np.ndarray, names: tuple[str, str]) -> SideMask:
+        obj = np.asarray(mask, dtype=bool).view(cls)
+        obj.names = names
+        return obj
+
+    def __array_finalize__(self, obj: Any) -> None:
+        self.names = getattr(obj, "names", LEFT_RIGHT)
 #: Separator between a region and its side.
 SEPARATOR = ":"
 
@@ -118,7 +144,11 @@ def native_left(
     yaw_deg: float,
     native_to_display: np.ndarray,
 ) -> np.ndarray:
-    """Native-plane pixels on the displayed LEFT, for a placement *native_to_display*.
+    """Native-plane pixels on the displayed LEFT (or TOP), for a placement *native_to_display*.
+
+    Returns a :class:`SideMask`: the left half with ``names`` = ``("left",
+    "right")`` when the midline is closer to vertical on the picture, else the
+    top half with ``names`` = ``("top", "bottom")``.
 
     *native_to_display* is the placement's linear part (2x2, or the 3x3/2x3
     matrix; only its first two columns of the first two rows are read)
@@ -132,17 +162,31 @@ def native_left(
     shown = np.linalg.inv(linear).T @ gradient
     if not np.isfinite(shown).all() or np.hypot(*shown) < 1e-9:
         raise SideError("NO_SIDES", "The atlas plane does not cross the midline.")
-    if abs(shown[0]) <= abs(shown[1]):
-        raise SideError("SIDES_AMBIGUOUS", "This placement turns the midline closer to "
-                        "horizontal than vertical, so left and right are undefined.")
-    # ML increasing toward the right: the low half is on the left.
-    return ~high if shown[0] > 0 else high
+    if abs(shown[0]) == abs(shown[1]):
+        raise SideError("SIDES_AMBIGUOUS", "This placement turns the midline to 45 degrees, "
+                        "so neither left/right nor top/bottom is defined.")
+    if abs(shown[0]) > abs(shown[1]):
+        # ML increasing toward the right: the low half is on the left.
+        return SideMask(~high if shown[0] > 0 else high, LEFT_RIGHT)
+    # ML increasing downward: the low half is on top.
+    return SideMask(~high if shown[1] > 0 else high, TOP_BOTTOM)
 
 
 def restrict(mask: np.ndarray, side: str | None, left: np.ndarray | None) -> np.ndarray:
-    """*mask* limited to one side (unchanged for no side)."""
+    """*mask* limited to one side (unchanged for no side).
+
+    *left* is :func:`native_left`'s mask; a side outside its pair is refused
+    (``SIDES_AMBIGUOUS``) with the pair this picture has.
+    """
     if side is None:
         return mask
     if left is None:
         raise ValueError("A one-sided region needs the placement's sides")
-    return mask & (left if side == "left" else ~left)
+    names = getattr(left, "names", LEFT_RIGHT)
+    if side not in names:
+        runs = "vertically" if names == LEFT_RIGHT else "horizontally"
+        raise SideError("SIDES_AMBIGUOUS", f"On this picture the midline runs {runs}, so its "
+                        f"halves are {names[0]!r} and {names[1]!r}, not {side!r}: name "
+                        f"one of those (e.g. \"CTX:{names[0]}\").")
+    first = np.asarray(left, dtype=bool)
+    return np.asarray(mask & (first if side == names[0] else ~first), dtype=bool)

@@ -43,3 +43,14 @@ def test_a_bad_job_flag_ends_with_a_message_not_a_traceback(tmp_path, command):
     with pytest.raises(SystemExit) as stopped:
         main([*command, str(tmp_path), "--positions", "{not json"])
     assert "--positions" in str(stopped.value.code)
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("2.5", 2.5),
+    ('{"a.png": 3.0, "b.png": 4.5}', {"a.png": 3.0, "b.png": 4.5}),
+])
+def test_pixel_size_is_one_number_or_one_per_file(tmp_path, value, expected):
+    from langslice.doors.cli.linear import spec_from_args
+
+    args = _parse(["linear", "run", str(tmp_path), "--pixel-size-um", value])
+    assert spec_from_args(args, str(tmp_path)).inputs["pixel_size_um"] == expected

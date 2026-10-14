@@ -52,6 +52,7 @@ def test_entries_name_a_region_and_optionally_a_side():
     assert split_side("315:right") == ("315", "right")
     with pytest.raises(ValueError, match="Unknown side"):
         split_side("CTX:dorsal")
+    assert split_side("CTX:Top") == ("CTX", "top")
     assert has_sides(["STR", "CTX:left"]) and not has_sides(["STR", "CTX"])
 
 
@@ -77,10 +78,36 @@ def test_left_follows_the_placement_not_the_atlas_labels(atlas):
     assert np.array_equal(native_left(atlas, 0.1, "coronal", 0, 0, tilt), upright)
 
 
-def test_sides_are_refused_where_they_mean_nothing(atlas):
+def test_a_horizontal_midline_has_a_top_and_a_bottom(atlas):
+    upright = native_left(atlas, 0.1, "coronal", 0, 0, np.eye(2))
+    assert upright.names == ("left", "right")
+    # A quarter turn lays the midline across: the halves are top and bottom.
     quarter = np.array([[0.0, -1.0], [1.0, 0.0]])
+    turned = native_left(atlas, 0.1, "coronal", 0, 0, quarter)
+    assert turned.names == ("top", "bottom")
+    # native x -> display y: the low-ML half (upright's left) is now on top.
+    assert np.array_equal(np.asarray(turned), np.asarray(upright))
+    labels = atlas.annotation[0]
+    both = regions_mask(atlas, labels, ["CTX"])
+    top = regions_mask(atlas, labels, ["CTX:top"], turned)
+    bottom = regions_mask(atlas, labels, ["CTX:bottom"], turned)
+    assert top.any() and bottom.any() and not (top & bottom).any()
+    assert np.array_equal(top | bottom, both)
+    # The pair the picture does not have is refused, naming the right pair.
+    with pytest.raises(SideError, match="'top' and 'bottom'") as wrong:
+        regions_mask(atlas, labels, ["CTX:left"], turned)
+    assert wrong.value.code == "SIDES_AMBIGUOUS"
+    with pytest.raises(SideError, match="'left' and 'right'"):
+        regions_mask(atlas, labels, ["CTX:top"], upright)
+    # Left/right masks are unchanged by the extension (coronal behaviour).
+    assert np.array_equal(regions_mask(atlas, labels, ["CTX:left"], upright),
+                          both & np.asarray(upright))
+
+
+def test_sides_are_refused_where_they_mean_nothing(atlas):
+    diagonal = np.array([[1.0, -1.0], [1.0, 1.0]])
     with pytest.raises(SideError) as turned:
-        native_left(atlas, 0.1, "coronal", 0, 0, quarter)
+        native_left(atlas, 0.1, "coronal", 0, 0, diagonal)
     assert turned.value.code == "SIDES_AMBIGUOUS"
     with pytest.raises(SideError) as sagittal:
         native_left(atlas, 0.1, "sagittal", 0, 0, np.eye(2))
