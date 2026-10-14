@@ -24,10 +24,14 @@ Both are right-handed rotations in the atlas index frame, applied pitch first.
 
 from __future__ import annotations
 
+import os
+import threading
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 import numpy as np
-from scipy.ndimage import map_coordinates, spline_filter
+from scipy.ndimage import map_coordinates, spline_filter, spline_filter1d
 from scipy.spatial.transform import Rotation
 
 from langslice.core.atlas.core import orient_slice_for_display
@@ -69,6 +73,11 @@ def build_rotation_matrix(
 _volume_cache: dict[tuple[str, str, int, int], tuple[np.ndarray, tuple[float, float, float]]] = {}
 #: Spline-prefiltered volumes per (atlas, kind, downsample, order, id): :func:`_filtered_volume`.
 _filtered_cache: dict[tuple[str, str, int, int, int], np.ndarray] = {}
+#: One lock per volume cache: pictures drawn on several threads (the opening)
+#: wait for a volume being built instead of building it again.
+_volume_lock = threading.Lock()
+_filtered_lock = threading.Lock()
+_annotation_lock = threading.Lock()
 
 
 def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.ndarray:
@@ -80,12 +89,48 @@ def _filtered_volume(atlas: Any, kind: str, downsample: int, order: int) -> np.n
     once and sampling with ``prefilter=False`` gives the same values.
     """
     key = (str(getattr(atlas, "atlas_name", "?")), kind, int(downsample), int(order), id(atlas))
-    hit = _filtered_cache.get(key)
-    if hit is None:
-        vol, _res = _scaled_volume(atlas, kind, downsample)
-        hit = spline_filter(vol, order=order, mode="constant", output=np.float32)
-        _filtered_cache[key] = hit
+    with _filtered_lock:
+        hit = _filtered_cache.get(key)
+        if hit is None:
+            vol, _res = _scaled_volume(atlas, kind, downsample)
+            hit = _spline_filter_threaded(vol, order)
+            _filtered_cache[key] = hit
     return hit
+
+
+#: Threads for :func:`_spline_filter_threaded`; past about 8 the filter is
+#: limited by memory bandwidth, not cores.
+FILTER_THREADS = 8
+
+
+def _spline_filter_threaded(vol: np.ndarray, order: int) -> np.ndarray:
+    """``spline_filter(vol, order, mode="constant", output=float32)``, the same
+    values, on several threads.
+
+    The filter is separable: one 1-D pass along each axis in turn, every line
+    independent of the others. Each pass is split into slabs across another
+    axis, one per thread (scipy releases the GIL inside the pass): the 1024 x
+    512 x 512 rat template filters in about 2.5 s instead of 12.
+    """
+    workers = max(1, min(FILTER_THREADS, os.cpu_count() or 1))
+    if workers == 1 or vol.ndim != 3:
+        return spline_filter(vol, order=order, mode="constant", output=cast(Any, np.float32))
+    out = np.array(vol, dtype=np.float32, copy=True)
+    with ThreadPoolExecutor(workers) as pool:
+        for axis in range(out.ndim):
+            across = 1 if axis == 0 else 0
+            bounds = np.linspace(0, out.shape[across], workers + 1).astype(int)
+
+            def run(index: int, axis: int = axis, across: int = across,
+                    bounds: np.ndarray = bounds) -> None:
+                slab: list[slice] = [slice(None)] * out.ndim
+                slab[across] = slice(int(bounds[index]), int(bounds[index + 1]))
+                view = out[tuple(slab)]
+                spline_filter1d(view, order=order, axis=axis, mode="constant",
+                                output=cast(Any, view))
+
+            list(pool.map(run, range(workers)))
+    return out
 
 
 def _scaled_volume(
@@ -97,6 +142,13 @@ def _scaled_volume(
     float32 and the fit re-samples it hundreds of times per section.
     """
     key = (str(getattr(atlas, "atlas_name", "?")), kind, int(downsample), id(atlas))
+    with _volume_lock:
+        return _scaled_volume_locked(atlas, kind, downsample, key)
+
+
+def _scaled_volume_locked(
+    atlas: Any, kind: str, downsample: int, key: tuple[str, str, int, int]
+) -> tuple[np.ndarray, tuple[float, float, float]]:
     cache = _volume_cache
     hit = cache.get(key)
     if hit is not None:
@@ -304,29 +356,77 @@ def sample_oblique_plane(
         position_mm / res_mm[normal_axis], pitch_deg, yaw_deg,
     )
     if isinstance(volume, str) and order > 1:
-        sampled = map_coordinates(_filtered_volume(atlas, volume, downsample, order), coords,
-                                  order=order, mode="constant", cval=0.0, prefilter=False)
+        sampled = _sample(_filtered_volume(atlas, volume, downsample, order), coords,
+                          order=order, prefilter=False)
     else:
-        sampled = map_coordinates(vol, coords, order=order, mode="constant", cval=0.0)
+        sampled = _sample(vol, coords, order=order, prefilter=True)
     return np.asarray(orient_slice_for_display(sampled, plane), dtype=np.float32)
+
+
+#: Planes of at least this many pixels are sampled in row bands on
+#: :func:`_sample_pool`; a smaller one is not worth the hand-off.
+SAMPLE_SPLIT_PIXELS = 1 << 17
+_sample_pools: dict[int, ThreadPoolExecutor] = {}
+
+
+def _sample_pool() -> ThreadPoolExecutor:
+    """This process's sampling threads (a forked child makes its own: a
+    parent's pool has no threads there)."""
+    pid = os.getpid()
+    pool = _sample_pools.get(pid)
+    if pool is None:
+        _sample_pools.clear()
+        pool = _sample_pools.setdefault(
+            pid, ThreadPoolExecutor(FILTER_THREADS, thread_name_prefix="oblique-sample"))
+    return pool
+
+
+def _sample(vol: np.ndarray, coords: np.ndarray, *, order: int, prefilter: bool) -> np.ndarray:
+    """``map_coordinates(vol, coords, order=order, mode="constant", cval=0.0,
+    prefilter=prefilter)``, the same values, a large plane in row bands on
+    several threads (each pixel is sampled on its own; scipy releases the
+    GIL while it samples)."""
+    def band(rows: slice) -> np.ndarray:
+        return map_coordinates(vol, coords[:, rows], order=order, mode="constant", cval=0.0,
+                               prefilter=prefilter)
+
+    height = coords.shape[1]
+    if (prefilter and order > 1) or coords[0].size < SAMPLE_SPLIT_PIXELS or height < 2:
+        # a prefiltering call filters its whole input in every band
+        return band(slice(None))
+    bounds = np.linspace(0, height, min(FILTER_THREADS, height) + 1).astype(int)
+    bands = [slice(int(a), int(b)) for a, b in zip(bounds[:-1], bounds[1:], strict=True)]
+    return np.concatenate(list(_sample_pool().map(band, bands)), axis=0)
 
 
 _annotation_index_cache: dict[tuple[str, int], tuple[np.ndarray, np.ndarray]] = {}
 
 
+#: Annotation planes already sampled, as dense indices into the atlas's
+#: sorted ids (:func:`sample_oblique_annotation`), least recently used first:
+#: the job's frames, calibration and the pictures' masks sample the same
+#: plane of a section in turn.
+_annotation_plane_cache: OrderedDict[tuple[Any, ...], np.ndarray] = OrderedDict()
+#: Most planes in ``_annotation_plane_cache`` (about 1 MB each on the 39 um rat).
+ANNOTATION_PLANE_CACHE_SIZE = 256
+
+
 def _compact_annotation(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
     """(sorted ids, float32 volume of their dense indices), cached per atlas."""
     key = (str(getattr(atlas, "atlas_name", "?")), id(atlas))
-    hit = _annotation_index_cache.get(key)
-    if hit is not None:
+    with _annotation_lock:
+        hit = _annotation_index_cache.get(key)
+        if hit is not None:
+            return hit
+        annotation = np.asarray(atlas.annotation)
+        ids = np.unique(annotation)
+        lookup = np.zeros(int(ids.max()) + 1, dtype=np.float32)
+        lookup[ids] = np.arange(len(ids), dtype=np.float32)
+        _annotation_index_cache.clear()  # ponytail: one atlas at a time; these are ~300 MB
+        _annotation_plane_cache.clear()
+        hit = (ids, lookup[annotation])
+        _annotation_index_cache[key] = hit
         return hit
-    annotation = np.asarray(atlas.annotation)
-    ids = np.unique(annotation)
-    lookup = np.zeros(int(ids.max()) + 1, dtype=np.float32)
-    lookup[ids] = np.arange(len(ids), dtype=np.float32)
-    _annotation_index_cache.clear()  # ponytail: one atlas at a time; these are ~300 MB
-    _annotation_index_cache[key] = (ids, lookup[annotation])
-    return _annotation_index_cache[key]
 
 
 def sample_oblique_annotation(
@@ -346,14 +446,27 @@ def sample_oblique_annotation(
     first makes every sampled value round-trip exactly.
     """
     ids, index_volume = _compact_annotation(atlas)
-    sampled = sample_oblique_plane(
-        atlas,
-        position_mm,
-        plane,
-        pitch_deg,
-        yaw_deg,
-        volume=index_volume,
-        downsample=downsample,
-        order=0,
-    )
-    return ids[np.rint(sampled).astype(np.intp).clip(0, len(ids) - 1)]
+    key = (str(getattr(atlas, "atlas_name", "?")), id(atlas), float(position_mm), str(plane),
+           float(pitch_deg), float(yaw_deg), int(downsample))
+    with _annotation_lock:
+        index = _annotation_plane_cache.get(key)
+        if index is not None:
+            _annotation_plane_cache.move_to_end(key)
+    if index is None:
+        sampled = sample_oblique_plane(
+            atlas,
+            position_mm,
+            plane,
+            pitch_deg,
+            yaw_deg,
+            volume=index_volume,
+            downsample=downsample,
+            order=0,
+        )
+        dtype = np.uint16 if len(ids) <= np.iinfo(np.uint16).max else np.uint32
+        index = np.rint(sampled).clip(0, len(ids) - 1).astype(dtype)
+        with _annotation_lock:
+            _annotation_plane_cache[key] = index
+            while len(_annotation_plane_cache) > ANNOTATION_PLANE_CACHE_SIZE:
+                _annotation_plane_cache.popitem(last=False)
+    return ids[index]
