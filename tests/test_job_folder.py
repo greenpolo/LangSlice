@@ -313,14 +313,29 @@ def test_the_layers_agree_with_the_borders_drawn_on_a_picture(tmp_path: Path):
 
     borders = np.asarray(Image.open(view / "borders.png")).astype(int)
     labels = tifffile.imread(view / "labels.tif")
-    yellow = ((picture[..., 0] + picture[..., 1]) / 2 - picture[..., 2]) > 80
+    # The borders are drawn in whichever colour the caption says (resolved
+    # per picture for contrast, not always yellow). A line pixel is one
+    # whose colour leans toward that candidate's own channel(s) well past a
+    # neutral grey -- the same kind of test the original hardcoded "yellow
+    # = (R+G)/2 - B > 80" was doing, generalised to any of the candidates
+    # (each is pure in one or two channels), and still tolerant of JPEG
+    # subsampling and the anti-aliased line edge blending into the tissue.
+    import json as _json
+
+    from langslice.core.canvas import BORDER_CANDIDATES
+
+    view_json = _json.loads((view / "view.json").read_text())
+    word = view_json["caption"].rsplit("borders ", 1)[-1].split(";")[0].split(")")[0].strip()
+    target = np.asarray(dict(BORDER_CANDIDATES).get(word, (255, 255, 0)), dtype=float)
+    weights = target / 255.0 - (target / 255.0).mean()
+    colored = (picture @ weights) > 53.0
     strong = borders >= 128
     assert strong.sum() > 500
-    assert (yellow & strong).sum() / strong.sum() > 0.85  # the layer is where lines are drawn
+    assert (colored & strong).sum() / strong.sum() > 0.85  # the layer is where lines are drawn
     # ...and every drawn line is in it (JPEG's colour subsampling bleeds a
-    # one-pixel-wide line's yellow one pixel to the side).
+    # one-pixel-wide line's colour one pixel to the side).
     layer = cv2.dilate((borders > 0).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-    assert (yellow & layer).sum() / yellow.sum() > 0.98
+    assert (colored & layer).sum() / colored.sum() > 0.98
     change = region_boundaries(labels)[0]
     near = cv2.dilate(change.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
     assert (strong & near).sum() / strong.sum() > 0.98  # the lines are label boundaries

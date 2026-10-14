@@ -403,7 +403,10 @@ def test_atlas_layers_are_the_atlas_images_and_borders(tmp_path: Path):
 
     template, borders, both = drawn(["template"]), drawn(["borders"]), drawn(
         ["template", "borders"])
-    assert template[0].endswith("layers template") and both[0].endswith("template + borders")
+    assert template[0].endswith("layers template")
+    # The caption now also names the colour the (auto-chosen) borders are
+    # drawn in, so "both" no longer ends in "template + borders" exactly.
+    assert "layers template + borders" in both[0] and "; borders " in both[0]
     assert len({template[1], borders[1], both[1]}) == 3
     refused = look("atlas", positions_mm=[5.0], atlas_layers=["nissl"])
     assert refused["error"] == "UNKNOWN_LAYER" and "template, borders" in refused["message"]

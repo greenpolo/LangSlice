@@ -324,8 +324,10 @@ def _region_picture(
     median = state.drawn_at_median(angles)
     plane = (view_angles_label(angles, median=True) if median
              else f"{angles_label(angles)} (the stack's cutting angles)")
+    border_word = picture.info.get("border_word")
     text = (f"atlas at {position_mm:.2f} mm{plane}; "
-            f"{um:.1f} um/px; regions highlighted: {names}")
+            f"{um:.1f} um/px; regions highlighted: {names}"
+            + (f"; borders {border_word}" if border_word else ""))
     image = caption(picture, tag + atlas_caption(state, position_mm, options, angles=angles,
                                                   median=median))
     args = {"mode": "atlas", "regions": [name for name, _ids in regions],

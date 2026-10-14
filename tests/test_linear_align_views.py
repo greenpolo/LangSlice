@@ -257,10 +257,12 @@ def _bodies(**kwargs) -> list[np.ndarray]:
 
 
 def test_clean_section_and_template_views_carry_no_outlines():
-    (section_only,) = _bodies(mode="section")
-    (template_only,) = _bodies(mode="template")
-    (template_lined,) = _bodies(mode="template", template_lines=True)
-    (overlaid,) = _bodies(mode="overlay")
+    # Pinned to yellow: this checks whether a line is drawn at all, not
+    # which colour the automatic choice would pick for this background.
+    (section_only,) = _bodies(mode="section", border_color="yellow")
+    (template_only,) = _bodies(mode="template", border_color="yellow")
+    (template_lined,) = _bodies(mode="template", template_lines=True, border_color="yellow")
+    (overlaid,) = _bodies(mode="overlay", border_color="yellow")
 
     # The synthetic tissue is 120 grey; anti-aliased hairlines are far brighter.
     # Picture area only: above the scale bar (the caption band is cut off).
@@ -306,7 +308,10 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
 
 @pytest.mark.parametrize("mode", ["overlay", "template"])
 def test_border_style_reaches_all_atlas_bearing_panels(mode):
-    defaults = _views(mode=mode, template_lines=True)
+    # "defaults" is pinned to yellow: the point of this test is that an
+    # explicit style reaches every atlas-bearing panel, not which colour
+    # the automatic default would pick for this synthetic background.
+    defaults = _views(mode=mode, template_lines=True, border_color="yellow")
     styled = _views(mode=mode, template_lines=True, border_color="cyan", border_thickness=4)
     for default, custom in zip(defaults, styled, strict=True):
         assert default.shape == custom.shape

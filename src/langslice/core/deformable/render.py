@@ -44,8 +44,15 @@ from langslice.core.deformable.record import DeformableRecord
 #: 1.0 leaves a ripple along shallow edges (the annotation's own 25 um stair
 #: steps); 2.0 closes thin regions into dotted blobs.
 BORDER_SMOOTHING_PX = 1.4
+#: This function's own fallback when a caller draws with it directly (e.g.
+#: tests) and gives no colour. The agent-facing path
+#: (core.deformation.picture, via ops.deformable.pictures) always passes an
+#: explicit colour -- resolved per picture for contrast
+#: (core.canvas.resolve_border_color) -- so this default is never hit there.
 STRONG_COLOR = (255, 255, 0)
 #: Second ink, for a marked set of regions (those excluded from a fit).
+#: Fixed, not part of the automatic choice: it is excluded from
+#: core.canvas.BORDER_CANDIDATES as a reserved colour.
 MARKED_COLOR = (255, 64, 160)
 FAINT_ALPHA = 0.35
 

@@ -295,16 +295,25 @@ def pictures(
     drawn row gets ``image_indexes``; a picture that fails is listed in
     ``render_failed``.
     """
+    import numpy as np
+
     from langslice.core import layers
-    from langslice.core.canvas import normalize_border_style
+    from langslice.core.canvas import resolve_border_color, validate_border_thickness
+    from langslice.core.deformable.render import drawn_border_coverage
 
     parts: list[Image.Image] = []
     failed: list[dict[str, str]] = []
-    color, thickness = normalize_border_style(options.border_color, options.border_thickness)
+    thickness = validate_border_thickness(options.border_thickness)
+    # `color` here is the image model's own fixed yellow (`trace_picture`
+    # below always uses it as-is, unresolved: it stays yellow, per the
+    # image-model route's own fixed prompt and read-back). Each fitted-atlas
+    # picture overrides `color` per row below, resolved against that row's
+    # own tissue -- never one colour for the whole batch, since different
+    # sections in one call can need different ones.
     style = deformation.Style(
         zoom=() if options.full_view else tuple(options.zoom),
         highlight=tuple(name for name, _ids in options.regions), marked=(),
-        outlines=options.layer, color=color, thickness=thickness,
+        outlines=options.layer, color=(255, 255, 0), thickness=thickness,
         atlas_opacity=options.atlas_opacity, depth=options.depth, long_edge=options.long_edge,
     )
     for fitted in done.fitted:
@@ -312,6 +321,16 @@ def pictures(
         record = fit.grid.record
         include, exclude = fit_regions(fit)
         fit_style = replace(style, highlight=style.highlight or include, marked=exclude)
+        coverage = drawn_border_coverage(
+            outcome, workspace.atlas, highlight=fit_style.highlight, marked=fit_style.marked,
+            warped=True, outlines=fit_style.outlines, depth=fit_style.depth,
+            width_px=fit_style.thickness,
+        )
+        color_rgb, _, border_word = resolve_border_color(
+            options.border_color, options.border_thickness,
+            rgb=np.asarray(fit.image.convert("RGB")), coverage=coverage,
+        )
+        fit_style = replace(fit_style, color=color_rgb)
         heading = f"{record.id}  applied: {outcome.engine['name']} {fit.choice.stiffness}"
         start = "current" if fit.previous is not None else "linear"
         detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
@@ -324,7 +343,7 @@ def pictures(
                 workspace, fit.image, outcome, warped=True, style=fit_style,
                 atlas_images=shown_atlas, title=f"{heading}\n{detail_line}",
                 note={"sections": (record.id,), "mode": options.mode,
-                      "caption": fit_caption(record, fit, row, include, exclude)}))
+                      "caption": fit_caption(record, fit, row, include, exclude, border_word)}))
         except Exception as exc:
             logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
             del parts[first:]
@@ -362,10 +381,12 @@ _FIT_SECTION_WORDS = {
 
 
 def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
-                include: Sequence[str], exclude: Sequence[str]) -> str:
+                include: Sequence[str], exclude: Sequence[str],
+                border_word: str = "") -> str:
     """The index caption of a deformable fit's picture: the section, the
     fit (engine, stiffness, what it read against which atlas image), the
-    position, the regions drawn thick or left out, and the fit's numbers."""
+    position, the regions drawn thick or left out, the colour the fitted
+    borders are drawn in, and the fit's numbers."""
     choice = fit.choice
     read = _FIT_SECTION_WORDS.get(choice.fit_section, choice.fit_section)
     at = (f", at {float(record.position_mm):.2f} mm"
@@ -375,8 +396,9 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
              f"fold fraction {row.get('fold_fraction')}") if numbers else ""
     engine = getattr(fit.result, "engine", {}).get("name")
     return (f"{record.id} deformation fit ({engine} {choice.stiffness}, {read} "
-            f"against the atlas {choice.fit_atlas}){at}; the fitted atlas borders on the "
-            "image the fit read"
+            f"against the atlas {choice.fit_atlas}){at}; the fitted atlas borders "
+            + (f"({border_word}) " if border_word else "")
+            + "on the image the fit read"
             + (f"; regions {', '.join(include)} drawn thick, the other borders faint"
                if include else "")
             + (f"; left out (second colour): {', '.join(exclude)}" if exclude else "")

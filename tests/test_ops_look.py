@@ -231,13 +231,21 @@ def test_a_dry_run_zooms_from_memory(tmp_path: Path):
     assert zoomed.entries[0]["id"] == entry["id"] + 1
 
 
-def _yellow(picture: Image.Image) -> np.ndarray:
+def _border_color_mask(picture: Image.Image, caption_text: str) -> np.ndarray:
+    """Pixels close to whichever colour the caption says the borders are
+    drawn in (``resolve_border_color`` picks per picture now, not always
+    yellow): a tolerant match, since anti-aliasing blends the line into
+    the background at its edges."""
+    from langslice.core.canvas import BORDER_CANDIDATES
+
+    word = caption_text.rsplit("borders ", 1)[-1].split(";")[0].split(".")[0].strip()
+    target = dict(BORDER_CANDIDATES).get(word, (255, 255, 0))
     data = np.asarray(picture.convert("RGB")).astype(int)
-    return (data[..., 0] > 200) & (data[..., 1] > 200) & (data[..., 2] < 80)
+    return np.linalg.norm(data - np.asarray(target), axis=-1) < 60
 
 
-def _centre_x(picture: Image.Image) -> float:
-    _ys, xs = np.nonzero(_yellow(picture))
+def _centre_x(picture: Image.Image, caption_text: str) -> float:
+    _ys, xs = np.nonzero(_border_color_mask(picture, caption_text))
     assert xs.size > 20, "no highlighted border drawn"
     return float(xs.mean() / picture.width)
 
@@ -252,12 +260,15 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     saved = job.views.lookup(1)
     assert saved is not None and saved.tool == "grep_atlas_view" and saved.mode == "atlas"
     assert saved.recipe is not None and saved.recipe["args"]["regions"] == ["STR"]
-    striatum = _centre_x(view.pictures[0])
-    thalamus = _centre_x(ops_atlas.grep_atlas_view(job, ws, ["TH"], [0.1]).pictures[0])
+    striatum = _centre_x(view.pictures[0], view.entries[0]["caption"])
+    thalamus_view = ops_atlas.grep_atlas_view(job, ws, ["TH"], [0.1])
+    thalamus = _centre_x(thalamus_view.pictures[0], thalamus_view.entries[0]["caption"])
     assert striatum < 0.45 < 0.55 < thalamus  # STR sits left of TH in the synthetic plane
     # One side of a region: the highlight is the half on that side only.
-    both = _yellow(ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1]).pictures[0]).sum()
-    left = _yellow(ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1]).pictures[0]).sum()
+    both_view = ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1])
+    both = _border_color_mask(both_view.pictures[0], both_view.entries[0]["caption"]).sum()
+    left_view = ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1])
+    left = _border_color_mask(left_view.pictures[0], left_view.entries[0]["caption"]).sum()
     assert 0 < left < both
     assert not view.regions_not_in_plane
 

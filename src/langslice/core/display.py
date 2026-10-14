@@ -54,11 +54,13 @@ from langslice.core.atlas.render import (
     region_outlines,
 )
 from langslice.core.canvas import (
+    AUTO_BORDER_COLOR,
     REGION_CONTEXT_ALPHA,
     _draw_polys,
-    normalize_border_style,
+    line_coverage,
     region_polys,
     regions_left,
+    resolve_border_color,
 )
 from langslice.core.channels import all_properties, display_words, with_properties
 from langslice.core.image_prep import mask_box
@@ -251,7 +253,7 @@ def default_options(
     return DisplayOptions(
         mode=mode, zoom=(), channels=(), version="",
         atlas_channels=rule.atlas_default if atlas_channels is None else atlas_channels,
-        atlas_opacity=0.0, regions=(), outlines="all", border_color="#ffff00",
+        atlas_opacity=0.0, regions=(), outlines="all", border_color=AUTO_BORDER_COLOR,
         border_thickness=DEFAULT_BORDER_THICKNESS, long_edge=long_edge,
     )
 
@@ -455,24 +457,39 @@ def framed_atlas(
         return shown
     factor = shown.width / float(cropped.width)
     canvas = np.asarray(shown, dtype=np.uint8).copy()
-    rgb, _ = normalize_border_style(options.border_color, options.border_thickness)
     context: list[np.ndarray] = []
     if options.borders:
         context = region_outlines(ctx.atlas, position_mm, depth=options.depth, plane=plane,
                                   pitch_deg=pitch, yaw_deg=yaw)
     origin = (box[0], box[1])
-    if context:
-        _draw_polys(canvas, context, rgb, thickness=options.border_thickness, origin=origin,
-                    factor=factor, alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0)
+    region_lines: list[np.ndarray] = []
     if options.regions:
         # An atlas-only picture has no section: a side is the picture's own.
         left = regions_left(ctx.atlas, options.regions, position_mm, plane,
                             pitch, yaw, np.eye(2))
-        _draw_polys(canvas, region_polys(labels, options.regions, left), rgb,
+        region_lines = region_polys(labels, options.regions, left)
+    # One colour for the whole picture, resolved against this atlas plate's
+    # own pixels (there is no section here to judge contrast against).
+    drawn_polys = context + region_lines
+    coverage = (
+        line_coverage(canvas.shape[:2], drawn_polys, thickness=options.border_thickness,
+                     origin=origin, factor=factor)
+        if drawn_polys else None
+    )
+    rgb, _, border_word = resolve_border_color(
+        options.border_color, options.border_thickness, rgb=canvas, coverage=coverage,
+    )
+    if context:
+        _draw_polys(canvas, context, rgb, thickness=options.border_thickness, origin=origin,
+                    factor=factor, alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0)
+    if region_lines:
+        _draw_polys(canvas, region_lines, rgb,
                     thickness=options.border_thickness * HIGHLIGHT_WIDTH, origin=origin,
                     factor=factor)
     result = Image.fromarray(canvas, mode="RGB")
     result.info["pixel_to_native"] = shown.info["pixel_to_native"]
+    if drawn_polys:
+        result.info["border_word"] = border_word
     return result
 
 
