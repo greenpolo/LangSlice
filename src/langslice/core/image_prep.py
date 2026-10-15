@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import math
-import os
 import re
-import sys
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -662,70 +659,72 @@ def working_intensity_ranges(
         return [_array_range(np.asarray(page.asarray())) for page in handle.pages]
 
 
-#: Threads ANTs' bundled ITK runs N4 and denoising on: a multithreaded
-#: filter's last bits depend on the split, so the count is fixed.
-ANTS_THREADS = 8
-#: ITK's environment variable for its default thread count (read once).
-ITK_THREADS_ENV = "ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"
-_ANTS_LOCK = threading.Lock()
+#: Threads the ITK filters run N4 and denoising on: a multithreaded filter's
+#: last bits depend on the split, so the count is fixed.
+ITK_THREADS = 8
+#: N4: the image and mask shrunk
+#: by 4, four levels of 50 iterations, tolerance 1e-7, a B-spline with 4
+#: control points per axis (mesh 1, order 3).
+N4_SHRINK = 4
+N4_ITERATIONS = (50, 50, 50, 50)
+N4_TOLERANCE = 1e-7
+N4_CONTROL_POINTS = 4
+#: Denoising: ITK's patch-based filter, 3x3 patches, 50 sampled patches.
+DENOISE_PATCH_RADIUS = 1
+DENOISE_SAMPLE_PATCHES = 50
 
 
-def import_ants() -> Any:
-    """Import antspyx with ITK's thread count fixed at :data:`ANTS_THREADS`.
+def _n4_corrected(array: np.ndarray, tissue: np.ndarray | None) -> np.ndarray:
+    """N4 bias-field correction of a positive float32 plane, inside *tissue*."""
+    import SimpleITK as sitk
 
-    ANTs' bundled ITK reads ``ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS`` once per
-    process at first use, so the first import sets it, runs one tiny filter
-    and puts the variable back. ``RuntimeError`` with the install hint when
-    antspyx does not import.
-    """
-    with _ANTS_LOCK:
-        first = "ants" not in sys.modules
-        held = os.environ.get(ITK_THREADS_ENV)
-        if first:
-            os.environ[ITK_THREADS_ENV] = str(ANTS_THREADS)
-        try:
-            import ants
-
-            if first:
-                ants.smooth_image(ants.from_numpy(np.zeros((4, 4), np.float32)), 1.0)
-        except ImportError as exc:  # pragma: no cover - depends on the environment
-            raise RuntimeError(
-                "N4 and denoising need antspyx, one of LangSlice's dependencies on Python "
-                "3.13 and below (pip install 'antspyx>=0.6.3,<0.7')"
-            ) from exc
-        finally:
-            if first:
-                if held is None:
-                    os.environ.pop(ITK_THREADS_ENV, None)
-                else:
-                    os.environ[ITK_THREADS_ENV] = held
-    return ants
+    image = sitk.GetImageFromArray(array)
+    mask = sitk.GetImageFromArray(
+        (tissue if tissue is not None else np.ones(array.shape, bool)).astype(np.uint8)
+    )
+    shrunk = sitk.Shrink(image, [N4_SHRINK] * 2)
+    shrunk_mask = sitk.Shrink(mask, [N4_SHRINK] * 2)
+    n4 = sitk.N4BiasFieldCorrectionImageFilter()
+    n4.SetNumberOfThreads(ITK_THREADS)
+    n4.SetMaximumNumberOfIterations(list(N4_ITERATIONS))
+    n4.SetConvergenceThreshold(N4_TOLERANCE)
+    n4.SetNumberOfControlPoints([N4_CONTROL_POINTS] * 2)
+    n4.Execute(shrunk, shrunk_mask)
+    # The field is fitted on the shrunk plane and evaluated on the whole one.
+    field = n4.GetLogBiasFieldAsImage(image)
+    return sitk.GetArrayFromImage(image / sitk.Exp(field)).astype(np.float32)
 
 
-def ants_enhance(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
-    """ANTs N4 bias-field correction and/or denoising of one 8-bit plane.
+def _denoised(array: np.ndarray) -> np.ndarray:
+    """ITK's patch-based (non-local means) denoising of a float32 plane."""
+    import SimpleITK as sitk
 
-    antspyx is imported on first use (:func:`import_ants`); without it this
-    raises with the install hint.
+    if float(array.max()) == float(array.min()):
+        return array  # the filter refuses a constant image; there is no noise
+    denoise = sitk.PatchBasedDenoisingImageFilter()
+    denoise.SetNumberOfThreads(ITK_THREADS)
+    denoise.SetPatchRadius(DENOISE_PATCH_RADIUS)
+    denoise.SetNumberOfSamplePatches(DENOISE_SAMPLE_PATCHES)
+    denoise.SetNoiseModel(denoise.NOMODEL)
+    return sitk.GetArrayFromImage(denoise.Execute(sitk.GetImageFromArray(array))).astype(np.float32)
+
+
+def enhance_plane(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
+    """N4 bias-field correction and/or denoising of one 8-bit plane (SimpleITK).
+
     Intensities are shifted positive first (N4 works on their logarithm) and
     the result is scaled back to the plane's own mean inside the tissue, so a
     dim channel stays dim; outside the tissue the plane is kept.
     """
     if not (n4 or denoise):
         return plane
-    ants = import_ants()
     array = plane.astype(np.float32) + 1.0
-    image = ants.from_numpy(np.ascontiguousarray(array))
     tissue = plane > 15
-    mask = (
-        ants.from_numpy(np.ascontiguousarray(tissue.astype(np.float32)))
-        if tissue.any() else None
-    )
+    out = array
     if n4:
-        image = ants.n4_bias_field_correction(image, mask=mask)
+        out = _n4_corrected(out, tissue if tissue.any() else None)
     if denoise:
-        image = ants.denoise_image(image, mask=mask)
-    out = np.asarray(image.numpy(), dtype=np.float32)
+        out = _denoised(out)
     region = tissue if tissue.any() else np.ones(plane.shape, dtype=bool)
     # Keep the channel's own brightness: a dim channel stays dim, so the
     # weights still mean what they say and its noise is not stretched up.
@@ -748,7 +747,7 @@ def custom_appearance(
     """The grayscale image an explicit appearance draws from raw planes.
 
     Each plane with weight above zero is optionally N4-corrected and denoised
-    (:func:`ants_enhance`), CLAHE-enhanced at *clahe_clip* over a
+    (:func:`enhance_plane`), CLAHE-enhanced at *clahe_clip* over a
     *clahe_tiles* x *clahe_tiles* grid (0 = no CLAHE), then the planes are
     blended by *channel_weights* (None = :func:`coverage_weights`) and
     brightened like the automatic path. 8-bit RGB with three equal channels.
@@ -757,7 +756,7 @@ def custom_appearance(
     if len(weights) != len(planes):
         raise ValueError(f"Expected {len(planes)} channel weight(s); got {len(weights)}")
     used = [
-        ants_enhance(plane, n4=n4, denoise=denoise) if weight > 0 else plane
+        enhance_plane(plane, n4=n4, denoise=denoise) if weight > 0 else plane
         for plane, weight in zip(planes, weights, strict=True)
     ]
     tiles = max(1, int(clahe_tiles))
