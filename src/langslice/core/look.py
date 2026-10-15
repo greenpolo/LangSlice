@@ -369,7 +369,7 @@ def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozen
     ``(name, ids with descendants)``; :class:`LookError` ``UNKNOWN_REGIONS``."""
     if not request.highlight:
         return ()
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     names = list(request.highlight)
     try:

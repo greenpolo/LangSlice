@@ -428,7 +428,7 @@ class ToolContext:
         (:func:`langslice.core.atlas.images.atlas_images`); a name the atlas
         does not have is skipped."""
         from langslice.core.atlas.images import atlas_images
-        from langslice.core.deformable.atlas_images import native_intensity, native_labels
+        from langslice.core.deformable.plane_images import native_intensity, native_labels
 
         record = self._record(section)
         grid = self._grid(record)

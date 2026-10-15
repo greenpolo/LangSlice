@@ -507,7 +507,7 @@ def region_box(
     on both sides.
     """
     from langslice.core.atlas.sides import split_side
-    from langslice.core.deformable.atlas_images import regions_mask
+    from langslice.core.deformable.plane_images import regions_mask
     from langslice.core.placement import stage
 
     if not regions:

@@ -89,14 +89,13 @@ EM_BLOCK_PX = 16
 EM_ITERATIONS = 20
 #: emlddmm's ridge on each block's normal equations (x the largest entry).
 EM_RIDGE = 1e-7
-#: Class widths (matching, background, artifact) as multiples of
+#: One width for all three classes (matching, background, artifact):
 #: EM_SIGMA_SCALE x std(J), held fixed (emlddmm does not update them in its
 #: default path). DEVIATION: emlddmm's code default is (1, 2, 5) x std; on
 #: Carey (brightfield) and PL_Projections (DAPI) that flagged nothing, not
 #: even a 0.3 mm hole. Its published runs use near-equal widths; equal widths
 #: at 0.5 x std catch holes, tears and debris and leave brightfield anatomy
 #: alone; 0.75 x std missed the hole again.
-EM_SIGMA_RATIOS = (1.0, 1.0, 1.0)
 EM_SIGMA_SCALE = 0.5
 #: Class priors (matching, artifact, background), held fixed. DEVIATION:
 #: emlddmm's code updates them; updated priors ran away on DAPI, where dim
@@ -111,7 +110,7 @@ EM_MATCH_THRESHOLD = 0.5
 EM_PARAMETERS: dict[str, Any] = {
     "method": "three-class EM after emlddmm (Tward et al. 2025)",
     "grid_um": EM_GRID_UM, "block_px": EM_BLOCK_PX, "iterations": EM_ITERATIONS,
-    "ridge": EM_RIDGE, "sigma_ratios": list(EM_SIGMA_RATIOS), "sigma_scale": EM_SIGMA_SCALE,
+    "ridge": EM_RIDGE, "sigma_scale": EM_SIGMA_SCALE,
     "priors": list(EM_PRIORS), "background_distance_um": EM_BACKGROUND_DISTANCE_UM,
     "match_threshold": EM_MATCH_THRESHOLD,
 }
@@ -165,8 +164,7 @@ def em_weights(
     lo, hi = np.percentile(Ic, (0.5, 99.5))
     Ic = (Ic - lo) / max(float(hi - lo), 1e-6)
     sd = float(Jc.std())
-    rM, rB, rA = EM_SIGMA_RATIOS
-    sM, sB, sA = (r * sd * EM_SIGMA_SCALE for r in (rM, rB, rA))
+    sigma = sd * EM_SIGMA_SCALE
     r = max(1, round(EM_BACKGROUND_DISTANCE_UM / EM_GRID_UM))
     far = ~(cv2.dilate(fp.astype(np.uint8), cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0)
@@ -187,9 +185,9 @@ def em_weights(
     f = Jc
     for _ in range(EM_ITERATIONS):
         f = _block_linear(Jc, Ic, WM, EM_BLOCK_PX)  # M step: the contrast map
-        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sM ** 2) / sM  # E step
-        lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sA ** 2) / sA
-        lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sB ** 2) / sB
+        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigma ** 2) / sigma  # E step
+        lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sigma ** 2) / sigma
+        lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sigma ** 2) / sigma
         total = lM + lA + lB
         total = total + total.max() * 1e-12
         WM, WA, WB = lM / total, lA / total, lB / total
@@ -199,7 +197,7 @@ def em_weights(
 
     return {
         "WM": up(WM), "WA": up(WA), "WB": up(WB), "predicted": up(f),
-        "params": {"muA": muA, "muB": muB, "sigmaM": sM, "sigmaA": sA, "sigmaB": sB,
+        "params": {"muA": muA, "muB": muB, "sigmaM": sigma, "sigmaA": sigma, "sigmaB": sigma,
                    "priors": list(EM_PRIORS)},
     }
 

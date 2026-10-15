@@ -146,8 +146,7 @@ class FitSettings:
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
     #: Stain fits only (lines ignore it): the intensity metric. Mutual
     #: information is the default (it followed the raters' own corrections
-    #: best on the benchmarks); local correlation stays selectable so records fitted
-    #: with it still load and refit identically.
+    #: best on the benchmarks); local correlation is the selectable alternative.
     stain_metric: StainMetric = "mutual_information"
     #: Stain fits only (lines ignore it): add an edge channel, the smoothed
     #: gradient magnitude of the stain and of the atlas image, as a second

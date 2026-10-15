@@ -20,9 +20,9 @@ from langslice.core.deformable import (
     diagnose,
     prepare_fit,
 )
-from langslice.core.deformable.atlas_images import native_intensity, whole_region_ids
 from langslice.core.deformable.fit import fit_prepared
 from langslice.core.deformable.geometry import Placement
+from langslice.core.deformable.plane_images import native_intensity, whole_region_ids
 from langslice.core.deformable.record import jacobian_determinant
 from langslice.core.deformable.regions import model_extent, named_regions
 from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
@@ -52,9 +52,9 @@ def _settings(**options) -> FitSettings:
 #: The synthetic sections are flat-intensity regions with no texture, where
 #: local correlation has little to work with (synthetic warp error 0.39 of the
 #: warp vs 0.12 for mutual information at standard detail). Tests of the fit's
-#: mechanics (direction, exclusion, steps, the pool) pin the mutual-information
-#: stain metric.
-MI = {"stain_metric": "mutual_information", "stain_edges": False}
+#: mechanics (direction, exclusion, steps, the pool) use the default
+#: mutual-information stain metric without the edge channel.
+MI = {"stain_edges": False}
 
 
 @pytest.fixture(scope="module")
@@ -270,6 +270,8 @@ def test_fit_settings_validation():
 
 @needs_engine
 def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
+    from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
+
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
                                                                stiffness="firm", **MI))
@@ -278,6 +280,17 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
                                    neighbourhood_um=250, **MI), previous=first)
     assert second.step == 1 and second.parent is first
     assert second.engine["step_details"]["structures"] == [STR]
+    assert second.engine["step_details"]["taper_um"] == [250.0, 250.0 + 1000 * RESTRICTED_TAPER_MM]
+    # Beyond the taper the step moves nothing; inside its neighbourhood it moves tissue.
+    mm = second.placement.section_mm_per_px
+    distance = ndi.distance_transform_edt(first.labels != STR) * mm
+    change = np.linalg.norm(second.field_mm - first.field_mm, axis=-1)
+    beyond = (distance > 0.25 + RESTRICTED_TAPER_MM + 2 * mm) & (truth > 0)
+    assert beyond.any() and change[beyond].max() < 1e-4
+    near = (distance <= 0.25) & (truth > 0)
+    assert change[near].max() > 1e-3
+    assert second.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
+    assert second.diagnostics["fold_fraction"] == 0.0 or second.diagnostics["fold_fraction"] < 1e-3
     # Far from the striatum the second step leaves the first one's field alone.
     far = np.zeros(truth.shape, dtype=bool)
     far[150:220, 240:300] = True
@@ -331,28 +344,6 @@ def test_inverted_step_undoes_the_tapered_step():
     back = np.stack([cv2.remap(np.ascontiguousarray(step[..., k]), mx, my, cv2.INTER_LINEAR,
                                borderMode=cv2.BORDER_REPLICATE) for k in range(2)], -1)
     assert np.abs(inverse + back).max() < 1e-3
-
-
-@needs_engine
-def test_a_restricted_step_leaves_tissue_beyond_its_taper_unmoved(atlas, warped):
-    from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
-
-    field, image, truth = warped
-    first = fit_section(image, atlas, placement(), _settings(detail="coarse",
-                                                               stiffness="firm", **MI))
-    second = fit_section(image, atlas, placement(),
-                         _settings(detail="coarse", structures=("STR",),
-                                   neighbourhood_um=250, **MI), previous=first)
-    assert second.engine["step_details"]["taper_um"] == [250.0, 250.0 + 1000 * RESTRICTED_TAPER_MM]
-    mm = second.placement.section_mm_per_px
-    distance = ndi.distance_transform_edt(first.labels != STR) * mm
-    change = np.linalg.norm(second.field_mm - first.field_mm, axis=-1)
-    beyond = (distance > 0.25 + RESTRICTED_TAPER_MM + 2 * mm) & (truth > 0)
-    assert beyond.any() and change[beyond].max() < 1e-4
-    near = (distance <= 0.25) & (truth > 0)
-    assert change[near].max() > 1e-3
-    assert second.diagnostics["inverse_consistency_mm"]["p99"] < 0.01
-    assert second.diagnostics["fold_fraction"] == 0.0 or second.diagnostics["fold_fraction"] < 1e-3
 
 
 @pytest.mark.slow

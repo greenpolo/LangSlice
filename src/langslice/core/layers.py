@@ -367,7 +367,7 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     native_y = grid_to_native[1, 0] * gx + grid_to_native[1, 1] * gy + grid_to_native[1, 2]
     native = warp.native if warp.native is not None else None
     if native is None:
-        from langslice.core.deformable.atlas_images import native_labels
+        from langslice.core.deformable.plane_images import native_labels
 
         native = native_labels(atlas, placement)
     ids = sample_native(np.asarray(native), np.stack([native_x, native_y], axis=-1))

@@ -37,7 +37,7 @@ from langslice.core.atlas.render import (
     stroke_boundaries,
     supersampled_positions,
 )
-from langslice.core.deformable.atlas_images import native_labels, placement_left, regions_mask
+from langslice.core.deformable.plane_images import native_labels, placement_left, regions_mask
 from langslice.core.deformable.record import DeformableRecord
 
 #: Atlas-grid blur of each region indicator before bilinear sampling.

@@ -65,7 +65,8 @@ FIREANTS_LEARNING_RATE = 0.8
 #: Each pyramid level halves the grid (shrink factors 2^(n-1)..1 for n levels).
 FIREANTS_SHRINK = 2
 #: Fixed-point iterations (and relaxation) that invert each half of the SyN
-#: warp (:func:`_invert`).
+#: warp (:func:`_invert`) and a tapered restricted step (``fit._invert_step``, the
+#: same fixed point on the section grid in numpy).
 INVERSE_ITERATIONS = 200
 INVERSE_RELAXATION = 0.5
 #: The release built from github.com/rohitrango/FireANTs at f8a9cc2; part of

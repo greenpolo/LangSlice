@@ -29,19 +29,10 @@ from scipy import ndimage as ndi
 
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.sides import split_side
-from langslice.core.deformable.atlas_images import (
-    native_labels,
-    placed_atlas_image,
-    placement_left,
-    regions_mask,
-    resolve_structures,
-    soft_lines,
-    structure_acronyms,
-    ventricle_ids,
-    whole_region_ids,
-)
 from langslice.core.deformable.engines import (
     FIT_THREADS,
+    INVERSE_ITERATIONS,
+    INVERSE_RELAXATION,
     EngineInputs,
     EngineResult,
     engine_worker,
@@ -56,6 +47,17 @@ from langslice.core.deformable.masks import (
     dilate,
     em_masks,
     footprint_masks,
+)
+from langslice.core.deformable.plane_images import (
+    native_labels,
+    placed_atlas_image,
+    placement_left,
+    regions_mask,
+    resolve_structures,
+    soft_lines,
+    structure_acronyms,
+    ventricle_ids,
+    whole_region_ids,
 )
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.regions import model_extent, named_regions
@@ -84,9 +86,6 @@ STAIN_PERCENTILES = (1.0, 99.0)
 #: beyond: ANTs' masks only limit where the metric is measured, so its smooth
 #: field otherwise moves tissue far from the region.
 RESTRICTED_TAPER_MM = 0.3
-#: Fixed-point iterations (and relaxation) that invert a tapered step.
-TAPER_INVERSE_ITERATIONS = 200
-TAPER_INVERSE_RELAXATION = 0.5
 
 
 @dataclass
@@ -402,11 +401,11 @@ def _invert_step(field_px: np.ndarray, guess_px: np.ndarray) -> np.ndarray:
     yy, xx = np.indices((height, width), dtype=np.float32)
     channels = [np.ascontiguousarray(field_px[..., k], dtype=np.float32) for k in range(2)]
     inverse = guess_px.astype(np.float32).copy()
-    for _ in range(TAPER_INVERSE_ITERATIONS):
+    for _ in range(INVERSE_ITERATIONS):
         mx, my = xx + inverse[..., 0], yy + inverse[..., 1]
         sampled = np.stack([cv2.remap(c, mx, my, cv2.INTER_LINEAR,
                                       borderMode=cv2.BORDER_REPLICATE) for c in channels], -1)
-        inverse += TAPER_INVERSE_RELAXATION * (-sampled - inverse)
+        inverse += INVERSE_RELAXATION * (-sampled - inverse)
     return inverse
 
 

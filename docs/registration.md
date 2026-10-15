@@ -313,7 +313,7 @@ Both registration engines accept any of the atlas's own images as
 reference the atlas ships, under BrainGlobe's names (for example
 `ccfv3augmented_mouse_25um`, whose template is the Blue Brain averaged Nissl,
 also ships a single-animal Nissl). The job statement lists them, and `look`
-draws any of them as an atlas layer. One temporary exception: an Allen CCFv3
+draws any of them as an atlas layer. One addition: an Allen CCFv3
 atlas (which ships no Nissl) is also offered `"ccfv3augmented_nissl"`, the
 Blue Brain averaged Nissl template from `ccfv3augmented_mouse_25um`, which is
 the CCFv3 grid extended 0.35 mm at the front; it downloads on first use.
