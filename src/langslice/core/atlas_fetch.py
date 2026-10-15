@@ -64,7 +64,8 @@ def atlas_section(
     *frame* crops to the brain silhouette plus a margin. The silhouette
     comes from the ANNOTATION, not from the render's non-zero
     pixels: reference volumes carry faint background noise that would put the
-    bounding box back at the canvas edges.
+    bounding box back at the canvas edges. The image is the caller's own copy
+    (``info`` included): the cached plane is never shared.
     """
     pitch, yaw = plane_angles(state, angles)
     key = (float(position_mm), str(state.plane), float(pitch), float(yaw), bool(frame))
@@ -74,7 +75,7 @@ def atlas_section(
         if hit is not None:
             cache.move_to_end(key)
     if hit is not None:
-        return hit
+        return hit.copy()
     image = get_reference_slice(
         ctx.atlas,
         position_mm,
@@ -97,7 +98,7 @@ def atlas_section(
         cache[key] = image
         while len(cache) > PLANE_CACHE_SIZE:
             cache.popitem(last=False)
-    return image
+    return image.copy()
 
 
 def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:

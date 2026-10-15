@@ -35,6 +35,25 @@ def test_cubic_samples_match_uncached_and_filter_once():
     assert second.shape == first.shape
 
 
+def test_a_volume_cached_for_an_atlas_goes_with_the_atlas():
+    import gc
+
+    atlas = SyntheticAtlas()
+    oblique.sample_oblique_plane(atlas, 0.1, "coronal", 0.0, 0.0, volume="template", order=3)
+    assert len(oblique._filtered_cache) == 1
+    del atlas
+    gc.collect()
+    assert not oblique._filtered_cache
+
+
+def test_filtered_volumes_are_bounded(monkeypatch):
+    monkeypatch.setattr(oblique, "FILTERED_CACHE_SIZE", 2)
+    atlases = [SyntheticAtlas() for _ in range(3)]
+    for atlas in atlases:
+        oblique.sample_oblique_plane(atlas, 0.1, "coronal", 0.0, 0.0, volume="template", order=3)
+    assert len(oblique._filtered_cache) == 2
+
+
 def test_threaded_filter_matches_scipy_exactly():
     rng = np.random.default_rng(0)
     vol = rng.random((37, 23, 29), dtype=np.float32)

@@ -123,7 +123,7 @@ def plane_annotation(workspace: Workspace, plane: dict[str, Any]) -> np.ndarray:
                             yaw_deg=float(angles[1]))
 
 
-def label_at(annotation: np.ndarray, native_xy: Sequence[float]) -> int | None:
+def label_at(annotation: np.ndarray, native_xy: Sequence[float] | np.ndarray) -> int | None:
     """The annotation id at atlas-native point *native_xy*; None off the slice."""
     c, r = int(np.rint(native_xy[0])), int(np.rint(native_xy[1]))
     if 0 <= r < annotation.shape[0] and 0 <= c < annotation.shape[1]:
