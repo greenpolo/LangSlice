@@ -59,6 +59,7 @@ from langslice.ops import (
     transforms,
     views,
 )
+from langslice.ops.refusal import Refused
 
 __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on", "verbs_for"]
 
@@ -157,6 +158,22 @@ VERBS: dict[str, Verb] = {
                limits=_LIMITS.get(name, {}))
     for name, tool in TOOLS.items()
 }
+
+#: The tools the job's own ``transform.max_parallel`` also caps.
+_TRANSFORM_TOOLS = ("interactive_transform", "elastix_affine")
+
+
+def check_section_count(job: Any, name: str, count: int) -> None:
+    """Refuse (``TOO_MANY_SECTIONS``, with ``max_sections`` and ``requested``) a
+    call of tool *name* naming *count* sections when that is more than its
+    ``limits["sections"]`` (:data:`VERBS`), or, for the transform tools, more
+    than the job lets one transform call take (``Job.transform_cap``)."""
+    cap = VERBS[name].limits.get("sections")
+    if cap is not None and name in _TRANSFORM_TOOLS and job.transform_cap is not None:
+        cap = min(cap, job.transform_cap)
+    if cap is not None and count > cap:
+        raise Refused("TOO_MANY_SECTIONS", max_sections=cap, requested=count)
+
 
 def verbs_for(spec: Any = None) -> dict[str, Verb]:
     """Every verb a job of *spec* can have: :data:`VERBS`, then one verb per

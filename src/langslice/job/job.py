@@ -951,18 +951,6 @@ class Job:
         cap = self.spec.transform.max_parallel
         return cap if cap < MAX_PARALLEL_TRANSFORMS else None
 
-    def over_cap(self, requested: int) -> dict[str, Any] | None:
-        """The refusal for a transform call naming more sections than allowed."""
-        cap = self.transform_cap
-        if cap is None or requested <= cap:
-            return None
-        return {
-            "status": "error",
-            "error": "TOO_MANY_SECTIONS",
-            "max_sections": cap,
-            "requested": requested,
-        }
-
     def submit_errors(self, breaks: list[int]) -> dict[str, Any] | None:
         """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
         return submit_errors(self.state, self.spec, breaks)

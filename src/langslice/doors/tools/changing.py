@@ -27,8 +27,8 @@ from langslice.ops import notes as ops_notes
 from langslice.ops import positions as ops_positions
 from langslice.ops import submit as ops_submit
 from langslice.ops import transforms as ops_transforms
-from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
+from langslice.ops.registry import check_section_count
 
 #: Positions closer than this (mm) are one atlas picture in a positioning picture.
 SAME_POSITION_MM = 0.02
@@ -97,12 +97,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if not entries:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "sections must name one or more sections"}
-        if len(entries) > MAX_LOOK_PICTURES:
-            return {"status": "error", "error": "TOO_MANY_SECTIONS",
-                    "max_sections": MAX_LOOK_PICTURES}
-        refusal = door.over_cap(len(entries))
-        if refusal is not None:
-            return refusal
+        try:
+            check_section_count(job, "interactive_transform", len(entries))
+        except Refused as refusal:
+            return refusal.payload()
         named = [job.state.resolve(entry.get("id", "")) for entry in entries
                  if isinstance(entry, dict)]
         ids = [record.id for record in named if record is not None]

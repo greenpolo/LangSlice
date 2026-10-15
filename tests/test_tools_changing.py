@@ -189,7 +189,8 @@ def test_interactive_transform_refuses_bad_calls_without_writing(tmp_path: Path)
     assert duplicate["error"] == "DUPLICATE_SLICE_IDS"
     assert duplicate["duplicate_ids"] == ["s0.png"]
     many = tool([{"id": f"s{i}.png"} for i in range(5)])
-    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
+    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4,
+                    "requested": 5}
     assert tool([])["error"] == "BAD_ARGS"
     nothing = tool([{"id": "nope.png", "rotation_deg": 1}])
     assert nothing["status"] == "error" and nothing["error"] == "NOTHING_WRITTEN"

@@ -403,7 +403,7 @@ def build_tools(
         image_model = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
     run = Door(job=job, ctx=ctx, spec=spec, box=box, level=level,
                traces_on=traces_on,
-               image_model=image_model, over_cap=job.over_cap)
+               image_model=image_model)
 
     def sync_job() -> None:
         """Before every call: pick up a state file changed on disk."""

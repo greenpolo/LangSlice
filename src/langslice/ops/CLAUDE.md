@@ -39,8 +39,9 @@ wording; `registry.py` lists which.
   tool door after the write.
 - It never words anything for a model. Job rules (frozen
   properties, host damage marks, the spec's flip switch, the submit gates)
-  are the job's and are applied here; the transform cap (`Job.over_cap`)
-  is checked by the tool door with its other arguments.
+  are the job's and are applied here; the per-call section caps (`registry.check_section_count`:
+  `Verb.limits`, and the job's `transform.max_parallel` for the transform tools;
+  `TOO_MANY_SECTIONS`) are checked by the tool door with its other arguments.
 - A model is passed in, never chosen here: `traces.trace_borders`
   takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
@@ -398,8 +399,7 @@ missing inverses, repeated section points, zero-area source triangles (named by
 pair id) and stale atlas endpoints (named by pair id) are refused. Folded
 triangles are applied and reported (`folds`: area fraction, pair ids; stored as
 `landmark_folds` in the deformation reference, which also holds
-`landmark_pairs`, the pair-to-geometry digest `applied` is read from; a record
-without it is `applied` when its `landmark_revision` matches the pairs). A
+`landmark_pairs`, the pair-to-geometry digest `applied` is read from). A
 refused endpoint says the pair (call index and id), role, picture, x,y and the
 picture's content box. `set_landmarks` replies with one compact record per pair
 (`id`, `atlas`, `section`, `state`: applied/moved/pending/stale) and counts and

@@ -28,8 +28,8 @@ from langslice.ops import landmarks as ops_landmarks
 from langslice.ops import look as ops_look
 from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
-from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
+from langslice.ops.registry import check_section_count
 
 
 def bodies(door: Door) -> dict[str, Callable[..., Any]]:
@@ -61,12 +61,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if not named:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "sections must name one or more sections"}
-        if len(named) > MAX_LOOK_PICTURES:
-            return {"status": "error", "error": "TOO_MANY_SECTIONS",
-                    "max_sections": MAX_LOOK_PICTURES}
-        refusal = door.over_cap(len(named))
-        if refusal is not None:
-            return refusal
+        try:
+            check_section_count(job, "elastix_affine", len(named))
+        except Refused as refusal:
+            return refusal.payload()
         try:
             done = ops_transforms.elastix_affine(job, ctx, named, regions,
                                                  str(atlas_image or "template"))
@@ -101,6 +99,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def fireants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
                  stiffness: str, view: bool = True) -> dict[str, Any]:
         try:
+            check_section_count(job, "fireants_syn", len(as_list(sections)))
             done = ops_deformable.fireants_syn(job, ctx, as_list(sections),
                                            restrict_to=as_list(restrict_to),
                                            atlas_image=atlas_image, stiffness=stiffness)

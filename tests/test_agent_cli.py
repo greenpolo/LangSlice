@@ -767,7 +767,7 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
         most = limits["fireants_syn"]["sections"]
         refused = job.fireants_syn(sections=[ID0] * (most + 1))
-        assert refused["error"] == "BAD_ARGS" and refused["max_sections"] == most
+        assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
         # One past a picture limit: the rest named, not shown.
         most = limits["look"]["pictures"]
         shown = job.look(mode="atlas", positions_mm=[0.02 + 0.04 * i for i in range(most + 1)])

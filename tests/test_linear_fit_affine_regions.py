@@ -100,7 +100,7 @@ def test_a_side_on_a_turned_placement_is_a_refusal_not_an_exception(tmp_path: Pa
     before = dict(state.slices[0].transform or {})
     result = _tool(box, "elastix_affine")(["s0.png"], restrict_to=["L:left"])
     assert result["error"] == "NOTHING_FITTED"
-    assert result["results"][0]["error"] == "SIDES_AMBIGUOUS"
+    assert result["results"][0]["error"] == "WRONG_SIDE_PAIR"
     assert "pictures" not in result
     assert state.slices[0].transform == before
 

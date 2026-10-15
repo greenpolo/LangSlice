@@ -78,7 +78,6 @@ def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
 
 @pytest.mark.parametrize("kwargs,code", [
     ({"sections": []}, "BAD_ARGS"),
-    ({"sections": [ID] * 5}, "BAD_ARGS"),
     ({"sections": [ID], "stiffness": "stiff"}, "BAD_ARGS"),
     ({"sections": [ID], "atlas_image": "borders"}, "BAD_ARGS"),
     ({"sections": [ID], "atlas_image": "nissl"}, "BAD_ARGS"),  # not this atlas's image
