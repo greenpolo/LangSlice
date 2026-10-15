@@ -20,12 +20,6 @@ def test_a_well_measured_setting_uses_its_band_times_sections():
     assert result["unit"] == "percent_of_usage_window"
 
 
-def test_the_high_end_stops_at_the_run_cap():
-    result = estimate({**FULL, "max_quota_percent": 10}, 38)
-    assert result["high"] == 10.0 and "cap" in result["basis"]
-    assert result["low"] <= result["high"]
-
-
 def test_a_single_run_or_unmeasured_setting_is_widened():
     single = estimate({**FULL, "model": "openai-oauth/gpt-6-luna"}, 38)
     assert "widened" in single["basis"]

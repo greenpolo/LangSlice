@@ -328,48 +328,26 @@ def test_run_resumes_from_the_checkpoint(tmp_path: Path, monkeypatch):
     assert [s.position_mm for s in state.in_order()] == list(positions.values())
 
 
-def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypatch):
-    names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: submit is refused every turn
-    install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
-
-    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500),
-                 max_input_tokens=999)
-    state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
-
-    assert state.submitted is False
-    assert state.by_id(names[0]).position_mm == 4.0
-    assert any("no submission" in note for note in state.notes)
-    assert (tmp_path / "langslice" / "exports" / "linear_results.json").exists()
-
-
-def test_one_request_over_the_input_context_limit_stops_with_grace(
+def test_a_session_that_fails_before_submitting_keeps_its_writes_and_its_spend(
     tmp_path: Path, monkeypatch
 ):
     names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: submit keeps being refused
-    install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
-    lines: list[str] = []
+    positions = {names[0]: 4.0}  # incomplete: submit is refused every turn
+    install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000,
+                                 fail_after_calls=3)
 
-    spec = _spec(
-        tmp_path,
-        tasks=["position"],
-        position=PositionSpec(interval_um=500),
-        max_input_tokens=999,
-    )
-    state = asyncio.run(run(spec, emit=lines.append, atlas_loader=lambda _n: _ATLAS))
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
+    with pytest.raises(RuntimeError, match="fake model failed"):
+        asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
 
-    assert state.submitted is False
-    assert state.by_id(names[0]).position_mm == 4.0  # the write survived the stop
-    budget = [line for line in lines if "exceeded the context limit" in line]
-    assert len(budget) == 1 and "request input 1000" in budget[0]
-    assert any(line.startswith("[tokens] call 1: request_input=1000") for line in lines)
-    # the stop, then ONE grace call to submit (refused: the stack is incomplete)
-    assert any("run total: 2 calls, cumulative_input=2000" in line for line in lines)
+    exports = tmp_path / "langslice" / "exports"
+    spend = json.loads((exports / "spend.json").read_text())
+    assert spend["tokens"]["input_uncached"] == 3000  # the three calls that were answered
+    saved = load_checkpoint(tmp_path / "langslice" / "state.json")
+    assert saved.by_id(names[0]).position_mm == 4.0
 
 
-@pytest.mark.parametrize("limit", [None, 1000, 2500])
-def test_repeated_inputs_are_not_cumulative_context(tmp_path: Path, monkeypatch, limit):
+def test_repeated_inputs_are_not_cumulative_context(tmp_path: Path, monkeypatch):
     names = _make_stack(tmp_path, n=3)
     install_fake_adk_model_stack(
         monkeypatch, positions=dict(zip(names, [4.0, 4.5, 5.0], strict=True)),
@@ -377,17 +355,17 @@ def test_repeated_inputs_are_not_cumulative_context(tmp_path: Path, monkeypatch,
     )
     lines: list[str] = []
     state = asyncio.run(run(
-        _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500),
-              max_input_tokens=limit),
+        _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500)),
         emit=lines.append, atlas_loader=lambda _n: _ATLAS,
     ))
     assert state.submitted
-    assert not any("exceeded the context limit" in line for line in lines)
     assert any("cumulative_input=3000" in line and "peak_input=1000" in line for line in lines)
 
 
-def test_input_context_safeguard_is_disabled_by_default(tmp_path):
-    assert _spec(tmp_path).max_input_tokens is None
+def test_no_budget_setting_exists(tmp_path):
+    for key in ("max_input_tokens", "max_quota_percent"):
+        with pytest.raises(ValueError, match="Unknown job setting"):
+            JobSpec.from_dict({"image_folder": str(tmp_path), key: 25})
 
 
 def test_token_tally_tracks_last_and_peak_including_cached_input():
@@ -405,145 +383,69 @@ def test_token_tally_tracks_last_and_peak_including_cached_input():
     assert tally.as_dict()["peak_input"] == 2000
 
 
-def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkeypatch):
-    """The window was at 40% before the run; the run may spend 25 points of
-    it, not reach 25%."""
-    names = _make_stack(tmp_path, n=3)
-    positions = {names[0]: 4.0}  # incomplete: submit keeps being refused
-    install_fake_adk_model_stack(monkeypatch, positions=positions, quota_percent_per_call=10)
-    lines: list[str] = []
-
-    spec = _spec(
-        tmp_path,
-        tasks=["position"],
-        position=PositionSpec(interval_um=500),
-        max_quota_percent=25,
-    )
-    state = asyncio.run(run(spec, emit=lines.append, atlas_loader=lambda _n: _ATLAS))
-
-    assert state.submitted is False
-    stops = [line for line in lines if "the budget of 25%" in line]
-    assert len(stops) == 1 and "used 30%" in stops[0]  # 50, 60, 70, 80: 0, 10, 20, 30
-    assert any("window used by this run 10%" in line for line in lines)
-    assert any("run total: 5 calls" in line for line in lines)  # the stop + one grace call
-
-
-def test_the_seed_carries_section_strips_then_the_atlas_reference(tmp_path: Path):
-    from langslice.agent.engine import build_context, build_seed_message
-    from langslice.job.job import ingest
-
-    _make_stack(tmp_path, n=3)
-    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
-    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
-    state = ingest(spec, ctx)
-    parts = build_seed_message(state, ctx).parts or []
-    texts = [p.text for p in parts if p.text]
-    # No positions: one section-only strip, then the atlas reference strips.
-    assert texts[0].startswith("The 3 sections of the stack follow in 1 strip,")
-    assert "Beneath each section" not in texts[0]
-    assert texts[1] == "Strip 1 of 1: " + ", ".join(r.id for r in state.in_order())
-    reference = next(t for t in texts if t.startswith("Atlas reference strip"))
-    n_atlas = int(reference.split("the atlas at ")[1].split()[0])
-    assert 1 < n_atlas <= 48
-    atlas_strips = [t for t in texts if t.startswith("Atlas strip ")]
-    images = [p for p in parts if p.inline_data is not None]
-    assert len(images) == 1 + len(atlas_strips) >= 2
-    assert texts.index(reference) > 1
-    assert texts[-1].startswith("Status table")
-
-
-def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp_path: Path):
-    names = _make_stack(tmp_path, n=2)
-    del names
-    on = _spec(tmp_path, tasks=["transform"])
-    off = _spec(tmp_path, tasks=["position"])
-    from langslice.agent.engine import build_context
-    from langslice.agent.prompt import build_job_statement
-    from langslice.doors.tools.toolbox import build_tools
-    from langslice.job.job import ingest
-
-    for spec, expected in ((on, True), (off, False)):
-        ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
-        state = ingest(spec, ctx)
-        box = build_tools(state, ctx, spec)
-        text = build_job_statement(
-            spec, state, tool_names=box.names, species="mouse", pos_lo=0.0, pos_hi=10.0,
-            axis_ends=("anterior", "posterior"),
-        )
-        assert ("TRUE physical size" in text) is expected
-        assert "landmark" not in text.lower()
-        assert "regularized spline" not in text.lower()
-
-
-# --- background work between turns ------------------------------------------
-
-
-def _job(tmp_path: Path):
-    from langslice.job.job import Job
-
-    _make_stack(tmp_path, n=2)
-    spec = _spec(tmp_path, tasks=["position"])
-    ctx = _ctx(spec)
-    return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
-
-
-def test_background_message_is_none_when_no_work_ran(tmp_path: Path):
-    from langslice.agent.engine import background_message
-
-    assert background_message(_job(tmp_path)) is None
-
-
-def test_background_message_waits_for_running_work_and_hands_it_out_once(tmp_path: Path):
-    import threading
-
-    from langslice.agent.engine import background_message
-    from langslice.job.background import DONE, Landed
-
-    job = _job(tmp_path)
-    release = threading.Event()
-    picture = Image.new("RGB", (32, 24), (200, 30, 30))
-
-    def land() -> Landed:
-        release.wait(5)
-        return Landed(status=DONE, text="fitted.", pictures=[picture])
-
-    work = job.background.start("trace_borders", ["slice_1.png"], land,
-                                wait_for_images=False)
-    threading.Timer(0.2, release.set).start()
-    assert job.background.running()  # still running when the turn ends
-
-    items = background_message(job)
-    assert items is not None and not job.background.running()
-    assert items[0] == ("Background work finished:\n"
-                        f"{work.id} trace_borders of slice_1.png finished: fitted. "
-                        f"Pictures #{work.pictures[0]}.")
-    assert items[1] == f"picture {work.pictures[0]} ({work.id})"
-    assert isinstance(items[2], Image.Image) and items[2].size == picture.size
-    assert len(items) == 3
-    # Each finished piece is handed out once.
-    assert background_message(job) is None
-    job.background.close()
-
-
-def test_the_session_is_given_the_background_message_of_its_job(
+def test_window_share_warnings_go_to_the_operator_every_ten_points(
     tmp_path: Path, monkeypatch
 ):
-    from langslice.agent import engine
+    """The window stands at 50% on the run's first call and rises 10 points per
+    call: the run is told at 10% and 20%, measured from its own first call, and
+    nothing stops it; the account lands in exports/spend.json and the trace."""
+    names = _make_stack(tmp_path, n=3)
+    install_fake_adk_model_stack(
+        monkeypatch, positions=dict(zip(names, [4.0, 4.5, 5.0], strict=True)),
+        quota_percent_per_call=10)
+    lines: list[str] = []
+    events: list[dict] = []
+    monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(tmp_path / "trace"))
 
-    names = _make_stack(tmp_path, n=2)
-    seen: dict = {}
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
+    state = asyncio.run(run(spec, emit=lines.append, atlas_loader=lambda _n: _ATLAS,
+                            on_event=events.append))
 
-    async def fake_session(**kwargs):
-        seen.update(kwargs)
-        return 0, 0
+    assert state.submitted is True
+    spent = [line for line in lines if line.startswith("[spend] this run has used")]
+    assert spent == [
+        "[spend] this run has used 10% of the usage window (passed 10%)",
+        "[spend] this run has used 20% of the usage window (passed 20%)",
+    ]
+    assert [e["threshold"] for e in events if e["kind"] == "spend"
+            and "used_percent" in e] == [10, 20]
+    assert any("window used by this run 10%" in line for line in lines)
+    assert any(line == "[spend] run total: 20% of the usage window" for line in lines)
+    spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text())
+    assert spend["quota_used_percent"] == 20 and spend["usd_estimate"] is None
+    records = [json.loads(row) for path in (tmp_path / "trace").glob("*.jsonl")
+               for row in path.read_text().splitlines()]
+    assert [r["threshold"] for r in records if r["kind"] == "spend"
+            and "used_percent" in r] == [10, 20]
+    assert next(r for r in records if r["kind"] == "summary")["spend"]["quota_used_percent"] == 20
+    assert next(e for e in events if e["kind"] == "complete")["spend"]["quota_used_percent"] == 20
 
-    monkeypatch.setattr(engine, "run_agent_session", fake_session)
-    opened: list = []
-    state = asyncio.run(run(_spec(tmp_path, tasks=["position"]), emit=lambda _m: None,
-                            atlas_loader=lambda _n: _ATLAS,
-                            on_open=lambda job, _ctx: opened.append(job)))
-    assert state.submitted is False and [s.id for s in state.in_order()] == names
-    background = seen["background"]
-    assert background.func is engine.background_message
-    assert background.args == (opened[0],)
-    assert background() is None  # no work ran
+
+def test_an_api_key_lane_is_told_its_dollar_estimate_through_the_whole_session(
+    tmp_path: Path, monkeypatch
+):
+    """Three calls of 4M uncached input tokens on Gemini 2.5 Pro ($1.25 per
+    million) cost $5 each: the operator hears at $5 and $10, the model hears
+    nothing, and the account has the estimate."""
+    names = _make_stack(tmp_path, n=3)
+    install_fake_adk_model_stack(
+        monkeypatch, positions=dict(zip(names, [4.0, 4.5, 5.0], strict=True)),
+        input_tokens_per_call=4_000_000)
+    lines: list[str] = []
+    events: list[dict] = []
+
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500),
+                 model="gemini-2.5-pro")
+    state = asyncio.run(run(spec, emit=lines.append, atlas_loader=lambda _n: _ATLAS,
+                            on_event=events.append))
+
+    assert state.submitted is True
+    assert [line for line in lines if line.startswith("[spend] this run's")] == [
+        "[spend] this run's estimated API cost is $5.00 (passed $5; gemini-api/gemini-2.5-pro, "
+        "list prices)",
+        "[spend] this run's estimated API cost is $10.00 (passed $10; gemini-api/gemini-2.5-pro, "
+        "list prices)",
+    ]
+    assert [e["threshold"] for e in events if e["kind"] == "spend"] == [5.0, 10.0]
+    spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text())
+    assert spend["usd_estimate"] == 15.0 and spend["quota_used_percent"] is None

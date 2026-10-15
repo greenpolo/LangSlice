@@ -26,14 +26,6 @@ logger = logging.getLogger(__name__)
 #: any other is refused.
 REQUEST_KEYS = ("image_folder", "pixel_size_um", "positions_mm", "z_offset_mm", "angles_deg",
                 "existing_warp", "damaged", "channel_names", "spec", "preprocessing")
-#: Why a run stopped before submitting (``agent.session``'s stop reasons),
-#: as the connector's final message says it.
-STOP_REASONS = {
-    "quota_budget": "it used this run's share of the usage window (max_quota_percent)",
-    "input_context_limit": "a request exceeded the context limit (max_input_tokens)",
-}
-
-
 #: Why an ABBA door refuses a job whose sections carry different cutting
 #: angles: ABBA shows one atlas angle for the whole stack (its
 #: ``ReslicedAtlas`` rotations). Jobs made from an ABBA session have one.
@@ -483,8 +475,7 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     on top of the affine step, ``{"error": reason}`` when they cannot be
     made, or null to remove LangSlice's warp step; :class:`HostCheckpoints`),
     and a checkpoint ``host_angles`` when the stack-wide angles changed. The
-    result is ``state``, ``output_dir`` and, when the agent stopped before
-    submitting for a budget, ``stopped`` (:data:`STOP_REASONS`).
+    result is ``state`` and ``output_dir``.
     """
     from langslice.agent import engine
     from langslice.agent.trace import TRACE_DIR_ENV, job_trace_dir
@@ -497,11 +488,8 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     # else next to the snapshots, else the read-only fallback under
     # ~/.langslice/jobs/), found as the engine finds it.
     output_dir, _fallback = locate_job_folder(folder, spec.job_dir, register=False)
-    stopped: list[str] = []
 
     def on_event(event: dict[str, Any]) -> None:
-        if event.get("kind") == "complete" and event.get("stopped"):
-            stopped.append(str(event["stopped"]))
         emit({"kind": "agent_event", "event": public_event(event)})
 
     with _tracing(None if os.environ.get(TRACE_DIR_ENV) else job_trace_dir(output_dir)):
@@ -514,8 +502,6 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     # conversion ensures a failed native geometry export cannot report success.
     checkpoint(state)
     result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(output_dir)}
-    if stopped and stopped[-1] in STOP_REASONS:
-        result["stopped"] = STOP_REASONS[stopped[-1]]
     return result
 
 

@@ -240,20 +240,6 @@ def add_session_arguments(p: argparse.ArgumentParser) -> None:
         "provider's own",
     )
     p.add_argument(
-        "--max-input-tokens",
-        type=int,
-        default=None,
-        help="Stop after one request reports more than N input tokens, cached included, "
-        "then allow one submit call (default: disabled; checked after the response)",
-    )
-    p.add_argument(
-        "--max-quota-percent",
-        type=int,
-        default=None,
-        help="Hard stop on the share of the provider's usage window one run "
-        "may spend (default: JobSpec.max_quota_percent)",
-    )
-    p.add_argument(
         "--no-debrief",
         dest="debrief",
         action="store_false",
@@ -435,10 +421,6 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         resume=args.resume,
         debrief=getattr(args, "debrief", True),
         force_view=bool(getattr(args, "force_view", False)),
-        **({"max_input_tokens": args.max_input_tokens}
-           if getattr(args, "max_input_tokens", None) else {}),
-        **({"max_quota_percent": args.max_quota_percent}
-           if getattr(args, "max_quota_percent", None) else {}),
     )
 
 

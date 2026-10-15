@@ -104,6 +104,8 @@ def format_event(event: dict[str, Any]) -> tuple[str, str]:
         return f"Run failed: {text}", "error"
     if kind == "progress":
         return str(text), "tool"
+    if kind == "spend":
+        return str(text), "error"
     # Usage, seed instructions, paths and JSON make the conversation harder
     # to read. They remain available in console/opt-in JSONL diagnostics.
     return "", "muted"

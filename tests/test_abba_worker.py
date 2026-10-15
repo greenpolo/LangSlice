@@ -446,23 +446,6 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
     assert "source_mm" in tracker._warp(job.state, record, key)
 
 
-def test_a_budget_stop_is_named_in_the_result(params, monkeypatch):
-    from langslice.agent import engine
-
-    async def run(spec, *, on_write, on_event, emit, **_):
-        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0},
-                 "slices": [{"id": "section_0001.tif", "position_mm": 4.0,
-                             "rotation_deg": 0, "transform": None}]}
-        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
-        on_write(state)
-        on_event({"kind": "complete", "submitted": False, "stopped": "quota_budget"})
-        return state
-
-    monkeypatch.setattr(engine, "run", run)
-    result = run_linear(params, lambda event: None)
-    assert "usage window" in result["stopped"]
-
-
 def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
     """The "linear placement stands" record (what submit's ``left_linear``
     writes) and a moved placement each send ABBA no warp for the section."""

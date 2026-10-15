@@ -19,7 +19,7 @@ A registration file can also be explicitly imported when creating a job.
                         image-model traces (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
-  exports/              linear_results.json, quicknii.json, visualign.json, plugins/<tool>/ (copies of plugin layers)
+  exports/              linear_results.json, spend.json, quicknii.json, visualign.json, plugins/<tool>/ (copies of plugin layers)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/)
   logs/                 the agent CLI's calls and background runs
   AGENTS.md, CLAUDE.md  the reference card for coding agents
@@ -168,6 +168,16 @@ pixels and `nr` that index + 1.
   QUINT team's reference code reads it (`triangulate` on `(nx, ny)`, mapped to
   `(x, y)`). Each marker reproduces the section's maps exactly at its own
   point.
+
+### `spend.json`
+
+Written by `langslice linear run` when the session ends (also when it fails),
+for the person or agent monitoring the run: `lane` and `model`; `tokens`
+(`input_uncached`, `input_cached`, `output`, `reasoning`, the model's reported
+counts summed over the run); `quota_used_percent` (the usage window's rise since
+the run's first reading, null when the provider reports no window) and
+`quota_reading` (the last reading); `usd_estimate` (list prices times tokens,
+null for a model without a known price); `note`.
 
 ## Importing a registration
 

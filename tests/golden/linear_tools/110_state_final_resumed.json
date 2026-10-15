@@ -164,8 +164,6 @@
      "s2.png": 0.2
     }
    },
-   "max_input_tokens": null,
-   "max_quota_percent": 25,
    "model": null,
    "nonlinear": {
     "image_model": null,
