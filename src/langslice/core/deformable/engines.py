@@ -62,6 +62,18 @@ RANDOM_SEED = 20261002
 #: pixels the masks leave out (an excluded region) moved as far as any, driven
 #: by the faint smoothed gradient around them.
 FIREANTS_LEARNING_RATE = 0.8
+#: A fit of traced lines (``section_image="lines"``: the image model's lines
+#: and the regions they enclose against the atlas borders and regions) is run
+#: as the antspyx SyN it replaced ran it, which these three settings restore;
+#: tuned on Carey (seven brains, the image model's saved replies, scored
+#: against the raters), where FireANTs at the stain fit's settings followed
+#: hallucinated lines, folded and labelled worse than ANTs. The step is ANTs'
+#: own 0.2 voxel (0.4 half-pixels), half the stain fit's.
+TRACED_LEARNING_RATE = 0.4
+#: The whole warp of a traced fit is smoothed this many times wider than its
+#: stiffness says (medium: 0.04 mm instead of 0.02), so a stray or invented
+#: line bends the atlas less locally.
+TRACED_TOTAL_SIGMA_FACTOR = 2.0
 #: Each pyramid level halves the grid (shrink factors 2^(n-1)..1 for n levels).
 FIREANTS_SHRINK = 2
 #: Fixed-point iterations (and relaxation) that invert each half of the SyN
@@ -196,7 +208,9 @@ def _deterministic(torch: Any, device: str) -> Iterator[None]:
             torch.set_num_threads(held[3])
 
 
-def _channel_loss(torch: Any, terms: list[tuple[str, float]], kernel_px: int) -> Any:
+def _channel_loss(
+    torch: Any, terms: list[tuple[str, float]], kernel_px: int, *, balanced: bool = False,
+) -> Any:
     """ANTs' multivariate metric on FireANTs' images: one metric per channel
     (``terms``: metric name and weight, in channel order), weights normalized,
     every term measured under one mask, the last channel of both images
@@ -205,7 +219,16 @@ def _channel_loss(torch: Any, terms: list[tuple[str, float]], kernel_px: int) ->
     and its masked local correlation sums each window over masked pixels
     too, so a blanked excluded region still pulled the tissue around it; here,
     as in ITK's neighbourhood correlation, a window counts only the pixels
-    inside the mask."""
+    inside the mask.
+
+    *balanced* (mean-squares terms only, the traced fit): ITK's multi-metric
+    rule (``ObjectToObjectMultiMetricv4``), which ANTs applied: each term's
+    gradient is scaled to unit length before its weight applies, so a small
+    region's channel pulls as much as a large one and as the line channel. A
+    plain sum lets the channels with the most contrast (large regions) drive
+    the warp. The length is estimated at each evaluation from the warped
+    images (the term's derivative times each image's spatial gradient, both
+    halves) and held constant for that step."""
     from fireants.losses.cc import separable_filtering
     from fireants.losses.mi import GlobalMutualInformationLoss
 
@@ -226,6 +249,31 @@ def _channel_loss(torch: Any, terms: list[tuple[str, float]], kernel_px: int) ->
         var_t = (box(mask * t * t) - st * st / n).clamp(min=1e-5)
         ncc = (cross * cross + 1e-5) / (var_p * var_t + 1e-5)
         return -(ncc.clamp(max=1.0) * mask * valid).sum() / ((mask * valid).sum() + 1e-8)
+
+    if balanced and any(metric != "mean_squares" for metric, _w in terms):
+        raise ValueError("A balanced channel loss takes mean-squares terms only")
+    weights = torch.tensor([weight / total_weight for _metric, weight in terms])
+
+    class BalancedLoss(torch.nn.Module):
+        def forward(self, pred: Any, target: Any) -> Any:
+            mask = (pred[:, -1:] * target[:, -1:]).detach()
+            area = mask.sum() + 1e-8
+            n = len(terms)
+            p, t = pred[:, :n], target[:, :n]
+            values = ((p - t) ** 2 * mask).sum(dim=(0, 2, 3)) / area
+            with torch.no_grad():
+                d = 2.0 * (p - t) * mask / area
+                length = torch.zeros(n, dtype=p.dtype, device=p.device)
+                for image in (p, t):
+                    gy, gx = torch.gradient(image, dim=(2, 3))
+                    length += ((d * gx) ** 2 + (d * gy) ** 2).sum(dim=(0, 2, 3))
+                length = length.sqrt()
+                scale = torch.where(length > 1e-12, 1.0 / length.clamp(min=1e-12),
+                                    torch.zeros_like(length))
+            return (weights.to(p.device, p.dtype) * scale * values).sum()
+
+    if balanced:
+        return BalancedLoss()
 
     class ChannelLoss(torch.nn.Module):
         def forward(self, pred: Any, target: Any) -> Any:
@@ -298,10 +346,13 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     level = DETAIL[settings.detail]
     stiffness = STIFFNESS[settings.stiffness]
     voxel_mm = float(np.mean(inputs.spacing_mm))
+    traced = settings.section_image == "lines"
+    learning_rate = TRACED_LEARNING_RATE if traced else FIREANTS_LEARNING_RATE
+    total_sigma_mm = stiffness.total_sigma_mm * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0)
     # FireANTs takes Gaussian sigmas in voxels of each pyramid level, as ANTs
     # took its variances.
     grad_sigma = stiffness.update_sigma_mm / voxel_mm
-    warp_sigma = stiffness.total_sigma_mm / voxel_mm
+    warp_sigma = total_sigma_mm / voxel_mm
     radius = max(1, int(inputs.correlation_radius_px))
     edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
     terms: list[tuple[str, float]] = [(metric, 1.0)]
@@ -339,8 +390,9 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         registration: Any = SyNRegistration(
             scales=scales, iterations=list(level.iterations),
             fixed_images=fixed, moving_images=moving,
-            loss_type="masked_custom", custom_loss=_channel_loss(torch, terms, 2 * radius + 1),
-            optimizer="SGD", optimizer_lr=FIREANTS_LEARNING_RATE,
+            loss_type="masked_custom",
+            custom_loss=_channel_loss(torch, terms, 2 * radius + 1, balanced=traced),
+            optimizer="SGD", optimizer_lr=learning_rate,
             optimizer_params={"compose_n": 1},
             smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
             progress_bar=False, dtype=torch.float32,
@@ -368,9 +420,10 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     options: dict[str, Any] = {
         "metric": metric, "loss_terms": [list(t) for t in terms],
         "scales": scales, "iterations": list(level.iterations),
-        "optimizer": "SGD, ANTs' step rule", "optimizer_lr": FIREANTS_LEARNING_RATE,
+        "optimizer": "SGD, ANTs' step rule", "optimizer_lr": learning_rate,
         "smooth_grad_sigma_px": grad_sigma, "smooth_warp_sigma_px": warp_sigma,
-        "update_sigma_mm": stiffness.update_sigma_mm, "total_sigma_mm": stiffness.total_sigma_mm,
+        "update_sigma_mm": stiffness.update_sigma_mm, "total_sigma_mm": total_sigma_mm,
+        "balanced_channels": traced,
         "edge_channel": edges,
         "edge_weight": float(inputs.edge_weight) if edges else 0.0,
         "label_channels": len(inputs.fixed_labels),
