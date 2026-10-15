@@ -4,6 +4,7 @@ cropped to the section's aspect, never stretched."""
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from langslice.core.nonlinear.image_gen_registration import (
@@ -11,17 +12,10 @@ from langslice.core.nonlinear.image_gen_registration import (
 )
 
 
-def test_an_output_in_a_wider_frame_is_cropped_back_to_the_section_aspect() -> None:
-    # the section's frame letterboxed inside a 3:2 answer
-    returned = Image.new("RGB", (1536, 1024))
-    cropped = crop_to_aspect(returned, 1.0)
-
-    assert cropped.size == (1024, 1024)
-
-
-def test_an_output_in_a_taller_frame_is_cropped_back() -> None:
-    cropped = crop_to_aspect(Image.new("RGB", (1024, 1536)), 1.0)
-    assert cropped.size == (1024, 1024)
+@pytest.mark.parametrize("size", [(1536, 1024), (1024, 1536)])
+def test_an_output_in_a_wider_or_taller_frame_is_cropped_back(size) -> None:
+    # the section's frame letterboxed inside a 3:2 answer (either way up)
+    assert crop_to_aspect(Image.new("RGB", size), 1.0).size == (1024, 1024)
 
 
 def test_an_output_already_in_the_frame_is_returned_untouched() -> None:

@@ -50,7 +50,7 @@ and `environment.yml` hold the worker's source installation.
   everywhere.
 - The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
-  (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
+  (`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
   `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
 - A tool plugin (`JobSpec.plugins`, `docs/plugins.md`) adds first-class tools
@@ -69,12 +69,11 @@ and `environment.yml` hold the worker's source installation.
   pictures and maps are derived from it and never read back.
 - Positions are atlas millimetres from the anterior edge of the volume; axis
   conventions are centralized in `core/space.py`.
-- Model-facing text (tool descriptions, job statement, tool replies) and the
-  pictures are pinned by golden tests (`tests/test_golden_linear_tools.py`,
-  `tests/golden/`); an intended change re-records them with
-  `LANGSLICE_UPDATE_GOLDEN=1` (see `tests/golden/record.py`) and the diff is
-  reviewed. The golden test needs `antspyx`, `itk-elastix`, `mcp` and
-  `google-adk`, and skips without them.
+- Model-facing text (tool descriptions, job statements, refusals) is pinned
+  by a text snapshot (`tests/test_agent_text_snapshot.py`,
+  `tests/snapshots/agent_text/`); an intended change regenerates it with
+  `LANGSLICE_UPDATE_SNAPSHOT=1` and the diff is reviewed. Pictures are
+  pinned by no test: a change to them is judged by looking (below).
 - Image-model prompts live in `core/nonlinear/prompts.py`; every sentence of an
   edit is audited for a second reading, and no border line is made conditional
   on visibility (`src/langslice/core/nonlinear/CLAUDE.md`).
@@ -99,12 +98,12 @@ and `environment.yml` hold the worker's source installation.
 ## Environment and checks
 
 Linux + bash. The project environment is a uv venv at `.venv` (Python 3.11):
-`uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`; the ANTs engine
-(antspyx) is a core dependency below Python 3.14.
+`uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`; the deformable engine
+(FireANTs on torch) and SimpleITK are core dependencies.
 
 ```bash
 source .venv/bin/activate
-python -m pytest              # markers: `slow` is deselected by default
+python -m pytest              # in parallel (pytest-xdist); `slow` is deselected by default
 python -m ruff check .
 python -m basedpyright
 lint-imports                  # the layer contracts

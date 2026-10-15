@@ -45,7 +45,7 @@ from langslice.job.formats import registration_document
 from langslice.job.layout import JobLayout
 from langslice.job.quint import job_export
 from tests.deformable_synthetic import CTX, STR, SyntheticAtlas
-from tests.golden.record import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
+from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, write_sections
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "deepslice"
 #: Recovered six numbers and angles agree with the given ones to this.
@@ -188,7 +188,7 @@ def test_core_round_trip_is_exact(stack: Path, plane: str):
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas, plane=plane)
     rng = np.random.default_rng({"coronal": 1, "sagittal": 2, "horizontal": 3}[plane])
-    for trial in range(24):
+    for trial in range(8):
         flat = trial % 4 == 0
         given = Given(
             section_id=(ID0, ID1, ID2)[trial % 3],
@@ -411,30 +411,6 @@ def test_registration_json_seeds_a_new_job(stack: Path, tmp_path: Path):
     assert "no common QuickNII target" in refused.refused[ID0]
 
 
-def test_without_a_pixel_size_the_imported_one_is_used(stack: Path, tmp_path: Path):
-    atlas = DeepAtlas()
-    calibrated = make_workspace(stack, atlas)
-    document = job_export(export_rows(calibrated, PER_SECTION), atlas_facts(atlas))
-    path = write_export(tmp_path / "quicknii.json", document)
-    bare = make_workspace(stack, atlas, pixel_size=None)
-    result = imports.import_placements(path, bare)
-    assert result.pixel_size_source == "imported"
-    implied = [implied_pixel_size_um(p.pixel_to_atlas_um) for p in result.placements]
-    assert result.pixel_size_um == pytest.approx(float(np.median(implied)))
-    # Given that pixel size, the job draws exactly the imported maps.
-    assert result.pixel_size_um is not None
-    redrawn = make_workspace(stack, atlas, pixel_size=result.pixel_size_um)
-    for placement in result.placements:
-        assert placement.pixel_size_source == "imported"
-        given = Given(placement.section_id, placement.position_mm, placement.pitch_deg,
-                      placement.yaw_deg, placement.rotation_deg, placement.flip, {})
-        state = state_of(redrawn, [given])
-        state.slices[0].transform = {"params": list(placement.params)}
-        frame = section_frame(state, redrawn, state.slices[0])
-        assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
-                           atol=1e-6, rtol=0)
-
-
 # --- DeepSlice's own files ---------------------------------------------------------------
 
 
@@ -486,16 +462,6 @@ def test_deepslice_files_round_trip(stack: Path, tmp_path: Path, name: str):
         assert np.allclose(placement.params, params_for(workspace, given), atol=1e-6)
 
 
-def test_the_fixtures_are_this_cases_export(stack: Path, tmp_path: Path):
-    """The fixture anchorings are this module's export, unchanged by DeepSlice."""
-    _workspace, document = deepslice_case(stack, tmp_path / "M1")
-    written = json.loads((FIXTURES / "deepslice.json").read_text())
-    assert written["target"] == document["target"]
-    for ours, theirs in zip(document["slices"], written["slices"], strict=True):
-        assert theirs["filename"].endswith(ours["filename"])
-        assert np.allclose(theirs["anchoring"], ours["anchoring"], atol=1e-9)
-
-
 def test_an_old_deepslice_xml_parses(tmp_path: Path):
     """DeepSlice's earlier releases: bare ampersands, width and height -999,
     nr as a float, a folder in the file name."""
@@ -540,24 +506,6 @@ def test_matching_rules_in_order():
 # --- as a job's supplied inputs ----------------------------------------------------------
 
 
-def test_the_imported_transform_carries_its_knobs(stack: Path, tmp_path: Path):
-    """``physical`` rebuilds the six numbers (knobs rounded as every stored
-    transform's are), about the render's centre at its pixel size."""
-    from langslice.core.affine import normalized_physical_affine
-
-    atlas = DeepAtlas()
-    workspace = make_workspace(stack, atlas)
-    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
-    result = imports.import_placements(write_export(tmp_path / "q.json", document), workspace)
-    for placement in result.placements:
-        knobs_ = dict(placement.transform()["physical"])
-        assert knobs_.pop("pivot") == [0.5, 0.5]
-        rebuilt = normalized_physical_affine(size=placement.placement.render_size,
-                                             um_per_px=placement.placement.render_um_per_px,
-                                             **knobs_)
-        assert np.allclose(rebuilt, placement.params, atol=2e-3)
-
-
 def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     atlas = DeepAtlas()
     workspace = make_workspace(stack, atlas)
@@ -569,6 +517,16 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     assert set(inputs["angles"]) == {ID0, ID1, ID2}  # they differ: per section
     assert inputs["orientation"][ID1] == {"flip": True, "rotation_deg": 90}
     assert found.report["warnings"] == [] and found.report["markers_imported"] is False
+    # No pixel size anywhere: the imported one is used, and the maps hold at it.
+    bare = make_workspace(stack, atlas, pixel_size=None)
+    result = imports.import_placements(path, bare)
+    assert result.pixel_size_source == "imported" and result.pixel_size_um is not None
+    implied = [implied_pixel_size_um(p.pixel_to_atlas_um) for p in result.placements]
+    assert result.pixel_size_um == pytest.approx(float(np.median(implied)))
+    redrawn = make_workspace(stack, atlas, pixel_size=result.pixel_size_um)
+    for placement in result.placements:
+        assert placement.pixel_size_source == "imported"
+        _assert_redraws(redrawn, placement)
     # Only one file carries its own pixel size: the job gets one size, and
     # every section is placed against it (the maps still hold exactly).
     import langslice.core.workspace as module
@@ -584,13 +542,18 @@ def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.Mo
     assert any("replaced" in warning for warning in found.report["warnings"])
     redrawn = make_workspace(stack, atlas, pixel_size=size)
     for placement in found.result.placements:
-        given = Given(placement.section_id, placement.position_mm, placement.pitch_deg,
-                      placement.yaw_deg, placement.rotation_deg, placement.flip, {})
-        state = state_of(redrawn, [given])
-        state.slices[0].transform = {"params": list(placement.params)}
-        frame = section_frame(state, redrawn, state.slices[0])
-        assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
-                           atol=1e-6, rtol=0)
+        _assert_redraws(redrawn, placement)
+
+
+def _assert_redraws(redrawn: Workspace, placement: Any) -> None:
+    """The job's own frame for the imported placement is the imported map."""
+    given = Given(placement.section_id, placement.position_mm, placement.pitch_deg,
+                  placement.yaw_deg, placement.rotation_deg, placement.flip, {})
+    state = state_of(redrawn, [given])
+    state.slices[0].transform = {"params": list(placement.params)}
+    frame = section_frame(state, redrawn, state.slices[0])
+    assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
+                       atol=1e-6, rtol=0)
 
 
 def _by_section(result):

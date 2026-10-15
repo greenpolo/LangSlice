@@ -10,7 +10,7 @@ changed, a section list resolved, a refusal as a payload).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -47,9 +47,6 @@ class Door:
     #: The image model is in this run and reachable (``trace_borders``).
     traces_on: bool
     image_model: ImageModel | None
-    #: Refuses a call naming more sections than the job lets one transform
-    #: call take (``Job.over_cap``), or None.
-    over_cap: Callable[[int], dict[str, Any] | None]
 
     @property
     def state(self) -> StackState:

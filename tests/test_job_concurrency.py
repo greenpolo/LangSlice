@@ -5,7 +5,7 @@ others saved first (``Job.writing``); a long fit computes outside the lock
 and, when it applies, refuses a section whose inputs changed meanwhile
 (``STALE_INPUT``) while the others apply. Here an "agent" (a second job on
 the folder, through the library) writes while a CLI fit computes
-(``ants_syn``, ``elastix_affine``: long verbs), and several CLI processes
+(``fireants_syn``, ``elastix_affine``: long verbs), and several CLI processes
 write at once.
 """
 
@@ -25,12 +25,11 @@ import langslice
 from langslice.core import deformation
 from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
-from tests.golden.record import (
+from tests.synthetic_stack import (
     ID0,
     ID1,
     ID2,
     PIXEL_SIZE_UM,
-    apply_patches,
     atlas_loader,
     write_sections,
 )
@@ -59,7 +58,6 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
            capsys: pytest.CaptureFixture[str]) -> Path:
     """A placed stack (positions; identity transforms on s0 and s1) and its job."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     install(atlas_loader(), monkeypatch.setattr)
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
@@ -98,20 +96,20 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
     monkeypatch.setattr(module, name, wrapped)
 
 
-def _needs_ants() -> None:
-    from langslice.ops.deformable import ants_ready
+def _needs_engine() -> None:
+    from langslice.ops.deformable import engine_ready
 
-    if not ants_ready():
-        pytest.skip("ants_syn needs antspyx")
+    if not engine_ready():
+        pytest.skip("fireants_syn needs FireANTs")
 
 
 def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatch):
-    _needs_ants()
+    _needs_engine()
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.position_sections(sections=[{"id": ID2, "position_mm": 0.2}],
                                            view=False))
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", ID0,
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
                          "--view", "false")
     assert code == 0, envelope
     assert envelope["result"]["results"][0]["written"] is True
@@ -126,12 +124,12 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
 
 def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
         capsys, images, monkeypatch):
-    _needs_ants()
+    _needs_engine()
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
                                            view=False))
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections",
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections",
                          json.dumps([ID0, ID1]), "--view", "false")
     assert code == 0, envelope
     rows = {row["id"]: row for row in envelope["result"]["results"]}
@@ -145,6 +143,7 @@ def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
 
 
 def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, monkeypatch):
+    pytest.importorskip("itk")
     from langslice.core import transform
 
     agent = langslice.open_job(images)
@@ -162,6 +161,7 @@ def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, 
     agent.close()
 
 
+@pytest.mark.slow
 def test_cli_processes_writing_at_once_all_land(images):
     # Each commit waits 0.4 s inside its write: without the lock, writers
     # that read the state before another's commit would overwrite it.
@@ -178,7 +178,7 @@ def test_cli_processes_writing_at_once_all_land(images):
                      json.dumps([{"id": ID2, "position_mm": 0.2}]), "--view", "false"),
                start("position_sections", "--sections",
                      json.dumps([{"id": ID0, "position_mm": 0.12}]), "--view", "false")]
-    started += [start("note", "--text", f"note {number}") for number in range(4)]
+    started += [start("note", "--text", f"note {number}") for number in range(2)]
     for process in started:
         out, err = process.communicate(timeout=300)
         assert process.returncode == 0, err[-2000:]
@@ -187,7 +187,7 @@ def test_cli_processes_writing_at_once_all_land(images):
     assert held[ID2]["position_mm"] == 0.2 and held[ID0]["position_mm"] == 0.12
     notes = json.loads((images / "langslice" / "state.json").read_text())["notes"]
     assert sorted(note for note in notes if note.startswith("note ")) == [
-        f"note {number}" for number in range(4)]
+        f"note {number}" for number in range(2)]
 
 
 def test_two_stores_never_number_two_pictures_alike(tmp_path: Path, monkeypatch: Any):

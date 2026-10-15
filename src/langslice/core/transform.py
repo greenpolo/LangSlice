@@ -148,7 +148,7 @@ class RegionTooSmall(ValueError):
 def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> None:
     if not include:
         return
-    from langslice.core.deformable.atlas_images import placement_left, regions_mask
+    from langslice.core.deformable.plane_images import placement_left, regions_mask
 
     left = placement_left(atlas, prepared.placement, include)
     mask = regions_mask(atlas, prepared.native, include, left)

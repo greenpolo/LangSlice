@@ -18,6 +18,9 @@ from langslice.job.job import ingest
 
 LEFT, RIGHT, CORE = 2, 3, 4
 
+
+# HalvesAtlas and _left_half_section are used by tests/test_damage_regions.py,
+# tests/test_ops_interactive_transform.py and tests/test_tool_plugins.py
 class HalvesAtlas:
     """One ellipse of brain split into a left and a right half, 100 um voxels.
 
@@ -97,26 +100,9 @@ def test_a_side_on_a_turned_placement_is_a_refusal_not_an_exception(tmp_path: Pa
     before = dict(state.slices[0].transform or {})
     result = _tool(box, "elastix_affine")(["s0.png"], restrict_to=["L:left"])
     assert result["error"] == "NOTHING_FITTED"
-    assert result["results"][0]["error"] == "SIDES_AMBIGUOUS"
+    assert result["results"][0]["error"] == "WRONG_SIDE_PAIR"
     assert "pictures" not in result
     assert state.slices[0].transform == before
-
-
-def test_a_restricted_fit_highlights_its_regions_and_zooms_only_when_it_gains(tmp_path: Path):
-    """The picture of a fit by restrict_to draws those regions thick and the
-    others faint, says so, and zooms to their box only when that magnifies."""
-    from langslice.ops.transforms import MIN_ZOOM_GAIN, zoom_window
-
-    _state, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
-                       position_mm=1.0)
-    half = _tool(box, "elastix_affine")(["s0.png"], restrict_to=["L"])
-    assert half["status"] == "ok"
-    (picture,) = half["pictures"]
-    assert "regions L drawn thick, the other borders faint" in picture["caption"]
-    zoomed = zoom_window(half["results"][0]["restrict_box"]) is not None
-    assert ("from the image file" in picture["caption"]) == zoomed  # a zoom reads the file
-    assert zoom_window([0.0, 0.1, 0.9, 0.8]) is None  # a 1.1x zoom: drawn whole
-    assert zoom_window([0.2, 0.2, 0.2 + 1 / MIN_ZOOM_GAIN, 0.5]) is not None
 
 
 def test_tiny_region_is_refused_before_elastix_and_does_not_write(tmp_path: Path, monkeypatch):

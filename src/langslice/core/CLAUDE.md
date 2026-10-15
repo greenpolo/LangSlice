@@ -72,6 +72,17 @@ whose imports are core-only:
   `opening.py`, `transform.py`, `deformation.py`, `discovery.py`. Their
   entries are in the linear agent environment's guide
   (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method;
+- atlas planes are cached: `oblique.py` spline-filters a
+  volume once (on threads) for every cubic plane and keeps the annotation as
+  dense integer indices, both in memory and on disk
+  (`atlas/disk_cache.py`), samples a large plane in row bands on threads and
+  keeps recent annotation planes;
+  `atlas_fetch.atlas_section` keeps recent template planes on
+  `Workspace.plane_cache`; `opening.opening_items` draws the columns after
+  the first on threads. Each gives the same pixels as the serial path
+  (`tests/test_oblique_prefilter_cache.py`); `tests/test_opening_startup_budget.py`
+  holds a 100-section angled opening on an Allen-sized volume within a
+  time budget;
 - plain tables several layers share: `provider_names.py` and
   `media_keys.py` (the keys a tool's media travels under, read by the tool
   door, the ADK driver, MCP and the OAuth transport);
@@ -229,8 +240,10 @@ the angles in a caption (empty for the flat plane).
 - `canvas.py` — the physical canvas: `CanvasGeometry` / `canvas_geometry`
   (the atlas section at true scale on the section's frame, anatomy centred,
   canvas grown to hold it plus `WORKING_MARGIN`), `VIEW_MODES` (`overlay`,
-  `section`, `template`), `normalize_border_style`, `line_coverage` (the
-  one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
+  `section`, `template`), the cased atlas borders (`resolve_border_color`
+  picks a black or white core from the lightness under the lines,
+  `CASING_PX` of the other colour on each side, `border_words` for the
+  caption; `composite_cased`), `line_coverage` (the one border rasteriser), `regions_left` / `region_polys`, `zoom_box`,
   `pivot_on_canvas`, `placement_matrices`, `PanelFrame`, `physical_views`
   (the alignment picture in a view mode).
 - `scale.py` — one micrometres per pixel for a section and its atlas drawn
@@ -468,8 +481,8 @@ them on `Canvas.panels` and notes each picture (below).
 picture's own pixel grid (caption band included, empty there):
 `labels_layer` (the atlas id under every pixel, uint32, nearest neighbour
 through the mapping the borders are drawn with), `borders_layer` (the drawn
-borders' coverage, uint8, `line_coverage` at full strength, so the layer
-and the picture's lines cannot disagree), `picture_to_native`,
+borders' coverage, uint8, `line_coverage` at full strength, the core's
+(not the casing's), so the layer and the picture's lines cannot disagree), `picture_to_native`,
 `section_to_picture` (3x3 on `[row, col, 1]`, the linear placement; a
 deformation drawn on top is not in it), `frame_record` (the JSON a saved
 picture's `view.json` carries under `frame`: atlas name, version,
@@ -492,7 +505,7 @@ takes a `view.json` (record or path) and returns the `(rows, cols, 3)`
 float32 map on demand, NaN in the caption band. The labels layer is what
 that map reads in the atlas annotation, up to ties at exact half voxels.
 
-A deformation-fit picture (`ants_syn`, a landed trace) gets the same layers on its own
+A deformation-fit picture (`fireants_syn`, a landed trace) gets the same layers on its own
 grid through `warp_layers(atlas, note, size)`: labels through the record's
 composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
@@ -511,7 +524,7 @@ extra=, recipe=, caption=)`; `note_for` finds a picture's note by
 identity; `annotate(image, recipe=, caption=)` sets fields on the note a
 renderer already made for that image (its frame and panel kept). `draw_canvas`
 and the `look` renderers note theirs; `ops.deformable.pictures` notes
-the deformation fits (`ants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
+the deformation fits (`fireants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door
 the pictures it labels itself (`set_preprocessed_channel_properties`'

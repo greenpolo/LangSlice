@@ -171,15 +171,6 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
 
 # --- elastix_affine ------------------------------------------------------------------
 
-def fit_targets(job: Job) -> list[SliceState]:
-    """The sections ``elastix_affine`` fits when none are named: every
-    positioned section whose affine is not frozen, in corrected order."""
-    return [
-        record for record in job.state.in_order()
-        if record.position_mm is not None and "affine" not in job.frozen_for(record.id)
-    ]
-
-
 @dataclass(frozen=True)
 class AffineFit:
     """What :func:`elastix_affine` did.
@@ -516,7 +507,7 @@ def region_box(
     on both sides.
     """
     from langslice.core.atlas.sides import split_side
-    from langslice.core.deformable.atlas_images import regions_mask
+    from langslice.core.deformable.plane_images import regions_mask
     from langslice.core.placement import stage
 
     if not regions:
@@ -546,7 +537,7 @@ def region_box(
 def elastix_affine(
     job: Job,
     workspace: Workspace,
-    sections: Sequence[str] = (),
+    sections: Sequence[str],
     restrict_to: Sequence[str] = (),
     atlas_image: str = "template",
 ) -> AffineFit:
@@ -554,8 +545,8 @@ def elastix_affine(
 
     Each section's current placement is refined against *atlas_image* (one of
     the atlas's images, :func:`langslice.core.atlas.images.atlas_images`).
-    *sections* are filenames
-    (``StackState.resolve``); empty, every section :func:`fit_targets` names.
+    *sections* are one or more filenames
+    (``StackState.resolve``).
     *restrict_to* fits by those atlas regions only (sides allowed; empty:
     every region). Each section's marked damage regions are left out
     automatically (:func:`langslice.core.damage.exclusions`).
@@ -565,9 +556,12 @@ def elastix_affine(
     fractions (``core.canvas.zoom_box``'s zoom), so a later picture can zoom
     on them; absent when the regions are not in that plane. Refused (nothing
     fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not one of the
-    atlas's images, a region that is not text).
+    atlas's images, a region that is not text, no section named).
     """
     from langslice.core.atlas.images import atlas_images
+
+    if not sections:
+        raise Refused("BAD_ARGS", message="sections must name one or more sections")
 
     image = str(atlas_image).strip()
     offered = atlas_images(workspace.atlas)
@@ -576,15 +570,12 @@ def elastix_affine(
                       f"{list(offered)}", atlas_image=list(offered))
     if any(not isinstance(name, str) for name in restrict_to):
         raise Refused("BAD_ARGS", message="restrict_to lists atlas regions")
-    if sections:
-        records = []
-        for ref in sections:
-            record = job.state.resolve(ref)
-            if record is None:
-                raise unknown_sections(job.state, [str(ref)])
-            records.append(record)
-    else:
-        records = fit_targets(job)
+    records = []
+    for ref in sections:
+        record = job.state.resolve(ref)
+        if record is None:
+            raise unknown_sections(job.state, [str(ref)])
+        records.append(record)
     result = _fit_elastix(job, workspace, records, fit_atlas=image,
                           restrict_to=tuple(restrict_to))
     if restrict_to:

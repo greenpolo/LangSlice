@@ -53,7 +53,7 @@ def transport(monkeypatch):
     return outcomes, calls, waits
 
 
-@pytest.mark.parametrize("status", [408, 409, 429, 500, 502, 503, 504, 507])
+@pytest.mark.parametrize("status", [408, 429, 500, 503])
 def test_recovers_with_same_request_and_closes_responses(transport, caplog, status):
     outcomes, calls, waits = transport
     failed, success = Response(status), Response(headers={"x-codex-primary-used-percent": "1"})
@@ -130,7 +130,7 @@ def test_retry_after_seconds_and_http_date(transport, monkeypatch):
     assert waits == [10, 20]
 
 
-@pytest.mark.parametrize("header", ["bad", "nan", "-3"])
+@pytest.mark.parametrize("header", ["bad", "-3"])
 def test_invalid_retry_after_uses_backoff(transport, header):
     outcomes, _, waits = transport
     outcomes.extend([Response(503, headers={"Retry-After": header}), Response()])

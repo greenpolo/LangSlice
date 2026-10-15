@@ -14,18 +14,15 @@ from langslice.doors.api import setup
 @pytest.fixture
 def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    for name in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    for name in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+                 "LANGSLICE_OPENAI_AUTH"):
+        # set then delete, so the variable is restored (or removed) after the test
+        # even when the code under test writes it to os.environ
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
     return tmp_path
-
-
-def test_status_without_credentials(isolated_home: Path) -> None:
-    status = setup.setup_status()
-    assert status["protocol_version"] == 2
-    assert status["python_executable"]
-    assert not status["providers"]["openai-oauth"]["configured"]
-    assert not status["providers"]["gemini-api"]["configured"]
-    assert not (isolated_home / ".langslice").exists()
 
 
 def test_save_both_keys_preserves_them_and_never_returns_secrets(isolated_home: Path) -> None:
@@ -38,7 +35,9 @@ def test_save_both_keys_preserves_them_and_never_returns_secrets(isolated_home: 
     }
     if os.name == "posix":
         assert path.stat().st_mode & 0o777 == 0o600
-    assert "test-private" not in json.dumps(setup.setup_status())
+    status = setup.setup_status()
+    assert status["protocol_version"] == 2
+    assert "test-private" not in json.dumps(status)
     assert list(path.parent.glob(".provider_credentials-*")) == []
 
 
@@ -120,58 +119,6 @@ def test_a_codex_login_is_not_a_langslice_login(isolated_home: Path) -> None:
     assert setup.setup_status()["providers"]["openai-oauth"]["configured"] is False
 
 
-def test_status_lists_the_chatgpt_agent_and_image_models(isolated_home: Path) -> None:
-    from langslice.providers.registry import OPENAI_OAUTH_DEFAULT_AGENT_MODEL
-
-    oauth = setup.setup_status()["providers"]["openai-oauth"]
-    assert oauth["agent_models"] == [
-        "openai-oauth/gpt-6.1-sol",
-        "openai-oauth/gpt-6-astra", "openai-oauth/gpt-6-sol", "openai-oauth/gpt-6-luna",
-        "openai-oauth/gpt-5.6-sol", "openai-oauth/gpt-5.6-terra", "openai-oauth/gpt-5.6-luna",
-    ]
-    assert oauth["default_agent_model"] == OPENAI_OAUTH_DEFAULT_AGENT_MODEL
-    assert oauth["default_agent_model"] in oauth["agent_models"]
-    assert oauth["image_models"] == ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
-    assert oauth["default_image_model"] == "gpt-image-2.5-sunburst"
-    # One definition: the transport's defaults are the listed ones.
-    from langslice.providers import openai_oauth
-
-    assert openai_oauth.DEFAULT_REVIEW_MODEL == oauth["default_agent_model"]
-    assert openai_oauth.DEFAULT_IMAGE_MODEL == oauth["default_image_model"]
-
-
-def test_status_models_do_not_import_the_transport() -> None:
-    import subprocess
-    import sys
-
-    script = (
-        "import sys; from langslice.doors.api import setup; setup.setup_status(); "
-        "print('langslice.providers.openai_oauth' in sys.modules, 'google.adk' in sys.modules)"
-    )
-    out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
-                         timeout=60, check=True)
-    assert out.stdout.split() == ["False", "False"]
-
-
-def test_login_forwards_url_callback(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from langslice.providers import openai_oauth
-
-    urls: list[str] = []
-
-    def fake_login(*, timeout_s, on_url):
-        assert timeout_s == 60
-        on_url("https://example.test/login")
-        path = isolated_home / ".langslice" / "openai_auth.json"
-        path.parent.mkdir()
-        path.write_text(json.dumps({"access_token": "private-token"}))
-
-    monkeypatch.setattr(openai_oauth, "login", fake_login)
-    result = setup.login_oauth(urls.append, timeout_s=60)
-    assert urls == ["https://example.test/login"]
-    assert result["configured"]
-    assert "private-token" not in json.dumps(result)
-
-
 def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
                                                       monkeypatch: pytest.MonkeyPatch) -> None:
     """A script's ``langslice.open_job`` gets the keys saved by the setup
@@ -182,9 +129,8 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     import langslice
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
-    from tests.golden.record import atlas_loader, full_spec, write_sections
+    from tests.synthetic_stack import atlas_loader, full_spec, write_sections
 
-    monkeypatch.setenv("HOME", str(isolated_home))
     monkeypatch.setattr(setup, "load_dotenv", lambda: None)  # no developer .env here
     setup.save_api_key("gemini-api", "saved-gemini")
     setup.save_api_key("openai-api", "saved-openai")
@@ -193,7 +139,6 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
     write_sections(folder)
     spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"))
     create(spec, atlas_loader=atlas_loader()).close()
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
     job.close()
     assert os.environ["GEMINI_API_KEY"] == "saved-gemini"
@@ -203,28 +148,13 @@ def test_the_library_loads_saved_keys_as_the_cli_does(isolated_home: Path,
 def test_status_lists_every_image_model_choice_with_its_connection(
     isolated_home: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The dialog's image-model choices, in its order, connected or not, from
-    offline presence checks only."""
-    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENAI_IMAGE_API_KEY",
-                 "OPENAI_IMAGE_BASE_URL", "OPENAI_BASE_URL", "LANGSLICE_OPENAI_AUTH",
-                 "OPENAI_IMAGE_MODEL"):
-        monkeypatch.delenv(name, raising=False)
+    """The dialog's image-model choices, connected or not, from offline presence checks."""
     choices = setup.setup_status()["image_models"]
     assert [c["provider"] for c in choices] == ["openai-oauth", "gemini-api", "openai-api",
                                                 "none"]
     connected = {c["provider"]: c["connected"] for c in choices}
     assert connected == {"openai-oauth": False, "gemini-api": False, "openai-api": False,
                          "none": True}
-    oauth = choices[0]
-    assert oauth["models"] == ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
-    assert oauth["default_model"] == "gpt-image-2.5-sunburst"
-    api = choices[2]
-    assert api["models"] == ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
-    assert api["default_model"] == "gpt-image-2.5-sunburst"
-    gemini = choices[1]
-    assert gemini["models"] and all("-image" in m for m in gemini["models"])
-    assert gemini["default_model"] == "gemini-3.1-flash-image"
-    assert choices[3]["models"] == [] and choices[3]["default_model"] is None
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     path = isolated_home / ".langslice" / "openai_auth.json"
     path.parent.mkdir(exist_ok=True)

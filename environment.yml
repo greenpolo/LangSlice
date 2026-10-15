@@ -1,6 +1,6 @@
 # Run from the root of a downloaded LangSlice source archive or checkout:
 # conda env create -f environment.yml
-# One environment for everything: the agent, the ANTs engine, the Claude
+# One environment for everything: the agent, the deformable engine, the Claude
 # Desktop server and the ABBA connector's worker and launcher.
 name: langslice
 channels:

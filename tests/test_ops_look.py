@@ -203,7 +203,7 @@ def test_a_picture_without_a_recipe_is_cropped_and_a_crop_of_a_crop_maps_back(tm
     assert np.median(np.asarray(again.pictures[0].convert("L"))[150:250, 150:250]) > 240
 
 
-def test_a_picture_that_is_not_saved_is_refused(tmp_path: Path):
+def test_a_picture_that_is_not_saved_is_refused_and_a_dry_run_zooms_from_memory(tmp_path: Path):
     job, ws = _job(tmp_path)
     (name,) = job.views.save(tool="strip", pictures=[(Image.new("RGB", (40, 30)), None)])
     number = int(name.split("_")[0])
@@ -221,28 +221,36 @@ def test_a_picture_that_is_not_saved_is_refused(tmp_path: Path):
     with pytest.raises(Refused) as caught:
         ops_look.zoom(dry, dry_ws, [0, 0, 20, 20])
     assert caught.value.code == "NO_PICTURE"
-
-
-def test_a_dry_run_zooms_from_memory(tmp_path: Path):
-    job, ws = _job(tmp_path, persist=False)
-    (entry,) = ops_look.look(job, ws, "section", sections=[SECTIONS[0]]).entries
-    zoomed = ops_look.zoom(job, ws, [0, 0, 60, 40])
+    # ... but within the process a dry run zooms from memory.
+    (entry,) = ops_look.look(dry, dry_ws, "section", sections=[SECTIONS[0]]).entries
+    zoomed = ops_look.zoom(dry, dry_ws, [0, 0, 60, 40])
     assert zoomed.picture == entry["id"] and zoomed.redrawn
     assert zoomed.entries[0]["id"] == entry["id"] + 1
 
 
-def _yellow(picture: Image.Image) -> np.ndarray:
-    data = np.asarray(picture.convert("RGB")).astype(int)
-    return (data[..., 0] > 200) & (data[..., 1] > 200) & (data[..., 2] < 80)
+def _border_color_mask(plain: Image.Image, picture: Image.Image) -> np.ndarray:
+    """The strong atlas lines of a highlight picture: where it differs a lot
+    from the plain atlas template (*plain*) at the same plane and size (the
+    faint context lines move a pixel by less). Cased lines are black or white,
+    which the tissue also is, so a colour test cannot find them."""
+    rows = 100  # the picture above its caption band, whose height varies
+    assert plain.width == picture.width
+    diff = np.abs(np.asarray(picture.convert("RGB")).astype(int)[:rows]
+                  - np.asarray(plain.convert("RGB")).astype(int)[:rows]).max(axis=-1)
+    return diff > 120
 
 
-def _centre_x(picture: Image.Image) -> float:
-    _ys, xs = np.nonzero(_yellow(picture))
+def _centre_x(plain: Image.Image, picture: Image.Image) -> float:
+    _ys, xs = np.nonzero(_border_color_mask(plain, picture))
     assert xs.size > 20, "no highlighted border drawn"
     return float(xs.mean() / picture.width)
 
 
 def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
+    (tmp_path / "plain").mkdir()
+    plain_job, plain_ws = _job(tmp_path / "plain")
+    (plain,) = ops_look.look(plain_job, plain_ws, "atlas", positions_mm=[0.1],
+                             atlas_layers=["template"]).pictures
     job, ws = _job(tmp_path)
     view = ops_atlas.grep_atlas_view(job, ws, ["STR"], [0.1, 0.3])
     assert view.regions == ["STR"] and len(view.pictures) == 2
@@ -252,14 +260,24 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     saved = job.views.lookup(1)
     assert saved is not None and saved.tool == "grep_atlas_view" and saved.mode == "atlas"
     assert saved.recipe is not None and saved.recipe["args"]["regions"] == ["STR"]
-    striatum = _centre_x(view.pictures[0])
-    thalamus = _centre_x(ops_atlas.grep_atlas_view(job, ws, ["TH"], [0.1]).pictures[0])
+    striatum = _centre_x(plain, view.pictures[0])
+    thalamus_view = ops_atlas.grep_atlas_view(job, ws, ["TH"], [0.1])
+    thalamus = _centre_x(plain, thalamus_view.pictures[0])
     assert striatum < 0.45 < 0.55 < thalamus  # STR sits left of TH in the synthetic plane
     # One side of a region: the highlight is the half on that side only.
-    both = _yellow(ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1]).pictures[0]).sum()
-    left = _yellow(ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1]).pictures[0]).sum()
+    both_view = ops_atlas.grep_atlas_view(job, ws, ["CTX"], [0.1])
+    both = _border_color_mask(plain, both_view.pictures[0]).sum()
+    left_view = ops_atlas.grep_atlas_view(job, ws, ["CTX:left"], [0.1])
+    left = _border_color_mask(plain, left_view.pictures[0]).sum()
     assert 0 < left < both
     assert not view.regions_not_in_plane
+    # More than four positions: the rest are named, and a zoom redraws through the recipe.
+    many = ops_atlas.grep_atlas_view(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
+    assert len(many.entries) == 4 and many.not_shown[0]["positions_mm"] == [0.14]
+    shown = ops_look.zoom(job, ws, [0, 0, 120, 90], picture=many.entries[0]["id"])
+    assert shown.redrawn and not shown.stale
+    zoom_recipe = _recipe(job, shown.entries[0]["id"])
+    assert zoom_recipe["renderer"] == "grep_atlas_view" and zoom_recipe["args"]["zoom"]
 
 
 def test_grep_atlas_view_names_a_side_with_no_pixel_as_not_in_plane(tmp_path: Path):
@@ -268,18 +286,6 @@ def test_grep_atlas_view_names_a_side_with_no_pixel_as_not_in_plane(tmp_path: Pa
     job, ws = _job(tmp_path)
     view = ops_atlas.grep_atlas_view(job, ws, ["TH:left", "TH:right", "STR"], [0.1])
     assert view.regions_not_in_plane == {"0.10": ["TH:left"]}
-
-
-def test_grep_atlas_view_zooms_through_its_recipe_and_names_extra_pictures(tmp_path: Path):
-    job, ws = _job(tmp_path)
-    view = ops_atlas.grep_atlas_view(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
-    assert len(view.entries) == 4 and len(view.not_shown) == 1
-    assert view.not_shown[0]["positions_mm"] == [0.14]
-    shown = ops_look.zoom(job, ws, [0, 0, 120, 90], picture=view.entries[0]["id"])
-    assert shown.redrawn and not shown.stale
-    zoom_recipe = _recipe(job, shown.entries[0]["id"])
-    assert zoom_recipe["renderer"] == "grep_atlas_view" and zoom_recipe["args"]["zoom"]
-    assert "TH, STR" in shown.entries[0]["caption"]
 
 
 def test_grep_atlas_view_refuses_unknown_regions(tmp_path: Path):
@@ -293,13 +299,3 @@ def test_grep_atlas_view_refuses_unknown_regions(tmp_path: Path):
     assert caught.value.code == "BAD_ARGS"
     assert job.views.latest(exclude_tool=None) is None
 
-
-def test_grep_atlas_view_has_no_context_borders(tmp_path: Path):
-    job, ws = _job(tmp_path)
-    view = ops_atlas.grep_atlas_view(job, ws, ["STR"], [0.1])
-    image = np.asarray(view.pictures[0]).astype(int)
-    # The template and caption are gray. Any colored pixel is a border,
-    # including faint context lines; STR occupies only the left half.
-    colored = image.max(axis=-1) - image.min(axis=-1) > 5
-    assert colored[:, :image.shape[1] // 2].any()
-    assert not colored[:, image.shape[1] // 2:].any()

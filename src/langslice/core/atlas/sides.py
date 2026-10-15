@@ -32,8 +32,9 @@ anatomical left. They are derived, never guessed from the tissue:
 
 A sagittal plane lies within one hemisphere (``NO_SIDES``). Naming the pair
 the picture does not have (``left`` where the halves are top and bottom) is
-refused with ``SIDES_AMBIGUOUS``, its message naming the pair to use; so is a
-midline at exactly 45 degrees.
+refused with ``WRONG_SIDE_PAIR``, its message naming the pair to use; a
+midline at 45 degrees (within :data:`DIAGONAL_TOLERANCE`) is refused with
+``SIDES_AMBIGUOUS``.
 """
 
 from __future__ import annotations
@@ -46,6 +47,9 @@ SIDES: tuple[str, ...] = ("left", "right", "top", "bottom")
 #: The two names of the halves, by which way the midline runs on the picture.
 LEFT_RIGHT: tuple[str, str] = ("left", "right")
 TOP_BOTTOM: tuple[str, str] = ("top", "bottom")
+#: The midline counts as diagonal on the picture when its two components differ
+#: by less than this fraction of the larger one.
+DIAGONAL_TOLERANCE = 1e-6
 
 
 class SideMask(np.ndarray):
@@ -162,7 +166,7 @@ def native_left(
     shown = np.linalg.inv(linear).T @ gradient
     if not np.isfinite(shown).all() or np.hypot(*shown) < 1e-9:
         raise SideError("NO_SIDES", "The atlas plane does not cross the midline.")
-    if abs(shown[0]) == abs(shown[1]):
+    if abs(abs(shown[0]) - abs(shown[1])) <= DIAGONAL_TOLERANCE * max(abs(shown[0]), abs(shown[1])):
         raise SideError("SIDES_AMBIGUOUS", "This placement turns the midline to 45 degrees, "
                         "so neither left/right nor top/bottom is defined.")
     if abs(shown[0]) > abs(shown[1]):
@@ -176,7 +180,7 @@ def restrict(mask: np.ndarray, side: str | None, left: np.ndarray | None) -> np.
     """*mask* limited to one side (unchanged for no side).
 
     *left* is :func:`native_left`'s mask; a side outside its pair is refused
-    (``SIDES_AMBIGUOUS``) with the pair this picture has.
+    (``WRONG_SIDE_PAIR``) with the pair this picture has.
     """
     if side is None:
         return mask
@@ -185,7 +189,7 @@ def restrict(mask: np.ndarray, side: str | None, left: np.ndarray | None) -> np.
     names = getattr(left, "names", LEFT_RIGHT)
     if side not in names:
         runs = "vertically" if names == LEFT_RIGHT else "horizontally"
-        raise SideError("SIDES_AMBIGUOUS", f"On this picture the midline runs {runs}, so its "
+        raise SideError("WRONG_SIDE_PAIR", f"On this picture the midline runs {runs}, so its "
                         f"halves are {names[0]!r} and {names[1]!r}, not {side!r}: name "
                         f"one of those (e.g. \"CTX:{names[0]}\").")
     first = np.asarray(left, dtype=bool)

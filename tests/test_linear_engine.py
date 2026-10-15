@@ -14,9 +14,7 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context, run
-from langslice.agent.prompt import build_job_statement
 from langslice.core.spec import JobSpec, PositionSpec
-from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
 from tests import fakes
 from tests.fakes import SlabAtlas, install_fake_adk_model_stack
@@ -58,12 +56,6 @@ def test_ingest_discovers_the_folder_in_natural_order(tmp_path: Path):
     assert state.interval_mm is None and state.thickness_mm is None
     assert state.spec["atlas"] == "allen_mouse_25um"
     assert "0.00-19.00 mm" in state.notes[0]
-
-
-def test_ingest_rejects_an_empty_folder(tmp_path: Path):
-    spec = _spec(tmp_path)
-    with pytest.raises(ValueError, match="No slice images"):
-        ingest(spec, _ctx(spec))
 
 
 def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
@@ -110,81 +102,20 @@ def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
     assert submit_errors(state, spec, []) is None
 
 
-def test_host_inputs_reject_an_unknown_filename(tmp_path: Path):
-    _make_stack(tmp_path, n=2)
-    spec = _spec(tmp_path, inputs={"positions": {"ghost.png": 1.0}})
+@pytest.mark.parametrize("inputs", [None, {"positions": {"ghost.png": 1.0}}])
+def test_ingest_and_host_inputs_refuse_an_empty_folder_and_an_unknown_filename(
+    tmp_path: Path, inputs
+):
+    if inputs is not None:
+        _make_stack(tmp_path, n=2)
+    spec = _spec(tmp_path, **({"inputs": inputs} if inputs else {}))
+    if inputs is None:
+        with pytest.raises(ValueError, match="No slice images"):
+            ingest(spec, _ctx(spec))
+        return
     state = ingest(spec, _ctx(spec))
     with pytest.raises(ValueError, match="ghost.png"):
         apply_host_inputs(state, spec)
-
-
-# --- the prompt ----------------------------------------------------------
-
-
-def test_the_job_statement_lists_only_the_tools_that_exist(tmp_path: Path):
-    _make_stack(tmp_path, n=3)
-    spec = _spec(tmp_path, tasks=["position"], facts=["the block was cut back to front"])
-    ctx = _ctx(spec)
-    state = ingest(spec, ctx)
-    box = build_tools(state, ctx, spec)
-    pos_lo, pos_hi = ctx.position_range
-
-    text = build_job_statement(
-        spec,
-        state,
-        tool_names=box.names,
-        species="mouse",
-        pos_lo=pos_lo,
-        pos_hi=pos_hi,
-        axis_ends=ctx.axis_ends,
-    )
-    assert "`position_sections`" in text and "`look`" in text and "`submit`" in text
-    # Positioning only: no transform, fit or retired tool is named.
-    for absent in ("`interactive_transform`", "`elastix_affine`", "`ants_syn`",
-                   "`set_positions`", "`reorder_slices`", "`fit_affine`"):
-        assert absent not in text
-    assert "the block was cut back to front" in text
-    assert "0.00-19.00 mm" in text
-    # the one direction fact, derived from the atlas orientation
-    assert ctx.axis_ends == ("anterior", "posterior")
-    assert "0.00 mm is the anterior edge" in text
-    assert "positions increase toward posterior" in text
-    # atlas-agnostic: no region names, no strategy
-    for banned in ("cortex", "hippocampus", "strategy", "tip:", "you should"):
-        assert banned not in text.lower()
-
-
-def _statement(spec: JobSpec) -> str:
-    ctx = _ctx(spec)
-    state = ingest(spec, ctx)
-    pos_lo, pos_hi = ctx.position_range
-    return build_job_statement(
-        spec, state, tool_names=build_tools(state, ctx, spec).names, species="mouse",
-        pos_lo=pos_lo, pos_hi=pos_hi, axis_ends=ctx.axis_ends,
-    )
-
-
-def test_mirroring_is_part_of_linear_never_of_positioning(tmp_path: Path):
-    from langslice.core.spec import TransformSpec
-
-    _make_stack(tmp_path, n=3)
-    cue = TransformSpec(hemisphere_cue="ink on the right")
-    positioning = _statement(_spec(tmp_path, tasks=["position"], transform=cue))
-    for word in ("mirror", "flip", "hemisphere", "interactive_transform"):
-        assert word not in positioning.lower()
-
-    linear = _statement(_spec(tmp_path, tasks=["transform"], transform=cue))
-    assert "`interactive_transform`" in linear
-    assert "orientation of any section that is mirrored or turned" in linear
-    assert "ink on the right" in linear
-
-    no_flip = _statement(_spec(
-        tmp_path, tasks=["transform"],
-        transform=TransformSpec(hemisphere_cue="ink on the right"),
-        disabled=["interactive_transform:flip"],
-    ))
-    assert "Flipping sections is switched off" in no_flip
-    assert "mirrored or turned" not in no_flip and "ink on the right" not in no_flip
 
 
 # --- end to end ----------------------------------------------------------
@@ -213,8 +144,8 @@ def test_a_tools_plain_pictures_reach_the_model_as_message_images(
     tmp_path: Path, monkeypatch
 ):
     """The tools return plain pictures; the ADK door packages them, so the
-    model's next request carries the write's picture as an image in the
-    function response."""
+    model's next request carries one overlay per written section as an image in
+    the function response."""
     names = _make_stack(tmp_path, n=2)
     install_fake_adk_model_stack(monkeypatch, positions={names[0]: 2.0, names[1]: 3.0})
     requests: list = []
@@ -225,69 +156,18 @@ def test_a_tools_plain_pictures_reach_the_model_as_message_images(
         return generate(self, llm_request, stream)
 
     monkeypatch.setattr(fakes._StackLlm, "generate_content_async", recording)
-    state = asyncio.run(run(_spec(tmp_path, tasks=["position"]), emit=lambda _m: None,
-                            atlas_loader=lambda _n: _ATLAS))
-    assert state.submitted is True
-
-    def images(request) -> list[bytes]:
-        found = []
-        for content in request.contents or []:
-            for part in content.parts or []:
-                response = part.function_response
-                if response is not None and response.name == "position_sections":
-                    found += [item.inline_data.data for item in response.parts or []
-                              if item.inline_data is not None]
-        return found
-
-    # position_sections shows its positioning picture of the written sections.
-    pictures = images(requests[1])
-    assert len(pictures) == 1 and all(data[:2] == b"\xff\xd8" for data in pictures)
-
-
-def test_a_run_with_disabled_tools_shows_the_model_neither_the_tools_nor_the_options(
-    tmp_path: Path, monkeypatch
-):
-    """The system instruction and the tools of every request name nothing the
-    job disables; position_sections draws one overlay per written section
-    where the positioning look is off."""
-    names = _make_stack(tmp_path, n=2)
-    install_fake_adk_model_stack(monkeypatch, positions={names[0]: 2.0, names[1]: 3.0})
-    requests: list = []
-    generate = fakes._StackLlm.generate_content_async
-
-    def recording(self, llm_request, stream=False):
-        requests.append(llm_request.model_copy(deep=True))
-        return generate(self, llm_request, stream)
-
-    monkeypatch.setattr(fakes._StackLlm, "generate_content_async", recording)
-    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(playbook=True),
-                 disabled=["look:positioning", "zoom", "grep_atlas_view"])
+    spec = _spec(tmp_path, tasks=["position"], disabled=["look:positioning"])
     state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS))
     assert state.submitted is True
 
-    first = requests[0]
-    instruction = str(first.config.system_instruction)
-    tools = first.config.tools[0].function_declarations
-    declared = {tool.name: tool for tool in tools}
-    assert "zoom" not in declared and "grep_atlas_view" not in declared
-    text = instruction + " ".join(tool.description for tool in tools)
-    for gone in ("`zoom`", "grep_atlas_view", "mode positioning", "positioning mode",
-                 "zoom takes"):
-        assert gone not in text
-    mode = declared["look"].parameters_json_schema["properties"]["mode"]
-    assert mode["enum"] == ["section", "atlas", "overlay"]
-
-    def images(request) -> list[bytes]:
-        found = []
-        for content in request.contents or []:
-            for part in content.parts or []:
-                response = part.function_response
-                if response is not None and response.name == "position_sections":
-                    found += [item.inline_data.data for item in response.parts or []
-                              if item.inline_data is not None]
-        return found
-
-    assert len(images(requests[1])) == 2  # an overlay for each written section
+    found = []
+    for content in requests[1].contents or []:
+        for part in content.parts or []:
+            response = part.function_response
+            if response is not None and response.name == "position_sections":
+                found += [item.inline_data.data for item in response.parts or []
+                          if item.inline_data is not None]
+    assert len(found) == 2 and all(data[:2] == b"\xff\xd8" for data in found)
 
 
 def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
@@ -449,3 +329,47 @@ def test_an_api_key_lane_is_told_its_dollar_estimate_through_the_whole_session(
     assert [e["threshold"] for e in events if e["kind"] == "spend"] == [5.0, 10.0]
     spend = json.loads((tmp_path / "langslice" / "exports" / "spend.json").read_text())
     assert spend["usd_estimate"] == 15.0 and spend["quota_used_percent"] is None
+
+
+# --- background work between turns ------------------------------------------
+
+
+def _job(tmp_path: Path):
+    from langslice.job.job import Job
+
+    _make_stack(tmp_path, n=2)
+    spec = _spec(tmp_path, tasks=["position"])
+    ctx = _ctx(spec)
+    return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+
+
+def test_background_message_waits_for_running_work_and_hands_it_out_once(tmp_path: Path):
+    import threading
+
+    from langslice.agent.engine import background_message
+    from langslice.job.background import DONE, Landed
+
+    job = _job(tmp_path)
+    release = threading.Event()
+    picture = Image.new("RGB", (32, 24), (200, 30, 30))
+
+    def land() -> Landed:
+        release.wait(5)
+        return Landed(status=DONE, text="fitted.", pictures=[picture])
+
+    work = job.background.start("trace_borders", ["slice_1.png"], land,
+                                wait_for_images=False)
+    threading.Timer(0.02, release.set).start()
+    assert job.background.running()  # still running when the turn ends
+
+    items = background_message(job)
+    assert items is not None and not job.background.running()
+    assert items[0] == ("Background work finished:\n"
+                        f"{work.id} trace_borders of slice_1.png finished: fitted. "
+                        f"Pictures #{work.pictures[0]}.")
+    assert items[1] == f"picture {work.pictures[0]} ({work.id})"
+    assert isinstance(items[2], Image.Image) and items[2].size == picture.size
+    assert len(items) == 3
+    # Each finished piece is handed out once.
+    assert background_message(job) is None
+    job.background.close()

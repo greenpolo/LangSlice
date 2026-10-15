@@ -27,7 +27,7 @@ from langslice.core.positioning import ATLAS_UPSAMPLE
 from langslice.core.sizes import picture_edge
 from langslice.core.state import Angles, StackState
 from langslice.ops.look import MAX_LOOK_PICTURES, not_shown, save_pictures
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, sides_refused, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -112,6 +112,31 @@ def _label_layer(job: Job, record: Any) -> Any:
         return None
 
 
+def plane_annotation(workspace: Workspace, plane: dict[str, Any]) -> np.ndarray:
+    """The annotation slice of a section's atlas *plane* (``position_mm``,
+    ``plane``, optional ``angles``: ``landmarks.plane_context``), in atlas-native pixels."""
+    from langslice.core.atlas.render import annotation_slice
+
+    angles = plane.get("angles") or [0, 0]
+    return annotation_slice(workspace.atlas, float(plane["position_mm"]),
+                            plane=plane["plane"], pitch_deg=float(angles[0]),
+                            yaw_deg=float(angles[1]))
+
+
+def label_at(annotation: np.ndarray, native_xy: Sequence[float] | np.ndarray) -> int | None:
+    """The annotation id at atlas-native point *native_xy*; None off the slice."""
+    c, r = int(np.rint(native_xy[0])), int(np.rint(native_xy[1]))
+    if 0 <= r < annotation.shape[0] and 0 <= c < annotation.shape[1]:
+        return int(annotation[r, c])
+    return None
+
+
+def region_words(structures: dict[int, Any], label: int) -> str:
+    """``ACRONYM (name)`` of annotation id *label*."""
+    entry = structures.get(label)
+    return f"{entry['acronym']} ({entry['name']})" if entry is not None else f"region {label}"
+
+
 def _chain(table: dict[int, Any], region_id: int) -> list[str]:
     """The regions containing *region_id*, nearest first, as ``acronym (name)``."""
     entry = table.get(region_id)
@@ -122,7 +147,7 @@ def _chain(table: dict[int, Any], region_id: int) -> list[str]:
         held = table.get(parent)
         if held is None or len(path(held)) <= 1:
             continue  # the root says nothing
-        out.append(f"{held['acronym']} ({held['name']})")
+        out.append(region_words(table, parent))
     return out[:MAX_CHAIN]
 
 
@@ -211,7 +236,6 @@ def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: fl
     """The annotation id at picture pixel (*px*, *py*) of an atlas picture drawn
     for a section (its endpoint panel gives the plane's pixels); refused for a
     picture that draws no atlas or no section's plane."""
-    from langslice.core.atlas.render import annotation_slice
     from langslice.core.landmarks import transform
 
     panels = [p for p in recipe.get("endpoint_panels") or [] if p.get("role") == "atlas"]
@@ -230,14 +254,9 @@ def _plane_label(workspace: Workspace, recipe: dict[str, Any], px: float, py: fl
                 "drawn for the section."))
     panel = panels[0]
     native = transform(panel["pixel_to_native"], [px, py])
-    angles = held.get("angles") or [0, 0]
-    annotation = annotation_slice(workspace.atlas, float(held["position_mm"]),
-                                  plane=held["plane"], pitch_deg=float(angles[0]),
-                                  yaw_deg=float(angles[1]))
-    c, r = int(np.rint(native[0])), int(np.rint(native[1]))
-    inside = 0 <= r < annotation.shape[0] and 0 <= c < annotation.shape[1]
-    inside = inside and all(b[0] <= px < b[2] and b[1] <= py < b[3] for b in [panel["bounds"]])
-    return int(annotation[r, c]) if inside else None
+    label = label_at(plane_annotation(workspace, held), native)
+    inside = all(b[0] <= px < b[2] and b[1] <= py < b[3] for b in [panel["bounds"]])
+    return label if inside else None
 
 
 # --- grep_atlas_view ---------------------------------------------------------------------
@@ -265,7 +284,7 @@ def _resolved(workspace: Workspace, state: StackState, regions: Any,
     ``BAD_ARGS``, ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``."""
     from langslice.core.atlas.sides import has_sides
     from langslice.core.damage import normalized_entries
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
         raise Refused("BAD_ARGS", message="regions is a list of acronyms, names or ids.")
@@ -324,8 +343,10 @@ def _region_picture(
     median = state.drawn_at_median(angles)
     plane = (view_angles_label(angles, median=True) if median
              else f"{angles_label(angles)} (the stack's cutting angles)")
+    border_word = picture.info.get("border_word")
     text = (f"atlas at {position_mm:.2f} mm{plane}; "
-            f"{um:.1f} um/px; regions highlighted: {names}")
+            f"{um:.1f} um/px; regions highlighted: {names}"
+            + (f"; borders {border_word}" if border_word else ""))
     image = caption(picture, tag + atlas_caption(state, position_mm, options, angles=angles,
                                                   median=median))
     args = {"mode": "atlas", "regions": [name for name, _ids in regions],
@@ -383,8 +404,8 @@ def grep_atlas_view(
     so it can be zoomed. At most :data:`~langslice.ops.look.MAX_LOOK_PICTURES`
     are shown; the rest are ``not_shown``. ``regions_not_in_plane`` names, per
     position, the regions with no pixel in that plane. Refused: ``BAD_ARGS``,
-    ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``, ``SIDES_AMBIGUOUS``
-    (a side the picture does not have: its message names the pair to use).
+    ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``, ``WRONG_SIDE_PAIR`` (a side
+    the picture does not have: its message names the pair to use), ``SIDES_AMBIGUOUS``.
     """
     state = job.state
     resolved = _resolved(workspace, state, regions)
@@ -400,14 +421,9 @@ def grep_atlas_view(
     used = [min(max(v, low), high) for v in asked]
     angles = state.view_angles
     edge = picture_edge(workspace)
-    from langslice.core.atlas.sides import SideError
-
-    try:
-        with collecting() as notes:
-            drawn = [_region_picture(workspace, state, resolved, mm, edge, angles)
-                     for mm in used]
-    except SideError as exc:
-        raise Refused(exc.code, message=str(exc)) from exc
+    with sides_refused(), collecting() as notes:
+        drawn = [_region_picture(workspace, state, resolved, mm, edge, angles)
+                 for mm in used]
     shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
     names = [name for name, _ids in resolved]
     entries = save_pictures(job, workspace, "grep_atlas_view", shown, notes,
@@ -416,10 +432,8 @@ def grep_atlas_view(
                       regions=tuple(resolved))
     absent: dict[str, list[str]] = {}
     for mm in used[:MAX_LOOK_PICTURES]:
-        try:
+        with sides_refused():
             present = regions_in_plane(workspace, state, mm, options, angles=angles)
-        except SideError as exc:
-            raise Refused(exc.code, message=str(exc)) from exc
         missing = [name for name in names if name not in present]
         if missing:
             absent[f"{mm:.2f}"] = missing

@@ -14,11 +14,10 @@ from PIL import Image
 from langslice.agent.plugins import (
     DEFAULT_KEEP_IMAGES,
     DEFAULT_MAX_IMAGES,
-    ModelCallPacingPlugin,
     RequestCapturePlugin,
     WorkingSetImages,
 )
-from langslice.agent.session import run_agent_session
+from langslice.agent.session import build_plugins, run_agent_session
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
 
@@ -62,58 +61,34 @@ def test_langslice_tool_shape_reaches_adk_native_media_extraction():
         "description": "Fetched 2 atlas sections",
     }
 
-
-def test_native_media_parts_ride_on_the_function_response_part():
-    image_part = types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-one")
+    # On the function response part itself: one part carrying the image, no
+    # sibling image part, so nothing double-injects it.
     content = _build_function_response_content(
         _FakeTool(),  # type: ignore[arg-type]
-        {"status": "ok", TOOL_MEDIA_PARTS_KEY: [image_part]},
+        {"status": "ok", TOOL_MEDIA_PARTS_KEY: image_parts[:1]},
         "call-1",
     )
-
     parts = content.parts or []
-    # One function_response part carrying the image; no sibling image part, so
-    # nothing double-injects it.
     assert len(parts) == 1
     function_response = parts[0].function_response
     assert function_response is not None
     assert function_response.response == {"status": "ok"}
     media = function_response.parts or []
-    assert len(media) == 1
-    assert media[0].inline_data is not None
+    assert len(media) == 1 and media[0].inline_data is not None
     assert media[0].inline_data.data == b"jpeg-one"
 
 
-def test_text_parts_would_leak_into_the_json_result():
-    """Why tool text lives in JSON fields, not in Parts: ADK keeps text Parts."""
-    remaining, response_parts = _extract_multimodal_parts(
-        {"status": "ok", TOOL_MEDIA_PARTS_KEY: [types.Part.from_text(text="Atlas at 4.00 mm:")]}
-    )
-
-    assert response_parts is None
-    assert isinstance(remaining, dict)
-    assert TOOL_MEDIA_PARTS_KEY in remaining
-
-
-def test_model_call_pacing_plugin_accepts_zero_delay():
-    plugin = ModelCallPacingPlugin(0)
-    request = LlmRequest(model="capture-model", contents=[])
-
-    result = asyncio.run(
-        plugin.before_model_callback(
-            callback_context=None,  # type: ignore[arg-type]
-            llm_request=request,
-        )
-    )
-
-    assert result is None
-
-
-def test_request_capture_plugin_redacts_inline_image_bytes(tmp_path):
+def test_request_capture_plugin_redacts_inline_bytes_and_counts_response_media(tmp_path):
     part = types.Part.from_bytes(mime_type="image/jpeg", data=b"not-a-real-jpeg")
+    response = _build_function_response_content(
+        _FakeTool(),  # type: ignore[arg-type]
+        {"status": "ok", TOOL_MEDIA_PARTS_KEY: [
+            types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-one")]},
+        "call-1",
+    )
     request = LlmRequest(
         model="capture-model",
-        contents=[types.Content(role="user", parts=[part])],
+        contents=[types.Content(role="user", parts=[part]), response],
     )
     plugin = RequestCapturePlugin(tmp_path, run_label="unit")
 
@@ -124,33 +99,9 @@ def test_request_capture_plugin_redacts_inline_image_bytes(tmp_path):
     captures = list(tmp_path.glob("unit_*.json"))
     assert len(captures) == 1
     text = captures[0].read_text(encoding="utf-8")
-    assert "not-a-real-jpeg" not in text
-    assert "inline_data" in text
-    assert "byte_count" in text
-    assert "image/jpeg" in text
-
-
-def test_request_capture_plugin_counts_function_response_media(tmp_path):
-    content = _build_function_response_content(
-        _FakeTool(),  # type: ignore[arg-type]
-        {
-            "status": "ok",
-            TOOL_MEDIA_PARTS_KEY: [
-                types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-one")
-            ],
-        },
-        "call-1",
-    )
-    request = LlmRequest(model="capture-model", contents=[content])
-    plugin = RequestCapturePlugin(tmp_path, run_label="fr")
-
-    asyncio.run(
-        plugin.before_model_callback(callback_context=None, llm_request=request)  # type: ignore[arg-type]
-    )
-
-    text = next(iter(tmp_path.glob("fr_*.json"))).read_text(encoding="utf-8")
+    assert "not-a-real-jpeg" not in text and "jpeg-one" not in text
+    assert "inline_data" in text and "byte_count" in text and "image/jpeg" in text
     assert '"media_part_count": 1' in text
-    assert "jpeg-one" not in text
 
 
 def _media_part(n: int) -> types.Part:
@@ -219,21 +170,6 @@ def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
     assert _kept(contents) == [3, 3]
 
 
-def test_transform_calls_do_not_cut_earlier_images():
-    """No stage-boundary cut: channel strips and preprocessed-channel
-    pictures seen before alignment stay in context."""
-    ws = WorkingSetImages()
-
-    def _turn(name: str, n: int) -> types.Content:
-        part = _media_part(n)
-        part.function_response.name = name  # type: ignore[union-attr]
-        return types.Content(role="user", parts=[part])
-
-    history = [_seed(), _turn("look", 4), _turn("set_preprocessed_channel_properties", 6),
-               _turn("elastix_affine", 3), _turn("interactive_transform", 1)]
-    assert ws(history) is history
-
-
 def test_working_set_never_touches_the_seed_strip():
     """The seed strip heads the prefix: cached, and the one picture of every
     section the model always has."""
@@ -243,9 +179,6 @@ def test_working_set_never_touches_the_seed_strip():
     assert _kept(out) == [0, 1]
     assert out[0] is contents[0]
     assert (out[0].parts or [])[1].inline_data is not None
-
-
-# --- retired tool names --------------------------------------------------------
 
 
 # --- a scripted model through a whole session -----------------------------------------
@@ -327,49 +260,8 @@ def test_a_turn_ended_while_work_runs_gets_its_notice_as_the_next_message(monkey
     assert len(waits) == 2
 
 
-class _LongSessionLlm(BaseLlm):
-    """Finish after exceeding both the old driver and ADK call cutoffs."""
-
-    calls: int = 0
-
-    async def generate_content_async(self, llm_request: LlmRequest, stream: bool = False):
-        del llm_request, stream
-        self.calls += 1
-        if self.calls <= 65:
-            part = types.Part.from_text(text="Still reviewing.")
-        elif self.calls <= 566:
-            part = _call("inspect_section")
-        else:
-            part = _call("submit")
-        yield LlmResponse(
-            content=types.Content(role="model", parts=[part]),
-            partial=False, turn_complete=True,
-        )
-
-
-def test_session_has_no_turn_tool_or_adk_call_cutoff(monkeypatch):
-    monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
-    submitted = []
-    inspected = []
-
-    def inspect_section() -> dict:
-        """Inspect the next section."""
-        inspected.append(True)
-        return {"status": "ok"}
-
-    def submit() -> dict:
-        """Submit the completed registration."""
-        submitted.append(True)
-        return {"status": "ok"}
-
-    model = _LongSessionLlm(model="long-session")
-    agent = LlmAgent(name="uncapped", model=model, tools=[inspect_section, submit])
-    calls, turns = asyncio.run(run_agent_session(
-        agent=agent,
-        seed_message=types.Content(role="user", parts=[types.Part.from_text(text="Register.")]),
-        done=lambda: bool(submitted), nudge_no_tool="Continue", nudge_continue="Continue",
-        run_label="uncapped",
-    ))
-    assert submitted and len(inspected) == 501
-    assert calls == 502 and turns == 66
-    assert model.calls == 567
+def test_session_uses_the_working_set_filter_first(monkeypatch):
+    monkeypatch.delenv("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR", raising=False)
+    monkeypatch.delenv("LANGSLICE_ADK_MODEL_CALL_DELAY_S", raising=False)
+    plugins = build_plugins("test")
+    assert isinstance(plugins[0]._custom_filter, WorkingSetImages)

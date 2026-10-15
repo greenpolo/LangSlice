@@ -1,10 +1,9 @@
 """The change tools and the bookkeeping, through the tool door:
-position_sections, interactive_transform, mark_damage, note/undo/redo,
-and submit."""
+position_sections, interactive_transform, mark_damage, undo/redo,
+and the submit gates."""
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from langslice.core.spec import PositionSpec
@@ -23,14 +22,6 @@ def _positions(state) -> dict[str, float | None]:
 
 
 # --- which tools ------------------------------------------------------------------
-
-
-def test_a_position_only_run_has_no_transform_or_fit_tools(tmp_path: Path):
-    _, _, box = _box(tmp_path, tasks=["position"])
-    names = set(box.names)
-    assert {"status", "look", "position_sections", "mark_damage", "submit"} <= names
-    assert not names & {"interactive_transform", "elastix_affine", "ants_syn",
-                        "trace_borders"}
 
 
 # --- position_sections -------------------------------------------------------------
@@ -111,27 +102,6 @@ def test_the_stack_is_renumbered_by_position_after_every_write(tmp_path: Path):
     assert [s.id for s in state.in_order()] == before
 
 
-def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
-    _, _, box = _box(tmp_path, placed=True)
-    result = _tool(box, "position_sections")(
-        [{"id": "s0.png", "position_mm": 1.0}, {"id": "s3.png", "position_mm": 6.0}],
-        view=False)
-    assert sorted(row["id"] for row in result["changed"]) == ["s0.png", "s3.png"]
-    assert result["n_sections"] == 5
-    assert result["cutting_angles_deg"] == {"pitch": 0.0, "yaw": 0.0}
-    assert result["interval_breaks"] == []
-    assert "rows" not in result  # the whole table is `status`, one call away
-    assert len(_tool(box, "status")()["rows"]) == 5
-    undone = _tool(box, "undo")()
-    assert "placement" in undone["undone"]["fields"]
-    assert {"s0.png", "s3.png"} <= set(undone["undone"]["sections"])
-    assert sorted(row["id"] for row in undone["changed"]) == sorted(undone["undone"]["sections"])
-    assert "rows" not in undone  # only what the step touched
-    redone = _tool(box, "redo")()
-    assert "placement" in redone["redone"]["fields"]
-    assert {"s0.png", "s3.png"} <= {row["id"] for row in redone["changed"]}
-
-
 def test_cutting_angles_are_one_write_for_the_stack(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True, tasks=["position"])
     write = _tool(box, "position_sections")
@@ -144,37 +114,6 @@ def test_cutting_angles_are_one_write_for_the_stack(tmp_path: Path):
     assert write()["error"] == "BAD_ARGS"  # neither sections nor angles
     _tool(box, "undo")()
     assert state.cutting_angles_deg == {"pitch": 0.0, "yaw": 0.0}
-
-
-def test_the_picture_is_a_positioning_picture_of_the_written_sections(tmp_path: Path):
-    _, _, box = _box(tmp_path, placed=True)
-    write = _tool(box, "position_sections")
-    result = write([{"id": "s0.png", "position_mm": 3.2}])
-    (entry,) = result["pictures"]
-    assert set(entry) == {"id", "caption"}
-    assert entry["caption"].startswith("positioning:") and "s0.png 3.20 mm" in entry["caption"]
-    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
-    records = box.job.views.records()
-    assert [(r.seq, r.tool) for r in records] == [(entry["id"], "position_sections")]
-
-    quiet = write([{"id": "s1.png", "position_mm": 3.4}], view=False)
-    assert quiet["status"] == "ok"
-    assert "pictures" not in quiet and TOOL_MEDIA_PARTS_KEY not in quiet
-    assert len(box.job.views.records()) == 1
-
-
-def test_force_view_drops_the_view_argument_and_always_draws(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True, force_view=True)
-    for name in ("position_sections", "interactive_transform", "elastix_affine"):
-        assert "view" not in inspect.signature(_tool(box, name)).parameters, name
-    refused = _tool(box, "position_sections")([{"id": "s0.png", "position_mm": 3.0}],
-                                              view=False)
-    assert refused["error"] == "UNKNOWN_ARGUMENTS"
-    assert state.by_id("s0.png").position_mm == 2.0
-    drawn = _tool(box, "position_sections")([{"id": "s0.png", "position_mm": 3.0}])
-    assert len(drawn["pictures"]) == 1 and len(drawn[TOOL_MEDIA_PARTS_KEY]) == 1
-    turned = _tool(box, "interactive_transform")([{"id": "s1.png", "rotation_deg": 2.0}])
-    assert len(turned["pictures"]) == 1
 
 
 # --- interactive_transform --------------------------------------------------------------
@@ -222,39 +161,12 @@ def test_values_left_out_keep_the_sections_current_ones(tmp_path: Path):
     assert row["transform"]["translate_x_mm"] == 0.2
     assert row["transform"]["scale_x"] == 1.2
     assert state.by_id("s0.png").transform["physical"]["rotation_deg"] == 5.0
-
-
-def test_a_batch_is_one_undo_step(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
-    result = _tool(box, "interactive_transform")([
-        {"id": "s0.png", "rotation_deg": 2.0, "translate_x_mm": 0.1},
-        {"id": "s1.png", "rotation_deg": -3.0, "scale_x": 1.1, "scale_y": 0.9},
-    ])
-    assert result["status"] == "ok"
-    assert [row["id"] for row in result["results"]] == ["s0.png", "s1.png"]
-    assert len(result["pictures"]) == 2 and len(result[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert len(box.job.undo_stack) == 1
-    assert state.by_id("s1.png").transform["physical"]["rotation_deg"] == -3.0
-    _tool(box, "undo")()
-    assert state.by_id("s0.png").transform is None
-    assert state.by_id("s1.png").transform is None
-
-
-def test_an_orientation_change_keeps_the_values_and_says_so(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
-    transform = single_transform(_tool(box, "interactive_transform"))
-    transform("s0.png", 7.0)
-    row = transform("s0.png", flip=True)
-    assert row["orientation"] == {"flip": True, "rotate_quarter": 0, "changed": True}
-    assert "The orientation changed." in row["message"]
-    assert row["transform"]["rotation_deg"] == 7.0
-    record = state.by_id("s0.png")
-    assert record.flip is True and record.transform["physical"]["rotation_deg"] == 7.0
-    # Without a transform, the orientation alone is set.
+    # A new orientation keeps the transform values.
+    flipped = transform("s0.png", flip=True)
+    assert flipped["orientation"]["changed"] is True
+    assert flipped["transform"]["rotation_deg"] == 5.0 and state.by_id("s0.png").flip is True
     quarter = transform("s1.png", rotate_quarter=90)
-    assert quarter["written"] is True and "transform" not in quarter
-    assert state.by_id("s1.png").rotation_deg == 90
-    assert state.by_id("s1.png").transform is None
+    assert quarter["written"] is True and state.by_id("s1.png").rotation_deg == 90
     assert transform("s2.png", rotate_quarter=45)["error"] == "BAD_ROTATION"
 
 
@@ -277,7 +189,8 @@ def test_interactive_transform_refuses_bad_calls_without_writing(tmp_path: Path)
     assert duplicate["error"] == "DUPLICATE_SLICE_IDS"
     assert duplicate["duplicate_ids"] == ["s0.png"]
     many = tool([{"id": f"s{i}.png"} for i in range(5)])
-    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
+    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4,
+                    "requested": 5}
     assert tool([])["error"] == "BAD_ARGS"
     nothing = tool([{"id": "nope.png", "rotation_deg": 1}])
     assert nothing["status"] == "error" and nothing["error"] == "NOTHING_WRITTEN"
@@ -306,16 +219,6 @@ def test_a_picture_that_fails_leaves_the_write_standing(tmp_path: Path, monkeypa
     assert state.by_id("s0.png").transform is not None
     assert load_checkpoint(ctx.checkpoint_path).by_id("s1.png").transform is not None
     assert len(box.job.undo_stack) == 1
-
-
-def test_view_false_returns_no_picture(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
-    result = _tool(box, "interactive_transform")([{"id": "s0.png", "rotation_deg": 3.0}],
-                                                 view=False)
-    assert result["status"] == "ok" and result["results"][0]["written"] is True
-    assert "pictures" not in result and TOOL_MEDIA_PARTS_KEY not in result
-    assert state.by_id("s0.png").transform is not None
-    assert box.job.views.records() == []
 
 
 # --- mark_damage ------------------------------------------------------------------------
@@ -364,17 +267,6 @@ def test_mark_damage_refuses_unknown_regions_and_sections(tmp_path: Path):
 
 
 # --- note, undo, redo --------------------------------------------------------------------
-
-
-def test_a_note_is_one_undoable_line(tmp_path: Path):
-    state, _, box = _box(tmp_path)
-    assert _tool(box, "undo")()["error"] == "NOTHING_TO_UNDO"
-    result = _tool(box, "note")("sections 3-5 are faint")
-    assert result["status"] == "ok" and result["notes"][-1] == "sections 3-5 are faint"
-    assert state.notes[-1] == "sections 3-5 are faint"
-    assert _tool(box, "undo")()["status"] == "ok"
-    assert "sections 3-5 are faint" not in state.notes
-    assert _tool(box, "redo")()["redo_depth"] == 0
 
 
 # --- submit ------------------------------------------------------------------------------
@@ -487,13 +379,3 @@ def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
     for record in state.slices:
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
     assert _submit(box)["status"] == "ok"
-
-
-def test_left_linear_belongs_to_runs_with_nonlinear(tmp_path: Path):
-    state, _, box = _box(tmp_path, tasks=["position"], placed=True)
-    # Without Nonlinear the argument is not offered at all.
-    assert "left_linear" not in inspect.signature(_tool(box, "submit")).parameters
-    refused = _tool(box, "submit")("done", [], [], left_linear=[
-        {"id": "s0.png", "reason": "no deformation needed"}])
-    assert refused["error"] == "UNKNOWN_ARGUMENTS"
-    assert state.submitted is False

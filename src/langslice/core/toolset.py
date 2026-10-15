@@ -102,7 +102,7 @@ class ToolDef:
 TASK_WRITERS: dict[str, tuple[str, ...]] = {
     "position": ("position_sections",),
     "transform": ("interactive_transform", "elastix_affine"),
-    "nonlinear": ("ants_syn", "landmark_triangulation", "trace_borders"),
+    "nonlinear": ("fireants_syn", "landmark_triangulation", "trace_borders"),
 }
 
 _LOOK_OPTIONS = {mode: "mode" for mode in LOOK_MODES}
@@ -131,7 +131,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     # --- fitting ----------------------------------------------------------------------
     ToolDef("elastix_affine", "write", "Linear", long=True,
             when=lambda spec: spec.has("transform"), needs=_OVERLAY, writes=("affine",)),
-    ToolDef("ants_syn", "write", "Nonlinear", long=True,
+    ToolDef("fireants_syn", "write", "Nonlinear", long=True,
             when=lambda spec: spec.has("nonlinear"), needs=_OVERLAY,
             writes=("deformation",)),
     # The landmark pair: set_landmarks only places the pairs (it applies no

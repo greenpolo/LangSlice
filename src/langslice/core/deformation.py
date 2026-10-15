@@ -1,6 +1,6 @@
 """The deformable fit as the tools use it: inputs, cache, records, pictures.
 
-``ants_syn`` and ``trace_borders``' landing (through
+``fireants_syn`` and ``trace_borders``' landing (through
 :func:`langslice.ops.deformable.fit_deformable`) are thin verbs over this
 module and the engine package :mod:`langslice.core.deformable`. What lives
 here:
@@ -49,24 +49,28 @@ from langslice.core.deformable import (
     FitSettings,
     Placement,
     draw_warped_borders,
-    finish_fit,
     fit_prepared,
     placement_from_handoff,
     prepare_fit,
     resampled_record,
 )
-from langslice.core.deformable.atlas_images import (
+from langslice.core.deformable.engines import (
+    FIREANTS_LEARNING_RATE,
+    FIREANTS_VERSION,
+    INVERSE_ITERATIONS,
+)
+from langslice.core.deformable.fit import run_prepared
+from langslice.core.deformable.masks import EM_PARAMETERS
+from langslice.core.deformable.plane_images import (
     native_intensity,
     native_labels,
     normalize_intensity,
 )
-from langslice.core.deformable.engines import run_engine
-from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
 from langslice.core.deformable.render import composed_native_grid
 from langslice.core.deformable.settings import (
-    ANTS_STIFFNESS,
     CORRELATION_RADIUS_UM,
     DETAIL,
+    STIFFNESS,
 )
 from langslice.core.handoff import digest
 from langslice.core.state import SliceState, StackState
@@ -117,14 +121,17 @@ class FitRefusal(Exception):
         self.payload = {"status": "error", "error": code, "message": message, **extra}
 
 
-def ants_available() -> bool:
-    return importlib.util.find_spec("ants") is not None
+def engine_available() -> bool:
+    """Whether the deformable engine's libraries (FireANTs, torch) are installed."""
+    return all(importlib.util.find_spec(name) is not None for name in ("fireants", "torch"))
 
 
-ANTS_MISSING = (
-    "ANTs (antspyx) cannot be imported on this host. It is one of LangSlice's "
-    "dependencies on Python 3.13 and below: reinstall LangSlice there "
-    "(pip install 'antspyx>=0.6.3,<0.7')"
+#: The refusal when :func:`engine_available` is False (model-facing text,
+#: pinned by the text snapshot).
+ENGINE_MISSING = (
+    "The deformable engine cannot run on this host: torch and fireants must both "
+    "import. They are LangSlice's dependencies: reinstall LangSlice "
+    "(its pyproject.toml pins the FireANTs build)"
 )
 
 
@@ -301,10 +308,10 @@ def engine_settings(settings: FitSettings) -> dict[str, Any]:
         used["correlation_radius_um"] = CORRELATION_RADIUS_UM
     if settings.section_image == "stain" and settings.stain_edges:
         used["edge_channel"] = True
-    stiffness = ANTS_STIFFNESS[settings.stiffness]
+    stiffness = STIFFNESS[settings.stiffness]
     used.update(update_sigma_mm=stiffness.update_sigma_mm,
                 total_sigma_mm=stiffness.total_sigma_mm,
-                iterations=list(level.ants_iterations))
+                iterations=list(level.iterations))
     if settings.labels != "none":
         used["label_map"] = settings.labels
     if settings.structures:
@@ -322,9 +329,12 @@ def cache_key(
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
         "placement": grid.placement.to_dict(), "image": image_identity,
         "settings": settings.to_dict(), "start": previous_key or "linear",
-        # A restricted step is tapered outside its region (fit.RESTRICTED_TAPER_MM);
-        # results saved before the taper are not reused.
-        **({"restricted_taper_mm": RESTRICTED_TAPER_MM} if settings.structures else {}),
+        # The engine and, for a stain fit, the EM section mask: a record from
+        # another engine or mask is not reused.
+        "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,
+                   list(DETAIL[settings.detail].iterations)],
+        **({"section_mask": EM_PARAMETERS}
+           if settings.section_image == "stain" else {}),
     })
 
 
@@ -375,8 +385,7 @@ class RecordStore:
     def current(self, state: StackState, record: SliceState) -> DeformableRecord | None:
         """The section's applied record, when it still sits on its placement."""
         held = record.deformation
-        if (not held or "keep_linear" in held
-                or held.get("linear_key") != linear_key(state, record)):
+        if not held or held.get("linear_key") != linear_key(state, record):
             return None
         return self.get(record.id, str(held.get("key", "")))
 
@@ -497,8 +506,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
         for item in prepared:
             try:
                 with _ENGINE_LOCK:
-                    result = run_engine(item.inputs, item.settings)
-                results.append(finish_fit(item, result))
+                    results.append(run_prepared(item))
             except Exception as exc:  # noqa: BLE001
                 results.append(CandidateFailure(item.settings, f"{type(exc).__name__}: {exc}"))
     for job, result in zip(waiting, results, strict=True):
@@ -520,6 +528,7 @@ class Style:
     #: Regions drawn in the second color (those excluded from the fit).
     marked: tuple[str, ...]
     outlines: str
+    #: The image model's trace colour (:func:`trace_picture`: plain, read back by colour).
     color: tuple[int, int, int]
     thickness: float
     atlas_opacity: float
@@ -528,6 +537,9 @@ class Style:
     #: Long edge of the picture (of the zoomed crop when zoomed), in pixels;
     #: never more than the fit image's own pixels.
     long_edge: int = 512
+    #: Core colour of the fitted borders in :func:`picture`, ``black`` or
+    #: ``white`` (cased with the other).
+    core: str = "black"
 
 
 def picture(
@@ -576,7 +588,7 @@ def picture(
     drawn = draw_warped_borders(
         base, small, ctx.atlas, highlight=style.highlight, marked=style.marked, warped=warped,
         outlines=style.outlines, depth=style.depth, width_px=style.thickness,
-        color=style.color, native=native,
+        core=style.core, native=native,
     )
     captioned = caption(drawn, title)
     if note is not None:

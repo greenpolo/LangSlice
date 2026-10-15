@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageDraw
 
@@ -213,6 +214,9 @@ def pack_strips(columns: Sequence[Sequence[Image.Image]], tile: int, count: int,
 
 ANGLES_WORDS = " (pitch {:.1f}, yaw {:.1f} degrees)"
 
+#: Threads drawing the opening's columns (:func:`opening_items`).
+OPENING_THREADS = 8
+
 
 def _angles(state: StackState) -> str:
     return angles_label(state.stack_angles, ANGLES_WORDS)
@@ -238,18 +242,23 @@ def opening_items(
     placed = any(record.position_mm is not None for record in ordered)
     unplaced = [record for record in ordered if record.position_mm is None]
 
-    columns: list[list[Image.Image]] = []
-    for record in ordered:
+    def column(record: SliceState) -> list[Image.Image]:
         position = record.position_mm
         if placed and position is not None:
             section, atlas = pair_tiles(ctx, state, record, position, tile)
-            column = [_cell(section, tile_label(record), tile),
-                      _cell(atlas, f"atlas {position:.2f} mm", tile)]
-        else:
-            column = [_cell(section_tile(ctx, state, record, tile), tile_label(record), tile)]
-            if placed:
-                column.append(_cell(None, "no position", tile))
-        columns.append(column)
+            return [_cell(section, tile_label(record), tile),
+                    _cell(atlas, f"atlas {position:.2f} mm", tile)]
+        cells = [_cell(section_tile(ctx, state, record, tile), tile_label(record), tile)]
+        if placed:
+            cells.append(_cell(None, "no position", tile))
+        return cells
+
+    # The first column alone loads the atlas volumes the rest share; then
+    # the sections are drawn on threads (decoding, resampling and resizing
+    # release the GIL), in order.
+    columns = [column(record) for record in ordered[:1]]
+    with ThreadPoolExecutor(OPENING_THREADS) as pool:
+        columns += pool.map(column, ordered[1:])
     strips = pack_strips(columns, tile, count, budget, max_bytes)
 
     planes = ("at that section's own cutting angles (they differ between sections)"

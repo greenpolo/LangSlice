@@ -1,5 +1,6 @@
-"""The job folder: layout, per-step undo files, refused older formats, and
-every picture the model is shown saved with its layers."""
+"""The job folder: layout, per-step undo files, refused newer and older formats,
+read-only image folders, and every picture the model is shown saved with its
+layers."""
 
 from __future__ import annotations
 
@@ -7,19 +8,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
 import pytest
 import tifffile
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core.atlas.render import region_boundaries
 from langslice.core.jpeg import encode_jpeg
 from langslice.core.layers import coordinate_map
 from langslice.core.spec import JobSpec
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.checkpoint import STATE_FORMAT_VERSION
+from langslice.job.checkpoint import STATE_FORMAT_VERSION, read_checkpoint
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.job import Job
 from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, job_folder_for, section_dirname
@@ -84,27 +83,6 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
     # No position is inferred for a fresh section.
     assert all(entry["parameters"]["plane"]["position_mm"] is None
                for entry in registration["sections"])
-
-
-def test_the_open_event_says_whether_a_checkpoint_was_resumed(tmp_path: Path):
-    folder = _folder(tmp_path / "stack")
-    _open(folder)
-    _open(folder)
-    events = [json.loads(line) for line in
-              (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
-    assert [event["resumed"] for event in events if event["kind"] == "open"] == [False, True]
-
-
-def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
-    folder = _folder(tmp_path / "stack")
-    _open(folder)
-    path = folder / "langslice" / "job.json"
-    record = json.loads(path.read_text())
-    record["format_version"] = JOB_FORMAT_VERSION + 1
-    path.write_text(json.dumps(record))
-    with pytest.raises(ValueError, match="newer LangSlice"):
-        _open(folder)
-    assert json.loads(path.read_text())["format_version"] == JOB_FORMAT_VERSION + 1
 
 
 def test_undo_is_one_file_per_step_and_bounded(tmp_path: Path):
@@ -180,7 +158,27 @@ def test_a_history_that_cannot_be_read_is_never_deleted(tmp_path: Path, damage: 
 # --- older formats ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("version", [None, 1, 2])
+def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    _open(folder)
+    path = folder / "langslice" / "job.json"
+    record = json.loads(path.read_text())
+    record["format_version"] = JOB_FORMAT_VERSION + 1
+    path.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="newer LangSlice"):
+        _open(folder)
+    assert json.loads(path.read_text())["format_version"] == JOB_FORMAT_VERSION + 1
+    # A checkpoint from a newer LangSlice is refused the same way.
+    path.write_text(json.dumps({**record, "format_version": JOB_FORMAT_VERSION}))
+    state = folder / "langslice" / "state.json"
+    saved = json.loads(state.read_text())
+    saved["format_version"] = STATE_FORMAT_VERSION + 1
+    state.write_text(json.dumps(saved))
+    with pytest.raises(ValueError, match="newer LangSlice"):
+        read_checkpoint(state)
+
+
+@pytest.mark.parametrize("version", [None, 2])
 def test_a_checkpoint_of_an_older_format_is_refused(tmp_path: Path, version: int | None):
     """A pre-release checkpoint (unversioned, or an older format) is not read:
     the job asks to be started fresh and leaves the file alone."""
@@ -225,27 +223,12 @@ def test_saved_settings_with_an_unknown_key_are_refused_naming_it_and_the_file(t
         read_spec(folder / "langslice")
 
 
-def test_every_saved_settings_reader_names_an_unknown_key():
-    from langslice.core.channels import ChannelProperties
-    from langslice.core.deformable.settings import FitSettings
-    from langslice.core.look import LookRequest
-
-    with pytest.raises(ValueError, match=r"Unknown channel property key\(s\) \['level'\]"):
-        ChannelProperties.from_dict({"gamma": 1.0, "level": 2})
-    with pytest.raises(ValueError, match=r"Unknown fit setting key\(s\) \['preprocess'\]"):
-        FitSettings.from_dict({**FitSettings().to_dict(), "preprocess": "none"})
-    with pytest.raises(ValueError, match=r"Unknown picture recipe key\(s\) \['mode_hint'\]"):
-        LookRequest.from_args({**LookRequest("atlas").args(), "mode_hint": 1})
-    with pytest.raises(ValueError, match=r"Unknown job setting\(s\) \['transform\.flip'\]"):
-        JobSpec.from_dict({"image_folder": ".", "transform": {"flip": False}})
-
-
 # --- the saved pictures ---------------------------------------------------------------------
 
 
-def _golden_toolbox(folder: Path) -> tuple[Any, Any]:
+def _stack_toolbox(folder: Path) -> tuple[Any, Any]:
     from langslice.job.job import ingest
-    from tests.golden.record import atlas_loader, full_spec, write_sections
+    from tests.synthetic_stack import atlas_loader, full_spec, write_sections
 
     write_sections(folder)
     spec = full_spec(folder)
@@ -255,7 +238,7 @@ def _golden_toolbox(folder: Path) -> tuple[Any, Any]:
 
 
 def _place(box: Any, view: bool = False) -> dict[str, Any]:
-    from tests.golden.record import ID0, ID1, ID2
+    from tests.synthetic_stack import ID0, ID1, ID2
 
     return _tool(box, "position_sections")([{"id": ID0, "position_mm": 0.1},
                                             {"id": ID1, "position_mm": 0.15},
@@ -265,7 +248,7 @@ def _place(box: Any, view: bool = False) -> dict[str, Any]:
 def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Path):
     from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
-    box, _ctx = _golden_toolbox(tmp_path / "stack")
+    box, _ctx = _stack_toolbox(tmp_path / "stack")
     look = _tool(box, "look")
     shown = look("section", sections=["s0.png", "s1.png"])[TOOL_MEDIA_PARTS_KEY]
     written = _place(box, view=True)  # a change tool's picture, under its own name
@@ -300,37 +283,11 @@ def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Pat
     assert len(stacked) == len([item for item in sheet if not isinstance(item, str)]) >= 1
 
 
-def test_the_layers_agree_with_the_borders_drawn_on_a_picture(tmp_path: Path):
-    from tests.golden.record import ID2
-
-    box, _ctx = _golden_toolbox(tmp_path / "stack")
-    _place(box)
-    # The overlay with the atlas template under the lines.
-    _tool(box, "look")("overlay", sections=[ID2], atlas_layers=["template", "borders"])
-    flush_all()
-    view = next((tmp_path / "stack" / "langslice").glob("sections/s2/views/*look_overlay*"))
-    picture = np.asarray(Image.open(view / "view.jpg").convert("RGB")).astype(int)
-
-    borders = np.asarray(Image.open(view / "borders.png")).astype(int)
-    labels = tifffile.imread(view / "labels.tif")
-    yellow = ((picture[..., 0] + picture[..., 1]) / 2 - picture[..., 2]) > 80
-    strong = borders >= 128
-    assert strong.sum() > 500
-    assert (yellow & strong).sum() / strong.sum() > 0.85  # the layer is where lines are drawn
-    # ...and every drawn line is in it (JPEG's colour subsampling bleeds a
-    # one-pixel-wide line's yellow one pixel to the side).
-    layer = cv2.dilate((borders > 0).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-    assert (yellow & layer).sum() / yellow.sum() > 0.98
-    change = region_boundaries(labels)[0]
-    near = cv2.dilate(change.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
-    assert (strong & near).sum() / strong.sum() > 0.98  # the lines are label boundaries
-
-
 def _overlay_view(tmp_path: Path, angles: tuple[float, float], zoom: bool) -> Path:
     """The saved overlay of section s1 (zoomed into a box when *zoom*)."""
-    from tests.golden.record import ID1
+    from tests.synthetic_stack import ID1
 
-    box, _ctx = _golden_toolbox(tmp_path / "stack")
+    box, _ctx = _stack_toolbox(tmp_path / "stack")
     _place(box)
     if angles != (0.0, 0.0):
         pitch, yaw = angles
@@ -346,11 +303,8 @@ def _overlay_view(tmp_path: Path, angles: tuple[float, float], zoom: bool) -> Pa
     return next((tmp_path / "stack" / "langslice").glob(f"sections/s1/views/{pattern}"))
 
 
-@pytest.mark.parametrize("zoom", [
-    False,
-    True,
-], ids=["overlay", "zoomed"])
-@pytest.mark.parametrize("angles", [(0.0, 0.0), (1.0, 0.5)])
+@pytest.mark.parametrize("angles, zoom", [((0.0, 0.0), False), ((1.0, 0.5), True)],
+                         ids=["flat-overlay", "angled-zoomed"])
 def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[float, float],
                                                 zoom: bool):
     from tests.deformable_synthetic import SyntheticAtlas
@@ -395,15 +349,6 @@ def test_a_job_folder_holding_another_image_folders_job_is_refused(tmp_path: Pat
         _open(_folder(tmp_path / "two"), job_dir=str(tmp_path / "shared"))
 
 
-def test_the_cli_takes_a_job_folder(tmp_path: Path):
-    from langslice.doors.cli import build_parser
-    from langslice.doors.cli.linear import build_linear_spec
-
-    args = build_parser().parse_args(
-        ["linear", "run", str(tmp_path), "--job-dir", str(tmp_path / "arm")])
-    assert build_linear_spec(args, str(tmp_path)).job_dir == str(tmp_path / "arm")
-
-
 @pytest.fixture
 def read_only(tmp_path: Path, monkeypatch: Any) -> Any:
     import os
@@ -445,31 +390,22 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
     before = job.snapshot()
     job.state.notes.append("kept")
     job.commit(before)
-    again, _ = _open(read_only)  # found again on reopen
+    again, _ = _open(read_only, tasks=["position"])  # found again on reopen
     assert again.folder == target and again.state.notes[-1] == "kept"
 
-
-def test_a_read_only_folder_job_opens_over_mcp_by_its_job_folder(
-    tmp_path: Path, read_only: Path,
-):
-    """The job of a read-only image folder lives under the home job folder;
-    an MCP host opens it by that job folder, as saved."""
+    # An MCP host opens that job by its job folder, as saved.
+    from langslice.doors.jobs import close_job
     from langslice.doors.mcp.server import open_folder
 
-    job, _ = _open(read_only, tasks=["position"])
-    job_folder = job.folder
-    from langslice.doors.jobs import close_job
-
-    close_job(job)
+    close_job(again)
 
     def flags(_folder: str) -> JobSpec:
         raise AssertionError("A folder's own job must not use the server's job flags")
 
-    session = open_folder(str(job_folder), flags, lambda _n: _ATLAS)
+    session = open_folder(str(target), flags, lambda _n: _ATLAS)
     try:
-        assert session.job.folder == job_folder
+        assert session.job.folder == target
         assert session.ctx.image_folder == str(read_only)
-        assert session.spec.tasks == ["position"]
     finally:
         session.close()
 

@@ -3,8 +3,8 @@
 :func:`fit_deformable` runs one deformable fit per section
 (:mod:`langslice.core.deformation`: the fit grid, the image the fit reads,
 the record cache and the engine) and APPLIES each section's result as its
-deformation: one undo step for the call. Its callers are :func:`ants_syn`
-(ANTs SyN on the preprocessed channel, building on whatever deformation
+deformation: one undo step for the call. Its callers are :func:`fireants_syn`
+(FireANTs SyN on the preprocessed channel, building on whatever deformation
 each section holds) and the landing of a packaged trace
 (:func:`langslice.ops.traces.land_trace`: the traced borders fitted).
 
@@ -154,7 +154,7 @@ def fit_deformable(
         except ValueError:  # its record.json does not load (the error names it)
             logger.warning("Applied deformation of %s unreadable", record.id, exc_info=True)
             current, unreadable = None, True
-        if unreadable or (current is None and held and "keep_linear" not in held
+        if unreadable or (current is None and held
                           and held.get("linear_key") == deformation.linear_key(state, record)):
             rows.append({"id": record.id, "status": "error", "error": "DEFORMATION_UNREADABLE",
                          "message": "The section's applied deformation record cannot be read "
@@ -295,16 +295,28 @@ def pictures(
     drawn row gets ``image_indexes``; a picture that fails is listed in
     ``render_failed``.
     """
+    import numpy as np
+
     from langslice.core import layers
-    from langslice.core.canvas import normalize_border_style
+    from langslice.core.canvas import (
+        border_words,
+        resolve_border_color,
+        validate_border_thickness,
+    )
+    from langslice.core.deformable.render import drawn_border_coverage
 
     parts: list[Image.Image] = []
     failed: list[dict[str, str]] = []
-    color, thickness = normalize_border_style(options.border_color, options.border_thickness)
+    thickness = validate_border_thickness(options.border_thickness)
+    # `color` is the image model's own fixed yellow (`trace_picture` below
+    # draws it plain: its prompt says yellow and its reply is read back by
+    # colour). Each fitted-atlas picture gets its cased core (`core`) per row
+    # below, resolved against that row's own tissue -- never one for the whole
+    # batch, since different sections in one call can need different ones.
     style = deformation.Style(
         zoom=() if options.full_view else tuple(options.zoom),
         highlight=tuple(name for name, _ids in options.regions), marked=(),
-        outlines=options.layer, color=color, thickness=thickness,
+        outlines=options.layer, color=(255, 255, 0), thickness=thickness,
         atlas_opacity=options.atlas_opacity, depth=options.depth, long_edge=options.long_edge,
     )
     for fitted in done.fitted:
@@ -312,6 +324,16 @@ def pictures(
         record = fit.grid.record
         include, exclude = fit_regions(fit)
         fit_style = replace(style, highlight=style.highlight or include, marked=exclude)
+        coverage = drawn_border_coverage(
+            outcome, workspace.atlas, highlight=fit_style.highlight, marked=fit_style.marked,
+            warped=True, outlines=fit_style.outlines, depth=fit_style.depth,
+            width_px=fit_style.thickness,
+        )
+        core, _ = resolve_border_color(
+            options.border_color, options.border_thickness,
+            rgb=np.asarray(fit.image.convert("RGB")), coverage=coverage,
+        )
+        fit_style = replace(fit_style, core=core)
         heading = f"{record.id}  applied: {outcome.engine['name']} {fit.choice.stiffness}"
         start = "current" if fit.previous is not None else "linear"
         detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {start}"
@@ -324,7 +346,8 @@ def pictures(
                 workspace, fit.image, outcome, warped=True, style=fit_style,
                 atlas_images=shown_atlas, title=f"{heading}\n{detail_line}",
                 note={"sections": (record.id,), "mode": options.mode,
-                      "caption": fit_caption(record, fit, row, include, exclude)}))
+                      "caption": fit_caption(record, fit, row, include, exclude,
+                                             border_words(core))}))
         except Exception as exc:
             logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
             del parts[first:]
@@ -362,10 +385,12 @@ _FIT_SECTION_WORDS = {
 
 
 def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
-                include: Sequence[str], exclude: Sequence[str]) -> str:
+                include: Sequence[str], exclude: Sequence[str],
+                border_word: str = "") -> str:
     """The index caption of a deformable fit's picture: the section, the
     fit (engine, stiffness, what it read against which atlas image), the
-    position, the regions drawn thick or left out, and the fit's numbers."""
+    position, the regions drawn thick or left out, the colour the fitted
+    borders are drawn in, and the fit's numbers."""
     choice = fit.choice
     read = _FIT_SECTION_WORDS.get(choice.fit_section, choice.fit_section)
     at = (f", at {float(record.position_mm):.2f} mm"
@@ -375,8 +400,9 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
              f"fold fraction {row.get('fold_fraction')}") if numbers else ""
     engine = getattr(fit.result, "engine", {}).get("name")
     return (f"{record.id} deformation fit ({engine} {choice.stiffness}, {read} "
-            f"against the atlas {choice.fit_atlas}){at}; the fitted atlas borders on the "
-            "image the fit read"
+            f"against the atlas {choice.fit_atlas}){at}; the fitted atlas borders "
+            + (f"({border_word}) " if border_word else "")
+            + "on the image the fit read"
             + (f"; regions {', '.join(include)} drawn thick, the other borders faint"
                if include else "")
             + (f"; left out (second colour): {', '.join(exclude)}" if exclude else "")
@@ -385,28 +411,30 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
 
 #: Stiffness levels (``core.deformable.settings.Stiffness``).
 STIFFNESSES = ("soft", "medium", "firm")
-#: Sections one :func:`ants_syn` call takes.
-MAX_ANTS_SYN_SECTIONS = 4
+#: Sections one :func:`fireants_syn` call takes.
+MAX_FIREANTS_SYN_SECTIONS = 4
 
 
-def ants_ready() -> bool:
-    """Whether antspyx imports here (the ANTs engine, ``ANTS_MISSING`` when not)."""
-    if not deformation.ants_available():
+def engine_ready() -> bool:
+    """Whether the deformable engine (FireANTs on torch) imports here
+    (``ENGINE_MISSING`` when not)."""
+    if not deformation.engine_available():
         return False
-    from langslice.core.deformable.engines import import_ants
+    from langslice.core.deformable.engines import import_fireants
 
     try:
-        import_ants()
+        import_fireants()
     except Exception:  # an install that does not load is as missing as none
-        logger.warning("antspyx is installed but does not import", exc_info=True)
+        logger.warning("FireANTs is installed but does not import", exc_info=True)
         return False
     return True
 
 
-def refuse_without_ants() -> None:
-    """Refuse ``ANTS_MISSING`` (nothing done) when antspyx does not import."""
-    if not ants_ready():
-        raise Refused("ANTS_MISSING", message=deformation.ANTS_MISSING + ".")
+def refuse_without_engine() -> None:
+    """Refuse ``ENGINE_MISSING`` (nothing done) when the deformable engine does
+    not import."""
+    if not engine_ready():
+        raise Refused("ENGINE_MISSING", message=deformation.ENGINE_MISSING + ".")
 
 
 def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str, ...]:
@@ -416,7 +444,7 @@ def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str,
     ``NO_SIDES`` (a side on a sagittal stack)."""
     from langslice.core.atlas.sides import has_sides
     from langslice.core.damage import normalized_entries
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
         raise Refused("BAD_ARGS", message="restrict_to is a list of atlas regions.")
@@ -435,7 +463,7 @@ def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str,
     return tuple(names)
 
 
-def ants_syn(
+def fireants_syn(
     job: Job,
     workspace: Workspace,
     sections: list[Any],
@@ -444,7 +472,7 @@ def ants_syn(
     atlas_image: str = "template",
     stiffness: str = "medium",
 ) -> DeformableFit:
-    """A deformable fit with ANTs SyN on each section, applied: ONE undo step.
+    """A deformable fit with FireANTs SyN on each section, applied: ONE undo step.
 
     One choice, no candidates: the section's preprocessed channel
     (:mod:`langslice.core.appearance`) against *atlas_image* (one of the atlas's
@@ -460,8 +488,8 @@ def ants_syn(
     ``STALE_INPUT``; per-section problems are rows. The tool door draws the
     picture of what was written (:func:`langslice.ops.look.show_result`).
 
-    Refused (nothing done): ``ANTS_MISSING``; ``BAD_ARGS`` (no sections,
-    more than :data:`MAX_ANTS_SYN_SECTIONS`, an image the atlas does not
+    Refused (nothing done): ``ENGINE_MISSING``; ``BAD_ARGS`` (no sections,
+    an image the atlas does not
     have, an unknown stiffness, a bad region entry); ``UNKNOWN_SLICE_IDS``;
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
@@ -470,9 +498,6 @@ def ants_syn(
     refs = list(sections or [])
     if not refs:
         raise Refused("BAD_ARGS", message="Name the sections to fit.")
-    if len(refs) > MAX_ANTS_SYN_SECTIONS:
-        raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_ANTS_SYN_SECTIONS} "
-                      "sections.", max_sections=MAX_ANTS_SYN_SECTIONS)
     kind = str(atlas_image or "template").strip()
     offered = atlas_images(workspace.atlas)
     if kind not in offered:
@@ -481,7 +506,7 @@ def ants_syn(
     level = str(stiffness or "medium").strip().lower()
     if level not in STIFFNESSES:
         raise Refused("BAD_ARGS", message=f"stiffness is one of {list(STIFFNESSES)}.")
-    refuse_without_ants()
+    refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
     records: list[SliceState] = []
     unknown: list[str] = []

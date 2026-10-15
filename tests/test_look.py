@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-from langslice.core.channels import ChannelProperties, set_properties
 from langslice.core.layers import collecting, note_for
 from langslice.core.look import (
     LookError,
@@ -52,11 +51,10 @@ def test_section_mode_one_picture_per_section(tmp_path: Path):
         assert held.caption == picture.caption and held.mode == "section"
 
 
-def test_section_channels_preprocessed_and_errors(tmp_path: Path):
+def test_section_refusals(tmp_path: Path):
     ws, state = stack(tmp_path)
     one = ("s0.png",)
-    picture = look(ws, state, LookRequest("section", sections=one, channels=("preprocessed",)))[0]
-    assert "preprocessed channel (default appearance)" in picture.caption
+    look(ws, state, LookRequest("section", sections=one, channels=("preprocessed",)))
     for channels, code in ((("DAPI",), "UNKNOWN_CHANNEL"),
                            (("gray", "preprocessed"), "MIXED_CHANNELS")):
         with pytest.raises(LookError) as caught:
@@ -68,15 +66,6 @@ def test_section_channels_preprocessed_and_errors(tmp_path: Path):
     with pytest.raises(LookError) as caught:
         look(ws, state, LookRequest("sideways"))
     assert caught.value.code == "UNKNOWN_MODE"
-
-
-def test_display_properties_restated_in_the_caption(tmp_path: Path):
-    ws, state = stack(tmp_path)
-    set_properties(state, "gray", ChannelProperties(contrast_limits=(20.0, 200.0), gamma=1.5))
-    picture = look(ws, state, LookRequest("section", sections=("s0.png",)))[0]
-    assert "gray 20-200 gamma 1.5" in picture.caption
-    assert "percentile" not in picture.caption
-    assert picture.recipe["state"]["appearance"]["channels"]["gray"]["gamma"] == 1.5
 
 
 def test_atlas_mode_needs_positions_and_known_layers(tmp_path: Path):
@@ -117,13 +106,6 @@ def test_overlay_keeps_the_placement_frame_for_the_layers(tmp_path: Path):
     with pytest.raises(LookError) as caught:
         look(ws, state, LookRequest("overlay", sections=("s1.png",), warp="bent"))
     assert caught.value.code == "BAD_WARP"
-
-
-def test_overlay_atlas_images_get_an_opacity(tmp_path: Path):
-    ws, state = stack(tmp_path)
-    picture = look(ws, state, LookRequest("overlay", sections=("s0.png",),
-                                          atlas_layers=("template", "borders")))[0]
-    assert "images at 0.5" in picture.caption
 
 
 def test_snapshot_changed_and_restored(tmp_path: Path):

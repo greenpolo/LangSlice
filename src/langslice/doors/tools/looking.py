@@ -64,7 +64,7 @@ def can_change(door: Door) -> list[str]:
     if has("mark_damage"):
         out.append("damaged regions")
     if spec.has("nonlinear"):
-        fits = [name for name in ("ants_syn", "trace_borders")
+        fits = [name for name in ("fireants_syn", "trace_borders")
                 if has(name) and (name != "trace_borders" or door.traces_on)]
         if has("set_landmarks") and has("landmark_triangulation"):
             fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")

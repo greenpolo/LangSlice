@@ -329,7 +329,7 @@ class ToolContext:
             position_mm=record.position_mm, angles=record.angles, flip=bool(record.flip),
             rotation_deg=int(record.rotation_deg), affine=affine,
             deformation=None if held is None else {
-                key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps", "keep_linear")
+                key: copy.deepcopy(held[key]) for key in ("key", "kind", "steps")
                 if key in held},
             damaged_regions=tuple(record.damaged_regions), damage_note=record.damage_note,
             layers=tuple(str(ref["name"]) for ref in record.layers),
@@ -428,7 +428,7 @@ class ToolContext:
         (:func:`langslice.core.atlas.images.atlas_images`); a name the atlas
         does not have is skipped."""
         from langslice.core.atlas.images import atlas_images
-        from langslice.core.deformable.atlas_images import native_intensity, native_labels
+        from langslice.core.deformable.plane_images import native_intensity, native_labels
 
         record = self._record(section)
         grid = self._grid(record)

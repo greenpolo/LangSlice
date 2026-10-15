@@ -3,7 +3,7 @@
 LangSlice gives an agent a stack of sections, an atlas and tools for looking,
 placing and fitting. The agent inspects the anatomy, chooses tools and
 regions, reviews their pictures and revises the registration. Image-model
-border tracing is optional; affine and ANTs fits can use the stain directly.
+border tracing is optional; affine and FireANTs fits can use the stain directly.
 
 The tools have the same names across [CLI, MCP and agent sessions](agents.md)
 and the [Python library](library.md). Use `langslice-job schema VERB --job
@@ -15,7 +15,7 @@ FOLDER` for exact arguments and limits.
 |---|---|---|
 | `position` | `position_sections` | Atlas positions, section order and cutting angles |
 | `transform` | `interactive_transform`, `elastix_affine` | In-plane alignment of each section |
-| `nonlinear` | `ants_syn`, `set_landmarks`, `landmark_triangulation`, optionally `trace_borders` | Deformation on top of a linear placement |
+| `nonlinear` | `fireants_syn`, `set_landmarks`, `landmark_triangulation`, optionally `trace_borders` | Deformation on top of a linear placement |
 
 Default tasks are `position,transform`. A disabled task takes its answer
 from supplied inputs and removes its tools. `transform.angles` also enables
@@ -34,7 +34,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | Name | Removes |
 |---|---|
 | `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
-| `position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
 | `export_maps` | the scripting verb |
 | `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
@@ -49,7 +49,7 @@ work is refused with one line saying why:
 
 - a task that is on keeps at least one tool that writes its answer
   (`position_sections`; `interactive_transform` or `elastix_affine`;
-  `ants_syn`, `landmark_triangulation` or `trace_borders`);
+  `fireants_syn`, `landmark_triangulation` or `trace_borders`);
 - `look` keeps at least one mode;
 - `set_landmarks` and `landmark_triangulation` need each other; the first
   also needs a way to see atlas points (`look:atlas` or `look:overlay`) and
@@ -123,22 +123,21 @@ partial cases:
   replaces (positive without one, negative for a supplied mirrored
   transform). `elastix_affine` and `interactive_transform` refuse a fit or
   a scale that would mirror the section.
-- A frozen `affine` is never rewritten: `elastix_affine` leaves the section
-  out of its default list and refuses it by name, `interactive_transform`
+- A frozen `affine` is never rewritten: `elastix_affine` refuses it by name, `interactive_transform`
   refuses a changed knob (the same numbers again write nothing, and the
   orientation may change under it when it is free). A section whose
   `deformation` is free is still deformed on its supplied transform.
 - The cutting angles are one plane for the stack, so `position_sections`
   refuses its `cutting_angles` while any section has `angles` frozen.
-- A frozen `deformation` needs no entry in `submit`'s `left_linear` and no
-  deformation to submit; naming it there is refused.
+- A frozen `deformation` needs no deformation to submit, even where the host
+  requires one on every section.
 
 A task whose properties are all frozen on every section is off
 (`position`: position and angles; `transform`: orientation and affine;
 `nonlinear`: deformation), and a task that is switched off freezes its
 properties on every section: "the host supplied this" is one rule. A tool
 that writes only properties frozen on every section is not offered
-(`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
+(`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
 `landmark_triangulation` and `trace_borders` by what they write; `set_landmarks`
 goes with `landmark_triangulation`, whose deformation its pairs serve), `interactive_transform`'s `flip` and
 `rotate_quarter` go with a frozen `orientation` on every section, and no text names what is gone. The job
@@ -205,8 +204,9 @@ from the tissue, so a mirrored placement swaps them. Where the midline runs
 closer to vertical on the picture, the halves are `left` and `right`; where it
 runs closer to horizontal, as on a horizontal section shown with the
 anterior-posterior axis across, they are `top` and `bottom`. Naming the pair
-the picture does not have, or a side on a midline at exactly 45 degrees, is
-refused with `SIDES_AMBIGUOUS`, whose message names the pair to use. A
+the picture does not have is refused with `WRONG_SIDE_PAIR`, whose message
+names the pair to use; a side on a midline at 45 degrees is refused with
+`SIDES_AMBIGUOUS`. A
 sagittal plane lies in one hemisphere and has no sides (`NO_SIDES`).
 
 New jobs leave sections without supplied positions unplaced. The opening
@@ -224,7 +224,7 @@ affine contributes its isotropic scale, `sqrt(abs(det))`. Each section
 thumbnail is the whole image; each atlas thumbnail is framed around the
 atlas anatomy. Neither is stretched to fill the tile.
 
-Overlay pictures show the applied deformation unless `warp="none"`. Their atlas borders are the boundaries between regions at one depth of the atlas ontology (`depth`, default 6; 0 = root, as in BrainGlobe's `structure_id_path`); a highlighted region is outlined from the leaf annotation, whatever its depth. The footer of a picture drawn at other than canvas pixels gives both scales: `canvas` (micrometres per canvas pixel) and `view` (micrometres per picture pixel, the number the reply's caption calls um/px).
+Overlay pictures show the applied deformation unless `warp="none"`. Their atlas borders are the boundaries between regions at one depth of the atlas ontology (`depth`, default 6; 0 = root, as in BrainGlobe's `structure_id_path`); a highlighted region is outlined from the leaf annotation, whatever its depth. Every agent picture draws its atlas borders as cased lines, so they read on dark and pale tissue alike: a core line in black or white with a thin outline of the other colour (about one picture pixel) on both sides. Each picture takes one arrangement, a black core with a white outline when the picture's own pixels under the lines are light (mean CIELAB lightness 50 or more) and a white core with a black outline when they are darker; the caption names it (`borders black, white-edged`). Faint context lines and thick highlighted regions keep the same arrangement, the outline scaling with the core. The image model's pictures keep plain yellow lines. The footer of a picture drawn at other than canvas pixels gives both scales: `canvas` (micrometres per canvas pixel) and `view` (micrometres per picture pixel, the number the reply's caption calls um/px).
 Where the agent chooses the picture size, `resolution` applies to every mode:
 a section is never drawn past its source pixels, an atlas plane at most four
 times past its voxels (as an atlas zoom is). Picture resolution affects
@@ -238,13 +238,16 @@ These settings affect pictures, not fits.
 
 `set_preprocessed_channel_properties` changes the channel blend, CLAHE,
 N4 correction and denoising used by the fits and image model, stack-wide or
-per section. It returns before/after pictures. Inspect that channel with
+per section. It returns before/after pictures. Its description and the
+job statement's Method tell the agent to register on the counterstain
+(DAPI, Hoechst, Nissl, NeuroTrace) alone, enhanced, with every labelling
+channel at weight 0. Inspect that channel with
 `look(channels=["preprocessed"])`. Both channel tools are available in every
 job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 
 `mark_damage` records atlas regions physically lost or badly displaced,
 including one hemisphere when needed. Those regions are excluded from
-elastix, ANTs and image-model tracing. Small tears, bubbles and folds do not
+elastix, `fireants_syn` and image-model tracing. Small tears, bubbles and folds do not
 by themselves justify excluding an entire region. A job can disable this tool
 with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
 
@@ -260,7 +263,7 @@ shifts for up to four sections. Values are absolute; omitted values keep
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` refines a placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes one to four sections per call, as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -271,24 +274,47 @@ in-plane dimension and contain at least sixteen pixels. The check happens
 before padding or fitting. No fit is run or written for that section; use
 a larger region or `interactive_transform`.
 
-## ANTs deformation
+## FireANTs deformation
 
-`ants_syn` fits the atlas to the section's preprocessed stain, starting from
+`fireants_syn` fits the atlas to the section's preprocessed stain, starting from
 its current linear placement and any applied deformation. Each fit builds
 on the previous one and can be undone. It accepts one to four sections,
 `stiffness="soft"|"medium"|"firm"` and optional `restrict_to` regions.
 The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically. A restricted fit moves only that
-neighbourhood: ANTs' masks limit where the fit is measured, not where its
+neighbourhood: the masks limit where the fit is measured, not where its
 smooth field reaches, so the step's displacement fades to none over a further
 0.3 mm and the tissue beyond keeps its earlier fit.
+
+The engine is the SyN (symmetric diffeomorphic) registration of
+[FireANTs](https://github.com/rohitrango/FireANTs), on the GPU when there is
+one (about a second per section) and on the CPU otherwise, with ANTs' step rule: mutual information plus an edge channel,
+four pyramid levels, the stiffness as Gaussian smoothing of each step and of
+the whole warp. Identical inputs give identical fields.
+
+A stain fit runs twice, over the whole section or restricted to regions. The
+first run measures the section inside the placed atlas outline widened by
+0.2 mm (for a restricted fit, only within the regions' neighbourhood). Then each section pixel is
+classed as matching the atlas image the first run warped, as an artifact, or
+as background (a three-class EM after Tward et al. 2025, on a 50 µm grid with
+a linear contrast per 0.8 mm block). The second run starts again from the
+same placement, measures every section pixel that matches with probability
+at least 0.5 anywhere in the picture, and lets the atlas reach everywhere
+except the marked damage: holes, tears and debris drop out, and the outline
+no longer bounds where tissue may go. A restricted fit classes the pixels
+over the whole section (the classes need tissue and background to learn
+from) and then keeps both masks within its regions' neighbourhood; its
+field still fades to nothing over 0.3 mm beyond the neighbourhood. The fitted record keeps the pixels left
+out, for review pictures; the agent's replies and pictures do not change.
+The Elastix affine and fits of traced borders keep the outline masks and
+run once.
 
 Both registration engines accept any of the atlas's own images as
 `atlas_image`: BrainGlobe's `"template"` (the default) and every additional
 reference the atlas ships, under BrainGlobe's names (for example
 `ccfv3augmented_mouse_25um`, whose template is the Blue Brain averaged Nissl,
 also ships a single-animal Nissl). The job statement lists them, and `look`
-draws any of them as an atlas layer. One temporary exception: an Allen CCFv3
+draws any of them as an atlas layer. One addition: an Allen CCFv3
 atlas (which ships no Nissl) is also offered `"ccfv3augmented_nissl"`, the
 Blue Brain averaged Nissl template from `ccfv3augmented_mouse_25um`, which is
 the CCFv3 grid extended 0.35 mm at the front; it downloads on first use.
@@ -466,7 +492,7 @@ picture size; where the agent chooses the size, `resolution` works as for
 composes the landmark correction onto the current deformation. Consecutive
 landmark applications replace that landmark correction using the same
 earlier baseline, so editing or deleting a pair removes its prior influence.
-An intervening ANTs or trace fit becomes the baseline for the next landmark
+An intervening FireANTs or trace fit becomes the baseline for the next landmark
 application. A missing baseline inverse or unreadable current deformation is
 refused. Reapplying an unchanged set writes nothing. Editing or deleting
 points leaves the current registration in force until explicit application;
@@ -476,11 +502,12 @@ undo restores the registration before that application.
 
 `trace_borders(section="s01.tif", restrict_to=["CA1"], prompt="")` asks an
 image model to move the placed atlas borders onto the tissue, then fits an
-ANTs deformation to the extracted lines. It requires a linear placement.
+FireANTs deformation to the extracted lines. It requires a linear placement.
 The model receives two images in the same frame: the preprocessed section
 and that section with thin yellow atlas borders. `restrict_to` selects the
 borders shown and fitted; empty uses all eligible regions. Marked damage
-is excluded.
+is excluded. The model's outer line sets the section's extent: the fit pulls
+the atlas in or out to it, wherever the linear placement left the atlas edge.
 
 The agent can edit the base prompt for a section; blank uses it unchanged.
 The atlas determines which borders exist even when tissue boundaries are
@@ -499,7 +526,7 @@ fit metrics do not certify region identity or topology. The job saves the
 attachments, prompts, raw reply, extracted lines and fit separately.
 
 `trace_borders` is offered only with Nonlinear enabled and an image model
-connected. `provider="none"` disables it while keeping ANTs and landmark tools.
+connected. `provider="none"` disables it while keeping FireANTs and landmark tools.
 Custom models and prompts are described in the [library guide](library.md#image-models).
 
 ## Writes, review and submission
@@ -519,10 +546,13 @@ produces `STALE_INPUT` for that section; unaffected results still apply.
   permits at most 10% deviation from the interval. Reported interval breaks
   must exceed 1.5 times the median spacing.
 - Linear requires a transform for every section, including damaged ones.
-- Nonlinear requires a deformation at the current placement, or an entry
-  in `left_linear=[{"id":"s01.tif","reason":"..."}]`. A host setting
-  `nonlinear.require_deformation=True` disallows leaving sections linear.
-  Host-excluded sections are exempt. An image-model trace is never required.
+- Nonlinear asks for no deformation by default: the agent gives a section one
+  where it improves on the linear placement. A host setting
+  `nonlinear.require_deformation=True` (`linear run --require-deformation`)
+  requires a deformation at the current placement on every section; the job
+  statement then says so, and `submit` is refused with `MISSING_DEFORMATIONS`
+  until each has one. Host-excluded sections are exempt. An image-model trace
+  is never required.
 
 Results are [coordinate maps, labels and registration exports](file_formats.md).
 

@@ -75,7 +75,7 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         help="Comma-separated subset of position,transform,nonlinear: position "
         "places and orders the sections, transform aligns them in-plane, nonlinear "
-        "deforms each linearly aligned section (ants_syn, and trace_borders with an "
+        "deforms each linearly aligned section (fireants_syn, and trace_borders with an "
         "image model). A task left out takes its answer from the flags that supply "
         "it (--positions, --transforms ...). Default: "
         f"{DEFAULT_TASKS}; with --registration, {REGISTRATION_TASKS} (the imported "
@@ -252,6 +252,13 @@ def add_session_arguments(p: argparse.ArgumentParser) -> None:
         help="The change and fitting tools always return their picture: their view "
         "argument is not offered (JobSpec.force_view)",
     )
+    p.add_argument(
+        "--require-deformation",
+        dest="require_deformation",
+        action="store_true",
+        help="Nonlinear task: submit is refused until every section carries a deformation "
+        "(NonlinearSpec.require_deformation); otherwise a deformation is the agent's choice",
+    )
 
 
 def add_trace_argument(p: argparse.ArgumentParser) -> None:
@@ -372,11 +379,8 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value
-    if args.pixel_size_um:
-        try:
-            inputs["pixel_size_um"] = float(args.pixel_size_um)
-        except ValueError:
-            inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
+    if args.pixel_size_um:  # a number, or a JSON object / file of filename: um
+        inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
     if args.pitch is not None or args.yaw is not None:
         inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
     section_angles = load_json_arg(getattr(args, "section_angles", None), "--section-angles")
@@ -413,6 +417,7 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,
+            require_deformation=bool(getattr(args, "require_deformation", False)),
         ),
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),

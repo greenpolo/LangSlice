@@ -79,9 +79,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "damage_note": record.damage_note,
                 "transform": transform.get("kind"),
                 "transform_mirrored": transform.get("mirrored"),
-                **({"keep_linear": record.deformation["keep_linear"]}
-                   if record.deformation and "keep_linear" in record.deformation
-                   else {"deformation_steps": len(record.deformation.get("steps") or [])}
+                **({"deformation_steps": len(record.deformation.get("steps") or [])}
                    if record.deformation else {}),
                 **({"landmarks": counts} if (counts := landmark_counts(state, record)) else {}),
                 **({"layers": [{"name": ref["name"], "kind": ref["kind"],
@@ -100,7 +98,7 @@ ROW_FIELDS: tuple[str, ...] = (
     "id", "position_mm", "delta_to_next_mm", "flip",
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
-    "transform_mirrored", "keep_linear", "deformation_steps", "landmarks", "caveats",
+    "transform_mirrored", "deformation_steps", "landmarks", "caveats",
     "frozen", "damage_by_user",
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):

@@ -13,7 +13,7 @@ object with ``--args '{...}'`` or ``--args @file.json``, and/or one flag per
 argument, ``--name value`` (kebab or snake case; a JSON value, or plain text
 for a text argument; a list argument takes the flag again for each item).
 Options: ``--dry-run`` (a write verb runs on the job without writing
-anything and reports what would change; ``elastix_affine``, ``ants_syn``
+anything and reports what would change; ``elastix_affine``, ``fireants_syn``
 and ``trace_borders`` are only checked, not run; not with ``--background``),
 ``--background`` (answer at
 once with a run id), ``--verbose`` (the whole reply: whole-stack rows, the
@@ -58,7 +58,7 @@ from langslice.job.lock import JobBusy
 logger = logging.getLogger(__name__)
 
 #: Verbs a dry run checks without running (a model call, a long fit).
-CHECKED_ONLY = frozenset({"trace_borders", "elastix_affine", "ants_syn"})
+CHECKED_ONLY = frozenset({"trace_borders", "elastix_affine", "fireants_syn"})
 #: Reply keys worth a warning when present and not empty.
 WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")

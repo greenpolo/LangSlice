@@ -30,7 +30,7 @@ public final class DialogPreview {
                 + "{\"name\":\"position_sections\",\"group\":\"Positioning\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:positioning\",\"look:overlay\"]]},"
                 + "{\"name\":\"interactive_transform\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[\"flip\"],\"needs\":[[\"look:overlay\"]]},"
                 + "{\"name\":\"elastix_affine\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:overlay\"]]},"
-                + "{\"name\":\"ants_syn\",\"group\":\"Nonlinear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:overlay\"]]}]}").getAsJsonObject();
+                + "{\"name\":\"fireants_syn\",\"group\":\"Nonlinear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[[\"look:overlay\"]]}]}").getAsJsonObject();
         List<RegistrationDialog.SliceRow> rows = new ArrayList<>();
         for (int i = 1; i <= 12; i++) rows.add(new RegistrationDialog.SliceRow("M03_B_" + String.format("%02d", i) + ".vsi - 10x_01", i % 5 == 0 ? 2 : 0));
         List<String> channels = Arrays.asList("DAPI", "NeuN-AF488", "Iba1-AF647 (a long channel name from the scanner)");

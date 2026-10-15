@@ -217,6 +217,10 @@ class DeformableRecord:
     #: (the linear agent's tool stores its section id, the linear handoff
     #: metadata and the fit inputs it chose).
     provenance: dict[str, Any] = field(default_factory=dict)
+    #: Section pixels (on the section grid) the fit's metric left out: the EM
+    #: section mask's rejects (``masks.em_masks``); None for a fit with the
+    #: footprint masks. For review pictures; nothing reads it back into a fit.
+    left_out: np.ndarray | None = None
 
     @property
     def mm_per_px(self) -> float:
@@ -251,6 +255,8 @@ class DeformableRecord:
         }
         if self.inverse_field_mm is not None:
             arrays["inverse_field_mm"] = self.inverse_field_mm.astype(np.float32)
+        if self.left_out is not None:
+            arrays["left_out"] = self.left_out.astype(bool)
         np.savez_compressed(out / "arrays.npz", **arrays)  # pyright: ignore[reportArgumentType]
         if self.parent is not None:
             self.parent.save(out / "parent")
@@ -282,6 +288,7 @@ class DeformableRecord:
                 excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
                 diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
                 parent=parent, provenance=dict(meta["provenance"]),
+                left_out=arrays.get("left_out"),
             )
         except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
             raise ValueError(f"{root / 'record.json'}: {exc}") from exc

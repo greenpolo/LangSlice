@@ -55,6 +55,7 @@ from langslice.core.appearance import describe as describe_look
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
+from langslice.core.canvas import AUTO_BORDER_COLOR
 from langslice.core.captions import angles_label, caption, view_angles_label
 from langslice.core.channels import CHANNELS_KEY, all_properties, display_words
 from langslice.core.display import (
@@ -112,7 +113,10 @@ SECTION_FIELDS: tuple[str, ...] = (
 #: The appearance entries a picture depends on (display properties and the
 #: preprocessed channel's recipe).
 APPEARANCE_KEYS: tuple[str, ...] = (CHANNELS_KEY, PREPROCESSED)
-_BORDER_COLOR = "#ffff00"
+#: Default: let `canvas.resolve_border_color` pick the per-picture cased
+#: arrangement (Nash, 2026-10-14: "Just have black with white outlines or
+#: white with black outlines (the outlines having outlines themselves)").
+_BORDER_COLOR = AUTO_BORDER_COLOR
 
 logger = logging.getLogger(__name__)
 
@@ -365,7 +369,7 @@ def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozen
     ``(name, ids with descendants)``; :class:`LookError` ``UNKNOWN_REGIONS``."""
     if not request.highlight:
         return ()
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     names = list(request.highlight)
     try:
@@ -563,6 +567,9 @@ def _overlay_picture(
     atlas_words = " + ".join(layers) or "none"
     if options.atlas_images and options.atlas_opacity > 0:
         atlas_words += f" (images at {options.atlas_opacity:g})"
+    border_word = image.info.get("border_word")
+    if border_word:
+        atlas_words += f"; borders {border_word}"
     if options.regions:
         emphasis = "only" if request.region_only else "drawn thick, the other borders faint"
         atlas_words += f"; regions {', '.join(name for name, _ids in options.regions)} {emphasis}"
@@ -712,7 +719,9 @@ def _atlas_picture(
              else f"{angles_label(angles)} (the stack's cutting angles)")
     if section:
         plane = f"{angles_label(angles)} ({section.id}'s cutting angles)"
-    text = f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}"
+    border_word = picture.info.get("border_word")
+    text = (f"atlas at {position_mm:.2f} mm{plane}; {um:.1f} um/px; layers {layers_words}"
+            + (f"; borders {border_word}" if border_word else ""))
     panels = []
     section = state.by_id(request.sections[0]) if len(request.sections) == 1 else None
     if section is not None:

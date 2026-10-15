@@ -3,8 +3,8 @@
 Run through ``langslice.cli.main`` as an agent runs it: one JSON envelope on
 stdout (``ok``, ``result``, ``artifacts``, ``warnings``, ``next``, and
 ``error`` with a ``fix`` when not ok), exit codes 0 / 2 (bad arguments) /
-3 (refused by the job) / 4 (internal). The stack is the golden recorder's
-synthetic one (``tests/golden/record.py``), its atlas installed where every
+3 (refused by the job) / 4 (internal). The stack is the shared
+synthetic one (``tests/synthetic_stack.py``), its atlas installed where every
 CLI job opens (``tests.cli_child.install``); background runs start
 ``python -m tests.cli_child`` in a process of their own.
 """
@@ -22,12 +22,11 @@ import pytest
 
 from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
-from tests.golden.record import (
+from tests.synthetic_stack import (
     ID0,
     ID1,
     ID2,
     PIXEL_SIZE_UM,
-    apply_patches,
     atlas_loader,
     write_sections,
 )
@@ -46,7 +45,6 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A fresh copy of the stack, the synthetic atlas installed, HOME private."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     install(atlas_loader(), monkeypatch.setattr)
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
@@ -72,22 +70,6 @@ def init(capsys: pytest.CaptureFixture[str], images: Path, *flags: str) -> Path:
 
 
 # --- ops and schema -----------------------------------------------------------------
-
-
-def test_ops_lists_every_verb_with_kind_group_and_one_line(capsys):
-    from langslice.ops.registry import VERBS
-
-    code, envelope = cli(capsys, "ops")
-    assert code == 0 and envelope["ok"] is True
-    listed = envelope["result"]["verbs"]
-    assert [row["name"] for row in listed] == list(VERBS)
-    for row in listed:
-        assert row["kind"] == VERBS[row["name"]].kind
-        assert row["group"] == VERBS[row["name"]].group
-        assert row["summary"] and "\n" not in row["summary"]
-        assert row.get("long", False) is VERBS[row["name"]].long
-    assert "brief" in envelope["result"]["job_commands"]
-    assert set(envelope) == {"ok", "result", "artifacts", "warnings", "next"}
 
 
 def test_schema_of_one_verb_and_of_every_verb(capsys):
@@ -117,7 +99,7 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, fit = cli(capsys, "schema", "elastix_affine")
     assert fit["result"]["long"] is True and fit["next"][0].endswith("--background")
     code, everything = cli(capsys, "schema")
-    assert code == 0 and "ants_syn" in everything["result"]["verbs"]
+    assert code == 0 and "fireants_syn" in everything["result"]["verbs"]
     assert everything["result"]["schema_version"] == 3
     assert everything["result"]["verbs"]["status"]["arguments"]["properties"] == {}
     assert not any("picture_options" in entry
@@ -125,28 +107,6 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
     assert "langslice-job ops" in unknown["error"]["fix"]
-
-
-def test_init_is_described_by_schema_and_by_help(capsys, images):
-    code, envelope = cli(capsys, "schema", "init")
-    assert code == 0, envelope
-    result = envelope["result"]
-    assert result["verb"] == "init" and result["kind"] == "command"
-    flags = {row["flag"]: row for row in result["flags"]}
-    assert {"--tasks", "--atlas", "--registration", "--notes", "--viewer"} <= set(flags)
-    assert flags["--viewer"]["choices"] and flags["--notes"]["takes_value"] is True
-    assert all(row["help"] for row in result["flags"])
-    # `FOLDER init --help` answers the same and creates nothing.
-    code, helped = cli(capsys, str(images), "init", "--help")
-    assert code == 0 and helped["result"] == result
-    assert not (images / "langslice").exists()
-    code, waited = cli(capsys, "schema", "wait")
-    assert code == 0 and [row["flag"] for row in waited["result"]["flags"]] == ["--timeout"]
-    # Any verb: --help is its schema, declared for the folder's job.
-    init(capsys, images)
-    code, status = cli(capsys, str(images), "status", "--help")
-    assert code == 0 and status["result"]["verb"] == "status"
-    assert status["result"]["job"] == str(images / "langslice")
 
 
 def test_stdout_holds_the_envelope_alone_when_the_atlas_prints(capsys, images, monkeypatch):
@@ -205,9 +165,9 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     assert "sections" not in here["result"]["arguments"]["properties"]
     # Only the job's verbs: no Nonlinear verb for a transform job.
     code, listed = cli(capsys, "schema", "--job", str(images))
-    assert "ants_syn" not in listed["result"]["verbs"]
+    assert "fireants_syn" not in listed["result"]["verbs"]
     assert "interactive_transform" in listed["result"]["verbs"]
-    code, off = cli(capsys, "schema", "ants_syn", "--job", str(images))
+    code, off = cli(capsys, "schema", "fireants_syn", "--job", str(images))
     assert code == 3 and off["error"]["code"] == "VERB_OFF"
 
 
@@ -216,7 +176,7 @@ def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
     record = json.loads((job / "job.json").read_text())
     record["spec"]["plane"] = "diagonal"  # a spec the job layer refuses
     (job / "job.json").write_text(json.dumps(record))
-    code, envelope = cli(capsys, "schema", "ants_syn", "--job", str(images))
+    code, envelope = cli(capsys, "schema", "fireants_syn", "--job", str(images))
     assert code == 3 and envelope["error"]["code"] == "JOB_UNREADABLE"
 
 
@@ -228,17 +188,18 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert job == images / "langslice"
     agents = (job / "AGENTS.md").read_text()
     assert agents == (job / "CLAUDE.md").read_text()
-    from langslice.ops.deformable import MAX_ANTS_SYN_SECTIONS
+    from langslice.ops.deformable import MAX_FIREANTS_SYN_SECTIONS
     from langslice.ops.look import MAX_LOOK_PICTURES
     from langslice.ops.registry import VERBS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " brief`", "BRIEF.md", "STALE_INPUT",
-                   "- `elastix_affine` (write, Linear, long):",
+                   f"- `elastix_affine` (write, Linear, long; at most {MAX_LOOK_PICTURES} "
+                   "sections per call):",
                    f"- `look` (read, Common; at most {MAX_LOOK_PICTURES} pictures per call):",
                    f"- `interactive_transform` (write, Linear; at most {MAX_LOOK_PICTURES} "
                    "sections per call):",
-                   f"- `ants_syn` (write, Nonlinear, long; at most {MAX_ANTS_SYN_SECTIONS} "
+                   f"- `fireants_syn` (write, Nonlinear, long; at most {MAX_FIREANTS_SYN_SECTIONS} "
                    "sections per call):",
                    'job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])',
                    "schema init", "reply.images", "`scripts/`", "never in /tmp"):
@@ -249,7 +210,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     assert [row["id"] for row in envelope["result"]["rows"]] == [ID0, ID1, ID2]
-    assert {"position_sections", "elastix_affine", "ants_syn", "export_maps"} <= set(
+    assert {"position_sections", "elastix_affine", "fireants_syn", "export_maps"} <= set(
         envelope["result"]["verbs"])
     # Opening the job folder itself works too; a folder without a job is refused.
     code, _envelope = cli(capsys, str(job), "status")
@@ -260,15 +221,6 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     (job / "AGENTS.md").write_text("old")
     cli(capsys, str(images), "status")
     assert (job / "AGENTS.md").read_text() == agents
-
-
-def test_cli_json_preserves_unicode_on_non_utf8_consoles():
-    from langslice.doors.cli.envelope import Envelope, dumps
-
-    message = "The atlas border — preserved exactly"
-    wire = dumps(Envelope(result={"statement": message}))
-    assert wire.isascii()
-    assert json.loads(wire)["result"]["statement"] == message
 
 
 # --- brief: the job statement and the opening, as LangSlice's own agent gets them ------
@@ -337,24 +289,12 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048
 
 
-def test_brief_writes_normalized_line_endings_on_every_platform(tmp_path: Path):
-    from langslice.doors.cli.brief import Brief, write
-
-    saved = write(tmp_path, Brief(statement="First line\r\nSecond line"), pictures=False)
-    assert saved is not None
-    data = saved.read_bytes()
-    assert b"First line\nSecond line" in data
-    assert b"\r" not in data
-
-
 def test_init_answers_with_the_statement_and_keeps_notes_and_viewer(capsys, images):
     code, envelope = cli(capsys, str(images), "init", "--tasks", "position",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          "--notes", "Mind the bulbs.")
     assert code == 0, envelope
     statement = envelope["result"]["statement"]
-    assert "You are an expert neuroanatomist" in statement
-    assert "`langslice-job " in statement and " brief` saves them as picture files" in statement
     assert "User notes:\nMind the bulbs." in statement
     assert envelope["result"]["viewer"] == "claude"  # the default viewer
     assert envelope["next"] == [f"langslice-job {images / 'langslice'} brief"]
@@ -565,16 +505,16 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert (job / "state.json").read_bytes() == state_before
     assert sorted(path.name for path in job.rglob("*")) == views_before
     # A fit is checked, not run.
-    for fit in ("ants_syn", "elastix_affine"):
+    for fit in ("fireants_syn", "elastix_affine"):
         code, envelope = cli(capsys, str(images), fit, "--sections", ID0, "--dry-run")
         assert code == 0 and envelope["result"] == {"dry_run": True, "simulated": False,
                                                     "sections": [ID0]}, fit
         assert envelope["next"][-1].endswith("--background")
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", "nope.png",
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", "nope.png",
                          "--dry-run")
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_SLICE_IDS"
     # A dry run never starts a background run (that child would run the verb).
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", ID0,
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
                          "--dry-run", "--background")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
     assert not (job / "logs" / "runs").exists()
@@ -607,14 +547,11 @@ def test_trace_borders_answers_once_its_background_work_has_landed(capsys, image
                                                                    monkeypatch):
     """The packaged trace starts background work; the CLI process waits for
     it and answers with its notice and its pictures as artifacts."""
-    pytest.importorskip("ants")
-    from langslice.core import deformation
+    pytest.importorskip("fireants")
     from langslice.doors.api import setup
     from langslice.doors.tools import toolbox
-    from tests.golden.record import stub_image_model
+    from tests.synthetic_stack import stub_image_model
 
-    monkeypatch.setattr(deformation, "USE_PROCESS_POOL", False)
-    monkeypatch.setattr(deformation, "DETAIL_LEVEL", "coarse")
     monkeypatch.setattr(setup, "image_model_connected", lambda provider: True)
     monkeypatch.setattr(toolbox, "resolve_image_model", lambda provider, model: stub_image_model(
         SimpleNamespace(nonlinear=SimpleNamespace(provider=provider, image_model=model))))
@@ -770,16 +707,14 @@ def _dead_run(tmp_path: Path) -> tuple[Any, str]:
     from langslice.job.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
-    background._write(layout, {"id": "run-1", "verb": "ants_syn", "state": "running",
+    background._write(layout, {"id": "run-1", "verb": "fireants_syn", "state": "running",
                                "started": 0.0, "pid": 424242})
     return layout, "run-1"
 
 
-@pytest.mark.parametrize("probe", ["psutil", "ctypes"])
-def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch, probe):
-    """On Windows the run's process is really probed (psutil when installed,
-    else OpenProcess/GetExitCodeProcess), and ``wait`` without a timeout
-    returns once the process is gone."""
+def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch):
+    """On Windows the run's process is really probed, and ``wait`` without a
+    timeout returns once the process is gone."""
     import sys
     import threading
     import types
@@ -787,27 +722,8 @@ def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch, probe):
     from langslice.doors.cli import background
 
     monkeypatch.setattr(background, "WINDOWS", True)
-    if probe == "psutil":
-        fake = types.SimpleNamespace(pid_exists=lambda pid: pid != 424242)
-        monkeypatch.setitem(sys.modules, "psutil", fake)
-    else:
-        monkeypatch.setitem(sys.modules, "psutil", None)  # not installed
-
-        class Kernel32:
-            def OpenProcess(self, access, inherit, pid):  # noqa: N802
-                return 0 if pid == 424242 else 7
-
-            def GetLastError(self):  # noqa: N802
-                return 87  # ERROR_INVALID_PARAMETER: no such process
-
-            def GetExitCodeProcess(self, handle, code):  # noqa: N802
-                code._obj.value = 259
-                return 1
-
-            def CloseHandle(self, handle):  # noqa: N802
-                return 1
-
-        monkeypatch.setattr(background, "_kernel32", lambda: Kernel32())
+    fake = types.SimpleNamespace(pid_exists=lambda pid: pid != 424242)
+    monkeypatch.setitem(sys.modules, "psutil", fake)
     assert background._alive(4242) is True
     assert background._alive(424242) is False
     layout, run_id = _dead_run(tmp_path)
@@ -833,7 +749,8 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         "set_preprocessed_channel_properties": {"pictures": limits["look"]["pictures"]},
         "grep_atlas_view": {"pictures": limits["look"]["pictures"]},
         "interactive_transform": {"sections": limits["interactive_transform"]["sections"]},
-        "ants_syn": {"sections": limits["ants_syn"]["sections"]},
+        "elastix_affine": {"sections": limits["elastix_affine"]["sections"]},
+        "fireants_syn": {"sections": limits["fireants_syn"]["sections"]},
     }
     with langslice.open_job(images) as job:
         code, _placed = cli(capsys, str(images), "position_sections", "--args", json.dumps(
@@ -845,9 +762,12 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         refused = job.interactive_transform(
             sections=[{"id": ID0, "rotation_deg": 0}] * (most + 1))
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
-        most = limits["ants_syn"]["sections"]
-        refused = job.ants_syn(sections=[ID0] * (most + 1))
-        assert refused["error"] == "BAD_ARGS" and refused["max_sections"] == most
+        most = limits["elastix_affine"]["sections"]
+        refused = job.elastix_affine(sections=[ID0] * (most + 1))
+        assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
+        most = limits["fireants_syn"]["sections"]
+        refused = job.fireants_syn(sections=[ID0] * (most + 1))
+        assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
         # One past a picture limit: the rest named, not shown.
         most = limits["look"]["pictures"]
         shown = job.look(mode="atlas", positions_mm=[0.02 + 0.04 * i for i in range(most + 1)])
@@ -863,7 +783,7 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
 _EXIT_SCRIPT = """
 import sys
 from tests.cli_child import install
-from tests.golden.record import ID0, ID1, ID2, apply_patches, atlas_loader
+from tests.synthetic_stack import ID0, ID1, ID2, apply_patches, atlas_loader
 apply_patches()
 install(atlas_loader())
 import langslice

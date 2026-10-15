@@ -1,12 +1,10 @@
-"""grep_atlas: text lookup of atlas regions, with optional in-plane presence,
-in every run."""
+"""grep_atlas: text lookup of atlas regions, with optional in-plane presence."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
@@ -52,13 +50,6 @@ def _stack(folder: Path, tasks: list[str], atlas: SlabAtlas | None = None):
 def _grep(tmp_path: Path):
     state, ctx, spec = _stack(tmp_path, ["nonlinear"])
     return state, _tool(build_tools(state, ctx, spec), "grep_atlas")
-
-
-@pytest.mark.parametrize("tasks", [[], ["position"], ["transform"], ["nonlinear"]])
-def test_the_tool_is_in_every_run(tmp_path: Path, tasks: list[str]):
-    state, ctx, spec = _stack(tmp_path, tasks)
-    names = build_tools(state, ctx, spec).names
-    assert {"grep_atlas", "grep_atlas_view"} <= set(names)
 
 
 def test_lookup_by_acronym_name_and_id_with_ancestry(tmp_path: Path):

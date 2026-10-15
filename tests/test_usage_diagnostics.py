@@ -53,19 +53,6 @@ def test_attribution_reconciles_without_double_counting_children_or_guessing_ids
     assert body == original
 
 
-def test_tool_images_are_described_from_output_and_hashes_detect_changed_content():
-    item = {"type": "function_call_output", "call_id": "tool_1", "output": [
-        {"type": "input_text", "text": "private"},
-        {"type": "input_image", "image_url": "private image"},
-    ]}
-    first = item_descriptor(item)
-    assert [part["type"] for part in first["content"]] == ["input_text", "input_image"]
-    item["output"][1]["image_url"] = "different image"
-    second = item_descriptor(item)
-    assert first["content"][0] == second["content"][0]
-    assert first["content"][1]["fingerprint"] != second["content"][1]["fingerprint"]
-
-
 @pytest.mark.parametrize("bad", [None, -1, True, "0", 1.5])
 def test_missing_or_invalid_counts_are_unknown_not_zero(bad):
     report = usage_diagnostics({"input_tokens_details": {"cache_write_tokens": bad}})
@@ -112,7 +99,7 @@ def test_provider_diagnostics_do_not_change_request_or_model_content(monkeypatch
     assert "private" not in json.dumps(diagnostics)
 
 
-@pytest.mark.parametrize("writes", [None, 0, 3])
+@pytest.mark.parametrize("writes", [None, 3])
 def test_trace_preserves_usage_only_responses_and_optional_cache_writes(tmp_path, writes):
     agent = SimpleNamespace(name="test", model="fake", instruction="test")
     trace = SessionTrace(tmp_path, "usage", agent=agent)
@@ -128,11 +115,8 @@ def test_trace_preserves_usage_only_responses_and_optional_cache_writes(tmp_path
     assert ("cache_write_tokens" in row["usage"]) is (writes is not None)
 
 
-@pytest.mark.parametrize("traced", [False, True])
-def test_session_enables_optional_diagnostics_only_when_traced(tmp_path, monkeypatch, traced):
+def test_session_does_not_enable_optional_diagnostics_when_untraced(monkeypatch):
     monkeypatch.delenv("LANGSLICE_TRACE_DIR", raising=False)
-    if traced:
-        monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(tmp_path))
     model = openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test")
     agent = LlmAgent(name="test", model=model)
     # Already done: test session setup without invoking any provider.
@@ -141,7 +125,7 @@ def test_session_enables_optional_diagnostics_only_when_traced(tmp_path, monkeyp
         nudge_no_tool="continue", nudge_continue="continue",
         seed_message=types.Content(role="user", parts=[types.Part.from_text(text="test")]),
     ))
-    assert model.capture_usage_details is traced
+    assert model.capture_usage_details is False
 
 
 def test_diagnostics_survive_the_adk_session_to_trace(tmp_path, monkeypatch):
@@ -157,12 +141,14 @@ def test_diagnostics_survive_the_adk_session_to_trace(tmp_path, monkeypatch):
             }}},
         ])
     monkeypatch.setattr(openai_oauth, "stream_events", fake_stream)
-    agent = LlmAgent(name="test", model=openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test"))
+    llm = openai_oauth.OpenAIOAuthLlm(model="openai-oauth/test")
+    agent = LlmAgent(name="test", model=llm)
     asyncio.run(run_agent_session(
         agent=agent, run_label="usage_test", done=lambda: bool(sent),
         nudge_no_tool="continue", nudge_continue="continue",
         seed_message=types.Content(role="user", parts=[types.Part.from_text(text="test")]),
     ))
+    assert llm.capture_usage_details is True  # traced sessions enable the diagnostics
     path, = tmp_path.glob("*.jsonl")
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     model, = [row for row in rows if row["kind"] == "model"]

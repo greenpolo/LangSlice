@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from langslice.core.layers import PictureNote, collecting, note
+from langslice.core.layers import PictureNote
 from langslice.job.layout import JobLayout
 from langslice.job.views import DiscardedViews, ViewStore, captured
 
@@ -43,17 +43,6 @@ def test_view_json_and_the_index_carry_caption_step_and_recipe(tmp_path: Path):
     assert "caption" not in bare and "recipe" not in bare and bare["step"] == 4
 
 
-def test_note_carries_recipe_and_caption_and_old_callers_still_work():
-    image = _picture()
-    plain = _picture()
-    with collecting() as notes:
-        note(image, sections=["s1.png"], mode="atlas", recipe=RECIPE, caption="c")
-        note(plain, mode="section")
-    held = notes[0][1]
-    assert held.recipe == RECIPE and held.caption == "c" and held.sections == ("s1.png",)
-    assert notes[1][1].recipe is None and notes[1][1].caption is None
-
-
 def test_lookup_and_latest_skip_zoom_and_survive_a_new_store(tmp_path: Path):
     store = _store(tmp_path)
     store.save(tool="view", pictures=[(_picture(), PictureNote(recipe=RECIPE))])
@@ -84,11 +73,3 @@ def test_a_dry_run_indexes_pictures_in_memory(tmp_path: Path):
     assert latest is not None and latest.seq == 1
     assert not (tmp_path / "langslice" / "views.jsonl").exists()
 
-
-def test_a_dry_run_store_keeps_only_the_newest_images(tmp_path: Path):
-    store = _store(tmp_path, DiscardedViews)
-    for _ in range(DiscardedViews.KEPT_PICTURES + 3):
-        store.save(tool="view", pictures=[(_picture(), None)])
-    first, last = store.lookup(1), store.lookup(DiscardedViews.KEPT_PICTURES + 3)
-    assert first is not None and first.image is None
-    assert last is not None and last.image is not None

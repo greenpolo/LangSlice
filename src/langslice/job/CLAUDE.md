@@ -261,13 +261,13 @@ longer exist be taken over by the images it is opened with.
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
-  gates, `submit_errors(state, spec, breaks, left_linear=)`, in order and
+  gates, `submit_errors(state, spec, breaks)`, in order and
   only for the tasks that are on: `MISSING_POSITIONS` (no position),
   `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
-  `MISSING_DEFORMATIONS`. The sections whose
-  deformation is frozen need no deformation and no image correction, and
-  the sections `submit` leaves linear (`left_linear`) count as covered.
+  `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
+  section (`NonlinearSpec.require_deformation`). The sections whose
+  deformation is frozen need no deformation and no image correction.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
   `applied_deformation`, `maps_status`, `write_registration`,
@@ -317,9 +317,9 @@ longer exist be taken over by the images it is opened with.
   exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
   number and id, arguments, `caption`, `step`, `recipe`, sections, mode, picture size and bytes, `frame`)
-  and, for a placement picture or an `ants_syn` picture (its note's
+  and, for a placement picture or an `fireants_syn` picture (its note's
   `warp`, `core.layers.warp_layers`), `labels.tif` (uint32, zlib) and
-  `borders.png` (8-bit coverage), plus `residual.tif` for an `ants_syn`
+  `borders.png` (8-bit coverage), plus `residual.tif` for an `fireants_syn`
   picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`, and `caption`, `step`,

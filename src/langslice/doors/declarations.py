@@ -16,8 +16,8 @@ The description is the stub's docstring, which a model reads verbatim (ADK
 and FastMCP send a function's ``__doc__`` as it is), and it is the ONLY
 description of the tool: the job statement names the tools and describes
 none. Every continuation line a model reads is indented eight spaces;
-:func:`model_doc` adds the four this module level lacks (the goldens pin the
-bytes).
+:func:`model_doc` adds the four this module level lacks (the text snapshot pins
+the text).
 
 A run varies a declaration in the ways a :class:`Variant` names: ``look``'s and
 ``landmark_triangulation``'s ``resolution`` exist only where the agent chooses
@@ -25,8 +25,7 @@ the picture size (image resolution "auto"; the CLI always); the change tools'
 ``view`` is not offered
 where the host forces their pictures on (``JobSpec.force_view``);
 ``position_sections`` takes ``sections`` only with the Positioning task;
-``submit`` takes ``left_linear`` only with Nonlinear on and no deformation
-required on every section; ``trace_borders`` carries the run's base image
+``trace_borders`` carries the run's base image
 prompt; each door words where its answers come from (``_DOOR_DOCS``); and
 what the job disables (``JobSpec.disabled``) is gone: an option from the
 argument's enum (``look``'s ``mode``), the arguments only it served
@@ -55,7 +54,6 @@ from langslice.core.toolset import OPTION_SEPARATOR, TOOLS, is_off, options_on
 from langslice.doors.tools.arguments import (
     CuttingAngles,
     LandmarkPair,
-    LeftLinear,
     PicturePoint,
     SectionPosition,
     SectionTransform,
@@ -259,14 +257,25 @@ def set_preprocessed_channel_properties(
 
     Every section has one preprocessed channel, made from its raw channels
     by a recipe, LangSlice's default until this is called: each raw channel
-    with a weight above zero is optionally N4-corrected and denoised (ANTs)
+    with a weight above zero is optionally N4-corrected and denoised
     and contrast-enhanced by CLAHE, then the channels are blended by their
     weights. The fits match it against an atlas image. The raw channels are
     never changed; look draws this channel with channels ["preprocessed"].
     Undoable; another call replaces the recipe.
 
-    Tune channel weights and preprocessing to make the internal anatomy
-    useful for registration stand out. Inspect the before-and-after pictures
+    Register on the counterstain. A counterstain (DAPI, Hoechst, Nissl,
+    NeuroTrace) labels every cell, so it shows the anatomy the atlas draws; a
+    labelling channel (a tracer, an antibody, a reporter) marks only some
+    cells, and its bright signal pulls the fits toward it. Give the
+    counterstain weight 1 and each labelling channel weight 0, then enhance
+    it until the internal anatomy (layers, nuclei, fibre tracts, ventricles)
+    is as clear as possible: CLAHE always, N4 where illumination is uneven,
+    denoising where it is grainy. A section with one channel, or a
+    brightfield stain that already shows the anatomy, uses that channel. The
+    preprocessed channel serves both you and the fitting algorithms: look at
+    it (`look` with channels ["preprocessed"]) to judge alignment, and the
+    fits match it against the atlas. Pale or low-contrast sections
+    especially need this before you place or fit them. Inspect the before-and-after pictures
     and compare with the raw channels before fitting. Raw-channel display
     adjustments alone do not change what the fitting algorithms receive.
 
@@ -279,8 +288,8 @@ def set_preprocessed_channel_properties(
             weights by tissue coverage.
         clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
         clahe_tiles: CLAHE tiles per side, 1 to 32.
-        n4: ANTs N4 correction of uneven illumination.
-        denoise: ANTs denoising.
+        n4: N4 correction of uneven illumination.
+        denoise: Denoising.
         reset: True returns the stack to the default recipe, or the named
             sections to the stack's recipe; the other arguments are then
             ignored.
@@ -529,9 +538,9 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
     olfactory bulb or the cortex. Small tears, bubbles, stains, low contrast
     and folds within an intact outline are not damage and are not marked.
     A section is damaged exactly when it has marked regions. ~
-    [[?elastix_affine|ants_syn|trace_borders The marked
+    [[?elastix_affine|fireants_syn|trace_borders The marked
     regions are left out of ~
-    [[#elastix_affine=elastix_affine||ants_syn=ants_syn||~
+    [[#elastix_affine=elastix_affine||fireants_syn=fireants_syn||~
     trace_borders=the image model's
     trace]] automatically, and they||The marked regions]] move with the registration because they
     are named by atlas region. One undoable write.
@@ -556,16 +565,17 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
 
 
 def elastix_affine(
-    sections: list[str] = [],
+    sections: list[str],
     restrict_to: list[str] = [],
     atlas_image: FitAtlas = "template",
     view: bool = True,
 ) -> dict[str, Any]:
     """Fit sections' in-plane affine transforms automatically with elastix.
 
-    Elastix refines each section's current placement (from the identity
-    when it has no transform) by matching its preprocessed channel against
-    an atlas image, inner anatomy included. It adjusts from where the
+    For a few sections at a time. Elastix refines each section's current
+    placement (from the identity when it has no transform) by matching its
+    preprocessed channel against an atlas image, inner anatomy included. It
+    adjusts from where the
     section is and does not search from scratch: it moves a section by
     small amounts and does not turn it over. The section's marked damage
     regions are left out automatically. Each fit is written as the
@@ -580,8 +590,7 @@ def elastix_affine(
     a larger region[[?interactive_transform  or interactive_transform]]. No fit is written for it.
 
     Args:
-        sections: Filenames (the extension may be left off); empty is every
-            placed section whose affine is not frozen.
+        sections: One to four filenames (the extension may be left off).
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side): only the
             atlas within 300 um of them, against the tissue the fit lays
@@ -603,14 +612,14 @@ def elastix_affine(
     ...
 
 
-def ants_syn(
+def fireants_syn(
     sections: list[str],
     restrict_to: list[str] = [],
     atlas_image: FitAtlas = "template",
     stiffness: Stiffness = "medium",
     view: bool = True,
 ) -> dict[str, Any]:
-    """Fit a deformation of the atlas onto sections with ANTs SyN, on their current registration.
+    """Fit the atlas onto sections with FireANTs SyN, on their current registration.
 
     SyN bends the atlas onto each section's preprocessed channel, starting
     from the section's current registration (its linear placement, and its
@@ -651,11 +660,11 @@ def ants_syn(
 
 
 def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -> dict[str, Any]:
-    """Trace the atlas borders onto a section with the image model, then fit what it drew with ANTs.
+    """Trace the atlas borders onto a section with the image model, then fit it with FireANTs.
 
     LangSlice's own nonlinear method, packaged: the image model is shown the
     section with its placed atlas borders and draws them on the section's
-    anatomy; when it answers, ANTs fits the traced borders (medium
+    anatomy; when it answers, FireANTs fits the traced borders (medium
     stiffness) on top of the section's current registration and the
     deformation is applied as its own undoable step. The section needs a
     position and a transform; its marked damage regions are left out of
@@ -735,7 +744,6 @@ def submit(
     summary: str,
     notes: list[str],
     interval_breaks: list[str],
-    left_linear: list[LeftLinear] = [],
 ) -> dict[str, Any]:
     """End the run. Call this exactly once, last.
 
@@ -748,9 +756,6 @@ def submit(
         interval_breaks: Filenames (the extension may be left off) of the
             sections AFTER a gap you conclude is real. Empty if there are
             none.
-        left_linear: Sections left without a deformation, each with the
-            reason its linear placement stands: [{"id": "<filename>",
-            "reason": "..."}].
     """
     ...
 
@@ -891,7 +896,7 @@ STUBS: dict[str, Callable[..., Any]] = {
         look, zoom, set_channel_properties, set_preprocessed_channel_properties,
         grep_atlas, grep_atlas_view, status, list_files, search_files, read_file,
         position_sections, interactive_transform, mark_damage,
-        elastix_affine, ants_syn, set_landmarks, landmark_triangulation,
+        elastix_affine, fireants_syn, set_landmarks, landmark_triangulation,
         trace_borders,
         note, undo, redo, submit, export_maps,
     )
@@ -899,7 +904,7 @@ STUBS: dict[str, Callable[..., Any]] = {
 
 #: The change tools: each returns its picture unless ``view`` is false.
 VIEW_TOOLS: tuple[str, ...] = (
-    "position_sections", "interactive_transform", "elastix_affine", "ants_syn",
+    "position_sections", "interactive_transform", "elastix_affine", "fireants_syn",
     "set_landmarks", "landmark_triangulation",
 )
 
@@ -929,8 +934,6 @@ class Variant:
     forced_view: bool = False
     #: ``position_sections`` takes ``sections`` (the Positioning task is on).
     positions: bool = True
-    #: ``submit`` takes ``left_linear`` (Nonlinear on, no deformation required).
-    left_linear: bool = True
     #: The base image prompt ``trace_borders`` carries.
     prompt: str = ""
     #: What the job disables (``JobSpec.disabled``).
@@ -957,8 +960,6 @@ class Variant:
         held = tuple(of_spec(spec))
         return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
                    positions=bool(spec.has("position")),
-                   left_linear=bool(spec.has("nonlinear")
-                                    and not spec.nonlinear.require_deformation),
                    prompt=text, off=frozenset(spec.switched_off), plugins=held)
 
 
@@ -1064,8 +1065,6 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
         dropped.append("view")
     if name == "position_sections" and not variant.positions:
         dropped.append("sections")
-    if name == "submit" and not variant.left_linear:
-        dropped.append("left_linear")
     if name == "look":
         modes = set(options_on(variant.off, "look"))
         if "overlay" not in modes:  # what only an overlay uses

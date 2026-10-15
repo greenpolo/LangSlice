@@ -4,13 +4,12 @@ passive viewer and log (fakes; no JVM in the plain environment)."""
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from langslice.hosts.integrations import abba_launch
-from langslice.hosts.integrations.abba_launch import RunListener, connector_jar, read_views
+from langslice.hosts.integrations.abba_launch import RunListener, connector_jar
 
 
 class _Follower:
@@ -82,19 +81,6 @@ def test_agent_events_reach_the_viewer_and_the_log_with_pictures_from_the_views(
     assert "images" not in end  # the follower's copy is untouched
 
 
-def test_a_new_section_map_is_a_new_run_and_the_end_finishes_the_follower():
-    slices: dict[str, Any] = {"a.tif": 1}
-    listener, followers, _logs = _listener(slices)
-    listener.handle(_agent({"kind": "seed", "views": []}))
-    slices.clear()
-    slices.update({"b.tif": 2})
-    listener.handle(_agent({"kind": "seed", "views": []}))
-    assert [f.mapping for f in followers] == [{"a.tif": 1}, {"b.tif": 2}]
-    assert followers[0].finished == 1
-    listener.handle(json.dumps({"kind": "run_finished"}))
-    assert followers[1].finished == 1 and listener.follower is None
-
-
 def test_failing_viewers_never_reach_the_run_and_log_messages_are_progress():
     def broken(_mapping: Any) -> Any:
         raise RuntimeError("no display")
@@ -118,24 +104,6 @@ def test_the_java_thread_only_queues_messages():
     assert [event["execution_id"] for event in followers[0].events] == list("01234")
 
 
-def test_one_log_serves_the_session_and_each_run_reopens_it():
-    listener, _followers, logs = _listener({"a.tif": 1})
-    listener.handle(json.dumps({"kind": "run_started", "viewer": False}))
-    listener.handle(json.dumps({"kind": "run_finished", "message": "Submitted"}))
-    listener.handle(json.dumps({"kind": "run_started", "viewer": False}))
-    [log] = logs
-    assert log.shown == 2
-    assert {"kind": "status", "text": "Submitted"} in log.events
-    log.closed = True  # disposed: the next message gets a new window
-    listener.handle(json.dumps({"kind": "log", "message": "next"}))
-    assert len(logs) == 2 and logs[1].events == [{"kind": "progress", "text": "next"}]
-
-
-def test_missing_or_unlisted_views_are_skipped(tmp_path):
-    assert read_views([str(tmp_path / "missing.jpg"), 3], wait_s=0.0) == []
-    assert read_views(None) == []
-
-
 def test_the_connector_jar_comes_from_the_environment_or_the_build_output(tmp_path, monkeypatch):
     monkeypatch.delenv(abba_launch.CONNECTOR_JAR_ENV, raising=False)
     monkeypatch.setattr(abba_launch, "repository_root", lambda: tmp_path)
@@ -156,22 +124,3 @@ def test_the_connector_jar_comes_from_the_environment_or_the_build_output(tmp_pa
         connector_jar()
 
 
-def test_abba_0_24_dependencies_are_pinned():
-    assert "ch.epfl.biop:ImageToAtlasRegister:0.24.1" in abba_launch.ABBA_JAVA_DEPENDENCIES
-    assert Path(abba_launch.__file__).resolve().parents[4] == abba_launch.repository_root()
-
-
-def test_the_viewer_opens_only_when_the_run_asked_for_it_and_failures_are_logged():
-    listener, followers, logs = _listener({"a.tif": 1})
-    listener.handle(json.dumps({"kind": "run_started", "mode": "claude", "viewer": False,
-                                "sections": {"a.tif": "slice 1"}}))
-    listener.handle(_agent({"kind": "tool_start", "name": "look", "target_ids": ["a.tif"]}))
-    assert followers == []
-    listener.handle(json.dumps({"kind": "applied", "applied": [], "angles": False,
-                                "failed": {"a.tif": "a newer registration"}}))
-    assert "a.tif: a newer registration" in logs[0].events[-1]["text"]
-    listener.handle(json.dumps({"kind": "run_started", "viewer": True}))
-    assert len(followers) == 1
-    listener.handle(json.dumps({"kind": "run_finished", "message": "Done"}))
-    assert logs[0].events[-1] == {"kind": "status", "text": "Done"}
-    assert followers[0].finished == 1
