@@ -2,7 +2,7 @@
 
 ``run(spec)`` is the whole of ``langslice linear``. There is no node graph: one
 job (:class:`langslice.job.job.Job`), one toolbox over it, one job
-statement, and a session that ends at ``submit`` or a usage budget. Every
+statement, and a session that ends at ``submit``. Every
 write tool checkpoints, so a run that dies mid-way resumes from the checkpoint
 with the state it had (and its undo history) — the agent is re-seeded, not
 replayed.
@@ -27,6 +27,7 @@ from langslice.agent.session import (
     build_agent,
     run_agent_session,
 )
+from langslice.agent.spend import SpendMonitor
 from langslice.core.atlas.core import load_atlas
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
@@ -36,6 +37,7 @@ from langslice.doors.jobs import JobContext, close_job
 from langslice.doors.statement import read_notes, status_and_notes, user_notes_lines
 from langslice.doors.tools.media import opening_parts, packaged_tools
 from langslice.doors.tools.toolbox import ToolBox, build_tools
+from langslice.job.checkpoint import write_json_atomic
 from langslice.job.job import Job
 from langslice.job.layout import JobLayout, locate_job_folder
 
@@ -204,22 +206,30 @@ async def run_session(
     sink: list[str] = []
     seed = build_seed_message(state, ctx)
     on_event = with_seed_views(on_event, save_opening(box, seed))
-    outcome = await run_agent_session(
-        agent=agent,
-        seed_message=seed,
-        done=lambda: state.submitted,
-        nudge_no_tool=_NUDGE_NO_TOOL,
-        nudge_continue=_NUDGE_CONTINUE,
-        run_label=_RUN_LABEL,
-        debrief=DEBRIEF_PROMPT if spec.debrief else None,
-        debrief_sink=sink,
-        progress=ctx.progress,
-        max_input_tokens=spec.max_input_tokens,
-        max_quota_percent=spec.max_quota_percent,
-        on_event=on_event,
-        background=functools.partial(background_message, box.job),
-        plugins=box.plugins,
-    )
+    spend = SpendMonitor(agent.model)
+    try:
+        outcome = await run_agent_session(
+            agent=agent,
+            seed_message=seed,
+            done=lambda: state.submitted,
+            nudge_no_tool=_NUDGE_NO_TOOL,
+            nudge_continue=_NUDGE_CONTINUE,
+            run_label=_RUN_LABEL,
+            debrief=DEBRIEF_PROMPT if spec.debrief else None,
+            debrief_sink=sink,
+            progress=ctx.progress,
+            on_event=on_event,
+            background=functools.partial(background_message, box.job),
+            plugins=box.plugins,
+            spend=spend,
+        )
+    finally:
+        # The account is written even when the session fails part-way: the
+        # tokens were spent. A monitoring agent reads it from the job folder.
+        try:
+            write_json_atomic(str(box.job.layout.spend_file), spend.summary())
+        except OSError:
+            logger.warning("Could not write %s", box.job.layout.spend_file, exc_info=True)
     if sink and sink[0]:
         state.debrief = sink[0]
         box.job.checkpoint()

@@ -22,7 +22,7 @@ The method spans the layers; each package has its own guide:
 
 `langslice linear run FOLDER` is ONE agent environment over a stack of
 sections: one `StackState`, one toolbox, one job statement, one ADK session
-that ends at `submit` or a configured quota/context budget. A single section
+that ends at `submit`. A single section
 is a stack of one.
 There is no node graph, no per-step agent, no single-section agent and no
 sub-session: looking at the whole stack once yields the information for
@@ -87,18 +87,24 @@ written with what it needs (`core/needs.py`) and rendered for the job.
 - `session.py` — `build_agent` (the ADK `LlmAgent`; `reasoning` set on any
   resolved model exposing `reasoning_effort`), `build_plugins`,
   `run_agent_session` (the loop: nudges when the model answers without a
-  tool, no turn or tool-call limit (including ADK: `max_llm_calls=0`), the
-  budget stops and their grace call, the debrief; *background*, called in a thread when a
+  tool, no turn, tool-call, token or time limit (including ADK:
+  `max_llm_calls=0`), the debrief; *background*, called in a thread when a
   turn ends without a submit, returns the next message in place of the
   nudge: the notices of background work that finished) and `TokenTally`
   (every call's usage printed and traced; `paid` is uncached input plus
-  cached input at `CACHED_TOKEN_WEIGHT` 0.13, an input-only proxy).
-  `JobSpec.max_quota_percent` (25) ends the session when this run's share
-  of the OAuth usage window reaches it; `JobSpec.max_input_tokens` (default
-  None) when one request's reported input, cached included, passes it.
-  Either stop gets ONE more call, asking for `submit` (`_BUDGET_GRACE`,
-  `_CONTEXT_GRACE`); a stop never breaks out of a turn, so the pending tool
-  call is answered first and the history stays well formed.
+  cached input at `CACHED_TOKEN_WEIGHT` 0.13, an input-only proxy). No
+  budget stops anything; spend only warns (`spend.py`).
+- `spend.py` — `SpendMonitor`, the operator's spend meter: warnings go to
+  the progress log (`[spend] ...`), the live `spend` event and the trace's
+  `spend` record, NEVER to the model (no text of it enters a message or a
+  tool reply). The usage-window share (from the quota headers the OAuth lane
+  puts in the event metadata) warns every 10 points; the API-key lanes
+  (`lane_of` reads the model object) get a dollar estimate from `PRICES`
+  (one table; source and date in its comment; reasoning tokens as output where
+  ADK reports them apart) warned at $5 doubling; a model with no price is said
+  so once. `engine.run_session` writes `summary()` to `exports/spend.json`
+  when the session ends or fails. A new provider lane adds its row group to
+  `PRICES`; the provider modules supply raw usage only.
 - `prompt.py` — `build_job_statement`: the job, the run facts (`run_facts`:
   the range, the optional protocol (`cutting_protocol_fact`: unknown values
   stay unknown; the agent infers from anatomy and notes uncertainty), the cutting angles, placed and unplaced sections

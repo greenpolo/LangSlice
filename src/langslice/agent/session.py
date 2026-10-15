@@ -38,6 +38,7 @@ from langslice.agent.plugins import (
     StrictArgumentsPlugin,
     WorkingSetImages,
 )
+from langslice.agent.spend import SpendMonitor
 from langslice.agent.trace import open_trace
 
 logger = logging.getLogger(__name__)
@@ -111,16 +112,6 @@ def build_agent(
 CACHED_TOKEN_WEIGHT = 0.13
 
 
-_BUDGET_GRACE = (
-    "The run's budget is spent. Call `submit` now with the stack as it stands; "
-    "no other tool."
-)
-_CONTEXT_GRACE = (
-    "The last request exceeded the configured input-context limit. "
-    "Call `submit` now with the stack as it stands; no other tool."
-)
-
-
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
@@ -144,6 +135,7 @@ class TokenTally:
         self.peak_input = 0
         self.cached = 0
         self.output = 0
+        self.reasoning = 0
 
     @property
     def paid(self) -> int:
@@ -154,6 +146,7 @@ class TokenTally:
         prompt = int(getattr(usage, "prompt_token_count", None) or 0)
         cached = int(getattr(usage, "cached_content_token_count", None) or 0)
         output = int(getattr(usage, "candidates_token_count", None) or 0)
+        self.reasoning += int(getattr(usage, "thoughts_token_count", None) or 0)
         self.calls += 1
         self.input += prompt
         self.latest_input = prompt
@@ -173,6 +166,7 @@ class TokenTally:
             "peak_input": self.peak_input,
             "cached": self.cached,
             "output": self.output,
+            "reasoning": self.reasoning,
             "paid": self.paid,
         }
 
@@ -194,19 +188,18 @@ async def run_agent_session(
     debrief: str | None = None,
     debrief_sink: list[str] | None = None,
     progress: Callable[[str], None] | None = None,
-    max_input_tokens: int | None = None,
-    max_quota_percent: int | None = None,
     on_event: LiveCallback | None = None,
     background: Callable[[], list[Any] | None] | None = None,
     plugins: list[dict[str, Any]] | None = None,
+    spend: SpendMonitor | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
-    Ends when *done* reports the session's submit tool has fired, or a configured
-    quota/input-context budget is reached. There is no turn or tool-call limit.
-    Cached input still occupies context. Budget checks happen after the
-    response, not before sending it;
-    cumulative usage remains available separately for cost accounting.
+    Ends when *done* reports the session's submit tool has fired. There is no
+    turn, tool-call, token or time limit, and nothing here stops a run for what
+    it has spent: *spend* (a :class:`~langslice.agent.spend.SpendMonitor`,
+    made from the agent's model when not given) only warns the operator, through
+    *progress*, the live ``spend`` event and the trace, never the model.
 
     *background*, when the model ends its turn without submitting: waits
     for the job's background work still running and returns what to say
@@ -230,6 +223,7 @@ async def run_agent_session(
         root_agent=agent,
         plugins=build_plugins(run_label),
     )
+    spend = spend or SpendMonitor(agent.model)
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None
     await runner.session_service.create_session(
@@ -241,27 +235,38 @@ async def run_agent_session(
         live.start(agent, seed_message)
     if trace is not None:
         trace.seed(seed_message)
-    # The nudge is traced where it is sent, not where it is written: the last
-    # one built before the budget runs out never reaches the model.
+    # The nudge is traced where it is sent, not where it is written.
     nudge: str | None = None
     tool_calls = 0
     turns = 0
     tokens = TokenTally()
-    quota_start: int | None = None
-    stopped: str | None = None
-    # A budget stop gets ONE more call, to submit: a run stopped one call
-    # short of its submit loses all its work for a few hundred tokens.
-    grace_left = 1
-    while not done() and (stopped is None or grace_left):
+
+    def count(usage: Any, event: Any, turn: int) -> None:
+        """Add one call's usage to the tally and the spend meter; the
+        warnings go to the operator."""
+        line = tokens.add(usage)
+        quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
+        warnings = spend.add(usage, quota)
+        if quota and spend.quota_used is not None:
+            line += f"; quota {quota}; window used by this run {spend.quota_used}%"
+        elif quota:
+            line += f"; quota {quota}"
+        (progress or logger.info)(f"[tokens] {line}")
+        if live is not None:
+            live.emit("usage", tokens=tokens.as_dict())
+        for warning in warnings:
+            (progress or logger.warning)(warning["text"])
+            if live is not None:
+                live.emit("spend", **warning)
+            if trace is not None:
+                trace.spend(warning, turn=turn)
+
+    while not done():
         turns += 1
-        if stopped is not None:
-            grace_left -= 1
-            nudge = _CONTEXT_GRACE if stopped == "input_context_limit" else _BUDGET_GRACE
-            message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
         saw_tool_call = False
-        # Close inside this task before submit/budget breaks leave the loop.
+        # Close inside this task before a submit break leaves the loop.
         # Deferred finalization detaches ADK telemetry in a different context.
         async with aclosing(runner.run_async(
             user_id=_USER_ID, session_id=run_label, new_message=message, run_config=run_config
@@ -273,7 +278,7 @@ async def run_agent_session(
                     live.event(event)
                 if getattr(event, "error_message", None):
                     # A model/provider error is a stop, not a turn to nudge past:
-                    # looping would re-pay the same failure until the budget ran out.
+                    # looping would re-pay the same failure over and over.
                     if live is not None:
                         live.emit("error", text=str(event.error_message))
                     raise RuntimeError(
@@ -284,41 +289,7 @@ async def run_agent_session(
                     continue
                 usage = getattr(event, "usage_metadata", None)
                 if usage is not None:
-                    line = tokens.add(usage)
-                    if live is not None:
-                        live.emit("usage", tokens=tokens.as_dict())
-                    quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
-                    used: int | None = None
-                    if quota:
-                        line += f"; quota {quota}"
-                        percent = _int_or_none(quota.get("primary_used_percent"))
-                        if percent is not None:
-                            if quota_start is None:
-                                quota_start = percent
-                            used = percent - quota_start
-                            line += f"; window used by this run {used}%"
-                    (progress or logger.info)(f"[tokens] {line}")
-                    if (
-                        max_quota_percent is not None
-                        and used is not None
-                        and used >= max_quota_percent
-                    ):
-                        # No break here: the pending tool call is answered first
-                        # (see below), so the history stays well-formed for the
-                        # grace call.
-                        if stopped is None:
-                            (progress or logger.warning)(
-                                f"[tokens] this run has used {used}% of the usage window, "
-                                f"the budget of {max_quota_percent}%; one more call to submit"
-                            )
-                        stopped = stopped or "quota_budget"
-                    if max_input_tokens is not None and tokens.latest_input > max_input_tokens:
-                        if stopped is None:
-                            (progress or logger.warning)(
-                                f"[tokens] request input {tokens.latest_input} exceeded the "
-                                f"context limit of {max_input_tokens}; one more call to submit"
-                            )
-                        stopped = stopped or "input_context_limit"
+                    count(usage, event, turns)
                 calls = event.get_function_calls() or []
                 if calls:
                     saw_tool_call = True
@@ -332,14 +303,9 @@ async def run_agent_session(
                     )
                 if done():
                     break
-                if stopped is not None and (event.get_function_responses() or not calls):
-                    # ADK runs the WHOLE tool loop inside one run_async: a model
-                    # that never stops calling tools never ends the turn on its
-                    # own. Leave once the budget-tripping call is answered.
-                    break
         if done():
             break
-        if background is not None and stopped is None:
+        if background is not None:
             # Work still running when the turn ended: wait for it, and its
             # notice is the next message.
             items = await asyncio.to_thread(background)
@@ -352,7 +318,7 @@ async def run_agent_session(
         nudge = nudge_continue if saw_tool_call else nudge_no_tool
         message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
 
-    if debrief and done() and stopped is None:
+    if debrief and done():
         # One more user message in the SAME context, after the job is over:
         # what did the agent reach for that was not there? Its answer is data
         # for the people building the environment, never for the run.
@@ -379,7 +345,7 @@ async def run_agent_session(
                         continue
                     usage = getattr(event, "usage_metadata", None)
                     if usage is not None:
-                        (progress or logger.info)(f"[tokens] {tokens.add(usage)}")
+                        count(usage, event, turns + 1)
                     for part in getattr(getattr(event, "content", None), "parts", None) or []:
                         text = getattr(part, "text", None)
                         if isinstance(text, str) and text and not getattr(part, "thought", False):
@@ -390,14 +356,15 @@ async def run_agent_session(
             debrief_sink.append("\n".join(answer).strip())
 
     (progress or logger.info)(f"[tokens] run total: {tokens.totals()}")
+    (progress or logger.info)(spend.line())
     if trace is not None:
         trace.summary(
             tool_calls=tool_calls,
             turns=turns,
             submitted=done(),
             tokens=tokens.as_dict(),
-            stopped=stopped,
+            spend=spend.summary(),
         )
     if live is not None:
-        live.emit("complete", submitted=done(), tokens=tokens.as_dict(), stopped=stopped)
+        live.emit("complete", submitted=done(), tokens=tokens.as_dict(), spend=spend.summary())
     return tool_calls, turns

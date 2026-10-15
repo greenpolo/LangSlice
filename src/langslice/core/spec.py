@@ -226,15 +226,6 @@ class NonlinearSpec:
         return canonical_provider(str(self.provider or "")) != "none"
 
 
-#: Optional per-request context safeguard, disabled unless a host sets it.
-#: Cumulative input measures repeated processing, not context-window size.
-DEFAULT_MAX_INPUT_TOKENS: int | None = None
-#: Share of the provider's usage window one run may spend, when the provider
-#: reports one (the OAuth lane's x-codex headers). Cached tokens are ~0.13x
-#: there, so this, not the raw input count, is the cost.
-DEFAULT_MAX_QUOTA_PERCENT = 25
-
-
 @dataclass
 class JobSpec:
     """One whole ``langslice linear`` run, host-agnostic."""
@@ -317,14 +308,6 @@ class JobSpec:
     #: After submit, ask the agent (same context) what tools it missed and
     #: record the answer on the state. One extra model call.
     debrief: bool = True
-    #: Stop after an observed request exceeds this input count (cached tokens
-    #: included), with one grace call to submit. None disables the safeguard.
-    #: This is checked after usage arrives, not a preflight context guarantee.
-    max_input_tokens: int | None = DEFAULT_MAX_INPUT_TOKENS
-    #: Hard stop on the usage-window share one run may spend, measured from
-    #: the window's reading on the first call; ignored when the provider
-    #: reports no quota.
-    max_quota_percent: int = DEFAULT_MAX_QUOTA_PERCENT
     #: Tool plugins the job loads, each ``module:factory``
     #: (:mod:`langslice.core.plugins`, ``docs/plugins.md``): their tools join
     #: the toolbox, and are named in ``disabled`` like the native ones. A

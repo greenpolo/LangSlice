@@ -303,8 +303,7 @@ public final class AgentRunner {
                 // Every checkpoint, the final one included, has already reached ABBA; retry what did not, once.
                 if (host.hasPending()) host.applyCheckpoint(null, null);
                 boolean submitted = result.getAsJsonObject("state").get("submitted").getAsBoolean();
-                String stopped = result.has("stopped") ? " (" + result.get("stopped").getAsString() + ")" : "";
-                return (submitted ? "Finished. " : "The agent stopped before submitting" + stopped + "; review the result. ")
+                return (submitted ? "Finished. " : "The agent stopped before submitting; review the result. ")
                         + "The agent's changes are in ABBA; each saved step is one ABBA Undo."
                         + pendingText(host) + " Save the project with ABBA's normal Save command." + outputs(result);
             }

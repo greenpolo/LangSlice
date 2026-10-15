@@ -65,8 +65,6 @@
      "inputs": {
       "pixel_size_um": 31.25
      },
-     "max_input_tokens": null,
-     "max_quota_percent": 25,
      "model": "fake-model",
      "nonlinear": {
       "image_model": null,

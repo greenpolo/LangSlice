@@ -39,9 +39,12 @@ Record kinds, in the order a healthy session writes them:
 ``nudge``
     A driver-injected user turn (the model answered in prose, or the pass
     continues).
+``spend``
+    An operator spend warning: the usage-window share or the dollar estimate
+    passed another step (:mod:`langslice.agent.spend`). Never shown to the model.
 ``summary``
-    Once, last line: tool-call count, turn count, and whether the step's
-    submit tool fired.
+    Once, last line: tool-call count, turn count, whether the step's submit
+    tool fired, the token tally and the run's spend account.
 
 No secrets: only content parts, the prompt, and a model *name* are read —
 never the request config, HTTP options, or a provider wrapper's repr (which
@@ -131,6 +134,10 @@ class SessionTrace:
     def seed(self, message: types.Content) -> None:
         self._write({"kind": "seed", "parts": _describe_parts(message.parts)})
 
+    def spend(self, warning: dict[str, Any], *, turn: int) -> None:
+        """An operator spend warning (:mod:`langslice.agent.spend`)."""
+        self._write({"kind": "spend", "turn": turn, **warning})
+
     def nudge(self, text: str, *, turn: int) -> None:
         self._write({"kind": "nudge", "turn": turn, "text": text})
 
@@ -215,7 +222,7 @@ class SessionTrace:
         turns: int,
         submitted: bool,
         tokens: dict[str, int] | None = None,
-        stopped: str | None = None,
+        spend: dict[str, Any] | None = None,
     ) -> None:
         record: dict[str, Any] = {
             "kind": "summary",
@@ -225,8 +232,8 @@ class SessionTrace:
         }
         if tokens is not None:
             record["tokens"] = tokens
-        if stopped is not None:
-            record["stopped"] = stopped
+        if spend is not None:
+            record["spend"] = spend
         self._write(record)
 
 

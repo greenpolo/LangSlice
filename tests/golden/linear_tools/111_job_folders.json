@@ -56,8 +56,6 @@
      "inputs": {
       "pixel_size_um": 31.25
      },
-     "max_input_tokens": null,
-     "max_quota_percent": 25,
      "model": "fake-model",
      "nonlinear": {
       "image_model": null,
@@ -1210,6 +1208,7 @@
    "files": [
     "AGENTS.md",
     "CLAUDE.md",
+    "exports/spend.json",
     "job.json",
     "job.lock",
     "logs/events.jsonl",
@@ -1236,8 +1235,6 @@
      "inputs": {
       "pixel_size_um": 31.25
      },
-     "max_input_tokens": null,
-     "max_quota_percent": 25,
      "model": "fake-model",
      "nonlinear": {
       "image_model": null,
@@ -1355,8 +1352,6 @@
        "s2.png": 0.2
       }
      },
-     "max_input_tokens": null,
-     "max_quota_percent": 25,
      "model": null,
      "nonlinear": {
       "image_model": null,
@@ -2130,8 +2125,6 @@
        "s2.png": 0.2
       }
      },
-     "max_input_tokens": null,
-     "max_quota_percent": 25,
      "model": null,
      "nonlinear": {
       "image_model": null,
@@ -3124,8 +3117,6 @@
      "inputs": {
       "pixel_size_um": 31.25
      },
-     "max_input_tokens": null,
-     "max_quota_percent": 25,
      "model": "fake-model",
      "nonlinear": {
       "image_model": null,

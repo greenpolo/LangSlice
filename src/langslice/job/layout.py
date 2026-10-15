@@ -21,8 +21,8 @@ without an id. Inside::
     views/<seq>_<tool>_<mode>/     pictures of several sections (stack level)
     views.jsonl          append-only index of every saved picture
     views.seq            the picture and call numbers handed out (+ views.seq.lock)
-    exports/             linear_results.json, a host's result.json,
-                         quicknii.json and visualign.json
+    exports/             linear_results.json, spend.json (the agent run's spend),
+                         a host's result.json, quicknii.json and visualign.json
     logs/                events.jsonl (opens), runs/ (the agent CLI's
                          background runs), calls.jsonl (the agent CLI's calls)
     prompt.txt           a saved ABBA job's copy prompt
@@ -69,6 +69,9 @@ PLUGINS_DIR = "plugins"
 #: Under ``exports/``: the run's result (the state's shape, unversioned) and
 #: a host job's final result (state + host updates).
 RESULTS_FILE = "linear_results.json"
+#: Under ``exports/``: what the agent run spent (tokens, usage-window share, dollar
+#: estimate), written when the session ends, for the operator.
+SPEND_FILE = "spend.json"
 #: Under ``sections/<name>/``.
 DEFORMABLE_DIR = "deformable"
 IMAGE_CORRECTION_DIR = "image_correction"
@@ -269,6 +272,10 @@ class JobLayout:
     @property
     def results_file(self) -> Path:
         return self.exports_dir / RESULTS_FILE
+
+    @property
+    def spend_file(self) -> Path:
+        return self.exports_dir / SPEND_FILE
 
     @property
     def prompt_file(self) -> Path:

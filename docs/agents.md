@@ -146,7 +146,7 @@ langslice linear run sections/ --tasks position,transform,nonlinear --image-prov
 langslice linear run sections/ --registration quicknii.json
 ```
 
-One session handles the whole stack and ends at `submit` or a budget limit.
+One session handles the whole stack and ends at `submit`.
 The default tasks are `position,transform`; `--registration` imports a linear
 placement and defaults to `nonlinear`. The agent chooses its sequence of
 tools, regions and fit settings. Nonlinear registration can fit to the stain
@@ -161,7 +161,7 @@ flag reference. The main choices are:
 |---|---|
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--max-quota-percent`, `--max-input-tokens`, `--no-debrief`, `--force-view` (change and fitting tools always return their picture) |
+| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--no-debrief`, `--force-view` (change and fitting tools always return their picture) |
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
@@ -187,12 +187,23 @@ settings than the saved job's with `SETTINGS_CHANGED`; `--fresh` starts the job
 over. Every write is checkpointed and undoable. Calls through different
 interfaces pick up each other's saved changes.
 
-The built-in agent prints token usage per model call.
-There is no limit on model turns or tool calls.
-`--max-quota-percent` (default 25) limits the run's share of a provider usage
-window when the provider reports it. `--max-input-tokens` limits the input
-reported by one request. A budget stop allows a final submit call and keeps
-completed writes.
+The built-in agent prints token usage per model call. LangSlice sets no limit
+on model turns, tool calls, tokens or time, and nothing stops a run for what it
+has spent. Spend is reported to whoever runs LangSlice, never to the model:
+
+- On the ChatGPT OAuth lane, which reports the account's usage window, a
+  `[spend]` warning is logged each time this run's share of the window (its
+  rise since the run's first reading) passes another 10 percentage points.
+- On the API-key lanes (`anthropic-api`, `openai-api`, `gemini-api`) a running
+  dollar estimate from per-token list prices (input, cached input, output;
+  thinking tokens as output; Claude input that is not a cache read as a cache
+  write) is warned at $5, $10, $20, $40 and so on, doubling. A model without a
+  price in `agent/spend.py` is said so once, with no estimate.
+- Each warning also reaches the live event stream as a `spend` event (the ABBA
+  agent viewer shows it) and the trace as a `spend` record. The run's final
+  account is written to `exports/spend.json` in the job folder, also when the
+  session fails part-way, and is the `spend` field of the trace's `summary`
+  and of the `complete` event.
 
 ## Logs and credentials
 

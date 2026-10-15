@@ -116,6 +116,9 @@ class _StackLlm(BaseLlm):
     #: Usage-window percent the fake reports as used, stepping this much per
     #: call from 40, the way the OAuth lane's quota headers do.
     quota_percent_per_call: int = 0
+    #: Raise on the call after this many (0: never), the way a failing
+    #: provider ends a run that has not submitted.
+    fail_after_calls: int = 0
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -152,6 +155,8 @@ class _StackLlm(BaseLlm):
             part = types.Part.from_text(text="Nothing to submit.")
         # ADK resolves a fresh instance per turn, so the call count lives here.
         _QUOTA_CALLS[0] += 1
+        if self.fail_after_calls and _QUOTA_CALLS[0] > self.fail_after_calls:
+            raise RuntimeError("the fake model failed")
         quota = (
             {"quota": {"primary_used_percent": str(40 + _QUOTA_CALLS[0] * self.quota_percent_per_call)}}
             if self.quota_percent_per_call
@@ -174,6 +179,7 @@ def install_fake_adk_model_stack(
     positions: dict[str, float] | None = None,
     input_tokens_per_call: int = 0,
     quota_percent_per_call: int = 0,
+    fail_after_calls: int = 0,
 ) -> None:
     """Patch LLMRegistry.new_llm so a linear session submits at once."""
     from google.adk.models.registry import LLMRegistry
@@ -186,6 +192,7 @@ def install_fake_adk_model_stack(
             positions=positions,
             input_tokens_per_call=input_tokens_per_call,
             quota_percent_per_call=quota_percent_per_call,
+            fail_after_calls=fail_after_calls,
         )
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))

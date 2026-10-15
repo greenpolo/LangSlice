@@ -94,7 +94,7 @@ def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
     estimate can honestly be given, :func:`unavailable` with the reason
     (module text); ``ValueError`` only for malformed inputs.
     """
-    from langslice.core.spec import DEFAULT_MAX_QUOTA_PERCENT, JobSpec
+    from langslice.core.spec import JobSpec
 
     if n_slices < 1:
         raise ValueError("n_slices must be at least 1")
@@ -139,11 +139,6 @@ def estimate(spec: dict[str, Any], n_slices: int) -> dict[str, Any]:
         return {"low": 0.0, "high": 0.0, "unit": UNIT,
                 "basis": "every section is frozen" + extra, "available": True}
     low, high = low_rate * sections, high_rate * sections
-    cap = float(spec.get("max_quota_percent", DEFAULT_MAX_QUOTA_PERCENT))
-    if high > cap:
-        high = cap
-        basis += f"; a run stops at its {cap:g}% cap"
-    low = min(low, high)
     if n_slices < 20 or n_slices > 60:
         basis += "; measured stacks had 36-38 sections"
     return {"low": round(low, 1), "high": round(high, 1), "unit": UNIT,
