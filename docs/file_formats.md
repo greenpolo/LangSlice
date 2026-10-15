@@ -19,7 +19,7 @@ A registration file can also be explicitly imported when creating a job.
                         image-model traces (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
-  exports/              linear_results.json, spend.json, quicknii.json, visualign.json, plugins/<tool>/ (copies of plugin layers)
+  exports/              linear_results.json, spend.json, quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/)
   logs/                 the agent CLI's calls and background runs
   AGENTS.md, CLAUDE.md  the reference card for coding agents
@@ -169,6 +169,28 @@ pixels and `nr` that index + 1.
   QUINT team's reference code reads it (`triangulate` on `(nx, ny)`, mapped to
   `(x, y)`). Each marker reproduces the section's maps exactly at its own
   point.
+
+### `traces/<name>.npz`
+
+Written with the maps, one per mapped section whose last `trace_borders`
+call holds a completed reply (`<name>` as for `sections/<name>/`: the
+filename's stem). A section without one loses the file an earlier export
+left. It holds what the image model returned, before any fit, on the grid
+of the section's maps (`maps.json`'s `grid_size`): the image file's own
+frame, with no rotation or flip applied, at the working copy's size or,
+with `full_resolution`, the file's own pixels. A NumPy `.npz` archive:
+
+| Key | Content |
+|---|---|
+| `borders` | bool, `(rows, cols)`: the model's lines as LangSlice extracts them from its reply (yellow pixels, thinned): the lines the trace's fit is fitted to |
+| `reply` | uint8 RGB, `(rows, cols, 3)`: the model's raw reply, cropped to the canvas's aspect and resized to it as the lines are, then mapped to the grid; black outside the canvas |
+| `info` | JSON text: `section`, `grid_size` (`[width, height]`), `full_resolution`, `frame`, `grid_from_canvas` (3x3 on `[x, y, 1]`: the model's canvas to the grid's pixel centres), `artifact_dir` (the attempt's folder under `sections/<name>/image_correction/`, relative to the job folder), `attempt`, `provider`, `model`, `prompt_edited`, `profile` and `untested` (an untested profile), `include` / `exclude` (the regions `restrict_to` chose), `placement_current` (whether the section's placement is still the one traced), `written_by` |
+
+The map from the canvas to the grid is the images' own (the canvas's
+padding and resize of the oriented section render, then the render's quarter
+turn, flip and resize of the file); the section's placement does not enter
+it, so a reply made at an earlier placement is still drawn where the model
+put it on the tissue.
 
 ### `spend.json`
 

@@ -18,6 +18,9 @@ input:
   section maps into the atlas volume), ``residual.tif`` (only with a deformation)
   and ``maps.json`` (what the maps were written from: grid, matrix, the
   parameters' digest).
+- ``exports/traces/<name>.npz``, with the maps, for a section holding a
+  completed ``trace_borders`` reply (:func:`write_trace_reply`): the
+  model's lines and its reply, before any fit, on the maps' grid.
 
 Writers never raise into a write of the state: a failure is logged (and the
 section's entry says why it has no matrix).
@@ -67,6 +70,9 @@ MAPS_FILE = "maps.json"
 #: same with VisuAlign markers of each applied deformation.
 QUICKNII_FILE = "quicknii.json"
 VISUALIGN_FILE = "visualign.json"
+#: Under ``exports/``: each traced section's image-model reply on its maps'
+#: grid, ``<name>.npz`` (:func:`write_trace_reply`).
+TRACES_DIR = "traces"
 #: Every per-section file, by its artifact kind.
 SECTION_FILES: dict[str, str] = {
     "coords": COORDS_FILE, "labels": LABELS_FILE, "labels_fiji": LABELS_FIJI_FILE,
@@ -423,9 +429,32 @@ def write_section_maps(
     return written
 
 
+def trace_reply_path(layout: JobLayout, section_id: str) -> Path:
+    """Where a section's exported trace reply goes: ``exports/traces/<name>.npz``."""
+    return layout.exports_dir / TRACES_DIR / (layout.section_name(section_id) + ".npz")
+
+
+def write_trace_reply(
+    layout: JobLayout, section_id: str, borders: np.ndarray, reply: np.ndarray,
+    info: dict[str, Any],
+) -> Path:
+    """Write one section's trace reply (``docs/file_formats.md``): ``borders``
+    (bool, the model's lines), ``reply`` (uint8 RGB, its raw reply), both on
+    the grid *info* names, and ``info`` (the facts as JSON text)."""
+    path = trace_reply_path(layout, section_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.stem + ".tmp.npz")
+    np.savez_compressed(temporary, borders=np.asarray(borders, dtype=bool),
+                        reply=np.asarray(reply, dtype=np.uint8),
+                        info=np.array(json.dumps(info, sort_keys=True)))
+    temporary.replace(path)
+    return path
+
+
 def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]]:
     """``(path, kind)`` of every derived file the job folder holds now:
-    ``registration.json``, the exports and each section's maps."""
+    ``registration.json``, the exports, each section's maps and its
+    exported trace reply."""
     found: list[tuple[Path, str]] = []
     top = layout.folder / REGISTRATION_FILE
     if top.exists():
@@ -437,6 +466,9 @@ def derived_files(layout: JobLayout, state: StackState) -> list[tuple[Path, str]
         folder = layout.section_dir(record.id)
         found += [(folder / name, kind) for kind, name in SECTION_FILES.items()
                   if (folder / name).exists()]
+        trace = trace_reply_path(layout, record.id)
+        if trace.exists():
+            found.append((trace, "trace_reply"))
     return found
 
 

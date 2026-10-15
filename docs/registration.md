@@ -510,6 +510,8 @@ is excluded. The model's outer line sets the section's extent: the fit pulls
 the atlas in or out to it, wherever the linear placement left the atlas edge.
 
 The agent can edit the base prompt for a section; blank uses it unchanged.
+The base prompt is LangSlice's for the provider, or the job's own
+(`nonlinear.image_prompt`, `linear run --image-prompt FILE`).
 The atlas determines which borders exist even when tissue boundaries are
 indistinct. Only physically missing tissue justifies omitting them.
 
@@ -523,7 +525,10 @@ Inspect the raw model reply, then the extracted lines on the original
 photograph, then the fitted overlay. A model may redraw tissue, and a fit
 may degrade a useful trace. Yellow tissue can confuse the line extractor;
 fit metrics do not certify region identity or topology. The job saves the
-attachments, prompts, raw reply, extracted lines and fit separately.
+attachments, prompts, raw reply, extracted lines and fit separately, and
+`export_maps` (and `submit`) export each section's last reply and its lines
+on the section's maps grid, before any fit
+([`exports/traces/`](file_formats.md#tracesnamenpz)).
 
 `trace_borders` is offered only with Nonlinear enabled and an image model
 connected. `provider="none"` disables it while keeping FireANTs and landmark tools.

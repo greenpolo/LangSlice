@@ -949,12 +949,20 @@ class Variant:
         """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
         *image_model* False: the door cannot reach its image model, so no
         prompt is described. *prompt* is the image model's own base prompt
-        (None: LangSlice's for the run's plane and provider)."""
+        (None: the job's own, ``nonlinear.image_prompt``, else LangSlice's
+        for the run's plane and provider)."""
         traced = bool(spec.has("nonlinear") and spec.nonlinear.uses_image_model and image_model)
         text = ""
         if traced:
-            text = prompt if prompt is not None else base_prompt(
-                str(spec.plane), spec.nonlinear.provider)
+            own = spec.nonlinear.image_prompt
+            if prompt is not None:
+                text = prompt
+            elif own is not None:
+                from langslice.core.nonlinear.registration_tool import PLANE_PLACEHOLDER
+
+                text = own.replace(PLANE_PLACEHOLDER, str(spec.plane))
+            else:
+                text = base_prompt(str(spec.plane), spec.nonlinear.provider)
         from langslice.core.plugins import of_spec
 
         held = tuple(of_spec(spec))

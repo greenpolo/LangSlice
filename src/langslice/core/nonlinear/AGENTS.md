@@ -45,7 +45,8 @@ residual alone is never exported.
 
 - `registration_tool.py` — `start_correction` (route "supplied"),
   the call-key folders and attempts, `profile_prompt`, `profile_marks`,
-  `prompt_diff`.
+  `prompt_diff`, `reply_on_grid` (an attempt's lines and raw reply in the
+  image file's frame, for `export_maps`).
 - `image_gen_registration.py` — model-facing canvas geometry (`prepare_canvas`,
   aspect helpers).
 - `border_refinement.py` — the yellow lines of a trace: `smooth_border_overlay`

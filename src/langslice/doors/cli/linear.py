@@ -99,6 +99,14 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help="Image model for the nonlinear tool; default is the provider's image model",
     )
     p.add_argument(
+        "--image-prompt", default=None, metavar="FILE",
+        help="A UTF-8 text file holding the base prompt trace_borders sends the image "
+        "model, in place of LangSlice's own (NonlinearSpec.image_prompt); {plane} in it "
+        "becomes the section plane. It must describe the provider's attachment order, "
+        "and its traces are recorded as an untested profile. The agent's per-section "
+        "edit starts from it. Default: LangSlice's prompt for the provider",
+    )
+    p.add_argument(
         "--pixel-size-um",
         default=None,
         metavar="UM|JSON",
@@ -227,6 +235,12 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help="Add optional positioning guidance: compare candidate planes and regions, "
         "write supported placements, revisit uncertainty and review the stack",
     )
+    for task in ("position", "transform", "nonlinear"):
+        p.add_argument(
+            f"--{task}-notes", dest=f"{task}_notes", default="", metavar="TEXT",
+            help=f"The user's notes for the {task} task, shown to the agent with the task "
+            f"(one line each; {task.capitalize()}Spec.notes)",
+        )
 
 
 def add_session_arguments(p: argparse.ArgumentParser) -> None:
@@ -302,6 +316,18 @@ def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | No
     except json.JSONDecodeError as exc:
         raise ValueError(f"{flag}: neither an existing JSON file nor inline JSON ({exc})"
                          ) from exc
+
+
+def read_text_arg(value: str | None, flag: str) -> str | None:
+    """The text of the UTF-8 file *value* names (None without one); a file that
+    cannot be read is a ``ValueError`` naming *flag*."""
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"{flag}: could not read {path}: {exc}") from exc
 
 
 def apply_trace_dir(args: argparse.Namespace) -> None:
@@ -410,14 +436,18 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
             interval_um=args.interval,
             strict_interval=args.strict_interval,
             playbook=args.playbook,
+            notes=getattr(args, "position_notes", ""),
         ),
-        transform=TransformSpec(angles=args.angles, hemisphere_cue=args.hemisphere_cue),
+        transform=TransformSpec(angles=args.angles, hemisphere_cue=args.hemisphere_cue,
+                                notes=getattr(args, "transform_notes", "")),
         disabled=[name.strip() for item in getattr(args, "disabled", []) for name in item.split(",")
                   if name.strip()],
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,
             require_deformation=bool(getattr(args, "require_deformation", False)),
+            notes=getattr(args, "nonlinear_notes", ""),
+            image_prompt=read_text_arg(getattr(args, "image_prompt", None), "--image-prompt"),
         ),
         image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),

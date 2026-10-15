@@ -12,6 +12,10 @@ doors) and ``submit`` write, from the stack as it stands:
   ``exports/visualign.json`` (the same, with VisuAlign markers of each
   applied deformation) (:func:`langslice.job.quint.job_export`);
 - ``registration.json`` again, so it lists the files just written;
+- ``exports/traces/<name>.npz``: per mapped section whose last
+  ``trace_borders`` call holds a reply, the model's lines and its raw
+  reply on the maps' grid, before any fit
+  (:func:`langslice.job.formats.write_trace_reply`);
 - ``exports/plugins/<tool>/``: a copy of the layers tool plugins left on the
   sections, with a manifest each (:func:`langslice.job.plugin_store.export_layers`),
   only when a section has layers.
@@ -129,6 +133,8 @@ def export_maps(
             if warp is None:
                 names.pop("residual")
             files += [(str(folder / name), kind) for kind, name in names.items()]
+            if _completed_trace(record) is not None:
+                files.append((str(formats.trace_reply_path(layout, record.id)), "trace_reply"))
             done.append(record.id)
             continue
         computed_from = section_inputs(state, record, deformation=True)
@@ -155,6 +161,7 @@ def export_maps(
                 skipped.append({"id": record.id, "reason": str(exc)})
                 continue
         files += [(str(path), kind) for path, kind in written]
+        files += _export_trace(job, workspace, state, record, maps.grid_size, full_resolution)
         done.append(record.id)
     exports_dir = layout.exports_dir
     if persist:
@@ -167,6 +174,69 @@ def export_maps(
     return Exported(files=files, sections=done, skipped=skipped,
                     full_resolution=bool(full_resolution), written=persist,
                     seconds=time.perf_counter() - started)
+
+
+def _completed_trace(record: SliceState) -> dict[str, Any] | None:
+    """The section's trace record when its last ``trace_borders`` call holds a reply."""
+    held = record.image_correction or {}
+    return held if held.get("status") == "ok" and held.get("artifact_dir") else None
+
+
+def _export_trace(
+    job: Job, workspace: Workspace, state: StackState, record: SliceState,
+    grid_size: tuple[int, int], full_resolution: bool,
+) -> list[tuple[str, str]]:
+    """Write the section's trace reply on its maps' grid
+    (``exports/traces/<name>.npz``, :func:`langslice.job.formats.write_trace_reply`),
+    or remove the one an earlier export left when the section holds no
+    completed trace now. A reply whose files cannot be read is logged and
+    left out."""
+    import langslice
+    from langslice.core.handoff import correction_fingerprint
+    from langslice.core.maps import render_sizes
+    from langslice.core.nonlinear.registration_tool import reply_on_grid
+    from langslice.job import formats
+
+    layout = job.layout
+    path = formats.trace_reply_path(layout, record.id)
+    held = _completed_trace(record)
+    if held is None:
+        if path.exists():
+            path.unlink()
+        return []
+    artifact_dir = str(held["artifact_dir"])
+    try:
+        file_size = render_sizes(workspace, record.id).file_size
+        borders, reply, grid_from_canvas = reply_on_grid(
+            layout.resolve(artifact_dir), file_size, grid_size)
+        current = held.get("geometry_fingerprint") == correction_fingerprint(
+            state, workspace, record.id)
+    except (OSError, ValueError, KeyError) as exc:
+        logger.warning("Could not export the trace reply of %s: %s", record.id, exc)
+        return []
+    info = {
+        "section": record.id, "grid_size": [int(grid_size[0]), int(grid_size[1])],
+        "full_resolution": bool(full_resolution),
+        "frame": "the image file as stored (no rotation or flip applied), resized to "
+                 "grid_size; the grid of the section's maps",
+        "grid_from_canvas": grid_from_canvas.tolist(), "artifact_dir": artifact_dir,
+        "attempt": held.get("attempt"), "provider": held.get("provider"),
+        "model": held.get("model"), "prompt_edited": bool(held.get("prompt_edited")),
+        **({"profile": held["profile"], "untested": True} if held.get("untested") else {}),
+        **{key: held[key] for key in ("include", "exclude") if held.get(key)},
+        "placement_current": bool(current),
+        "written_by": f"LangSlice {langslice.__version__}",
+    }
+    with job.writing():
+        now = job.state.by_id(record.id)
+        if now is None or (now.image_correction or {}).get("artifact_dir") != artifact_dir:
+            return []  # traced again meanwhile: the next export writes the new reply
+        try:
+            written = formats.write_trace_reply(layout, record.id, borders, reply, info)
+        except OSError:
+            logger.warning("Could not write the trace reply of %s", record.id, exc_info=True)
+            return []
+    return [(str(written), "trace_reply")]
 
 
 def _section_maps(workspace: Workspace, frame: Any, warp: DeformableRecord | None,

@@ -345,6 +345,23 @@ class ToolBox:
 # --- the toolbox ---------------------------------------------------------
 
 
+def with_job_prompt(spec: JobSpec, image_model: ImageModel) -> ImageModel:
+    """*image_model* with the job's own base prompt (``nonlinear.image_prompt``)
+    as its profile prompt, an untested ``custom`` profile
+    (:func:`langslice.providers.profiles.image_model`); unchanged when the
+    job has none. A model whose profile carries another prompt of its own
+    is a ``ValueError``: the trace would not know which to send."""
+    text = spec.nonlinear.image_prompt
+    if text is None or image_model.prompt == text:
+        return image_model
+    if image_model.prompt is not None:
+        raise ValueError("The image model's profile has a prompt of its own, and the job "
+                         "sets another (nonlinear.image_prompt); give only one")
+    from langslice.providers.profiles import image_model as profile
+
+    return profile(image_model, prompt=text)
+
+
 def build_tools(
     state: StackState, ctx: EngineContext, spec: JobSpec, *,
     job: Job | None = None,
@@ -401,6 +418,8 @@ def build_tools(
     traces_on = spec.nonlinear.uses_image_model and image_model_connected
     if traces_on and image_model is None:
         image_model = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
+    if traces_on and image_model is not None:
+        image_model = with_job_prompt(spec, image_model)
     run = Door(job=job, ctx=ctx, spec=spec, box=box, level=level,
                traces_on=traces_on,
                image_model=image_model)

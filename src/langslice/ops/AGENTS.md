@@ -154,7 +154,11 @@ wording; `registry.py` lists which.
   whose record or file cannot be read, is `skipped` with its reason), then
   `exports/quicknii.json` and `exports/visualign.json` for every placed
   section (`job.quint.job_export`, markers from
-  `core.maps.residual_markers`), then `registration.json`. A job that
+  `core.maps.residual_markers`), then `registration.json`. With its maps,
+  a section whose last trace holds a reply gets `exports/traces/<name>.npz`
+  (`core.nonlinear.registration_tool.reply_on_grid` on the maps' grid,
+  written by `job.formats.write_trace_reply`, kind `trace_reply`; one left
+  by an earlier export is removed when the section has none now). A job that
   persists nothing writes nothing and lists what it would (`written`
   False). A job whose sections show plugin layers also gets
   `exports/plugins/<tool>/` (`job.plugin_store.export_layers`, kind
