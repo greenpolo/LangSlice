@@ -2913,6 +2913,7 @@ abba = [
 ]
 anthropic = [
     { name = "anthropic" },
+    { name = "httpx2" },
 ]
 dev = [
     { name = "basedpyright" },
@@ -2941,6 +2942,7 @@ requires-dist = [
     { name = "google-adk" },
     { name = "google-genai" },
     { name = "h5py", marker = "extra == 'registration'", specifier = ">=3.10" },
+    { name = "httpx2", marker = "extra == 'anthropic'" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.1" },
     { name = "itk-elastix" },
     { name = "litellm", specifier = ">=1.83.3" },
