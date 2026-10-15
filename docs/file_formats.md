@@ -58,6 +58,7 @@ Format 1.
 |---|---|
 | `format_version` | 1 |
 | `written_by` | the LangSlice version |
+| `source` | the code that wrote it: `version`, `commit` (the git commit of the LangSlice checkout, null for an installed package) and `uncommitted_changes` (whether that checkout had uncommitted edits to tracked files), read once per process |
 | `note`, `convention` | what the file is; the conventions above, in words |
 | `atlas` | `name`, `version`, `orientation`, `shape` (voxels per axis), `resolution_um` (per axis) |
 | `plane` | `coronal`, `sagittal` or `horizontal` |

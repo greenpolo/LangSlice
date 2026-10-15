@@ -577,3 +577,20 @@ def test_export_maps_computes_outside_the_lock_and_refuses_a_moved_section(
     assert [row["id"] for row in done.skipped] == [ID1]
     assert "STALE_INPUT" in done.skipped[0]["reason"]
     assert (Path(first.folder) / "sections" / "s1" / "maps.json").read_text() == stamp
+
+
+def test_registration_names_the_code_that_wrote_it(placed):
+    """registration.json records the LangSlice commit it was written by: the
+    tests run from a git checkout, so the commit is the checkout's HEAD."""
+    import subprocess
+
+    import langslice
+
+    _job, root, _exported = placed
+    source = json.loads((root / "registration.json").read_text())["source"]
+    checkout = Path(langslice.__file__).resolve().parent
+    head = subprocess.run(["git", "-C", str(checkout), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    assert source["version"] == langslice.__version__
+    assert source["commit"] == head
+    assert isinstance(source["uncommitted_changes"], bool)
