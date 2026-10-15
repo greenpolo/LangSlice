@@ -64,6 +64,18 @@ def test_one_folder_per_atlas_version(cache_dir):
     assert first.is_relative_to(cache_dir)
 
 
+def test_the_first_write_removes_older_format_folders(cache_dir):
+    folder = disk_cache.atlas_folder(VersionedAtlas())
+    assert folder is not None
+    old = folder.parent / "format0"
+    other = folder.parent / "notes"
+    old.mkdir(parents=True)
+    other.mkdir()
+    (old / "x.npy").write_bytes(b"old")
+    disk_cache.cached_volume(VersionedAtlas(), "v", lambda: np.zeros(3))
+    assert not old.exists() and other.exists() and folder.is_dir()
+
+
 def test_not_cached_without_a_version_or_past_the_size_limit(cache_dir, monkeypatch):
     assert disk_cache.atlas_folder(SyntheticAtlas()) is None
     monkeypatch.setattr(disk_cache, "MAX_VOXELS", 10)

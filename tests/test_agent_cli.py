@@ -3,7 +3,7 @@
 Run through ``langslice.cli.main`` as an agent runs it: one JSON envelope on
 stdout (``ok``, ``result``, ``artifacts``, ``warnings``, ``next``, and
 ``error`` with a ``fix`` when not ok), exit codes 0 / 2 (bad arguments) /
-3 (refused by the job) / 4 (internal). The stack is the golden recorder's
+3 (refused by the job) / 4 (internal). The stack is the shared
 synthetic one (``tests/synthetic_stack.py``), its atlas installed where every
 CLI job opens (``tests.cli_child.install``); background runs start
 ``python -m tests.cli_child`` in a process of their own.

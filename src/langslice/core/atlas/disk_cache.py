@@ -11,7 +11,8 @@ processes reading the same file share the operating system's copy.
 Where: ``LANGSLICE_ATLAS_CACHE`` (a folder, or ``off``), else
 ``~/.langslice/atlas-cache``; one folder per atlas name, BrainGlobe version
 and :data:`FORMAT`, so a new atlas version or a change in what is stored is
-never matched against an old file. Atlases without a version (test and host
+never matched against an old file; the first write of a version
+removes its folders of an older format. Atlases without a version (test and host
 fakes) and atlases past :data:`MAX_VOXELS` are not cached on disk. The cache
 only ever saves time: a file that cannot be written or read is built in
 memory, as without a cache, and a warning is logged.
@@ -23,6 +24,7 @@ import logging
 import math
 import os
 import re
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -39,8 +41,8 @@ _OFF = {"", "0", "off", "none", "false", "no"}
 #: Bumped whenever what a cached file holds changes, so old files are never read.
 FORMAT = 1
 
-#: Atlases with more voxels than this are not cached on disk: the 10 um Allen
-#: atlas (1.2 billion voxels) would take about 8 GB.
+#: Atlases with more voxels than this are not cached on disk: one float32
+#: volume of the 10 um Allen atlas (1.2 billion voxels) is 4.8 GB.
 MAX_VOXELS = 500_000_000
 
 
@@ -69,6 +71,19 @@ def atlas_folder(atlas: Any) -> Path | None:
     return root / safe / f"format{FORMAT}"
 
 
+def _remove_older_formats(folder: Path) -> None:
+    """Delete the ``format<N>`` folders beside *folder* (this atlas version's
+    cache) other than *folder* itself: files of a :data:`FORMAT` nothing reads
+    any more. Only folders named ``format<digits>`` are touched."""
+    parent = folder.parent
+    if not parent.is_dir():
+        return
+    for old in parent.iterdir():
+        if old != folder and old.is_dir() and re.fullmatch(r"format\d+", old.name):
+            shutil.rmtree(old, ignore_errors=True)
+            logger.info("atlas cache: removed %s (an older format)", old)
+
+
 def cached_volume(atlas: Any, name: str, build: Callable[[], np.ndarray]) -> np.ndarray:
     """The volume *name* of *atlas*: read memory-mapped from the cache, else
     *build* () and saved there. Read only either way.
@@ -90,6 +105,8 @@ def cached_volume(atlas: Any, name: str, build: Callable[[], np.ndarray]) -> np.
     array = build()
     temporary = path.with_name(f"{path.name}.{os.getpid()}.part")
     try:
+        if not folder.exists():
+            _remove_older_formats(folder)
         folder.mkdir(parents=True, exist_ok=True)
         with open(temporary, "wb") as handle:
             np.save(handle, np.ascontiguousarray(array))
