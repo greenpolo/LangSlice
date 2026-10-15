@@ -432,13 +432,3 @@ def test_submit_needs_no_deformation_unless_the_user_requires_one(tmp_path: Path
     refused = _tool(req_box, "submit")("Done", [], [])
     assert refused["error"] == "MISSING_DEFORMATIONS" and not req_state.submitted
     assert "left_linear" not in refused["message"]
-
-
-def test_an_older_jobs_left_linear_marker_loads_as_no_deformation():
-    """Jobs saved before 2026-10-14 mark a section left linear; it loads with none."""
-    from langslice.core.state import StackState
-
-    state = StackState.from_dict({"slices": [{
-        "id": ID, "index_original": 0, "index_corrected": 0, "deformation": {
-        "keep_linear": "The linear placement already matches.", "linear_key": "x"}}]})
-    assert state.slices[0].deformation is None

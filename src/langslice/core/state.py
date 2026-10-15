@@ -335,10 +335,6 @@ class StackState:
             own = kwargs.get(ANGLES_KEY)
             kwargs[ANGLES_KEY] = dict(own if isinstance(own, dict) else
                                       stack if isinstance(stack, dict) else flat_angles())
-            held = kwargs.get("deformation")
-            if isinstance(held, dict) and "keep_linear" in held:
-                # Jobs saved before 2026-10-14 mark a section left linear; it has no deformation.
-                kwargs["deformation"] = None
             slices.append(SliceState(**kwargs))
         kwargs = {k: v for k, v in data.items() if k in stack_fields}
         return cls(slices=slices, **kwargs)

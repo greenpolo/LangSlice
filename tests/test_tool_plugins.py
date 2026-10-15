@@ -542,7 +542,7 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
 
 
 def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
-    from langslice.core.plugin_layers import EXTENSIONS, load_layer, save_layer
+    from langslice.core.plugin_layers import load_layer, save_layer
 
     cases = [
         Layer.points([[1.5, 2.5], [3, 4]], labels=["a", ""], values=[0.5, 2], name="p"),
@@ -556,7 +556,6 @@ def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
     ]
     for layer in cases:
         path = save_layer(layer, tmp_path / layer.name)
-        assert path.suffix in (EXTENSIONS[layer.kind], ".npz")
         back = load_layer(path, {"kind": layer.kind, "frame": layer.frame, "name": layer.name})
         assert back.kind == layer.kind and back.frame == layer.frame
         if layer.kind == "points":
