@@ -80,3 +80,17 @@ def test_gemini_canvas_is_padded_to_the_fixed_frame_never_cropped() -> None:
     box = _render_box(render_to_canvas, image.size)
     assert box.min() >= -1e-9
     assert box[:, 0].max() <= 1200 + 1e-9 and box[:, 1].max() <= 896 + 1e-9
+
+
+def test_the_canvas_is_cropped_to_the_atlas_footprint_plus_margin_clamped_to_the_image() -> None:
+    image = Image.new("RGB", (1000, 800), (20, 20, 20))
+    # A 200 x 100 footprint inside the image: kept with 30 px (15% of 200) on every side.
+    inside = np.array([[400.0, 300.0], [600.0, 400.0]]) - 0.5  # pixel-centre numbers of edges
+    canvas, render_to_canvas = prepare_canvas(image, provider="none", footprint=inside)
+    assert canvas.size == (260, 160)
+    np.testing.assert_allclose(render_to_canvas @ [399.5, 299.5, 1], [29.5, 29.5, 1])
+    # Near the left edge, the margin is clamped to the image (nothing past it is kept).
+    edge = np.array([[10.0, 300.0], [210.0, 400.0]]) - 0.5
+    canvas, render_to_canvas = prepare_canvas(image, provider="none", footprint=edge)
+    assert canvas.size == (240, 160)
+    np.testing.assert_allclose(render_to_canvas @ [-0.5, 299.5, 1], [-0.5, 29.5, 1])

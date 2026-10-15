@@ -31,17 +31,18 @@ from langslice.providers.registry import ImageModel, resolve_image_model
 from tests.deformable_synthetic import SyntheticAtlas
 
 POSITION_MM = 0.1
-RENDER_SIZE = (420, 360)
+#: About the canvas's own size, so a canvas pixel is about a section pixel.
+RENDER_SIZE = (1260, 1080)
 
 
-def _tilted(turn_deg: float, *, mirror: bool = False, scale: float = 1.9) -> np.ndarray:
+def _tilted(turn_deg: float, *, mirror: bool = False, scale: float = 5.7) -> np.ndarray:
     """Native atlas plane (160 x 120) -> a RENDER_SIZE section, turned *turn_deg*
     clockwise on the screen about its centre (and mirrored left-right first)."""
     phi = math.radians(turn_deg)
     turn = np.array([[math.cos(phi), -math.sin(phi)], [math.sin(phi), math.cos(phi)]])
     linear = scale * turn @ (np.diag([-1.0, 1.0]) if mirror else np.eye(2))
     atlas_centre = np.array([79.5, 59.5])
-    shift = np.array([RENDER_SIZE[0] / 2 + 12.0, RENDER_SIZE[1] / 2 - 7.0]) - linear @ atlas_centre
+    shift = np.array([RENDER_SIZE[0] / 2 + 36.0, RENDER_SIZE[1] / 2 - 21.0]) - linear @ atlas_centre
     return np.array([[*linear[0], shift[0]], [*linear[1], shift[1]], [0.0, 0.0, 1.0]])
 
 
@@ -83,14 +84,18 @@ def test_the_canvas_midline_is_vertical_centred_and_dorsal_up(turn_deg, mirror):
     # The section's own turn undone; a mirror kept (a turn never changes handedness).
     assert stance.turn_deg == pytest.approx(-turn_deg, abs=1e-6)
     assert np.sign(np.linalg.det(placement[:2, :2])) == (-1.0 if mirror else 1.0)
-    # The provider's frame (the fixed Codex-lane budget), holding the whole render.
+    # The provider's frame (the fixed Codex-lane budget), cropped to the placed
+    # atlas plus 15% of its box's larger side on every side, symmetric about the
+    # midline: the footprint box with that margin fits, and fills the frame.
     assert canvas.width * canvas.height == pytest.approx(1024 * 1536, rel=2e-3)
-    width, height = RENDER_SIZE
-    corners = render_to_canvas @ np.array([[-0.5, -0.5, 1], [width - 0.5, -0.5, 1],
-                                           [-0.5, height - 0.5, 1],
-                                           [width - 0.5, height - 0.5, 1]]).T
-    assert corners[0].min() >= -0.5 - 1e-6 and corners[0].max() <= canvas.width - 0.5 + 1e-6
-    assert corners[1].min() >= -0.5 - 1e-6 and corners[1].max() <= canvas.height - 0.5 + 1e-6
+    outline = tool.footprint(np.asarray(annotation_slice(atlas, POSITION_MM, plane="coronal")),
+                             placement)
+    (x0, y0), (x1, y1) = outline.min(axis=0) + 0.5, outline.max(axis=0) + 0.5
+    margin = 0.15 * max(x1 - x0, y1 - y0)
+    assert x0 - margin >= -1e-6 and x1 + margin <= canvas.width + 1e-6
+    assert y0 - margin >= -1e-6 and y1 + margin <= canvas.height + 1e-6
+    half = max(canvas.width / 2 - (x0 - margin), x1 + margin - canvas.width / 2)
+    assert max(2 * half / canvas.width, (y1 - y0 + 2 * margin) / canvas.height) > 0.99
     # The padding is the slide's background colour.
     assert canvas.getpixel((0, 0)) == (60, 60, 60)
 

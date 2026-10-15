@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.core.affine import pixel_center_map
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.render import annotation_slice
 from langslice.core.handoff import (
@@ -37,6 +38,7 @@ from langslice.core.nonlinear.border_refinement import (
     smooth_border_overlay,
 )
 from langslice.core.nonlinear.image_gen_registration import (
+    FOOTPRINT_MARGIN,
     prepare_canvas,
 )
 from langslice.core.nonlinear.prompts import (
@@ -172,28 +174,46 @@ def _calls_folder(calls_dir: Path | None, out: Path | None, section_id: str) -> 
     return Path(out) / re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
 
 
+def footprint(labels: np.ndarray, atlas_to_render: np.ndarray) -> np.ndarray:
+    """The placed atlas plane's outline on the render: ``(N, 2)`` x, y points,
+    the outer corners of every non-background native pixel on the outline
+    (empty for an empty plane)."""
+    mask = (np.asarray(labels) != 0).astype(np.uint8)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return np.zeros((0, 2))
+    centres = np.concatenate([c.reshape(-1, 2) for c in contours]).astype(np.float64)
+    corners = (centres[:, None, :] + np.array([[-0.5, -0.5], [0.5, -0.5],
+                                               [-0.5, 0.5], [0.5, 0.5]])).reshape(-1, 2)
+    matrix = np.asarray(atlas_to_render, dtype=np.float64)
+    return corners @ matrix[:2, :2].T + matrix[:2, 2]
+
+
 def _canvas_and_placement(
     prepared: LinearRegistrationInput, ctx: Workspace, provider: str, model: str | None,
 ) -> tuple[Image.Image, np.ndarray, np.ndarray, Upright, np.ndarray]:
     """``(canvas, labels, atlas_to_canvas, stance, render_to_canvas)``: the
     model-facing canvas of the section render, turned upright
     (:func:`~langslice.core.nonlinear.upright.upright`: the atlas's vertical
-    straight up, a coronal or horizontal midline down the canvas's middle),
+    straight up, a coronal or horizontal midline down the canvas's middle)
+    and cropped to the placed atlas plus a margin (:func:`footprint`,
+    ``prepare_canvas``),
     the native atlas plane at its position and cutting angles, and the
     section's linear placement of that plane on the canvas (native atlas
-    pixel centres to canvas pixel centres, the turn included; what
+    pixel centres to canvas pixel centres, the turn and crop included; what
     ``fit_deformable`` maps the traced lines back through,
     ``core.deformation.traced_lines``)."""
     stance = upright(ctx.atlas, prepared.plane, prepared.position_mm, prepared.pitch_deg,
                      prepared.yaw_deg, prepared.atlas_to_slice)
-    canvas, render_to_canvas = prepare_canvas(prepared.image, provider=provider,
-                                              image_model=model, upright=stance)
     labels = np.asarray(annotation_slice(
         ctx.atlas, prepared.position_mm, plane=prepared.plane,
         pitch_deg=prepared.pitch_deg, yaw_deg=prepared.yaw_deg,
     ))
     if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
         raise ValueError("Atlas annotation must be a two-dimensional integer label map")
+    canvas, render_to_canvas = prepare_canvas(
+        prepared.image, provider=provider, image_model=model, upright=stance,
+        footprint=footprint(labels, prepared.atlas_to_slice))
     placement = render_to_canvas @ prepared.atlas_to_slice
     # float64 preserves large atlas IDs across nearest-neighbour projection.
     placed = cv2.warpAffine(
@@ -352,7 +372,8 @@ def start_correction(
         "provider": provider, "model": model, **marks, **regions,
         "linear_handoff": prepared.metadata, "atlas_to_canvas": placement.tolist(),
         "render_to_canvas": render_to_canvas.tolist(),
-        "upright": {"turn_deg": stance.turn_deg, "midline_centred": stance.through is not None},
+        "upright": {"turn_deg": stance.turn_deg, "midline_centred": stance.through is not None,
+                    "atlas_margin": FOOTPRINT_MARGIN},
         "attachments": [
             {"role": role, "path": paths[key],
              "sha256": hashlib.sha256(Path(paths[key]).read_bytes()).hexdigest()}
@@ -407,8 +428,8 @@ def reply_on_grid(
     reply itself (RGB, resized to the canvas the model was shown, then
     mapped), and ``grid_from_canvas`` the 3x3 on ``[x, y, 1]`` from the
     model's canvas to the grid's pixel centres. The map is the images' own:
-    the canvas's padding and resize of the oriented section render (the
-    attempt's ``request.json``) and the render's quarter turn, flip and
+    the canvas's upright turn, crop, padding and resize of the oriented
+    section render (the attempt's ``request.json``) and the render's quarter turn, flip and
     resize of the file; the section's current placement does not enter it.
     ``ValueError`` when the attempt's files are missing or unreadable."""
     from langslice.core.maps import orientation_matrix, unturned
