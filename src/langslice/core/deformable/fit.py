@@ -52,7 +52,7 @@ from langslice.core.deformable.geometry import Placement, WorkingGrid, sample_na
 from langslice.core.deformable.masks import (
     EM_PARAMETERS,
     MASK_MARGIN_MM,
-    Masks,
+    EMContext,
     dilate,
     em_masks,
     footprint_masks,
@@ -113,11 +113,11 @@ class PreparedFit:
     #: neighbourhood, fading to 0 over :data:`RESTRICTED_TAPER_MM`); None
     #: for a fit over the whole section.
     step_weight: np.ndarray | None = None
-    #: A whole-section stain fit's damage zone on the working grid: the fit
-    #: runs twice, the second time with the EM section mask
-    #: (:func:`run_prepared`, ``masks.em_masks``). None: one run with the
-    #: footprint masks (the Elastix affine, restricted steps, traced lines).
-    em_damage_zone: np.ndarray | None = None
+    #: A stain fit's EM context on the working grid: the fit runs twice, the
+    #: second time with the EM section mask (:func:`run_prepared`,
+    #: ``masks.em_masks``). None: one run with the footprint masks (the
+    #: Elastix affine, traced lines).
+    em: EMContext | None = None
 
 
 @dataclass
@@ -292,6 +292,7 @@ def prepare_fit(
 
     details: dict[str, Any] = {}
     region: np.ndarray | None = None
+    neighbourhood: np.ndarray | None = None
     step_weight: np.ndarray | None = None
     if settings.structures:
         chosen = regions_mask(atlas, native, settings.structures, left)
@@ -369,9 +370,10 @@ def prepare_fit(
         edge_weight=EDGE_CHANNEL_WEIGHT if fixed_edges is not None else 0.0,
         correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM / 1000.0 / spacing)),
     )
-    whole_stain = (settings.engine == "ants" and settings.section_image == "stain"
-                   and not settings.structures)
-    if whole_stain:
+    em = None
+    if settings.engine == "ants" and settings.section_image == "stain":
+        em = EMContext(footprint=masks.fixed, damage_zone=masks.damage_zone,
+                       neighbourhood=neighbourhood)
         details["section_mask"] = "em"
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
@@ -379,7 +381,7 @@ def prepare_fit(
         excluded=excluded, ventricles=ventricles,
         atlas_meta=_atlas_record(atlas, placement, native),
         previous=previous, details=details, excluded_mask=excluded_native,
-        step_weight=step_weight, em_damage_zone=masks.damage_zone if whole_stain else None,
+        step_weight=step_weight, em=em,
     )
 
 
@@ -550,24 +552,22 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
 
 
 def run_fit(
-    inputs: EngineInputs, settings: FitSettings, em_damage_zone: np.ndarray | None,
+    inputs: EngineInputs, settings: FitSettings, em: EMContext | None,
 ) -> EngineResult:
     """The engine work of one prepared fit, on plain arrays (a pool worker runs it).
 
-    With *em_damage_zone* (a whole-section stain fit): a first run with the
+    With *em* (a stain fit): a first run with the
     footprint masks, the EM weights of the section against the atlas image it
     warped (``masks.em_masks``), and a second run from the same start with
     the EM masks, whose result is the fit's. Its native parameters record the
     EM's (``section_mask``) and ``left_out`` the section pixels it dropped.
     """
     first = run_engine(inputs, settings)
-    if em_damage_zone is None:
+    if em is None:
         return first
     spacing = np.asarray(inputs.spacing_mm, dtype=np.float32)
     warped = _remap(inputs.moving, first.field_mm / spacing)
-    masks, facts = em_masks(inputs.fixed, warped,
-                            Masks(inputs.fixed_mask, inputs.moving_mask, em_damage_zone),
-                            float(np.mean(inputs.spacing_mm)))
+    masks, facts = em_masks(inputs.fixed, warped, em, float(np.mean(inputs.spacing_mm)))
     second = run_engine(replace(inputs, fixed_mask=masks.fixed, moving_mask=masks.moving),
                         settings)
     second.native_parameters["section_mask"] = {
@@ -626,9 +626,9 @@ def fit_prepared(
 
 def _engine_args(
     prepared: PreparedFit,
-) -> tuple[EngineInputs, FitSettings, np.ndarray | None]:
-    """The engine's inputs, settings and EM damage zone of a fit; a
+) -> tuple[EngineInputs, FitSettings, EMContext | None]:
+    """The engine's inputs, settings and EM context of a fit; a
     :func:`prepare_warp` has none."""
     if prepared.inputs is None or prepared.settings is None:
         raise ValueError("A prepared warp has no engine fit to run")
-    return prepared.inputs, prepared.settings, prepared.em_damage_zone
+    return prepared.inputs, prepared.settings, prepared.em

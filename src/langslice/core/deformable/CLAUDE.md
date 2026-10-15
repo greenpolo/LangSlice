@@ -116,14 +116,14 @@ and returns a `record.DeformableRecord`. No custom solver.
   `AffineResult.matrix_mm` (section mm -> placed-atlas mm, the field's
   direction); a non-finite or singular matrix raises. `_elastix_register` is
   the one Elastix call (images, masks, extra pairs, the global thread count).
-- `fit.run_fit(inputs, settings, em_damage_zone)` is a prepared fit's
-  engine work on plain arrays: one run, or for a whole-section stain fit
-  (`PreparedFit.em_damage_zone` set) a run with the footprint masks, the EM
+- `fit.run_fit(inputs, settings, em)` is a prepared fit's
+  engine work on plain arrays: one run, or for a stain fit, whole-section or
+  restricted (`PreparedFit.em`, a `masks.EMContext`) a run with the footprint masks, the EM
   masks from the atlas image it warped (`masks.em_masks`) and a second run
   from the same start, whose result counts (its native parameters gain
   `section_mask`: the EM's settings, its fitted means and widths, the
-  fraction of the footprint left out, the first run's time; `left_out` the
-  dropped section pixels). `run_prepared` runs one in this process.
+  fraction of the footprint in the fit's scope left out, the first run's time;
+  `left_out` the dropped section pixels in that scope). `run_prepared` runs one in this process.
   `fit_prepared` runs 1–8 prepared fits (different sections or settings):
   on a GPU one after another in the caller, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
@@ -175,8 +175,8 @@ one side, excluding RSP/VIS/PTLp by name also drops the intact hemisphere;
 ## Masks (`masks.py`)
 
 One module builds every mask. FOOTPRINT masks (`footprint_masks`: the
-Elastix affine, restricted steps, traced lines, and a whole-section fit's
-first run): fixed = placed atlas footprint widened by `MASK_MARGIN_MM`
+Elastix affine, traced lines, and the first run of every stain fit, whole or
+restricted; a restricted fit's are cut to the regions' neighbourhood): fixed = placed atlas footprint widened by `MASK_MARGIN_MM`
 (0.2); moving = that footprint minus the damage zone, the excluded regions
 widened by `EXCLUSION_MARGIN_MM` (blanking alone left an edge that still
 pulled tissue). Excluded regions are blanked on the native plane for EVERY
@@ -190,9 +190,25 @@ costs); moving = the placed atlas widened by `TRACE_MOVING_MARGIN_MM` (1.0;
 drawn borders, nothing to fence off) minus the damage zone, so an outline
 beyond the atlas can draw it out.
 
-EM masks (`em_masks`, a whole-section stain fit's second run): the section
-mask is P(match) >= `EM_MATCH_THRESHOLD` (0.5) over the whole working grid,
-the atlas mask everything except the damage zone. `em_weights` is a port of
+EM masks (`em_masks`, every stain fit's second run, given an `EMContext`):
+the section mask is P(match) >= `EM_MATCH_THRESHOLD` (0.5) over the whole
+working grid, the atlas mask everything except the damage zone. A
+region-restricted fit (`structures`) estimates the classes over the WHOLE
+working grid, against the UNRESTRICTED placed footprint, and then intersects
+both masks with the regions' neighbourhood (`EMContext.neighbourhood`), so
+the weights inside it are the whole-section fit's. Why: the EM learns what
+tissue, artifact and background look like from the image (`muB` from the
+section's own background beyond 500 µm of the footprint, a contrast map per
+0.8 mm block); a neighbourhood a few hundred µm wide has too little of either
+and a restricted footprint would make the tissue stand for background. Its
+first run is the restricted footprint fit, so the warped atlas image outside
+the neighbourhood is nearly the placement; that only touches the contrast
+blocks straddling the neighbourhood's edge. The taper
+(`PreparedFit.step_weight`) is applied to the second run's field as before:
+the EM mask bounds the metric inside the neighbourhood only, the field still
+fades to nothing over `RESTRICTED_TAPER_MM` beyond it. `left_out` is limited
+to the neighbourhood. Traced lines (`section_image="lines"`) and the Elastix
+affine get no EM mask. `em_weights` is a port of
 emlddmm's three-class EM (Tward et al. 2025, doi 10.1038/s41467-025-65317-7)
 with the warp fixed at the first run's: matching J ~ N(f(I_warped), sigmaM)
 with f linear per `EM_BLOCK_PX` (16) block of the `EM_GRID_UM` (50 µm) grid,
@@ -203,7 +219,7 @@ flagged nothing, not even a 0.3 mm hole), and priors fixed at (0.9, 0.05,
 0.05) (updated priors ran away on DAPI, where dim tissue has the background's
 intensity). muB is the image's own background, muA the opposite extreme
 quantile of the tissue. `EM_PARAMETERS` (every setting) is part of the
-deformable cache key, as is the engine (`core.deformation.cache_key`). On
+deformable cache key of every stain fit, as is the engine (`core.deformation.cache_key`). On
 flat, textureless synthetic tissue a hole of 0.5 mm or more inside one
 uniform region is absorbed by its block's contrast offset and kept.
 
