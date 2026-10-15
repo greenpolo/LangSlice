@@ -37,7 +37,8 @@ def test_root_mask_is_binary_alpha_at_target_size():
 def test_canvas_aspect_clamps_into_the_supported_range(size, padded, offset):
     from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
-    canvas, unpadded, ox, oy = prepare_canvas(
+    canvas, render_to_canvas = prepare_canvas(
         _make_slice(size), provider="none", image_model="gpt-image-2.5-sunburst",
     )
-    assert canvas.size == padded and unpadded == size and (ox, oy) == offset
+    assert canvas.size == padded
+    np.testing.assert_allclose(render_to_canvas, [[1, 0, offset[0]], [0, 1, offset[1]], [0, 0, 1]])

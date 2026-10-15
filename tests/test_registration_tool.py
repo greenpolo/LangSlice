@@ -14,6 +14,7 @@ from langslice.core.handoff import (
 from langslice.core.nonlinear import registration_tool as tool
 from langslice.core.nonlinear.border_refinement import border_overlay, smooth_border_overlay
 from langslice.core.nonlinear.prompts import border_correction_tool_prompt
+from langslice.core.nonlinear.upright import Upright
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
 from langslice.providers.registry import ImageModel, resolve_image_model
@@ -50,7 +51,8 @@ def case(tmp_path, monkeypatch):
     prepared = LinearRegistrationInput(original, placement, "test", 4, "coronal", 0, 0, {})
     monkeypatch.setattr(tool, "prepare_linear_registration", lambda *a, **k: prepared)
     monkeypatch.setattr(tool, "annotation_slice", lambda *a, **k: labels)
-    monkeypatch.setattr(tool, "prepare_canvas", lambda image, **k: (image, image.size, 0, 0))
+    monkeypatch.setattr(tool, "prepare_canvas", lambda image, **k: (image, np.eye(3)))
+    monkeypatch.setattr(tool, "upright", lambda *a, **k: Upright())
     return state, ctx, record, original, labels, placement
 
 
