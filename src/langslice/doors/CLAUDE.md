@@ -21,9 +21,8 @@ the native ones on every door: the toolbox (agent and MCP), `ops` / `schema`
 per-spec view (`registry.verbs_for(spec)`).
 A job without plugins declares, replies and draws exactly as before.
 
-The goldens
-(`tests/golden/linear_tools/*_declarations_*`) pin what the ADK and MCP
-doors declare, byte for byte.
+The text snapshot (`tests/snapshots/agent_text/`) pins what the doors
+declare.
 
 ## The layer rule
 
@@ -56,7 +55,7 @@ the CLI is a process per call.
   (signature = the arguments, docstring = the description a model reads,
   re-indented by `model_doc`). The description is the tool's only
   description: the job statement names the tools and describes none.
-  `Variant` (`auto`, `door`, `forced_view`, `positions`, `left_linear`,
+  `Variant` (`auto`, `door`, `forced_view`, `positions`,
   `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=)`) is
   what of a run changes a declaration (`dropped_arguments`, each dropped
   argument's `Args` entry cut from the description): `off` (the job's
@@ -70,8 +69,7 @@ the CLI is a process per call.
   only where the caller sizes pictures; the change tools' `view`
   (`VIEW_TOOLS`) not offered where the host forces their pictures on
   (`JobSpec.force_view`); `position_sections`' `sections` only with the
-  Positioning task; `submit`'s `left_linear` only with Nonlinear on and no
-  deformation required; `trace_borders` carries the run's base image prompt
+  Positioning task; `trace_borders` carries the run's base image prompt
   (`base_prompt`, or the image model's profile prompt; none without an
   image model) in place of `BASE_PROMPT`; and the door that reads it
   (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: the CLI's background
@@ -203,7 +201,7 @@ the CLI is a process per call.
   `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
   `mark_damage`, `note`, `undo`, `redo`, `submit`; `fitting.py`:
-  `elastix_affine`, `ants_syn`, `trace_borders`,
+  `elastix_affine`, `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
   force it; `interactive_transform` and `elastix_affine` drop the
@@ -212,8 +210,8 @@ the CLI is a process per call.
   highlights its `restrict_to` regions and zooms to them only past
   `ops.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
   picture with its caption), `arguments.py` (the argument shapes, typed dicts with
-  `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`,
-  `LeftLinear`; `argument_refusal`, the one strictness rule every door
+  `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
+  `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
   `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,
@@ -330,7 +328,7 @@ the CLI is a process per call.
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`). `CHECKED_ONLY`:
-    `trace_borders`, `elastix_affine` and `ants_syn`
+    `trace_borders`, `elastix_affine` and `fireants_syn`
     are checked, not run, by `--dry-run`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
@@ -348,7 +346,7 @@ one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job
 folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
-`elastix_affine`, `ants_syn`, `trace_borders`,
+`elastix_affine`, `fireants_syn`, `trace_borders`,
 `export_maps`), which compute outside it and take it to apply, refusing a
 section whose inputs changed (`ops.inputs`, `STALE_INPUT`); the lock timing
 out is `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write

@@ -9,14 +9,13 @@ one of :data:`VIEW_MODES` and hands back, per picture, the
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageColor
+from PIL import Image
 
 from langslice.core.affine import (
     physical_affine_matrix,
@@ -147,33 +146,105 @@ def _as_3x3(matrix: np.ndarray) -> np.ndarray:
     return np.vstack([np.asarray(matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
 
 
-def normalize_border_style(
-    color: str = "yellow", thickness: float = 0.5,
-) -> tuple[tuple[int, int, int], float]:
-    """Validate display-only atlas borders; width is in output-image pixels."""
-    if not isinstance(color, str):
-        raise ValueError("border_color must be a named color or #RRGGBB")
-    value = color.strip().lower()
-    if not re.fullmatch(r"[a-z]+|#[0-9a-f]{6}", value):
-        raise ValueError("border_color must be a named color or #RRGGBB")
-    try:
-        rgb = ImageColor.getrgb(value)
-    except ValueError:
-        raise ValueError("border_color must be a named color or #RRGGBB") from None
-    if len(rgb) != 3:
-        raise ValueError("border_color must be an opaque RGB color")
+#: ``border_color`` default: the core colour is chosen per picture by
+#: :func:`resolve_border_color`.
+AUTO_BORDER_COLOR = "auto"
+
+#: Atlas borders are CASED lines (the cartographic technique): a core line in
+#: black or white, edged on both sides by a thin outline in the other, so the
+#: line reads on any background, dark and pale tissue in one picture alike.
+#: ``border_color`` names the core ("black" or "white"; "auto" picks one).
+BORDER_CORES = ("black", "white")
+_CORE_RGB = {"black": (0, 0, 0), "white": (255, 255, 255)}
+#: Width of the outline beyond the core on EACH side, in output pixels. The
+#: casing line is the core's width plus twice this.
+CASING_PX = 1.0
+#: Mean CIELAB lightness under the lines at or above which the core is black
+#: (white casing); below it the core is white (black casing).
+CORE_LIGHTNESS_SPLIT = 50.0
+
+
+def casing_of(core: str) -> str:
+    """The outline colour of a core colour: the other of black and white."""
+    return "white" if core == "black" else "black"
+
+
+def border_words(core: str) -> str:
+    """The caption words for a cased border: ``black, white-edged``."""
+    return f"{core}, {casing_of(core)}-edged"
+
+
+def _lab(rgb: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(np.ascontiguousarray(rgb, dtype=np.uint8), cv2.COLOR_RGB2LAB).astype(
+        np.float64)
+
+
+def pick_border_core(rgb: np.ndarray, coverage: np.ndarray) -> str:
+    """``black`` for a pale picture, ``white`` for a dark one.
+
+    The mean CIELAB lightness (0-100) of *rgb*'s own pixels under and around
+    where the lines fall (*coverage* in [0, 1], same height/width as *rgb*;
+    dilated a little here for "around"), weighted by coverage: at or above
+    :data:`CORE_LIGHTNESS_SPLIT` the core is black. No coverage: black, unused.
+    """
+    if coverage.shape != rgb.shape[:2]:
+        coverage = cv2.resize(coverage.astype(np.float32), (rgb.shape[1], rgb.shape[0]))
+    weights = cv2.dilate(coverage.astype(np.float32), np.ones((5, 5), np.float32))
+    total = float(weights.sum())
+    if total <= 0:
+        return "black"
+    lightness = _lab(rgb[..., :3])[..., 0] * (100.0 / 255.0)
+    mean = float((lightness * weights).sum() / total)
+    return "black" if mean >= CORE_LIGHTNESS_SPLIT else "white"
+
+
+def validate_border_thickness(thickness: float) -> float:
+    """*thickness* in 0.25..8 output-image pixels, or a ``ValueError``."""
     if (
         isinstance(thickness, bool) or not isinstance(thickness, (int, float))
         or not math.isfinite(thickness) or not 0.25 <= thickness <= 8
     ):
         raise ValueError("border_thickness must be a number from 0.25 to 8 output pixels")
-    return (rgb[0], rgb[1], rgb[2]), float(thickness)
+    return float(thickness)
+
+
+def resolve_border_color(
+    color: str, thickness: float, *,
+    rgb: np.ndarray | None = None, coverage: np.ndarray | None = None,
+) -> tuple[str, float]:
+    """``(core, thickness)``: the core colour (``black`` or ``white``) and a
+    validated thickness. :data:`AUTO_BORDER_COLOR` picks the core from *rgb*
+    and *coverage* (:func:`pick_border_core`); *rgb*/*coverage* may be omitted
+    only when no line will be drawn."""
+    if not isinstance(color, str):
+        raise ValueError("border_color must be 'auto', 'black' or 'white'")
+    value = color.strip().lower()
+    valid_thickness = validate_border_thickness(thickness)
+    if value == AUTO_BORDER_COLOR:
+        if rgb is None or coverage is None or not coverage.any():
+            return "black", valid_thickness
+        return pick_border_core(rgb, coverage), valid_thickness
+    if value not in BORDER_CORES:
+        raise ValueError("border_color must be 'auto', 'black' or 'white'")
+    return value, valid_thickness
+
+
+def composite_cased(
+    base: np.ndarray, core: str, *, casing: np.ndarray, line: np.ndarray, alpha: float = 1.0,
+) -> np.ndarray:
+    """*base* (float, rows x cols x 3) with a cased line laid on it: the
+    casing coverage in the casing colour, then the core coverage in the core
+    colour, both at *alpha*."""
+    for coverage, ink in ((casing, casing_of(core)), (line, core)):
+        weight = coverage[..., None] * float(alpha)
+        base = base * (1.0 - weight) + np.asarray(_CORE_RGB[ink], dtype=np.float32) * weight
+    return base
 
 
 def _draw_polys(
     canvas: np.ndarray,
     polys: list[np.ndarray],
-    color: tuple[int, int, int],
+    core: str,
     *,
     thickness: float = 1,
     scale: float = 1.0,
@@ -182,18 +253,22 @@ def _draw_polys(
     factor: float = 1.0,
     alpha: float = 1.0,
 ) -> None:
-    """Closed x/y polylines with anti-aliased thickness at OUTPUT resolution.
+    """Closed x/y polylines, cased, with anti-aliased thickness at OUTPUT resolution.
 
     Each point runs through the same chain the pixels did: its own frame ->
     canvas (*scale*, *offset*), minus the zoom crop's *origin*, times *factor*,
     the canvas-px -> output-px ratio. Sub-pixel via OpenCV's 4-bit shift.
-    *alpha* below 1 draws the lines faint (context under highlighted regions).
+    The line is the *core* colour (``black`` or ``white``) of *thickness*, over
+    a casing of the other colour :data:`CASING_PX` wider on each side, both
+    from :func:`line_coverage`. *alpha* below 1 draws core and casing faint
+    (context under highlighted regions).
     """
-    coverage = line_coverage(
-        canvas.shape[:2], polys, thickness=thickness, scale=scale, offset=offset,
-        origin=origin, factor=factor,
-    )[..., None] * float(alpha)
-    blended = canvas * (1.0 - coverage) + np.asarray(color) * coverage
+    kwargs = {"scale": scale, "offset": offset, "origin": origin, "factor": factor}
+    line = line_coverage(canvas.shape[:2], polys, thickness=thickness, **kwargs)
+    casing = line_coverage(
+        canvas.shape[:2], polys, thickness=thickness + 2 * CASING_PX, **kwargs)
+    blended = composite_cased(canvas.astype(np.float32), core, casing=casing, line=line,
+                              alpha=alpha)
     canvas[:] = np.rint(blended).astype(np.uint8)
 
 
@@ -452,7 +527,8 @@ class PanelFrame:
     *section_matrix* (3x3, the section render's frame -> canvas,
     :func:`placement_matrices`), and the atlas *lines* and *highlighted*
     region outlines drawn on it (native plane pixels, x/y; empty when none
-    were drawn) at *line_width*. *from_file*: a zoom whose section pixels
+    were drawn) at *line_width*, in *border_color* (resolved from "auto" if
+    that is what was asked for). *from_file*: a zoom whose section pixels
     were read from the image file, how many picture pixels one file pixel
     spans (None: drawn from the render).
     """
@@ -468,6 +544,9 @@ class PanelFrame:
     line_width: float
     mode: str
     from_file: float | None = None
+    #: The core colour any drawn line used, ``black`` or ``white``
+    #: (``resolve_border_color``'s choice); None when nothing was drawn.
+    border_color: str | None = None
 
 
 def physical_views(
@@ -484,7 +563,7 @@ def physical_views(
     zoom: list[float] | None = None,
     zoom_pixels: Sequence[float] = (),
     atlas_opacity: float = 0.0,
-    border_color: str = "yellow",
+    border_color: str = AUTO_BORDER_COLOR,
     border_thickness: float = 0.5,
     outlines: str = "all",
     depth: int = OVERLAY_DEPTH,
@@ -525,7 +604,10 @@ def physical_views(
     *outlines* picks which atlas lines are drawn: every boundary between
     regions at ontology *depth* (``all``, :func:`langslice.core.atlas.levels.labels_at`)
     or none (``none``). *border_color*
-    is a named color or #RRGGBB (default yellow); *border_thickness* is 0.25..8
+    is the core colour of the cased line: "black" (white casing), "white"
+    (black casing) or :data:`AUTO_BORDER_COLOR` ("auto", the default), resolved
+    per picture from the lightness of the picture's own pixels under the lines
+    (:func:`resolve_border_color`). *border_thickness* (the core) is 0.25..8
     output-image pixels (default 0.5), unchanged by zoom or canvas resolution.
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
@@ -553,7 +635,6 @@ def physical_views(
     where its pixels sit, for the picture's layers. Returns the images, each
     captioned.
     """
-    line_color, line_width = normalize_border_style(border_color, border_thickness)
     geometry = canvas_geometry(
         section.size,
         section_um_per_px,
@@ -638,6 +719,21 @@ def physical_views(
             )
         panels = [(warped, label or "section")]
 
+    # One colour for the whole picture: resolved once, against the one
+    # background panel this call draws (never per zoom crop or per line
+    # layer), before anything is drawn on it.
+    drawn_polys = (list(atlas_lines) if lines else []) + list(highlighted)
+    coverage = (
+        line_coverage(
+            panels[0][0].shape[:2], drawn_polys, thickness=max(float(border_thickness), 1.0),
+            scale=geometry.atlas_scale, offset=geometry.atlas_offset,
+        )
+        if drawn_polys else None
+    )
+    line_color, line_width = resolve_border_color(
+        border_color, border_thickness, rgb=np.asarray(panels[0][0]), coverage=coverage,
+    )
+
     knobs = matrix_label if isinstance(params, np.ndarray) else knob_words(params)
 
     # The crop happens first, then the screen is sized: *long_edge*, or, for
@@ -694,6 +790,11 @@ def physical_views(
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
         labelled = caption(Image.fromarray(screen, mode="RGB"), text,
                            min_width=edge if zoomed and edge is not None else 0)
+        if drawn_polys:
+            # Carried on the image itself (as `pixel_to_native` etc. already
+            # are), so any caller building a caption after this call can
+            # name the colour without re-threading it through every layer.
+            labelled.info["border_word"] = border_words(line_color)
         if panel_frames is not None:
             panel_frames.append(PanelFrame(
                 size=labelled.size,
@@ -702,7 +803,7 @@ def physical_views(
                 section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
                 lines=tuple(atlas_lines) if lines else (),
                 highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
-                from_file=from_file,
+                from_file=from_file, border_color=line_color if drawn_polys else None,
             ))
         images.append(labelled)
     return images

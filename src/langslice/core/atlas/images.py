@@ -5,7 +5,7 @@ atlases carry one ``template`` and may carry any number of additional
 references (another modality or stain on the same grid, e.g.
 ``ccfv3augmented_mouse``'s single-animal Nissl, DeMBA's MRI, light-sheet and
 STPT templates). LangSlice offers exactly these, under BrainGlobe's own
-names, to the agent's pictures and fits. One temporary exception: an Allen
+names, to the agent's pictures and fits. One addition: an Allen
 CCFv3 atlas also gets :data:`BORROWED_NISSL` (below).
 """
 
@@ -20,12 +20,12 @@ from langslice.core.space import atlas_space_context
 #: The name of the atlas's main image (BrainGlobe's ``template``).
 TEMPLATE = "template"
 
-#: TEMPORARY, on Harry Carey's advice (BrainGlobe): the Allen CCFv3 atlases
+#: On Harry Carey's advice (BrainGlobe), kept as the standing design: the Allen CCFv3 atlases
 #: ship no Nissl, but ``ccfv3augmented_mouse_25um`` is the CCFv3 grid extended
 #: 0.35 mm at the front, and its template is the Blue Brain averaged Nissl
 #: aligned to the CCFv3 annotation (Piluso et al. 2025). An atlas covering
 #: exactly the CCFv3 extent is offered that template as one more image,
-#: resampled onto its own grid. Delete when BrainGlobe ships a Nissl with them.
+#: resampled onto its own grid.
 BORROWED_NISSL = "ccfv3augmented_nissl"
 _AUGMENTED = "ccfv3augmented_mouse_25um"
 _AUGMENTED_VOXEL_MM = 0.025

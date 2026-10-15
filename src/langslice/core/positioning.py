@@ -95,7 +95,7 @@ TEXT_COLOR = (235, 235, 235)
 SECTION_LINE_COLOR = (165, 165, 165)
 SECTION_DOT_COLOR = (240, 240, 240)
 #: An atlas thumbnail's line to its position, and its marker (the atlas
-#: borders' yellow, dimmed).
+#: dimmed yellow, a colour of its own).
 ATLAS_LINE_COLOR = (200, 185, 70)
 
 

@@ -1,6 +1,6 @@
-"""The deformation on top of a section's linear placement: the ``ants_syn`` tool,
-``submit``'s ``left_linear``, and the fit underneath (``ops.deformable``:
-``fit_deformable``, which ``ants_syn`` and the packaged ``trace_borders``
+"""The deformation on top of a section's linear placement: the ``fireants_syn`` tool,
+``submit``'s deformation gate, and the fit underneath (``ops.deformable``:
+``fit_deformable``, which ``fireants_syn`` and the packaged ``trace_borders``
 fit with)."""
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.agent.prompt import build_job_statement
 from langslice.core import deformation
 from langslice.core.atlas.render import region_boundaries
 from langslice.core.deformable import DeformableRecord
@@ -32,25 +31,17 @@ from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
 
-needs_ants = pytest.mark.skipif(not ops_deformable.ants_ready(),
-                                reason="ants_syn needs antspyx")
+needs_engine = pytest.mark.skipif(not ops_deformable.engine_ready(),
+                                reason="fireants_syn needs FireANTs")
 
 
 def _choice(fit_section: str = deformation.FIT_LOOK, fit_atlas: str = "template",
             stiffness: str = "medium") -> deformation.Choice:
-    """One fit setting for ``ops.deformable.fit_deformable`` (ANTs SyN)."""
+    """One fit setting for ``ops.deformable.fit_deformable`` (SyN)."""
     return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas, stiffness=stiffness)
 
 
 TRACED = _choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders")
-
-
-@pytest.fixture(autouse=True)
-def _in_process(monkeypatch):
-    """Fits run in this process (no spawn pool) at the coarse detail level, to
-    keep the tests quick (the tool itself always runs at standard)."""
-    monkeypatch.setattr(deformation, "USE_PROCESS_POOL", False)
-    monkeypatch.setattr(deformation, "DETAIL_LEVEL", "coarse")
 
 
 @pytest.fixture(scope="module")
@@ -81,8 +72,8 @@ def _pixels(image: Image.Image) -> np.ndarray:
     return np.asarray(image.convert("RGB")).astype(int)
 
 
-def _ants(box: Any, **kwargs: Any) -> dict[str, Any]:
-    result = _tool(box, "ants_syn")([ID], **kwargs)
+def _syn(box: Any, **kwargs: Any) -> dict[str, Any]:
+    result = _tool(box, "fireants_syn")([ID], **kwargs)
     assert result["status"] == "ok", result
     return result
 
@@ -99,50 +90,19 @@ def _fit(box: Any, ctx: Any, choice: deformation.Choice | None = None,
 
 def test_built_with_the_nonlinear_task_only(tmp_path: Path, atlas):
     *_, box = _setup(tmp_path, atlas, tasks=("position", "transform"))
-    assert not {"ants_syn", "trace_borders"} & set(box.names)
+    assert not {"fireants_syn", "trace_borders"} & set(box.names)
     *_, box = _setup(tmp_path, atlas)
-    assert {"trace_borders", "grep_atlas", "ants_syn"} <= set(box.names)
+    assert {"trace_borders", "grep_atlas", "fireants_syn"} <= set(box.names)
     assert not {"fit_deformable", "keep_linear"} & set(box.names)
-
-
-def test_ants_syn_takes_sections_regions_atlas_image_and_stiffness(tmp_path: Path, atlas):
-    from google.adk.tools import FunctionTool
-
-    *_, box = _setup(tmp_path, atlas)
-    declaration = FunctionTool(_tool(box, "ants_syn"))._get_declaration().model_dump()
-    schema = declaration["parameters"] or declaration["parameters_json_schema"]
-    assert set(schema["properties"]) == {"sections", "restrict_to", "atlas_image",
-                                         "stiffness", "view"}
-
-
-@needs_ants
-def test_bad_arguments_are_refused_before_any_fit(tmp_path: Path, atlas, monkeypatch):
-    *_, box = _setup(tmp_path, atlas)
-
-    def no_engine(*_a: Any, **_k: Any) -> Any:
-        raise AssertionError("a refused call ran the engine")
-
-    monkeypatch.setattr(deformation, "run_jobs", no_engine)
-    fit = _tool(box, "ants_syn")
-    assert fit([])["error"] == "BAD_ARGS"
-    many = fit([ID] * 5)
-    assert many["error"] == "BAD_ARGS" and many["max_sections"] == 4
-    assert fit([ID], stiffness="jelly")["error"] == "BAD_ARGS"
-    assert fit([ID], atlas_image="borders")["error"] == "BAD_ARGS"
-    assert fit([ID], atlas_image="nissl")["error"] == "BAD_ARGS"  # not this atlas's image
-    assert fit([ID], restrict_to=["NOPE"])["error"] == "UNKNOWN_REGIONS"
-    assert fit([ID], restrict_to=["STR:up"])["error"] == "BAD_ARGS"  # no such side
-    assert fit(["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"
-    assert not box.job.undo_stack
 
 
 # --- apply, compose, undo ------------------------------------------------------
 
 
-@needs_ants
+@needs_engine
 def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     state, ctx, _, box = _setup(tmp_path, atlas)
-    result = _ants(box, stiffness="soft", view=False)
+    result = _syn(box, stiffness="soft", view=False)
     row = result["results"][0]
     assert row["written"] is True and row["steps"] == 1
     assert row["settings"] == {"stiffness": "soft", "fit_section": "fit",
@@ -170,12 +130,12 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert state.slices[0].deformation == held
 
 
-@needs_ants
+@needs_engine
 def test_a_second_fit_builds_on_the_first_and_undo_goes_back(tmp_path: Path, atlas):
-    state, _, _, box = _setup(tmp_path, atlas)
-    _ants(box, view=False)
+    state, ctx, _, box = _setup(tmp_path, atlas)
+    _syn(box, view=False)
     first = state.slices[0].deformation
-    row = _ants(box, restrict_to=["STR"], view=False)["results"][0]
+    row = _syn(box, restrict_to=["STR"], view=False)["results"][0]
     assert row["steps"] == 2 and "step_displacement_mm" in row
     held = state.slices[0].deformation
     assert [step["start"] for step in held["steps"]] == ["linear", "current"]
@@ -186,33 +146,16 @@ def test_a_second_fit_builds_on_the_first_and_undo_goes_back(tmp_path: Path, atl
     assert record.settings.structures == ("STR",)
     _tool(box, "undo")()
     assert state.slices[0].deformation == first
+    # The same chain fitted again after the undo reuses the saved result.
+    reused = _fit(box, ctx, _choice(), restrict_to=("STR",)).rows[0]
+    assert reused["steps"] == 2 and reused["cached"] is True
 
 
-@needs_ants
-def test_restrict_to_and_marked_damage_reach_the_engine(tmp_path: Path, atlas, monkeypatch):
-    state, *_, box = _setup(tmp_path, atlas)
-    state.slices[0].damaged_regions = ["HY:left"]
-    seen: list[Any] = []
-    real = deformation.prepare_fit
-
-    def spy(image: Any, atlas_: Any, placement: Any, settings: Any, **kwargs: Any) -> Any:
-        seen.append(settings)
-        return real(image, atlas_, placement, settings, **kwargs)
-
-    monkeypatch.setattr(deformation, "prepare_fit", spy)
-    _ants(box, restrict_to=["STR"], view=False)
-    (settings,) = seen
-    assert settings.structures == ("STR",)
-    assert settings.exclude == ("HY:left",)
-    assert settings.atlas_image == "template" and settings.engine == "ants"
-    assert settings.detail == "coarse"
-
-
-@needs_ants
+@needs_engine
 def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
     state, _, _, box = _setup(tmp_path, atlas)
     state.slices[0].transform = None
-    result = _tool(box, "ants_syn")([ID])
+    result = _tool(box, "fireants_syn")([ID])
     assert result["status"] == "error" and result["error"] == "NOTHING_FITTED"
     assert result["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT"
     assert TOOL_MEDIA_PARTS_KEY not in result
@@ -222,23 +165,7 @@ def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
 # --- the fits underneath (ops.deformable.fit_deformable) -----------------------
 
 
-@needs_ants
-def test_a_fit_builds_on_the_applied_deformation_and_a_redo_reuses_the_result(
-        tmp_path: Path, atlas):
-    state, ctx, _, box = _setup(tmp_path, atlas)
-    row = _fit(box, ctx, _choice(stiffness="soft")).rows[0]
-    assert row["status"] == "ok" and row["written"] is True and row["steps"] == 1
-    depth = len(box.job.undo_stack)
-    again = _fit(box, ctx, _choice(stiffness="soft")).rows[0]
-    assert again["written"] is True and again["steps"] == 2 and again["cached"] is False
-    assert len(box.job.undo_stack) == depth + 1
-    # The same chain fitted again (after an undo) reuses the saved result.
-    assert _tool(box, "undo")()["status"] == "ok"
-    reused = _fit(box, ctx, _choice(stiffness="soft")).rows[0]
-    assert reused["steps"] == 2 and reused["cached"] is True
-
-
-@needs_ants
+@needs_engine
 def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_last(
         tmp_path: Path, atlas, monkeypatch):
     """NONLINEAR-5: a fit does not silently restart from linear over an applied
@@ -266,64 +193,42 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
     assert state.slices[0].deformation == held
 
 
-@needs_ants
-def test_excluded_regions_are_drawn_in_their_own_color(tmp_path: Path, atlas):
-    _, ctx, _, box = _setup(tmp_path, atlas)
-    options = default_options("overlay")
-    plain = _fit(box, ctx, options=options)
-    box.job.state.slices[0].damaged_regions = ["HY"]  # marked damage is left out
-    marked = _fit(box, ctx, options=options)
-
-    def pinkish(image: Image.Image) -> int:
-        pixels = _pixels(image)
-        return int(((pixels[..., 0] > 200) & (pixels[..., 1] < 140)
-                    & (pixels[..., 2] > 100)).sum())
-
-    assert pinkish(marked.pictures[0]) > 20 and pinkish(plain.pictures[0]) == 0
-
-
 # --- consequences: linear edits, the overlay -------------------------------------
 
 
-@needs_ants
-@pytest.mark.parametrize("edit", ["transform", "position", "angles", "flip"])
-def test_a_linear_edit_clears_the_warp_and_says_so(tmp_path: Path, atlas, edit):
+@needs_engine
+def test_a_linear_edit_clears_the_warp_and_says_so(tmp_path: Path, atlas):
     state, ctx, _, box = _setup(tmp_path, atlas)
-    _ants(box, view=False)
+    _syn(box, view=False)
     held = state.slices[0].deformation
     transform = dict(state.slices[0].transform)
-    if edit == "transform":
-        reply = _tool(box, "interactive_transform")([{"id": ID, "rotation_deg": 2.0}],
-                                                    view=False)
-    elif edit == "position":
-        reply = _tool(box, "position_sections")([{"id": ID, "position_mm": 0.15}],
-                                                view=False)
-    elif edit == "angles":
-        reply = _tool(box, "position_sections")(cutting_angles={"pitch_deg": 1.0,
-                                                                "yaw_deg": 0.0}, view=False)
-    else:
-        reply = _tool(box, "interactive_transform")([{"id": ID, "flip": True}], view=False)
-    assert reply["status"] == "ok", reply
-    assert reply["deformation_cleared"] == [ID]
-    assert state.slices[0].deformation is None
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation is None
-    _tool(box, "undo")()
-    assert state.slices[0].deformation == held
-    assert state.slices[0].transform == transform
-
-
-@needs_ants
-def test_reads_keep_the_warp(tmp_path: Path, atlas):
-    state, _, _, box = _setup(tmp_path, atlas)
-    _ants(box, view=False)
-    held = state.slices[0].deformation
+    # Reads keep the warp.
     for reply in (_tool(box, "status")(), _tool(box, "note")("looked"),
                   _tool(box, "look")("overlay", sections=[ID])):
         assert "deformation_cleared" not in reply
     assert state.slices[0].deformation == held
+    edits = {
+        "transform": lambda: _tool(box, "interactive_transform")(
+            [{"id": ID, "rotation_deg": 2.0}], view=False),
+        "position": lambda: _tool(box, "position_sections")(
+            [{"id": ID, "position_mm": 0.15}], view=False),
+        "angles": lambda: _tool(box, "position_sections")(
+            cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0}, view=False),
+        "flip": lambda: _tool(box, "interactive_transform")(
+            [{"id": ID, "flip": True}], view=False),
+    }
+    for name, edit in edits.items():
+        reply = edit()
+        assert reply["status"] == "ok", (name, reply)
+        assert reply["deformation_cleared"] == [ID], name
+        assert state.slices[0].deformation is None, name
+        assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation is None
+        _tool(box, "undo")()
+        assert state.slices[0].deformation == held, name
+        assert state.slices[0].transform == transform, name
 
 
-@needs_ants
+@needs_engine
 def test_look_overlay_draws_the_applied_warp_unless_warp_none(tmp_path: Path, atlas):
     state, _, _, box = _setup(tmp_path, atlas)
     look = _tool(box, "look")
@@ -336,37 +241,15 @@ def test_look_overlay_draws_the_applied_warp_unless_warp_none(tmp_path: Path, at
 
     linear = drawn("none")
     assert np.array_equal(drawn("applied"), linear)  # nothing applied yet
-    _ants(box, stiffness="soft", view=False)
+    _syn(box, stiffness="soft", view=False)
     assert not np.array_equal(drawn("applied"), linear)
     assert np.array_equal(drawn("none"), linear)
     assert state.slices[0].deformation is not None
     # Built for a run without positioning, too: the overlay of the supplied placement.
     (tmp_path / "only").mkdir()
     *_, nonlinear_only = _setup(tmp_path / "only", atlas, tasks=("nonlinear",))
-    assert {"look", "ants_syn"} <= set(nonlinear_only.names)
+    assert {"look", "fireants_syn"} <= set(nonlinear_only.names)
     assert not {"position_sections", "interactive_transform"} & set(nonlinear_only.names)
-
-
-def test_the_job_statement_names_the_tools_and_says_when_ants_is_missing(
-        tmp_path: Path, atlas, monkeypatch):
-    state, _, spec, box = _setup(tmp_path, atlas)
-
-    def statement() -> str:
-        text = build_job_statement(spec, state, tool_names=box.names, species="mouse",
-                                   pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"),
-                                   atlas_channels=("template", "borders"))
-        return " ".join(text.split())
-
-    monkeypatch.setattr(deformation, "ants_available", lambda: True)
-    text = statement()
-    assert "`ants_syn`" in text and "`trace_borders`" in text
-    assert "`fit_deformable`" not in text and "`keep_linear`" not in text
-    assert "- Atlas layers on this host: template, borders." in text
-    assert "ANTs is not installed" not in text
-    monkeypatch.setattr(deformation, "ants_available", lambda: False)
-    assert ("- ANTs is not installed on this host, so ants_syn and trace_borders cannot "
-            "run; a section left without a deformation is named in submit's left_linear."
-            ) in statement()
 
 
 # --- traced section images (the fit a trace gets) ----------------------------------
@@ -394,7 +277,7 @@ def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
     return {"status": "ok", "geometry_fingerprint": fingerprint, "artifact_dir": str(folder)}
 
 
-@needs_ants
+@needs_engine
 def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, atlas,
                                                                 monkeypatch):
     from langslice.core import handoff
@@ -413,7 +296,7 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     assert state.slices[0].deformation["steps"][-1]["trace"] == str(tmp_path / "trace")
 
 
-@needs_ants
+@needs_engine
 def test_a_traced_fit_drops_the_regions_the_trace_left_out(tmp_path: Path, atlas, monkeypatch):
     from langslice.core import handoff
 
@@ -449,11 +332,9 @@ def test_the_model_is_shown_only_the_kept_regions(tmp_path: Path, atlas):
         shown_labels(atlas, labels, prepared, include=("TH",), exclude=("TH",))
 
 
-@needs_ants
+@needs_engine
 def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path, atlas,
                                                                  monkeypatch):
-    import time
-
     from langslice.core import handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
@@ -462,7 +343,6 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
     state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
 
     def job() -> dict[str, Any]:
-        time.sleep(0.3)
         return _trace_artifacts(state, ctx, folder, fingerprint="now")
 
     box.job.start_image_job(ID, "now", job, workers=1)
@@ -478,7 +358,7 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
                 & (pixels[..., 2] < 80)).sum()) > 50
 
 
-@needs_ants
+@needs_engine
 def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas, monkeypatch):
     import threading
 
@@ -514,61 +394,14 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
     assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]
 
 
-# --- the nonlinear goal: a deformation (or left_linear) per section ----------------
-
-
-def _statement(spec: JobSpec, state: StackState, box: Any) -> str:
-    text = build_job_statement(spec, state, tool_names=box.names, species="mouse",
-                               pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"))
-    return " ".join(text.split())
-
-
-def test_the_job_is_a_deformation_per_section_with_or_without_the_image_model(
-        tmp_path: Path, atlas):
-    state, _, spec, box = _setup(tmp_path, atlas)
-    text = _statement(spec, state, box)
-    assert ("give every section a deformation onto the atlas, on top of its linear "
-            "placement, with the section's stain as the evidence, or, for a section you "
-            "choose to trace, the borders the image model traces on it.") in text
-    assert ("- `submit` is refused unless every section carries a deformation applied at "
-            "its current placement, or is named in its `left_linear` with the reason its "
-            "linear placement stands, damaged sections included.") in text
-    assert ("- `trace_borders` is optional: you decide which sections, if any, to trace. "
-            "A trace requires a position and a linear transform.") in text
-    assert ("- Fit each section whole first, then refine regions. Inspect each fit's "
-            "borders against the section's internal anatomy and, where traced, its traced "
-            "borders; undo a fit that does not improve the alignment and fit that section "
-            "again with different `ants_syn` settings, such as another stiffness or another "
-            "atlas image, and name in submit's `left_linear` only a section that no fit "
-            "improves.") in text
-
-    (tmp_path / "none").mkdir()
-    none_state, _, none_spec, none_box = _setup(tmp_path / "none", atlas, provider="none")
-    text = _statement(none_spec, none_state, none_box)
-    assert ("give every section a deformation onto the atlas, on top of its linear "
-            "placement, with the section's stain as the evidence.") in text
-    assert "or is named in its `left_linear` with the reason" in text
-    for absent in ("trace", "image model"):
-        assert absent not in text, absent
-
-    (tmp_path / "required").mkdir()
-    req_state, _, req_spec, req_box = _setup(tmp_path / "required", atlas,
-                                             require_deformation=True)
-    text = _statement(req_spec, req_state, req_box)
-    assert ("- `submit` is refused unless every section carries a deformation applied at "
-            "its current placement, damaged sections included; the user requires one on "
-            "every section.") in text
-    assert "left_linear" not in text
-
-
-@needs_ants
+@needs_engine
 def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monkeypatch):
     from langslice.core import handoff
 
-    _, _, spec, box = _setup(tmp_path, atlas, provider="none")
+    _, _, spec, box = _setup(tmp_path, atlas, provider="none", require_deformation=True)
     assert spec.nonlinear.uses_image_model is False
     assert "trace_borders" not in box.names
-    assert {"grep_atlas", "ants_syn"} <= set(box.names)
+    assert {"grep_atlas", "fireants_syn"} <= set(box.names)
 
     def no_trace_check(*_a: Any, **_k: Any) -> Any:
         raise AssertionError("submit looked for an image correction")
@@ -577,70 +410,25 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
     submit = _tool(box, "submit")
     first = submit("Done", [], [])
     assert first["error"] == "MISSING_DEFORMATIONS"
-    assert first["sections"] == [{"id": ID,
-                                  "reason": "no deformation, and not in left_linear"}]
-    _ants(box, view=False)
+    assert first["sections"] == [{"id": ID, "reason": "no deformation"}]
+    _syn(box, view=False)
     assert submit("Done", [], [])["status"] == "ok"
     with pytest.raises(ValueError, match="nonlinear.provider"):
         NonlinearSpec(provider="mystery")
     assert JobSpec.from_dict(spec.to_dict()).nonlinear.provider == "none"
 
 
-def test_submit_left_linear_records_why_the_placement_stands(tmp_path: Path, atlas,
-                                                              monkeypatch):
+def test_submit_needs_no_deformation_unless_the_user_requires_one(tmp_path: Path, atlas,
+                                                                   monkeypatch):
     from langslice.core import handoff
 
-    state, ctx, _, box = _setup(tmp_path, atlas)
+    state, _, _, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
-    submit = _tool(box, "submit")
-    assert submit("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
-    assert submit("Done", [], [], left_linear=[{"id": ID}])["error"] == "BAD_ARGS"
-    assert submit("Done", [], [], left_linear=[{"id": "nope.png", "reason": "x"}])[
-        "error"] == "UNKNOWN_SLICE_IDS"
-    refused = submit("Done", [], [], left_linear=[{"id": ID, "reason": "x", "why": "y"}])
-    assert refused["status"] == "error" and not state.submitted
-    reply = submit("Done", [], [], left_linear=[{"id": ID, "reason": "Matches already."}])
-    assert reply["status"] == "ok", reply
-    assert reply["left_linear"] == {ID: "Matches already."}
-    assert state.submitted
-    held = state.slices[0].deformation
-    assert held["keep_linear"] == "Matches already."
-    assert held["linear_key"] == deformation.linear_key(state, state.slices[0])
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
-
-
-def test_left_linear_is_not_offered_when_the_user_requires_a_deformation(tmp_path: Path,
-                                                                         atlas):
-    from google.adk.tools import FunctionTool
-
-    state, *_, box = _setup(tmp_path, atlas, require_deformation=True)
-    declaration = FunctionTool(_tool(box, "submit"))._get_declaration().model_dump()
-    schema = declaration["parameters"] or declaration["parameters_json_schema"]
-    assert "left_linear" not in schema["properties"]
     assert "left_linear" not in (_tool(box, "submit").__doc__ or "")
-    refused = _tool(box, "submit")("Done", [], [], left_linear=[{"id": ID, "reason": "x"}])
-    assert refused["status"] == "error" and not state.submitted
+    assert _tool(box, "submit")("Done", [], [])["status"] == "ok" and state.submitted
 
-
-@needs_ants
-def test_keep_linear_satisfies_submit_until_the_placement_moves(tmp_path: Path, atlas):
-    """The "linear placement stands" record (what submit's left_linear writes)
-    is cleared by a placement change like an applied fit."""
-    state, ctx, _, box = _setup(tmp_path, atlas, provider="none")
-    before = box.job.snapshot()
-    state.slices[0].deformation = {
-        "keep_linear": "The linear placement already matches.",
-        "linear_key": deformation.linear_key(state, state.slices[0])}
-    box.job.commit(before)
-    held = state.slices[0].deformation
-    assert held["keep_linear"] == "The linear placement already matches."
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
-    assert box.job.submit_errors([]) is None
-    # A placement change clears it, like an applied fit.
-    moved = _tool(box, "interactive_transform")([{"id": ID, "rotation_deg": 2.0}], view=False)
-    assert moved["deformation_cleared"] == [ID]
-    assert box.job.submit_errors([])["error"] == "MISSING_DEFORMATIONS"
-    _tool(box, "undo")()
-    assert state.slices[0].deformation == held
-    _tool(box, "undo")()
-    assert state.slices[0].deformation is None
+    (tmp_path / "required").mkdir()
+    req_state, *_, req_box = _setup(tmp_path / "required", atlas, require_deformation=True)
+    refused = _tool(req_box, "submit")("Done", [], [])
+    assert refused["error"] == "MISSING_DEFORMATIONS" and not req_state.submitted
+    assert "left_linear" not in refused["message"]

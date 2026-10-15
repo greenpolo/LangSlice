@@ -51,16 +51,7 @@ def test_streaming_final_text_and_calls_are_not_duplicated():
     assert 'secret' not in str(records)
     live.event(event([types.Part.from_text(text='Next response')]))
     assert records[-1] == {'kind': 'text', 'text': 'Next response'}
-
-
-def test_observer_failures_do_not_fail_the_agent(caplog):
-    def broken(record):
-        raise RuntimeError('viewer closed')
-    LiveEvents(broken).emit('text', text='hello')
-    assert 'Live session observer failed' in caplog.text
-
-
-def test_final_revision_is_visible_when_it_differs_from_streamed_text():
+    # A final answer that differs from the streamed one is shown as a revision.
     records = []
     live = LiveEvents(records.append)
     live.event(event([
@@ -77,6 +68,13 @@ def test_final_revision_is_visible_when_it_differs_from_streamed_text():
     ]
     live.event(event([types.Part.from_text(text='Next answer')]))
     assert records[-1] == {'kind': 'text', 'text': 'Next answer'}
+
+
+def test_observer_failures_do_not_fail_the_agent(caplog):
+    def broken(record):
+        raise RuntimeError('viewer closed')
+    LiveEvents(broken).emit('text', text='hello')
+    assert 'Live session observer failed' in caplog.text
 
 
 def test_session_streaming_counts_final_calls_once_and_debrief_once(monkeypatch):

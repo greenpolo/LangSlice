@@ -50,14 +50,14 @@ def _two_channels() -> tuple[np.ndarray, np.ndarray]:
     (_tissue().astype(np.uint16) * 200),
     np.stack([_tissue(), _tissue() // 2, _tissue() // 3], axis=-1),
 ])
-def test_auto_on_one_page_is_todays_automatic_path(tmp_path: Path, page: np.ndarray):
+def test_auto_on_one_page_is_the_automatic_path(tmp_path: Path, page: np.ndarray):
     path = tmp_path / "one.tif"
     tifffile.imwrite(path, page, photometric="rgb" if page.ndim == 3 else "minisblack")
     with Image.open(path) as handle:
-        today = adaptive_preprocess(normalize_image(handle.copy()))
+        automatic = adaptive_preprocess(normalize_image(handle.copy()))
     for settings in (None, {"mode": "auto"}):
         result = host_preprocess(read_pages(path), settings)
-        assert np.array_equal(np.asarray(result), np.asarray(today))
+        assert np.array_equal(np.asarray(result), np.asarray(automatic))
 
 
 def test_auto_weights_the_channel_that_lights_the_tissue():
@@ -122,7 +122,7 @@ def _request(*lines: dict[str, Any]) -> list[dict[str, Any]]:
     return [json.loads(line) for line in output.getvalue().splitlines() if line.strip()]
 
 
-def test_preview_writes_exactly_the_blend(tmp_path: Path):
+def test_preview_writes_exactly_the_blend_and_refuses_bad_settings(tmp_path: Path):
     path = tmp_path / "snap.tif"
     tifffile.imwrite(path, np.stack(_two_channels()))
     settings = {"mode": "custom", "clahe": True, "clahe_strength": "low",
@@ -134,13 +134,10 @@ def test_preview_writes_exactly_the_blend(tmp_path: Path):
     written = np.asarray(Image.open(out))
     expected = np.asarray(host_preprocess(read_pages(path), settings).convert("L"))
     assert np.array_equal(written, expected)
-
-
-def test_preview_refuses_bad_settings_as_validation_errors(tmp_path: Path):
-    [message] = _request({"id": "p", "method": "preprocess.preview", "params": {
+    [refused] = _request({"id": "q", "method": "preprocess.preview", "params": {
         "image_path": str(tmp_path / "x.tif"), "output_path": str(tmp_path / "x.png"),
         "preprocessing": {"mode": "custom", "channel_weights": [-1]}}})
-    assert message["error"]["code"] == "validation_error"
+    assert refused["error"]["code"] == "validation_error"
 
 
 # --- linear.run staging and host updates -----------------------------------
@@ -199,6 +196,13 @@ def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkey
     assert names == ("ch1", "ch2")
     broad, sparse = _two_channels()
     assert np.array_equal(planes[0], broad) and np.array_equal(planes[1], sparse)
+    # Weights that do not fit the pages are refused before the engine runs.
+    refused: dict[str, Any] = {}
+    _fake_engine(monkeypatch, [], refused)
+    with pytest.raises(ValueError, match="Expected 2"):
+        run_linear({**snapshots, "preprocessing": {"mode": "custom", "channel_weights": [1]}},
+                   lambda event: None)
+    assert "spec" not in refused
 
 
 def test_host_channel_names_name_the_raw_channels(snapshots, monkeypatch):
@@ -212,7 +216,7 @@ def test_host_channel_names_name_the_raw_channels(snapshots, monkeypatch):
     assert ctx.section_channels("b.tif")[0] == ("DAPI", "tdTomato")
 
 
-def test_single_page_snapshots_without_settings_keep_todays_path(tmp_path, monkeypatch):
+def test_single_page_snapshots_without_settings_keep_the_automatic_path(tmp_path, monkeypatch):
     Image.fromarray(_tissue()).save(tmp_path / "a.tif")
     seen: dict[str, Any] = {}
     _fake_engine(monkeypatch, [], seen)
@@ -222,15 +226,6 @@ def test_single_page_snapshots_without_settings_keep_todays_path(tmp_path, monke
     assert Path(seen["spec"].image_folder) == tmp_path
     assert seen["spec"].preprocess == "auto"
     assert seen["spec"].host_preprocessing is None
-
-
-def test_bad_weights_for_the_pages_are_refused_before_the_engine(snapshots, monkeypatch):
-    seen: dict[str, Any] = {}
-    _fake_engine(monkeypatch, [], seen)
-    with pytest.raises(ValueError, match="Expected 2"):
-        run_linear({**snapshots, "preprocessing": {"mode": "custom", "channel_weights": [1]}},
-                   lambda event: None)
-    assert "spec" not in seen
 
 
 def test_checkpoints_carry_the_rows_since_the_previous_one(

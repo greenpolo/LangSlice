@@ -1,7 +1,7 @@
 """``anthropic-api``: Claude models through the Anthropic API with an API key.
 
 A thin layer over ADK's own ``AnthropicLlm`` (google.adk.models.anthropic_llm),
-which converts ADK requests to the Messages API. Three things it adds:
+which converts ADK requests to the Messages API. Four things it adds:
 
 - **The key**: ``ANTHROPIC_API_KEY`` when set, else the file
   ``~/.langslice/anthropic_api_key`` (beside the openai-oauth login files).
@@ -23,7 +23,7 @@ import copy
 import os
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from google.adk.models.anthropic_llm import AnthropicLlm
 
@@ -60,7 +60,8 @@ def _mark_last_block(messages: list[Any]) -> list[Any]:
         content = [{"type": "text", "text": content}]
     if isinstance(content, list) and content:
         blocks = [dict(b) if isinstance(b, dict) else b for b in content]
-        if isinstance(blocks[-1], dict) and blocks[-1].get("type") not in ("thinking", "redacted_thinking"):
+        if isinstance(blocks[-1], dict) and blocks[-1].get("type") not in (
+                "thinking", "redacted_thinking"):
             blocks[-1] = {**blocks[-1], "cache_control": _EPHEMERAL}
         last["content"] = blocks
     out[-1] = last
@@ -72,21 +73,26 @@ class AnthropicApiLlm(AnthropicLlm):
 
     max_tokens: int = MAX_TOKENS
     #: Set by ``agent.session._with_reasoning`` from ``--reasoning``; None keeps the API default.
-    reasoning_effort: Optional[str] = None
+    reasoning_effort: str | None = None
 
-    def _build_anthropic_kwargs(self, llm_request, messages, tools, tool_choice, thinking):  # type: ignore[override]
-        kwargs = super()._build_anthropic_kwargs(llm_request, messages, tools, tool_choice, thinking)
+    def _build_anthropic_kwargs(  # type: ignore[override]
+        self, llm_request, messages, tools, tool_choice, thinking,
+    ):
+        kwargs = super()._build_anthropic_kwargs(
+            llm_request, messages, tools, tool_choice, thinking)
         effort = self.reasoning_effort
         if effort and "output_config" not in kwargs:
             if effort not in EFFORTS:
-                raise ValueError(f"Unknown reasoning effort {effort!r} for Claude: use one of {EFFORTS}")
+                raise ValueError(
+                    f"Unknown reasoning effort {effort!r} for Claude: use one of {EFFORTS}")
             kwargs["output_config"] = {"effort": effort}
             if not isinstance(kwargs.get("thinking"), dict):
                 kwargs["thinking"] = {"type": "adaptive"}
             for name in ("temperature", "top_p", "top_k"):  # not accepted with effort set
                 kwargs.pop(name, None)
         thinking_param = kwargs.get("thinking")
-        if isinstance(thinking_param, dict) and thinking_param.get("type") == "adaptive" and "display" not in thinking_param:
+        if (isinstance(thinking_param, dict) and thinking_param.get("type") == "adaptive"
+                and "display" not in thinking_param):
             kwargs["thinking"] = {**thinking_param, "display": "summarized"}
         system = kwargs.get("system")
         if isinstance(system, str) and system:
@@ -96,14 +102,16 @@ class AnthropicApiLlm(AnthropicLlm):
 
     @cached_property
     def _anthropic_client(self):  # type: ignore[override]
-        from anthropic import AsyncAnthropic
         import httpx2 as httpx  # the HTTP library the anthropic SDK (>=1.13) is built on
+        from anthropic import AsyncAnthropic
 
         # A plain client, not the SDK's default wrapper: that wrapper turns every
         # NO_PROXY entry into a URL pattern and fails on a bracketed IPv6 one
         # ("[::1]", set on the lab machine). An explicit proxy is still honoured.
-        proxy = next((os.environ[n] for n in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+        proxy = next((os.environ[n]
+                      for n in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
                       if os.environ.get(n)), None)
-        http_client = httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(600.0, connect=15.0),
-                                        **({"proxy": proxy} if proxy else {}))
+        options: dict[str, Any] = {"proxy": proxy} if proxy else {}
+        http_client = httpx.AsyncClient(
+            trust_env=False, timeout=httpx.Timeout(600.0, connect=15.0), **options)
         return AsyncAnthropic(api_key=api_key(), max_retries=4, http_client=http_client)

@@ -4,7 +4,7 @@ title: "LangSlice: VLM-driven registration of histological brain sections to Bra
 abstract: >
   LangSlice gives a vision-language agent tools to register histological
   brain sections to BrainGlobe atlases. The agent determines positions and
-  cutting angles, aligns sections in-plane, and optionally fits ANTs
+  cutting angles, aligns sections in-plane, and optionally fits FireANTs
   deformations to the stain or to borders traced by an image model.
   Results include coordinate and label maps, registration parameters,
   and QuickNII / VisuAlign exports, with native registration updates in ABBA.

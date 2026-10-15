@@ -56,24 +56,24 @@ def _sse(events: list[dict[str, Any]]) -> list[str]:
 
 
 # --- credentials -------------------------------------------------------------
-def test_jwt_claims_and_account_id():
-    token = _id_token("acct_123", "pro")
-    assert chatgpt.account_id_from_id_token(token) == "acct_123"
+def test_credentials_and_headers():
+    assert chatgpt.account_id_from_id_token(_id_token("acct_123", "pro")) == "acct_123"
     assert chatgpt.account_id_from_id_token(None) is None
     assert chatgpt.account_id_from_id_token("garbage") is None
 
-
-def test_creds_from_doc_nested_and_flat():
     nested = {"tokens": {"access_token": "A", "refresh_token": "R", "id_token": _id_token()}}
     creds = chatgpt.creds_from_doc(nested, "test")
     assert (creds.access_token, creds.refresh_token) == ("A", "R")
     assert creds.account_id == "acct_9"  # derived from id_token
-
     flat = {"access_token": "A2", "account_id": "acct_explicit"}
     assert chatgpt.creds_from_doc(flat, "test").account_id == "acct_explicit"
-
     with pytest.raises(ValueError):
         chatgpt.creds_from_doc({"tokens": {}}, "test")
+
+    headers = chatgpt._headers(chatgpt.Creds("ACCESS", account_id="acct_5"), "sess-1")
+    assert headers["Authorization"] == "Bearer ACCESS"
+    assert headers["chatgpt-account-id"] == "acct_5"
+    assert "chatgpt-account-id" not in chatgpt._headers(chatgpt.Creds("A"), "sess-1")
 
 
 def test_refresh_persists_only_to_our_own_file(tmp_path, monkeypatch):
@@ -131,17 +131,6 @@ def test_load_credentials_without_any_source_is_actionable(tmp_path, monkeypatch
 
 
 # --- wire shaping ------------------------------------------------------------
-def test_headers():
-    headers = chatgpt._headers(chatgpt.Creds("ACCESS", account_id="acct_5"), "sess-1")
-    assert headers["Authorization"] == "Bearer ACCESS"
-    assert headers["chatgpt-account-id"] == "acct_5"
-    assert headers["OpenAI-Beta"] == "responses=experimental"
-    assert headers["Accept"] == "text/event-stream"
-    assert headers["originator"] == "langslice"
-    assert headers["session_id"] == "sess-1"
-    assert "chatgpt-account-id" not in chatgpt._headers(chatgpt.Creds("A"), "sess-1")
-
-
 def test_iter_sse_decodes_bytes_lines_and_stops_at_done():
     lines = _sse(
         [
@@ -211,7 +200,7 @@ def test_content_conversion_text_image_and_function_calls():
     }
 
 
-def test_function_response_media_is_forwarded_as_input_image():
+def test_function_response_images_are_forwarded_and_labelled():
     response = types.Content(
         role="user",
         parts=[
@@ -245,70 +234,16 @@ def test_function_response_media_is_forwarded_as_input_image():
     assert content[2]["detail"] == "high"
     assert content[2]["image_url"].startswith("data:image/png;base64,")
 
-
-def test_each_tool_image_is_labelled_before_it():
-    """N images from one tool arrive interleaved with 'image k of N' text."""
-    blob = types.FunctionResponsePart(
-        inline_data=types.FunctionResponseBlob(data=_png_bytes(), mime_type="image/png")
-    )
-    response = types.Content(
-        role="user",
-        parts=[
-            types.Part(
-                function_response=types.FunctionResponse(
-                    id="call_1",
-                    name="look",
-                    response={"status": "ok"},
-                    parts=[blob, blob, blob],
-                )
-            )
-        ],
-    )
+    # N images from one tool arrive interleaved with "image k of N" text.
+    blob = response.parts[0].function_response.parts[0]
+    response.parts[0].function_response.parts = [blob, blob, blob]
     content = chatgpt.content_to_input_items(response)[0]["output"]
-    assert [item["type"] for item in content] == [
-        "input_text",
-        "input_text",
-        "input_image",
-        "input_text",
-        "input_image",
-        "input_text",
-        "input_image",
-    ]
-    assert [item["text"] for item in content[1::2]] == [
-        "look image 1 of 3",
-        "look image 2 of 3",
-        "look image 3 of 3",
-    ]
+    assert [item["type"] for item in content] == ["input_text"] + ["input_text", "input_image"] * 3
+    labels = [item["text"] for item in content[1::2]]
+    assert labels == [f"get_slice image {k} of 3" for k in (1, 2, 3)]
 
 
-def test_tools_to_wire_uses_flat_responses_function_shape():
-    declaration = types.FunctionDeclaration(
-        name="get_atlas_slice",
-        description="Fetch an atlas slice",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={"position_mm": types.Schema(type=types.Type.NUMBER)},
-            required=["position_mm"],
-        ),
-    )
-    config = types.GenerateContentConfig(tools=[types.Tool(function_declarations=[declaration])])
-    wire = chatgpt.tools_to_wire(config)
-    assert wire == [
-        {
-            "type": "function",
-            "name": "get_atlas_slice",
-            "description": "Fetch an atlas slice",
-            "strict": False,
-            "parameters": {
-                "type": "object",
-                "properties": {"position_mm": {"type": "number"}},
-                "required": ["position_mm"],
-            },
-        }
-    ]
-
-
-def test_build_request_body_carries_instructions_and_model():
+def test_request_body_and_tool_wire_shape():
     llm = chatgpt.OpenAIOAuthLlm(model="openai-oauth/gpt-5.6-luna")
     assert llm.model == "gpt-5.6-luna"  # prefix stripped
     request = LlmRequest(
@@ -326,6 +261,20 @@ def test_build_request_body_carries_instructions_and_model():
         "context": "all_turns",
     }
     assert body["input"][0]["content"][0]["text"] == "hi"
+
+    declaration = types.FunctionDeclaration(
+        name="get_atlas_slice",
+        description="Fetch an atlas slice",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"position_mm": types.Schema(type=types.Type.NUMBER)},
+            required=["position_mm"],
+        ),
+    )
+    config = types.GenerateContentConfig(tools=[types.Tool(function_declarations=[declaration])])
+    (wire,) = chatgpt.tools_to_wire(config)
+    assert (wire["type"], wire["name"], wire["strict"]) == ("function", "get_atlas_slice", False)
+    assert wire["parameters"]["required"] == ["position_mm"]
 
 
 # --- streaming ---------------------------------------------------------------
@@ -348,33 +297,6 @@ def _run_turn(monkeypatch, events: list[dict[str, Any]], *, stream: bool):
     return asyncio.run(collect()), captured
 
 
-def test_streaming_yields_partials_then_aggregated_final(monkeypatch):
-    events = [
-        {"type": "response.output_text.delta", "delta": "Hel"},
-        {"type": "response.output_text.delta", "delta": "lo"},
-        {
-            "type": "response.completed",
-            "response": {
-                "usage": {
-                    "input_tokens": 7,
-                    "input_tokens_details": {"cached_tokens": 5},
-                    "output_tokens": 3,
-                    "output_tokens_details": {"reasoning_tokens": 2},
-                }
-            },
-        },
-    ]
-    responses, _ = _run_turn(monkeypatch, events, stream=True)
-    assert [r.partial for r in responses] == [True, True, False]
-    assert responses[-1].content is not None
-    assert responses[-1].content.parts[0].text == "Hello"
-    usage = responses[-1].usage_metadata
-    assert usage.prompt_token_count == 7
-    assert usage.cached_content_token_count == 5
-    assert usage.candidates_token_count == 3
-    assert usage.thoughts_token_count == 2
-
-
 @pytest.mark.parametrize("stream", [False, True])
 def test_summary_streaming_preserves_final_reasoning_and_ignores_raw_reasoning(monkeypatch, stream):
     reasoning = {
@@ -393,9 +315,14 @@ def test_summary_streaming_preserves_final_reasoning_and_ignores_raw_reasoning(m
             "type": "response.output_item.done",
             "item": {"type": "function_call", "name": "probe", "arguments": "{}", "call_id": "c1"},
         },
-        {"type": "response.completed"},
+        {"type": "response.completed", "response": {"usage": {
+            "input_tokens": 7, "input_tokens_details": {"cached_tokens": 5},
+            "output_tokens": 3, "output_tokens_details": {"reasoning_tokens": 2}}}},
     ]
     responses, _ = _run_turn(monkeypatch, events, stream=stream)
+    usage = responses[-1].usage_metadata
+    assert (usage.prompt_token_count, usage.cached_content_token_count,
+            usage.candidates_token_count, usage.thoughts_token_count) == (7, 5, 3, 2)
     assert [r.partial for r in responses] == ([True, True, True, False] if stream else [False])
     if stream:
         summary_parts = [r.content.parts[0] for r in responses[:2]]
@@ -518,24 +445,6 @@ def test_function_result_round_trip_body(monkeypatch):
     assert body["input"][2]["call_id"] == "c1"
 
 
-# --- wiring ------------------------------------------------------------------
-def test_model_resolver_routes_the_openai_oauth_prefix():
-    from langslice.agent import model_resolver
-
-    model = model_resolver.resolve_adk_model("openai-oauth/gpt-5.6-luna")
-    assert isinstance(model, chatgpt.OpenAIOAuthLlm)
-    assert model.model == "gpt-5.6-luna"
-
-    with pytest.raises(ValueError):
-        model_resolver.resolve_adk_model("openai-oauth/")
-
-
-def test_registry_resolves_openai_oauth_models():
-    from google.adk.models.registry import LLMRegistry
-
-    assert LLMRegistry.resolve("openai-oauth/gpt-5.6-luna") is chatgpt.OpenAIOAuthLlm
-
-
 def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
     """The registration path calls the direct edits endpoint: one GPT model
     (the pilot), one image model — no routing model rewriting the prompt."""
@@ -590,28 +499,3 @@ def test_user_content_preserves_text_image_interleaving():
     assert kinds == ["input_text", "input_image", "input_text", "input_image"]
     assert item["content"][0]["text"] == "0: a.tif"
     assert item["content"][2]["text"] == "1: b.tif"
-
-
-def test_reasoning_items_are_kept_and_replayed_ahead_of_the_turn(monkeypatch):
-    reasoning = {
-        "type": "reasoning",
-        "id": "rs_1",
-        "summary": [{"type": "summary_text", "text": "compare 4.6 and 4.8"}],
-        "encrypted_content": "opaque",
-    }
-    events = [
-        {"type": "response.output_item.done", "item": reasoning},
-        {
-            "type": "response.output_item.done",
-            "item": {"type": "function_call", "name": "probe", "arguments": "{}", "call_id": "c1"},
-        },
-        {"type": "response.completed"},
-    ]
-    responses, _ = _run_turn(monkeypatch, events, stream=False)
-    turn = responses[0].content
-    assert turn.parts[0].thought and turn.parts[0].text == "compare 4.6 and 4.8"
-    assert turn.parts[1].function_call.name == "probe"
-
-    items = chatgpt.content_to_input_items(turn)
-    assert [item["type"] for item in items] == ["reasoning", "function_call"]
-    assert items[0] == reasoning

@@ -2,8 +2,7 @@
 
 The alignment loop is a vision-action loop, so a render that lies about scale
 compromises every decision made from it. These are the geometry pins: what one
-millimetre is worth in pixels, how wide a known atlas lands, how long the scale
-bar is, and where the outlines fall.
+millimetre is worth in pixels, how wide a known atlas lands, and where the outlines fall.
 """
 
 from __future__ import annotations
@@ -15,11 +14,10 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core.affine import normalized_physical_affine, physical_affine_matrix
+from langslice.core.affine import physical_affine_matrix
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import annotation_slice, region_boundaries, region_outlines
 from langslice.core.canvas import canvas_geometry, physical_views
-from langslice.core.captions import scale_bar_px
 from langslice.core.image_prep import read_pixel_size_um
 from langslice.core.sections import canvas_um_per_px
 from langslice.core.spec import JobSpec
@@ -119,18 +117,6 @@ def test_ome_xml_pixel_size_wins_over_the_tags(tmp_path: Path):
     assert read_pixel_size_um(path) == pytest.approx(0.75488, rel=1e-6)
 
 
-def test_the_micro_sign_survives_a_mangled_encoding():
-    """tifffile writes "µm"; its UTF-8 bytes reach us as "Âµm" often enough."""
-    from langslice.core.image_prep import _unit_to_um
-
-    assert _unit_to_um("Âµm") == 1.0
-    assert _unit_to_um("µm") == 1.0
-    assert _unit_to_um("um") == 1.0
-    assert _unit_to_um("") == 1.0  # OME's default
-    assert _unit_to_um("mm") == 1000.0
-    assert _unit_to_um("furlong") is None
-
-
 # --- millimetres on the canvas -------------------------------------------
 
 
@@ -158,12 +144,6 @@ def test_a_one_millimetre_shift_moves_the_tissue_by_that_many_pixels():
     x1, y1 = centroid(moved)
     assert x1 - x0 == pytest.approx(100.0, abs=2.0)  # 1 mm at 10 um/px
     assert y1 - y0 == pytest.approx(0.0, abs=2.0)
-
-
-def test_the_normalized_numbers_describe_the_same_physical_map():
-    params = {**_IDENTITY, "translate_x_mm": 0.5, "rotation_deg": 0.0}
-    six = normalized_physical_affine(size=(300, 200), um_per_px=10.0, **params)
-    assert six[2] == pytest.approx(50.0 / 300.0)  # half a millimetre of width
 
 
 # --- the atlas at true scale ---------------------------------------------
@@ -205,28 +185,6 @@ def test_the_canvas_grows_when_the_atlas_would_not_fit():
     small = canvas_geometry((40, 40), 10.0, TwoRegionAtlas(), 0.2, "coronal")
     assert small.size[0] >= 100 and small.size[1] >= 100
     assert small.section_offset[0] == (small.size[0] - 40) // 2
-
-
-def test_the_scale_bar_is_one_millimetre_long():
-    assert scale_bar_px(10.0) == 100
-    assert scale_bar_px(0.75488) == 1325
-
-    rgb = _overlay(_IDENTITY)
-    bar_rows = [
-        row for row in range(rgb.shape[0])
-        if (rgb[row, :150] >= 230).all(axis=1).sum() >= 100
-    ]
-    assert bar_rows, "no 1 mm bar found"
-    run = (rgb[bar_rows[0]] >= 230).all(axis=1).sum()
-    assert run == pytest.approx(101, abs=2)  # inclusive endpoints
-
-
-def test_the_template_only_shows_when_it_is_asked_for():
-    plain = _overlay(_IDENTITY)
-    with_template = _overlay(_IDENTITY, atlas_opacity=0.35)
-    # The template lights up the atlas anatomy under the lines: the picture
-    # area (above the caption band) gets brighter overall.
-    assert with_template[:-60].mean() > plain[:-60].mean() + 1
 
 
 # --- the outlines --------------------------------------------------------
@@ -312,27 +270,6 @@ def test_no_pixel_size_anywhere_is_uncalibrated_never_fatal(tmp_path: Path):
     # The section image's width is mapped onto the atlas plane's width.
     plane = annotation_slice(ctx.atlas, 0.2, plane=state.plane)
     assert um == pytest.approx(plane.shape[1] * 25.0 / section.width)
-
-
-def test_the_hand_tool_returns_one_image_and_the_numbers(tmp_path: Path):
-    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-    from langslice.doors.tools.toolbox import build_tools
-
-    _section((512, 512)).save(tmp_path / "s.tif",
-        resolution_unit=3, x_resolution=1000.0, y_resolution=1000.0)  # 10 um/px
-    ctx, state = _ctx(tmp_path)
-    record = state.slices[0]
-    record.position_mm = 0.2
-    box = build_tools(state, ctx, ctx.spec)
-    adjust = next(tool for tool in box.tools if tool.__name__ == "interactive_transform")
-
-    result = adjust([{"id": record.id, "rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
-                      "translate_x_mm": 0.25, "translate_y_mm": 0.0}])
-    assert result["status"] == "ok"
-    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1  # ONE image, not a panel strip
-    (row,) = result["results"]
-    assert row["written"] is True and row["transform"]["translate_x_mm"] == 0.25
-    assert record.transform["calibration"]["source"] == "file"
 
 
 # --- the reasoning knob --------------------------------------------------

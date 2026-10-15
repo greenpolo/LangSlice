@@ -86,6 +86,13 @@ class Workspace:
     #: ``core.maps.FRAME_CACHE_SECTIONS``). Shared: read only.
     frame_cache: OrderedDict[str, tuple[tuple[Any, ...], Any]] = field(
         default_factory=OrderedDict, repr=False)
+    #: Atlas template planes (:func:`langslice.core.atlas_fetch.atlas_section`),
+    #: keyed ``(position, plane, pitch, yaw, frame)``, least recently used
+    #: first (bounded by ``core.atlas_fetch.PLANE_CACHE_SIZE``): the opening
+    #: and the pictures size and draw the same plane more than once. Shared:
+    #: read only.
+    plane_cache: OrderedDict[tuple[float, str, float, float, bool], Image.Image] = field(
+        default_factory=OrderedDict, repr=False)
     _atlas: Any = field(default=None, repr=False)
     _range: tuple[float, float] | None = field(default=None, repr=False)
     _pixel_sizes: dict[str, float | None] = field(default_factory=dict, repr=False)

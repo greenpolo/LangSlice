@@ -1,4 +1,6 @@
-"""External worker keeps host calibration and initial state intact without Java."""
+"""External worker keeps host calibration and initial state intact without Java.
+
+The deformation warp-row tests (real deformation fits on the synthetic stack) are `slow`."""
 import copy
 import json
 from pathlib import Path
@@ -88,35 +90,6 @@ def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypa
         run_linear(params, lambda event: None)
 
 
-def test_a_run_keeps_its_trace_in_the_job_folder_as_linear_run_does(params, monkeypatch):
-    import os
-
-    from langslice.agent import engine
-    from langslice.agent.trace import TRACE_DIR_ENV
-
-    monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
-    seen = []
-
-    async def run(spec, *, on_write, on_event, emit, **_):
-        seen.append(os.environ[TRACE_DIR_ENV])
-        value = {"cutting_angles_deg": {"pitch": 0.0, "yaw": 0.0},
-                 "slices": [{"id": "section_0001.tif", "position_mm": 4.0,
-                             "rotation_deg": 0, "transform": None}]}
-        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
-        on_write(state)
-        return state
-
-    monkeypatch.setattr(engine, "run", run)
-    result = run_linear(params, lambda event: None)
-    assert seen == [str(Path(result["output_dir"]) / "trace")]
-    assert TRACE_DIR_ENV not in os.environ
-    monkeypatch.setenv(TRACE_DIR_ENV, "/elsewhere")  # a named folder wins, as for linear run
-    run_linear(params, lambda event: None)
-    assert seen[-1] == "/elsewhere"
-    with pytest.raises(ValueError, match=r"Unknown request key\(s\) \['trace_dir'\]"):
-        run_linear({**params, "trace_dir": "/tmp/x"}, lambda event: None)
-
-
 @pytest.mark.parametrize(("frozen", "sent"), [
     (frozenset(), True), (frozenset({"orientation"}), False), (frozenset({"affine"}), True)])
 def test_orientation_reaches_the_host_unless_it_is_frozen(frozen, sent):
@@ -130,14 +103,6 @@ def test_orientation_reaches_the_host_unless_it_is_frozen(frozen, sent):
     assert bool(updates) is sent
     if sent:
         assert updates[0]["flip"] is True and updates[0]["rotation_deg"] == 90
-
-
-def test_nonlinear_without_an_image_model_is_accepted(params):
-    from langslice.doors.api.abba_worker import prepare_linear
-
-    params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
-    spec = prepare_linear(params).spec
-    assert spec.has("nonlinear") and spec.nonlinear.uses_image_model is False
 
 
 @pytest.mark.parametrize("where", ["job_dir", "read_only"])
@@ -196,7 +161,7 @@ def _angled_state(*angles):
     return StackState(slices=slices)
 
 
-def test_a_checkpoint_with_an_angle_per_section_is_refused_before_abba_sees_it(params):
+def test_an_angle_per_section_is_refused_before_abba_sees_it(params, monkeypatch):
     from langslice.doors.api.abba_worker import (
         ABBA_MIXED_ANGLES,
         checkpoint_callback,
@@ -212,14 +177,12 @@ def test_a_checkpoint_with_an_angle_per_section_is_refused_before_abba_sees_it(p
     assert str(refused.value) == ABBA_MIXED_ANGLES
     assert len(events) == 1  # nothing emitted to the host
 
-
-def test_a_run_ending_with_an_angle_per_section_reports_the_refusal(params, monkeypatch):
     from langslice.agent import engine
 
     async def run(spec, *, on_write, on_event, emit, **_):
         return _angled_state((1.0, 0.0), (0.0, 0.0))
 
-    monkeypatch.setattr(engine, "run", run)
+    monkeypatch.setattr(engine, "run", run)  # a run ending that way reports the refusal too
     with pytest.raises(ValueError, match="cannot show"):
         run_linear(params, [].append)
 
@@ -300,7 +263,7 @@ def test_the_abba_session_facts_are_kept_with_the_job(params, monkeypatch, tmp_p
 
 @pytest.fixture(scope="module")
 def warped(tmp_path_factory):
-    """A real job (the golden recorder's synthetic stack) placed through the
+    """A real job (the shared synthetic stack) placed through the
     library, with the worker's checkpoint tracker attached to it."""
     import dataclasses
 
@@ -308,11 +271,10 @@ def warped(tmp_path_factory):
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.api.abba_worker import PreparedLinear, checkpoint_callback
     from langslice.doors.jobs import create
-    from tests.golden.record import (
+    from tests.synthetic_stack import (
         ID0,
         ID1,
         PIXEL_SIZE_UM,
-        apply_patches,
         atlas_loader,
         full_spec,
         write_sections,
@@ -321,7 +283,6 @@ def warped(tmp_path_factory):
     root = tmp_path_factory.mktemp("warp_rows")
     patch = pytest.MonkeyPatch()
     patch.setenv("HOME", str(root / "home"))
-    apply_patches()
     folder = root / "stack"
     write_sections(folder)
     spec = dataclasses.replace(full_spec(folder), nonlinear=NonlinearSpec(provider="none"))
@@ -358,18 +319,19 @@ def _row(event, name):
     return next((row for row in event["host_updates"] if row["id"] == name), None)
 
 
+@pytest.mark.slow
 def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     from langslice.core.abba_warp import world_frame
     from langslice.core.maps import native_points, section_frame, stored_params
     from langslice.core.thin_plate import ThinPlateKernel
-    from tests.golden.record import ID0, ID1
+    from tests.synthetic_stack import ID0, ID1
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, prepared = warped
-    # An ANTs SyN field varies on a finer scale than the 33x33 landmark cap
+    # A SyN field varies on a finer scale than the 33x33 landmark cap
     # follows, so the pairs approximate it with an error the row reports; the
     # conversion's own exactness on a smooth field is test_abba_warp's.
-    assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+    assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     row = _row(events[-1], ID0)
     warp = row["warp"]
@@ -403,32 +365,17 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     assert errors.max() <= 1.5 * warp["max_error_mm"]
 
 
-def test_an_ants_syn_deformation_is_sent_with_its_error(warped):
-    """The deformation the tool door fits (ants_syn) reaches ABBA as warp
-    pairs, with the error of the landmark approximation measured and logged."""
-    from tests.golden.record import ID1
-
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
-    job, tracker, events, _prepared = warped
-    assert job.ants_syn(sections=[ID1], view=False)["status"] == "ok"
-    tracker(job.state)
-    warp = _row(events[-1], ID1)["warp"]
-    assert warp is not None and warp["points"] > 0
-    assert 0 < warp["p99_error_mm"] <= warp["max_error_mm"]
-    logged = [e["message"] for e in events if e.get("kind") == "log" and ID1 in e["message"]]
-    assert any("deformation sent to ABBA" in m for m in logged)
-
-
+@pytest.mark.slow
 def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeypatch):
     """CONN-4: the row names the failure (the connector keeps it as a failed
     update and leaves ABBA's warp as it is); it is not remembered, so the
     next checkpoint tries again."""
-    from tests.golden.record import ID0
+    from tests.synthetic_stack import ID0
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, _prepared = warped
     if job.state.by_id(ID0).deformation is None:
-        assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+        assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
         tracker(job.state)
     record = job.state.by_id(ID0)
     key = str(record.deformation["key"])
@@ -446,26 +393,14 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
     assert "source_mm" in tracker._warp(job.state, record, key)
 
 
-def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
-    """The "linear placement stands" record (what submit's ``left_linear``
-    writes) and a moved placement each send ABBA no warp for the section."""
-    from langslice.core.deformation import linear_key
-    from tests.golden.record import ID0
+@pytest.mark.slow
+def test_a_moved_placement_removes_the_warp_step(warped):
+    """A moved placement sends ABBA no warp for the section."""
+    from tests.synthetic_stack import ID0
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, _prepared = warped
-    if job.state.by_id(ID0).deformation is None:
-        assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
-        tracker(job.state)
-    with job.job.writing():
-        before = job.job.snapshot()
-        record = job.state.by_id(ID0)
-        record.deformation = {"keep_linear": "kept for the test",
-                              "linear_key": linear_key(job.state, record)}
-        job.job.commit(before)
-    tracker(job.state)
-    assert _row(events[-1], ID0)["warp"] is None
-    assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+    assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     assert _row(events[-1], ID0)["warp"] is not None
     assert job.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
@@ -475,24 +410,22 @@ def test_keep_linear_and_a_moved_placement_remove_the_warp_step(warped):
     assert moved["position_mm"] == pytest.approx(0.11) and moved["warp"] is None
 
 
-def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monkeypatch):
+def test_a_section_keeping_the_users_warp_is_refused_by_fireants_syn(tmp_path, monkeypatch):
     import dataclasses
 
     import langslice
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
-    from tests.golden.record import (
+    from tests.synthetic_stack import (
         ID0,
         PIXEL_SIZE_UM,
-        apply_patches,
         atlas_loader,
         full_spec,
         write_sections,
     )
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     folder = tmp_path / "stack"
     write_sections(folder)
     spec = dataclasses.replace(
@@ -503,24 +436,11 @@ def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monke
     try:
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
-        result = job.ants_syn(sections=[ID0], view=False)
+        result = job.fireants_syn(sections=[ID0], view=False)
         assert "FROZEN" in json.dumps(result)
         assert job.state.by_id(ID0).deformation is None
     finally:
         job.close()
-
-
-def test_the_seed_event_carries_the_saved_opening_views():
-    from langslice.agent.engine import with_seed_views
-
-    got: list = []
-    forward = with_seed_views(got.append, ["/job/views/000001_opening/view.jpg"])
-    assert forward is not None
-    forward({"kind": "seed", "text": "", "images": []})
-    forward({"kind": "text", "text": "hello"})
-    assert got[0]["views"] == ["/job/views/000001_opening/view.jpg"]
-    assert "views" not in got[1]
-    assert with_seed_views(None, ["x"]) is None
 
 
 def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monkeypatch):
@@ -533,10 +453,9 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.api.abba_worker import prepare_linear
     from langslice.doors.jobs import create
-    from tests.golden.record import (
+    from tests.synthetic_stack import (
         ID0,
         PIXEL_SIZE_UM,
-        apply_patches,
         atlas_loader,
         full_spec,
         write_sections,
@@ -556,9 +475,8 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
                         "positions_mm": {"a.tif": 4.0},
                         "spec": {"frozen": {"b.tif": ["deformation"]}}})
 
-    pytest.importorskip("ants", reason="ants_syn needs antspyx")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    apply_patches()
     folder = tmp_path / "stack"
     write_sections(folder)
     spec = dataclasses.replace(
@@ -569,7 +487,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     try:
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
-        assert "FROZEN" in json.dumps(job.ants_syn(sections=[ID0], view=False))
+        assert "FROZEN" in json.dumps(job.fireants_syn(sections=[ID0], view=False))
         assert job.job.frozen_refusal([ID0], "deformation")["error"] == "FROZEN"
     finally:
         job.close()

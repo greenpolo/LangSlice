@@ -79,15 +79,8 @@ FIXES: dict[str, str] = {
     "MISSING_TRANSFORMS": "Give every section a transform[[?elastix_affine|"
                           "interactive_transform  ([[%elastix_affine=elastix_affine||"
                           "interactive_transform=interactive_transform]])]].",
-    "MISSING_DEFORMATIONS": "Give every section a deformation[[?ants_syn|trace_borders  "
-                            "([[%ants_syn=ants_syn||trace_borders=trace_borders]])]], "
-                            "or name it in submit's left_linear with the reason its linear "
-                            "placement stands.",
-    "DEFORMATION_REQUIRED": "The user requires a deformation on every section: fit one"
-                            "[[?ants_syn|trace_borders  ([[%ants_syn=ants_syn||"
-                            "trace_borders=trace_borders]])]] instead of naming it in "
-                            "left_linear.",
-    "HAS_DEFORMATION": "That section carries a deformation; leave it out of left_linear.",
+    "MISSING_DEFORMATIONS": "Give every section a deformation[[?fireants_syn|trace_borders  "
+                            "([[%fireants_syn=fireants_syn||trace_borders=trace_borders]])]].",
     "FROZEN": "The user froze these properties of these sections (the reply names them): "
               "leave them out of the call.",
     "STALE_INPUT": "The section changed while this ran; run the verb again for it.",
@@ -106,9 +99,9 @@ FIXES: dict[str, str] = {
                       "from these inputs (the old one's work is replaced), or with the "
                       "inputs the job was made from (job.json, spec.inputs) to continue it.",
     "IMAGE_MODEL_OFF": "Connect the job's image model to LangSlice (`langslice login` for "
-                       "openai-oauth, or its API key) and call it again[[?ants_syn ; "
+                       "openai-oauth, or its API key) and call it again[[?fireants_syn ; "
                        "without it, fit each section's deformation to its stain with "
-                       "ants_syn]].",
+                       "fireants_syn]].",
     "NOTHING_TRACED": "Each section's row under result.results names its problem"
                       "[[?trace_borders ; a section needs a position and a transform"
                       "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
@@ -126,13 +119,10 @@ FIXES: dict[str, str] = {
                                 "[[?elastix_affine|interactive_transform  ([[%elastix_affine="
                                 "elastix_affine||interactive_transform=interactive_transform"
                                 "]])]] first.",
-    "ANTS_MISSING": "ANTs (antspyx) does not import on this host; reinstall LangSlice "
-                    "there (see the message), or name the sections in submit's "
-                    "left_linear.",
+    "ENGINE_MISSING": "torch or fireants does not import on this host; reinstall "
+                    "LangSlice (see the message).",
     "FIT_FAILED": "See the message; try other settings or regions.",
     "RENDER_FAILED": "See the message; check the section file opens, then retry.",
-    "UNAVAILABLE": "Not installed on this host (see the message); use what the job "
-                   "statement offers instead.",
     "FIT_ATLAS_UNAVAILABLE": "Use atlas_image \"template\" (the reference template).",
     "NO_PICTURE": "Look first[[?zoom : zoom takes a box on a picture already drawn]].",
     "UNKNOWN_PICTURE": "Use a picture number from a reply's `pictures`, or views.jsonl.",

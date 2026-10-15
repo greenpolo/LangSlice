@@ -27,8 +27,8 @@ from langslice.ops import notes as ops_notes
 from langslice.ops import positions as ops_positions
 from langslice.ops import submit as ops_submit
 from langslice.ops import transforms as ops_transforms
-from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
+from langslice.ops.registry import check_section_count
 
 #: Positions closer than this (mm) are one atlas picture in a positioning picture.
 SAME_POSITION_MM = 0.02
@@ -97,12 +97,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if not entries:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "sections must name one or more sections"}
-        if len(entries) > MAX_LOOK_PICTURES:
-            return {"status": "error", "error": "TOO_MANY_SECTIONS",
-                    "max_sections": MAX_LOOK_PICTURES}
-        refusal = door.over_cap(len(entries))
-        if refusal is not None:
-            return refusal
+        try:
+            check_section_count(job, "interactive_transform", len(entries))
+        except Refused as refusal:
+            return refusal.payload()
         named = [job.state.resolve(entry.get("id", "")) for entry in entries
                  if isinstance(entry, dict)]
         ids = [record.id for record in named if record is not None]
@@ -201,12 +199,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return stepped("redone", "redo_depth", step)
 
     def submit(summary: str, notes: list[str], interval_breaks: list[str],
-               left_linear: list[dict[str, Any]] = [],  # noqa: B006 (read only)
                tool_context: Any = None) -> dict[str, Any]:
         try:
             done = ops_submit.submit(
                 job, summary=summary, notes=as_list(notes),
-                interval_breaks=as_list(interval_breaks), left_linear=as_list(left_linear),
+                interval_breaks=as_list(interval_breaks),
                 traces=door.traces_on, workspace=ctx)
         except Refused as refusal:
             return refusal.payload()
@@ -214,8 +211,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                     "interval_breaks": done.interval_breaks})
         if tool_context is not None:
             tool_context.actions.escalate = True
-        return {"status": "ok", **({"left_linear": done.left_linear} if done.left_linear
-                                   else {}), **door.rows()}
+        return {"status": "ok", **door.rows()}
 
     return {
         "position_sections": position_sections,

@@ -8,6 +8,7 @@ known place, so a zoom can be checked to land where it was asked.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -36,19 +37,35 @@ def _marked() -> Image.Image:
     return Image.fromarray(image)
 
 
+@lru_cache(maxsize=1)
+def _atlas_and_png_bytes() -> tuple[SyntheticAtlas, tuple[bytes, ...], bytes]:
+    """The atlas, the three section PNGs and the marked one, rendered once per process."""
+    import io
+
+    atlas = SyntheticAtlas()
+    pngs = []
+    for seed, _name in enumerate(SECTIONS):
+        image, _labels = render_section(atlas, bump_field([]), seed=seed)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        pngs.append(buffer.getvalue())
+    buffer = io.BytesIO()
+    _marked().save(buffer, format="PNG")
+    return atlas, tuple(pngs), buffer.getvalue()
+
+
 def stack(tmp_path: Path, *, marked: bool = False) -> tuple[Workspace, StackState]:
     """``(workspace, state)``: the three synthetic sections (and with
     *marked*, the marked one last), each at its position."""
     folder = tmp_path / "images"
     folder.mkdir(exist_ok=True)
-    atlas = SyntheticAtlas()
-    for seed, name in enumerate(SECTIONS):
-        image, _labels = render_section(atlas, bump_field([]), seed=seed)
-        image.save(folder / name)
+    atlas, pngs, marked_png = _atlas_and_png_bytes()
+    for name, data in zip(SECTIONS, pngs, strict=True):
+        (folder / name).write_bytes(data)
     names: list[str] = list(SECTIONS)
     positions: list[float] = list(POSITIONS)
     if marked:
-        _marked().save(folder / MARKED)
+        (folder / MARKED).write_bytes(marked_png)
         names.append(MARKED)
         positions.append(0.2)
     spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",

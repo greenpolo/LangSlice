@@ -1,8 +1,8 @@
 """The shapes of the toolbox's arguments, and the one check that refuses strays.
 
 An argument whose value is an object or a list of objects (``sections`` of
-``position_sections`` and ``interactive_transform``, ``cutting_angles``,
-``submit``'s ``left_linear``) is a typed dict. Typed dicts, not ``dict[str,
+``position_sections`` and ``interactive_transform``, ``cutting_angles``)
+is a typed dict. Typed dicts, not ``dict[str,
 Any]``: ADK and FastMCP
 both turn them into a JSON schema that names every key and its type, so the
 model sees the shape in the tool list, and the keys this module checks are
@@ -106,15 +106,6 @@ class SectionTransformNoFlip(TypedDict, total=False):  # SectionTransform withou
     shear: float
     translate_x_mm: float
     translate_y_mm: float
-
-
-@with_config(ConfigDict(extra="forbid"))
-class LeftLinear(TypedDict, total=False):
-    """One ``submit`` ``left_linear`` entry: a section left without a
-    deformation, and why."""
-
-    id: str
-    reason: str
 
 
 @with_config(ConfigDict(extra="forbid"))
@@ -254,7 +245,7 @@ def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[
 
     Checks the top-level names against *func*'s signature, and every key of
     an argument typed as a typed dict (``cutting_angles``) or a list of them
-    (``sections``, ``left_linear``) against that dict's keys. A value of the
+    (``sections``) against that dict's keys. A value of the
     wrong kind (a string where an object belongs) is left to the tool.
     """
     params = parameters(func)

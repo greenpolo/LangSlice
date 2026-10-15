@@ -97,7 +97,7 @@ def mark_damage(
     ``NO_SIDES`` (a side on a sagittal stack).
     """
     from langslice.core.atlas.sides import has_sides
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
         raise Refused("BAD_ARGS", message="regions must be a list of acronyms or ids")

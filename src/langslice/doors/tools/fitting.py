@@ -1,6 +1,6 @@
 """The fit tools, one per registration method, and the scripting verbs: their bodies.
 
-``elastix_affine`` and ``ants_syn`` fit, apply, then show each fitted
+``elastix_affine`` and ``fireants_syn`` fit, apply, then show each fitted
 section under its new registration with the atlas borders on it
 (:func:`langslice.ops.look.show_result`), unless the call's ``view`` is
 false and the host does not force it. With ``restrict_to`` those regions'
@@ -29,6 +29,7 @@ from langslice.ops import look as ops_look
 from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
 from langslice.ops.refusal import Refused
+from langslice.ops.registry import check_section_count
 
 
 def bodies(door: Door) -> dict[str, Callable[..., Any]]:
@@ -57,10 +58,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         if refusal is not None:
             return refusal
         named = as_list(sections)
-        count = len(named) if named else len(ops_transforms.fit_targets(job))
-        refusal = door.over_cap(count)
-        if refusal is not None:
-            return refusal
+        if not named:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "sections must name one or more sections"}
+        try:
+            check_section_count(job, "elastix_affine", len(named))
+        except Refused as refusal:
+            return refusal.payload()
         try:
             done = ops_transforms.elastix_affine(job, ctx, named, regions,
                                                  str(atlas_image or "template"))
@@ -92,10 +96,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                      zooms=zooms, highlight=regions)
         return pictured(result, shown)
 
-    def ants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
+    def fireants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
                  stiffness: str, view: bool = True) -> dict[str, Any]:
         try:
-            done = ops_deformable.ants_syn(job, ctx, as_list(sections),
+            check_section_count(job, "fireants_syn", len(as_list(sections)))
+            done = ops_deformable.fireants_syn(job, ctx, as_list(sections),
                                            restrict_to=as_list(restrict_to),
                                            atlas_image=atlas_image, stiffness=stiffness)
         except Refused as refusal:
@@ -121,7 +126,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 window = ops_transforms.zoom_window(box)
                 if window is not None:
                     zooms[name] = window
-        shown = ops_look.show_result(job, ctx, "ants_syn", "overlay", drawn, zooms=zooms,
+        shown = ops_look.show_result(job, ctx, "fireants_syn", "overlay", drawn, zooms=zooms,
                                      highlight=regions)
         return pictured(result, shown)
 
@@ -224,7 +229,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     return {
         "set_landmarks": set_landmarks, "landmark_triangulation": landmark_triangulation,
-        "elastix_affine": elastix_affine, "ants_syn": ants_syn,
+        "elastix_affine": elastix_affine, "fireants_syn": fireants_syn,
         "trace_borders": trace_borders,
         "export_maps": export_maps,
     }

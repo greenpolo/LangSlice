@@ -37,15 +37,15 @@ from langslice.core.atlas.render import (
     stroke_boundaries,
     supersampled_positions,
 )
-from langslice.core.deformable.atlas_images import native_labels, placement_left, regions_mask
+from langslice.core.deformable.plane_images import native_labels, placement_left, regions_mask
 from langslice.core.deformable.record import DeformableRecord
 
 #: Atlas-grid blur of each region indicator before bilinear sampling.
 #: 1.0 leaves a ripple along shallow edges (the annotation's own 25 um stair
 #: steps); 2.0 closes thin regions into dotted blobs.
 BORDER_SMOOTHING_PX = 1.4
-STRONG_COLOR = (255, 255, 0)
 #: Second ink, for a marked set of regions (those excluded from a fit).
+#: Fixed and uncased (the cased black/white core is the fitted borders').
 MARKED_COLOR = (255, 64, 160)
 FAINT_ALPHA = 0.35
 
@@ -79,7 +79,7 @@ def warped_border_layers(
     highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
     warped: bool = True, depth: int = OVERLAY_DEPTH,
     width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
-    native: np.ndarray | None = None,
+    native: np.ndarray | None = None, extra_px: float = 0.0,
 ) -> dict[str, np.ndarray]:
     """Border coverage in [0, 1] on the section grid, per layer.
 
@@ -91,8 +91,10 @@ def warped_border_layers(
     :func:`~langslice.core.atlas.levels.labels_at`) and
     ``outer`` (edges against the background: the atlas's outer boundary).
     With ``warped=False`` the residual field is ignored (the linear placement alone).
+    *extra_px* widens every stroke (a casing is the core's width plus this).
     """
     s = int(supersample)
+    width_px = float(width_px) + float(extra_px)
     width, height = record.section_size
     leaf = native if native is not None else native_labels(atlas, record.placement)
     highlight, marked = list(highlight), list(marked)
@@ -139,7 +141,7 @@ def _drawn_layers(
     record: DeformableRecord, atlas: Any, *,
     highlight: Iterable[str | int], marked: Iterable[str | int], warped: bool, outlines: str,
     depth: int, width_px: float, smoothing_px: float, supersample: int,
-    native: np.ndarray | None,
+    native: np.ndarray | None, extra_px: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """``(faint, strong, marked)``: the coverage :func:`draw_warped_borders`
     draws, each layer as the *outlines* choice leaves it."""
@@ -149,6 +151,7 @@ def _drawn_layers(
     layers = warped_border_layers(
         record, atlas, highlight=highlight, marked=marked, warped=warped, depth=depth,
         width_px=width_px, smoothing_px=smoothing_px, supersample=supersample, native=native,
+        extra_px=extra_px,
     )
     blank = np.zeros_like(layers["faint"])
     if highlight:
@@ -181,29 +184,34 @@ def draw_warped_borders(
     highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
     warped: bool = True, outlines: str = "all", depth: int = OVERLAY_DEPTH,
     width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
-    color: tuple[int, int, int] = STRONG_COLOR, marked_color: tuple[int, int, int] = MARKED_COLOR,
+    core: str = "black", marked_color: tuple[int, int, int] = MARKED_COLOR,
     native: np.ndarray | None = None,
 ) -> Image.Image:
     """The fitted atlas borders, smooth and antialiased, on the original section.
 
-    Without *highlight* every border between regions at ontology *depth* is drawn in
-    *color*. With it, only the selected structures' edges are strong, over a
-    faint outline of the rest. *marked* regions' edges are drawn in
-    *marked_color* (a second set, e.g. regions excluded from the fit).
+    Cased lines (:func:`~langslice.core.canvas.composite_cased`): the *core*
+    colour (``black`` or ``white``) edged on both sides by
+    :data:`~langslice.core.canvas.CASING_PX` of the other. Without *highlight*
+    every border between regions at ontology *depth* is drawn. With it, only
+    the selected structures' edges are strong, over a faint outline of the
+    rest (core and casing both faint). *marked* regions' edges are drawn in
+    *marked_color* (a second set, e.g. regions excluded from the fit), plain.
     *outlines* limits the other lines: ``all`` or ``none``.
     """
-    faint, strong, marked_lines = _drawn_layers(
-        record, atlas, highlight=highlight, marked=marked, warped=warped, outlines=outlines,
-        depth=depth, width_px=width_px, smoothing_px=smoothing_px, supersample=supersample,
-        native=native)
+    from langslice.core.canvas import CASING_PX, composite_cased
+
+    kwargs = {"highlight": highlight, "marked": marked, "warped": warped, "outlines": outlines,
+              "depth": depth, "width_px": width_px, "smoothing_px": smoothing_px,
+              "supersample": supersample, "native": native}
+    faint, strong, marked_lines = _drawn_layers(record, atlas, **kwargs)
+    faint_casing, strong_casing, _ = _drawn_layers(record, atlas, extra_px=2 * CASING_PX, **kwargs)
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
     if base.shape[:2] != strong.shape:
         raise ValueError("The image must be on the record's section grid")
-    for coverage, ink, weight in (
-        (faint, color, FAINT_ALPHA), (strong, color, 1.0), (marked_lines, marked_color, 1.0),
-    ):
-        alpha = (weight * coverage)[..., None]
-        base = base * (1.0 - alpha) + np.array(ink, dtype=np.float32) * alpha
+    for casing, line, weight in ((faint_casing, faint, FAINT_ALPHA), (strong_casing, strong, 1.0)):
+        base = composite_cased(base, core, casing=casing, line=line, alpha=weight)
+    alpha = marked_lines[..., None]
+    base = base * (1.0 - alpha) + np.array(marked_color, dtype=np.float32) * alpha
     return Image.fromarray(np.rint(base).astype(np.uint8))
 
 

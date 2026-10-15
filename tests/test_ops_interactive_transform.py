@@ -159,9 +159,10 @@ def test_elastix_affine_restricts_and_carries_the_region_box(
     assert 0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0
     # The left half of the brain: the box leaves the right side of the canvas out.
     assert x1 < 0.8 and (x0 + x1) / 2 < 0.5
-    # Every section when none is named; no regions, no box.
+    # No regions, no box.
     calls.clear()
-    everything = transforms.elastix_affine(job, ctx, atlas_image="template")
+    everything = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"],
+                                           atlas_image="template")
     assert [call["id"] for call in calls] == ["s0.png", "s1.png"]
     assert {call["atlas_image"] for call in calls} == {"template"}
     assert all("restrict_box" not in row for row in everything.rows)
@@ -189,8 +190,11 @@ def test_elastix_affine_refuses_bad_arguments_and_unfittable_sections(
         transforms.elastix_affine(job, ctx, ["nope.png"])
     assert unknown.value.code == "UNKNOWN_SLICE_IDS"
     with pytest.raises(Refused) as image:
-        transforms.elastix_affine(job, ctx, atlas_image="colour")
+        transforms.elastix_affine(job, ctx, ["s0.png"], atlas_image="colour")
     assert image.value.code == "BAD_ARGS"
+    with pytest.raises(Refused) as none:
+        transforms.elastix_affine(job, ctx, [])
+    assert none.value.code == "BAD_ARGS"
     with pytest.raises(Refused) as regions:
         transforms.elastix_affine(job, ctx, ["s0.png"], restrict_to=[3])  # type: ignore[list-item]
     assert regions.value.code == "BAD_ARGS"
@@ -203,7 +207,6 @@ def test_elastix_affine_refuses_a_frozen_affine_and_fits_a_noted_one(
     regions) is no damage, so that section is fitted whole."""
     job, ctx = _open(tmp_path, frozen={"s1.png": ["affine"]}, inputs={
                                        "damaged": {"s0.png": "torn"}})
-    assert [record.id for record in transforms.fit_targets(job)] == ["s0.png"]
     done = transforms.elastix_affine(job, ctx, ["s0.png", "s1.png"])
     assert [row.get("error") for row in done.rows] == [None, "FROZEN"]
     assert done.fitted == ["s0.png"]

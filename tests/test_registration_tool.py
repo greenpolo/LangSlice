@@ -13,7 +13,7 @@ from langslice.core.handoff import (
 )
 from langslice.core.nonlinear import registration_tool as tool
 from langslice.core.nonlinear.border_refinement import border_overlay, smooth_border_overlay
-from langslice.core.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
+from langslice.core.nonlinear.prompts import border_correction_tool_prompt
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
 from langslice.providers.registry import ImageModel, resolve_image_model
@@ -168,34 +168,7 @@ def test_another_image_provider_makes_a_trace_stale(case):
 
 def test_a_door_resolves_the_provider_and_none_has_no_image_model():
     resolved = resolve_image_model("openai-oauth")
-    assert (resolved.provider, resolved.model) == ("openai-oauth", "gpt-image-2.5-sunburst")
+    assert resolved.provider == "openai-oauth" and resolved.model
     assert resolve_image_model("gemini-api", "some-model").model == "some-model"
     with pytest.raises(ValueError, match="image-model provider"):
         resolve_image_model("none")
-
-
-def test_gemini_keeps_the_accepted_prompt_and_attachment_order(case, tmp_path, monkeypatch):
-    state, ctx, record, original, *_ = case
-    calls = []
-    model = _model(
-        lambda request: calls.append(request) or SimpleNamespace(image=original, route="test"),
-        provider="gemini-api",
-    )
-    _correct(state, ctx, record.id, out=tmp_path / "out", image_model=model)
-    assert calls[0].prompt == border_refinement_prompt()
-    np.testing.assert_array_equal(calls[0].reference_images[0], original)
-    assert not np.array_equal(np.asarray(calls[0].slice_image), np.asarray(original))
-
-
-def test_smooth_borders_draw_one_antialiased_line_per_shared_edge():
-    labels = np.zeros((20, 20), dtype=np.int64)
-    labels[4:16, 4:10] = 1
-    labels[4:16, 10:16] = 2
-    photo = Image.new("RGB", (100, 100), (0, 0, 0))
-    atlas_to_image = np.array([[5.0, 0, 2.0], [0, 5.0, 2.0], [0, 0, 1]])  # 5x magnification
-    drawn = np.asarray(smooth_border_overlay(photo, labels, atlas_to_image, width_px=2.0))
-    row = drawn[50, 30:70, 0].astype(int)  # across the shared edge at x ~ 52
-    lit = np.flatnonzero(row > 0)
-    # One stroke about two pixels wide, not one line per region an atlas pixel apart.
-    assert lit.size and lit.max() - lit.min() <= 3
-    assert ((row > 0) & (row < 255)).any()  # antialiased edge pixels

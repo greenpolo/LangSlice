@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from langslice.ops.registry import GROUPS, VERBS, enabled
-from tests.golden.record import atlas_loader, full_spec, write_sections
+from tests.synthetic_stack import atlas_loader, full_spec, write_sections
 
 
 def _names(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
@@ -47,16 +47,15 @@ def folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def test_the_nineteen_tools_and_the_file_tools():
+def test_the_tools_a_model_is_offered():
     assert MODEL_VERBS == [
         "look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
         "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files", "read_file",
         "position_sections", "interactive_transform", "mark_damage",
-        "elastix_affine", "ants_syn", "set_landmarks", "landmark_triangulation", "trace_borders",
+        "elastix_affine", "fireants_syn", "set_landmarks", "landmark_triangulation",
+        "trace_borders",
         "note", "undo", "redo", "submit",
     ]
-    files = {"list_files", "search_files", "read_file"}
-    assert len([name for name in MODEL_VERBS if name not in files]) == 19
 
 
 def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, monkeypatch):
@@ -72,20 +71,15 @@ def _spec(folder: Path, **changes: Any) -> Any:
     return dataclasses.replace(full_spec(folder), **changes)
 
 
-@pytest.mark.parametrize("tasks", [["position"], ["transform"], ["nonlinear"],
-                                   ["position", "transform"], []])
-def test_every_run_has_the_looking_and_bookkeeping_tools(folder: Path, tasks: list[str]):
-    names = enabled(_spec(folder, tasks=tasks))
-    assert set(EVERY_RUN) <= set(names)
-    assert set(names) <= set(VERBS)
-
-
 def test_the_gating_table(folder: Path):
     from langslice.core.spec import NonlinearSpec, TransformSpec
 
     def has(**changes: Any) -> set[str]:
         return set(enabled(_spec(folder, **changes))) - set(EVERY_RUN)
 
+    for tasks in (["position"], ["transform"], ["nonlinear"], ["position", "transform"], []):
+        names = enabled(_spec(folder, tasks=tasks))
+        assert set(EVERY_RUN) <= set(names) <= set(VERBS)
     # Positioning, or the cutting angles left to the agent.
     assert "position_sections" in has(tasks=["position"])
     assert "position_sections" in has(tasks=["transform"],
@@ -98,13 +92,13 @@ def test_the_gating_table(folder: Path):
         tasks=["transform"], disabled=["interactive_transform"])
     assert "elastix_affine" not in has(tasks=["transform"], disabled=["elastix_affine"])
     assert not {"interactive_transform", "elastix_affine"} & has(tasks=["position"])
-    # Nonlinear: ants_syn; trace_borders only with an image model.
-    assert {"ants_syn", "trace_borders"} <= has(tasks=["nonlinear"])
+    # Nonlinear: fireants_syn; trace_borders only with an image model.
+    assert {"fireants_syn", "trace_borders"} <= has(tasks=["nonlinear"])
     assert "trace_borders" not in has(tasks=["nonlinear"],
                                       nonlinear=NonlinearSpec(provider="none"))
     assert "trace_borders" not in set(enabled(_spec(folder, tasks=["nonlinear"]),
                                               image_model=False))
-    assert not {"ants_syn", "trace_borders"} & has(tasks=["position", "transform"])
+    assert not {"fireants_syn", "trace_borders"} & has(tasks=["position", "transform"])
     # Damage marking is a host switch.
     assert "mark_damage" in has(tasks=["position"])
     assert "mark_damage" not in has(tasks=["position"], disabled=["mark_damage"])
@@ -120,4 +114,4 @@ def test_every_operation_is_an_op_and_classified():
              "search_files", "read_file", "export_maps"}
     assert {name for name, verb in VERBS.items() if verb.kind == "read"} == reads
     assert {name for name, verb in VERBS.items() if verb.long} == {
-        "elastix_affine", "ants_syn", "trace_borders", "export_maps"}
+        "elastix_affine", "fireants_syn", "trace_borders", "export_maps"}

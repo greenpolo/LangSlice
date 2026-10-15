@@ -113,16 +113,16 @@ def task_notes(spec: JobSpec) -> list[str]:
     return lines
 
 
-def ants_fact(tool_names: list[str]) -> str | None:
-    """The job statement's line when ANTs cannot run here (None when it can,
+def engine_fact(tool_names: list[str]) -> str | None:
+    """The job statement's line when the deformable engine cannot run here (None when it can,
     or when no tool of the run needs it)."""
-    from langslice.core.deformation import ants_available
+    from langslice.core.deformation import engine_available
 
-    needing = [name for name in ("ants_syn", "trace_borders") if name in tool_names]
-    if not needing or ants_available():
+    needing = [name for name in ("fireants_syn", "trace_borders") if name in tool_names]
+    if not needing or engine_available():
         return None
-    return (f"- ANTs is not installed on this host, so {' and '.join(needing)} cannot run; "
-            "a section left without a deformation is named in submit's left_linear.")
+    return (f"- FireANTs (or torch) is not installed on this host, so "
+            f"{' and '.join(needing)} cannot run.")
 
 
 def build_job_statement(
@@ -179,8 +179,11 @@ def build_job_statement(
             )
     if spec.has("nonlinear"):
         jobs.append(
-            "give every section a deformation onto the atlas, on top of its linear "
-            "placement, with the section's stain as the evidence"
+            ("give every section a deformation onto the atlas, on top of its linear "
+             "placement, with the section's stain as the evidence"
+             if spec.nonlinear.require_deformation else
+             "give a section a deformation onto the atlas where it improves on its "
+             "linear placement, with the section's stain as the evidence")
             + (", or, for a section you choose to trace, the borders the image model "
                "traces on it"
                if "trace_borders" in tool_names else "")
@@ -246,13 +249,7 @@ def build_job_statement(
                 "at its current placement, damaged sections included; the user requires "
                 "one on every section."
             )
-        else:
-            constraints.append(
-                "- `submit` is refused unless every section carries a deformation applied "
-                "at its current placement, or is named in its `left_linear` with the "
-                "reason its linear placement stands, damaged sections included."
-            )
-        missing = ants_fact(tool_names)
+        missing = engine_fact(tool_names)
         if missing:
             constraints.append(missing)
     constraints.append(
@@ -314,9 +311,27 @@ def build_job_statement(
             "alignment.", off
         ))
 
+    if method and not spec.off("set_preprocessed_channel_properties"):
+        # First in the Method: the channel every later step looks at and fits.
+        method.insert(
+            2,
+            "- Before placing or fitting a section, make its counterstain the channel "
+            "you register on: set the preprocessed channel "
+            "(`set_preprocessed_channel_properties`) to the counterstain alone, "
+            "enhanced, and judge alignment and run fits on it."
+        )
+
     if spec.has("transform") and not spec.off("interactive_transform"):
         if not method:
             method = ["", "Method:"]
+        # The first alignment line, after placement: a hand alignment comes before any fit.
+        method.append(
+            "- Align each section by hand with `interactive_transform` as well as you "
+            "can before running any fitting algorithm: match its outline and its "
+            "internal anatomy (ventricles, fibre tracts, layer boundaries, the "
+            "midline) to the atlas. Fitting algorithms refine a placement that is "
+            "already close; they do not correct a large offset."
+        )
         method.append(
             "- After each automatic fit or manual adjustment, inspect the returned "
             "overlay against surviving internal anatomy. Refine each slice's "
@@ -334,15 +349,14 @@ def build_job_statement(
                 "`mark_damage`, so that every region it still has drives its fits."
             )
         method.append(
-            "- Fit each section whole first, then refine regions. Inspect each fit's "
+            "- Run each fit on the whole section first, then refine regions. Inspect each fit's "
             "borders against the section's internal anatomy"
             + (" and, where traced, its traced borders"
                if "trace_borders" in tool_names else "")
             + "; undo a fit that does not improve the alignment"
-            + render("[[?ants_syn  and fit that section again with different `ants_syn` "
+            + render("[[?fireants_syn  and fit that section again with different `fireants_syn` "
                      "settings, such as another stiffness or another atlas image]]", off)
-            + ("." if spec.nonlinear.require_deformation else
-               ", and name in submit's `left_linear` only a section that no fit improves.")
+            + "."
         )
 
     return "\n".join(

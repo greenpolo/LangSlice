@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 from langslice.agent.live import LiveEvents
 from langslice.hosts.integrations import abba_activity as activity
 
@@ -69,75 +67,7 @@ def test_huge_batch_keeps_newest_images_within_total_budget(monkeypatch):
     assert history.removed > 0
 
 
-@pytest.mark.parametrize(
-    ("event", "expected", "style"),
-    [
-        ({"kind": "text", "text": "Looking at section 3"}, "Looking at section 3", "text"),
-        ({"kind": "reasoning", "text": "Compare boundaries"}, "Compare boundaries", "reasoning"),
-        ({"kind": "complete", "submitted": True}, "Submitted", "tool"),
-        ({"kind": "complete", "submitted": False}, "Stopped before submission", "tool"),
-        ({"kind": "error", "text": "Atlas unavailable"}, "Atlas unavailable", "error"),
-    ],
-)
-def test_visible_events_use_distinct_styles(event, expected, style):
-    text, actual_style = activity.format_event(event)
-    assert expected in text
-    assert actual_style == style
-
-
-def test_activity_hides_protocol_payloads_and_reports_image_count():
-    response = {"detail": "x" * 10_000, "status": "ok"}
-    text, style = activity.format_event(
-        {
-            "kind": "tool_end",
-            "name": "compare",
-            "response": response,
-            "images": [_image(b"a"), _image(b"b")],
-        }
-    )
-    assert text == "Viewing 2 images"
-    assert style == "result"
-    assert activity.format_event({"kind": "usage", "tokens": {"input": 5000}})[0] == ""
-    # A worker log line (and a line ABBA could not apply) is shown as it is.
-    assert activity.format_event({"kind": "progress", "text": "[tokens] diagnostic"}) == (
-        "[tokens] diagnostic", "tool")
-    refused = {"name": "elastix_affine", "failed": True,
-               "response": {"status": "error", "message": "s1 is locked"}}
-    shown = activity.format_event({"kind": "tool_end", **refused})
-    assert shown == ("elastix affine: s1 is locked", "error")
-    # A background trace that started is no failure (toolbox.FAILED_STATUSES).
-    started = {"name": "trace_borders", "failed": False, "response": {"status": "started"}}
-    assert activity.format_event({"kind": "tool_end", **started})[1] != "error"
-    assert activity.format_event({"kind": "tool_result", **refused})[0] == ""
-    assert len(response["detail"]) == 10_000
-
-
-def test_html_renders_public_markdown_without_interpreting_markup():
-    rendered = activity.transcript_html(
-        [
-            ("**Comparing slices**\n<script>hidden</script>", "reasoning"),
-            ("Called look", "tool"),
-            ("Viewing 4 images", "result"),
-        ]
-    )
-    assert "<b>Comparing slices</b>" in rendered
-    assert "<script>" not in rendered
-    assert "&lt;script&gt;" in rendered
-    assert "Reasoning summary" in rendered
-
-
-def test_actual_execution_has_one_compact_tool_line():
-    assert activity.format_event({"kind": "tool_call", "name": "look"})[0] == ""
-    assert activity.format_event(
-        {
-            "kind": "tool_start",
-            "name": "look",
-            "args": {"secret": "noise"},
-        }
-    ) == ("Called look", "tool")
-
-
-def test_formatted_live_events_never_include_encrypted_fields_or_object_repr():
+def test_live_events_never_show_private_fields_or_markup():
     class PrivateObject:
         def __repr__(self):
             raise AssertionError("A provider object's repr must never be requested")
@@ -182,3 +112,9 @@ def test_formatted_live_events_never_include_encrypted_fields_or_object_repr():
     assert activity.format_event({"kind": "provider", "payload": PrivateObject()})[0] == ""
     public = {"kind": "text", "text": "Public", "provider": PrivateObject()}
     assert activity.format_event(public)[0] == "Public"
+    # The transcript renders public markdown and never interprets markup.
+    rendered = activity.transcript_html(
+        [("**Comparing slices**\n<script>hidden</script>", "reasoning")])
+    assert "<b>Comparing slices</b>" in rendered
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered

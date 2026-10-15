@@ -14,6 +14,21 @@ here is a verbatim copy — edit one, mirror to the other.
   `get_position_range_mm`), the reference plate (`get_reference_slice`) and
   `get_root_mask`. The public surface is deliberately small: what LangSlice
   itself reads.
+- `disk_cache.py` — volumes derived from an atlas, kept on disk between
+  processes (`docs/architecture.md`, "Atlas cache"): `cached_volume(atlas,
+  name, build)` reads `<cache>/<atlas>_v<version>/format<FORMAT>/<name>.npy`
+  memory-mapped, else builds it and saves it under a temporary name renamed
+  into place; `cache_root` (`LANGSLICE_ATLAS_CACHE`, `off`, else
+  `~/.langslice/atlas-cache`), `atlas_folder` (None without an atlas version
+  or past `MAX_VOXELS`). A write or read failure falls back to building in
+  memory. `core.oblique` caches the template's spline coefficients and the
+  annotation's dense indices through it; the tests turn it off
+  (`tests/conftest.py`).
+- `images.py` — the atlas's own grayscale images (`atlas_images`,
+  `atlas_volume`): BrainGlobe's `template` and every additional reference the
+  atlas ships, under BrainGlobe's names, plus `ccfv3augmented_nissl` for an
+  Allen CCFv3 atlas (no Nissl of its own): the Blue Brain Nissl template of
+  `ccfv3augmented_mouse_25um` resampled onto its grid.
 - `sides.py` — one side of a region, `"CTX:left"`: the grammar
   (`split_side`), the native plane's two ML halves
   (`ml_halves`: ML volume index per pixel from `oblique.plane_index_coordinates`
@@ -24,9 +39,9 @@ here is a verbatim copy — edit one, mirror to the other.
   DISPLAYED section's left, or its top when the midline runs closer to
   horizontal there, `names` `LEFT_RIGHT` or `TOP_BOTTOM`: the ML gradient
   carried through the placement's linear part; a mirror swaps the halves;
-  `SideError` `NO_SIDES` on sagittal planes, `SIDES_AMBIGUOUS` at exactly 45
-  degrees and from `restrict` for a side outside the picture's pair, its
-  message naming the pair). BrainGlobe's
+  `SideError` `NO_SIDES` on sagittal planes, `SIDES_AMBIGUOUS` at 45
+  degrees (within `DIAGONAL_TOLERANCE`), `WRONG_SIDE_PAIR` from `restrict` for
+  a side outside the picture's pair, its message naming the pair). BrainGlobe's
   own "left"/"right" hemisphere values are never used: its `hemispheres`
   docstring and code disagree, and on a symmetric atlas no label agreement
   could settle which is which.

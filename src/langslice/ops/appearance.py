@@ -5,7 +5,6 @@ properties (:mod:`langslice.core.channels`)."""
 from __future__ import annotations
 
 import copy
-import importlib.util
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -158,7 +157,7 @@ def set_preprocessed(
     The recipe is checked first (:func:`langslice.core.appearance.validate_settings`,
     ``BAD_ARGS``): *channel_weights* is one weight per raw channel, empty for
     automatic weights (``CHANNEL_COUNT_MISMATCH`` for a section with another
-    channel count), N4 and denoising need antspyx (``UNAVAILABLE``), and every
+    channel count), and every
     id must be a section (``UNKNOWN_SLICE_IDS``). With *options*, each section
     in *shown* is pictured BEFORE and AFTER (:func:`preprocess`).
     """
@@ -187,10 +186,6 @@ def set_preprocessed(
             if mismatched:
                 raise Refused("CHANNEL_COUNT_MISMATCH", weights=len(weights),
                               channels=mismatched)
-        if (n4 or denoise) and importlib.util.find_spec("ants") is None:
-            raise Refused("UNAVAILABLE", message=(
-                "N4 and denoising need antspyx, one of LangSlice's dependencies on "
-                "Python 3.13 and below (pip install 'antspyx>=0.6.3,<0.7')."))
     return preprocess(job, workspace, ids, settings, shown=shown, options=options)
 
 

@@ -39,8 +39,8 @@ if TYPE_CHECKING:
 #: written with what it needs (:mod:`langslice.core.needs`).
 _IMAGE_MODEL_OFF = (
     "[[?trace_borders The image-model tool (trace_borders) is off: no image model is "
-    "connected to LangSlice (no key or login for this job's image provider).[[?ants_syn  "
-    "Fit each section's deformation to its stain with ants_syn.]]]]"
+    "connected to LangSlice (no key or login for this job's image provider).[[?fireants_syn  "
+    "Fit each section's deformation to its stain with fireants_syn.]]]]"
 )
 #: ... as a job that disables nothing reads it.
 IMAGE_MODEL_OFF = render(_IMAGE_MODEL_OFF)
@@ -126,8 +126,8 @@ def opening_for_cli(folder: str, pictures: int | None,
         "Pictures come back as files under `artifacts` (kind `view`, in the order the "
         "reply's `pictures` lists their numbers); open them to see them.",
         render("- `--dry-run` runs a write without writing and reports what would change"
-               "[[?elastix_affine|ants_syn|trace_borders ; the "
-               "[[#elastix_affine|ants_syn=fits||trace_borders=trace_borders]] "
+               "[[?elastix_affine|fireants_syn|trace_borders ; the "
+               "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders]] "
                "are only checked, not run]].", disabled),
         f"- Long tools ({', '.join(long_verbs(disabled, spec))}) can run with `--background`, "
         "which "

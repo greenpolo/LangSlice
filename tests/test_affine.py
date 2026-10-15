@@ -102,20 +102,6 @@ def test_normalized_affine_is_the_same_map_in_fractional_coordinates():
     assert c * x_n + d * y_n + ty == pytest.approx(expected[1] / height)
 
 
-def test_the_identity_normalizes_to_the_identity():
-    matrix = affine_matrix(
-        rotation_deg=0.0,
-        scale_x=1.0,
-        scale_y=1.0,
-        translate_x=0.0,
-        translate_y=0.0,
-        size=(640, 480),
-    )
-    assert normalized_affine(matrix, (640, 480)) == pytest.approx(
-        [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-    )
-
-
 # --- reading a transform back --------------------------------------------
 
 

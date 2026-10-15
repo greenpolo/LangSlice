@@ -24,6 +24,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.atlas.sides import SEPARATOR, split_side
+from langslice.core.canvas import AUTO_BORDER_COLOR
 
 if TYPE_CHECKING:
     from langslice.core.canvas import PanelFrame
@@ -167,7 +168,7 @@ def damage_picture(
     *,
     store: Any = None,
     long_edge: int | None = None,
-    border_color: str = "#ffff00",
+    border_color: str = AUTO_BORDER_COLOR,
     border_thickness: float | None = None,
 ) -> Image.Image:
     """The section's marked regions, hatched, on the section and on the atlas.
@@ -188,7 +189,7 @@ def damage_picture(
     the placement cannot define) pass through.
     """
     from langslice.core.captions import caption
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
     from langslice.core.display import DEFAULT_BORDER_THICKNESS, default_options
     from langslice.core.layers import note
     from langslice.core.placement import (
@@ -223,9 +224,16 @@ def damage_picture(
         label=f"{record.id} damage", warp=warp,
         matrix_label=transform_words(record, kind, warp=warp is not None),
     )
+    # One arrangement for the whole picture: resolved from the section's own
+    # tissue (the first, "shown" panel), then forced for the atlas panel so
+    # the two sides never pick different ones.
+    resolved = shown.panels[0].border_color if shown.panels else None
+    atlas_options = replace(options, atlas_channels=("template", "borders"))
+    if resolved is not None:
+        atlas_options = replace(atlas_options, border_color=resolved)
     atlas = draw_canvas(
         ws, state, record, section, um_per_px, position, params,
-        replace(options, atlas_channels=("template", "borders")), mode="template",
+        atlas_options, mode="template",
         label=f"{record.id} damage", matrix_label=transform_words(record, kind),
     )
     panels = []
@@ -234,7 +242,9 @@ def damage_picture(
         marks = _native_marks(ws, panel, regions, position, state.plane,
                               record.pitch_deg, record.yaw_deg)
         panels.append(_hatched(image, _picture_mask(panel, marks)))
+    border_word = shown.images[0].info.get("border_word")
     text = ("marked damaged (hatched): " + ", ".join(entries)
             + (f"  note: {record.damage_note}" if record.damage_note else "")
+            + (f"; borders {border_word}" if border_word else "")
             + "\nleft: the section under its current registration; right: the atlas")
     return note(caption(beside(*panels), text), sections=(record.id,), mode="damage")

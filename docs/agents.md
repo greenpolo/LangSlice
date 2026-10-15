@@ -19,6 +19,14 @@ access, `langslice login` signs in with ChatGPT; API providers use
 MCP uses its host's agent and account. An optional image model has its own
 provider setting and credentials.
 
+Claude models run in `langslice linear run` through the Anthropic API:
+`--model anthropic-api/<model id>` (install the extra with
+`pip install -e ".[anthropic]"`). The key is `ANTHROPIC_API_KEY`, else the
+file `~/.langslice/anthropic_api_key`. `--reasoning` sets Claude's
+effort (`low`, `medium`, `high`, `xhigh`, `max`) with adaptive thinking whose
+summary is written to the run trace, and the system prompt and the newest
+message are marked for prompt caching.
+
 ## Coding agents: `langslice-job`
 
 Initialize a job, read its brief, then choose tools from the live schema:
@@ -66,7 +74,7 @@ snake_case are accepted. `grep_atlas` returns its rows by default.
 Long calls can run detached:
 
 ```bash
-langslice-job sections/ ants_syn --sections s01.tif --background
+langslice-job sections/ fireants_syn --sections s01.tif --background
 langslice-job sections/ runs
 langslice-job sections/ wait --timeout 600
 ```
@@ -161,7 +169,7 @@ flag reference. The main choices are:
 |---|---|
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--no-debrief`, `--force-view` (change and fitting tools always return their picture) |
+| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--no-debrief`, `--force-view` (change and fitting tools always return their picture), `--require-deformation` (Nonlinear: `submit` is refused until every section carries a deformation) |
 | Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |

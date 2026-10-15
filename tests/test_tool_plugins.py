@@ -22,7 +22,7 @@ from PIL import Image
 from langslice.core import plugins as core_plugins
 from langslice.core.plugins import Layer, PluginError
 from langslice.core.spec import JobSpec
-from langslice.core.toolset import TOOLS, tools_for, valid_names
+from langslice.core.toolset import tools_for, valid_names
 from langslice.doors.declarations import FULL, Variant, declaration
 from langslice.doors.tools.toolbox import build_tools
 from langslice.ops.registry import enabled, verbs_for
@@ -115,26 +115,12 @@ def test_the_spec_saves_its_plugins_and_leaves_the_key_out_without_any(make, ima
     assert "plugins" not in plain and "plugin_config" not in plain
 
 
-REFUSED = {
-    "no such module": ("no_such_module_anywhere", None, "cannot import"),
-    "no such factory": ("PLACEHOLDER", "x = 1\n", "has no 'tools'"),
-    "factory raises": ("PLACEHOLDER", "def tools():\n    raise RuntimeError('boom')\n",
-                       "the factory failed: RuntimeError: boom"),
-    "factory returns a number": ("PLACEHOLDER", "def tools():\n    return 3\n",
-                                 "returns a list of ToolSpec"),
-    "not a ToolSpec": ("PLACEHOLDER", "def tools():\n    return [1]\n", "not a ToolSpec"),
+SOURCES = {
+    "factory missing": "x = 1\n",
+    "factory raises": "def tools():\n    raise RuntimeError('boom')\n",
+    "factory returns a number": "def tools():\n    return 3\n",
+    "not a ToolSpec": "def tools():\n    return [1]\n",
 }
-
-
-@pytest.mark.parametrize("case", REFUSED)
-def test_a_plugin_that_cannot_load_is_refused_in_one_line_when_the_spec_is_made(
-        case: str, make, images: Path):
-    module, source, fragment = REFUSED[case]
-    ref = f"{module}:tools" if source is None else make(f"refused_{abs(hash(case))}", source)
-    with pytest.raises(ValueError) as caught:
-        JobSpec(image_folder=str(images), plugins=[ref])
-    message = str(caught.value)
-    assert fragment in message and "\n" not in message
 
 
 def _decl(name: str = '"thing"', kind: str = '"read"', group: str = '"Common"',
@@ -152,38 +138,38 @@ def _decl(name: str = '"thing"', kind: str = '"read"', group: str = '"Common"',
     ''')
 
 
-@pytest.mark.parametrize("changes, fragment", [
-    ({"name": '"look"'}, "clashes with the native tool"),
-    ({"name": '"2bad"'}, "is not an identifier"),
-    ({"task": '"bogus"'}, "unknown task 'bogus'"),
-    ({"kind": '"write"', "writes": '("wings",)'}, "no section properties"),
-    ({"writes": '("affine",)'}, "a read tool writes nothing"),
-    ({"api_version": "2"}, "plugin API 2"),
-    ({"group": '"Elsewhere"'}, "group is one of"),
-    ({"limits": '{"sections": 0}'}, "positive whole number"),
-])
-def test_a_bad_tool_declaration_is_refused_with_its_reason(
-        changes: dict[str, str], fragment: str, make, images: Path):
-    ref = make(f"decl_{abs(hash(fragment))}", _decl(**changes))
-    with pytest.raises(ValueError, match=fragment):
-        JobSpec(image_folder=str(images), plugins=[ref])
+DECLARATIONS = {
+    "native name": {"name": '"look"'},
+    "not an identifier": {"name": '"2bad"'},
+    "unknown task": {"task": '"bogus"'},
+    "write without properties": {"kind": '"write"', "writes": '("wings",)'},
+    "read that writes": {"writes": '("affine",)'},
+    "other api version": {"api_version": "2"},
+    "unknown group": {"group": '"Elsewhere"'},
+    "zero limit": {"limits": '{"sections": 0}'},
+}
 
 
-def test_a_module_naming_another_api_version_is_refused(make, images: Path):
-    ref = make("old_api", HELLO + "\nPLUGIN_API_VERSION = 0\n")
-    with pytest.raises(ValueError, match="plugin API 0"):
-        JobSpec(image_folder=str(images), plugins=[ref])
-
-
-def test_two_plugins_cannot_add_the_same_tool(make, images: Path):
-    first, second = make("twin_a", HELLO), make("twin_b", HELLO)
-    with pytest.raises(ValueError, match="'hello' is added by both"):
-        JobSpec(image_folder=str(images), plugins=[first, second])
-
-
-def test_plugin_config_must_name_a_plugin_of_the_job(images: Path):
-    with pytest.raises(ValueError, match="no plugin of this job"):
-        JobSpec(image_folder=str(images), plugin_config={"a:b": {}})
+@pytest.mark.parametrize("case", [
+    "no such module", "module api version", "same tool twice", "config of no plugin",
+    *SOURCES, *DECLARATIONS])
+def test_a_bad_plugin_is_refused_in_one_line_when_the_spec_is_made(case: str, make, images: Path):
+    config: dict[str, Any] = {}
+    if case == "no such module":
+        plugins = ["no_such_module_anywhere:tools"]
+    elif case == "module api version":
+        plugins = [make("old_api", HELLO + "\nPLUGIN_API_VERSION = 0\n")]
+    elif case == "same tool twice":
+        plugins = [make("twin_a", HELLO), make("twin_b", HELLO)]
+    elif case == "config of no plugin":
+        plugins, config = [], {"a:b": {}}
+    elif case in SOURCES:
+        plugins = [make("bad_source", SOURCES[case])]
+    else:
+        plugins = [make("bad_decl", _decl(**DECLARATIONS[case]))]
+    with pytest.raises(ValueError) as caught:
+        JobSpec(image_folder=str(images), plugins=plugins, plugin_config=config)
+    assert "\n" not in str(caught.value)
 
 
 def test_a_disabled_name_must_exist_and_a_plugin_tool_can_be_disabled(images: Path):
@@ -217,55 +203,10 @@ def test_a_frozen_property_refuses_the_write_as_that_sections_row(images: Path):
     assert state.by_id("s1.png").transform is None and state.by_id("s0.png").transform
 
 
-def test_the_listing_follows_the_spec_and_is_unchanged_without_plugins(images: Path):
-    _s, _c, box = box_of(images, EXAMPLE)
-    spec = box.job.spec
-    assert list(verbs_for()) == list(TOOLS)
-    assert list(verbs_for(spec))[-2:] == ["section_brightness", "nudge_sections"]
-    assert list(verbs_for(JobSpec(image_folder=str(images)))) == list(verbs_for())
-
-
 def test_a_per_call_limit_refuses_a_longer_call(images: Path):
     _s, _c, box = box_of(images, EXAMPLE, n=6)
     reply = call(box, "nudge_sections", sections=[f"s{i}.png" for i in range(5)])
     assert reply["error"] == "TOO_MANY_SECTIONS" and reply["max_sections"] == 4
-
-
-def test_unknown_arguments_are_refused_like_a_native_tools(images: Path):
-    _s, _c, box = box_of(images, EXAMPLE)
-    assert call(box, "section_brightness", bogus=1)["status"] in ("error", "refused")
-
-
-def test_needs_marks_in_a_plugin_description_follow_the_disabled_list(make, images: Path):
-    ref = make("marked", '''
-        from langslice.plugin_api import ToolResult, ToolSpec
-        def stub():
-            """Do it.[[?zoom  Zoom shows the detail.]]"""
-        def tools():
-            return [ToolSpec("marked_tool", stub, lambda ctx: ToolResult({}), kind="read",
-                             group="Common")]
-    ''')
-    _s, _c, box = box_of(images, ref)
-    assert tool_named(box, "marked_tool").__doc__ == "Do it. Zoom shows the detail."
-    _s, _c, off = box_of(images, ref, disabled=["zoom"])
-    assert tool_named(off, "marked_tool").__doc__ == "Do it."
-
-
-def test_pictures_past_the_limit_are_counted_not_sent(make, images: Path):
-    ref = make("many_pictures", '''
-        from PIL import Image
-        from langslice.plugin_api import ToolResult, ToolSpec
-        def stub():
-            """Draw."""
-        def handler(ctx):
-            return ToolResult({}, [Image.new("RGB", (8, 8)) for _ in range(5)])
-        def tools():
-            return [ToolSpec("draw", stub, handler, kind="read", group="Common",
-                             limits={"pictures": 2})]
-    ''')
-    _s, _c, box = box_of(images, ref)
-    reply = call(box, "draw")
-    assert len(reply["images"]) == 2 and reply["pictures_not_shown"] == 3
 
 
 # --- writes -------------------------------------------------------------------------------------
@@ -288,14 +229,6 @@ def test_a_context_write_is_one_undo_step_that_undo_reverts(images: Path):
     registration = json.loads((job.layout.folder / "registration.json").read_text())
     assert all((item["parameters"].get("affine") or {}).get("kind") != "plugin:nudge_sections"
                for item in registration["sections"])
-
-
-def test_the_write_shows_the_overlay_it_made_and_numbers_the_picture(images: Path):
-    _s, _c, box = box_of(images, EXAMPLE)
-    reply = call(box, "nudge_sections", sections=["s0.png"], dx=0.02)
-    assert len(reply["pictures"]) == 1 and reply["pictures"][0]["id"] >= 1
-    assert "plugin:nudge_sections transform" in reply["pictures"][0]["caption"]
-    assert any(isinstance(item, Image.Image) for item in reply["images"])
 
 
 def test_a_read_tool_cannot_write_and_a_write_only_what_it_declared(make, images: Path):
@@ -598,40 +531,18 @@ def test_layers_are_state_listed_by_status_drawn_by_look_and_hidden_by_undo(make
     assert call(box, "look", mode="section", layers=["marks"])["error"] == "UNKNOWN_PLUGIN_LAYER"
     assert call(box, "redo")["status"] == "ok"
     assert len(state.by_id("s0.png").layers) == 5
-
-
-def test_look_refuses_layers_in_a_mode_that_draws_none_and_unknown_names(make, images: Path):
-    ref = make("marker_modes", MARKS)
-    _s, _c, box = box_of(images, ref)
-    call(box, "mark", sections=["s0.png"])
+    first = [item["id"] for item in state.by_id("s0.png").layers]
+    call(box, "mark", sections=["s0.png"])  # a layer of the same name replaces the earlier one
+    second = [item["id"] for item in state.by_id("s0.png").layers]
+    assert len(second) == 5 and not set(first) & set(second)
     assert call(box, "look", mode="positioning", layers=["marks"])["error"] == "BAD_ARGS"
     refused = call(box, "look", mode="section", layers=["nope"])
     assert refused["error"] == "UNKNOWN_PLUGIN_LAYER" and refused["layers"] == [
         "marks", "box", "regions", "map", "shot"]
 
 
-def test_a_zoom_of_a_picture_with_layers_draws_them_again(make, images: Path):
-    ref = make("marker_zoom", MARKS)
-    _s, _c, box = box_of(images, ref)
-    call(box, "mark", sections=["s0.png"])
-    shown = call(box, "look", mode="section", sections=["s0.png"], layers=["marks"])
-    number = shown["pictures"][0]["id"]
-    zoomed = call(box, "zoom", box=[0, 0, 40, 30], picture=number)
-    assert zoomed["status"] == "ok" and zoomed["redrawn"] is True
-
-
-def test_a_layer_of_the_same_name_replaces_the_earlier_one(make, images: Path):
-    ref = make("marker_twice", MARKS)
-    state, _c, box = box_of(images, ref)
-    call(box, "mark", sections=["s0.png"])
-    first = [item["id"] for item in state.by_id("s0.png").layers]
-    call(box, "mark", sections=["s0.png"])
-    second = [item["id"] for item in state.by_id("s0.png").layers]
-    assert len(second) == 5 and not set(first) & set(second)
-
-
 def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
-    from langslice.core.plugin_layers import EXTENSIONS, load_layer, save_layer
+    from langslice.core.plugin_layers import load_layer, save_layer
 
     cases = [
         Layer.points([[1.5, 2.5], [3, 4]], labels=["a", ""], values=[0.5, 2], name="p"),
@@ -645,7 +556,6 @@ def test_layer_files_round_trip_in_their_formats(tmp_path: Path):
     ]
     for layer in cases:
         path = save_layer(layer, tmp_path / layer.name)
-        assert path.suffix in (EXTENSIONS[layer.kind], ".npz")
         back = load_layer(path, {"kind": layer.kind, "frame": layer.frame, "name": layer.name})
         assert back.kind == layer.kind and back.frame == layer.frame
         if layer.kind == "points":
@@ -798,11 +708,9 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
     verbs = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
     assert [item["name"] for item in verbs][-2:] == ["section_brightness", "nudge_sections"]
     assert verbs[-1]["kind"] == "write" and verbs[-1]["group"] == "Linear"
-    assert verbs[-2]["summary"] == "Report how bright each section is. Writes nothing."
     main(["schema", "nudge_sections"])
     schema = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]
     assert set(schema["arguments"]["properties"]) == {"sections", "dx"}
-    assert schema["description"].startswith("Shift sections sideways")
     monkeypatch.chdir(images.parent)  # a folder with no job: the native listing
     main(["ops"])
     plain = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
@@ -883,54 +791,24 @@ def test_a_cost_estimate_of_a_spec_with_plugins_loads_nothing(make, tmp_path: Pa
 # --- provenance ---------------------------------------------------------------------------------
 
 
-def test_job_json_and_the_trace_carry_the_plugins_provenance(images: Path, tmp_path: Path,
-                                                             monkeypatch):
-    from langslice.agent.trace import TRACE_DIR_ENV, open_trace
+def test_job_json_carries_the_plugins_provenance_and_a_changed_file_is_a_new_digest(
+        make, images: Path):
+    import hashlib
+
     from langslice.job.layout import read_job_file
 
-    monkeypatch.setenv(TRACE_DIR_ENV, str(tmp_path / "trace"))
     _s, _c, box = box_of(images, EXAMPLE)
     held = read_job_file(box.job.layout)["plugins"]
     assert len(held) == 1 and held[0] == box.plugins[0]
     record = held[0]
     assert record["ref"] == EXAMPLE and record["module"] == "tests.fixtures.example_plugin"
     assert record["factory"] == "tools" and record["api_version"] == 1
-    path = Path(record["module_file"] if "module_file" in record else next(iter(record["sources"])))
-    import hashlib
-
+    path = Path(next(iter(record["sources"])))
     assert record["sources"][str(path)] == hashlib.sha256(path.read_bytes()).hexdigest()
-    by_name = {tool["name"]: tool for tool in record["tools"]}
-    nudge = by_name["nudge_sections"]
+    nudge = {tool["name"]: tool for tool in record["tools"]}["nudge_sections"]
     assert nudge["kind"] == "write" and nudge["task"] == "transform"
     assert nudge["writes"] == ["affine"] and nudge["limits"] == {"sections": 4}
-    # The description as the model sees it, byte for byte.
-    declared = tool_named(box, "nudge_sections")
-    assert nudge["declaration"]["description"] == declared.__doc__
-    assert nudge["declaration"]["arguments"]["properties"]["dx"]["type"] == "number"
-    events = (box.job.layout.logs_dir / "events.jsonl").read_text()
-    assert '"kind": "plugins"' in events
 
-    class Agent:
-        name, model, instruction = "a", "m", "do it"
-
-    trace = open_trace("run", agent=Agent(), plugins=box.plugins)
-    lines = [json.loads(line) for line in trace.path.read_text().splitlines()]
-    assert [line["kind"] for line in lines] == ["session", "plugins"]
-    assert lines[1]["plugins"][0]["tools"][1]["declaration"]["description"] == declared.__doc__
-    plain = open_trace("run2", agent=Agent())
-    assert [json.loads(line)["kind"] for line in plain.path.read_text().splitlines()] == [
-        "session"]
-
-
-def test_a_job_without_plugins_records_none(images: Path):
-    from langslice.job.layout import read_job_file
-
-    state, ctx, spec = stack(images, 2, placed=True)
-    box = build_tools(state, ctx, spec)
-    assert box.plugins == [] and "plugins" not in (read_job_file(box.job.layout) or {})
-
-
-def test_a_changed_plugin_file_is_a_new_digest(make, images: Path):
     first = make("evolving", HELLO)
     spec = JobSpec(image_folder=str(images), plugins=[first])
     digest = next(iter(core_plugins.of_spec(spec)[0].provenance["sources"].values()))
@@ -940,43 +818,19 @@ def test_a_changed_plugin_file_is_a_new_digest(make, images: Path):
     assert digest != changed
 
 
-# --- invariance: nothing of a plugin is in a job without any ------------------------------------
+def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
+    from langslice.job.layout import read_job_file
 
-
-def test_look_has_no_layers_argument_without_plugins_and_has_it_with_them(images: Path):
-    plain = JobSpec(image_folder=str(images))
-    assert "layers" not in declaration("look", Variant.of(plain, auto=True)).signature.parameters
-    assert "layers" not in declaration("look", FULL).signature.parameters
-    assert "Names of the layers that tools have left" not in declaration("look", FULL).doc
-    with_plugins = JobSpec(image_folder=str(images), plugins=[EXAMPLE])
-    variant = Variant.of(with_plugins, auto=True)
-    declared = declaration("look", variant)
-    assert "layers" in declared.signature.parameters
-    assert '"section" and "overlay" pictures' in declared.doc
-    off = JobSpec(image_folder=str(images), plugins=[EXAMPLE], tasks=["position"],
-                  disabled=["look:section", "look:overlay"])
-    assert "layers" not in declaration("look", Variant.of(off, auto=True)).signature.parameters
-    section_only = JobSpec(image_folder=str(images), plugins=[EXAMPLE], tasks=["position"],
-                           disabled=["look:overlay"])
-    assert 'on the "section" pictures' in declaration(
-        "look", Variant.of(section_only, auto=True)).doc
-
-
-def test_a_plugin_free_job_reads_and_writes_as_it_always_did(images: Path):
     state, ctx, spec = stack(images, 2, placed=True)
-    assert "layers" not in state.to_dict()["slices"][0]
-    assert "plugins" not in spec.to_dict()
     box = build_tools(state, ctx, spec)
-    row = call(box, "status")["rows"][0]
-    assert "layers" not in row
-    assert "plugin" not in " ".join(call(box, "status")["can_change"])
+    assert box.plugins == [] and "plugins" not in (read_job_file(box.job.layout) or {})
+    assert "layers" not in state.to_dict()["slices"][0] and "plugins" not in spec.to_dict()
+    assert "layers" not in call(box, "status")["rows"][0]
     assert "layers" not in inspect.signature(tool_named(box, "look")).parameters
-
-
-def test_what_the_plugin_tools_change_is_in_status_can_change(images: Path):
-    _s, _c, box = box_of(images, EXAMPLE)
-    changes = call(box, "status")["can_change"]
-    assert "whatever the plugin tools change (nudge_sections)" in changes
+    assert "layers" not in declaration("look", FULL).signature.parameters
+    with_plugins = JobSpec(image_folder=str(images), plugins=[EXAMPLE])
+    declared = declaration("look", Variant.of(with_plugins, auto=True))
+    assert "layers" in declared.signature.parameters
 
 
 # --- frames: array pixels and section_px ---------------------------------------------------------

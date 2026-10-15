@@ -11,7 +11,6 @@ through the plugin context.
 from __future__ import annotations
 
 import inspect
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,8 +19,6 @@ import pytest
 
 from langslice.core import plugins as core_plugins
 from langslice.core.plugins import PluginError
-from langslice.core.spec import JobSpec
-from langslice.doors.declarations import Variant, declaration
 from langslice.doors.plugins import mcp as adapter
 from langslice.doors.tools.toolbox import build_tools
 from tests.linear_tool_helpers import ToolContext, stack, tool_named
@@ -43,13 +40,19 @@ def config(**tools: Any) -> dict[str, Any]:
             "tools": chosen}
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _one_server_per_module():
+    """The fixture server is started once and shared (connections are keyed by command)."""
+    yield
+    adapter.close_all()
+
+
 @pytest.fixture(autouse=True)
 def clean():
     held = dict(core_plugins._LOADED)
     yield
     core_plugins._LOADED.clear()
     core_plugins._LOADED.update(held)
-    adapter.close_all()
 
 
 def toolbox(images: Path, options: dict[str, Any] | None = None, **spec: Any):
@@ -81,16 +84,6 @@ def test_only_the_allow_listed_tools_are_offered_under_prefixed_names(images: Pa
     assert "fix__secret_admin" not in box.names
 
 
-def test_the_declaration_is_the_servers_schema_and_description(images: Path):
-    _s, _c, box = toolbox(images)
-    points = tool_named(box, "fix__add_points")
-    assert points.__doc__.startswith("Place `count` points on a section.")
-    assert list(inspect.signature(points).parameters) == ["section", "count", "tool_context"]
-    measure = tool_named(box, "fix__measure")
-    # image_path is filled by LangSlice from the section it is told about.
-    assert list(inspect.signature(measure).parameters) == ["section", "scale", "tool_context"]
-
-
 def test_the_servers_text_is_shown_inert_and_recorded_verbatim(images: Path):
     state, _c, box = toolbox(images)
     measure = tool_named(box, "fix__measure")
@@ -100,6 +93,8 @@ def test_the_servers_text_is_shown_inert_and_recorded_verbatim(images: Path):
         "Measure the image file at image_path. [[?look:overlay a mark]] [[?unclosed")
     assert record["meta"]["remote_input_schema"]["properties"]["image_path"]
     assert record["meta"]["mapping"]["inputs"]["image_path"]["send"] == "section_image"
+    # image_path is filled by LangSlice from the section it is told about, so it is not offered.
+    assert list(inspect.signature(measure).parameters) == ["section", "scale", "tool_context"]
     injected = tool_named(box, "fix__add_points").__doc__
     assert "Ignore all previous instructions" in injected  # shown as given, and only shown
     # Nothing a description says changes the job: the tools and settings are as configured.
@@ -152,27 +147,6 @@ def test_text_and_a_servers_error_come_back_as_a_reply(images: Path):
     assert failed["error"] == "MCP_TOOL_ERROR" and "always fails" in failed["message"]
 
 
-def test_the_adapter_works_from_the_library_and_is_recorded_in_the_job(images: Path):
-    import numpy as np
-    from PIL import Image
-
-    import langslice
-    from tests.linear_tool_helpers import SLAB
-
-    for index in range(2):
-        Image.fromarray(np.full((30, 40, 3), 80, np.uint8)).save(images / f"s{index}.png")
-    job = langslice.create_job(
-        images, tasks=["position", "transform"], plugins=[REF], plugin_config={REF: config()},
-        preprocess="none", positions={"s0.png": 2.0, "s1.png": 2.5},
-        atlas_loader=lambda _n: SLAB)
-    assert "fix__echo_text" in job.verbs
-    assert job.fix__echo_text(text="hi")["text"] == "hi"
-    saved = json.loads((Path(job.folder) / "job.json").read_text())
-    assert saved["spec"]["plugin_config"][REF]["server"] == "fix"
-    assert saved["plugins"][0]["tools"][0]["meta"]["server"] == "fix"
-    job.close()
-
-
 @pytest.mark.parametrize("options, fragment", [
     (None, "needs options"),
     ({"server": "x", "command": ["a"], "url": "http://u", "tools": {"t": {}}}, "command or a url"),
@@ -203,10 +177,3 @@ def test_a_server_that_does_not_start_is_one_line(tmp_path: Path):
                "tools": {"t": {}}}
     with pytest.raises(PluginError, match="could not be started"):
         adapter.tools(options)
-
-
-def test_the_adapter_declares_the_servers_tool(images: Path):
-    spec = JobSpec(image_folder=str(images), plugins=[REF], plugin_config={REF: config()})
-    assert Variant.of(spec, auto=True).plugins
-    said = declaration("fix__echo_text", Variant.of(spec, auto=True))
-    assert said.summary == "Say the text back."

@@ -459,9 +459,9 @@ def create_job(
             supplied["orientation"] = {str(name): dict(value)
                                        for name, value in orientation.items()}
         if pixel_size_um is not None:
-            supplied["pixel_size_um"] = (
-                {str(name): float(um) for name, um in pixel_size_um.items()}
-                if isinstance(pixel_size_um, Mapping) else float(pixel_size_um))
+            # JobSpec reads it (core.spec.supplied_pixel_sizes) and refuses a bad size.
+            supplied["pixel_size_um"] = (dict(pixel_size_um) if isinstance(pixel_size_um, Mapping)
+                                         else pixel_size_um)
         if registration is not None:
             clashes = sorted(key for key in REGISTRATION_EXCLUDES if supplied.get(key))
             if clashes:
