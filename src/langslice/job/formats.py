@@ -26,9 +26,11 @@ section's entry says why it has no matrix).
 from __future__ import annotations
 
 import csv
+import functools
 import hashlib
 import json
 import logging
+import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -93,6 +95,27 @@ NOTE = (
 
 # --- the registration parameters ----------------------------------------------------
 
+
+
+@functools.lru_cache(maxsize=1)
+def source() -> dict[str, Any]:
+    """The code this process runs, read once: the git commit of the LangSlice
+    checkout it was imported from and whether that checkout had uncommitted
+    changes; ``commit`` null outside a git checkout (an installed package)."""
+    root = Path(langslice.__file__).resolve().parent
+
+    def git(*args: str) -> str | None:
+        try:
+            done = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
+                                  text=True, timeout=10, check=True)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return done.stdout.strip()
+
+    commit = git("rev-parse", "HEAD")
+    status = git("status", "--porcelain", "--untracked-files=no") if commit else None
+    return {"version": langslice.__version__, "commit": commit,
+            "uncommitted_changes": bool(status) if status is not None else None}
 
 def digest(value: Any) -> str:
     """SHA-256 of a JSON value (sorted keys)."""
@@ -237,6 +260,7 @@ def registration_document(
     return {
         "format_version": REGISTRATION_FORMAT_VERSION,
         "written_by": f"LangSlice {langslice.__version__}",
+        "source": source(),
         "note": NOTE,
         "convention": CONVENTION,
         "atlas": atlas if atlas is not None else {"name": state.atlas},
