@@ -35,9 +35,8 @@ TASKS: tuple[str, ...] = tuple(freeze.TASK_PROPERTIES)
 #: A tool name: a Python identifier, so a script can call it as a method.
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
-#: The kinds of layer, and the frames their coordinates are in.
+#: The kinds of layer.
 LAYER_KINDS: tuple[str, ...] = ("points", "lines", "labels", "scalar", "picture")
-LAYER_FRAMES: tuple[str, ...] = ("section_px", "atlas_um", "none")
 #: The frames each kind may have (the first is the default).
 KIND_FRAMES: dict[str, tuple[str, ...]] = {
     "points": ("section_px", "atlas_um"),
@@ -347,7 +346,8 @@ def register(plugin: LoadedPlugin) -> LoadedPlugin:
 
 
 def forget(ref: str) -> None:
-    """Drop every plugin loaded under *ref* (a reload starts from the source)."""
+    """Drop every plugin loaded under *ref* (a reload starts from the source).
+    Test support: it lets a test simulate a new process; no code calls it."""
     for key in [key for key in _LOADED if key == ref or key.startswith(ref + "#")]:
         del _LOADED[key]
 

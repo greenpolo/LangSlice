@@ -127,7 +127,6 @@ def supplied_pixel_sizes(value: Any) -> tuple[float | None, dict[str, float]]:
     return _micrometres(value, "inputs.pixel_size_um"), {}
 
 
-
 @dataclass
 class PositionSpec:
     """Knobs of the ``position`` task; the cutting protocol rides along."""

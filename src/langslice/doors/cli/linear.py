@@ -393,11 +393,8 @@ def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
         value = load_json_arg(getattr(args, key, None), flag)
         if value is not None:
             inputs[key] = value
-    if args.pixel_size_um:
-        try:
-            inputs["pixel_size_um"] = float(args.pixel_size_um)
-        except ValueError:
-            inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
+    if args.pixel_size_um:  # a number, or a JSON object / file of filename: um
+        inputs["pixel_size_um"] = load_json_arg(args.pixel_size_um, "--pixel-size-um")
     if args.pitch is not None or args.yaw is not None:
         inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
     section_angles = load_json_arg(getattr(args, "section_angles", None), "--section-angles")

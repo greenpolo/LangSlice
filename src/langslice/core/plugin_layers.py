@@ -41,10 +41,6 @@ from langslice.core.state import SliceState, StackState
 
 logger = logging.getLogger(__name__)
 
-#: The extension each kind is stored with.
-EXTENSIONS: dict[str, str] = {"points": ".csv", "lines": ".json", "labels": ".png",
-                              "scalar": ".npz", "picture": ".png"}
-
 #: Marks a layer's colours cycle through (a dark halo is drawn under each).
 PALETTE: tuple[str, ...] = ("#ffa000", "#00e5a0", "#ff4081", "#40c4ff", "#ffee00", "#b388ff")
 

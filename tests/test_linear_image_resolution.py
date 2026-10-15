@@ -52,20 +52,11 @@ class Tools(dict):
     box: Any = None
 
 
-_BUILT: dict[Any, Any] = {}
-
-
 def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
          count: int = 2, um_per_px: float = _UM_PER_PX,
-         tasks: tuple[str, ...] = ("position", "transform"), fresh: bool = False,
+         tasks: tuple[str, ...] = ("position", "transform"),
          ) -> tuple[Any, Any, Tools, JobSpec]:
-    # Building 2400 x 1800 TIFFs dominates; a stack is read-only here except for
-    # the hand transform every shared-stack test writes with the same numbers,
-    # so each configuration is built once per process. *fresh*: a stack of the
-    # caller's own, for a test that writes other numbers.
-    key = (resolution, size, count, um_per_px, tasks)
-    if key in _BUILT and not fresh:
-        return _BUILT[key]
+    # Every test builds a stack of its own: tools write to it.
     folder.mkdir()
     for index in range(count):
         _section(size).rotate(7 * index, fillcolor=(0, 0, 0)).save(
@@ -80,10 +71,7 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
     box = build_tools(state, ctx, spec)
     tools = Tools({tool.__name__: tool for tool in box.tools})
     tools.box = box
-    if fresh:
-        return state, ctx, tools, spec
-    _BUILT[key] = state, ctx, tools, spec
-    return _BUILT[key]
+    return state, ctx, tools, spec
 
 
 def _images(result: dict[str, Any]) -> list[Image.Image]:
@@ -249,8 +237,8 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
         return images
 
     monkeypatch.setattr(placement, "physical_views", capture)
-    _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low", fresh=True)
-    _big_state, _big_ctx, big, _ = _run(tmp_path / "high", "high", fresh=True)
+    _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low")
+    _big_state, _big_ctx, big, _ = _run(tmp_path / "high", "high")
     entry = _entry(rotation_deg=12.0)
     low["interactive_transform"]([entry])
     big["interactive_transform"]([entry])
