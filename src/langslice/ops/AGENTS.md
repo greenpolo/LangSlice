@@ -21,7 +21,7 @@ wording; `registry.py` lists which.
   dataclass with `touched`, or plain data). It runs under the job folder's
   write lock (`Job.writing`: lock, sync, apply, commit): the doors hold it
   around every verb except the long ones (`registry.Verb.long`:
-  `elastix_affine`, `ants_syn`, `trace_borders`, and the scripting
+  `elastix_affine`, `fireants_syn`, `trace_borders`, and the scripting
   verb `export_maps`), which compute outside
   it from the state they read and take it themselves to apply, comparing
   each section's `inputs.section_inputs` with the value they computed from:
@@ -102,8 +102,7 @@ wording; `registry.py` lists which.
   every fit and the image model read, `core/appearance.py`. `set_preprocessed(job, workspace, ids,
   channel_weights=, clahe_clip=, clahe_tiles=, n4=, denoise=, reset=,
   shown=, options=)`: the preprocessed channel's recipe, checked first
-  (`UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `CHANNEL_COUNT_MISMATCH`, `UNAVAILABLE`
-  without antspyx for N4 or denoising), then `preprocess`'s before and after
+  (`UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `CHANNEL_COUNT_MISMATCH`), then `preprocess`'s before and after
   pictures and write. `set_channel_properties(job, workspace, channel,
   contrast_limits=, gamma=, colormap=, reset=)`: a raw channel's display
   properties, stack-wide (`core/channels.py`; contrast limits in file
@@ -216,23 +215,23 @@ wording; `registry.py` lists which.
   `written`; with `options=`, `pictures(...)` draws each fit (the final
   borders on the image it read, titled with the settings) and each traced
   section's trace (`pictures`, `traces`, `render_failed`, each drawn row's
-  `image_indexes`). Its callers: `ants_syn` and `traces.land_trace`. An
+  `image_indexes`). Its callers: `fireants_syn` and `traces.land_trace`. An
   applied record is saved in the section's folder (`job.deformations`:
   `sections/<stem>/deformable/<key>`) and the section's `deformation` holds
   its path relative to the job folder; the step of a traced fit records the
   trace it read (`trace`: the trace's artifact directory); a traced fit
   section reads the trace's artifacts under the job folder
   (`traced_lines(root=...)`).
-  `ants_syn(job, workspace, sections, restrict_to=, atlas_image=,
-  stiffness=)`: the ANTs SyN fit, applied as ONE undo step:
+  `fireants_syn(job, workspace, sections, restrict_to=, atlas_image=,
+  stiffness=)`: the FireANTs SyN fit, applied as ONE undo step:
   on the preprocessed channel (`fit`) against one of the atlas's
   images (`core.atlas.images`), `soft`/`medium`/`firm`, on top of the applied deformation
   (undo is how to start over); *restrict_to*
   checked against the atlas (`region_entries`); refused, nothing done:
-  `ANTS_MISSING` (`refuse_without_ants`: FireANTs and torch must import, `engine_ready`),
-  `BAD_ARGS` (no sections, more than `MAX_ANTS_SYN_SECTIONS` (4), an unknown
+  `ENGINE_MISSING` (`refuse_without_engine`: FireANTs and torch must import, `engine_ready`),
+  `BAD_ARGS` (no sections, more than `MAX_FIREANTS_SYN_SECTIONS` (4), an unknown
   atlas image or stiffness, a malformed region list), `FIT_ATLAS_UNAVAILABLE`,
-  `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `ants_syn`.
+  `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
   restrict_to=, options=, workers=)`: LangSlice's own
@@ -241,7 +240,7 @@ wording; `registry.py` lists which.
   "trace_borders") and returns at once (`TraceStarted.work`, the work id; a
   section whose packaged trace still runs gets that work, `running`). When
   the reply lands, `land_trace` (the work's callable) fits the traced
-  borders (`TRACE_FIT`: traced borders against the atlas borders, ANTs,
+  borders (`TRACE_FIT`: traced borders against the atlas borders, FireANTs,
   medium; on top of the applied deformation; by *restrict_to*'s regions only) with
   `fit_deformable` and applies it as its own undo step, its notice saying so
   and that undo removes it while it is the latest step, with the
@@ -250,7 +249,7 @@ wording; `registry.py` lists which.
   `inputs.section_inputs` (with the deformation) moved since the call, or
   whose trace was undone or made at another placement, gets nothing: a
   failed work whose notice starts `STALE_INPUT`; a failed image call is a
-  failed work too. Refused before any image call: `ANTS_MISSING`,
+  failed work too. Refused before any image call: `ENGINE_MISSING`,
   `BAD_ARGS` / `UNKNOWN_REGIONS` / `NO_SIDES` (*restrict_to*), then the
   trace's own refusals. The trace itself: one section's image correction, showing
   the model only the chosen regions' borders, its marked regions excluded
@@ -341,7 +340,7 @@ wording; `registry.py` lists which.
   `note`, `undo`, `redo`, `mark_damage` and `submit` in every run;
   `position_sections` with the `position` task or the stack's cutting angles
   left to the agent (`transform.angles`, `positions_on`);
-  `interactive_transform` and `elastix_affine` with `transform`; `ants_syn`
+  `interactive_transform` and `elastix_affine` with `transform`; `fireants_syn`
   with `nonlinear`; `trace_borders` with `nonlinear` and an image model (a
   task whose properties are all frozen on every section is not on,
   `JobSpec.has`; a tool that writes only properties frozen on every section,
@@ -357,7 +356,7 @@ wording; `registry.py` lists which.
   `limits`: the most one
   call takes, by what it counts (`look`, `grep_atlas_view` and
   `set_preprocessed_channel_properties` show at most four `pictures`;
-  `interactive_transform` and `ants_syn` take at most four `sections`); the
+  `interactive_transform` and `fireants_syn` take at most four `sections`); the
   reference card lists them. Every door is built from it: `build_tools`
   makes the tools `enabled(spec)` names (the ADK and MCP doors), the MCP
   door's `readOnlyHint` is `kind == "read"`, and the agent CLI
@@ -394,7 +393,7 @@ is four corners, pairs, holds. Holds are recomputed on every application, kept i
 listed as pairs; the reply carries `automatic_holds` and `holds_note`, and a fold
 through a hold names it `automatic hold` (pair ids only). The VisuAlign mesh supplies dense
 forward and same-connectivity inverse fields to the usual record composition
-and diagnostic machinery without running ANTs. Unreadable current records,
+and diagnostic machinery without running an engine. Unreadable current records,
 missing inverses, repeated section points, zero-area source triangles (named by
 pair id) and stale atlas endpoints (named by pair id) are refused. Folded
 triangles are applied and reported (`folds`: area fraction, pair ids; stored as

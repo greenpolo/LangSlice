@@ -113,15 +113,16 @@ def task_notes(spec: JobSpec) -> list[str]:
     return lines
 
 
-def ants_fact(tool_names: list[str]) -> str | None:
-    """The job statement's line when ANTs cannot run here (None when it can,
+def engine_fact(tool_names: list[str]) -> str | None:
+    """The job statement's line when the deformable engine cannot run here (None when it can,
     or when no tool of the run needs it)."""
     from langslice.core.deformation import engine_available
 
-    needing = [name for name in ("ants_syn", "trace_borders") if name in tool_names]
+    needing = [name for name in ("fireants_syn", "trace_borders") if name in tool_names]
     if not needing or engine_available():
         return None
-    return f"- ANTs is not installed on this host, so {' and '.join(needing)} cannot run."
+    return (f"- FireANTs (or torch) is not installed on this host, so "
+            f"{' and '.join(needing)} cannot run.")
 
 
 def build_job_statement(
@@ -248,7 +249,7 @@ def build_job_statement(
                 "at its current placement, damaged sections included; the user requires "
                 "one on every section."
             )
-        missing = ants_fact(tool_names)
+        missing = engine_fact(tool_names)
         if missing:
             constraints.append(missing)
     constraints.append(
@@ -343,7 +344,7 @@ def build_job_statement(
             + (" and, where traced, its traced borders"
                if "trace_borders" in tool_names else "")
             + "; undo a fit that does not improve the alignment"
-            + render("[[?ants_syn  and fit that section again with different `ants_syn` "
+            + render("[[?fireants_syn  and fit that section again with different `fireants_syn` "
                      "settings, such as another stiffness or another atlas image]]", off)
             + "."
         )

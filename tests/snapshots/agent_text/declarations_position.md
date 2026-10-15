@@ -135,7 +135,7 @@ Set the recipe of the preprocessed channel that the fits and the image model rea
 
 Every section has one preprocessed channel, made from its raw channels
 by a recipe, LangSlice's default until this is called: each raw channel
-with a weight above zero is optionally N4-corrected and denoised (ANTs)
+with a weight above zero is optionally N4-corrected and denoised
 and contrast-enhanced by CLAHE, then the channels are blended by their
 weights. The fits match it against an atlas image. The raw channels are
 never changed; look draws this channel with channels ["preprocessed"].
@@ -160,8 +160,8 @@ Args:
         weights by tissue coverage.
     clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
     clahe_tiles: CLAHE tiles per side, 1 to 32.
-    n4: ANTs N4 correction of uneven illumination.
-    denoise: ANTs denoising.
+    n4: N4 correction of uneven illumination.
+    denoise: Denoising.
     reset: True returns the stack to the default recipe, or the named
         sections to the stack's recipe; the other arguments are then
         ignored.
@@ -347,7 +347,7 @@ displaced that it would wreck a fit, such as a whole hemisphere, the
 olfactory bulb or the cortex. Small tears, bubbles, stains, low contrast
 and folds within an intact outline are not damage and are not marked.
 A section is damaged exactly when it has marked regions. The marked
-regions are left out of elastix_affine, ants_syn and the image model's
+regions are left out of elastix_affine, fireants_syn and the image model's
 trace automatically, and they move with the registration because they
 are named by atlas region. One undoable write.
 

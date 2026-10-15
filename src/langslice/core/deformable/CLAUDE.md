@@ -3,8 +3,7 @@
 Package guide for `src/langslice/core/deformable/`; `AGENTS.md` is a verbatim
 twin of this file. A core sub-package, like `core/affine.py`: it belongs to
 neither the linear method nor `core/nonlinear/` and imports neither. It is the
-engine behind the deformable fits (`ants_syn`, whose name predates the
-FireANTs engine, and the packaged
+engine behind the deformable fits (`fireants_syn` and the packaged
 `trace_borders`' fit, through `core/deformation.py`, task `nonlinear`) and
 behind `elastix_affine` (`core/transform.elastix_affine`: `prepare_fit`
 builds its images and masks, `engines.run_elastix_affine` fits). The job folder's maps and VisuAlign
@@ -78,7 +77,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   GPU when torch sees one, `engines.fit_device`) on the working-grid images,
   the masks riding as each image's last channel (FireANTs' masked mode,
   resized but never blurred by the pyramid, warped with their image, no
-  gradient through them). Settings from the former ANTs ones: shrink factors
+  gradient through them). Settings: shrink factors
   2^(n-1)..1 for the detail's iteration list (`[8, 4, 2, 1]` at standard),
   `smooth_grad_sigma` = update sigma / voxel, `smooth_warp_sigma` = total
   sigma / voxel, the edge channel an extra channel. Optimizer: FireANTs' SGD
@@ -89,8 +88,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   atlas = fwd o rev^-1, atlas -> section = rev o fwd^-1, each half inverted by
   a damped fixed point (`engines._invert`, 200 sampling iterations; FireANTs'
   own inversion is an optimization that is not reproducible on the GPU).
-  Any other `FitSettings.engine` is refused there: `engine="ants"` names the
-  SyN engine (the record's engine version names FireANTs),
+  Any other `FitSettings.engine` is refused there: `engine="fireants"` names the
+  SyN engine,
   `engine="elastix"` exists for the Elastix affine's inputs (its metric, no
   label channels), never a deformation.
 - DETERMINISM: identical inputs give identical fields, bit for bit (tests

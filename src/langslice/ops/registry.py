@@ -126,7 +126,7 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "interactive_transform": transforms.interactive_transform,
     "mark_damage": damage.mark_damage,
     "elastix_affine": transforms.elastix_affine,
-    "ants_syn": deformable.ants_syn,
+    "fireants_syn": deformable.fireants_syn,
     "set_landmarks": landmarks.set_landmarks,
     "landmark_triangulation": landmarks.landmark_triangulation,
     "trace_borders": traces.trace_borders,
@@ -144,7 +144,7 @@ _LIMITS: dict[str, dict[str, int]] = {
     "grep_atlas_view": _PICTURES,
     "interactive_transform": {"sections": look.MAX_LOOK_PICTURES},
     "elastix_affine": {"sections": look.MAX_LOOK_PICTURES},
-    "ants_syn": {"sections": deformable.MAX_ANTS_SYN_SECTIONS},
+    "fireants_syn": {"sections": deformable.MAX_FIREANTS_SYN_SECTIONS},
 }
 
 if set(_FUNCTIONS) != set(TOOLS):

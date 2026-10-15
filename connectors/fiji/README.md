@@ -126,7 +126,7 @@ in Claude mode).
   else ABBA's for the selected slices, notes for the agent).
   *Linear* (**Enable hemisphere flipping** with an optional hemisphere cue, the affine
   tool, max parallel slice transforms 1–4, **Enable slice angle estimation**, notes for
-  the agent). *Nonlinear* (notes for the agent; ANTs SyN is the one deformable fit). Any combination of the three may run, Nonlinear alone included. When
+  the agent). *Nonlinear* (notes for the agent; FireANTs SyN is the one deformable fit). Any combination of the three may run, Nonlinear alone included. When
   Nonlinear is on, Linear is off and some listed slices have no ABBA registration, Run
   asks "Slices … have no linear registration. Let the agent align them first?": Yes
   switches Linear on; No leaves them out of Nonlinear (out of the run entirely when

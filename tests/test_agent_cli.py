@@ -99,7 +99,7 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, fit = cli(capsys, "schema", "elastix_affine")
     assert fit["result"]["long"] is True and fit["next"][0].endswith("--background")
     code, everything = cli(capsys, "schema")
-    assert code == 0 and "ants_syn" in everything["result"]["verbs"]
+    assert code == 0 and "fireants_syn" in everything["result"]["verbs"]
     assert everything["result"]["schema_version"] == 3
     assert everything["result"]["verbs"]["status"]["arguments"]["properties"] == {}
     assert not any("picture_options" in entry
@@ -165,9 +165,9 @@ def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
     assert "sections" not in here["result"]["arguments"]["properties"]
     # Only the job's verbs: no Nonlinear verb for a transform job.
     code, listed = cli(capsys, "schema", "--job", str(images))
-    assert "ants_syn" not in listed["result"]["verbs"]
+    assert "fireants_syn" not in listed["result"]["verbs"]
     assert "interactive_transform" in listed["result"]["verbs"]
-    code, off = cli(capsys, "schema", "ants_syn", "--job", str(images))
+    code, off = cli(capsys, "schema", "fireants_syn", "--job", str(images))
     assert code == 3 and off["error"]["code"] == "VERB_OFF"
 
 
@@ -176,7 +176,7 @@ def test_schema_of_an_unreadable_job_is_one_envelope(capsys, images):
     record = json.loads((job / "job.json").read_text())
     record["spec"]["plane"] = "diagonal"  # a spec the job layer refuses
     (job / "job.json").write_text(json.dumps(record))
-    code, envelope = cli(capsys, "schema", "ants_syn", "--job", str(images))
+    code, envelope = cli(capsys, "schema", "fireants_syn", "--job", str(images))
     assert code == 3 and envelope["error"]["code"] == "JOB_UNREADABLE"
 
 
@@ -188,7 +188,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert job == images / "langslice"
     agents = (job / "AGENTS.md").read_text()
     assert agents == (job / "CLAUDE.md").read_text()
-    from langslice.ops.deformable import MAX_ANTS_SYN_SECTIONS
+    from langslice.ops.deformable import MAX_FIREANTS_SYN_SECTIONS
     from langslice.ops.look import MAX_LOOK_PICTURES
     from langslice.ops.registry import VERBS
 
@@ -199,7 +199,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    f"- `look` (read, Common; at most {MAX_LOOK_PICTURES} pictures per call):",
                    f"- `interactive_transform` (write, Linear; at most {MAX_LOOK_PICTURES} "
                    "sections per call):",
-                   f"- `ants_syn` (write, Nonlinear, long; at most {MAX_ANTS_SYN_SECTIONS} "
+                   f"- `fireants_syn` (write, Nonlinear, long; at most {MAX_FIREANTS_SYN_SECTIONS} "
                    "sections per call):",
                    'job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])',
                    "schema init", "reply.images", "`scripts/`", "never in /tmp"):
@@ -210,7 +210,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     assert [row["id"] for row in envelope["result"]["rows"]] == [ID0, ID1, ID2]
-    assert {"position_sections", "elastix_affine", "ants_syn", "export_maps"} <= set(
+    assert {"position_sections", "elastix_affine", "fireants_syn", "export_maps"} <= set(
         envelope["result"]["verbs"])
     # Opening the job folder itself works too; a folder without a job is refused.
     code, _envelope = cli(capsys, str(job), "status")
@@ -505,16 +505,16 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert (job / "state.json").read_bytes() == state_before
     assert sorted(path.name for path in job.rglob("*")) == views_before
     # A fit is checked, not run.
-    for fit in ("ants_syn", "elastix_affine"):
+    for fit in ("fireants_syn", "elastix_affine"):
         code, envelope = cli(capsys, str(images), fit, "--sections", ID0, "--dry-run")
         assert code == 0 and envelope["result"] == {"dry_run": True, "simulated": False,
                                                     "sections": [ID0]}, fit
         assert envelope["next"][-1].endswith("--background")
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", "nope.png",
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", "nope.png",
                          "--dry-run")
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_SLICE_IDS"
     # A dry run never starts a background run (that child would run the verb).
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", ID0,
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
                          "--dry-run", "--background")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
     assert not (job / "logs" / "runs").exists()
@@ -707,7 +707,7 @@ def _dead_run(tmp_path: Path) -> tuple[Any, str]:
     from langslice.job.layout import JobLayout
 
     layout = JobLayout(tmp_path / "job")
-    background._write(layout, {"id": "run-1", "verb": "ants_syn", "state": "running",
+    background._write(layout, {"id": "run-1", "verb": "fireants_syn", "state": "running",
                                "started": 0.0, "pid": 424242})
     return layout, "run-1"
 
@@ -750,7 +750,7 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         "grep_atlas_view": {"pictures": limits["look"]["pictures"]},
         "interactive_transform": {"sections": limits["interactive_transform"]["sections"]},
         "elastix_affine": {"sections": limits["elastix_affine"]["sections"]},
-        "ants_syn": {"sections": limits["ants_syn"]["sections"]},
+        "fireants_syn": {"sections": limits["fireants_syn"]["sections"]},
     }
     with langslice.open_job(images) as job:
         code, _placed = cli(capsys, str(images), "position_sections", "--args", json.dumps(
@@ -765,8 +765,8 @@ def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images
         most = limits["elastix_affine"]["sections"]
         refused = job.elastix_affine(sections=[ID0] * (most + 1))
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
-        most = limits["ants_syn"]["sections"]
-        refused = job.ants_syn(sections=[ID0] * (most + 1))
+        most = limits["fireants_syn"]["sections"]
+        refused = job.fireants_syn(sections=[ID0] * (most + 1))
         assert refused["error"] == "BAD_ARGS" and refused["max_sections"] == most
         # One past a picture limit: the rest named, not shown.
         most = limits["look"]["pictures"]

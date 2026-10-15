@@ -115,7 +115,7 @@ def _start_trace(
 #: The background work's kind (:mod:`langslice.job.background`).
 TRACE_WORK = "trace_borders"
 #: The fit a landed trace gets: the traced lines as named regions against the
-#: atlas borders, ANTs at medium stiffness.
+#: atlas borders, FireANTs at medium stiffness.
 TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
                                stiffness="medium")
 #: Fit rows that mean the section or its trace changed before the fit applied.
@@ -134,7 +134,7 @@ def trace_borders(
     workers: int = registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
 ) -> TraceStarted:
     """LangSlice's own nonlinear method on one section, packaged: the image
-    model traces the atlas borders onto the section, then ANTs fits what it
+    model traces the atlas borders onto the section, then FireANTs fits what it
     drew and the deformation is applied. Returns at once (``work``: the id
     of the background work, :mod:`langslice.job.background`).
 
@@ -164,14 +164,14 @@ def trace_borders(
     this placement and region choice, and whose fit the section's applied
     deformation already holds, fits nothing again (``landed``, no work).
     Refused before any image call:
-    ``ANTS_MISSING``, ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES`` (a
+    ``ENGINE_MISSING``, ``BAD_ARGS`` / ``UNKNOWN_REGIONS`` / ``NO_SIDES`` (a
     bad *restrict_to*), ``UNKNOWN_SLICE_IDS``, ``FROZEN`` (the
     section's deformation is frozen), ``INVALID_LINEAR_PLACEMENT``, ``IMAGE_CORRECTION_IO_ERROR``,
     ``STALE_INPUT`` (the geometry changed while the call was prepared).
     """
-    from langslice.ops.deformable import refuse_without_ants, region_entries
+    from langslice.ops.deformable import refuse_without_engine, region_entries
 
-    refuse_without_ants()
+    refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
     record = job.state.resolve(ref)
     if record is None:
@@ -251,7 +251,7 @@ def land_trace(
         text = ("the trace landed; its fit equals the deformation the section already holds, "
                 "so nothing changed. " + facts)
     else:
-        text = ("the trace landed and ANTs fitted the traced borders (medium stiffness"
+        text = ("the trace landed and FireANTs fitted the traced borders (medium stiffness"
                 + (f", restricted to {', '.join(regions)}" if regions else "")
                 + f") on top of {built_on}. The deformation is applied as its own undo "
                 "step: undo removes it while it is the latest step. " + facts)

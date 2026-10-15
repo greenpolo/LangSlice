@@ -50,7 +50,7 @@ and `environment.yml` hold the worker's source installation.
   everywhere.
 - The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
-  (`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
+  (`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
   `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
 - A tool plugin (`JobSpec.plugins`, `docs/plugins.md`) adds first-class tools
@@ -98,8 +98,8 @@ and `environment.yml` hold the worker's source installation.
 ## Environment and checks
 
 Linux + bash. The project environment is a uv venv at `.venv` (Python 3.11):
-`uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`; the ANTs engine
-(antspyx) is a core dependency below Python 3.14.
+`uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`; the deformable engine
+(FireANTs on torch) and SimpleITK are core dependencies.
 
 ```bash
 source .venv/bin/activate

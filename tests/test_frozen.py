@@ -160,12 +160,12 @@ def test_elastix_affine_and_set_transforms_refuse_a_frozen_affine(
 
 def test_the_deformation_tools_refuse_a_frozen_deformation(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(ops_deformable, "refuse_without_ants", lambda: None)
+    monkeypatch.setattr(ops_deformable, "refuse_without_engine", lambda: None)
     job, ctx = _open(tmp_path, tasks=["nonlinear"], frozen={"s0.png": ["deformation"]},
                      nonlinear=NonlinearSpec(provider="none"))
     for record in job.state.slices:
         record.transform = {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]}
-    fit = ops_deformable.ants_syn(job, ctx, ["s0.png"])
+    fit = ops_deformable.fireants_syn(job, ctx, ["s0.png"])
     assert fit.rows[0]["error"] == "FROZEN" and fit.rows[0]["properties"] == ["deformation"]
     # Even where the host requires a deformation on every section, the gate
     # asks only for the section whose deformation is free.
@@ -237,8 +237,8 @@ def test_a_frozen_affine_leaves_the_deformation_free_and_a_deformation_fit_write
     assert held["kind"] == "host"
     # the deformation tools are on, and they only ever write the deformation
     names = set(enabled(job.spec))
-    assert {"ants_syn", "elastix_affine", "interactive_transform"} <= names
-    assert TOOLS["ants_syn"].writes == ("deformation",)
+    assert {"fireants_syn", "elastix_affine", "interactive_transform"} <= names
+    assert TOOLS["fireants_syn"].writes == ("deformation",)
     assert job.state.by_id("s0.png").transform == held
 
 
@@ -271,7 +271,7 @@ def test_the_carey_configuration_end_to_end(tmp_path: Path, monkeypatch: pytest.
     # deformation are the agent's, so Linear and Nonlinear stay on and the tools that
     # write only what is frozen are gone.
     assert spec.has("transform") and spec.has("nonlinear") and not spec.has("position")
-    assert set(enabled(spec)) >= {"interactive_transform", "elastix_affine", "ants_syn"}
+    assert set(enabled(spec)) >= {"interactive_transform", "elastix_affine", "fireants_syn"}
     assert "position_sections" not in enabled(spec)
     assert spec.off("interactive_transform:flip") and not spec.off("interactive_transform")
     monkeypatch.setattr("langslice.core.transform.fit_elastix",
@@ -304,7 +304,8 @@ def test_a_tool_is_off_when_everything_it_writes_is_frozen_everywhere():
     cases = {
         ("affine",): {"elastix_affine"},
         ("orientation",): set(),
-        ("deformation",): {"ants_syn", "trace_borders", "set_landmarks", "landmark_triangulation"},
+        ("deformation",): {"fireants_syn", "trace_borders", "set_landmarks",
+                           "landmark_triangulation"},
         ("position",): set(),
         ("position", "angles"): {"position_sections"},
         ("orientation", "affine"): {"interactive_transform", "elastix_affine"},

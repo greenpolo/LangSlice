@@ -301,8 +301,8 @@ def test_the_elastix_affine_reads_the_preprocessed_channel(tmp_path: Path, atlas
     assert np.array_equal(seen[2], seen[1])
 
 
-def test_the_ants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, monkeypatch):
-    """What ANTs SyN is handed is the section's preprocessed channel on the fit
+def test_the_fireants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, monkeypatch):
+    """What FireANTs SyN is handed is the section's preprocessed channel on the fit
     grid: a recipe changes it, a raw channel's display properties do not."""
     from langslice.core import deformation
     from langslice.ops import deformable as ops_deformable
@@ -315,10 +315,10 @@ def test_the_ants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, 
     seen: list[np.ndarray] = []
     monkeypatch.setattr(deformation, "run_jobs", lambda _ws, jobs: seen.extend(
         np.asarray(item.image).copy() for item in jobs))
-    monkeypatch.setattr(ops_deformable, "refuse_without_ants", lambda: None)
-    ops_deformable.ants_syn(job, ctx, [record.id])
+    monkeypatch.setattr(ops_deformable, "refuse_without_engine", lambda: None)
+    ops_deformable.fireants_syn(job, ctx, [record.id])
     looks.set_settings(state, None, dict(RECIPE))
-    ops_deformable.ants_syn(job, ctx, [record.id])
+    ops_deformable.fireants_syn(job, ctx, [record.id])
     grid = deformation.fit_grid(state, ctx, record)
     wanted = looks.preprocessed_image(ctx, state, record, long_edge=deformation.FIT_LONG_EDGE)
     if wanted.size != grid.image.size:
@@ -328,7 +328,7 @@ def test_the_ants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, 
     assert not np.array_equal(seen[0], seen[1])
     # Display properties are not read.
     channels.set_properties(state, "green", channels.ChannelProperties(gamma=3.0))
-    ops_deformable.ants_syn(job, ctx, [record.id])
+    ops_deformable.fireants_syn(job, ctx, [record.id])
     assert np.array_equal(seen[2], seen[1])
 
 

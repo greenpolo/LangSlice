@@ -257,7 +257,7 @@ def set_preprocessed_channel_properties(
 
     Every section has one preprocessed channel, made from its raw channels
     by a recipe, LangSlice's default until this is called: each raw channel
-    with a weight above zero is optionally N4-corrected and denoised (ANTs)
+    with a weight above zero is optionally N4-corrected and denoised
     and contrast-enhanced by CLAHE, then the channels are blended by their
     weights. The fits match it against an atlas image. The raw channels are
     never changed; look draws this channel with channels ["preprocessed"].
@@ -282,8 +282,8 @@ def set_preprocessed_channel_properties(
             weights by tissue coverage.
         clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
         clahe_tiles: CLAHE tiles per side, 1 to 32.
-        n4: ANTs N4 correction of uneven illumination.
-        denoise: ANTs denoising.
+        n4: N4 correction of uneven illumination.
+        denoise: Denoising.
         reset: True returns the stack to the default recipe, or the named
             sections to the stack's recipe; the other arguments are then
             ignored.
@@ -532,9 +532,9 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
     olfactory bulb or the cortex. Small tears, bubbles, stains, low contrast
     and folds within an intact outline are not damage and are not marked.
     A section is damaged exactly when it has marked regions. ~
-    [[?elastix_affine|ants_syn|trace_borders The marked
+    [[?elastix_affine|fireants_syn|trace_borders The marked
     regions are left out of ~
-    [[#elastix_affine=elastix_affine||ants_syn=ants_syn||~
+    [[#elastix_affine=elastix_affine||fireants_syn=fireants_syn||~
     trace_borders=the image model's
     trace]] automatically, and they||The marked regions]] move with the registration because they
     are named by atlas region. One undoable write.
@@ -606,14 +606,14 @@ def elastix_affine(
     ...
 
 
-def ants_syn(
+def fireants_syn(
     sections: list[str],
     restrict_to: list[str] = [],
     atlas_image: FitAtlas = "template",
     stiffness: Stiffness = "medium",
     view: bool = True,
 ) -> dict[str, Any]:
-    """Fit a deformation of the atlas onto sections with ANTs SyN, on their current registration.
+    """Fit the atlas onto sections with FireANTs SyN, on their current registration.
 
     SyN bends the atlas onto each section's preprocessed channel, starting
     from the section's current registration (its linear placement, and its
@@ -654,11 +654,11 @@ def ants_syn(
 
 
 def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -> dict[str, Any]:
-    """Trace the atlas borders onto a section with the image model, then fit what it drew with ANTs.
+    """Trace the atlas borders onto a section with the image model, then fit it with FireANTs.
 
     LangSlice's own nonlinear method, packaged: the image model is shown the
     section with its placed atlas borders and draws them on the section's
-    anatomy; when it answers, ANTs fits the traced borders (medium
+    anatomy; when it answers, FireANTs fits the traced borders (medium
     stiffness) on top of the section's current registration and the
     deformation is applied as its own undoable step. The section needs a
     position and a transform; its marked damage regions are left out of
@@ -890,7 +890,7 @@ STUBS: dict[str, Callable[..., Any]] = {
         look, zoom, set_channel_properties, set_preprocessed_channel_properties,
         grep_atlas, grep_atlas_view, status, list_files, search_files, read_file,
         position_sections, interactive_transform, mark_damage,
-        elastix_affine, ants_syn, set_landmarks, landmark_triangulation,
+        elastix_affine, fireants_syn, set_landmarks, landmark_triangulation,
         trace_borders,
         note, undo, redo, submit, export_maps,
     )
@@ -898,7 +898,7 @@ STUBS: dict[str, Callable[..., Any]] = {
 
 #: The change tools: each returns its picture unless ``view`` is false.
 VIEW_TOOLS: tuple[str, ...] = (
-    "position_sections", "interactive_transform", "elastix_affine", "ants_syn",
+    "position_sections", "interactive_transform", "elastix_affine", "fireants_syn",
     "set_landmarks", "landmark_triangulation",
 )
 

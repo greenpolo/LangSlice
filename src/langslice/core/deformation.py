@@ -1,6 +1,6 @@
 """The deformable fit as the tools use it: inputs, cache, records, pictures.
 
-``ants_syn`` and ``trace_borders``' landing (through
+``fireants_syn`` and ``trace_borders``' landing (through
 :func:`langslice.ops.deformable.fit_deformable`) are thin verbs over this
 module and the engine package :mod:`langslice.core.deformable`. What lives
 here:
@@ -128,10 +128,10 @@ def engine_available() -> bool:
 
 #: The refusal when :func:`engine_available` is False (model-facing text,
 #: pinned by the text snapshot).
-ANTS_MISSING = (
-    "ANTs (antspyx) cannot be imported on this host. It is one of LangSlice's "
-    "dependencies on Python 3.13 and below: reinstall LangSlice there "
-    "(pip install 'antspyx>=0.6.3,<0.7')"
+ENGINE_MISSING = (
+    "The deformable engine cannot run on this host: torch and fireants must both "
+    "import. They are LangSlice's dependencies: reinstall LangSlice "
+    "(its pyproject.toml pins the FireANTs build)"
 )
 
 

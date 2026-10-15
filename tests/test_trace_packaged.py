@@ -1,5 +1,5 @@
 """The packaged ``trace_borders`` (``ops.traces``): the image call in the
-background, then an ANTs fit of what it drew, applied as its own undo step.
+background, then a FireANTs fit of what it drew, applied as its own undo step.
 
 The image model is the shared stand-in (``tests/synthetic_stack.py``
 ``stub_image_model``): the run's model with its network call replaced by one
@@ -31,7 +31,8 @@ from langslice.ops.refusal import Refused
 from langslice.providers.registry import resolve_image_model
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
-pytest.importorskip("ants", reason="trace_borders fits with antspyx")
+if not deformation.engine_available():
+    pytest.skip("trace_borders fits with FireANTs", allow_module_level=True)
 
 ID = "s0.png"
 
@@ -103,7 +104,7 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     (work,) = job.background.notices()
     assert work.status == "done", work.notice
     assert work.notice.startswith("w1 trace_borders of s0.png finished: the trace landed "
-                                  "and ANTs fitted the traced borders (medium stiffness) on "
+                                  "and FireANTs fitted the traced borders (medium stiffness) on "
                                   "top of its linear placement.")
     assert "undo removes it while it is the latest step" in work.notice
     record = job.state.by_id(ID)
@@ -164,7 +165,7 @@ def test_a_trace_builds_on_the_current_deformation_and_draws_its_pictures(tmp_pa
     from langslice.core.display import default_options
 
     job, ctx, stub = _job(tmp_path, atlas)
-    fitted = ops_deformable.ants_syn(job, ctx, [ID])
+    fitted = ops_deformable.fireants_syn(job, ctx, [ID])
     assert fitted.rows[0]["status"] == "ok", fitted.rows
     options = default_options("overlay")
     traces.trace_borders(job, ctx, ID, image_model=stub.model, options=options)
@@ -213,14 +214,14 @@ def test_a_section_changed_while_the_model_draws_gets_nothing(tmp_path, atlas):
     assert len(job.undo_stack) == depth
 
 
-def test_without_ants_nothing_is_asked_of_the_image_model(tmp_path, atlas, monkeypatch):
+def test_without_engine_nothing_is_asked_of_the_image_model(tmp_path, atlas, monkeypatch):
     job, ctx, stub = _job(tmp_path, atlas)
     monkeypatch.setattr(ops_deformable, "engine_ready", lambda: False)
     depth = len(job.undo_stack)
     with pytest.raises(Refused) as refused:
         traces.trace_borders(job, ctx, ID, image_model=stub.model)
-    assert refused.value.code == "ANTS_MISSING"
-    assert "antspyx" in refused.value.payload()["message"]
+    assert refused.value.code == "ENGINE_MISSING"
+    assert "fireants" in refused.value.payload()["message"]
     assert stub.calls == [] and len(job.undo_stack) == depth
     assert job.state.slices[0].image_correction is None
     with pytest.raises(Refused) as unknown:

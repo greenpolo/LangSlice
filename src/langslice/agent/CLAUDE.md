@@ -32,11 +32,11 @@ The toolbox: shared tools for the everyday operations (`look` with its four
 modes, `zoom`, the two channel tools, `grep_atlas` / `grep_atlas_view`,
 `status`, the job-folder tools, `note` / `undo` / `redo` / `submit`) and one
 tool per registration method (`position_sections`,
-`interactive_transform`, `mark_damage`, `elastix_affine`, `ants_syn`,
+`interactive_transform`, `mark_damage`, `elastix_affine`, `fireants_syn`,
 `trace_borders`). Every change tool returns its own picture after the write
 (the computer-use pattern): the positioning picture for
 `position_sections`, the section under its new registration with the atlas
-borders on it for `interactive_transform`, `elastix_affine` and `ants_syn`
+borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
 (zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
 previews; everything is undoable, and undo is how two fits are compared.
 `interactive_transform` batches up to four independent sections in one
@@ -53,7 +53,7 @@ cutting angles left to the agent, `transform.angles`; the stack's order
 follows the positions, so there is no ordering tool);
 `interactive_transform` and `elastix_affine` with `transform` (a mirror is
 the sign of the in-plane affine, so flipping is Linear, never Positioning),
-each switchable alone; `ants_syn` and `trace_borders` with
+each switchable alone; `fireants_syn` and `trace_borders` with
 `nonlinear` (`trace_borders` only with an image model); everything else,
 `mark_damage` included, in every run. `JobSpec.disabled` takes single tools
 and tool options (`look:positioning`, `interactive_transform:flip`) off on
@@ -111,7 +111,7 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   description), the hard constraints (with the damaged-section guidance:
   a section with marked regions still needs a transform made for its
   surviving anatomy, by hand or by `elastix_affine`, which leaves the
-  marked regions out; `ants_fact` when ANTs is missing), the per-task user
+  marked regions out; `engine_fact` when FireANTs is missing), the per-task user
   notes (`task_notes`), the short "Method:" section. `display_facts` reads
   the run's raw channels and atlas channels. Every door's statement is
   assembled in `doors/statement.py`.
@@ -284,15 +284,15 @@ every section (`require_deformation`), the line says every section and
 deformation at its current `linear_key`; otherwise `submit` has no
 deformation gate.
 
-- `ants_syn(sections, restrict_to=, atlas_image=, stiffness=, view=)`:
-  ANTs SyN on the preprocessed channel against one of the atlas's images, on
+- `fireants_syn(sections, restrict_to=, atlas_image=, stiffness=, view=)`:
+  FireANTs SyN on the preprocessed channel against one of the atlas's images, on
   top of each section's current registration (each fit builds on the one
   before; undo is how to start over), the marked damage regions left out;
-  at most 4 sections per call; `ANTS_MISSING` without antspyx.
+  at most 4 sections per call; `ENGINE_MISSING` without torch and fireants.
 - `trace_borders(section, prompt="", restrict_to=[])`: LangSlice's own
   method, packaged: the image model traces the atlas borders onto the
   section (the agent's per-section edit of the base prompt, which the
-  description carries with the border rules), then ANTs fits the traced
+  description carries with the border rules), then FireANTs fits the traced
   borders and the deformation is applied as its own undo step, as
   background work (`job.background`): the call returns at once with the
   work's id; the notice comes at the head of a later reply, or as the next
@@ -305,7 +305,7 @@ deformation gate.
   positions_mm)` look regions up and show their borders on the atlas, for
   choosing `restrict_to` and `mark_damage` regions.
 - Provider `none` (`NonlinearSpec.uses_image_model` False) builds
-  `ants_syn` but no `trace_borders`. A door that cannot reach the job's
+  `fireants_syn` but no `trace_borders`. A door that cannot reach the job's
   image model builds the same toolbox (`image_model_connected=False`) and
   says so (`doors.statement.IMAGE_MODEL_OFF`).
 - `look` in mode overlay draws each section with its applied deformation

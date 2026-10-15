@@ -36,7 +36,7 @@ def case():
     remove = np.zeros((260, 340), dtype=bool)
     remove[:, 250:] = True  # the right side of the section is missing
     image, _ = render_section(atlas, SMOOTH_FIELD(), remove=remove)
-    record = fit_section(image, atlas, placement(), FitSettings(engine="ants", detail="coarse"))
+    record = fit_section(image, atlas, placement(), FitSettings(engine="fireants", detail="coarse"))
     return atlas, image, record
 
 

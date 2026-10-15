@@ -1,7 +1,7 @@
 """Deformable fit of a linearly placed atlas plane onto one section.
 
 Shared by the linear agent's tooling and nonlinear, like ``core/affine.py``:
-library engines (ANTs SyN), atlas images, masks, and the
+library engines (FireANTs SyN), atlas images, masks, and the
 canonical per-section record. See ``CLAUDE.md`` in this package.
 """
 

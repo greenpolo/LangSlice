@@ -75,7 +75,7 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         help="Comma-separated subset of position,transform,nonlinear: position "
         "places and orders the sections, transform aligns them in-plane, nonlinear "
-        "deforms each linearly aligned section (ants_syn, and trace_borders with an "
+        "deforms each linearly aligned section (fireants_syn, and trace_borders with an "
         "image model). A task left out takes its answer from the flags that supply "
         "it (--positions, --transforms ...). Default: "
         f"{DEFAULT_TASKS}; with --registration, {REGISTRATION_TASKS} (the imported "

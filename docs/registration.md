@@ -3,7 +3,7 @@
 LangSlice gives an agent a stack of sections, an atlas and tools for looking,
 placing and fitting. The agent inspects the anatomy, chooses tools and
 regions, reviews their pictures and revises the registration. Image-model
-border tracing is optional; affine and ANTs fits can use the stain directly.
+border tracing is optional; affine and FireANTs fits can use the stain directly.
 
 The tools have the same names across [CLI, MCP and agent sessions](agents.md)
 and the [Python library](library.md). Use `langslice-job schema VERB --job
@@ -15,7 +15,7 @@ FOLDER` for exact arguments and limits.
 |---|---|---|
 | `position` | `position_sections` | Atlas positions, section order and cutting angles |
 | `transform` | `interactive_transform`, `elastix_affine` | In-plane alignment of each section |
-| `nonlinear` | `ants_syn`, `set_landmarks`, `landmark_triangulation`, optionally `trace_borders` | Deformation on top of a linear placement |
+| `nonlinear` | `fireants_syn`, `set_landmarks`, `landmark_triangulation`, optionally `trace_borders` | Deformation on top of a linear placement |
 
 Default tasks are `position,transform`. A disabled task takes its answer
 from supplied inputs and removes its tools. `transform.angles` also enables
@@ -34,7 +34,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | Name | Removes |
 |---|---|
 | `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
-| `position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
 | `export_maps` | the scripting verb |
 | `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
@@ -49,7 +49,7 @@ work is refused with one line saying why:
 
 - a task that is on keeps at least one tool that writes its answer
   (`position_sections`; `interactive_transform` or `elastix_affine`;
-  `ants_syn`, `landmark_triangulation` or `trace_borders`);
+  `fireants_syn`, `landmark_triangulation` or `trace_borders`);
 - `look` keeps at least one mode;
 - `set_landmarks` and `landmark_triangulation` need each other; the first
   also needs a way to see atlas points (`look:atlas` or `look:overlay`) and
@@ -137,7 +137,7 @@ A task whose properties are all frozen on every section is off
 `nonlinear`: deformation), and a task that is switched off freezes its
 properties on every section: "the host supplied this" is one rule. A tool
 that writes only properties frozen on every section is not offered
-(`position_sections`, `interactive_transform`, `elastix_affine`, `ants_syn`,
+(`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
 `landmark_triangulation` and `trace_borders` by what they write; `set_landmarks`
 goes with `landmark_triangulation`, whose deformation its pairs serve), `interactive_transform`'s `flip` and
 `rotate_quarter` go with a frozen `orientation` on every section, and no text names what is gone. The job
@@ -243,7 +243,7 @@ job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 
 `mark_damage` records atlas regions physically lost or badly displaced,
 including one hemisphere when needed. Those regions are excluded from
-elastix, `ants_syn` and image-model tracing. Small tears, bubbles and folds do not
+elastix, `fireants_syn` and image-model tracing. Small tears, bubbles and folds do not
 by themselves justify excluding an entire region. A job can disable this tool
 with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
 
@@ -270,9 +270,9 @@ in-plane dimension and contain at least sixteen pixels. The check happens
 before padding or fitting. No fit is run or written for that section; use
 a larger region or `interactive_transform`.
 
-## ANTs deformation
+## FireANTs deformation
 
-`ants_syn` fits the atlas to the section's preprocessed stain, starting from
+`fireants_syn` fits the atlas to the section's preprocessed stain, starting from
 its current linear placement and any applied deformation. Each fit builds
 on the previous one and can be undone. It accepts one to four sections,
 `stiffness="soft"|"medium"|"firm"` and optional `restrict_to` regions.
@@ -284,8 +284,7 @@ smooth field reaches, so the step's displacement fades to none over a further
 
 The engine is the SyN (symmetric diffeomorphic) registration of
 [FireANTs](https://github.com/rohitrango/FireANTs), on the GPU when there is
-one (about a second per section) and on the CPU otherwise, with ANTs' settings
-and step rule: mutual information plus an edge channel,
+one (about a second per section) and on the CPU otherwise, with ANTs' step rule: mutual information plus an edge channel,
 four pyramid levels, the stiffness as Gaussian smoothing of each step and of
 the whole warp. Identical inputs give identical fields.
 
@@ -485,7 +484,7 @@ picture size; where the agent chooses the size, `resolution` works as for
 composes the landmark correction onto the current deformation. Consecutive
 landmark applications replace that landmark correction using the same
 earlier baseline, so editing or deleting a pair removes its prior influence.
-An intervening ANTs or trace fit becomes the baseline for the next landmark
+An intervening FireANTs or trace fit becomes the baseline for the next landmark
 application. A missing baseline inverse or unreadable current deformation is
 refused. Reapplying an unchanged set writes nothing. Editing or deleting
 points leaves the current registration in force until explicit application;
@@ -495,7 +494,7 @@ undo restores the registration before that application.
 
 `trace_borders(section="s01.tif", restrict_to=["CA1"], prompt="")` asks an
 image model to move the placed atlas borders onto the tissue, then fits an
-ANTs deformation to the extracted lines. It requires a linear placement.
+FireANTs deformation to the extracted lines. It requires a linear placement.
 The model receives two images in the same frame: the preprocessed section
 and that section with thin yellow atlas borders. `restrict_to` selects the
 borders shown and fitted; empty uses all eligible regions. Marked damage
@@ -519,7 +518,7 @@ fit metrics do not certify region identity or topology. The job saves the
 attachments, prompts, raw reply, extracted lines and fit separately.
 
 `trace_borders` is offered only with Nonlinear enabled and an image model
-connected. `provider="none"` disables it while keeping ANTs and landmark tools.
+connected. `provider="none"` disables it while keeping FireANTs and landmark tools.
 Custom models and prompts are described in the [library guide](library.md#image-models).
 
 ## Writes, review and submission

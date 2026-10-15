@@ -1,7 +1,7 @@
 """The few settings a deformable fit exposes, and what each named level means.
 
 Every knob is a short named ladder rather than a raw engine number, so an agent
-or a host dialog can pick "firmer" without knowing that ANTs and Elastix
+or a host dialog can pick "firmer" without knowing that FireANTs and Elastix
 regularize in different units. Physical units (millimetres) are used wherever
 an engine allows it, so changing the detail level does not change how stiff a
 fit is. The similarity metric follows from the image pairing, the engine and,
@@ -15,7 +15,7 @@ from typing import Any, Literal, cast, get_args
 
 #: ``ants``: SyN, fitted by FireANTs (the record's engine version names the
 #: library); ``elastix``: the Elastix affine's inputs, never a deformation.
-Engine = Literal["ants", "elastix"]
+Engine = Literal["fireants", "elastix"]
 #: There is no ``stiff``: it never gave the best-looking fit and left
 #: enlarged ventricles unfilled.
 Stiffness = Literal["soft", "medium", "firm"]
@@ -36,13 +36,13 @@ AtlasImage = str
 #: model's extracted boundary lines on that photograph's grid.
 SectionImage = Literal["stain", "lines"]
 Metric = Literal["local_correlation", "mutual_information", "mean_squares"]
-#: The similarity metric of a stain fit. ``local_correlation``: ANTs'
-#: neighbourhood cross-correlation (``CC``) over a small window
+#: The similarity metric of a stain fit. ``local_correlation``:
+#: neighbourhood cross-correlation over a small window
 #: (:data:`CORRELATION_RADIUS_UM`); Elastix has no local correlation metric
 #: and uses :data:`ELASTIX_STAIN_METRIC` instead. ``mutual_information``: one
 #: joint histogram over the whole masked section.
 StainMetric = Literal["local_correlation", "mutual_information"]
-#: Label-map channels added to the image pair (ANTs only). ``none``: the image
+#: Label-map channels added to the image pair (FireANTs only). ``none``: the image
 #: pair alone. ``model``: the image model's lines turned into named regions
 #: (:mod:`langslice.core.deformable.regions`), paired with the placed merged
 #: atlas regions.
@@ -91,7 +91,7 @@ DETAIL: dict[str, DetailLevel] = {
     "coarse": DetailLevel(working_um=40.0, iterations=(80, 50, 25)),
     "standard": DetailLevel(working_um=20.0, iterations=(100, 70, 50, 25)),
 }
-#: ANTs halves the grid at each level before the last (shrink factors
+#: SyN halves the grid at each level before the last (shrink factors
 #: 2^(n-1)..1, smoothing n-1..0 voxels): the extra coarse levels are what give
 #: SyN its capture range; more iterations at a level rarely change the result
 #: because its convergence test stops it first.
@@ -103,7 +103,7 @@ DETAIL: dict[str, DetailLevel] = {
 #: with Elastix.
 LINE_SOFTENING_UM = 60.0
 
-#: Radius, in micrometres, of the window ANTs' local correlation compares
+#: Radius, in micrometres, of the window the local correlation compares
 #: (window side = 2 x radius + 1 working pixels at the finest level; coarser
 #: pyramid levels widen it in proportion).
 CORRELATION_RADIUS_UM = 80.0
@@ -131,7 +131,7 @@ class FitSettings:
     one side only (``"CTX:left"``, :mod:`langslice.core.atlas.sides`), as may a
     ``structures`` entry."""
 
-    engine: Engine = "ants"
+    engine: Engine = "fireants"
     stiffness: Stiffness = "medium"
     detail: Detail = "standard"
     atlas_image: AtlasImage = "template"
@@ -167,10 +167,10 @@ class FitSettings:
             raise ValueError("neighbourhood_um must be a non-negative width below 5 mm")
         for name in ("exclude", "structures"):
             object.__setattr__(self, name, tuple(getattr(self, name)))
-        if self.labels != "none" and self.engine != "ants":
+        if self.labels != "none" and self.engine != "fireants":
             raise ValueError(
                 "Label-map channels are SyN-only: Elastix has no multi-label metric "
-                "with per-channel masks that matches ANTs' label registration"
+                "with per-channel masks that matches the label-map channels"
             )
         metric_for(self.section_image, self.atlas_image)
 
@@ -199,7 +199,7 @@ class FitSettings:
 
 
 def metric_for(
-    section_image: str, atlas_image: str, *, engine: str = "ants",
+    section_image: str, atlas_image: str, *, engine: str = "fireants",
     stain_metric: str = "mutual_information",
 ) -> Metric:
     """The similarity metric for an image pairing, engine and stain metric.
@@ -209,7 +209,7 @@ def metric_for(
     grayscale atlas image has an unknown intensity relationship (brightfield
     tissue is dark where the template is bright, and stains differ region by
     region): mutual information over the section by default, which asks only
-    that intensities be predictable from each other, or ANTs' local
+    that intensities be predictable from each other, or local
     correlation, which asks that they agree up to a scale and offset within
     each small window. Elastix has no local correlation metric, so its stain
     fits use :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
@@ -226,4 +226,4 @@ def metric_for(
                          "against a grayscale atlas image")
     if stain_metric == "mutual_information":
         return "mutual_information"
-    return "local_correlation" if engine == "ants" else ELASTIX_STAIN_METRIC
+    return "local_correlation" if engine == "fireants" else ELASTIX_STAIN_METRIC

@@ -1,6 +1,6 @@
 """The fit tools, one per registration method, and the scripting verbs: their bodies.
 
-``elastix_affine`` and ``ants_syn`` fit, apply, then show each fitted
+``elastix_affine`` and ``fireants_syn`` fit, apply, then show each fitted
 section under its new registration with the atlas borders on it
 (:func:`langslice.ops.look.show_result`), unless the call's ``view`` is
 false and the host does not force it. With ``restrict_to`` those regions'
@@ -98,10 +98,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                      zooms=zooms, highlight=regions)
         return pictured(result, shown)
 
-    def ants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
+    def fireants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
                  stiffness: str, view: bool = True) -> dict[str, Any]:
         try:
-            done = ops_deformable.ants_syn(job, ctx, as_list(sections),
+            done = ops_deformable.fireants_syn(job, ctx, as_list(sections),
                                            restrict_to=as_list(restrict_to),
                                            atlas_image=atlas_image, stiffness=stiffness)
         except Refused as refusal:
@@ -127,7 +127,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 window = ops_transforms.zoom_window(box)
                 if window is not None:
                     zooms[name] = window
-        shown = ops_look.show_result(job, ctx, "ants_syn", "overlay", drawn, zooms=zooms,
+        shown = ops_look.show_result(job, ctx, "fireants_syn", "overlay", drawn, zooms=zooms,
                                      highlight=regions)
         return pictured(result, shown)
 
@@ -230,7 +230,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
 
     return {
         "set_landmarks": set_landmarks, "landmark_triangulation": landmark_triangulation,
-        "elastix_affine": elastix_affine, "ants_syn": ants_syn,
+        "elastix_affine": elastix_affine, "fireants_syn": fireants_syn,
         "trace_borders": trace_borders,
         "export_maps": export_maps,
     }

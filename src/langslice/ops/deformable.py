@@ -3,8 +3,8 @@
 :func:`fit_deformable` runs one deformable fit per section
 (:mod:`langslice.core.deformation`: the fit grid, the image the fit reads,
 the record cache and the engine) and APPLIES each section's result as its
-deformation: one undo step for the call. Its callers are :func:`ants_syn`
-(ANTs SyN on the preprocessed channel, building on whatever deformation
+deformation: one undo step for the call. Its callers are :func:`fireants_syn`
+(FireANTs SyN on the preprocessed channel, building on whatever deformation
 each section holds) and the landing of a packaged trace
 (:func:`langslice.ops.traces.land_trace`: the traced borders fitted).
 
@@ -411,13 +411,13 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
 
 #: Stiffness levels (``core.deformable.settings.Stiffness``).
 STIFFNESSES = ("soft", "medium", "firm")
-#: Sections one :func:`ants_syn` call takes.
-MAX_ANTS_SYN_SECTIONS = 4
+#: Sections one :func:`fireants_syn` call takes.
+MAX_FIREANTS_SYN_SECTIONS = 4
 
 
 def engine_ready() -> bool:
     """Whether the deformable engine (FireANTs on torch) imports here
-    (``ANTS_MISSING`` when not)."""
+    (``ENGINE_MISSING`` when not)."""
     if not deformation.engine_available():
         return False
     from langslice.core.deformable.engines import import_fireants
@@ -430,11 +430,11 @@ def engine_ready() -> bool:
     return True
 
 
-def refuse_without_ants() -> None:
-    """Refuse ``ANTS_MISSING`` (nothing done) when the deformable engine does
+def refuse_without_engine() -> None:
+    """Refuse ``ENGINE_MISSING`` (nothing done) when the deformable engine does
     not import."""
     if not engine_ready():
-        raise Refused("ANTS_MISSING", message=deformation.ANTS_MISSING + ".")
+        raise Refused("ENGINE_MISSING", message=deformation.ENGINE_MISSING + ".")
 
 
 def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str, ...]:
@@ -463,7 +463,7 @@ def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str,
     return tuple(names)
 
 
-def ants_syn(
+def fireants_syn(
     job: Job,
     workspace: Workspace,
     sections: list[Any],
@@ -472,7 +472,7 @@ def ants_syn(
     atlas_image: str = "template",
     stiffness: str = "medium",
 ) -> DeformableFit:
-    """A deformable fit with ANTs SyN on each section, applied: ONE undo step.
+    """A deformable fit with FireANTs SyN on each section, applied: ONE undo step.
 
     One choice, no candidates: the section's preprocessed channel
     (:mod:`langslice.core.appearance`) against *atlas_image* (one of the atlas's
@@ -488,8 +488,8 @@ def ants_syn(
     ``STALE_INPUT``; per-section problems are rows. The tool door draws the
     picture of what was written (:func:`langslice.ops.look.show_result`).
 
-    Refused (nothing done): ``ANTS_MISSING``; ``BAD_ARGS`` (no sections,
-    more than :data:`MAX_ANTS_SYN_SECTIONS`, an image the atlas does not
+    Refused (nothing done): ``ENGINE_MISSING``; ``BAD_ARGS`` (no sections,
+    more than :data:`MAX_FIREANTS_SYN_SECTIONS`, an image the atlas does not
     have, an unknown stiffness, a bad region entry); ``UNKNOWN_SLICE_IDS``;
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
@@ -498,9 +498,9 @@ def ants_syn(
     refs = list(sections or [])
     if not refs:
         raise Refused("BAD_ARGS", message="Name the sections to fit.")
-    if len(refs) > MAX_ANTS_SYN_SECTIONS:
-        raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_ANTS_SYN_SECTIONS} "
-                      "sections.", max_sections=MAX_ANTS_SYN_SECTIONS)
+    if len(refs) > MAX_FIREANTS_SYN_SECTIONS:
+        raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_FIREANTS_SYN_SECTIONS} "
+                      "sections.", max_sections=MAX_FIREANTS_SYN_SECTIONS)
     kind = str(atlas_image or "template").strip()
     offered = atlas_images(workspace.atlas)
     if kind not in offered:
@@ -509,7 +509,7 @@ def ants_syn(
     level = str(stiffness or "medium").strip().lower()
     if level not in STIFFNESSES:
         raise Refused("BAD_ARGS", message=f"stiffness is one of {list(STIFFNESSES)}.")
-    refuse_without_ants()
+    refuse_without_engine()
     regions = region_entries(workspace, job.state, restrict_to)
     records: list[SliceState] = []
     unknown: list[str] = []

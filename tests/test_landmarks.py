@@ -269,13 +269,13 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record, delta=(1., .5)))
         landmarks.landmark_triangulation(job, ws, record.id)
         baseline = copy.deepcopy(job.deformations.current(job.state, record))
-        baseline.engine["name"] = "ants"
+        baseline.engine["name"] = "fireants"
         baseline_key = "other-method-baseline"
         job.deformations.put(baseline_key, baseline)
         folder = job.deformations.save(record.id, baseline_key, baseline)
         baseline_ref = {"key": baseline_key, "record": job.layout.relative(folder),
                         "linear_key": deformation.linear_key(job.state, record),
-                        "steps": [{"method": "ants_syn"}]}
+                        "steps": [{"method": "fireants_syn"}]}
         before = job.snapshot()
         record.deformation = copy.deepcopy(baseline_ref)
         job.commit(before)
@@ -302,7 +302,7 @@ def test_replacing_landmarks_preserves_nonzero_baseline_and_intervening_method(t
         np.testing.assert_array_equal(reduced.parent.field_mm, baseline.field_mm)
         assert record.deformation["landmark_baseline_key"] == baseline_key
         assert [step["method"] for step in record.deformation["steps"]] == [
-            "ants_syn", "landmark_triangulation"]
+            "fireants_syn", "landmark_triangulation"]
         # The remaining complete set applied fresh to the same original baseline
         # must produce exactly the same field, without influence from L4.
         before = job.snapshot()

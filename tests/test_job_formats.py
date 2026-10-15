@@ -36,7 +36,7 @@ from tests.synthetic_stack import (
 
 
 def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) -> Any:
-    """``ops.deformable.fit_deformable`` with one ANTs setting, applied, its
+    """``ops.deformable.fit_deformable`` with one FireANTs setting, applied, its
     pictures (a deformable-fit picture, with the residual layer) saved as a
     door saves a tool's pictures (``Job.views.shown``), under the tool whose
     landing draws them: ``trace_borders``."""

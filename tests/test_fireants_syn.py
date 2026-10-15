@@ -1,4 +1,4 @@
-"""``ops.deformable.ants_syn``: one choice, applied, always building on the
+"""``ops.deformable.fireants_syn``: one choice, applied, always building on the
 section's current deformation; and its refusals."""
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from langslice.ops import deformable as ops_deformable
 from langslice.ops.refusal import Refused
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
-pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
+pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
 
 ID = "s0.png"
 
@@ -47,7 +47,7 @@ def _job(folder: Path, atlas: SyntheticAtlas) -> tuple[Job, Any]:
 def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     job, ctx = _job(tmp_path, atlas)
     depth = len(job.undo_stack)
-    first = ops_deformable.ants_syn(job, ctx, [ID])
+    first = ops_deformable.fireants_syn(job, ctx, [ID])
     (row,) = first.rows
     assert row["status"] == "ok" and row["written"]
     assert row["settings"] == {"stiffness": "medium", "fit_section": "fit",
@@ -56,7 +56,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     held = job.state.slices[0].deformation
     assert held is not None and [step["start"] for step in held["steps"]] == ["linear"]
 
-    second = ops_deformable.ants_syn(job, ctx, ["s0.png"], stiffness="soft", restrict_to=["TH"])
+    second = ops_deformable.fireants_syn(job, ctx, ["s0.png"], stiffness="soft", restrict_to=["TH"])
     assert second.rows[0]["status"] == "ok", second.rows
     held = job.state.slices[0].deformation
     assert held is not None
@@ -70,7 +70,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
 def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
     job, ctx = _job(tmp_path, atlas)
     job.state.slices[0].damaged_regions = ["HY"]
-    done = ops_deformable.ants_syn(job, ctx, [ID])
+    done = ops_deformable.fireants_syn(job, ctx, [ID])
     assert done.rows[0]["status"] == "ok"
     step = job.state.slices[0].deformation["steps"][0]  # type: ignore[index]
     assert step["exclude"] == ["HY"]
@@ -91,15 +91,16 @@ def test_refusals_write_nothing(tmp_path: Path, atlas, kwargs, code):
     depth = len(job.undo_stack)
     sections = kwargs.pop("sections")
     with pytest.raises(Refused) as refused:
-        ops_deformable.ants_syn(job, ctx, sections, **kwargs)
+        ops_deformable.fireants_syn(job, ctx, sections, **kwargs)
     assert refused.value.code == code
     assert len(job.undo_stack) == depth and job.state.slices[0].deformation is None
 
 
-def test_without_ants_it_refuses(tmp_path: Path, atlas, monkeypatch):
+def test_without_engine_it_refuses(tmp_path: Path, atlas, monkeypatch):
     job, ctx = _job(tmp_path, atlas)
     monkeypatch.setattr(deformation, "engine_available", lambda: False)
     with pytest.raises(Refused) as refused:
-        ops_deformable.ants_syn(job, ctx, [ID])
-    assert refused.value.code == "ANTS_MISSING"
-    assert "antspyx" in refused.value.payload()["message"]
+        ops_deformable.fireants_syn(job, ctx, [ID])
+    assert refused.value.code == "ENGINE_MISSING"
+    message = refused.value.payload()["message"]
+    assert "torch" in message and "fireants" in message

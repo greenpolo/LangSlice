@@ -119,7 +119,7 @@ def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
     """Fit one deformation with FireANTs' SyN. Raises when FireANTs is not
     installed or fails, and for any other engine (Elastix fits affines only:
     :func:`run_elastix_affine`)."""
-    if settings.engine != "ants":
+    if settings.engine != "fireants":
         raise ValueError(f"No deformable fit with {settings.engine!r}: the deformable "
                          "engine is SyN (FireANTs)")
     return _run_fireants(inputs, settings, settings.metric)

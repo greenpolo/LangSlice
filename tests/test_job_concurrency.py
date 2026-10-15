@@ -5,7 +5,7 @@ others saved first (``Job.writing``); a long fit computes outside the lock
 and, when it applies, refuses a section whose inputs changed meanwhile
 (``STALE_INPUT``) while the others apply. Here an "agent" (a second job on
 the folder, through the library) writes while a CLI fit computes
-(``ants_syn``, ``elastix_affine``: long verbs), and several CLI processes
+(``fireants_syn``, ``elastix_affine``: long verbs), and several CLI processes
 write at once.
 """
 
@@ -96,20 +96,20 @@ def during(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, write: Any) 
     monkeypatch.setattr(module, name, wrapped)
 
 
-def _needs_ants() -> None:
+def _needs_engine() -> None:
     from langslice.ops.deformable import engine_ready
 
     if not engine_ready():
-        pytest.skip("ants_syn needs antspyx")
+        pytest.skip("fireants_syn needs FireANTs")
 
 
 def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatch):
-    _needs_ants()
+    _needs_engine()
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.position_sections(sections=[{"id": ID2, "position_mm": 0.2}],
                                            view=False))
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections", ID0,
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", ID0,
                          "--view", "false")
     assert code == 0, envelope
     assert envelope["result"]["results"][0]["written"] is True
@@ -124,12 +124,12 @@ def test_an_agent_write_while_a_fit_computes_survives(capsys, images, monkeypatc
 
 def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
         capsys, images, monkeypatch):
-    _needs_ants()
+    _needs_engine()
     agent = langslice.open_job(images)
     during(monkeypatch, deformation, "run_jobs",
            lambda: agent.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
                                            view=False))
-    code, envelope = cli(capsys, str(images), "ants_syn", "--sections",
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections",
                          json.dumps([ID0, ID1]), "--view", "false")
     assert code == 0, envelope
     rows = {row["id"]: row for row in envelope["result"]["results"]}

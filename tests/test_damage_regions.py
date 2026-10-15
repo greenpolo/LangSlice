@@ -135,9 +135,9 @@ def test_a_users_damage_note_is_a_note_alone_and_stays_first(tmp_path: Path):
 
 # --- every fit path leaves the marked regions out -------------------------------------
 # elastix_affine: tests/test_ops_interactive_transform.py (the regions it is
-# handed) and tests/test_linear_fit_affine_elastix.py (a real fit); ants_syn and
+# handed) and tests/test_linear_fit_affine_elastix.py (a real fit); fireants_syn and
 # the trace's SyN fit: tests/test_linear_fit_deformable.py (the engine's
-# settings) and tests/test_ants_syn.py (the recorded step); the image model's
+# settings) and tests/test_fireants_syn.py (the recorded step); the image model's
 # trace: below.
 
 
@@ -153,7 +153,7 @@ def test_the_image_model_trace_leaves_the_marked_regions_out(tmp_path: Path, mon
 
     monkeypatch.setattr(registration_tool, "start_correction", spy)
     monkeypatch.setattr(traces.handoff, "correction_fingerprint", lambda *_a: "fp")
-    monkeypatch.setattr(deformable, "refuse_without_ants", lambda: None)
+    monkeypatch.setattr(deformable, "refuse_without_engine", lambda: None)
     state, ctx, box = _box(tmp_path)
     # The trace alone: no fit lands in the background here.
     monkeypatch.setattr(box.job.background, "start",
