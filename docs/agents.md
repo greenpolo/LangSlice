@@ -66,7 +66,7 @@ snake_case are accepted. `grep_atlas` returns its rows by default.
 Long calls can run detached:
 
 ```bash
-langslice-job sections/ ants_syn --sections s01.tif --background
+langslice-job sections/ fireants_syn --sections s01.tif --background
 langslice-job sections/ runs
 langslice-job sections/ wait --timeout 600
 ```

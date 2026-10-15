@@ -10,7 +10,7 @@ product name. Canonical names:
   only; transport in ``providers/anthropic_api.py``).
 - ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login
   (``langslice login``; transport lives in ``providers/openai_oauth.py``).
-- ``none``: no image model; ANTs fits to the stain directly. There is
+- ``none``: no image model; FireANTs fits to the stain directly. There is
   nothing to authenticate for tracing, so it needs no transport module.
 
 A new provider gets its canonical name in the provider-free table

@@ -201,7 +201,7 @@ def test_a_new_job_from_a_jobs_export(capsys, images, atlas, tmp_path, export):
                     "--registration", str(copy))
     result = envelope["result"]
     assert result["tasks"] == ["nonlinear"]
-    assert {"trace_borders", "ants_syn"} <= set(result["verbs"])
+    assert {"trace_borders", "fireants_syn"} <= set(result["verbs"])
     assert "elastix_affine" not in result["verbs"]  # the imported placement is kept
     imported = result["registration"]
     assert imported["format"] == ("quicknii-json" if export == "quicknii"

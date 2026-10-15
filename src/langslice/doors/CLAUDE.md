@@ -201,7 +201,7 @@ the CLI is a process per call.
   `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
   `mark_damage`, `note`, `undo`, `redo`, `submit`; `fitting.py`:
-  `elastix_affine`, `ants_syn`, `trace_borders`,
+  `elastix_affine`, `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
   force it; `interactive_transform` and `elastix_affine` drop the
@@ -328,7 +328,7 @@ the CLI is a process per call.
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`). `CHECKED_ONLY`:
-    `trace_borders`, `elastix_affine` and `ants_syn`
+    `trace_borders`, `elastix_affine` and `fireants_syn`
     are checked, not run, by `--dry-run`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
@@ -346,7 +346,7 @@ one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job
 folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
-`elastix_affine`, `ants_syn`, `trace_borders`,
+`elastix_affine`, `fireants_syn`, `trace_borders`,
 `export_maps`), which compute outside it and take it to apply, refusing a
 section whose inputs changed (`ops.inputs`, `STALE_INPUT`); the lock timing
 out is `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write

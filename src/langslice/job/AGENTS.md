@@ -317,9 +317,9 @@ longer exist be taken over by the images it is opened with.
   exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
   number and id, arguments, `caption`, `step`, `recipe`, sections, mode, picture size and bytes, `frame`)
-  and, for a placement picture or an `ants_syn` picture (its note's
+  and, for a placement picture or an `fireants_syn` picture (its note's
   `warp`, `core.layers.warp_layers`), `labels.tif` (uint32, zlib) and
-  `borders.png` (8-bit coverage), plus `residual.tif` for an `ants_syn`
+  `borders.png` (8-bit coverage), plus `residual.tif` for an `fireants_syn`
   picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`, and `caption`, `step`,

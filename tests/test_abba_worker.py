@@ -326,12 +326,12 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     from langslice.core.thin_plate import ThinPlateKernel
     from tests.synthetic_stack import ID0, ID1
 
-    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, prepared = warped
     # A SyN field varies on a finer scale than the 33x33 landmark cap
     # follows, so the pairs approximate it with an error the row reports; the
     # conversion's own exactness on a smooth field is test_abba_warp's.
-    assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+    assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     row = _row(events[-1], ID0)
     warp = row["warp"]
@@ -372,10 +372,10 @@ def test_a_warp_that_cannot_be_converted_is_sent_as_an_error_row(warped, monkeyp
     next checkpoint tries again."""
     from tests.synthetic_stack import ID0
 
-    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, _prepared = warped
     if job.state.by_id(ID0).deformation is None:
-        assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+        assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
         tracker(job.state)
     record = job.state.by_id(ID0)
     key = str(record.deformation["key"])
@@ -398,9 +398,9 @@ def test_a_moved_placement_removes_the_warp_step(warped):
     """A moved placement sends ABBA no warp for the section."""
     from tests.synthetic_stack import ID0
 
-    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     job, tracker, events, _prepared = warped
-    assert job.ants_syn(sections=[ID0], view=False)["status"] == "ok"
+    assert job.fireants_syn(sections=[ID0], view=False)["status"] == "ok"
     tracker(job.state)
     assert _row(events[-1], ID0)["warp"] is not None
     assert job.position_sections(sections=[{"id": ID0, "position_mm": 0.11}],
@@ -410,7 +410,7 @@ def test_a_moved_placement_removes_the_warp_step(warped):
     assert moved["position_mm"] == pytest.approx(0.11) and moved["warp"] is None
 
 
-def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monkeypatch):
+def test_a_section_keeping_the_users_warp_is_refused_by_fireants_syn(tmp_path, monkeypatch):
     import dataclasses
 
     import langslice
@@ -424,7 +424,7 @@ def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monke
         write_sections,
     )
 
-    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     folder = tmp_path / "stack"
     write_sections(folder)
@@ -436,7 +436,7 @@ def test_a_section_keeping_the_users_warp_is_refused_by_ants_syn(tmp_path, monke
     try:
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
-        result = job.ants_syn(sections=[ID0], view=False)
+        result = job.fireants_syn(sections=[ID0], view=False)
         assert "FROZEN" in json.dumps(result)
         assert job.state.by_id(ID0).deformation is None
     finally:
@@ -475,7 +475,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
                         "positions_mm": {"a.tif": 4.0},
                         "spec": {"frozen": {"b.tif": ["deformation"]}}})
 
-    pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
+    pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     folder = tmp_path / "stack"
     write_sections(folder)
@@ -487,7 +487,7 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
     try:
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
-        assert "FROZEN" in json.dumps(job.ants_syn(sections=[ID0], view=False))
+        assert "FROZEN" in json.dumps(job.fireants_syn(sections=[ID0], view=False))
         assert job.job.frozen_refusal([ID0], "deformation")["error"] == "FROZEN"
     finally:
         job.close()

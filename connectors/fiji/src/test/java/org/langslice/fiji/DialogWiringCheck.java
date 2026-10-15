@@ -19,7 +19,7 @@ public final class DialogWiringCheck {
             + "{\"name\":\"mark_damage\",\"group\":\"Common\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]},"
             + "{\"name\":\"interactive_transform\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[\"flip\"],\"needs\":[[\"look:overlay\"]]},"
             + "{\"name\":\"elastix_affine\",\"group\":\"Linear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]},"
-            + "{\"name\":\"ants_syn\",\"group\":\"Nonlinear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]}]";
+            + "{\"name\":\"fireants_syn\",\"group\":\"Nonlinear\",\"kind\":\"write\",\"disableable\":true,\"options\":[],\"needs\":[]}]";
 
     static JsonObject status() {
         String text = "{\"providers\":{\"openai-oauth\":{\"configured\":true,\"agent_models\":[\"openai-oauth/gpt-6-sol\"],"
@@ -60,7 +60,7 @@ public final class DialogWiringCheck {
         Map<String, JCheckBox> mirrors = field(d, "mirrors"), boxes = field(d, "toolBoxes");
         require(d.advanced.isVisible() && !d.advancedPanel.isVisible(), "Advanced toggle shown, panel collapsed");
         require(mirrors.keySet().equals(new HashSet<>(Arrays.asList("mark_damage", "elastix_affine", "interactive_transform:flip"))), "Mirrors: " + mirrors.keySet());
-        require(boxes.keySet().equals(new HashSet<>(Arrays.asList("zoom", "ants_syn", "look:section", "look:atlas", "interactive_transform"))), "Catalog boxes: " + boxes.keySet());
+        require(boxes.keySet().equals(new HashSet<>(Arrays.asList("zoom", "fireants_syn", "look:section", "look:atlas", "interactive_transform"))), "Catalog boxes: " + boxes.keySet());
         require(d.read().spec().getAsJsonArray("disabled").size() == 0, "Nothing off by default");
         // 2. Simple box drives its mirror; the mirror drives the simple box.
         d.agentDamage.doClick();
@@ -73,10 +73,10 @@ public final class DialogWiringCheck {
         d.affine.doClick();
         // 3. A catalog checkbox lands in disabled; the flip mirror too.
         boxes.get("zoom").doClick();
-        boxes.get("ants_syn").doClick();
+        boxes.get("fireants_syn").doClick();
         d.flip.doClick();
         JsonArray names = d.read().spec().getAsJsonArray("disabled");
-        require(names.toString().equals("[\"interactive_transform:flip\",\"zoom\",\"ants_syn\"]"), "Disabled: " + names);
+        require(names.toString().equals("[\"interactive_transform:flip\",\"zoom\",\"fireants_syn\"]"), "Disabled: " + names);
         require(!d.read().spec().has("agent_damage") && !d.read().spec().getAsJsonObject("transform").has("flip"), "Old keys absent from the spec");
         // 4. Save and reopen: the Advanced choices come back.
         java.util.prefs.Preferences node = java.util.prefs.Preferences.userRoot().node("dialogcheck-" + System.nanoTime());
@@ -85,11 +85,11 @@ public final class DialogWiringCheck {
         RegistrationSettings back = RegistrationSettings.load(node, ConnectorSmokeTest.SPEC_DEFAULTS);
         RegistrationDialog again = dialog(status(), back);
         Map<String, JCheckBox> againBoxes = field(again, "toolBoxes");
-        require(!againBoxes.get("zoom").isSelected() && !againBoxes.get("ants_syn").isSelected() && againBoxes.get("look:section").isSelected(),
+        require(!againBoxes.get("zoom").isSelected() && !againBoxes.get("fireants_syn").isSelected() && againBoxes.get("look:section").isSelected(),
                 "Advanced checkboxes restored from settings");
         require(!again.flip.isSelected() && field(again, "mirrors").get("interactive_transform:flip").isSelected() == false,
                 "Flip restored, and its mirror follows");
-        require(again.read().spec().getAsJsonArray("disabled").toString().equals("[\"interactive_transform:flip\",\"zoom\",\"ants_syn\"]"), "Restored disabled list");
+        require(again.read().spec().getAsJsonArray("disabled").toString().equals("[\"interactive_transform:flip\",\"zoom\",\"fireants_syn\"]"), "Restored disabled list");
         node.removeNode();
     }
 }

@@ -133,7 +133,7 @@ def test_create_job_from_a_folder(images):
         assert job.job.spec.tasks == ["nonlinear"]  # every section has a transform
         assert job.job.spec.nonlinear.provider == "none"
         assert "trace_borders" not in job.verbs and "elastix_affine" not in job.verbs
-        assert "ants_syn" in job.verbs
+        assert "fireants_syn" in job.verbs
         record = job.state.by_id(ID0)
         assert record.position_mm == POSITIONS[ID0]
         assert record.transform == {"kind": "interactive", "params": TRANSFORMS[ID0],
@@ -144,11 +144,11 @@ def test_create_job_from_a_folder(images):
         assert Path(job.folder) == elsewhere
         assert job.job.spec.tasks == ["transform", "nonlinear"]
         assert job.job.spec.nonlinear.provider == "custom"
-        assert {"elastix_affine", "trace_borders", "ants_syn"} <= set(job.verbs)
+        assert {"elastix_affine", "trace_borders", "fireants_syn"} <= set(job.verbs)
     record = json.loads((elsewhere / "job.json").read_text())["image_model"]
     assert record["provider"] == "custom" and record["tested"] is False
     with langslice.open_job(elsewhere) as job:  # a model of one's own is never resolved
-        assert "trace_borders" not in job.verbs and "ants_syn" in job.verbs
+        assert "trace_borders" not in job.verbs and "fireants_syn" in job.verbs
     with pytest.raises(ValueError, match="Unknown job setting"):
         langslice.create_job(images, no_such_setting=1)
     # A profile not tested with LangSlice reopens without traces until a model is given.

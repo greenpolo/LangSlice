@@ -210,7 +210,7 @@ def test_open_job_refuses_a_nonlinear_task_with_no_tool_left_to_write_it(tmp_pat
 
     spec = JobSpec(image_folder=str(_folder(tmp_path)), preprocess="none",
                    tasks=["nonlinear"],
-                   disabled=["ants_syn", "set_landmarks", "landmark_triangulation"],
+                   disabled=["fireants_syn", "set_landmarks", "landmark_triangulation"],
                    nonlinear=NonlinearSpec(provider="openai-api"))
     # Valid with the image model; the door that cannot reach it has no writer.
     with pytest.raises(ValueError, match="image model is not connected"):

@@ -505,7 +505,7 @@ takes a `view.json` (record or path) and returns the `(rows, cols, 3)`
 float32 map on demand, NaN in the caption band. The labels layer is what
 that map reads in the atlas annotation, up to ties at exact half voxels.
 
-A deformation-fit picture (`ants_syn`, a landed trace) gets the same layers on its own
+A deformation-fit picture (`fireants_syn`, a landed trace) gets the same layers on its own
 grid through `warp_layers(atlas, note, size)`: labels through the record's
 composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
@@ -524,7 +524,7 @@ extra=, recipe=, caption=)`; `note_for` finds a picture's note by
 identity; `annotate(image, recipe=, caption=)` sets fields on the note a
 renderer already made for that image (its frame and panel kept). `draw_canvas`
 and the `look` renderers note theirs; `ops.deformable.pictures` notes
-the deformation fits (`ants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
+the deformation fits (`fireants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door
 the pictures it labels itself (`set_preprocessed_channel_properties`'

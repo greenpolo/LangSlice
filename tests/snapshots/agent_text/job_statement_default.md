@@ -17,7 +17,7 @@ Run facts:
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
 - Atlas layers on this host: template, borders.
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `elastix_affine`, `ants_syn`, `set_landmarks`, `landmark_triangulation`, `trace_borders`, `note`, `undo`, `redo`, `submit`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `trace_borders`, `note`, `undo`, `redo`, `submit`.
 
 Constraints:
 - `submit` is refused unless every section has a position of its own, damaged sections included.
@@ -36,7 +36,7 @@ Method:
 - Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
 - Before fitting a damaged section, mark the regions it has lost with `mark_damage`, so that every region it still has drives its fits.
-- Run each fit on the whole section first, then refine regions. Inspect each fit's borders against the section's internal anatomy and, where traced, its traced borders; undo a fit that does not improve the alignment and fit that section again with different `ants_syn` settings, such as another stiffness or another atlas image.
+- Run each fit on the whole section first, then refine regions. Inspect each fit's borders against the section's internal anatomy and, where traced, its traced borders; undo a fit that does not improve the alignment and fit that section again with different `fireants_syn` settings, such as another stiffness or another atlas image.
 
 Work with the tools, then call `submit`.
 

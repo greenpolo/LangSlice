@@ -132,11 +132,11 @@ under `views/` (several sections) or `sections/<name>/views/` (one;
 `job/views.py`), holding `view.jpg` (the bytes the model got) and `view.json`
 (tool, arguments, caption, history step, and the recipe `zoom` redraws it
 from), and listed in `views.jsonl`. A
-placement picture and an `ants_syn` picture carry
+placement picture and an `fireants_syn` picture carry
 `labels.tif` (the atlas id under every pixel below the caption, no tissue
 rule), `borders.png` and a frame in `view.json`.
 `langslice.coordinate_map(".../view.json")` gives every pixel's atlas
-micrometres. An `ants_syn` picture showing its deformation adds
+micrometres. An `fireants_syn` picture showing its deformation adds
 `residual.tif` (float32, `(2, rows, cols)`, `(d_row, d_col)` in picture
 pixels, zero in the caption band); its frame's `residual` names it, and
 `coordinate_map` applies it.

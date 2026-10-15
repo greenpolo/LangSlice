@@ -23,7 +23,7 @@ from tests.deformable_synthetic import SyntheticAtlas
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
-needs_ants = pytest.mark.skipif(not deformation.engine_available(), reason="needs antspyx")
+needs_engine = pytest.mark.skipif(not deformation.engine_available(), reason="needs FireANTs")
 
 
 def _stack(folder: Path, n: int = 5, *, placed: bool = True, atlas: Any = None,
@@ -223,7 +223,7 @@ class _NeverCalled:
         raise AssertionError("the image model was called")
 
 
-@needs_ants
+@needs_engine
 def test_sections_with_a_frozen_deformation_are_refused(tmp_path: Path):
     code = "FROZEN"
     state, _spec, tools = _stack(
@@ -234,7 +234,7 @@ def test_sections_with_a_frozen_deformation_are_refused(tmp_path: Path):
                 "transforms": {"s0.png": {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]},
                                "s1.png": {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]}}},
     )
-    fitted = tools["ants_syn"](["s0.png"])
+    fitted = tools["fireants_syn"](["s0.png"])
     assert fitted["status"] == "error" and fitted["error"] == "NOTHING_FITTED"
     assert fitted["results"][0]["id"] == "s0.png"
     assert fitted["results"][0]["error"] == code

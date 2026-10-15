@@ -13,7 +13,7 @@ The stack agent's optional `nonlinear` task uses a supplied linear placement via
 placed-border correction with the agent's edited copy of the base prompt
 (blank = base), one retained reply per geometry, raw and extracted images
 returned separately, no atlas search or rejection. The fit of the extracted
-lines is the traced ANTs fit (`ops.traces.land_trace`), in `core/deformation.py` and the
+lines is the traced FireANTs fit (`ops.traces.land_trace`), in `core/deformation.py` and the
 `core/deformable/` package. The prompt sentence review is below.
 
 One border-based route, which needs a written linear placement. No model

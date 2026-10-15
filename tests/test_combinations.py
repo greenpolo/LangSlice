@@ -237,7 +237,7 @@ COMMON = {"look", "zoom", "set_channel_properties", "set_preprocessed_channel_pr
           "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
           "read_file", "mark_damage", "note", "undo", "redo", "submit"}
 LINEAR = {"interactive_transform", "elastix_affine"}
-NONLINEAR = {"ants_syn", "set_landmarks", "landmark_triangulation"}
+NONLINEAR = {"fireants_syn", "set_landmarks", "landmark_triangulation"}
 
 
 @pytest.mark.parametrize(("tasks", "provider", "extra"), [
@@ -412,7 +412,7 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         for name in (ID0, ID1):  # started in the background; submit waits for them
             started = job.trace_borders(section=name)
             assert started["status"] == "started" and started["work"], started
-        fit = job.ants_syn(sections=[ID2])
+        fit = job.fireants_syn(sections=[ID2])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
@@ -432,7 +432,7 @@ def test_5_nonlinear_without_an_image_model_through_the_library(images):
     create(spec_for(images, ["nonlinear"], **external_inputs()))
     with langslice.open_job(images) as job:
         assert "trace_borders" not in job.verbs
-        fit = job.ants_syn(sections=[ID0])
+        fit = job.fireants_syn(sections=[ID0])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
@@ -450,7 +450,7 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
 
     create(spec_for(images, ["nonlinear"], positions=dict(POSITIONS)))
     with langslice.open_job(images) as job:
-        fit = job.ants_syn(sections=[ID0])
+        fit = job.fireants_syn(sections=[ID0])
         assert fit["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT", fit
         # The refusal says what to do: supply transforms, or switch Linear on.
         message = fit["results"][0]["message"]
@@ -480,7 +480,7 @@ def test_6_external_registration_then_nonlinear_through_the_library(images):
         status = job.status()
         assert [work["id"] for work in status.get("background_running", [])] in (
             [started["work"]], [])  # it may land before status reads it
-        fit = job.ants_syn(sections=[ID1])
+        fit = job.fireants_syn(sections=[ID1])
         assert fit["status"] == "ok" and fit["results"][0]["written"] is True, fit
         submitted = job.submit(summary="done", notes=[], interval_breaks=[])
         assert submitted["status"] == "ok", submitted
@@ -678,12 +678,12 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
                                   **external_inputs()))
     listed, statement = _mcp_listing_and_statement(server)
     names = set(listed)
-    assert {"grep_atlas", "ants_syn", "look"} <= names
+    assert {"grep_atlas", "fireants_syn", "look"} <= names
     assert ("trace_borders" in names) is linked
     assert (IMAGE_MODEL_OFF in statement) is not linked
     if not linked:
         replies = _mcp(server, [
-            ("ants_syn", {"sections": [ID0]}),
+            ("fireants_syn", {"sections": [ID0]}),
             ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
         ])
         assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
@@ -747,7 +747,7 @@ def test_7_the_agent_with_every_task_and_no_image_model(images, monkeypatch):
     install_script(monkeypatch, [
         ("position_sections", {"sections": _sections(POSITIONS)}),
         ("interactive_transform", {"sections": [{"id": name, **IDENTITY} for name in IDS]}),
-        ("ants_syn", {"sections": [ID0]}),
+        ("fireants_syn", {"sections": [ID0]}),
         ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
     ])
     state = run_agent(spec_for(images, ["position", "transform", "nonlinear"]))

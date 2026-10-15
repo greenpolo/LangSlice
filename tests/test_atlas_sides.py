@@ -172,7 +172,7 @@ def test_one_sided_highlights_and_marks_are_drawn_on_that_side(atlas):
     pytest.importorskip("fireants", reason="the deformable fit needs FireANTs")
     image, _ = render_section(atlas, SMOOTH_FIELD())
     record = fit_section(image, atlas, placement(),
-                         FitSettings(engine="ants", detail="coarse", exclude=("CTX:left",)))
+                         FitSettings(engine="fireants", detail="coarse", exclude=("CTX:left",)))
     pink = np.asarray(draw_warped_borders(image, record, atlas, marked=["CTX:left"]))
     marked = (pink[..., 0] > 200) & (pink[..., 1] < 140)
     # Native column 80 sits at section x = 2 * 80 + 10 = 170.

@@ -261,9 +261,7 @@ def test_the_recipe_refuses_bad_settings_before_writing(tmp_path: Path):
     assert state.appearance == {} and not box.job.undo_stack
 
 
-@pytest.mark.slow
-def test_ants_steps_run_when_the_extra_is_installed(tmp_path: Path):
-    pytest.importorskip("ants")
+def test_n4_and_denoise_run(tmp_path: Path):
     state, _, box = _rgb(tmp_path)
     result = _tool(box, "set_preprocessed_channel_properties")(
         sections=["s0.png"], n4=True, denoise=True)

@@ -369,7 +369,7 @@ def prepare_fit(
         edge_weight=EDGE_CHANNEL_WEIGHT if fixed_edges is not None else 0.0,
         correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM / 1000.0 / spacing)),
     )
-    whole_stain = (settings.engine == "ants" and settings.section_image == "stain"
+    whole_stain = (settings.engine == "fireants" and settings.section_image == "stain"
                    and not settings.structures)
     if whole_stain:
         details["section_mask"] = "em"

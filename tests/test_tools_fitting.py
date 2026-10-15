@@ -1,10 +1,10 @@
-"""The fit tools through the tool door: elastix_affine, ants_syn and the
+"""The fit tools through the tool door: elastix_affine, fireants_syn and the
 packaged trace_borders (a stand-in image model), with their refusals, their
 background notices and the stale-deformation sweep.
 
 The atlas is the deformable tests' synthetic one (50 um voxels, a section
-rendered from it at 25 um/px): real enough for Elastix and ANTs to fit, and
-the shape the Elastix tests use. ANTs cases skip without antspyx.
+rendered from it at 25 um/px): real enough for Elastix and FireANTs to fit, and
+the shape the Elastix tests use. FireANTs cases skip without torch and fireants.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, bump_field,
 from tests.linear_tool_helpers import ToolContext
 from tests.linear_tool_helpers import tool_named as _tool
 
-needs_ants = pytest.mark.skipif(not deformation.engine_available(), reason="needs antspyx")
+needs_engine = pytest.mark.skipif(not deformation.engine_available(), reason="needs FireANTs")
 IDENTITY = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             "calibration": {"section_um_per_px": 25.0, "source": "host"}}
 
@@ -131,13 +131,13 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert state.slices[0].transform is None
 
 
-# --- ants_syn --------------------------------------------------------------------------
+# --- fireants_syn --------------------------------------------------------------------------
 
 
-@needs_ants
-def test_ants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: Path, atlas):
+@needs_engine
+def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: Path, atlas):
     state, _, box, _ = _run(tmp_path, atlas, n=2, transformed=True)
-    fit = _tool(box, "ants_syn")
+    fit = _tool(box, "fireants_syn")
     result = fit(["s1.png"])
     assert result["status"] == "ok", result
     (row,) = result["results"]
@@ -148,7 +148,7 @@ def test_ants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: Path
     assert "s1.png overlay" in picture["caption"] and "deformation drawn" in picture["caption"]
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
     saved = box.job.views.lookup(picture["id"])
-    assert saved is not None and saved.tool == "ants_syn"
+    assert saved is not None and saved.tool == "fireants_syn"
     # The next fit composes onto it; view=False draws nothing.
     again = fit(["s1.png"], ["TH"], view=False)
     assert again["results"][0]["steps"] == 2
@@ -181,10 +181,10 @@ def test_submit_needs_no_deformation_in_a_nonlinear_run(tmp_path: Path, atlas):
 
 def test_trace_borders_comes_only_with_an_image_model(tmp_path: Path, atlas):
     _, _, box, _ = _run(tmp_path, atlas, transformed=True)
-    assert "trace_borders" not in box.names and "ants_syn" in box.names
+    assert "trace_borders" not in box.names and "fireants_syn" in box.names
 
 
-@needs_ants
+@needs_engine
 def test_trace_borders_starts_background_work_and_its_notice_opens_a_later_reply(
     tmp_path: Path, atlas,
 ):

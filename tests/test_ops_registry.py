@@ -52,7 +52,8 @@ def test_the_tools_a_model_is_offered():
         "look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
         "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files", "read_file",
         "position_sections", "interactive_transform", "mark_damage",
-        "elastix_affine", "ants_syn", "set_landmarks", "landmark_triangulation", "trace_borders",
+        "elastix_affine", "fireants_syn", "set_landmarks", "landmark_triangulation",
+        "trace_borders",
         "note", "undo", "redo", "submit",
     ]
 
@@ -91,13 +92,13 @@ def test_the_gating_table(folder: Path):
         tasks=["transform"], disabled=["interactive_transform"])
     assert "elastix_affine" not in has(tasks=["transform"], disabled=["elastix_affine"])
     assert not {"interactive_transform", "elastix_affine"} & has(tasks=["position"])
-    # Nonlinear: ants_syn; trace_borders only with an image model.
-    assert {"ants_syn", "trace_borders"} <= has(tasks=["nonlinear"])
+    # Nonlinear: fireants_syn; trace_borders only with an image model.
+    assert {"fireants_syn", "trace_borders"} <= has(tasks=["nonlinear"])
     assert "trace_borders" not in has(tasks=["nonlinear"],
                                       nonlinear=NonlinearSpec(provider="none"))
     assert "trace_borders" not in set(enabled(_spec(folder, tasks=["nonlinear"]),
                                               image_model=False))
-    assert not {"ants_syn", "trace_borders"} & has(tasks=["position", "transform"])
+    assert not {"fireants_syn", "trace_borders"} & has(tasks=["position", "transform"])
     # Damage marking is a host switch.
     assert "mark_damage" in has(tasks=["position"])
     assert "mark_damage" not in has(tasks=["position"], disabled=["mark_damage"])
@@ -113,4 +114,4 @@ def test_every_operation_is_an_op_and_classified():
              "search_files", "read_file", "export_maps"}
     assert {name for name, verb in VERBS.items() if verb.kind == "read"} == reads
     assert {name for name, verb in VERBS.items() if verb.long} == {
-        "elastix_affine", "ants_syn", "trace_borders", "export_maps"}
+        "elastix_affine", "fireants_syn", "trace_borders", "export_maps"}

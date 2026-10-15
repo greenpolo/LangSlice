@@ -46,7 +46,7 @@ needs_engine = pytest.mark.skipif(not HAVE_ENGINE, reason="FireANTs missing")
 
 
 def _settings(**options) -> FitSettings:
-    return FitSettings(**{"engine": "ants", **options})
+    return FitSettings(**{"engine": "fireants", **options})
 
 
 #: The synthetic sections are flat-intensity regions with no texture, where
@@ -80,7 +80,7 @@ def _errors(record: DeformableRecord, field: np.ndarray, truth: np.ndarray):
 def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped):
     field, image, truth = warped
     record = fit_section(image, atlas, placement(),
-                         FitSettings(engine="ants", detail="coarse", **MI))
+                         FitSettings(engine="fireants", detail="coarse", **MI))
     error, flipped, magnitude = _errors(record, field, truth)
     # atlas point = section point + field: the recovered field matches u, not -u.
     assert error < 0.4 * magnitude
@@ -103,7 +103,7 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped)
 
 @needs_engine
 def test_excluded_region_does_not_drive_the_fit(atlas):
-    engine = "ants"
+    engine = "fireants"
     # Only the thalamus is displaced; everywhere else the placement is right.
     field = bump_field([(226, 132, 16, 0.12, 0.0)])
     image, _ = render_section(atlas, field)
@@ -360,8 +360,8 @@ def test_a_restricted_step_leaves_tissue_beyond_its_taper_unmoved(atlas, warped)
 def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped
     results = fit_prepared([prepare_fit(image, atlas, placement(), settings) for settings in (
-        FitSettings(engine="ants", detail="coarse", **MI),
-        FitSettings(engine="ants", detail="coarse", stiffness="firm", **MI),
+        FitSettings(engine="fireants", detail="coarse", **MI),
+        FitSettings(engine="fireants", detail="coarse", stiffness="firm", **MI),
     )])
     assert len(results) == 2
     for result in results:

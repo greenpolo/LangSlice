@@ -67,7 +67,7 @@ def test_names_are_deduplicated_in_order_and_round_trip():
     _spec(tasks=["transform"], disabled=["elastix_affine"])
     _spec(tasks=["position"], disabled=["look:positioning"])  # overlays stand in
     _spec(tasks=["position"], disabled=["look:overlay"])
-    _spec(tasks=["nonlinear"], disabled=["ants_syn"])
+    _spec(tasks=["nonlinear"], disabled=["fireants_syn"])
 
 
 def test_a_tool_disables_its_options():
@@ -84,18 +84,18 @@ def test_a_tool_disables_its_options():
      "transform task is on and every tool that writes its answer"),
     ({"tasks": ["position"], "disabled": ["position_sections"]},
      "position task is on and every tool that writes its answer"),
-    ({"tasks": ["nonlinear"], "disabled": ["ants_syn", "landmark_triangulation", "set_landmarks",
-                                      "trace_borders"]},
+    ({"tasks": ["nonlinear"], "disabled": ["fireants_syn", "landmark_triangulation",
+                                                 "set_landmarks", "trace_borders"]},
      "nonlinear task is on and every tool that writes its answer"),
     ({"tasks": ["nonlinear"], "nonlinear": NonlinearSpec(provider="none"),
-      "disabled": ["ants_syn", "landmark_triangulation", "set_landmarks"]},
+      "disabled": ["fireants_syn", "landmark_triangulation", "set_landmarks"]},
      "nonlinear task is on and every tool that writes"),
     ({"tasks": ["nonlinear"], "disabled": ["set_landmarks"]},
      "landmark_triangulation is on and needs set_landmarks"),
     ({"tasks": ["nonlinear"], "disabled": ["landmark_triangulation"]},
      "set_landmarks is on and needs landmark_triangulation"),
     ({"tasks": ["nonlinear"], "disabled": ["look:section", "look:overlay"]},
-     "ants_syn is on and needs look:overlay"),
+     "fireants_syn is on and needs look:overlay"),
     ({"disabled": ["look:section", "look:atlas", "look:overlay", "look:positioning"]},
      "every look mode is off"),
     ({"tasks": ["position"], "disabled": ["look:positioning", "look:overlay"]},
@@ -103,7 +103,7 @@ def test_a_tool_disables_its_options():
     ({"tasks": ["transform"], "disabled": ["look:overlay"]},
      "interactive_transform is on and needs look:overlay"),
     ({"tasks": ["nonlinear"], "disabled": ["look:overlay"]},
-     "ants_syn is on and needs look:overlay"),
+     "fireants_syn is on and needs look:overlay"),
 ])
 def test_a_list_that_cannot_work_is_refused_with_one_line(fields: dict[str, Any], message: str):
     with pytest.raises(ValueError, match=message) as refused:
@@ -269,14 +269,14 @@ COMBINATIONS = [
     ["look:atlas", "look:positioning"],
     ["look:atlas", "look:positioning", "look:overlay"],
     ["interactive_transform", "elastix_affine"],
-    ["ants_syn", "trace_borders", "mark_damage"],
+    ["fireants_syn", "trace_borders", "mark_damage"],
     ["grep_atlas", "grep_atlas_view", "mark_damage", "zoom"],
     ["list_files", "search_files", "read_file", "note", "redo"],
     ["position_sections", "set_channel_properties", "set_preprocessed_channel_properties"],
     ["interactive_transform:flip", "interactive_transform"],
-    ["elastix_affine", "ants_syn", "look:positioning"],
+    ["elastix_affine", "fireants_syn", "look:positioning"],
     ["set_landmarks", "landmark_triangulation"],
-    ["set_landmarks", "landmark_triangulation", "ants_syn", "zoom"],
+    ["set_landmarks", "landmark_triangulation", "fireants_syn", "zoom"],
 ]
 
 
@@ -365,7 +365,7 @@ def test_the_landmark_tools_go_off_together_and_leave_no_mention(tmp_path: Path)
     off = _spec(str(folder), tasks=["nonlinear"], nonlinear=NonlinearSpec(provider="none"),
                 disabled=both)
     assert set(both) <= set(enabled(on)) and not set(both) & set(enabled(off))
-    assert "ants_syn" in enabled(off)
+    assert "fireants_syn" in enabled(off)
     for text in _model_texts(folder, off).values():
         assert not re.search(r"set_landmarks|landmark_triangulation|\blandmark pairs?\b", text), (
             text[:200])
