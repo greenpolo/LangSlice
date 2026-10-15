@@ -489,7 +489,7 @@ def fireants_syn(
     picture of what was written (:func:`langslice.ops.look.show_result`).
 
     Refused (nothing done): ``ENGINE_MISSING``; ``BAD_ARGS`` (no sections,
-    more than :data:`MAX_FIREANTS_SYN_SECTIONS`, an image the atlas does not
+    an image the atlas does not
     have, an unknown stiffness, a bad region entry); ``UNKNOWN_SLICE_IDS``;
     ``UNKNOWN_REGIONS``; ``NO_SIDES``.
     """
@@ -498,9 +498,6 @@ def fireants_syn(
     refs = list(sections or [])
     if not refs:
         raise Refused("BAD_ARGS", message="Name the sections to fit.")
-    if len(refs) > MAX_FIREANTS_SYN_SECTIONS:
-        raise Refused("BAD_ARGS", message=f"One call fits at most {MAX_FIREANTS_SYN_SECTIONS} "
-                      "sections.", max_sections=MAX_FIREANTS_SYN_SECTIONS)
     kind = str(atlas_image or "template").strip()
     offered = atlas_images(workspace.atlas)
     if kind not in offered:

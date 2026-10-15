@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterator, Mapping
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.atlas.sides import SideError
 from langslice.core.state import StackState
 from langslice.core.state import unknown_sections as state_unknown_sections
 
@@ -40,6 +42,16 @@ class Refused(ValueError):
 
     def payload(self) -> dict[str, Any]:
         return {"status": self.status, "error": self.code, **self.details}
+
+
+@contextmanager
+def sides_refused() -> Iterator[None]:
+    """Inside the block a :class:`~langslice.core.atlas.sides.SideError` (a side
+    the placement cannot define) becomes the :class:`Refused` of its own code."""
+    try:
+        yield
+    except SideError as exc:
+        raise Refused(exc.code, message=str(exc)) from exc
 
 
 def unknown_sections(state: StackState, refs: Any) -> Refused:

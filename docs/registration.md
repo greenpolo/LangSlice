@@ -204,8 +204,9 @@ from the tissue, so a mirrored placement swaps them. Where the midline runs
 closer to vertical on the picture, the halves are `left` and `right`; where it
 runs closer to horizontal, as on a horizontal section shown with the
 anterior-posterior axis across, they are `top` and `bottom`. Naming the pair
-the picture does not have, or a side on a midline at exactly 45 degrees, is
-refused with `SIDES_AMBIGUOUS`, whose message names the pair to use. A
+the picture does not have is refused with `WRONG_SIDE_PAIR`, whose message
+names the pair to use; a side on a midline at 45 degrees is refused with
+`SIDES_AMBIGUOUS`. A
 sagittal plane lies in one hemisphere and has no sides (`NO_SIDES`).
 
 New jobs leave sections without supplied positions unplaced. The opening

@@ -198,28 +198,21 @@ def _atlas_regions(
     """The region drawn at each of *items*' atlas endpoint on the atlas *plane*
     (``plane_context``), as ``ACRONYM (name)`` by pair id, and the ids whose
     atlas endpoint is outside the atlas."""
-    from langslice.core.atlas.render import annotation_slice
+    from langslice.ops.atlas import label_at, plane_annotation, region_words
 
     if not items:
         return {}, []
-    angles = plane.get("angles") or [0, 0]
-    annotation = annotation_slice(workspace.atlas, float(plane["position_mm"]),
-                                  plane=plane["plane"], pitch_deg=float(angles[0]),
-                                  yaw_deg=float(angles[1]))
+    annotation = plane_annotation(workspace, plane)
     structures = structure_table(workspace.atlas)
     regions: dict[str, str] = {}
     outside: list[str] = []
     for item in items:
-        c, r = (int(v) for v in np.rint(item["atlas_native_xy"]))
-        inside = 0 <= r < annotation.shape[0] and 0 <= c < annotation.shape[1]
-        label = int(annotation[r, c]) if inside else 0
+        label = label_at(annotation, item["atlas_native_xy"])
         if not label:
             regions[item["id"]] = "outside the atlas"
             outside.append(item["id"])
             continue
-        entry = structures.get(label)
-        regions[item["id"]] = (f"{entry['acronym']} ({entry['name']})" if entry is not None
-                               else f"region {label}")
+        regions[item["id"]] = region_words(structures, label)
     return regions, outside
 
 
@@ -407,7 +400,6 @@ HOLD_CLEARANCE = 0.7
 HOLD_SHIFTS = (0.0, 0.11, 0.23, 0.37)
 #: How a fold reply names a hold vertex.
 HOLD_WORDS = "automatic hold"
-_HOLD_PREFIX = "~"
 
 
 def automatic_holds(
@@ -444,7 +436,7 @@ def _vertex_name(index: int, names: Sequence[str]) -> str:
     """The name of mesh vertex *index* (the four fixed corners come first,
     then the pairs, then the holds): a pair id, or a hold marked by its number."""
     k = index - 4
-    return names[k] if k < len(names) else f"{_HOLD_PREFIX}{k - len(names)}"
+    return names[k] if k < len(names) else f"{geometry.HOLD_PREFIX}{k - len(names)}"
 
 
 def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
@@ -479,11 +471,11 @@ def _folds_reply(folds: dict[str, Any] | None) -> dict[str, Any]:
     if not folds:
         return {}
     triangles = folds["triangles"]
-    ids = sorted({i for tri in triangles for i in tri if not i.startswith(_HOLD_PREFIX)},
+    ids = sorted({i for tri in triangles for i in tri if not i.startswith(geometry.HOLD_PREFIX)},
                  key=lambda s: (len(s), s))
-    shown = [[HOLD_WORDS if i.startswith(_HOLD_PREFIX) else i for i in tri]
+    shown = [[HOLD_WORDS if i.startswith(geometry.HOLD_PREFIX) else i for i in tri]
              for tri in triangles[:MAX_FOLDS_LISTED]]
-    with_holds = any(i.startswith(_HOLD_PREFIX) for tri in triangles for i in tri)
+    with_holds = any(i.startswith(geometry.HOLD_PREFIX) for tri in triangles for i in tri)
     return {
         "folds": {
             "area_fraction": folds["area_fraction"],
@@ -519,9 +511,8 @@ def _holds_reply(count: int) -> dict[str, Any]:
     }
 
 
-def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict[str, Any]:
-    """Apply the complete set, replacing the preceding landmark application."""
-    record = _section(job, section)
+def _require_applicable(job: Job, record: SliceState) -> list[dict[str, Any]]:
+    """The section's pairs, refusing too few of them or any placed against another plane."""
     pairs = record.landmarks.get("pairs", [])
     if len(pairs) < 3:
         raise Refused(
@@ -540,20 +531,91 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
                 "endpoints with set_landmarks (the pair id and an atlas endpoint), or delete them."
             ),
         )
+    return pairs
+
+
+def _mesh_with_holds(
+    names: Sequence[str], source: np.ndarray, target: np.ndarray, size: tuple[int, int],
+    footprint: np.ndarray,
+) -> tuple[Any, np.ndarray]:
+    """The VisuAlign mesh of the pairs plus automatic holds, each hold
+    corresponding to itself against the baseline (the pair targets are already
+    in the baseline's section coordinates, so a hold's target is its own spot).
+    Only this verb adds holds: the mesh is exact for any point set."""
+    for shift in HOLD_SHIFTS:
+        holds = automatic_holds(source, size, shift, footprint)
+        try:
+            mesh = visualign_mesh(
+                np.vstack([source, holds]), np.vstack([target, holds]), size=size)
+            return mesh, holds
+        except DegenerateMesh as exc:
+            bare = {i for group in exc.vertices for i in group if i >= 4 + len(names)}
+            if not bare or shift == HOLD_SHIFTS[-1]:
+                # The mesh's first four vertices are the fixed corners.
+                raise Refused(
+                    "LANDMARK_TRIANGULATION_FAILED",
+                    pairs=sorted({names[i - 4] for group in exc.vertices
+                                  for i in group if 4 <= i < 4 + len(names)}),
+                    message=_degenerate_words(exc, names),
+                ) from exc
+    raise AssertionError("HOLD_SHIFTS is not empty")
+
+
+def _landmark_reference(
+    job: Job, record: SliceState, folder: Any, key: str, result: Any, numbers: dict[str, Any],
+    revision: str, pairs: list[dict[str, Any]], folds: dict[str, Any],
+    hold_fractions: list[Any], baseline_key: str | None, baseline_steps: list[Any],
+    composed: bool,
+) -> dict[str, Any]:
+    """The deformation reference the section holds for a landmark application."""
+    return {
+        "key": key,
+        "record": job.layout.relative(folder),
+        "linear_key": deformation.linear_key(job.state, record),
+        "summary": numbers,
+        "inverse_source": result.inverse_source,
+        "landmark_revision": revision,
+        "landmark_pairs": {p["id"]: geometry.pair_key(p) for p in pairs},
+        "landmark_folds": folds,
+        "landmark_holds": hold_fractions,
+        "landmark_baseline_key": baseline_key,
+        "landmark_baseline_steps": baseline_steps,
+        "steps": [
+            *baseline_steps,
+            {
+                "method": "landmark_triangulation",
+                "start": "current" if composed else "linear",
+                "landmark_revision": revision,
+                "landmark_count": len(pairs),
+            },
+        ],
+    }
+
+
+def _unchanged_reply(record: SliceState, pairs: list[dict[str, Any]]) -> dict[str, Any]:
+    """The reply when the section's warp is already the one these pairs make."""
+    held = record.deformation or {}
+    return {
+        "status": "ok",
+        "section": record.id,
+        "written": False,
+        "landmark_count": len(pairs),
+        "built_from": [p["id"] for p in pairs],
+        **_holds_reply(len(held.get("landmark_holds", []))),
+        **held.get("summary", {}),
+        DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
+        **_folds_reply(held.get("landmark_folds")),
+    }
+
+
+def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict[str, Any]:
+    """Apply the complete set, replacing the preceding landmark application."""
+    record = _section(job, section)
+    pairs = _require_applicable(job, record)
     revision = digest(pairs)
     held = record.deformation or {}
     if held.get("landmark_revision") == revision:
-        return {
-            "status": "ok",
-            "section": record.id,
-            "written": False,
-            "landmark_count": len(pairs),
-            "built_from": [p["id"] for p in pairs],
-            **_holds_reply(len(held.get("landmark_holds", []))),
-            **held.get("summary", {}),
-            DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
-            **_folds_reply(held.get("landmark_folds")),
-        }
+        return _unchanged_reply(record, pairs)
     started = time.monotonic()
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
@@ -571,8 +633,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         previous = current.parent if replacing and current is not None else current
         baseline_key = held.get("landmark_baseline_key") if replacing else held.get("key")
         baseline_steps = copy.deepcopy(
-            held.get("landmark_baseline_steps", held.get("steps", [])[:-1])
-            if replacing else held.get("steps", [])
+            held["landmark_baseline_steps"] if replacing else held.get("steps", [])
         )
         size = grid.image.size
         source = (
@@ -592,26 +653,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         names = [p["id"] for p in pairs]
         prepared = prepare_warp(workspace.atlas, grid.placement, size, deformation.DETAIL_LEVEL,
                                 previous=previous)
-        # Automatic holds between the pairs, each corresponding to itself against
-        # the baseline (the pair targets above are already in the baseline's
-        # section coordinates, so a hold's target is its own spot). Only this verb
-        # adds them: the VisuAlign mesh below is exact for any point set.
-        for shift in HOLD_SHIFTS:
-            holds = automatic_holds(source, size, shift, prepared.footprint)
-            try:
-                mesh = visualign_mesh(
-                    np.vstack([source, holds]), np.vstack([target, holds]), size=size)
-                break
-            except DegenerateMesh as exc:
-                bare = {i for group in exc.vertices for i in group if i >= 4 + len(names)}
-                if not bare or shift == HOLD_SHIFTS[-1]:
-                    # The mesh's first four vertices are the fixed corners.
-                    raise Refused(
-                        "LANDMARK_TRIANGULATION_FAILED",
-                        pairs=sorted({names[i - 4] for group in exc.vertices
-                                      for i in group if 4 <= i < 4 + len(names)}),
-                        message=_degenerate_words(exc, names),
-                    ) from exc
+        mesh, holds = _mesh_with_holds(names, source, target, size, prepared.footprint)
         yy, xx = np.indices((size[1], size[0]), dtype=float)
         points = np.stack([xx, yy], -1)
         mm = grid.placement.section_mm_per_px
@@ -669,28 +711,9 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
     # points are, so a picture of any orientation can place them.
     hold_fractions = geometry.transform(
         geometry.orientation(record), (holds + 0.5) / np.asarray(size)).tolist()
-    record.deformation = {
-        "key": key,
-        "record": job.layout.relative(folder),
-        "linear_key": deformation.linear_key(job.state, record),
-        "summary": numbers,
-        "inverse_source": result.inverse_source,
-        "landmark_revision": revision,
-        "landmark_pairs": {p["id"]: geometry.pair_key(p) for p in pairs},
-        "landmark_folds": folds,
-        "landmark_holds": hold_fractions,
-        "landmark_baseline_key": baseline_key,
-        "landmark_baseline_steps": baseline_steps,
-        "steps": [
-            *baseline_steps,
-            {
-                "method": "landmark_triangulation",
-                "start": "current" if previous else "linear",
-                "landmark_revision": revision,
-                "landmark_count": len(pairs),
-            },
-        ],
-    }
+    record.deformation = _landmark_reference(
+        job, record, folder, key, result, numbers, revision, pairs, folds, hold_fractions,
+        baseline_key, baseline_steps, previous is not None)
     job.commit(before)
     return {
         "status": "ok",

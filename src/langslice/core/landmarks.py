@@ -47,6 +47,10 @@ def stale(state: StackState, record: SliceState, pair: dict[str, Any]) -> bool:
     return pair.get("plane") != plane_context(state, record)
 
 
+#: A fold names an automatic hold vertex ``~K``: the K-th hold.
+HOLD_PREFIX = "~"
+
+
 def pair_key(pair: dict[str, Any]) -> str:
     """What of a pair the landmark warp is made from: its two endpoints."""
     from langslice.core.handoff import digest
@@ -61,7 +65,7 @@ def applied_pairs(record: SliceState) -> dict[str, str] | None:
     held = record.deformation or {}
     if not held.get("landmark_revision"):
         return None
-    return dict(held.get("landmark_pairs") or {})
+    return dict(held["landmark_pairs"])
 
 
 def pair_states(state: StackState, record: SliceState) -> dict[str, str]:
@@ -265,7 +269,7 @@ def draw_folds(
              for pair in record.landmarks.get("pairs", [])}
     # A hold vertex of a fold is named ``~K``: the K-th automatic hold.
     for k, fraction in enumerate((record.deformation or {}).get("landmark_holds") or []):
-        by_id[f"~{k}"] = fraction
+        by_id[f"{HOLD_PREFIX}{k}"] = fraction
     draw = ImageDraw.Draw(image)
     for ids in folds.get("triangles", []):
         points = [

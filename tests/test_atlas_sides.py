@@ -96,7 +96,7 @@ def test_a_horizontal_midline_has_a_top_and_a_bottom(atlas):
     # The pair the picture does not have is refused, naming the right pair.
     with pytest.raises(SideError, match="'top' and 'bottom'") as wrong:
         regions_mask(atlas, labels, ["CTX:left"], turned)
-    assert wrong.value.code == "SIDES_AMBIGUOUS"
+    assert wrong.value.code == "WRONG_SIDE_PAIR"
     with pytest.raises(SideError, match="'left' and 'right'"):
         regions_mask(atlas, labels, ["CTX:top"], upright)
     # Left/right masks are unchanged by the extension (coronal behaviour).
@@ -109,6 +109,11 @@ def test_sides_are_refused_where_they_mean_nothing(atlas):
     with pytest.raises(SideError) as turned:
         native_left(atlas, 0.1, "coronal", 0, 0, diagonal)
     assert turned.value.code == "SIDES_AMBIGUOUS"
+    # A rotation by 45 degrees is diagonal up to floating-point rounding.
+    c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)
+    with pytest.raises(SideError) as rotated:
+        native_left(atlas, 0.1, "coronal", 0, 0, np.array([[c, -s], [s, c]]))
+    assert rotated.value.code == "SIDES_AMBIGUOUS"
     with pytest.raises(SideError) as sagittal:
         native_left(atlas, 0.1, "sagittal", 0, 0, np.eye(2))
     assert sagittal.value.code == "NO_SIDES"

@@ -105,7 +105,8 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert fit(["s0.png"], [], "spline")["error"] == "BAD_ARGS"
     assert fit([])["error"] == "BAD_ARGS"
     many = fit(["s0.png"] * 5)
-    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4}
+    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4,
+                    "requested": 5}
     assert state.slices[0].transform is None and box.job.undo_stack == []
 
     # One real fit, restricted to a region: one undo step, a picture zoomed to it.
