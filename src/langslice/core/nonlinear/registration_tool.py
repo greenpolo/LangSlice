@@ -23,7 +23,6 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.core.affine import pixel_center_map
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.render import annotation_slice
 from langslice.core.handoff import (
@@ -45,6 +44,7 @@ from langslice.core.nonlinear.prompts import (
     supplied_prompt_is_gpt_twin,
 )
 from langslice.core.nonlinear.types import SegmentationGenerationRequest
+from langslice.core.nonlinear.upright import Upright, upright
 from langslice.core.space import Plane
 from langslice.core.workspace import Workspace
 
@@ -56,9 +56,9 @@ if TYPE_CHECKING:
 BORDER_WIDTH_PX = 2.0
 
 #: Changes whenever the model's inputs change for the same geometry (prompt text,
-#: attachment order, border rendering), so a saved reply is reused only for the
-#: exact inputs that produced it.
-INPUT_VERSION = "supplied-1"
+#: attachment order, border rendering, the canvas's upright turn), so a saved
+#: reply is reused only for the exact inputs that produced it.
+INPUT_VERSION = "supplied-2"
 
 #: Attachment roles in request order, per prompt twin.
 _GPT_ATTACHMENTS = (("Image 1: clean photograph", "original"),
@@ -174,21 +174,27 @@ def _calls_folder(calls_dir: Path | None, out: Path | None, section_id: str) -> 
 
 def _canvas_and_placement(
     prepared: LinearRegistrationInput, ctx: Workspace, provider: str, model: str | None,
-) -> tuple[Image.Image, np.ndarray, np.ndarray]:
-    """``(canvas, labels, atlas_to_canvas)``: the model-facing canvas of the
-    section render, the native atlas plane at its position and cutting angles,
-    and the section's linear placement of that plane on the canvas (native
-    atlas pixel centres to canvas pixel centres; what ``fit_deformable``
-    maps the traced lines back through, ``core.deformation.traced_lines``)."""
-    canvas, unpadded, ox, oy = prepare_canvas(prepared.image, provider=provider,
-                                              image_model=model)
+) -> tuple[Image.Image, np.ndarray, np.ndarray, Upright, np.ndarray]:
+    """``(canvas, labels, atlas_to_canvas, stance, render_to_canvas)``: the
+    model-facing canvas of the section render, turned upright
+    (:func:`~langslice.core.nonlinear.upright.upright`: the atlas's vertical
+    straight up, a coronal or horizontal midline down the canvas's middle),
+    the native atlas plane at its position and cutting angles, and the
+    section's linear placement of that plane on the canvas (native atlas
+    pixel centres to canvas pixel centres, the turn included; what
+    ``fit_deformable`` maps the traced lines back through,
+    ``core.deformation.traced_lines``)."""
+    stance = upright(ctx.atlas, prepared.plane, prepared.position_mm, prepared.pitch_deg,
+                     prepared.yaw_deg, prepared.atlas_to_slice)
+    canvas, render_to_canvas = prepare_canvas(prepared.image, provider=provider,
+                                              image_model=model, upright=stance)
     labels = np.asarray(annotation_slice(
         ctx.atlas, prepared.position_mm, plane=prepared.plane,
         pitch_deg=prepared.pitch_deg, yaw_deg=prepared.yaw_deg,
     ))
     if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
         raise ValueError("Atlas annotation must be a two-dimensional integer label map")
-    placement = pixel_center_map(prepared.image.size, unpadded, (ox, oy)) @ prepared.atlas_to_slice
+    placement = render_to_canvas @ prepared.atlas_to_slice
     # float64 preserves large atlas IDs across nearest-neighbour projection.
     placed = cv2.warpAffine(
         labels.astype(np.float64), placement[:2], canvas.size,
@@ -196,7 +202,7 @@ def _canvas_and_placement(
     ).astype(labels.dtype)
     if not placed.any():
         raise ValueError("The supplied linear placement contains no atlas regions on the image")
-    return canvas, labels, placement
+    return canvas, labels, placement, stance, render_to_canvas
 
 
 def shown_labels(
@@ -315,7 +321,8 @@ def start_correction(
                                  or previous.get("raw_received")):
         return {**previous, "cached": True}, None
 
-    canvas, labels, placement = _canvas_and_placement(prepared, ctx, provider, model)
+    canvas, labels, placement, stance, render_to_canvas = _canvas_and_placement(
+        prepared, ctx, provider, model)
     shown = shown_labels(ctx.atlas, labels, prepared, include, exclude)
     rough = smooth_border_overlay(
         canvas, shown, placement,
@@ -344,6 +351,8 @@ def start_correction(
         "prompt_edited": sent != base_prompt,
         "provider": provider, "model": model, **marks, **regions,
         "linear_handoff": prepared.metadata, "atlas_to_canvas": placement.tolist(),
+        "render_to_canvas": render_to_canvas.tolist(),
+        "upright": {"turn_deg": stance.turn_deg, "midline_centred": stance.through is not None},
         "attachments": [
             {"role": role, "path": paths[key],
              "sha256": hashlib.sha256(Path(paths[key]).read_bytes()).hexdigest()}

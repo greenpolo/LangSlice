@@ -504,7 +504,15 @@ undo restores the registration before that application.
 image model to move the placed atlas borders onto the tissue, then fits an
 FireANTs deformation to the extracted lines. It requires a linear placement.
 The model receives two images in the same frame: the preprocessed section
-and that section with thin yellow atlas borders. `restrict_to` selects the
+and that section with thin yellow atlas borders. The section is turned
+upright on that frame from its linear placement: the atlas's dorsal side
+(the anterior end on a horizontal section) points straight up, and on a
+coronal or horizontal section the atlas midline runs down the middle of the
+image; a sagittal section is only turned. It is a turn and shift, never a
+mirror, drawn in one resample; the frame holds the whole turned section and
+is padded with the slide's background colour, so the section is drawn
+smaller the more it is turned. The model's lines are read back through the
+same turn. `restrict_to` selects the
 borders shown and fitted; empty uses all eligible regions. Marked damage
 is excluded. The model's outer line sets the section's extent: the fit pulls
 the atlas in or out to it, wherever the linear placement left the atlas edge.

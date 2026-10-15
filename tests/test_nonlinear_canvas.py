@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 from PIL import Image
 
 from langslice.core.nonlinear.image_frames import gemini_aspect_for, native_output_size
@@ -39,30 +40,43 @@ def test_gemini_frame_is_the_measured_fixed_frame_for_the_nearest_aspect() -> No
     assert gemini_aspect_for(1.303) == "4:3" and gemini_aspect_for(0.75) == "3:4"
 
 
+def _render_box(render_to_canvas: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    """The render's pixel-edge corners on the canvas, in canvas pixel-edge numbers."""
+    width, height = size
+    corners = np.array([[-0.5, -0.5, 1], [width - 0.5, -0.5, 1],
+                        [-0.5, height - 0.5, 1], [width - 0.5, height - 0.5, 1]]).T
+    return (render_to_canvas @ corners)[:2].T + 0.5
+
+
 def test_unknown_lane_keeps_the_long_edge_rule() -> None:
     assert native_output_size(None, "none", (4000, 3000)) is None
-    canvas, unpadded, ox, oy = prepare_canvas(Image.new("RGB", (4000, 3000)), provider="none")
-    assert canvas.size == (2048, 1536) and unpadded == (2048, 1536)
-    assert (ox, oy) == (0.0, 0.0)
+    canvas, render_to_canvas = prepare_canvas(Image.new("RGB", (4000, 3000)), provider="none")
+    assert canvas.size == (2048, 1536)
+    np.testing.assert_allclose(_render_box(render_to_canvas, (4000, 3000)),
+                               [[0, 0], [2048, 0], [0, 1536], [2048, 1536]], atol=1e-9)
 
 
 def test_native_canvas_is_exactly_the_output_frame_and_keeps_the_slide_box() -> None:
     image = Image.new("RGB", (3137, 2353), (20, 20, 20))
-    canvas, unpadded, ox, oy = prepare_canvas(image, provider="openai-oauth")
-    # The frame of the long-edge layout (2047 x 1536), padded out to exactly.
-    assert canvas.size == native_output_size(None, "openai-oauth", (2047, 1536))
-    # The slide box scales with the canvas: its aspect is the slide's, and
-    # origin + box stay inside the frame.
-    assert math.isclose(unpadded[0] / unpadded[1], 3137 / 2353, rel_tol=0.01)
-    assert ox >= 0 and oy >= 0 and ox + unpadded[0] <= canvas.width + 1
-    assert oy + unpadded[1] <= canvas.height + 1
+    canvas, render_to_canvas = prepare_canvas(image, provider="openai-oauth")
+    # The frame of the long-edge layout (2048 x 1537), padded out to exactly.
+    assert canvas.size == native_output_size(None, "openai-oauth", (2048, 1537))
+    # The slide box scales with the canvas: its aspect is the slide's, and it
+    # stays inside the frame, centred.
+    box = _render_box(render_to_canvas, image.size)
+    (x0, y0), (x1, y1) = box.min(axis=0), box.max(axis=0)
+    assert math.isclose((x1 - x0) / (y1 - y0), 3137 / 2353, rel_tol=1e-9)
+    assert x0 >= -1e-9 and y0 >= -1e-9 and x1 <= canvas.width + 1e-9
+    assert y1 <= canvas.height + 1e-9
+    assert math.isclose(x0 + x1, canvas.width) and math.isclose(y0 + y1, canvas.height)
 
 
 def test_gemini_canvas_is_padded_to_the_fixed_frame_never_cropped() -> None:
     image = Image.new("RGB", (3137, 2353), (20, 20, 20))
-    canvas, unpadded, ox, oy = prepare_canvas(
+    canvas, render_to_canvas = prepare_canvas(
         image, image_model="gemini-3.1-flash-lite-image", provider="gemini-api"
     )
     assert canvas.size == (1200, 896)
-    assert unpadded[0] <= 1200 and unpadded[1] <= 896
-    assert ox + unpadded[0] <= 1200 + 1 and oy + unpadded[1] <= 896 + 1
+    box = _render_box(render_to_canvas, image.size)
+    assert box.min() >= -1e-9
+    assert box[:, 0].max() <= 1200 + 1e-9 and box[:, 1].max() <= 896 + 1e-9

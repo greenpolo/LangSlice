@@ -48,7 +48,25 @@ residual alone is never exported.
   `prompt_diff`, `reply_on_grid` (an attempt's lines and raw reply in the
   image file's frame, for `export_maps`).
 - `image_gen_registration.py` — model-facing canvas geometry (`prepare_canvas`,
-  aspect helpers).
+  aspect helpers). `prepare_canvas(image, provider=, image_model=, upright=)`
+  returns the canvas and `render_to_canvas` (3x3, pixel centres): the
+  section render turned and shifted by an `Upright`, scaled to the
+  provider's output frame and padded with the render's background colour,
+  holding the whole turned render (never a crop), in ONE interpolation
+  (Lanczos; shrinking anti-aliased first by the Lanczos kernel PIL's resize
+  uses).
+- `upright.py` — `upright(atlas, plane, position_mm, pitch, yaw,
+  atlas_to_render)` -> `Upright(up, through)`: which render direction points
+  up on the canvas and the render point its vertical centre line passes
+  through. Coronal: the atlas midline (the section's oblique plane crossing
+  the volume's medio-lateral split, `round(n / 2) - 0.5`), dorsal end up, the
+  canvas centred on it; horizontal: the midline, anterior end up, centred;
+  sagittal: the plane's dorsal direction, no centring. A turn and shift
+  only: a flip in the placement stays. `_canvas_and_placement` folds the
+  turn into `atlas_to_canvas`, so the rough overlay is drawn through it and
+  `core.deformation.traced_lines` reads the model's lines back through it
+  exactly; each attempt's `request.json` also keeps `render_to_canvas` and
+  `upright` (`turn_deg`, clockwise on the screen; `midline_centred`).
 - `border_refinement.py` — the yellow lines of a trace: `smooth_border_overlay`
   and `border_overlay` draw them on a section, `extract_thinned_lines`
   (`yellow_mask`, `thin`) reads the model's lines off a raw reply. It fits
