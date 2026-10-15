@@ -54,18 +54,18 @@ from langslice.core.deformable import (
     prepare_fit,
     resampled_record,
 )
-from langslice.core.deformable.atlas_images import (
-    native_intensity,
-    native_labels,
-    normalize_intensity,
-)
 from langslice.core.deformable.engines import (
     FIREANTS_LEARNING_RATE,
     FIREANTS_VERSION,
     INVERSE_ITERATIONS,
 )
-from langslice.core.deformable.fit import RESTRICTED_TAPER_MM, run_prepared
+from langslice.core.deformable.fit import run_prepared
 from langslice.core.deformable.masks import EM_PARAMETERS
+from langslice.core.deformable.plane_images import (
+    native_intensity,
+    native_labels,
+    normalize_intensity,
+)
 from langslice.core.deformable.render import composed_native_grid
 from langslice.core.deformable.settings import (
     CORRELATION_RADIUS_UM,
@@ -329,9 +329,6 @@ def cache_key(
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
         "placement": grid.placement.to_dict(), "image": image_identity,
         "settings": settings.to_dict(), "start": previous_key or "linear",
-        # A restricted step is tapered outside its region (fit.RESTRICTED_TAPER_MM);
-        # results saved before the taper are not reused.
-        **({"restricted_taper_mm": RESTRICTED_TAPER_MM} if settings.structures else {}),
         # The engine and, for a stain fit, the EM section mask: a record from
         # another engine or mask is not reused.
         "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,

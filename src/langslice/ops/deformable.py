@@ -444,7 +444,7 @@ def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str,
     ``NO_SIDES`` (a side on a sagittal stack)."""
     from langslice.core.atlas.sides import has_sides
     from langslice.core.damage import normalized_entries
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     if isinstance(entries, str) or not isinstance(entries, (list, tuple)):
         raise Refused("BAD_ARGS", message="restrict_to is a list of atlas regions.")

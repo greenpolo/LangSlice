@@ -213,7 +213,7 @@ def shown_labels(
     Unknown names or sides raise ``ValueError``.
     """
     from langslice.core.atlas.sides import has_sides, native_left
-    from langslice.core.deformable.atlas_images import regions_mask
+    from langslice.core.deformable.plane_images import regions_mask
 
     shown = labels_at(labels, atlas, MODEL_DEPTH)
     if not include and not exclude:

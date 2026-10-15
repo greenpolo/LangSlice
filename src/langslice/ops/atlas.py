@@ -265,7 +265,7 @@ def _resolved(workspace: Workspace, state: StackState, regions: Any,
     ``BAD_ARGS``, ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``."""
     from langslice.core.atlas.sides import has_sides
     from langslice.core.damage import normalized_entries
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
 
     if isinstance(regions, (str, bytes)) or not isinstance(regions, Sequence):
         raise Refused("BAD_ARGS", message="regions is a list of acronyms, names or ids.")

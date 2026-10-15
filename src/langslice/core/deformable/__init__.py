@@ -5,9 +5,6 @@ library engines (FireANTs SyN), atlas images, masks, and the
 canonical per-section record. See ``CLAUDE.md`` in this package.
 """
 
-from langslice.core.deformable.atlas_images import (
-    ventricle_ids,
-)
 from langslice.core.deformable.fit import (
     CandidateFailure,
     PreparedFit,
@@ -17,6 +14,9 @@ from langslice.core.deformable.fit import (
     prepare_warp,
 )
 from langslice.core.deformable.geometry import Placement, placement_from_handoff
+from langslice.core.deformable.plane_images import (
+    ventricle_ids,
+)
 from langslice.core.deformable.record import DeformableRecord, diagnose
 from langslice.core.deformable.render import (
     draw_warped_borders,

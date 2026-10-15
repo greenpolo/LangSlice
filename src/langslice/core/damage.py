@@ -189,7 +189,7 @@ def damage_picture(
     the placement cannot define) pass through.
     """
     from langslice.core.captions import caption
-    from langslice.core.deformable.atlas_images import resolve_entries
+    from langslice.core.deformable.plane_images import resolve_entries
     from langslice.core.display import DEFAULT_BORDER_THICKNESS, default_options
     from langslice.core.layers import note
     from langslice.core.placement import (

@@ -162,8 +162,8 @@ information.
 side, `"CTX:left"` / `"CTX:right"` (`core.atlas.sides`): left and right of the
 SECTION as displayed (the fit grid: oriented render, rotation and flip
 applied), carried to the native plane through the placement's
-`atlas_to_section` (`atlas_images.placement_left`). Exclusion is therefore a
-native-plane MASK (`atlas_images.regions_mask`), not an id set:
+`atlas_to_section` (`plane_images.placement_left`). Exclusion is therefore a
+native-plane MASK (`plane_images.regions_mask`), not an id set:
 `PreparedFit.excluded_mask` blanks the moving image, `excluded` (and the
 record's `excluded_ids`) holds only whole-region ids (`whole_region_ids`),
 and area diagnostics drop excluded pixels, so a region excluded on one side

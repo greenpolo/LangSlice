@@ -15,7 +15,7 @@ from langslice.core.atlas.sides import (
     split_side,
 )
 from langslice.core.deformable import FitSettings, draw_warped_borders, prepare_fit
-from langslice.core.deformable.atlas_images import regions_mask, whole_region_ids
+from langslice.core.deformable.plane_images import regions_mask, whole_region_ids
 from langslice.core.deformable.record import (
     OUTSIZED_MAX_FRACTION,
     OUTSIZED_MEDIAN_MM,
