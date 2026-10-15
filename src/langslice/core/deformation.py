@@ -58,6 +58,8 @@ from langslice.core.deformable.engines import (
     FIREANTS_LEARNING_RATE,
     FIREANTS_VERSION,
     INVERSE_ITERATIONS,
+    TRACED_LEARNING_RATE,
+    TRACED_TOTAL_SIGMA_FACTOR,
 )
 from langslice.core.deformable.fit import run_prepared
 from langslice.core.deformable.masks import EM_PARAMETERS
@@ -333,6 +335,8 @@ def cache_key(
         # another engine or mask is not reused.
         "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,
                    list(DETAIL[settings.detail].iterations)],
+        **({"traced_engine": [TRACED_LEARNING_RATE, TRACED_TOTAL_SIGMA_FACTOR, "balanced"]}
+           if settings.section_image == "lines" else {}),
         **({"section_mask": EM_PARAMETERS}
            if settings.section_image == "stain" else {}),
     })

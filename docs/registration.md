@@ -508,6 +508,10 @@ and that section with thin yellow atlas borders. `restrict_to` selects the
 borders shown and fitted; empty uses all eligible regions. Marked damage
 is excluded. The model's outer line sets the section's extent: the fit pulls
 the atlas in or out to it, wherever the linear placement left the atlas edge.
+The fit of traced lines steps half as far as a stain fit, smooths the whole
+warp twice as wide, and gives every traced region and the lines an equal
+pull (each one's gradient scaled to the same length, as ANTs' multi-metric
+rule does), so no single large region or stray line drives the warp.
 
 The agent can edit the base prompt for a section; blank uses it unchanged.
 The atlas determines which borders exist even when tissue boundaries are
