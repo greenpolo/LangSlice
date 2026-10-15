@@ -159,7 +159,11 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         assert info["grid_size"] == grid and info["section"] == SECTION
         assert info["placement_current"] is True and info["untested"] is True
         # The stub answers with the placed borders: in the file's frame they
-        # lie on the borders of the section's own label map.
+        # lie on the borders of the section's label map at the traced
+        # placement, so the deformation fitted to them is undone first.
+        job.undo()
+        assert job.state.by_id(SECTION).deformation is None
+        job.export_maps(slices=[SECTION])
         labels = tifffile.imread(folder / "sections" / "s0" / "labels.tif")
         distance = np.asarray(ndimage.distance_transform_edt(~_borders(labels)))
         assert borders.sum() > 50
