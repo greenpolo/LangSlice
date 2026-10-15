@@ -70,7 +70,8 @@ the CLI is a process per call.
   (`VIEW_TOOLS`) not offered where the host forces their pictures on
   (`JobSpec.force_view`); `position_sections`' `sections` only with the
   Positioning task; `trace_borders` carries the run's base image prompt
-  (`base_prompt`, or the image model's profile prompt; none without an
+  (the image model's profile prompt, else the job's own
+  `nonlinear.image_prompt`, else `base_prompt`; none without an
   image model) in place of `BASE_PROMPT`; and the door that reads it
   (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: the CLI's background
   verbs answer once their work has landed). `declaration(name, variant)`
@@ -193,7 +194,9 @@ the CLI is a process per call.
   that already lists `pictures`, saved by its operation, is left as it is),
   `_announces_work` (`with_notices`: the notices of background work
   finished since the last reply first, under `background`, and its pictures
-  after the reply's own) and `_serialized`; `_tool_target_ids`), `door.py`
+  after the reply's own) and `_serialized`; `_tool_target_ids`;
+  `with_job_prompt`: the image model with the job's own base prompt,
+  `nonlinear.image_prompt`, as an untested `custom` profile), `door.py`
   (`Door`, what every tool body of a run shares: the job, the workspace,
   the picture level, the image model, `rows`, `changed`,
   `answered`, `resolve_many`; `pictured`, `as_list`), the

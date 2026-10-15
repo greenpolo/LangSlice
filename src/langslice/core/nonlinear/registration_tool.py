@@ -384,3 +384,58 @@ def start_correction(
         return _finish_attempt(directory, result_path, in_progress, result)
 
     return submitted, job
+
+
+def reply_on_grid(
+    directory: Path, file_size: tuple[int, int], grid_size: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """One completed trace attempt's reply in the image FILE's frame, on a
+    resize of the file to *grid_size* (width, height): ``(borders, reply,
+    grid_from_canvas)``.
+
+    ``borders`` is the bool mask of the model's lines as extracted from its
+    raw reply (``extracted_lines.png``, before any fit), ``reply`` the raw
+    reply itself (RGB, resized to the canvas the model was shown, then
+    mapped), and ``grid_from_canvas`` the 3x3 on ``[x, y, 1]`` from the
+    model's canvas to the grid's pixel centres. The map is the images' own:
+    the canvas's padding and resize of the oriented section render (the
+    attempt's ``request.json``) and the render's quarter turn, flip and
+    resize of the file; the section's current placement does not enter it.
+    ``ValueError`` when the attempt's files are missing or unreadable."""
+    from langslice.core.maps import orientation_matrix, unturned
+
+    directory = Path(directory)
+    try:
+        request = json.loads((directory / "request.json").read_text())
+        with Image.open(directory / "extracted_lines.png") as opened:
+            lines = np.asarray(opened.convert("L"), dtype=np.float32) / 255.0
+        with Image.open(directory / "raw_reply.png") as opened:
+            raw = opened.convert("RGB")
+            raw.load()
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"the trace's files in {directory} cannot be read: {exc}") from exc
+    handoff = request["linear_handoff"]
+    canvas_size = (int(lines.shape[1]), int(lines.shape[0]))
+    canvas_from_render = (np.asarray(request["atlas_to_canvas"], dtype=np.float64)
+                          @ np.linalg.inv(np.asarray(handoff["atlas_to_slice"],
+                                                     dtype=np.float64)))
+    rotation = int(handoff["orientation"]["rotation_deg"])
+    flip = bool(handoff["orientation"]["flip"])
+    render_size = (int(handoff["image_size"][0]), int(handoff["image_size"][1]))
+    plain = unturned(render_size, rotation)
+    render_from_file = (orientation_matrix(plain, rotation, flip)
+                        @ pixel_center_map(file_size, plain))
+    canvas_from_grid = (canvas_from_render @ render_from_file
+                        @ pixel_center_map(grid_size, file_size))
+    grid_from_canvas = np.linalg.inv(canvas_from_grid)
+    size = (int(grid_size[0]), int(grid_size[1]))
+    warped = cv2.warpAffine(lines, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR,
+                            borderValue=0)
+    from langslice.core.nonlinear.image_gen_registration import crop_to_aspect
+
+    framed = crop_to_aspect(raw, canvas_size[0] / canvas_size[1])  # as the lines are read
+    picture = np.asarray(framed.resize(canvas_size, Image.Resampling.LANCZOS)
+                         if framed.size != canvas_size else framed)
+    reply = cv2.warpAffine(picture, grid_from_canvas[:2], size, flags=cv2.INTER_LINEAR,
+                           borderValue=(0, 0, 0))
+    return warped > 0.05, reply, grid_from_canvas

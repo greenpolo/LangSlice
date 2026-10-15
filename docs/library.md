@@ -40,6 +40,8 @@ completion notice; leaving the `with` block or calling `close()` waits for
 pending traces and picture writes. `submit(...)` checks the job and writes
 maps and exports. `export_maps(full_resolution=False)` exports placed
 sections at any point without submitting; `True` uses the source pixels.
+Each traced section's image-model reply is exported with its maps, to
+`exports/traces/<name>.npz` ([format](file_formats.md#tracesnamenpz)).
 
 ## Create a job
 
@@ -125,7 +127,12 @@ model = langslice.image_model(
 )
 ```
 
-`{plane}` in a custom prompt is replaced with the section plane.
+`{plane}` in a custom prompt is replaced with the section plane. A job's own
+base prompt can also be set in its settings,
+`nonlinear={"image_prompt": "..."}` (`langslice linear run --image-prompt
+FILE`), for any model without a prompt of its own; it is recorded as an
+untested `custom` profile, and a profile with another prompt of its own is
+refused.
 `photograph_first=True` sends the clean photograph first and its bordered
 copy second; `False` reverses them. Omitted uses the provider's order:
 clean first for OpenAI, bordered first otherwise. Custom prompts or

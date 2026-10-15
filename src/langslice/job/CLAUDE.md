@@ -83,6 +83,8 @@ views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
                      the path), spend.json (the agent run's spend account), result.json (a saved host job's final result),
                      quicknii.json and visualign.json (with the maps),
+                     traces/<stem>.npz (each traced section's image-model reply
+                     on its maps' grid, with the maps),
                      plugins/<tool>/ (copies of the layers plugins left)
 plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/);
                      the only place a plugin tool writes

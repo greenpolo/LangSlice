@@ -82,7 +82,9 @@ langslice-job sections/ wait --timeout 600
 `runs ID` and `wait ID` address a particular run. `--dry-run` previews a
 write without saving; expensive fits are validated without running them.
 `export_maps` is available through this CLI and Python to export the job's
-present state without submitting it.
+present state without submitting it; with the maps it writes each traced
+section's image-model reply to `exports/traces/<name>.npz`
+([format](file_formats.md#tracesnamenpz)).
 
 ### Replies and pictures
 
@@ -170,10 +172,10 @@ flag reference. The main choices are:
 | Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
 | Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
 | Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--no-debrief`, `--force-view` (change and fitting tools always return their picture), `--require-deformation` (Nonlinear: `submit` is refused until every section carries a deformation) |
-| Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model` |
+| Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model`, `--image-prompt FILE` (the base prompt `trace_borders` sends, in place of LangSlice's own) |
 | Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
 | Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
-| Constraints and context | `--hemisphere-cue`, `--frozen`, `--damaged`, `--fact` |
+| Constraints and context | `--hemisphere-cue`, `--frozen`, `--damaged`, `--fact`, `--position-notes`, `--transform-notes`, `--nonlinear-notes` (the user's notes for a task, shown to the agent with it) |
 | Tools and options off | `--disable NAME[,NAME...]`: a tool (`zoom`) or `tool:option` (`look:positioning`, `interactive_transform:flip`); [valid names](registration.md#switching-tools-and-options-off) |
 | Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
 | Storage | `--job-dir`, `--out`, `--fresh` (`linear run`), `--trace-dir` (`linear run`, `mcp`) |
@@ -188,6 +190,15 @@ lets the agent adjust cutting angles. A disabled task keeps the supplied
 answer and removes its tools; the [registration guide](registration.md)
 explains these constraints. `init --notes TEXT` saves instructions for the
 agent with the job.
+
+`--image-prompt FILE` replaces the base prompt `trace_borders` sends the
+image model for this job (`NonlinearSpec.image_prompt`, kept in the job's
+settings); `{plane}` in it becomes the section plane. Start from
+`langslice.default_prompt(provider, plane)`. It must describe the provider's
+attachment order: Image 1 the clean photograph and Image 2 the placed
+borders for the OpenAI providers, the other way round otherwise. The agent
+is shown it as the base it may edit per section, and its traces are recorded
+as an untested profile (`custom`).
 
 An interrupted job resumes from its checkpoint. Resuming with different
 supplied inputs is refused with `INPUTS_CHANGED`, and `init` with other job

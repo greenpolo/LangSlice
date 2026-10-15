@@ -203,6 +203,15 @@ class NonlinearSpec:
     #: until each section carries one at its current placement. Off, a
     #: deformation is the agent's choice, section by section.
     require_deformation: bool = False
+    #: The base prompt ``trace_borders`` sends the image model for this job,
+    #: in place of LangSlice's own for the provider
+    #: (:func:`langslice.core.nonlinear.prompts.border_correction_tool_prompt`);
+    #: ``{plane}`` in it becomes the section plane. It must describe the
+    #: provider's attachment order (the OpenAI providers: Image 1 the clean
+    #: photograph, Image 2 the placed borders; the others the other way
+    #: round). The agent's per-section edit starts from it, and its traces
+    #: are recorded as an untested profile (``custom``). None: LangSlice's own.
+    image_prompt: str | None = None
 
     def __post_init__(self) -> None:
         from langslice.core.provider_names import (
@@ -216,6 +225,13 @@ class NonlinearSpec:
             raise ValueError(
                 f"nonlinear.provider must be one of {accepted}; got {self.provider!r}"
             )
+        if self.image_prompt is not None:
+            if not isinstance(self.image_prompt, str) or not self.image_prompt.strip():
+                raise ValueError("nonlinear.image_prompt must be non-empty text or null")
+            if not self.uses_image_model:
+                raise ValueError("nonlinear.image_prompt needs an image model; the "
+                                 "nonlinear provider is 'none'")
+            self.image_prompt = self.image_prompt.strip()
 
     @property
     def uses_image_model(self) -> bool:
@@ -433,6 +449,8 @@ class JobSpec:
             data.pop("job_dir", None)
         if not data["nonlinear"].get("require_deformation"):  # likewise
             data["nonlinear"].pop("require_deformation", None)
+        if data["nonlinear"].get("image_prompt") is None:  # likewise
+            data["nonlinear"].pop("image_prompt", None)
         if not data.get("force_view"):  # likewise
             data.pop("force_view", None)
         if not data.get("disabled"):  # likewise
