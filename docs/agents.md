@@ -19,6 +19,14 @@ access, `langslice login` signs in with ChatGPT; API providers use
 MCP uses its host's agent and account. An optional image model has its own
 provider setting and credentials.
 
+Claude models run in `langslice linear run` through the Anthropic API:
+`--model anthropic-api/<model id>` (install the extra with
+`pip install -e ".[anthropic]"`). The key is `ANTHROPIC_API_KEY`, else the
+file `~/.langslice/anthropic_api_key`. `--reasoning` sets Claude's
+effort (`low`, `medium`, `high`, `xhigh`, `max`) with adaptive thinking whose
+summary is written to the run trace, and the system prompt and the newest
+message are marked for prompt caching.
+
 ## Coding agents: `langslice-job`
 
 Initialize a job, read its brief, then choose tools from the live schema:

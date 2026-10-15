@@ -58,6 +58,7 @@ mcp = [
 # providers/anthropic_api.py, on ADK's AnthropicLlm).
 anthropic = [
     "anthropic>=1.13",
+    "httpx2",
 ]
 dev = [
     "mcp>=1.24,<2",
