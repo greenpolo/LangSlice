@@ -136,7 +136,7 @@ def test_a_users_damage_note_is_a_note_alone_and_stays_first(tmp_path: Path):
 # --- every fit path leaves the marked regions out -------------------------------------
 # elastix_affine: tests/test_ops_interactive_transform.py (the regions it is
 # handed) and tests/test_linear_fit_affine_elastix.py (a real fit); ants_syn and
-# the trace's ANTs fit: tests/test_linear_fit_deformable.py (the engine's
+# the trace's SyN fit: tests/test_linear_fit_deformable.py (the engine's
 # settings) and tests/test_ants_syn.py (the recorded step); the image model's
 # trace: below.
 

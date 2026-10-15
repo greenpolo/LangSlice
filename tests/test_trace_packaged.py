@@ -215,7 +215,7 @@ def test_a_section_changed_while_the_model_draws_gets_nothing(tmp_path, atlas):
 
 def test_without_ants_nothing_is_asked_of_the_image_model(tmp_path, atlas, monkeypatch):
     job, ctx, stub = _job(tmp_path, atlas)
-    monkeypatch.setattr(ops_deformable, "ants_ready", lambda: False)
+    monkeypatch.setattr(ops_deformable, "engine_ready", lambda: False)
     depth = len(job.undo_stack)
     with pytest.raises(Refused) as refused:
         traces.trace_borders(job, ctx, ID, image_model=stub.model)
@@ -224,6 +224,6 @@ def test_without_ants_nothing_is_asked_of_the_image_model(tmp_path, atlas, monke
     assert stub.calls == [] and len(job.undo_stack) == depth
     assert job.state.slices[0].image_correction is None
     with pytest.raises(Refused) as unknown:
-        monkeypatch.setattr(ops_deformable, "ants_ready", lambda: True)
+        monkeypatch.setattr(ops_deformable, "engine_ready", lambda: True)
         traces.trace_borders(job, ctx, ID, image_model=stub.model, restrict_to=["NOPE"])
     assert unknown.value.code == "UNKNOWN_REGIONS" and stub.calls == []

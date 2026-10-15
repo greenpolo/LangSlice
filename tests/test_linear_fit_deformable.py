@@ -31,13 +31,13 @@ from tests.linear_tool_helpers import tool_named as _tool
 
 ID = "s0.png"
 
-needs_ants = pytest.mark.skipif(not ops_deformable.ants_ready(),
-                                reason="ants_syn needs antspyx")
+needs_ants = pytest.mark.skipif(not ops_deformable.engine_ready(),
+                                reason="ants_syn needs FireANTs")
 
 
 def _choice(fit_section: str = deformation.FIT_LOOK, fit_atlas: str = "template",
             stiffness: str = "medium") -> deformation.Choice:
-    """One fit setting for ``ops.deformable.fit_deformable`` (ANTs SyN)."""
+    """One fit setting for ``ops.deformable.fit_deformable`` (SyN)."""
     return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas, stiffness=stiffness)
 
 

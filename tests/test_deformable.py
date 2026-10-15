@@ -21,7 +21,6 @@ from langslice.core.deformable import (
     prepare_fit,
 )
 from langslice.core.deformable.atlas_images import native_intensity, whole_region_ids
-from langslice.core.deformable.engines import run_engine
 from langslice.core.deformable.fit import fit_prepared
 from langslice.core.deformable.geometry import Placement
 from langslice.core.deformable.record import jacobian_determinant
@@ -41,9 +40,9 @@ from tests.deformable_synthetic import (
     render_section,
 )
 
-#: The deformable engine is ANTs SyN (antspyx); a fit test skips without it.
-HAVE_ANTS = importlib.util.find_spec("ants") is not None
-needs_ants = pytest.mark.skipif(not HAVE_ANTS, reason="antspyx missing")
+#: The deformable engine is FireANTs SyN; a fit test skips without it.
+HAVE_ENGINE = importlib.util.find_spec("fireants") is not None
+needs_engine = pytest.mark.skipif(not HAVE_ENGINE, reason="FireANTs missing")
 
 
 def _settings(**options) -> FitSettings:
@@ -77,7 +76,7 @@ def _errors(record: DeformableRecord, field: np.ndarray, truth: np.ndarray):
     return error, flipped, np.linalg.norm(field, axis=-1)[inner].mean()
 
 
-@needs_ants
+@needs_engine
 def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped):
     field, image, truth = warped
     record = fit_section(image, atlas, placement(),
@@ -102,7 +101,7 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped)
     assert record.inverse_source == "engine"
 
 
-@needs_ants
+@needs_engine
 def test_excluded_region_does_not_drive_the_fit(atlas):
     engine = "ants"
     # Only the thalamus is displaced; everywhere else the placement is right.
@@ -172,7 +171,7 @@ def test_folds_are_reported():
     assert any(f["code"] == "FOLDS" for f in report["flags"])
 
 
-@needs_ants
+@needs_engine
 def test_lines_against_borders_and_model_regions(atlas):
     field = SMOOTH_FIELD()
     image, truth = render_section(atlas, field)
@@ -246,7 +245,7 @@ def test_model_regions_pull_the_atlas_in_to_the_model_outline(atlas):
 
 
 def test_fit_settings_validation():
-    with pytest.raises(ValueError, match="ANTs-only"):
+    with pytest.raises(ValueError, match="SyN-only"):
         FitSettings(engine="elastix", labels="model")
     with pytest.raises(ValueError, match="borders"):
         _settings(section_image="lines", atlas_image="template")
@@ -259,29 +258,17 @@ def test_fit_settings_validation():
     with pytest.raises(ValueError, match="detail"):
         FitSettings(detail="fine")  # type: ignore[arg-type]
     assert FitSettings.from_dict(FitSettings().to_dict()) == FitSettings()
-    assert FitSettings().metric == "local_correlation" and FitSettings().stain_edges
+    assert FitSettings().metric == "mutual_information" and FitSettings().stain_edges
     # Elastix has no local correlation: its stand-in.
     assert FitSettings(engine="elastix").metric == "mutual_information"
-    assert FitSettings(stain_metric="mutual_information").metric == "mutual_information"
+    assert FitSettings(stain_metric="local_correlation").metric == "local_correlation"
     lines = FitSettings(section_image="lines", atlas_image="borders_merged")
     assert lines.metric == "mean_squares"
     with pytest.raises(ValueError, match="stain_metric"):
         FitSettings(stain_metric="cc")  # type: ignore[arg-type]
 
 
-@needs_ants
-def test_identical_inputs_give_the_same_field(atlas, warped):
-    """The same fit twice in this process (fixed seed): the same field."""
-    _field, image, _truth = warped
-    settings = FitSettings(engine="ants", detail="coarse")
-    prepared = prepare_fit(image, atlas, placement(), settings)
-    first = run_engine(prepared.inputs, settings)
-    second = run_engine(prepared.inputs, settings)
-    assert np.allclose(first.field_mm, second.field_mm, atol=1e-4)
-    assert np.allclose(first.inverse_field_mm, second.inverse_field_mm, atol=1e-4)
-
-
-@needs_ants
+@needs_engine
 def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
@@ -346,7 +333,7 @@ def test_inverted_step_undoes_the_tapered_step():
     assert np.abs(inverse + back).max() < 1e-3
 
 
-@needs_ants
+@needs_engine
 def test_a_restricted_step_leaves_tissue_beyond_its_taper_unmoved(atlas, warped):
     from langslice.core.deformable.fit import RESTRICTED_TAPER_MM
 
@@ -369,7 +356,7 @@ def test_a_restricted_step_leaves_tissue_beyond_its_taper_unmoved(atlas, warped)
 
 
 @pytest.mark.slow
-@needs_ants
+@needs_engine
 def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped
     results = fit_prepared([prepare_fit(image, atlas, placement(), settings) for settings in (

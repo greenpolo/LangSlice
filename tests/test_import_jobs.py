@@ -9,7 +9,7 @@ DeepSlice 1.2.8's writers produced from the same placements) must map every
 section file exactly as the source did (``registration.json``'s
 ``pixel_to_atlas_um``), and then run the image-model nonlinear step on top
 (the packaged ``trace_borders`` with the stub image model: its image call
-and the ANTs fit of the traced lines; ``submit`` with a section left
+and the SyN fit of the traced lines; ``submit`` with a section left
 linear) end to end, once. The atlas is the importer tests' deep
 synthetic one; no credential is read and no model called.
 """
@@ -168,8 +168,8 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
                      ids: tuple[str, ...]) -> None:
     """The image-model nonlinear step on the imported placement, end to end:
     every section but the last traced (the trace and its fit, landed before
-    the CLI answers), the last left linear (deformations are optional). The fit needs antspyx."""
-    pytest.importorskip("ants", reason="the traced fit is ANTs (antspyx)")
+    the CLI answers), the last left linear (deformations are optional). The fit needs FireANTs."""
+    pytest.importorskip("fireants", reason="the traced fit needs FireANTs")
     for name in ids[:-1]:
         envelope = ok(capsys, folder, "trace_borders", "--section", name)
         result = envelope["result"]
