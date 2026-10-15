@@ -311,6 +311,16 @@ def build_job_statement(
             "alignment.", off
         ))
 
+    if method and not spec.off("set_preprocessed_channel_properties"):
+        # First in the Method: the channel every later step looks at and fits.
+        method.insert(
+            2,
+            "- Before placing or fitting a section, make its counterstain the channel "
+            "you register on: set the preprocessed channel "
+            "(`set_preprocessed_channel_properties`) to the counterstain alone, "
+            "enhanced, and judge alignment and run fits on it."
+        )
+
     if spec.has("transform") and not spec.off("interactive_transform"):
         if not method:
             method = ["", "Method:"]

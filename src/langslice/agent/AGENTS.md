@@ -317,7 +317,9 @@ deformation gate.
 job statement carries the job, the facts, the tools by name, the
 constraints and a short Method per task that is on (with
 `interactive_transform`, the alignment lines open by aligning each section by
-hand before any fitting algorithm runs): place each section on
+hand before any fitting algorithm runs; with `set_preprocessed_channel_properties`,
+the Method's first line makes the counterstain alone, enhanced, the channel
+every section is registered on): place each section on
 its own evidence and compare before writing; review the whole stack and
 re-check both sides of a gap before reporting a break; inspect each fit or
 adjustment against surviving internal anatomy and keep only changes that
