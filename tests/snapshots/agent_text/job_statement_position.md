@@ -25,6 +25,7 @@ Constraints:
 - LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute priority: this run may be evaluated on the quality of its registration alone, without regard to the time or tokens it spends.
 
 Method:
+- Before placing or fitting a section, make its counterstain the channel you register on: set the preprocessed channel (`set_preprocessed_channel_properties`) to the counterstain alone, enhanced, and judge alignment and run fits on it.
 - Place each section on its own evidence: compare it against candidate atlas positions before writing, and do not let the nominal interval stand in for a look.
 - After writing, review the whole stack against the atlas, watch for spacings that differ from their neighbours, and re-check the sections on either side of any gap before reporting an interval break.
 - Submit when the work is complete; address any missing requirements it returns.

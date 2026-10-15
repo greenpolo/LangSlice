@@ -237,7 +237,10 @@ These settings affect pictures, not fits.
 
 `set_preprocessed_channel_properties` changes the channel blend, CLAHE,
 N4 correction and denoising used by the fits and image model, stack-wide or
-per section. It returns before/after pictures. Inspect that channel with
+per section. It returns before/after pictures. Its description and the
+job statement's Method tell the agent to register on the counterstain
+(DAPI, Hoechst, Nissl, NeuroTrace) alone, enhanced, with every labelling
+channel at weight 0. Inspect that channel with
 `look(channels=["preprocessed"])`. Both channel tools are available in every
 job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 

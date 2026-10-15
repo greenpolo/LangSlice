@@ -173,9 +173,15 @@ Set the recipe of the preprocessed channel that the fits and the image model rea
         never changed; look draws this channel with channels ["preprocessed"].
         Undoable; another call replaces the recipe.
 
-        Process the sections so their detail is as visible as possible: choose
-        the channel weights and enhancement that show the internal anatomy
-        (layers, nuclei, fibre tracts, ventricles) most clearly. The
+        Register on the counterstain. A counterstain (DAPI, Hoechst, Nissl,
+        NeuroTrace) labels every cell, so it shows the anatomy the atlas draws; a
+        labelling channel (a tracer, an antibody, a reporter) marks only some
+        cells, and its bright signal pulls the fits toward it. Give the
+        counterstain weight 1 and each labelling channel weight 0, then enhance
+        it until the internal anatomy (layers, nuclei, fibre tracts, ventricles)
+        is as clear as possible: CLAHE always, N4 where illumination is uneven,
+        denoising where it is grainy. A section with one channel, or a
+        brightfield stain that already shows the anatomy, uses that channel. The
         preprocessed channel serves both you and the fitting algorithms: look at
         it (`look` with channels ["preprocessed"]) to judge alignment, and the
         fits match it against the atlas. Pale or low-contrast sections
