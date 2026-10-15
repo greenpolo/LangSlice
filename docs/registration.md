@@ -289,18 +289,22 @@ and step rule: mutual information plus an edge channel,
 four pyramid levels, the stiffness as Gaussian smoothing of each step and of
 the whole warp. Identical inputs give identical fields.
 
-A fit over the whole section runs twice. The first run measures the section
-inside the placed atlas outline widened by 0.2 mm. Then each section pixel is
+A stain fit runs twice, over the whole section or restricted to regions. The
+first run measures the section inside the placed atlas outline widened by
+0.2 mm (for a restricted fit, only within the regions' neighbourhood). Then each section pixel is
 classed as matching the atlas image the first run warped, as an artifact, or
 as background (a three-class EM after Tward et al. 2025, on a 50 µm grid with
 a linear contrast per 0.8 mm block). The second run starts again from the
 same placement, measures every section pixel that matches with probability
 at least 0.5 anywhere in the picture, and lets the atlas reach everywhere
 except the marked damage: holes, tears and debris drop out, and the outline
-no longer bounds where tissue may go. The fitted record keeps the pixels left
+no longer bounds where tissue may go. A restricted fit classes the pixels
+over the whole section (the classes need tissue and background to learn
+from) and then keeps both masks within its regions' neighbourhood; its
+field still fades to nothing over 0.3 mm beyond the neighbourhood. The fitted record keeps the pixels left
 out, for review pictures; the agent's replies and pictures do not change.
-The Elastix affine, restricted fits and fits of traced borders keep the
-outline masks and run once.
+The Elastix affine and fits of traced borders keep the outline masks and
+run once.
 
 Both registration engines accept any of the atlas's own images as
 `atlas_image`: BrainGlobe's `"template"` (the default) and every additional

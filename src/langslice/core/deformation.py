@@ -332,12 +332,12 @@ def cache_key(
         # A restricted step is tapered outside its region (fit.RESTRICTED_TAPER_MM);
         # results saved before the taper are not reused.
         **({"restricted_taper_mm": RESTRICTED_TAPER_MM} if settings.structures else {}),
-        # The engine and, for a whole-section stain fit, the EM section mask:
-        # a record from another engine or mask is not reused.
+        # The engine and, for a stain fit, the EM section mask: a record from
+        # another engine or mask is not reused.
         "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,
                    list(DETAIL[settings.detail].iterations)],
         **({"section_mask": EM_PARAMETERS}
-           if settings.section_image == "stain" and not settings.structures else {}),
+           if settings.section_image == "stain" else {}),
     })
 
 

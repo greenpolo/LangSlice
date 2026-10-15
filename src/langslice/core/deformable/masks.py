@@ -3,17 +3,21 @@
 Two kinds of fit, two kinds of mask:
 
 - FOOTPRINT masks (:func:`footprint_masks`): the Elastix affine, every
-  region-restricted step and every fit of traced lines. Section (fixed)
+  fit of traced lines and the first run of every stain fit. Section (fixed)
   mask = placed atlas footprint widened by :data:`MASK_MARGIN_MM`; atlas
   (moving) mask = the same footprint minus the excluded regions and an
   :data:`EXCLUSION_MARGIN_MM` margin around them (the damage zone).
-- EM masks (:func:`em_masks`): a whole-section stain fit. It is fitted once
-  with the footprint masks; :func:`em_weights` then asks, pixel by pixel,
+- EM masks (:func:`em_masks`): a stain fit, whole-section or restricted to
+  regions. It is fitted once with the footprint masks; :func:`em_weights` then asks, pixel by pixel,
   whether the section matches the warped atlas image, is an artifact or is
   background, and the fit is run again from the same start with section mask
   = P(match) >= :data:`EM_MATCH_THRESHOLD` over the whole grid and atlas mask
   = everything but the damage zone. Holes, tears, folds and debris drop out
-  of the metric; the footprint no longer limits where tissue may go.
+  of the metric; the footprint no longer limits where tissue may go. A
+  restricted fit estimates the classes over the whole section (the EM needs
+  tissue and background to learn what each looks like, and a fit's own
+  neighbourhood has too little of either) and then keeps both masks inside
+  the regions' neighbourhood, as its footprint masks were.
 """
 
 from __future__ import annotations
@@ -200,17 +204,38 @@ def em_weights(
     }
 
 
+@dataclass(frozen=True)
+class EMContext:
+    """What a stain fit's second run needs besides the engine inputs, on the
+    working grid: the whole placed *footprint* (with its margin; the EM's
+    tissue and background are told apart by it, so a restricted fit passes
+    the unrestricted one), the *damage_zone*, and for a region-restricted
+    fit the regions' *neighbourhood* (None: the whole section)."""
+
+    footprint: np.ndarray
+    damage_zone: np.ndarray
+    neighbourhood: np.ndarray | None = None
+
+
 def em_masks(
-    J: np.ndarray, warped_atlas: np.ndarray, first: Masks, spacing_mm: float,
+    J: np.ndarray, warped_atlas: np.ndarray, context: EMContext, spacing_mm: float,
 ) -> tuple[Masks, dict[str, Any]]:
     """The second fit's masks from the first fit's warped atlas image, and the
-    EM's facts (``left_out``: the section pixels the mask drops; ``params``;
-    ``left_out_in_footprint``: their fraction of the placed footprint)."""
-    weights = em_weights(J, warped_atlas, first.fixed, spacing_mm)
+    EM's facts (``left_out``: the section pixels the mask drops from the fit's
+    scope, the whole section or the neighbourhood; ``params``;
+    ``left_out_in_footprint``: their fraction of the placed footprint in that
+    scope)."""
+    weights = em_weights(J, warped_atlas, context.footprint, spacing_mm)
     fixed = weights["WM"] >= EM_MATCH_THRESHOLD
+    moving = ~context.damage_zone
+    scope = context.footprint if context.neighbourhood is None else (
+        context.footprint & context.neighbourhood)
     left_out = ~fixed
+    if context.neighbourhood is not None:
+        fixed, moving = fixed & context.neighbourhood, moving & context.neighbourhood
+        left_out = left_out & context.neighbourhood
     facts = {
         "left_out": left_out, "params": weights["params"],
-        "left_out_in_footprint": float(left_out[first.fixed].mean()) if first.fixed.any() else 0.0,
+        "left_out_in_footprint": float(left_out[scope].mean()) if scope.any() else 0.0,
     }
-    return Masks(fixed=fixed, moving=~first.damage_zone, damage_zone=first.damage_zone), facts
+    return Masks(fixed=fixed, moving=moving, damage_zone=context.damage_zone), facts
