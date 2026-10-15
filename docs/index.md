@@ -17,7 +17,7 @@ Coronal sections of the Allen mouse atlas are the most tested case.
 |---|---|
 | [Agents, CLI and MCP](agents.md) | Coding agents, Claude Desktop and LangSlice's built-in agent; setup, settings and replies |
 | [ABBA](abba.md) | Install the Fiji connector and register sections inside ABBA |
-| [Registration tools](registration.md) | Tasks, calibration, viewing, affine fits, ANTs and optional image-model traces |
+| [Registration tools](registration.md) | Tasks, calibration, viewing, affine fits, SyN deformations and optional image-model traces |
 | [Python library](library.md) | Write agent workflows using the same job and tools |
 | [File formats](file_formats.md) | Job files, coordinate conventions, maps and registration imports/exports |
 | [Architecture](architecture.md) | Package layers, shared operations and the Fiji worker protocol |

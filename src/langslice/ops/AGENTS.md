@@ -229,7 +229,7 @@ wording; `registry.py` lists which.
   images (`core.atlas.images`), `soft`/`medium`/`firm`, on top of the applied deformation
   (undo is how to start over); *restrict_to*
   checked against the atlas (`region_entries`); refused, nothing done:
-  `ANTS_MISSING` (`refuse_without_ants`: antspyx must import, `ants_ready`),
+  `ANTS_MISSING` (`refuse_without_ants`: FireANTs and torch must import, `engine_ready`),
   `BAD_ARGS` (no sections, more than `MAX_ANTS_SYN_SECTIONS` (4), an unknown
   atlas image or stiffness, a malformed region list), `FIT_ATLAS_UNAVAILABLE`,
   `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `ants_syn`.

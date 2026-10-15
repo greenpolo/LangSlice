@@ -16,7 +16,7 @@ from langslice.ops import deformable as ops_deformable
 from langslice.ops.refusal import Refused
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
-pytest.importorskip("ants", reason="ants_syn needs antspyx")
+pytest.importorskip("fireants", reason="ants_syn needs FireANTs")
 
 ID = "s0.png"
 
@@ -98,7 +98,7 @@ def test_refusals_write_nothing(tmp_path: Path, atlas, kwargs, code):
 
 def test_without_ants_it_refuses(tmp_path: Path, atlas, monkeypatch):
     job, ctx = _job(tmp_path, atlas)
-    monkeypatch.setattr(deformation, "ants_available", lambda: False)
+    monkeypatch.setattr(deformation, "engine_available", lambda: False)
     with pytest.raises(Refused) as refused:
         ops_deformable.ants_syn(job, ctx, [ID])
     assert refused.value.code == "ANTS_MISSING"

@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
+#: ``ants``: SyN, fitted by FireANTs (the record's engine version names the
+#: library); ``elastix``: the Elastix affine's inputs, never a deformation.
 Engine = Literal["ants", "elastix"]
 #: There is no ``stiff``: it never gave the best-looking fit and left
 #: enlarged ventricles unfilled.
@@ -50,12 +52,13 @@ BORDER_IMAGES: frozenset[str] = frozenset({"borders", "borders_merged"})
 
 
 @dataclass(frozen=True)
-class AntsStiffness:
-    """SyN regularization as Gaussian sigmas in millimetres.
+class StiffnessLevel:
+    """SyN regularization as Gaussian sigmas in millimetres: *update_sigma_mm*
+    smooths each step's gradient, *total_sigma_mm* the whole warp.
 
-    ANTs takes both as variances in voxels of the working grid; the adapter
-    converts (variance = (sigma_mm / voxel_mm) ** 2), so a level means the
-    same physical smoothness at every detail level.
+    The engine converts them to voxels of the working grid (sigma_mm /
+    voxel_mm), so a level means the same physical smoothness at every detail
+    level.
     """
 
     update_sigma_mm: float
@@ -64,11 +67,13 @@ class AntsStiffness:
 
 #: Soft lets a region bend at roughly the scale of a large nucleus; firm keeps
 #: the residual to smooth, larger-scale shape change.
-ANTS_STIFFNESS: dict[str, AntsStiffness] = {
-    "soft": AntsStiffness(update_sigma_mm=0.05, total_sigma_mm=0.0),
-    "medium": AntsStiffness(update_sigma_mm=0.08, total_sigma_mm=0.02),
-    "firm": AntsStiffness(update_sigma_mm=0.12, total_sigma_mm=0.04),
+STIFFNESS: dict[str, StiffnessLevel] = {
+    "soft": StiffnessLevel(update_sigma_mm=0.05, total_sigma_mm=0.0),
+    "medium": StiffnessLevel(update_sigma_mm=0.08, total_sigma_mm=0.02),
+    "firm": StiffnessLevel(update_sigma_mm=0.12, total_sigma_mm=0.04),
 }
+
+
 @dataclass(frozen=True)
 class DetailLevel:
     """Working resolution and optimization effort.
@@ -79,12 +84,12 @@ class DetailLevel:
     """
 
     working_um: float
-    ants_iterations: tuple[int, ...]
+    iterations: tuple[int, ...]
 
 
 DETAIL: dict[str, DetailLevel] = {
-    "coarse": DetailLevel(working_um=40.0, ants_iterations=(80, 50, 25)),
-    "standard": DetailLevel(working_um=20.0, ants_iterations=(100, 70, 50, 25)),
+    "coarse": DetailLevel(working_um=40.0, iterations=(80, 50, 25)),
+    "standard": DetailLevel(working_um=20.0, iterations=(100, 70, 50, 25)),
 }
 #: ANTs halves the grid at each level before the last (shrink factors
 #: 2^(n-1)..1, smoothing n-1..0 voxels): the extra coarse levels are what give
@@ -139,8 +144,11 @@ class FitSettings:
     structures: tuple[str | int, ...] = field(default_factory=tuple)
     #: Margin around *structures* the restricted fit may see and move, in um.
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
-    #: Stain fits only (lines ignore it): the intensity metric.
-    stain_metric: StainMetric = "local_correlation"
+    #: Stain fits only (lines ignore it): the intensity metric. Mutual
+    #: information is the default (it followed the raters' own corrections
+    #: best on the benchmarks); local correlation stays selectable so records fitted
+    #: with it still load and refit identically.
+    stain_metric: StainMetric = "mutual_information"
     #: Stain fits only (lines ignore it): add an edge channel, the smoothed
     #: gradient magnitude of the stain and of the atlas image, as a second
     #: metric next to the intensities (:func:`langslice.core.deformable.fit.edge_image`).
@@ -161,7 +169,7 @@ class FitSettings:
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if self.labels != "none" and self.engine != "ants":
             raise ValueError(
-                "Label-map channels are ANTs-only: Elastix has no multi-label metric "
+                "Label-map channels are SyN-only: Elastix has no multi-label metric "
                 "with per-channel masks that matches ANTs' label registration"
             )
         metric_for(self.section_image, self.atlas_image)
@@ -192,7 +200,7 @@ class FitSettings:
 
 def metric_for(
     section_image: str, atlas_image: str, *, engine: str = "ants",
-    stain_metric: str = "local_correlation",
+    stain_metric: str = "mutual_information",
 ) -> Metric:
     """The similarity metric for an image pairing, engine and stain metric.
 
@@ -200,12 +208,11 @@ def metric_for(
     so intensities should simply agree: mean squares. A photograph against a
     grayscale atlas image has an unknown intensity relationship (brightfield
     tissue is dark where the template is bright, and stains differ region by
-    region): ANTs' local correlation by default, which only asks that
-    intensities agree up to a scale and offset within each small window (the
-    linear placement is always the starting point, so a local metric is
-    enough), or mutual information over the whole section. Elastix has no
-    local correlation metric, so its stain fits use
-    :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
+    region): mutual information over the section by default, which asks only
+    that intensities be predictable from each other, or ANTs' local
+    correlation, which asks that they agree up to a scale and offset within
+    each small window. Elastix has no local correlation metric, so its stain
+    fits use :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
     lines against a grayscale image share no structure, and a stain against
     atlas borders is the worst pairing (it stays at the linear placement and
     leaves enlarged ventricles unfilled): borders are for traced lines.

@@ -31,7 +31,7 @@ from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, bump_field,
 from tests.linear_tool_helpers import ToolContext
 from tests.linear_tool_helpers import tool_named as _tool
 
-needs_ants = pytest.mark.skipif(not deformation.ants_available(), reason="needs antspyx")
+needs_ants = pytest.mark.skipif(not deformation.engine_available(), reason="needs antspyx")
 IDENTITY = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             "calibration": {"section_um_per_px": 25.0, "source": "host"}}
 

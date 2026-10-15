@@ -415,23 +415,25 @@ STIFFNESSES = ("soft", "medium", "firm")
 MAX_ANTS_SYN_SECTIONS = 4
 
 
-def ants_ready() -> bool:
-    """Whether antspyx imports here (the ANTs engine, ``ANTS_MISSING`` when not)."""
-    if not deformation.ants_available():
+def engine_ready() -> bool:
+    """Whether the deformable engine (FireANTs on torch) imports here
+    (``ANTS_MISSING`` when not)."""
+    if not deformation.engine_available():
         return False
-    from langslice.core.deformable.engines import import_ants
+    from langslice.core.deformable.engines import import_fireants
 
     try:
-        import_ants()
+        import_fireants()
     except Exception:  # an install that does not load is as missing as none
-        logger.warning("antspyx is installed but does not import", exc_info=True)
+        logger.warning("FireANTs is installed but does not import", exc_info=True)
         return False
     return True
 
 
 def refuse_without_ants() -> None:
-    """Refuse ``ANTS_MISSING`` (nothing done) when antspyx does not import."""
-    if not ants_ready():
+    """Refuse ``ANTS_MISSING`` (nothing done) when the deformable engine does
+    not import."""
+    if not engine_ready():
         raise Refused("ANTS_MISSING", message=deformation.ANTS_MISSING + ".")
 
 

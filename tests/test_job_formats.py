@@ -59,7 +59,7 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
 
 @pytest.fixture(scope="module")
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
-    pytest.importorskip("ants")
+    pytest.importorskip("fireants")
     import langslice
     from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create

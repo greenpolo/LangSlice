@@ -1,64 +1,78 @@
-"""The deformable engine (ANTs SyN) and the Elastix affine, behind plain calls.
+"""The deformable engine (FireANTs SyN) and the Elastix affine, behind plain calls.
 
 Both see the same thing: a fixed image (the section), a moving image (the
 placed atlas, already on the section's working grid), a fixed and a moving
 mask, and the physical spacing and origin of that grid. :func:`run_engine`
-(ANTs SyN) returns a displacement field in millimetres on the working grid
-that points from a section point to the matching point of the placed atlas
-image — the convention of brainglobe-registration and of ANTs' own
-resampling fields: ``atlas_point = section_point + field(section_point)``.
+(FireANTs' SyN, on the GPU when there is one) returns a displacement field in
+millimetres on the working grid that points from a section point to the
+matching point of the placed atlas image — the convention of
+brainglobe-registration and of ANTs' resampling fields:
+``atlas_point = section_point + field(section_point)``, and the inverse.
 :func:`run_elastix_affine` returns an affine on the same millimetres.
 
 No registration solver lives here; the libraries do the fitting. Pure arrays
 in, pure arrays out, so the adapters run unchanged in a worker process.
 
-Determinism: identical inputs give identical results. Neither engine samples
-randomly with these settings except Elastix's random coordinate sampler, which
-gets a fixed seed; what remains is the thread count, because a multithreaded
-metric sums partial results in an order that depends on how the image is
-split (ANTs fields differ by ~2 um between 1 and 8 threads). Every fit
-therefore runs on :data:`FIT_THREADS` threads. Elastix
-takes the number per call. ANTs (its own bundled ITK) reads the count from
-the environment once per process, at its first use, so :func:`import_ants`
-sets it around that first use and restores the environment afterwards (the
-rest of the process keeps its own default); pool workers set it before
-anything loads (:func:`ants_worker`). Only if something outside LangSlice
-loaded ANTs first is the count unknown, and the record says so.
+Determinism: identical inputs give identical results. FireANTs runs with
+torch's deterministic algorithms (:func:`_deterministic`); on the CPU torch
+and Elastix both run on :data:`FIT_THREADS` threads, because a multithreaded
+sum's last bits depend on how the work is split. Elastix's random coordinate
+sampler gets a fixed seed.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
+import logging
 import os
-import sys
-import tempfile
 import threading
 import time
+import warnings
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
 from langslice.core.deformable.settings import (
-    ANTS_STIFFNESS,
     DETAIL,
     ELASTIX_STAIN_METRIC,
+    STIFFNESS,
     FitSettings,
     Metric,
 )
 
-#: Fixed step for ANTs SyN's gradient descent (ANTs' own default).
-ANTS_GRADIENT_STEP = 0.2
 #: Histogram bins for mutual information, both engines.
 MUTUAL_INFORMATION_BINS = 32
 #: Random samples per Elastix iteration.
 ELASTIX_SPATIAL_SAMPLES = 4096
-#: Threads every engine call uses, whatever the machine or pool size: the
+#: Threads every CPU engine call uses, whatever the machine or pool size: the
 #: thread count changes a multithreaded fit's last bits (module docstring).
 FIT_THREADS = 8
-#: ITK's environment variable for its default thread count (read once).
-ITK_THREADS_ENV = "ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"
-#: antsRegistration's --random-seed and Elastix's RandomSeed.
+#: Elastix's RandomSeed, and torch's seed around a FireANTs fit.
 RANDOM_SEED = 20261002
+#: The largest move of one gradient step, in FireANTs' half-resolutions (half a
+#: pixel of the level), fixed. Tuned on Carey, PL_Projections and LSD sections:
+#: at 0.8 close-ups of the cerebellar granular layers and the hippocampal cell
+#: layers fit at least as tightly as ANTs SyN did and fluorescent brainstem
+#: kept its shape; 3.2 tore folia across the white matter. The optimizer is
+#: FireANTs' SGD with ANTs' step rule (:func:`_global_step_sgd`), not its
+#: default Adam: Adam scales each pixel's step by its own gradient history, so
+#: pixels the masks leave out (an excluded region) moved as far as any, driven
+#: by the faint smoothed gradient around them.
+FIREANTS_LEARNING_RATE = 0.8
+#: Each pyramid level halves the grid (shrink factors 2^(n-1)..1 for n levels).
+FIREANTS_SHRINK = 2
+#: Fixed-point iterations (and relaxation) that invert each half of the SyN
+#: warp (:func:`_invert`).
+INVERSE_ITERATIONS = 200
+INVERSE_RELAXATION = 0.5
+#: The release built from github.com/rohitrango/FireANTs at f8a9cc2; part of
+#: the deformable cache key (``core.deformation.cache_key``).
+FIREANTS_VERSION = "1.5.1"
+#: CUBLAS needs this before its first use for deterministic matrix products.
+_CUBLAS_ENV = ("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 
 @dataclass
@@ -72,7 +86,7 @@ class EngineInputs:
     spacing_mm: tuple[float, float]
     origin_mm: tuple[float, float]
     #: Label-map channels: paired region indicators (float, softened) and
-    #: their metric weights. ANTs only.
+    #: their metric weights. FireANTs only.
     fixed_labels: list[np.ndarray] = field(default_factory=list)
     moving_labels: list[np.ndarray] = field(default_factory=list)
     label_weights: list[float] = field(default_factory=list)
@@ -81,7 +95,7 @@ class EngineInputs:
     fixed_edges: np.ndarray | None = None
     moving_edges: np.ndarray | None = None
     edge_weight: float = 0.0
-    #: ANTs local correlation window radius in working-grid pixels.
+    #: Local correlation window radius in working-grid pixels.
     correlation_radius_px: int = 4
 
 
@@ -96,165 +110,284 @@ class EngineResult:
     runtime_s: float
     engine_version: str
     notes: list[str] = field(default_factory=list)
+    #: Section pixels the fit's metric left out (an EM section mask,
+    #: ``masks.em_masks``), on the working grid; None for a footprint mask.
+    left_out: np.ndarray | None = None
 
 
 def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
-    """Fit one deformation with ANTs SyN. Raises when ANTs is not installed or
-    fails, and for any other engine (Elastix fits affines only:
+    """Fit one deformation with FireANTs' SyN. Raises when FireANTs is not
+    installed or fails, and for any other engine (Elastix fits affines only:
     :func:`run_elastix_affine`)."""
     if settings.engine != "ants":
         raise ValueError(f"No deformable fit with {settings.engine!r}: the deformable "
-                         "engine is ANTs SyN")
-    return _run_ants(inputs, settings, settings.metric)
+                         "engine is SyN (FireANTs)")
+    return _run_fireants(inputs, settings, settings.metric)
 
 
-#: ANTs' thread count in this process: FIT_THREADS once :func:`import_ants`
-#: or :func:`ants_worker` fixed it, None if ANTs was loaded by someone else.
-_ANTS_THREADS: int | None = None
-_ANTS_LOCK = threading.Lock()
+_TORCH_LOCK = threading.Lock()
 
 
-def ants_worker() -> None:
-    """Process-pool initializer: fix ITK's thread count before anything loads."""
-    os.environ[ITK_THREADS_ENV] = str(FIT_THREADS)
+def import_fireants() -> Any:
+    """Import torch and FireANTs' SyN (``RuntimeError`` with the install hint).
 
-
-def import_ants(purpose: str = "The ANTs engine") -> Any:
-    """Import antspyx with its thread count fixed at :data:`FIT_THREADS`.
-
-    The first import sets ``ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS``, runs one
-    tiny filter so ANTs' ITK reads it, and puts the variable back.
+    Sets ``CUBLAS_WORKSPACE_CONFIG`` first when nothing set it, so the
+    deterministic algorithms can run on the GPU.
     """
-    global _ANTS_THREADS
-    with _ANTS_LOCK:
-        first = "ants" not in sys.modules
-        held = os.environ.get(ITK_THREADS_ENV)
-        if first:
-            os.environ[ITK_THREADS_ENV] = str(FIT_THREADS)
-        try:
-            import ants
-
-            if first:
-                ants.smooth_image(ants.from_numpy(np.zeros((4, 4), np.float32)), 1.0)
-                _ANTS_THREADS = FIT_THREADS
-            elif _ANTS_THREADS is None and held == str(FIT_THREADS):
-                _ANTS_THREADS = FIT_THREADS  # a pool worker (ants_worker)
-        except ImportError as exc:  # pragma: no cover - depends on the environment
-            raise RuntimeError(
-                f"{purpose} needs antspyx, one of LangSlice's dependencies on Python "
-                "3.13 and below (pip install 'antspyx>=0.6.3,<0.7')"
-            ) from exc
-        finally:
-            if first:
-                if held is None:
-                    os.environ.pop(ITK_THREADS_ENV, None)
-                else:
-                    os.environ[ITK_THREADS_ENV] = held
-    return ants
-
-
-def _run_ants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -> EngineResult:
-    ants = import_ants()
-    start = time.perf_counter()
-    level = DETAIL[settings.detail]
-    stiffness = ANTS_STIFFNESS[settings.stiffness]
-    voxel_mm = float(np.mean(inputs.spacing_mm))
-    # ANTs takes Gaussian *variances* in working-grid voxels.
-    flow_variance = (stiffness.update_sigma_mm / voxel_mm) ** 2
-    total_variance = (stiffness.total_sigma_mm / voxel_mm) ** 2
-
-    def image(array: np.ndarray) -> Any:
-        # ANTs arrays are x-first; transposing keeps x = columns, y = rows.
-        return ants.from_numpy(
-            np.ascontiguousarray(np.asarray(array, dtype=np.float32).T),
-            origin=tuple(float(v) for v in inputs.origin_mm),
-            spacing=tuple(float(v) for v in inputs.spacing_mm),
-        )
-
-    radius = max(1, int(inputs.correlation_radius_px))
-    if metric == "local_correlation":
-        # CC's parameter is the window radius in voxels of each pyramid level.
-        syn_metric, sampling = "CC", radius
-    elif metric == "mutual_information":
-        syn_metric, sampling = "mattes", MUTUAL_INFORMATION_BINS
-    elif metric == "mean_squares":
-        syn_metric, sampling = "meansquares", 0
-    else:
-        raise ValueError(f"ANTs has no {metric!r} metric here")
-    extras: list[list[Any]] = []
-    if inputs.fixed_edges is not None and inputs.moving_edges is not None:
-        # The edge channel uses the intensity pair's metric.
-        extras.append([syn_metric, image(inputs.fixed_edges), image(inputs.moving_edges),
-                       float(inputs.edge_weight), sampling])
-    # Each label pair is a mean-squares metric on region indicators, exactly
-    # the construction ants.label_image_registration builds internally; it is
-    # assembled here so the SyN regularization (stiffness) stays ours —
-    # label_image_registration hard-codes SyN[0.2,3,0].
-    extras += [
-        ["MeanSquares", image(f), image(m), float(w), 0]
-        for f, m, w in zip(inputs.fixed_labels, inputs.moving_labels, inputs.label_weights,
-                           strict=True)
-    ]
-    options: dict[str, Any] = {
-        "type_of_transform": "SyNOnly", "initial_transform": "Identity",
-        "syn_metric": syn_metric, "syn_sampling": sampling,
-        "reg_iterations": tuple(level.ants_iterations), "grad_step": ANTS_GRADIENT_STEP,
-        "flow_sigma": flow_variance, "total_sigma": total_variance,
-        "mask_all_stages": True,
-    }
-    # antspyx passes --random-seed from this module-level value. Dense
-    # sampling draws no random numbers; the seed pins whatever else might.
-    held_seed = ants.config._random_seed
-    ants.config._random_seed = RANDOM_SEED
+    os.environ.setdefault(*_CUBLAS_ENV)
     try:
-        with tempfile.TemporaryDirectory(prefix="langslice-syn-") as directory:
-            result = ants.registration(
-                image(inputs.fixed), image(inputs.moving),
-                outprefix=os.path.join(directory, "syn_"),
-                mask=image(inputs.fixed_mask.astype(np.float32)),
-                moving_mask=image(inputs.moving_mask.astype(np.float32)),
-                multivariate_extras=extras or None, verbose=False, **options,
-            )
-            forward_files = [p for p in result["fwdtransforms"] if p.endswith(".nii.gz")]
-            inverse_files = [p for p in result["invtransforms"] if p.endswith(".nii.gz")]
-            affines = [p for p in result["fwdtransforms"] if p.endswith(".mat")]
-            if len(forward_files) != 1 or len(inverse_files) != 1:
-                raise RuntimeError(f"Unexpected SyN transform chain: {result['fwdtransforms']}")
-            for path in affines:
-                parameters = np.asarray(ants.read_transform(path).parameters, dtype=float)
-                if not np.allclose(parameters, [1, 0, 0, 1, 0, 0], atol=1e-6):
-                    raise RuntimeError("SyNOnly produced a non-identity affine stage")
-            # The forward warp lives on the fixed (section) grid and is what
-            # ANTs resamples the moving image through: section point -> atlas
-            # point.
-            forward = ants.image_read(forward_files[0]).numpy().transpose(1, 0, 2)
-            inverse = ants.image_read(inverse_files[0]).numpy().transpose(1, 0, 2)
-    finally:
-        ants.config._random_seed = held_seed
-    options["metric"] = metric
+        import torch
+        # FireANTs warns once per module that its optional fused CUDA kernels
+        # are absent; the plain torch path is what LangSlice runs.
+        for name in ("fireants", "fireants.registration.optimizers.adam",
+                     "fireants.interpolator", "fireants.registration.abstract",
+                     "fireants.io.image"):
+            logging.getLogger(name).setLevel(logging.ERROR)
+        with contextlib.redirect_stdout(io.StringIO()):  # "Using FFO: False"
+            from fireants.registration.syn import SyNRegistration  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise RuntimeError(
+            "The deformable engine needs FireANTs and torch, LangSlice dependencies "
+            "(reinstall LangSlice)"
+        ) from exc
+    return torch
+
+
+def fit_device() -> str:
+    """``cuda`` when torch sees a GPU, else ``cpu``."""
+    torch = import_fireants()
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def engine_worker() -> None:
+    """Process-pool initializer for CPU fits: torch on :data:`FIT_THREADS` threads."""
+    torch = import_fireants()
+    torch.set_num_threads(FIT_THREADS)
+
+
+@contextlib.contextmanager
+def _deterministic(torch: Any, device: str) -> Iterator[None]:
+    """Torch's deterministic algorithms, seed and (CPU) thread count for one
+    fit; the process's own settings come back afterwards."""
+    with _TORCH_LOCK:
+        held = (torch.are_deterministic_algorithms_enabled(),
+                torch.backends.cudnn.enabled, torch.backends.cudnn.benchmark,
+                torch.get_num_threads())
+        # Torch flags its grid sampler's backward as nondeterministic for the
+        # image's gradient (atomic adds), which no fit asks for; the warp's
+        # gradient is one sum per output pixel. warn_only keeps that op, and
+        # the deformable tests check that identical inputs give identical
+        # fields. cuDNN's grid sampler is off: its backward is not one.
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.enabled = False
+        torch.backends.cudnn.benchmark = False
+        if device == "cpu":
+            torch.set_num_threads(FIT_THREADS)
+        torch.manual_seed(RANDOM_SEED)
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*does not have a deterministic")
+                yield
+        finally:
+            torch.use_deterministic_algorithms(held[0])
+            torch.backends.cudnn.enabled = held[1]
+            torch.backends.cudnn.benchmark = held[2]
+            torch.set_num_threads(held[3])
+
+
+def _channel_loss(torch: Any, terms: list[tuple[str, float]], kernel_px: int) -> Any:
+    """ANTs' multivariate metric on FireANTs' images: one metric per channel
+    (``terms``: metric name and weight, in channel order), weights normalized,
+    every term measured under one mask, the last channel of both images
+    (fixed x warped moving). FireANTs' own losses apply one metric to every
+    channel (label-map channels need mean squares beside the image pair's),
+    and its masked local correlation sums each window over masked pixels
+    too, so a blanked excluded region still pulled the tissue around it; here,
+    as in ITK's neighbourhood correlation, a window counts only the pixels
+    inside the mask."""
+    from fireants.losses.cc import separable_filtering
+    from fireants.losses.mi import GlobalMutualInformationLoss
+
+    information = GlobalMutualInformationLoss(num_bins=MUTUAL_INFORMATION_BINS, masked=True)
+    total_weight = float(sum(weight for _metric, weight in terms))
+
+    def box(x: Any) -> Any:
+        ones = torch.ones(kernel_px, dtype=x.dtype, device=x.device)
+        return separable_filtering(x, [ones, ones])
+
+    def correlation(p: Any, t: Any, mask: Any) -> Any:
+        n = box(mask)
+        valid = n > 0.5 * kernel_px
+        n = n.clamp(min=1.0)
+        sp, st = box(mask * p), box(mask * t)
+        cross = box(mask * p * t) - sp * st / n
+        var_p = (box(mask * p * p) - sp * sp / n).clamp(min=1e-5)
+        var_t = (box(mask * t * t) - st * st / n).clamp(min=1e-5)
+        ncc = (cross * cross + 1e-5) / (var_p * var_t + 1e-5)
+        return -(ncc.clamp(max=1.0) * mask * valid).sum() / ((mask * valid).sum() + 1e-8)
+
+    class ChannelLoss(torch.nn.Module):
+        def forward(self, pred: Any, target: Any) -> Any:
+            # The masks move with their images but carry no gradient, as in
+            # ANTs: through them the warp would be rewarded for sliding an
+            # excluded zone onto tissue that matches badly.
+            mask = (pred[:, -1:] * target[:, -1:]).detach()
+            area = mask.sum() + 1e-8
+            loss = pred.new_zeros(())
+            for k, (metric, weight) in enumerate(terms):
+                p, t = pred[:, k:k + 1], target[:, k:k + 1]
+                if metric == "local_correlation":
+                    value = correlation(p, t, mask)
+                elif metric == "mean_squares":
+                    value = ((p - t) ** 2 * mask).sum() / area
+                else:
+                    value = information(torch.cat([p, mask], 1),
+                                        torch.cat([t, torch.ones_like(mask)], 1))
+                loss = loss + (weight / total_weight) * value
+            return loss
+
+    return ChannelLoss()
+
+
+def _global_step_sgd() -> type:
+    from fireants.registration.optimizers.sgd import WarpSGD
+
+    class GlobalStepSGD(WarpSGD):
+        """ANTs' gradient step: the gradient scaled so its largest vector is one,
+        so FireANTs' SGD (one composition per step, ``compose_n`` 1) moves that
+        pixel lr half-resolutions and every other pixel in proportion."""
+
+        def step(self, loss: Any = None) -> None:
+            grad = self.warp.grad
+            grad.data.div_(grad.data.norm(p=2, dim=-1).max() + 1e-12)
+            super().step(loss)
+
+    return GlobalStepSGD
+
+
+def _invert(torch: Any, displacement: Any) -> Any:
+    """v with v(x) = -u(x + v(x)) for a (1, H, W, 2) normalized displacement u:
+    damped fixed point, by sampling only. FireANTs' own inversion
+    (``compositive_warp_inverse``) is an optimization whose gradient scatters
+    into the field it samples, which differs run to run on the GPU."""
+    import torch.nn.functional as F
+
+    u = displacement.permute(0, 3, 1, 2)
+    eye = torch.eye(2, 3, dtype=u.dtype, device=u.device)[None]
+    base = F.affine_grid(eye, list(u.shape), align_corners=True)
+    v = -displacement
+    for _ in range(INVERSE_ITERATIONS):
+        sampled = F.grid_sample(u, base + v, mode="bilinear", padding_mode="border",
+                                align_corners=True).permute(0, 2, 3, 1)
+        v = v + INVERSE_RELAXATION * (-sampled - v)
+    return v
+
+
+def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -> EngineResult:
+    torch = import_fireants()
+    import SimpleITK as sitk
+    from fireants.io.image import BatchedImages, Image
+    from fireants.registration.syn import SyNRegistration
+    from fireants.utils.util import compose_warp
+
+    if metric not in ("local_correlation", "mutual_information", "mean_squares"):
+        raise ValueError(f"FireANTs has no {metric!r} metric here")
+    start = time.perf_counter()
+    device = fit_device()
+    level = DETAIL[settings.detail]
+    stiffness = STIFFNESS[settings.stiffness]
+    voxel_mm = float(np.mean(inputs.spacing_mm))
+    # FireANTs takes Gaussian sigmas in voxels of each pyramid level, as ANTs
+    # took its variances.
+    grad_sigma = stiffness.update_sigma_mm / voxel_mm
+    warp_sigma = stiffness.total_sigma_mm / voxel_mm
+    radius = max(1, int(inputs.correlation_radius_px))
+    edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
+    terms: list[tuple[str, float]] = [(metric, 1.0)]
+    fixed_channels = [inputs.fixed]
+    moving_channels = [inputs.moving]
+    if edges:
+        assert inputs.fixed_edges is not None and inputs.moving_edges is not None
+        # The edge channel uses the intensity pair's metric.
+        terms.append((metric, float(inputs.edge_weight)))
+        fixed_channels.append(inputs.fixed_edges)
+        moving_channels.append(inputs.moving_edges)
+    # Each label pair is a mean-squares term on region indicators, the
+    # construction of ants.label_image_registration.
+    for f, m, w in zip(inputs.fixed_labels, inputs.moving_labels, inputs.label_weights,
+                       strict=True):
+        terms.append(("mean_squares", float(w)))
+        fixed_channels.append(f)
+        moving_channels.append(m)
+
+    def image(channels: list[np.ndarray], mask: np.ndarray) -> Any:
+        # The mask rides as the last channel (FireANTs' masked mode), so it is
+        # resized, never blurred, with the pyramid and warped with the atlas.
+        stack = np.stack([*channels, mask.astype(np.float32)], axis=-1).astype(np.float64)
+        itk = sitk.GetImageFromArray(stack, isVector=True)
+        itk.SetSpacing([float(v) for v in inputs.spacing_mm])
+        itk.SetOrigin([float(v) for v in inputs.origin_mm])
+        return BatchedImages([Image(itk, device=device, dtype=torch.float32)])
+
+    levels = len(level.iterations)
+    scales = [FIREANTS_SHRINK ** k for k in range(levels - 1, -1, -1)]
+    height, width = inputs.fixed.shape
+    with _deterministic(torch, device):
+        fixed = image(fixed_channels, inputs.fixed_mask)
+        moving = image(moving_channels, inputs.moving_mask)
+        registration: Any = SyNRegistration(
+            scales=scales, iterations=list(level.iterations),
+            fixed_images=fixed, moving_images=moving,
+            loss_type="masked_custom", custom_loss=_channel_loss(torch, terms, 2 * radius + 1),
+            optimizer="SGD", optimizer_lr=FIREANTS_LEARNING_RATE,
+            optimizer_params={"compose_n": 1},
+            smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
+            progress_bar=False, dtype=torch.float32,
+        )
+        # FireANTs builds its optimizers by name; the subclass changes only the step.
+        for half in (registration.fwd_warp, registration.rev_warp):
+            half.optimizer.__class__ = _global_step_sgd()
+        registration.optimize()
+        # Section -> atlas through the midpoint: rev^-1, then fwd; atlas ->
+        # section: fwd^-1, then rev. Both images share one grid, so the
+        # affine part is the identity.
+        with torch.no_grad():
+            forward_warp = registration.fwd_warp.get_warp().detach()
+            reverse_warp = registration.rev_warp.get_warp().detach()
+            forward = compose_warp(forward_warp, _invert(torch, reverse_warp))
+            inverse = compose_warp(reverse_warp, _invert(torch, forward_warp))
+        # Normalized [-1, 1] displacements (x, y) -> millimetres.
+        to_mm = np.array([(width - 1) / 2.0 * inputs.spacing_mm[0],
+                          (height - 1) / 2.0 * inputs.spacing_mm[1]], dtype=np.float64)
+        forward_mm = forward[0].detach().cpu().double().numpy() * to_mm
+        inverse_mm = inverse[0].detach().cpu().double().numpy() * to_mm
+        del registration, fixed, moving
+        if device == "cuda":
+            torch.cuda.empty_cache()
+    options: dict[str, Any] = {
+        "metric": metric, "loss_terms": [list(t) for t in terms],
+        "scales": scales, "iterations": list(level.iterations),
+        "optimizer": "SGD, ANTs' step rule", "optimizer_lr": FIREANTS_LEARNING_RATE,
+        "smooth_grad_sigma_px": grad_sigma, "smooth_warp_sigma_px": warp_sigma,
+        "update_sigma_mm": stiffness.update_sigma_mm, "total_sigma_mm": stiffness.total_sigma_mm,
+        "edge_channel": edges,
+        "edge_weight": float(inputs.edge_weight) if edges else 0.0,
+        "label_channels": len(inputs.fixed_labels),
+        "label_weights": [float(w) for w in inputs.label_weights],
+        "device": device, "random_seed": RANDOM_SEED, "deterministic": True,
+    }
     if metric == "local_correlation":
+        options["cc_kernel_px"] = 2 * radius + 1
         options["correlation_radius_mm"] = radius * voxel_mm
-    options["edge_channel"] = inputs.fixed_edges is not None
-    options["edge_weight"] = float(inputs.edge_weight) if inputs.fixed_edges is not None else 0.0
-    options["random_seed"] = RANDOM_SEED
-    options["threads"] = _ANTS_THREADS
-    options["flow_sigma_mm"] = stiffness.update_sigma_mm
-    options["total_sigma_mm"] = stiffness.total_sigma_mm
-    options["reg_iterations"] = list(level.ants_iterations)
-    options["label_channels"] = len(inputs.fixed_labels)
-    options["label_weights"] = [float(w) for w in inputs.label_weights]
+    if device == "cpu":
+        options["threads"] = FIT_THREADS
     return EngineResult(
-        field_mm=np.ascontiguousarray(forward, dtype=np.float32),
-        inverse_field_mm=np.ascontiguousarray(inverse, dtype=np.float32),
+        field_mm=np.ascontiguousarray(forward_mm, dtype=np.float32),
+        inverse_field_mm=np.ascontiguousarray(inverse_mm, dtype=np.float32),
         inverse_source="engine",
-        native_parameters={"antsRegistration": options,
-                           "shrink_factors": [2 ** k for k in
-                                              range(len(level.ants_iterations) - 1, -1, -1)]},
+        native_parameters={"SyNRegistration": options},
         runtime_s=time.perf_counter() - start,
-        engine_version=f"antspyx {ants.__version__}",
-        notes=[] if _ANTS_THREADS is not None else [
-            "ANTs was loaded before LangSlice could fix its thread count; this field "
-            "may differ in its last digits from the same fit run elsewhere"],
+        engine_version=f"fireants {FIREANTS_VERSION} (torch {torch.__version__}, {device})",
     )
 
 
@@ -352,7 +485,7 @@ def run_elastix_affine(inputs: EngineInputs) -> AffineResult:
     import itk
 
     if inputs.fixed_labels:
-        raise ValueError("Label-map channels are ANTs-only")
+        raise ValueError("Label-map channels are SyN-only")
     start = time.perf_counter()
     edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
     metrics = 2 if edges else 1

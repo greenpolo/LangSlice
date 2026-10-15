@@ -23,7 +23,7 @@ from tests.deformable_synthetic import SyntheticAtlas
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
-needs_ants = pytest.mark.skipif(not deformation.ants_available(), reason="needs antspyx")
+needs_ants = pytest.mark.skipif(not deformation.engine_available(), reason="needs antspyx")
 
 
 def _stack(folder: Path, n: int = 5, *, placed: bool = True, atlas: Any = None,
