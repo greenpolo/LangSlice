@@ -26,12 +26,13 @@ and returns a `record.DeformableRecord`. No custom solver.
   by their BrainGlobe names; temporarily, an Allen CCFv3 atlas also gets
   `ccfv3augmented_nissl`, the Blue Brain averaged Nissl from
   `ccfv3augmented_mouse_25um` at its 0.35 mm AP offset). Metric
-  (`stain_metric`, default `local_correlation`): neighbourhood
-  cross-correlation over a box window of radius `CORRELATION_RADIUS_UM`
-  (80 µm, rounded to working pixels: 4 at standard, 2 at coarse), each window
-  counting only its in-mask pixels (as ITK's; `engines._channel_loss`); the
-  Elastix affine has no local correlation and uses `ELASTIX_STAIN_METRIC`
-  (mutual information); `mutual_information` is the alternative. Plus, by
+  (`stain_metric`, default `mutual_information`, FireANTs' global mutual
+  information over the in-mask pixels; `engines._channel_loss`). The
+  alternative, `local_correlation`, is neighbourhood cross-correlation over a
+  box window of radius `CORRELATION_RADIUS_UM` (80 µm, rounded to working
+  pixels: 4 at standard, 2 at coarse), each window counting only its in-mask
+  pixels (as ITK's); the Elastix affine has no local correlation and uses
+  `ELASTIX_STAIN_METRIC` (mutual information). Plus, by
   default (`stain_edges`), an EDGE channel: the gradient
   magnitude after a `EDGE_SIGMA_UM` (30 µm) Gaussian of the stain and of the
   atlas image (`fit.edge_image`, scaled by its 99th percentile in each mask),
@@ -129,15 +130,19 @@ Named ladders, physical units: `stiffness` soft/medium/firm
 voxels); `detail` coarse/standard (working µm and pyramid depth/iterations —
 the extra levels are SyN's capture range); `atlas_image`, `section_image`, `exclude`,
 `labels`, `structures`, `neighbourhood_um`, `preprocess`, and for stain fits
-`stain_metric` (`local_correlation` | `mutual_information`) and
+`stain_metric` (`mutual_information` | `local_correlation`) and
 `stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
 from pairing, engine and stain metric (`metric_for`); lines against
 an atlas image and the stain against `borders`/`borders_merged` are refused.
 The step size is fixed.
 
-Stain defaults, and why: local correlation at 80 µm radius followed visible
-structure better than mutual information but on its own still crossed
-enlarged ventricles, so the edge channel is on by default. There is no `stiff`
+Stain defaults, and why: with the EM section mask, mutual information
+recovered more of the human raters' own corrections than local correlation
+on Carey 2026 brightfield and LSD_910 immunofluorescence, did less harm where
+the raters moved little, and was within noise of it on pl_projections when
+the fit read the DAPI counterstain (where indicator channels were blended in, it was pulled
+toward their bright labelling). The edge channel is on by default because
+the intensity metric on its own crossed enlarged ventricles. There is no `stiff`
 setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
 slower, worse outlines) and the linear tool always runs `standard`; line
 softening is the constant `LINE_SOFTENING_UM` = 60. `template` is the default

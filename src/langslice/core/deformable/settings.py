@@ -144,8 +144,11 @@ class FitSettings:
     structures: tuple[str | int, ...] = field(default_factory=tuple)
     #: Margin around *structures* the restricted fit may see and move, in um.
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
-    #: Stain fits only (lines ignore it): the intensity metric.
-    stain_metric: StainMetric = "local_correlation"
+    #: Stain fits only (lines ignore it): the intensity metric. Mutual
+    #: information is the default (it followed the raters' own corrections
+    #: best on the benchmarks); local correlation stays selectable so records fitted
+    #: with it still load and refit identically.
+    stain_metric: StainMetric = "mutual_information"
     #: Stain fits only (lines ignore it): add an edge channel, the smoothed
     #: gradient magnitude of the stain and of the atlas image, as a second
     #: metric next to the intensities (:func:`langslice.core.deformable.fit.edge_image`).
@@ -197,7 +200,7 @@ class FitSettings:
 
 def metric_for(
     section_image: str, atlas_image: str, *, engine: str = "ants",
-    stain_metric: str = "local_correlation",
+    stain_metric: str = "mutual_information",
 ) -> Metric:
     """The similarity metric for an image pairing, engine and stain metric.
 
@@ -205,12 +208,11 @@ def metric_for(
     so intensities should simply agree: mean squares. A photograph against a
     grayscale atlas image has an unknown intensity relationship (brightfield
     tissue is dark where the template is bright, and stains differ region by
-    region): ANTs' local correlation by default, which only asks that
-    intensities agree up to a scale and offset within each small window (the
-    linear placement is always the starting point, so a local metric is
-    enough), or mutual information over the whole section. Elastix has no
-    local correlation metric, so its stain fits use
-    :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
+    region): mutual information over the section by default, which asks only
+    that intensities be predictable from each other, or ANTs' local
+    correlation, which asks that they agree up to a scale and offset within
+    each small window. Elastix has no local correlation metric, so its stain
+    fits use :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
     lines against a grayscale image share no structure, and a stain against
     atlas borders is the worst pairing (it stays at the linear placement and
     leaves enlarged ventricles unfilled): borders are for traced lines.
