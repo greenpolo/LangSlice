@@ -187,7 +187,8 @@ with `full_resolution`, the file's own pixels. A NumPy `.npz` archive:
 | `info` | JSON text: `section`, `grid_size` (`[width, height]`), `full_resolution`, `frame`, `grid_from_canvas` (3x3 on `[x, y, 1]`: the model's canvas to the grid's pixel centres), `artifact_dir` (the attempt's folder under `sections/<name>/image_correction/`, relative to the job folder), `attempt`, `provider`, `model`, `prompt_edited`, `profile` and `untested` (an untested profile), `include` / `exclude` (the regions `restrict_to` chose), `placement_current` (whether the section's placement is still the one traced), `written_by` |
 
 The map from the canvas to the grid is the images' own (the canvas's
-padding and resize of the oriented section render, then the render's quarter
+upright turn, crop to the placed atlas plus a margin, padding and resize of
+the oriented section render, then the render's quarter
 turn, flip and resize of the file); the section's placement does not enter
 it, so a reply made at an earlier placement is still drawn where the model
 put it on the tissue.

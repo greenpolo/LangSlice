@@ -64,25 +64,39 @@ def _background_color(image: Image.Image) -> tuple[int, int, int]:
     return (r, g, b)
 
 
+#: The margin kept around the placed atlas's footprint on the canvas, as a
+#: fraction of the footprint box's larger side, on every side.
+FOOTPRINT_MARGIN = 0.15
+
+
 def prepare_canvas(
     image: Image.Image,
     *,
     image_model: str | None = None,
     provider: str | None = None,
     upright: Upright | None = None,
+    footprint: np.ndarray | None = None,
 ) -> tuple[Image.Image, np.ndarray]:
-    """The working canvas: the section render turned upright, scaled, padded
-    and aspect-snapped in ONE resample.
+    """The working canvas: the section render turned upright, cropped to the
+    placed atlas, scaled, padded and aspect-snapped in ONE resample.
 
     Returns ``(canvas, render_to_canvas)``, the 3x3 from render pixel centres
     to canvas pixel centres (integers at pixel centres, OpenCV's convention).
 
     *upright* (:func:`~langslice.core.nonlinear.upright.upright`) turns the
     render so its ``up`` points straight up and, with ``through``, shifts it
-    so that point lies on the canvas's vertical centre line; the canvas holds
-    the whole turned render (never a crop) and pads the rest with the
-    render's own background colour. Without it the render stands as it is,
-    centred. A turn is a rotation and a shift only, never a mirror.
+    so that point lies on the canvas's vertical centre line. Without it the
+    render stands as it is. A turn is a rotation and a shift only, never a
+    mirror.
+
+    *footprint* (render points, ``(N, 2)`` x, y: the placed atlas plane's
+    outline) crops the canvas to the footprint's box in the turned frame
+    plus :data:`FOOTPRINT_MARGIN` of its larger side on every side, clamped
+    to the turned render's extent; with ``through`` the box is then widened
+    to be symmetric about that line (the larger half-width on both sides),
+    so the line stays in the middle. Without it the canvas holds the whole
+    turned render. Wherever the box runs past the render, the canvas is
+    padded with the render's own background colour.
 
     The aspect-ratio clamp pads the short axis (pad only, never crop): in
     edit mode the model paints on ITS canvas, and resampling a mismatched
@@ -105,17 +119,25 @@ def prepare_canvas(
     centre = np.array([width / 2.0, height / 2.0])
     corners = np.array([[0.0, 0.0], [width, 0.0], [0.0, height], [width, height]]) - centre
     turned = corners @ turn.T
-    xs, ys = turned[:, 0], turned[:, 1]
+    x0, y0 = turned.min(axis=0)
+    x1, y1 = turned.max(axis=0)
+    if footprint is not None and len(footprint):
+        points = (np.asarray(footprint, dtype=np.float64) + 0.5 - centre) @ turn.T
+        (fx0, fy0), (fx1, fy1) = points.min(axis=0), points.max(axis=0)
+        margin = FOOTPRINT_MARGIN * max(fx1 - fx0, fy1 - fy0)
+        x0, y0 = max(x0, fx0 - margin), max(y0, fy0 - margin)
+        x1, y1 = min(x1, fx1 + margin), min(y1, fy1 + margin)
+        if x1 <= x0 or y1 <= y0:
+            raise ValueError("The placed atlas lies outside the section image")
     if stance.through is not None:
         mid = float((turn @ (np.asarray(stance.through, dtype=np.float64) + 0.5 - centre))[0])
-        half = float(np.abs(xs - mid).max())
-        left, box_w = mid - half, 2.0 * half
-    else:
-        left, box_w = float(xs.min()), float(xs.max() - xs.min())
-    top, box_h = float(ys.min()), float(ys.max() - ys.min())
+        half = max(abs(x0 - mid), abs(x1 - mid))
+        x0, x1 = mid - half, mid + half
+    left, top = float(x0), float(y0)
+    box_w, box_h = float(x1 - x0), float(y1 - y0)
 
     def snapped(scale: float) -> tuple[int, int]:
-        """The canvas holding the turned render at *scale*, aspect-clamped."""
+        """The canvas holding the kept box at *scale*, aspect-clamped."""
         cw, ch = _cover(box_w * scale), _cover(box_h * scale)
         if limits:
             if cw / ch > limits[1]:

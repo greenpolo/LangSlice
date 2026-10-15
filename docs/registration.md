@@ -509,10 +509,12 @@ upright on that frame from its linear placement: the atlas's dorsal side
 (the anterior end on a horizontal section) points straight up, and on a
 coronal or horizontal section the atlas midline runs down the middle of the
 image; a sagittal section is only turned. It is a turn and shift, never a
-mirror, drawn in one resample; the frame holds the whole turned section and
-is padded with the slide's background colour, so the section is drawn
-smaller the more it is turned. The model's lines are read back through the
-same turn. `restrict_to` selects the
+mirror. The image is then cropped to the placed atlas's extent plus 15% of
+its larger side on every side, never past the section image, and on a
+coronal or horizontal section widened to stay symmetric about the midline;
+where that runs past the section image it is padded with the slide's
+background colour. Turn, crop and scale are drawn in one resample, and the
+model's lines are read back through them. `restrict_to` selects the
 borders shown and fitted; empty uses all eligible regions. Marked damage
 is excluded. The model's outer line sets the section's extent: the fit pulls
 the atlas in or out to it, wherever the linear placement left the atlas edge.
