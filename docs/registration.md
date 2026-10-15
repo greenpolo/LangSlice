@@ -285,7 +285,7 @@ smooth field reaches, so the step's displacement fades to none over a further
 The engine is the SyN (symmetric diffeomorphic) registration of
 [FireANTs](https://github.com/rohitrango/FireANTs), on the GPU when there is
 one (about a second per section) and on the CPU otherwise, with ANTs' settings
-and step rule: local correlation over an 80 µm window plus an edge channel,
+and step rule: mutual information plus an edge channel,
 four pyramid levels, the stiffness as Gaussian smoothing of each step and of
 the whole warp. Identical inputs give identical fields.
 

@@ -223,10 +223,10 @@ def test_fit_settings_validation():
     with pytest.raises(ValueError, match="detail"):
         FitSettings(detail="fine")  # type: ignore[arg-type]
     assert FitSettings.from_dict(FitSettings().to_dict()) == FitSettings()
-    assert FitSettings().metric == "local_correlation" and FitSettings().stain_edges
+    assert FitSettings().metric == "mutual_information" and FitSettings().stain_edges
     # Elastix has no local correlation: its stand-in.
     assert FitSettings(engine="elastix").metric == "mutual_information"
-    assert FitSettings(stain_metric="mutual_information").metric == "mutual_information"
+    assert FitSettings(stain_metric="local_correlation").metric == "local_correlation"
     lines = FitSettings(section_image="lines", atlas_image="borders_merged")
     assert lines.metric == "mean_squares"
     with pytest.raises(ValueError, match="stain_metric"):
