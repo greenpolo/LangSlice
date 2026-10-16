@@ -259,11 +259,13 @@ revisit placement after inspecting linear or nonlinear fits; changing a
 section's position clears its deformation.
 
 `interactive_transform` sets flip, quarter turn, rotation, scales, shear and
-shifts for up to four sections. Values are absolute; omitted values keep
+shifts for several sections at once (up to four through LangSlice's own agent
+and MCP; any number through the CLI and the library, within the job's
+`transform.max_parallel`). Values are absolute; omitted values keep
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` takes one to four sections per call, as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.

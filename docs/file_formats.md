@@ -22,6 +22,9 @@ A registration file can also be explicitly imported when creating a job.
   exports/              linear_results.json, spend.json, quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/)
   logs/                 the agent CLI's calls and background runs
+  trace/                agent transcripts: the built-in agent's trace, a coding agent's session copied in by its harness plugin
+  env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
+  scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
   AGENTS.md, CLAUDE.md  the reference card for coding agents
   BRIEF.md              the agent CLI's brief
 ```

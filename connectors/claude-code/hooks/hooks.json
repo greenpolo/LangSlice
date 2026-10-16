@@ -1,0 +1,17 @@
+{
+  "description": "Copy a LangSlice registration subagent's transcript into its job folder's trace/",
+  "hooks": {
+    "SubagentStop": [
+      {
+        "matcher": "^langslice:register-",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "langslice session-end --harness claude-code",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

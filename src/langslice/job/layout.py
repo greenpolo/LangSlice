@@ -26,6 +26,11 @@ without an id. Inside::
     logs/                events.jsonl (opens), runs/ (the agent CLI's
                          background runs), calls.jsonl (the agent CLI's calls)
     prompt.txt           a saved ABBA job's copy prompt
+    trace/               agent transcripts: LangSlice's own agent's trace, and
+                         a coding agent's session copied in by its harness
+                         plugin (langslice.doors.cli.transcripts)
+    env/                 the job's own Python environment, made by
+                         `langslice-job FOLDER env` (langslice.doors.cli.jobenv)
     AGENTS.md, CLAUDE.md the reference card for coding agents
     BRIEF.md             the agent CLI's brief
 
@@ -63,6 +68,10 @@ EXPORTS_DIR = "exports"
 LOGS_DIR = "logs"
 EVENTS_FILE = "events.jsonl"
 PROMPT_FILE = "prompt.txt"
+#: Agent transcripts: LangSlice's own agent's trace, a coding agent's session.
+TRACE_DIR = "trace"
+#: The job's own Python environment (``langslice-job FOLDER env``).
+ENV_DIR = "env"
 #: Where tool plugins keep their files: ``plugins/<tool>/`` is a plugin tool's
 #: only place to write (:mod:`langslice.job.plugin_store`).
 PLUGINS_DIR = "plugins"
@@ -280,6 +289,10 @@ class JobLayout:
     @property
     def prompt_file(self) -> Path:
         return self.folder / PROMPT_FILE
+
+    @property
+    def trace_dir(self) -> Path:
+        return self.folder / TRACE_DIR
 
     @property
     def plugins_dir(self) -> Path:

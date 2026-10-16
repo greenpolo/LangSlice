@@ -67,6 +67,7 @@ from langslice.agent.model_resolver import env_value
 from langslice.agent.plugins import part_summary
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.trace import TRACE_DIR_ENV as _TRACE_DIR_ENV
+from langslice.job.layout import TRACE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def job_trace_dir(job_folder: str | Path) -> Path:
     """Where a run keeps its full agent trace when nothing else is named:
     ``trace/`` in its job folder (``langslice linear run`` and the ABBA
     worker's ``linear.run``)."""
-    return Path(job_folder) / "trace"
+    return Path(job_folder) / TRACE_DIR
 
 
 def _describe_parts(parts: Any) -> list[dict[str, Any]]:

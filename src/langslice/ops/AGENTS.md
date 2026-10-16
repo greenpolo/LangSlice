@@ -40,8 +40,9 @@ wording; `registry.py` lists which.
 - It never words anything for a model. Job rules (frozen
   properties, host damage marks, the spec's flip switch, the submit gates)
   are the job's and are applied here; the per-call section caps (`registry.check_section_count`:
-  `Verb.limits`, and the job's `transform.max_parallel` for the transform tools;
-  `TOO_MANY_SECTIONS`) are checked by the tool door with its other arguments.
+  `Verb.limits`, and for the transform tools `Job.picture_cap` and the job's
+  `transform.max_parallel`, each None for no cap; `TOO_MANY_SECTIONS`) are
+  checked by the tool door with its other arguments.
 - A model is passed in, never chosen here: `traces.trace_borders`
   takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
   the door resolved; the geometry fingerprint is the core's
@@ -189,7 +190,7 @@ wording; `registry.py` lists which.
   `orientation`, `kept`); the verb `interactive_transform`.
   `elastix_affine(job, workspace, sections, restrict_to=(),
   atlas_image="template")` (any of the atlas's images; `BAD_ARGS` for no
-  sections; the tool door takes one to four, `TOO_MANY_SECTIONS` past that): per section `core.transform.fit_elastix`
+  sections; the tool door refuses more than `Job.picture_cap` or `Job.transform_cap`, `TOO_MANY_SECTIONS`): per section `core.transform.fit_elastix`
   refining its current placement against the atlas image, by the *restrict_to* regions only, its marked damage regions
   left out on their own (`core.damage.exclusions`); the named sections;
   `FROZEN` per section (a frozen affine, or a fit that turns over a section
@@ -298,9 +299,11 @@ wording; `registry.py` lists which.
   save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
   (`Looked`, `Zoomed`) carries `pictures` (PIL) and `entries`
-  `[{"id", "caption"}]`, and the door must not save them again. `look` shows at
-  most `MAX_LOOK_PICTURES` (4) of the pictures `core.look.look` draws; the rest
-  are `not_shown`, each with the arguments that get it. `zoom` redraws a box
+  `[{"id", "caption"}]`, and the door must not save them again. `look` shows
+  every picture `core.look.look` draws, or the first `Job.picture_cap` of them
+  (4 at the agent tools and MCP, None at the CLI and the library, set by
+  `build_tools`; `look.split_shown`); the rest are `not_shown`, each with the
+  arguments that get it. `zoom` redraws a box
   of picture `picture` (default: `views.latest(exclude_tool="zoom")`) through
   `core.zoom.redraw` and saves it as tool `zoom`; `stale` when the stack has
   changed since. Instead of a box, `region` selects exactly one atlas region
@@ -320,8 +323,8 @@ wording; `registry.py` lists which.
   mode, sections, positions_mm=, zooms=)`: the picture a change tool shows
   of what it wrote, drawn as `look` draws `overlay` (one per section, each
   zoomed to its window) or `positioning`, saved under the change tool's
-  name (numbered, captioned, zoomable); at most four shown, the rest
-  `not_shown` with the `look` call that draws them, a failed picture
+  name (numbered, captioned, zoomable); at most `Job.picture_cap` shown (None:
+  all), the rest `not_shown` with the `look` call that draws them, a failed picture
   `failed` (the write stands).
 - `views.py` — `status(job)` (`StackStatus`: the status rows, angles,
   breaks as the filenames of the sections after each gap,
@@ -359,10 +362,10 @@ wording; `registry.py` lists which.
   (`export_maps`, a "read": it changes no state) is the agent CLI's and the
   library's only (`build_tools(scripting=True)`), never offered to a model.
   `limits`: the most one
-  call takes, by what it counts (`look`, `grep_atlas_view` and
-  `set_preprocessed_channel_properties` show at most four `pictures`;
-  `interactive_transform` and `fireants_syn` take at most four `sections`); the
-  reference card lists them. Every door is built from it: `build_tools`
+  call takes at every door, by what it counts (`fireants_syn` takes at most
+  `MAX_FIREANTS_SYN_SECTIONS` `sections`; a plugin's own); the reference card
+  lists them. The picture and transform-section cap of the ADK and MCP doors is
+  the job's `picture_cap`, not a limit here. Every door is built from it: `build_tools`
   makes the tools `enabled(spec)` names (the ADK and MCP doors), the MCP
   door's `readOnlyHint` is `kind == "read"`, and the agent CLI
   (`langslice-job ops`, `schema`, `job FOLDER VERB`), the library's job

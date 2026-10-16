@@ -89,7 +89,8 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     # What a model reads of the verb: the whole description, the summary, long
     # or not. The picture options are gone with the view modes.
     assert result["description"] == declaration(
-        "interactive_transform", Variant(auto=True, door="cli", prompt=FULL.prompt)).doc
+        "interactive_transform",
+        Variant(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)).doc
     assert "\n" in result["description"] and result["summary"] in result["description"]
     assert "picture_options" not in result
     assert result["long"] is False and result["job"] is None and "--job" in result["hint"]
@@ -189,20 +190,18 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     agents = (job / "AGENTS.md").read_text()
     assert agents == (job / "CLAUDE.md").read_text()
     from langslice.ops.deformable import MAX_FIREANTS_SYN_SECTIONS
-    from langslice.ops.look import MAX_LOOK_PICTURES
     from langslice.ops.registry import VERBS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
                    "i * resolution", " brief`", "BRIEF.md", "STALE_INPUT",
-                   f"- `elastix_affine` (write, Linear, long; at most {MAX_LOOK_PICTURES} "
-                   "sections per call):",
-                   f"- `look` (read, Common; at most {MAX_LOOK_PICTURES} pictures per call):",
-                   f"- `interactive_transform` (write, Linear; at most {MAX_LOOK_PICTURES} "
-                   "sections per call):",
+                   "- `elastix_affine` (write, Linear, long):",
+                   "- `look` (read, Common):",
+                   "- `interactive_transform` (write, Linear):",
                    f"- `fireants_syn` (write, Nonlinear, long; at most {MAX_FIREANTS_SYN_SECTIONS} "
                    "sections per call):",
                    'job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])',
-                   "schema init", "reply.images", "`scripts/`", "never in /tmp"):
+                   "schema init", "reply.images", "`scripts/`", "never in /tmp",
+                   "`env install PACKAGE ...`"):
         assert needle in agents, needle
     for name in VERBS:
         assert f"- `{name}` (" in agents, name
@@ -736,46 +735,60 @@ def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch):
     assert answer and answer[0]["state"] == "lost"
 
 
-def test_the_per_call_limits_the_card_lists_are_the_ones_enforced(capsys, images):
-    """``Verb.limits`` (what the card lists) against what the tools do one
-    past each limit."""
+def test_the_cli_and_the_library_cap_no_pictures_or_sections_but_fireants_syn(capsys, images):
+    """``Verb.limits`` (what the card lists) holds the compute cap only; the
+    pictures and the transform sections of one call are not capped."""
     import langslice
     from langslice.ops.registry import VERBS
 
     init(capsys, images)
     limits = {name: dict(verb.limits) for name, verb in VERBS.items() if verb.limits}
-    assert limits == {
-        "look": {"pictures": limits["look"]["pictures"]},
-        "set_preprocessed_channel_properties": {"pictures": limits["look"]["pictures"]},
-        "grep_atlas_view": {"pictures": limits["look"]["pictures"]},
-        "interactive_transform": {"sections": limits["interactive_transform"]["sections"]},
-        "elastix_affine": {"sections": limits["elastix_affine"]["sections"]},
-        "fireants_syn": {"sections": limits["fireants_syn"]["sections"]},
-    }
+    assert limits == {"fireants_syn": {"sections": limits["fireants_syn"]["sections"]}}
     with langslice.open_job(images) as job:
         code, _placed = cli(capsys, str(images), "position_sections", "--args", json.dumps(
             {"sections": [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
                           {"id": ID2, "position_mm": 0.2}], "view": False}))
         assert code == 0, _placed
-        # One past a section limit: refused.
-        most = limits["interactive_transform"]["sections"]
-        refused = job.interactive_transform(
-            sections=[{"id": ID0, "rotation_deg": 0}] * (most + 1))
-        assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
-        most = limits["elastix_affine"]["sections"]
-        refused = job.elastix_affine(sections=[ID0] * (most + 1))
-        assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
         most = limits["fireants_syn"]["sections"]
         refused = job.fireants_syn(sections=[ID0] * (most + 1))
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
-        # One past a picture limit: the rest named, not shown.
-        most = limits["look"]["pictures"]
-        shown = job.look(mode="atlas", positions_mm=[0.02 + 0.04 * i for i in range(most + 1)])
-        assert len(shown.images) == most and len(shown["not_shown"]) == 1
-        most = limits["grep_atlas_view"]["pictures"]
-        shown = job.grep_atlas_view(regions=["root"],
-                                    positions_mm=[0.02 + 0.04 * i for i in range(most + 1)])
-        assert len(shown.images) == most and len(shown["not_shown"]) == 1
+        # Past what the ADK door takes: every section written, every picture shown.
+        sections = [ID0, ID1, ID2] * 2
+        written = job.interactive_transform(
+            sections=[{"id": name, "rotation_deg": 0} for name in sections[:3]] * 2, view=False)
+        assert written.get("error") != "TOO_MANY_SECTIONS"
+        positions = [0.02 + 0.04 * i for i in range(7)]
+        shown = job.look(mode="atlas", positions_mm=positions)
+        assert len(shown.images) == 7 and "not_shown" not in shown
+        shown = job.grep_atlas_view(regions=["root"], positions_mm=positions)
+        assert len(shown.images) == 7 and "not_shown" not in shown
+
+
+def test_a_transform_cap_of_the_job_holds_without_a_picture_cap():
+    from types import SimpleNamespace
+
+    from langslice.ops.refusal import Refused
+    from langslice.ops.registry import check_section_count
+
+    check_section_count(SimpleNamespace(picture_cap=None, transform_cap=None),
+                        "elastix_affine", 50)
+    check_section_count(SimpleNamespace(picture_cap=4, transform_cap=None),
+                        "interactive_transform", 4)
+    for job in (SimpleNamespace(picture_cap=None, transform_cap=2),
+                SimpleNamespace(picture_cap=4, transform_cap=2)):
+        with pytest.raises(Refused) as caught:
+            check_section_count(job, "elastix_affine", 3)
+        assert caught.value.code == "TOO_MANY_SECTIONS"
+    with pytest.raises(Refused):
+        check_section_count(SimpleNamespace(picture_cap=4, transform_cap=None),
+                            "interactive_transform", 5)
+
+
+def test_the_door_sets_the_job_picture_cap(tmp_path):
+    from tests.linear_tool_helpers import box
+
+    _state, _spec, adk = box(tmp_path, placed=True)
+    assert adk.job.picture_cap == 4
 
 
 # --- a script that exits without closing its job ----------------------------------------

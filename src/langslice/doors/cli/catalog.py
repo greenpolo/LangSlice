@@ -47,6 +47,10 @@ JOB_COMMANDS: dict[str, str] = {
     "runs [ID]": "The background runs (newest first), or one run: running, finished "
                 "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID); --timeout SECONDS.",
+    "env [install PACKAGE ...|remove]": "The job's own Python environment (made when "
+        "missing; it also imports LangSlice's packages): its python, and `install` puts "
+        "pip packages in it, listed in scripts/requirements.txt; `remove` deletes it and "
+        "keeps that list, from which `env` rebuilds it.",
 }
 
 
@@ -130,7 +134,7 @@ class Declared:
 
         self.folder: str | None = None
         self.spec: Any = None
-        self.variant = Variant(auto=True, door="cli", prompt=FULL.prompt)
+        self.variant = Variant(auto=True, door="cli", uncapped=True, prompt=FULL.prompt)
         self.disabled: tuple[str, ...] = ()
         #: The open job's verbs (``Opened.listed_verbs``); None without a job.
         self.verbs: tuple[str, ...] | None = None

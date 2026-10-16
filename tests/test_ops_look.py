@@ -109,15 +109,27 @@ def test_look_refusals(tmp_path: Path):
     assert job.views.latest(exclude_tool=None) is None  # nothing saved
 
 
-def test_more_than_four_pictures_are_named_not_shown(tmp_path: Path):
+def test_a_job_with_a_picture_cap_names_the_pictures_past_it_not_shown(tmp_path: Path):
     job, ws = _job(tmp_path)
+    job.picture_cap = 4  # the agent tools and MCP set this (build_tools)
     positions = [0.05, 0.08, 0.11, 0.14, 0.17]
     looked = ops_look.look(job, ws, "atlas", positions_mm=positions)
-    assert len(looked.pictures) == len(looked.entries) == ops_look.MAX_LOOK_PICTURES == 4
+    assert len(looked.pictures) == len(looked.entries) == 4
     (left_out,) = looked.not_shown
     assert left_out["positions_mm"] == [0.17] and left_out["mode"] == "atlas"
     assert "positions_mm=[0.17]" in left_out["how"] and left_out["caption"]
     assert [r.seq for r in job.views.records()] == [1, 2, 3, 4]  # the fifth was not saved
+
+
+def test_a_job_without_a_picture_cap_shows_every_picture(tmp_path: Path):
+    job, ws = _job(tmp_path)
+    assert job.picture_cap is None  # the agent CLI and the library
+    positions = [0.05, 0.08, 0.11, 0.14, 0.17, 0.2]
+    looked = ops_look.look(job, ws, "atlas", positions_mm=positions)
+    assert len(looked.pictures) == len(looked.entries) == 6 and looked.not_shown == []
+    assert [r.seq for r in job.views.records()] == [1, 2, 3, 4, 5, 6]
+    regions = ops_atlas.grep_atlas_view(job, ws, ["TH"], positions)
+    assert len(regions.pictures) == 6 and regions.not_shown == []
 
 
 def test_zoom_defaults_to_the_latest_picture_that_is_not_a_zoom(tmp_path: Path):
@@ -272,6 +284,7 @@ def test_grep_atlas_view_highlights_the_named_regions(tmp_path: Path):
     assert 0 < left < both
     assert not view.regions_not_in_plane
     # More than four positions: the rest are named, and a zoom redraws through the recipe.
+    job.picture_cap = 4
     many = ops_atlas.grep_atlas_view(job, ws, ["TH", "STR"], [0.02, 0.05, 0.08, 0.11, 0.14])
     assert len(many.entries) == 4 and many.not_shown[0]["positions_mm"] == [0.14]
     shown = ops_look.zoom(job, ws, [0, 0, 120, 90], picture=many.entries[0]["id"])

@@ -630,6 +630,12 @@ class Job:
         self.redo_stack: list[dict[str, Any]] = list(redo or [])
         #: Undo steps recorded by this job so far (:meth:`merge_steps`).
         self.pushed = 0
+        #: The most pictures one call of a picture verb shows, and the most sections
+        #: one call of ``interactive_transform`` / ``elastix_affine`` names (the
+        #: pictures spend the driving model's context). None: no cap, as at the
+        #: agent CLI and the library; the agent tools and MCP set it
+        #: (``build_tools``). The job's own ``transform.max_parallel`` is separate.
+        self.picture_cap: int | None = None
         #: Called with the state after every checkpoint and every reload.
         self.observers: list[Callable[[StackState], None]] = []
         #: Image corrections still running, per section id: the geometry they

@@ -29,8 +29,9 @@ it points at this folder. To try it from a checkout:
 | --- | --- | --- |
 | skill `langslice:register-brain` | main session | prepares the job from the user's choices (tasks, atlas, image model or none, `--registration FILE`, pixel size), launches one subagent, then checks `status`, `registration.json`, the exports and the pictures, and handles export. It never registers itself. |
 | skill `langslice:abba` | main session | ABBA's own 0.24.x commands (import, state, export), how to reach a running Fiji, moving files between ABBA and a job |
-| agent `langslice:register-cli` | registers one brain | Bash and Read: the `langslice-job` command line and the pictures it saves |
-| agent `langslice:register-scripting` | registers one brain | Bash, Read, Write, Edit: the CLI plus scripts with the LangSlice Python library in the job folder |
+| agent `langslice:register-cli` | registers one brain | Bash, Read and the web (WebFetch, WebSearch): the `langslice-job` command line and the pictures it saves |
+| agent `langslice:register-scripting` | registers one brain | Bash, Read, Write, Edit and the web: the CLI plus scripts with the LangSlice Python library, and packages installed in the job's own environment (`langslice-job FOLDER env`) |
+| hook `SubagentStop` | every registration subagent | `langslice session-end --harness claude-code` copies the subagent's transcript into the job's `trace/` folder |
 
 The role split is deliberate. The main session owns everything around the
 registration (choices, job, checking, import and export with ABBA and other
@@ -50,8 +51,12 @@ Each agent has a strict `tools` allowlist, `model: inherit` and
 `omitClaudeMd: true` (the subagent starts without your user, project and local
 CLAUDE.md files; managed policy files still load).
 
-- `register-cli`: `Bash, Read`.
-- `register-scripting`: `Bash, Read, Write, Edit`.
+- `register-cli`: `Bash, Read, WebFetch, WebSearch`.
+- `register-scripting`: `Bash, Read, Write, Edit, WebFetch, WebSearch`.
+
+The main session may pass a model and an effort level when it starts a
+subagent (the Agent tool's `model` and `effort`); otherwise the subagent
+inherits the session's.
 
 A plugin agent cannot restrict Bash to one command (a `Bash(langslice *)`
 entry in `tools` is not honored per command; `permissionMode` and `hooks` are

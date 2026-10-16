@@ -75,10 +75,11 @@ class Verb:
     group: Group
     #: The core's definition: ``when``, ``options``, ``essential``, ``needs``.
     tool: ToolDef
-    #: The most one call takes, by what it counts (``pictures`` shown,
-    #: ``sections`` named), as the tool door enforces them (past a picture
-    #: limit the rest is named, not shown; past a section limit the call is
-    #: refused). The reference card lists them.
+    #: The most one call takes at every door, by what it counts (``sections``
+    #: named; a plugin's ``pictures`` shown), as the tool door enforces them
+    #: (past a picture limit the rest is named, not shown; past a section limit
+    #: the call is refused). The reference card lists them. The picture cap of
+    #: LangSlice's own agent and MCP is the job's (``Job.picture_cap``).
     limits: Mapping[str, int] = field(default_factory=dict)
 
     @property
@@ -108,9 +109,6 @@ class Verb:
         (:func:`enabled` with ``image_model`` False)."""
         return self.tool.image_model
 
-#: Pictures one call of a picture verb shows; the rest are named, not shown.
-_PICTURES: dict[str, int] = {"pictures": look.MAX_LOOK_PICTURES}
-
 #: The operation each tool calls.
 _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "look": look.look,
@@ -138,13 +136,9 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "export_maps": exports.export_maps,
 }
 
-#: The per-call limits of the tools that have them.
+#: The per-call limits every door shares (compute, not pictures: the picture
+#: cap of the agent tools and MCP is the job's, ``Job.picture_cap``).
 _LIMITS: dict[str, dict[str, int]] = {
-    "look": _PICTURES,
-    "set_preprocessed_channel_properties": _PICTURES,
-    "grep_atlas_view": _PICTURES,
-    "interactive_transform": {"sections": look.MAX_LOOK_PICTURES},
-    "elastix_affine": {"sections": look.MAX_LOOK_PICTURES},
     "fireants_syn": {"sections": deformable.MAX_FIREANTS_SYN_SECTIONS},
 }
 
@@ -167,10 +161,12 @@ def check_section_count(job: Any, name: str, count: int) -> None:
     """Refuse (``TOO_MANY_SECTIONS``, with ``max_sections`` and ``requested``) a
     call of tool *name* naming *count* sections when that is more than its
     ``limits["sections"]`` (:data:`VERBS`), or, for the transform tools, more
-    than the job lets one transform call take (``Job.transform_cap``)."""
+    than the door lets one call take (``Job.picture_cap``) or the job lets one
+    transform call take (``Job.transform_cap``); a cap that is None is no cap."""
     cap = VERBS[name].limits.get("sections")
-    if cap is not None and name in _TRANSFORM_TOOLS and job.transform_cap is not None:
-        cap = min(cap, job.transform_cap)
+    if name in _TRANSFORM_TOOLS:
+        held = [value for value in (job.picture_cap, job.transform_cap) if value is not None]
+        cap = min(held) if held else None
     if cap is not None and count > cap:
         raise Refused("TOO_MANY_SECTIONS", max_sections=cap, requested=count)
 

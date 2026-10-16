@@ -33,7 +33,6 @@ from langslice.ops import appearance as ops_appearance
 from langslice.ops import atlas as ops_atlas
 from langslice.ops import files as ops_files
 from langslice.ops import look as ops_look
-from langslice.ops.look import MAX_LOOK_PICTURES
 from langslice.ops.refusal import Refused
 
 
@@ -158,12 +157,16 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             if unknown or not scope:
                 return {"status": "error", "error": "UNKNOWN_SLICE_IDS",
                         **unknown_sections(job.state, unknown)}
-            shown = scope[:MAX_LOOK_PICTURES]
+            shown = scope[:job.picture_cap]
             ids: list[str] | None = [record.id for record in scope]
         else:
             scope = job.state.in_order()
-            picks = np.linspace(0, len(scope) - 1, min(len(scope), MAX_LOOK_PICTURES))
-            shown = [scope[index] for index in sorted({int(round(v)) for v in picks})]
+            cap = job.picture_cap
+            if cap is None:
+                shown = list(scope)
+            else:
+                picks = np.linspace(0, len(scope) - 1, min(len(scope), cap))
+                shown = [scope[index] for index in sorted({int(round(v)) for v in picks})]
             ids = None
         options = default_options("section", long_edge=picture_edge(ctx))
         try:
