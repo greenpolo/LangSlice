@@ -385,7 +385,7 @@ the angles in a caption (empty for the flat plane).
   back to the section's.
 - `sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
-  `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.
+  `MAX_IMAGES_PER_CALL` (what the agent tools and MCP set `Job.picture_cap` to), `resolution_level`, `opening_edge`, `picture_edge`.
 - `layers.py` — a placement picture's layers and frame record (and a
   deformation-fit picture's), the on-demand coordinate map, and the
   per-call picture notes (below).

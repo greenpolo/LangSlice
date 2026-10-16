@@ -91,6 +91,10 @@ plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/)
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, artifacts)
+trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
+                     built-in agent's trace, a coding agent's session copied in by
+                     `langslice session-end` (`doors/cli/transcripts.py`)
+env/                 the job's own Python environment (`ENV_DIR`; `doors/cli/jobenv.py`)
 prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale

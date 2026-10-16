@@ -8,8 +8,9 @@ returned PIL pictures with those numbers beside them and must not save them
 again.
 
 - :func:`look` draws one of the four modes (:mod:`langslice.core.look`). A
-  call shows at most :data:`MAX_LOOK_PICTURES` pictures; any more the core
-  drew are named in ``not_shown`` with the arguments that get them.
+  call shows every picture drawn, or at most ``Job.picture_cap`` of them
+  (the agent tools and MCP); the rest are named in ``not_shown`` with the
+  arguments that get them.
 - :func:`zoom` draws a box of an earlier picture again at more detail
   (:mod:`langslice.core.zoom`), from the picture's recipe; a picture with no
   recipe, or whose sections are gone, is cropped from its saved image. The
@@ -31,7 +32,7 @@ from langslice.core import zoom as zooms
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.layers import PictureNote, collecting, note_for
 from langslice.core.picture_geometry import source_frame
-from langslice.core.sizes import MAX_IMAGES_PER_CALL, MIN_RESOLUTION
+from langslice.core.sizes import MIN_RESOLUTION
 from langslice.job.views import PICTURE_FILE, PictureRecord, has_frame
 from langslice.ops.refusal import Refused, unknown_sections
 
@@ -39,8 +40,6 @@ if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
 
-#: Pictures one call shows; the rest are named, not drawn into the reply.
-MAX_LOOK_PICTURES = MAX_IMAGES_PER_CALL
 #: The tool name zoomed pictures are saved under (the picture index skips it
 #: when it picks the default picture to zoom).
 ZOOM_TOOL = "zoom"
@@ -116,6 +115,15 @@ def save_pictures(
             for name, picture in zip(names, drawn, strict=True)]
 
 
+def split_shown(job: Job, drawn: Sequence[Any]) -> tuple[list[Any], list[Any]]:
+    """The pictures a reply shows and the rest: all of them, or the first
+    ``Job.picture_cap``."""
+    cap = job.picture_cap
+    if cap is None:
+        return list(drawn), []
+    return list(drawn[:cap]), list(drawn[cap:])
+
+
 def not_shown(pictures: Sequence[Any], mode: str, *, verb: str = "") -> list[dict[str, Any]]:
     """The pictures left out of a reply, each with the arguments that get it
     (from its recipe: the sections and positions it shows): of this call
@@ -175,7 +183,7 @@ def look(
     door passes one only where its caller sizes the pictures (image_resolution
     ``auto``, or the agent CLI and the library, whose toolbox works at
     ``auto`` whatever the job's level). At most
-    :data:`MAX_LOOK_PICTURES` pictures are saved and returned; the rest are
+    ``Job.picture_cap`` pictures (None: all) are saved and returned; the rest are
     ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
     ``UNKNOWN_MODE``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS``,
@@ -261,7 +269,7 @@ def _reply(
     job: Job, workspace: Workspace, tool: str, drawn: list[looks.LookPicture],
     notes: list[tuple[Image.Image, PictureNote]], mode: str, arguments: dict[str, Any],
 ) -> Looked:
-    shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
+    shown, rest = split_shown(job, drawn)
     entries = save_pictures(job, workspace, tool, shown, notes, arguments)
     return Looked(pictures=[picture.image for picture in shown], entries=entries,
                   not_shown=not_shown(rest, mode), layers=_layer_notes(shown, entries))
@@ -284,8 +292,8 @@ def show_result(
     picture) when given, the *highlight* regions' borders thick and the
     others faint (a restricted fit's ``restrict_to``). ``positioning``:
     *sections* and the atlas at
-    *positions_mm* along the slicing axis. At most :data:`MAX_LOOK_PICTURES`
-    are shown; the rest are ``not_shown`` (with the ``look`` call that
+    *positions_mm* along the slicing axis. At most ``Job.picture_cap``
+    are shown (None: all); the rest are ``not_shown`` (with the ``look`` call that
     draws them), and a section whose picture fails is ``failed``. *resolution*
     is the long edge of each picture, as ``look``'s (None: the job's level).
     """
@@ -315,7 +323,7 @@ def show_result(
                     failed.append({"id": section, "error": getattr(exc, "code",
                                                                    "RENDER_FAILED"),
                                    "message": str(exc)})
-    shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
+    shown, rest = split_shown(job, drawn)
     entries = save_pictures(job, workspace, tool, shown, notes,
                             {"mode": mode, "sections": list(sections),
                              **({"positions_mm": [float(v) for v in positions_mm]}
@@ -469,6 +477,6 @@ def zoom(
 
 
 __all__ = [
-    "LOOK_TOOL", "MAX_LOOK_PICTURES", "ZOOM_TOOL", "Looked", "Zoomed", "look", "not_shown",
+    "LOOK_TOOL", "ZOOM_TOOL", "Looked", "Zoomed", "look", "not_shown",
     "save_pictures", "show_result", "zoom",
 ]

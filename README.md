@@ -47,8 +47,8 @@ launcher.
 
 ## Use LangSlice
 
-- **[Agents, CLI and MCP](docs/agents.md):** Claude Code or Codex through
-  `langslice-job`, Claude Desktop through MCP, or the built-in agent with
+- **[Agents, CLI and MCP](docs/agents.md):** Claude Code, Antigravity or Codex
+  through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
 - **[ABBA](docs/abba.md):** register selected sections through the Fiji
   connector and review changes in ABBA.

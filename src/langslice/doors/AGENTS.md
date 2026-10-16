@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`ops/registry.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps` and `brief` | Claude Code, Codex |
+| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `brief` and `env` | Claude Code, Antigravity, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
@@ -55,8 +55,8 @@ the CLI is a process per call.
   (signature = the arguments, docstring = the description a model reads,
   re-indented by `model_doc`). The description is the tool's only
   description: the job statement names the tools and describes none.
-  `Variant` (`auto`, `door`, `forced_view`, `positions`,
-  `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=)`) is
+  `Variant` (`auto`, `door`, `uncapped`, `forced_view`, `positions`,
+  `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=, uncapped=)`) is
   what of a run changes a declaration (`dropped_arguments`, each dropped
   argument's `Args` entry cut from the description): `off` (the job's
   disabled list): the modes it disables are out of `look`'s `mode` enum
@@ -74,7 +74,11 @@ the CLI is a process per call.
   `nonlinear.image_prompt`, else `base_prompt`; none without an
   image model) in place of `BASE_PROMPT`; and the door that reads it
   (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: the CLI's background
-  verbs answer once their work has landed). `declaration(name, variant)`
+  verbs answer once their work has landed); `uncapped` (the CLI and the
+  library, `build_tools(scripting=True)`): `_UNCAPPED_DOCS` words the
+  picture and section counts of `look`, `grep_atlas_view`,
+  `set_preprocessed_channel_properties`, `interactive_transform` and
+  `elastix_affine` without the ADK and MCP cap. `declaration(name, variant)`
   (cached), `summary(name)`, `declare(name, body, variant)` (a function with
   the declared name, doc and signature that binds the call, fills the
   declared defaults and hands every argument to the body by name; ADK's
@@ -175,7 +179,9 @@ the CLI is a process per call.
   (identical; Codex reads one, Claude Code the other): `card_text(layout)`
   (the folder's files, the maps and their coordinate convention, the CLI
   with every listed verb, `long` marked and its per-call limits
-  (`limits_note` of `registry.Verb.limits`; `transform_cap_line`: the job's
+  (`limits_note` of `registry.Verb.limits`: `fireants_syn`'s and a plugin's;
+  the CLI and the library cap no pictures or transform sections, so the card
+  states none; `transform_cap_line`: the job's
   own `transform.max_parallel` when lower; less the verbs its `disabled` list
   names, `disabled_names`), `schema init` and `--help`, the
   Python entry point and what a method returns, and to keep the agent's own
@@ -187,7 +193,9 @@ the CLI is a process per call.
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
   file per job folder) and `log_call` (`logs/calls.jsonl`).
-- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`; every tool wrapped,
+- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`; sets
+  `Job.picture_cap` to `MAX_IMAGES_PER_CALL` (4), or to None with
+  `scripting=True` (the CLI and the library); every tool wrapped,
   innermost first, by the opening gate (writes), `_strict`,
   `_clears_stale_deformations`, `_saves_views` (the pictures a body returns
   saved and numbered, their numbers and captions under `pictures`; a reply
@@ -268,7 +276,7 @@ the CLI is a process per call.
 - `cli/` — the `langslice` and `langslice-job` commands, one module per
   group; `langslice/cli.py` keeps the entry point `langslice.cli:main`.
   `__init__.py` (`build_parser`, `main`: `linear run`, `mcp`, the host
-  commands, `login`, `version`), `linear.py` (`linear run` and the job flags every
+  commands, `session-end`, `login`, `version`), `linear.py` (`linear run` and the job flags every
   stack-opening command shares: `add_linear_arguments` (`--disable
   NAME[,NAME...]`: the job's `disabled` list), `build_linear_spec`,
   `spec_from_args` (`--frozen JSON`: the job's `frozen`); `--tasks` defaults to `DEFAULT_TASKS`, or with
@@ -330,9 +338,24 @@ the CLI is a process per call.
     parser `init_parser`: the job flags of `linear run`, `--notes`,
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
-    `brief`, `runs` (`runs [ID]`, `wait [ID]`). `CHECKED_ONLY`:
+    `brief`, `runs` (`runs [ID]`, `wait [ID]`), and `env` (`jobenv.command`). `CHECKED_ONLY`:
     `trace_borders`, `elastix_affine` and `fireants_syn`
     are checked, not run, by `--dry-run`.
+  - `jobenv.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
+    the job's own Python environment `env/` (uv's or `venv`'s), a `.pth`
+    (`PARENT_PTH`) adding the site-packages of the environment LangSlice runs
+    in, so its python imports LangSlice; `install` (uv pip, else pip) and
+    `scripts/requirements.txt` (`REQUIREMENTS`: the environment's own
+    packages, pinned, read from its `*.dist-info`); `remove` keeps that list,
+    from which `ensure` rebuilds. `ENV_FAILED` when a step fails.
+  - `transcripts.py` — `langslice session-end --harness claude-code|antigravity`,
+    the hook of the Claude Code (`SubagentStop`) and Antigravity (`Stop`)
+    plugins: the hook's JSON on stdin, the transcript (`transcript_path`), the
+    job folders it names (`job_folders`: `langslice-job FOLDER` and
+    `open_job(...)`, through `jobs.find`), each given the transcript as
+    `trace/<harness>_<session>.jsonl` with inline image data replaced by its
+    size (`slim`); a transcript that submitted (`SUBMIT_PATTERN`) also removes
+    the job's `env/`. Never raises; prints `{}`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
     --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish` (in the

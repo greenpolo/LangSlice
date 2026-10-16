@@ -38,9 +38,9 @@ AUTO_RESOLUTION = "auto"
 #: reply says so.
 MIN_RESOLUTION = 128
 
-#: Default image/pair batch size. Separate positioning comparisons may return
-#: two references per pair (up to eight images); retained context is governed
-#: by the session's image-retention policy, not this per-tool batch size.
+#: Pictures (and, for the transform tools, sections) one call takes at the doors
+#: that spend a model's context on them: LangSlice's own agent and MCP
+#: (``Job.picture_cap``). The agent CLI and the library set no such cap.
 MAX_IMAGES_PER_CALL = 4
 
 

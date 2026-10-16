@@ -58,11 +58,15 @@ Pick the variant the user allows:
 | `langslice:register-cli` | Bash + Read: the `langslice-job` command line | default |
 | `langslice:register-scripting` | Bash + Read + Write + Edit: also scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
-Use the Agent tool with that `subagent_type`. The prompt names only the job
-folder: "Register the brain in job folder FOLDER". Add the user's notes only
+Use the Agent tool with that `subagent_type`, and the `model` and `effort`
+the user chose, if any (otherwise it inherits this session's). The prompt
+names only the job folder: "Register the brain in job folder FOLDER". Add the user's notes only
 if they were not already saved in the job. Do not add registration advice of
 your own: the subagent works from LangSlice's own job statement and card. Do
 not give it any other task. Run one subagent per job at a time.
+
+When the subagent finishes, the plugin copies its transcript into
+`FOLDER/trace/`.
 
 Shell restriction: a plugin subagent cannot limit Bash to one command. If the
 user wants it to run only `langslice-job`, tell them to add the permission rule

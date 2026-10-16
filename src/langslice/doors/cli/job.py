@@ -156,6 +156,16 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         return brief(folder, atlas_loader=atlas_loader)
     if name in ("runs", "wait"):
         return runs(folder, name, positional, options)
+    if name == "env":
+        from langslice.doors.cli import jobenv
+        from langslice.doors.jobs import NoJob, find
+        from langslice.job.layout import JobLayout
+
+        try:
+            layout = JobLayout(find(folder))
+        except NoJob as exc:
+            return Envelope.failure("NO_JOB", str(exc))
+        return jobenv.command(layout, positional)
     if positional:
         raise _Refusal(Envelope.failure(
             "BAD_ARGUMENTS", f"Unexpected value(s) {positional}: give arguments as "

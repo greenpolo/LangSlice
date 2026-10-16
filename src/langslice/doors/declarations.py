@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import re
 import typing
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
@@ -934,6 +935,9 @@ class Variant:
     forced_view: bool = False
     #: ``position_sections`` takes ``sections`` (the Positioning task is on).
     positions: bool = True
+    #: The door puts no per-call cap on pictures or sections (the agent CLI and
+    #: the library; ``Job.picture_cap`` None): :data:`_UNCAPPED_DOCS`.
+    uncapped: bool = False
     #: The base image prompt ``trace_borders`` carries.
     prompt: str = ""
     #: What the job disables (``JobSpec.disabled``).
@@ -945,12 +949,13 @@ class Variant:
 
     @classmethod
     def of(cls, spec: Any, *, auto: bool, image_model: bool = True, door: str = "agent",
-           prompt: str | None = None) -> Variant:
+           prompt: str | None = None, uncapped: bool | None = None) -> Variant:
         """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
         *image_model* False: the door cannot reach its image model, so no
         prompt is described. *prompt* is the image model's own base prompt
         (None: the job's own, ``nonlinear.image_prompt``, else LangSlice's
-        for the run's plane and provider)."""
+        for the run's plane and provider). *uncapped* (None: the CLI door
+        is) as :attr:`uncapped`."""
         traced = bool(spec.has("nonlinear") and spec.nonlinear.uses_image_model and image_model)
         text = ""
         if traced:
@@ -967,6 +972,7 @@ class Variant:
 
         held = tuple(of_spec(spec))
         return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
+                   uncapped=door == "cli" if uncapped is None else uncapped,
                    positions=bool(spec.has("position")),
                    prompt=text, off=frozenset(spec.switched_off), plugins=held)
 
@@ -987,6 +993,39 @@ _DOOR_DOCS: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
                 "        at once, and `wait` collects the answer), with its notice:"},
     ),),
 }
+
+
+#: Passages worded for a door with no picture or section cap
+#: (:attr:`Variant.uncapped`), as ``(capped text, uncapped text)`` per verb.
+_UNCAPPED_DOCS: dict[str, tuple[tuple[str, str], ...]] = {
+    "look": ((
+        "Up to 4 pictures, attached in the order `pictures` lists them, each\n"
+        "with its number and caption. Pictures past 4 are listed under\n"
+        "`not_shown` with the call that draws them.",
+        "Every picture drawn, in the order `pictures` lists them, each with its\n"
+        "number and caption."),),
+    "set_preprocessed_channel_properties": ((
+        "and for up to 4 of the\nsections (spread over the stack when none are named)",
+        "and for each of the\nsections (the whole stack when none are named)"),),
+    "grep_atlas_view": ((
+        "Up to 4 pictures with their numbers and captions",
+        "One picture per position with its number and caption"),),
+    "interactive_transform": (("sections: One to four objects:",
+                               "sections: One or more objects:"),),
+    "elastix_affine": (("sections: One to four filenames", "sections: One or more filenames"),),
+}
+
+
+def _reworded(name: str, doc: str, capped: str, uncapped: str) -> str:
+    """*doc* with the passage *capped* (its line breaks and indentation as
+    they fall) replaced by *uncapped*, indented as the passage's line is."""
+    pattern = r"\s+".join(re.escape(word) for word in capped.split())
+    found = re.search(pattern, doc)
+    if found is None:
+        raise RuntimeError(f"{name}: the passage an uncapped door rewords is gone")
+    line = doc.rfind("\n", 0, found.start()) + 1
+    indent = doc[line:len(doc) - len(doc[line:].lstrip(" "))]
+    return doc[:found.start()] + uncapped.replace("\n", "\n" + indent) + doc[found.end():]
 
 
 def _door_doc(name: str, doc: str, door: str) -> str:
@@ -1128,7 +1167,11 @@ def declaration(name: str, variant: Variant = FULL) -> Declaration:
     stub = STUBS[name] if name in STUBS else plugin_stub(name, variant)
     signature = inspect.signature(stub, eval_str=True)
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
-    doc = render(_door_doc(name, model_doc(stub), variant.door), variant.off)
+    doc = _door_doc(name, model_doc(stub), variant.door)
+    if variant.uncapped:
+        for capped, uncapped in _UNCAPPED_DOCS.get(name, ()):
+            doc = _reworded(name, doc, capped, uncapped)
+    doc = render(doc, variant.off)
     if name == "trace_borders":
         doc = _with_prompt(doc, variant.prompt)
     dropped = dropped_arguments(name, variant)

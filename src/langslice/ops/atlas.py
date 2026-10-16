@@ -26,7 +26,7 @@ from langslice.core.layers import collecting, note
 from langslice.core.positioning import ATLAS_UPSAMPLE
 from langslice.core.sizes import picture_edge
 from langslice.core.state import Angles, StackState
-from langslice.ops.look import MAX_LOOK_PICTURES, not_shown, save_pictures
+from langslice.ops.look import not_shown, save_pictures, split_shown
 from langslice.ops.refusal import Refused, sides_refused, unknown_sections
 
 if TYPE_CHECKING:
@@ -401,7 +401,7 @@ def grep_atlas_view(
     A region may name a side (``"CTX:left"``, as the section is displayed).
 
     Each picture is saved like a ``look`` picture (recipe, caption, number),
-    so it can be zoomed. At most :data:`~langslice.ops.look.MAX_LOOK_PICTURES`
+    so it can be zoomed. At most ``Job.picture_cap`` (None: all)
     are shown; the rest are ``not_shown``. ``regions_not_in_plane`` names, per
     position, the regions with no pixel in that plane. Refused: ``BAD_ARGS``,
     ``NO_STRUCTURES``, ``UNKNOWN_REGIONS``, ``NO_SIDES``, ``WRONG_SIDE_PAIR`` (a side
@@ -424,14 +424,14 @@ def grep_atlas_view(
     with sides_refused(), collecting() as notes:
         drawn = [_region_picture(workspace, state, resolved, mm, edge, angles)
                  for mm in used]
-    shown, rest = drawn[:MAX_LOOK_PICTURES], drawn[MAX_LOOK_PICTURES:]
+    shown, rest = split_shown(job, drawn)
     names = [name for name, _ids in resolved]
     entries = save_pictures(job, workspace, "grep_atlas_view", shown, notes,
                             {"regions": names, "positions_mm": asked})
     options = replace(default_options("template", atlas_channels=("template", "borders")),
                       regions=tuple(resolved))
     absent: dict[str, list[str]] = {}
-    for mm in used[:MAX_LOOK_PICTURES]:
+    for mm in used[:len(shown)]:
         with sides_refused():
             present = regions_in_plane(workspace, state, mm, options, angles=angles)
         missing = [name for name in names if name not in present]

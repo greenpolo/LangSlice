@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "langslice",
+  "description": "Register histology brain sections to a BrainGlobe atlas: skills for the main session and registration agents that each register one brain."
+}

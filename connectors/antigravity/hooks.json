@@ -1,0 +1,11 @@
+{
+  "langslice-transcript": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "langslice session-end --harness antigravity",
+        "timeout": 120
+      }
+    ]
+  }
+}

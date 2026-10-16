@@ -36,7 +36,7 @@ from PIL import Image
 
 from langslice.agent.live import LiveCallback, plain
 from langslice.core.opening import DEFAULT_IMAGE_LIMIT
-from langslice.core.sizes import AUTO_RESOLUTION, resolution_level
+from langslice.core.sizes import AUTO_RESOLUTION, MAX_IMAGES_PER_CALL, resolution_level
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
 from langslice.doors.declarations import Variant, declare
@@ -413,6 +413,9 @@ def build_tools(
         raise ValueError("build_tools: the job must hold this state and spec")
     if job.workspace is None:
         job.workspace = ctx
+    # The agent tools and MCP spend a model's context on pictures: capped. The
+    # agent CLI and the library (scripting) leave that to the harness.
+    job.picture_cap = None if scripting else MAX_IMAGES_PER_CALL
     box = ToolBox(job, max_view_edge=int(max_view_edge or view_edge_limit(ctx)))
     level = level or resolution_level(ctx)
     traces_on = spec.nonlinear.uses_image_model and image_model_connected
@@ -454,7 +457,7 @@ def build_tools(
 
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
-                         door=door, prompt=prompt)
+                         door=door, prompt=prompt, uncapped=scripting)
     if spec.plugins:
         from langslice.doors.plugins import provenance, runtime
 

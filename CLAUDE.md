@@ -30,7 +30,7 @@ and CI) with no exceptions: a violation is fixed by moving code.
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.24, which starts `langslice serve
 --stdio`), `claude-desktop/` (configuration for `langslice mcp`),
-`claude-code/` and `codex/` (skills and agents over the agent CLI). `packaging/`
+`claude-code/`, `antigravity/` and `codex/` (skills and agents over the agent CLI). `packaging/`
 and `environment.yml` hold the worker's source installation.
 
 ## Rules that hold in the code

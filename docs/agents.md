@@ -6,7 +6,7 @@ operations and saves work in a [job folder](file_formats.md).
 
 | Interface | Who drives it | Entry point |
 |---|---|---|
-| Agent CLI | A coding agent with a shell, such as Claude Code or Codex | `langslice-job FOLDER VERB` |
+| Agent CLI | A coding agent with a shell, such as Claude Code, Antigravity or Codex | `langslice-job FOLDER VERB` |
 | MCP | An agent in an MCP host, such as Claude Desktop | `langslice mcp` |
 | Built-in agent | LangSlice's agent session | `langslice linear run FOLDER` |
 | Python | A coding agent writing its own workflow | [Python library](library.md) |
@@ -112,7 +112,39 @@ cap them at 2048 px. `look --resolution N` requests a long edge of at least
 128 px, bounded by the viewer and source. A clamped request is reported.
 Picture resolution does not change the registration.
 
-Ready-made setups: [Claude Code](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-code/README.md)
+The CLI and the library cap no pictures or sections per call: `look`,
+`grep_atlas_view`, `set_preprocessed_channel_properties` and the change tools
+save and return every picture they draw, and `interactive_transform` and
+`elastix_affine` take any number of sections. What still limits a call is the
+job's own `transform.max_parallel` for those two, `fireants_syn`'s section cap
+and any limit a tool plugin declares; the job card states them. (LangSlice's
+own agent and MCP keep four pictures, and four sections, per call.)
+
+### The job's own Python environment
+
+`langslice-job FOLDER env` makes `env/` in the job folder when it is missing
+and answers with its `python`: a virtual environment that also imports every
+package of the environment LangSlice runs in (LangSlice included), with its
+own packages first. `env install PACKAGE [PACKAGE ...]` installs pip
+packages into it (uv when it is on the PATH, which links each package from
+its cache, so a package used by many jobs is stored once; else pip), and lists
+the environment's packages, pinned, in `scripts/requirements.txt`.
+`env remove` deletes `env/` and keeps that list; the next `env` rebuilds the
+environment from it. LangSlice's own environment is never changed.
+
+### Transcripts
+
+`langslice session-end --harness claude-code|antigravity` is the hook the
+Claude Code and Antigravity plugins run when a registration agent's session
+ends. It reads the hook's JSON on stdin, finds the job folders the transcript
+names (its `langslice-job FOLDER ...` commands and `open_job(...)` calls) and
+copies the transcript into each one's `trace/<harness>_<session id>.jsonl`,
+beside the built-in agent's traces, inline image data replaced by its size.
+When the transcript submitted the job, the job's `env/` is removed (its
+package list kept). It never fails the session and prints `{}`.
+
+Ready-made setups: [Claude Code](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-code/README.md),
+[Antigravity](https://github.com/greenpolo/LangSlice/blob/main/connectors/antigravity/README.md)
 and [Codex](https://github.com/greenpolo/LangSlice/blob/main/connectors/codex/README.md).
 
 ## MCP
@@ -231,7 +263,9 @@ The built-in agent always writes a JSONL trace: `--trace-dir`, then
 tool events; images are described by type, size and byte count rather than
 embedded. MCP traces record calls and results, not the host model's private
 conversation. The agent CLI logs every call in `logs/calls.jsonl` and uses
-`LANGSLICE_TRACE_DIR` for additional tool traces.
+`LANGSLICE_TRACE_DIR` for additional tool traces. The Claude Code and
+Antigravity plugins copy a registration agent's own transcript into the
+job's `trace/` folder when its session ends (Transcripts, above).
 
 The `openai-oauth` agent transport automatically retries connection failures,
 timeouts, HTTP 408/409/429 and 5xx errors (including 507), and early

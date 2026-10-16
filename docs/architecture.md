@@ -21,8 +21,8 @@ Dependencies flow downward: `hosts` → `doors` / `agent` → `ops` → `job` �
 
 `core`, `job` and `ops` import no provider or model SDK. Image models are
 passed in as arguments. `connectors/` contains code installed in another
-program: Fiji's Java plugin and the Claude Desktop, Claude Code and Codex
-setups.
+program: Fiji's Java plugin and the Claude Desktop, Claude Code, Antigravity
+and Codex setups.
 
 ## One job through every interface
 

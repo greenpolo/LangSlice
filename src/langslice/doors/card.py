@@ -158,6 +158,7 @@ every field, null where unset) plus `artifacts` as the CLI lists them; `reply.im
 holds the pictures as PIL images. {background}Atlases: `langslice.load_atlas("allen_mouse_25um")`.
 Keep your own files here, never in /tmp: scripts in `scripts/`, the rest (montages,
 tables) in `scratch/`; LangSlice never reads them. Every picture a verb shows is saved here.
+Packages: verb `env install PACKAGE ...` puts them in `env/`; `env/bin/python` imports both.
 """
 
 
