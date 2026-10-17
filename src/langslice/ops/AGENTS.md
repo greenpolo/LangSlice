@@ -238,6 +238,17 @@ wording; `registry.py` lists which.
   `BAD_ARGS` (no sections, more than `MAX_FIREANTS_SYN_SECTIONS` (4), an unknown
   atlas image or stiffness, a malformed region list), `FIT_ATLAS_UNAVAILABLE`,
   `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
+  `warp_from_map(job, workspace, section, native_xy, method=, step=,
+  provenance=)`: a deformation made elsewhere (a tool plugin's), given as the
+  full map from the fit grid's pixel centres to native atlas pixels, built as
+  a record (`core.deformation.record_from_map`: the residual over the current
+  linear placement, a fixed-point inverse, the usual diagnostics), not
+  written: `MappedWarp` (record, key, `linear_key`, step, numbers). Refused:
+  `UNKNOWN_SLICE_IDS`, `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`.
+  `apply_warps(job, warps)`: writes them as ONE undo step under the job's
+  lock, each replacing the section's deformation (step `start` `linear`);
+  per row `FROZEN`, `STALE_INPUT` (the placement is not the one the warp was
+  built on), `RECORD_WRITE_FAILED`. Returns `WarpsApplied`.
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
   restrict_to=, options=, workers=)`: LangSlice's own

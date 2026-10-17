@@ -294,6 +294,17 @@ Label-map mode is SyN-only. Named model regions inherit the
 linear placement's naming. Composed sequential inverses carry each step's
 approximation.
 
+## A map made elsewhere
+
+`fit.warp_from_native_map(atlas, placement, native_xy, detail, engine=)`: a
+full map (section-grid pixel centres to native atlas pixels, `(H, W, 2)`)
+as a record, the residual `field_mm = (atlas_to_section @ native - pixel) *
+mm_per_px` over *placement*, its inverse by `_invert_step`'s fixed point
+(guess: minus the forward field), `prepare_warp` and `finish_fit` as for the
+landmark warp below, `engine["name"]` *engine*. A tool plugin's
+deformations go through it (`core.deformation.record_from_map`,
+`ops.deformable.warp_from_map`).
+
 ## Landmark record adapter
 
 `ops.landmarks.landmark_triangulation` uses `prepare_warp` (the atlas side

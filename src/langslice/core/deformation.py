@@ -53,6 +53,7 @@ from langslice.core.deformable import (
     placement_from_handoff,
     prepare_fit,
     resampled_record,
+    warp_from_native_map,
 )
 from langslice.core.deformable.engines import (
     FIREANTS_LEARNING_RATE,
@@ -434,22 +435,44 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
 
 
 def reference(
-    *, folder: Path | str, key: str, linear: str, record: DeformableRecord, choice: Choice,
-    include: tuple[str, ...], exclude: tuple[str, ...], start: str,
-    previous: dict[str, Any] | None, numbers: dict[str, Any],
+    *, folder: Path | str, key: str, linear: str, record: DeformableRecord,
+    step: dict[str, Any], previous: dict[str, Any] | None, numbers: dict[str, Any],
 ) -> dict[str, Any]:
     """What ``SliceState.deformation`` holds for an applied record.
 
     *folder* is where the record lives as the job stores it: relative to the
-    job folder (the caller makes it so).
+    job folder (the caller makes it so). *step* describes this step (its
+    ``start`` is ``current`` when it builds on *previous*, whose steps then
+    come first, else ``linear``).
     """
-    step = {"start": start, **choice.echo(), "include": list(include), "exclude": list(exclude)}
-    steps = list((previous or {}).get("steps") or []) if start == "current" else []
+    steps = list((previous or {}).get("steps") or []) if step.get("start") == "current" else []
     return {
         "record": str(folder), "key": key, "linear_key": linear,
         "steps": [*steps, step], "summary": numbers,
         "inverse_source": record.inverse_source,
     }
+
+
+def record_from_map(
+    ctx: Workspace, grid: Grid, native_xy: np.ndarray, *, method: str,
+    provenance: dict[str, Any],
+) -> DeformableRecord:
+    """A deformation made elsewhere as an applied record on *grid*: *native_xy*
+    ``(H, W, 2)`` is the full map from the fit grid's pixel centres to native
+    atlas-plane pixels (``(H, W)`` the grid image's size), stored as the residual
+    over the grid's linear placement
+    (:func:`langslice.core.deformable.warp_from_native_map`). The record's
+    engine is *method*; its provenance is *provenance* with the section grid's
+    facts."""
+    outcome = warp_from_native_map(ctx.atlas, grid.placement, native_xy, DETAIL_LEVEL,
+                                   engine=method)
+    outcome.provenance = {
+        **provenance, "section_id": grid.record.id, "linear_handoff": grid.handoff,
+        "section_grid": {"size": list(grid.image.size), "long_edge": FIT_LONG_EDGE,
+                         "frame": "oriented rendered section, unframed; not acquisition "
+                                  "pixels (see linear_handoff)"},
+    }
+    return outcome
 
 
 def provenance(

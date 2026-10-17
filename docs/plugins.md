@@ -16,8 +16,8 @@ LangSlice.
 ## A plugin module
 
 A plugin names a function, `module:factory`, that returns a list of `ToolSpec`.
-`tests/fixtures/example_plugin.py` is a complete small one (a read tool and a
-write tool on synthetic data):
+`tests/fixtures/example_plugin.py` is a complete small one (a read tool and
+two write tools on synthetic data, one of them writing a deformation):
 
 ```python
 from langslice.plugin_api import ToolContext, ToolResult, ToolSpec
@@ -98,7 +98,7 @@ One per call; a handler must not keep it.
 | `ctx.section_raster(id, level=, channels=)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
 | `ctx.section_image(id, ...)` | Only the `array` of `section_raster`. **Its pixels are not `section_px`** (see [frames](#frames)) |
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
-| `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3), `plane` (the plane in atlas micrometres) |
+| `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `plane` (the plane in atlas micrometres) |
 | `ctx.atlas_slice(id, kind=)` | One of those atlas planes |
 | `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, appearance, damage marks); for [`expect=`](#long-tools-and-stale_input) |
 | `ctx.read_registration(path)` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements` (`id`, `position_mm`, `pitch_deg`, `yaw_deg`), nothing written |
@@ -112,12 +112,32 @@ and gives a `TransformProposal`: the transform as an Elastix fit would store it
 `ctx.transform_from_params(id, params)` does the same for six normalized
 numbers `[a, b, tx, c, d, ty]`. `proposal.row()` is a row for `set_transforms`.
 
+`ctx.deformation_from_map(id, native_xy, note="", meta=None)` takes a
+deformable method's result: `native_xy` is a float array `(H, W, 2)`, `H` by
+`W` the fit grid's `image`, giving for each fit-grid pixel centre `(x, y)` the
+native atlas pixel `(x, y)` it corresponds to. It is the whole map, linear
+placement and deformation composed, in the frames `transform_from_matrix`
+takes; an engine started from the section's current placement
+(`placed_atlas_to_section`) composes that placement into its answer. It gives a
+`DeformationProposal`: `summary` (the largest and median displacement over
+the placed atlas footprint in millimetres, the fold fraction and the
+plausibility flags, as for a native fit) and `inverse_consistency_mm`.
+`proposal.row()` is a row for `set_deformations`. The map is stored as every
+deformation is: the residual over the section's current linear placement
+(`field_mm = (placed_atlas_to_section @ native - pixel) * mm_per_px`, which
+gives the map back exactly, to float32 rounding), with an inverse LangSlice
+computes by fixed-point iteration (`inverse_consistency_mm` is how far the
+two disagree). It replaces whatever deformation the section holds rather than
+building on it: the map is already the whole registration. `note` and `meta`
+(JSON values) are kept in the record's provenance.
+
 **Writing.** Each write goes through the operation a native tool uses.
 
 | Call | Writes | Needs in `writes` |
 |---|---|---|
 | `ctx.set_positions(rows, cutting_angles=None, expect=None)` | rows `{"id", "position_mm"}`; positions are clamped into the atlas range and reported; the stack is renumbered by position | `position` (and `angles` with `cutting_angles`) |
 | `ctx.set_transforms(rows, expect=None)` | rows `{"id", "transform"}` (a `TransformProposal`'s `record`) or `{"id", "params", "note"?}` | `affine` |
+| `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation; ok rows carry the proposal's `summary` | `deformation` |
 | `ctx.mark_damage(rows, expect=None)` | rows `{"id", "regions", "note"?}`, as `mark_damage` | any write tool |
 | `ctx.add_layer(id, layer)` | a [layer](#layers) | any write tool |
 
@@ -128,6 +148,16 @@ A write returns a `WriteResult`: `ok` is false when the call was refused whole
 those as reply fields. A read tool that writes, or a write outside `writes`, is
 refused (`READ_TOOL_WRITES`, `WRITE_NOT_DECLARED`).
 
+A deformation is written as a native fit's is: the record is saved in the
+section's folder (`sections/<name>/deformable/<key>/`, its engine
+`plugin:<tool>`), the section's `deformation` names it with one step
+`{"method": "plugin:<tool>", "start": "linear", "note"?}`, and `look`,
+`export_maps`, `registration.json`, the VisuAlign markers and the ABBA
+connector read it like any other. A section without a position or transform is
+that section's row `INVALID_LINEAR_PLACEMENT`, as a native fit refuses it; a
+map of another shape, not float or not finite is `BAD_FIELD`. Maps are
+converted before the job's write lock is taken.
+
 Everything a write tool's call writes is one undo step: `undo` reverts it
 whole, the checkpoint and `registration.json` follow, a property the job froze
 is refused for that section, and a write that changes a section's placement
@@ -136,14 +166,17 @@ holds the job's write lock around several writes.
 
 **Showing.** `ctx.overlay_picture(id, proposal=None)` is the overlay `look`
 draws, as it stands or with a proposal not written yet (`{"transform": ...,
-"position_mm": ..., "angles": (pitch, yaw)}`); `ctx.caption(image, text)`.
+"position_mm": ..., "angles": (pitch, yaw)}`, or `{"deformation": ...}` alone,
+a `DeformationProposal` or a map, drawn on the current placement);
+`ctx.caption(image, text)`.
 
 ### Long tools and `STALE_INPUT`
 
 A tool declared `long=True` is not run under the job's write lock. It reads
 `ctx.section_inputs(id)` for each section first, computes (an engine can take
 minutes while the agent or other commands keep working), then writes with
-`expect={id: digest}`. A section whose placement, appearance or damage changed
+`expect={id: digest}` (for a deformation, the digest without
+`deformation=True`: it covers the placement the map was computed on). A section whose placement, appearance or damage changed
 meanwhile comes back as that section's row `STALE_INPUT`, nothing written for
 it; the others are written. A long call's writes are one undo step too, unless
 another write landed on the job between two of them: then they stay separate
@@ -180,6 +213,15 @@ but must be in the file's orientation; `frame` is required to say which it is:
 `add_layer` turns into the file's orientation. `atlas_um` coordinates are `[x, y, z]`
 BrainGlobe micrometres in the atlas's axis order. The file formats are in
 [file formats](file_formats.md#plugin-layers).
+
+The **fit grid** is `ctx.fit_frame(id).image`: the section turned and flipped
+as its orientation sets it, at the size LangSlice's fits run at (a long edge of
+1536 pixels, never larger than the file), pixel centres at integers. **Native
+atlas pixels** are `[x, y]` pixels of the atlas plane at the section's
+position and cutting angles (`fit_frame(id).atlas`, `plane` says where it lies
+in atlas micrometres). `atlas_to_section` and `placed_atlas_to_section` map
+native atlas pixels to fit-grid pixels; `transform_from_matrix` and
+`deformation_from_map` take maps the other way.
 
 `look` takes `layers=[names]` (or `["all"]`) for modes `section` and `overlay`
 once the job has plugins. Points and lines are drawn with a dark halo, label
@@ -285,6 +327,8 @@ between calls.
 | `TOO_MANY_SECTIONS` | More sections than `limits["sections"]` |
 | `READ_TOOL_WRITES`, `WRITE_NOT_DECLARED` | A write by a read tool, or of a property not in `writes` |
 | `FROZEN`, `STALE_INPUT`, `UNKNOWN_SLICE_IDS`, `BAD_ARGS` | Rows of a write, as for native tools |
+| `NO_POSITION`, `INVALID_LINEAR_PLACEMENT` | A section without a position (a read or conversion that needs one), or without a usable linear placement (a deformation needs a position and a transform) |
+| `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
 | `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
 | `PLUGIN_FAILED` | The handler raised something other than `ToolError` |
 | `MCP_TOOL_ERROR`, `MCP_TIMEOUT`, `MCP_UNAVAILABLE` | The adapter's server answered with an error, did not answer, or is not running |

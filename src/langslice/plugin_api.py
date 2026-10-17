@@ -12,6 +12,7 @@ from langslice.doors.plugins import (
     PLUGIN_API_VERSION,
     AffineView,
     AtlasView,
+    DeformationProposal,
     FitFrame,
     Layer,
     LayerRef,
@@ -27,7 +28,8 @@ from langslice.doors.plugins import (
 )
 
 __all__ = [
-    "PLUGIN_API_VERSION", "AffineView", "AtlasView", "FitFrame", "Layer", "LayerRef",
+    "PLUGIN_API_VERSION", "AffineView", "AtlasView", "DeformationProposal", "FitFrame", "Layer",
+    "LayerRef",
     "PluginError", "SectionRaster", "SectionView", "ToolContext", "ToolError", "ToolResult",
     "ToolSpec",
     "TransformProposal", "WriteResult",
