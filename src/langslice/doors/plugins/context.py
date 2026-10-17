@@ -110,7 +110,10 @@ class FitFrame:
     engine that refines it starts), None while it has no transform.
     ``excluded`` is the native plane's pixels of the section's marked damage
     regions (sides included), the regions every native fit leaves out; None
-    while the section has none marked. ``stain`` is the section's
+    while the section has none marked. ``damage_zone`` is ``excluded`` widened
+    by the margin the native fits also leave out of their comparison
+    (:data:`langslice.core.deformable.masks.EXCLUSION_MARGIN_MM`, scaled to the
+    atlas's brain size); None with ``excluded``. ``stain`` is the section's
     preprocessed channel on the same grid as ``image`` (RGB ``uint8``), the
     picture the native fits read; None unless asked for.
     """
@@ -124,6 +127,7 @@ class FitFrame:
     angles: tuple[float, float]
     placed_atlas_to_section: np.ndarray | None = None
     excluded: np.ndarray | None = None
+    damage_zone: np.ndarray | None = None
     stain: np.ndarray | None = None
 
 
@@ -460,7 +464,9 @@ class ToolContext:
         channel on the grid."""
         from langslice.core import deformation
         from langslice.core.atlas.images import atlas_images
+        from langslice.core.atlas.size import brain_scale
         from langslice.core.damage import exclusions
+        from langslice.core.deformable.masks import EXCLUSION_MARGIN_MM, dilate
         from langslice.core.deformable.plane_images import (
             native_intensity,
             native_labels,
@@ -488,7 +494,7 @@ class ToolContext:
                     dtype=np.float64)
             except ValueError:  # a stored transform no fit can use (stale, turned over)
                 placed = None
-        excluded = None
+        excluded = zone = None
         _, marked = exclusions(record)
         if marked:
             labels = planes.get("annotation")
@@ -496,13 +502,16 @@ class ToolContext:
                 labels = np.asarray(native_labels(workspace.atlas, placement))
             excluded = regions_mask(workspace.atlas, labels, marked,
                                     placement_left(workspace.atlas, placement, marked))
+            spacing_mm = float(np.mean(_plane_frame(workspace.atlas, placement)["px_um"])) / 1000.0
+            zone = dilate(excluded, EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)
+                          / spacing_mm)
         return FitFrame(
             id=record.id, image=np.asarray(image), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
-            placed_atlas_to_section=placed, excluded=excluded,
+            placed_atlas_to_section=placed, excluded=excluded, damage_zone=zone,
             stain=(np.asarray(deformation.stain_image(
                 workspace, self._door.state, grid, deformation.FIT_LOOK)[0].convert("RGB"))
                 if stain else None))

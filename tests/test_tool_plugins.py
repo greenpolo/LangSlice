@@ -415,6 +415,8 @@ def test_the_fit_frame_carries_the_marked_damage_on_the_native_plane(make, image
             labels = frame.atlas["annotation"]
             return ToolResult({"excluded": int(frame.excluded.sum()),
                                "same_grid": list(frame.excluded.shape) == list(labels.shape),
+                               "zone": bool((frame.damage_zone >= frame.excluded).all()
+                                            and frame.damage_zone.sum() > frame.excluded.sum()),
                                "inside": bool((labels[frame.excluded] != 0).all())})
         def tools():
             return [ToolSpec("damage_of", stub, handler, kind="read", group="Common")]
@@ -426,7 +428,7 @@ def test_the_fit_frame_carries_the_marked_damage_on_the_native_plane(make, image
     assert call(box, "damage_of")["excluded"] is None
     assert call(box, "mark_damage", section="s0.png", regions=["L"])["status"] == "ok"
     reply = call(box, "damage_of")
-    assert reply["excluded"] > 0 and reply["same_grid"] and reply["inside"]
+    assert reply["excluded"] > 0 and reply["same_grid"] and reply["inside"] and reply["zone"]
 
 
 # --- the context's reads and conversions --------------------------------------------------------
