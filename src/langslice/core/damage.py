@@ -1,7 +1,7 @@
 """Damage by atlas region: what every fit leaves out, and the picture of a mark.
 
-A section's damage is the atlas regions it is missing, or has so badly
-displaced that they would wreck a fit (``SliceState.damaged_regions``):
+A section's damage is the atlas regions whose tissue it is missing, or has
+folded over other anatomy (``SliceState.damaged_regions``):
 acronyms or ids, each optionally one side (``"CTX:left"``,
 :mod:`langslice.core.atlas.sides`, the section's displayed left and right).
 Named by atlas region, a mark moves with the registration. Every fit and the

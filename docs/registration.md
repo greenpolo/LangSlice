@@ -245,10 +245,14 @@ channel at weight 0. Inspect that channel with
 `look(channels=["preprocessed"])`. Both channel tools are available in every
 job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 
-`mark_damage` records atlas regions physically lost or badly displaced,
-including one hemisphere when needed. Those regions are excluded from
-elastix, `fireants_syn` and image-model tracing. Small tears, bubbles and folds do not
-by themselves justify excluding an entire region. A job can disable this tool
+`mark_damage` records atlas regions whose tissue is missing from the section
+or lies folded over other anatomy, including one hemisphere when needed.
+Those regions are excluded from elastix, `fireants_syn` and image-model
+tracing, so intact tissue inside a mark goes unfitted. Its description tells
+the agent to leave intact tissue shifted near its place unmarked, for the warp
+to fit, and that marking a whole large region when most of it is missing keeps
+the surrounding anatomy safe. Small tears, bubbles and folds within an intact
+outline are not damage. A job can disable this tool
 with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
 
 ## Positioning and linear alignment
