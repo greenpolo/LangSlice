@@ -203,11 +203,12 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    "schema init", "reply.images", "`scripts/`", "never in /tmp",
                    "`env install PACKAGE ...`"):
         assert needle in agents, needle
-    for name in VERBS:
-        assert f"- `{name}` (" in agents, name
     assert len(agents.splitlines()) < 85  # one screen, its verb list included
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
+    # The card lists exactly the verbs the job has: none it would refuse.
+    listed = [name for name in VERBS if f"- `{name}` (" in agents]
+    assert listed == [name for name in VERBS if name in envelope["result"]["verbs"]]
     assert [row["id"] for row in envelope["result"]["rows"]] == [ID0, ID1, ID2]
     assert {"position_sections", "elastix_affine", "fireants_syn", "export_maps"} <= set(
         envelope["result"]["verbs"])

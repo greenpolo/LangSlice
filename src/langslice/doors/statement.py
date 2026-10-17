@@ -117,6 +117,11 @@ def opening_for_cli(folder: str, pictures: int | None,
         opening = (f"Opening pictures: `brief` saved {pictures} picture files, listed in "
                    "reading order under `artifacts` (kind `opening`) and in BRIEF.md "
                    "with the text that goes with each; open every one before any write. ")
+    if spec is not None:  # a verb the run does not have is not mentioned either
+        from langslice.ops.registry import enabled, verbs_for
+
+        run = set(enabled(spec, scripting=True))
+        disabled = [*disabled, *(name for name in verbs_for(spec) if name not in run)]
     return [
         opening + OPENING_SHOWS,
         "",
@@ -141,12 +146,13 @@ def opening_for_cli(folder: str, pictures: int | None,
 def long_verbs(disabled: Collection[str] = (), spec: Any = None) -> list[str]:
     """The verbs that compute outside the job lock and may take long
     (:attr:`langslice.ops.registry.Verb.long`), in registry order, less the
-    ones *disabled* names."""
+    ones *disabled* names and, given *spec*, the ones its run does not have."""
     from langslice.core.toolset import is_off
     from langslice.ops.registry import verbs_for
 
     return [name for name, verb in verbs_for(spec).items()
-            if verb.long and not is_off(disabled, name)]
+            if verb.long and not is_off(disabled, name)
+            and (spec is None or verb.tool.is_on(spec))]
 
 
 def job_statement(
