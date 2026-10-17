@@ -148,6 +148,15 @@ class Workspace:
         return self._atlas
 
     @property
+    def brain_scale(self) -> float:
+        """The atlas brain's size next to the adult mouse's
+        (:func:`langslice.core.atlas.size.brain_scale`): what the deformable
+        fits and the positioning ruler multiply their distances by."""
+        from langslice.core.atlas.size import brain_scale
+
+        return brain_scale(self.atlas)
+
+    @property
     def position_range(self) -> tuple[float, float]:
         if self._range is None:
             self._range = get_position_range_mm(

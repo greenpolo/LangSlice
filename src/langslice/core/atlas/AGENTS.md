@@ -24,6 +24,17 @@ here is a verbatim copy — edit one, mirror to the other.
   memory. `core.oblique` caches the template's spline coefficients and the
   annotation's dense indices through it; the tests turn it off
   (`tests/conftest.py`).
+- `size.py` — how big the atlas's brain is next to the adult mouse's:
+  `brain_scale(atlas)` (memoized per atlas), the cube root of
+  `brain_volume_mm3` (the annotation's non-zero voxels counted every
+  `SAMPLE_UM`, `annotated_volume_mm3`, kept in the disk cache as
+  `brain_volume_mm3`) over `REFERENCE_VOLUME_MM3` (`allen_mouse_25um`'s),
+  rounded to `SCALE_STEP` (0.05) by `scale_for_volume`: 1.0 for every adult
+  CCFv3 atlas, 1.7 `whs_sd_rat_39um`, 1.4 `swc_female_rat_50um`, 0.7 / 0.9 /
+  0.95 DeMBA P4 / P10 / P14. The deformable fits, the Elastix affine and the
+  positioning ruler multiply their adult-mouse distances by it
+  (`Workspace.brain_scale`; `core/deformable/CLAUDE.md`, "Brain size"). The
+  tests patch `brain_volume_mm3` so every fake atlas is scale 1.
 - `images.py` — the atlas's own grayscale images (`atlas_images`,
   `atlas_volume`): BrainGlobe's `template` and every additional reference the
   atlas ships, under BrainGlobe's names, plus `ccfv3augmented_nissl` for an

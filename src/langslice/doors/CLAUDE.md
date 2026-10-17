@@ -56,7 +56,8 @@ the CLI is a process per call.
   re-indented by `model_doc`). The description is the tool's only
   description: the job statement names the tools and describes none.
   `Variant` (`auto`, `door`, `uncapped`, `forced_view`, `positions`,
-  `prompt`; `Variant.of(spec, auto=, image_model=, door=, prompt=, uncapped=)`) is
+  `prompt`, `brain_scale`; `Variant.of(spec, auto=, image_model=, door=, prompt=,
+  uncapped=, brain_scale=)`) is
   what of a run changes a declaration (`dropped_arguments`, each dropped
   argument's `Args` entry cut from the description): `off` (the job's
   disabled list): the modes it disables are out of `look`'s `mode` enum
@@ -78,7 +79,10 @@ the CLI is a process per call.
   library, `build_tools(scripting=True)`): `_UNCAPPED_DOCS` words the
   picture and section counts of `look`, `grep_atlas_view`,
   `set_preprocessed_channel_properties`, `interactive_transform` and
-  `elastix_affine` without the ADK and MCP cap. `declaration(name, variant)`
+  `elastix_affine` without the ADK and MCP cap; `brain_scale` (the job's
+  atlas brain's, `core.atlas.size`, passed by the toolbox and the CLI's
+  `schema` for a job): `_SCALED_DOCS` states the distances a description
+  gives (`elastix_affine`'s 300 um neighbourhood) at that scale, unchanged at 1. `declaration(name, variant)`
   (cached), `summary(name)`, `declare(name, body, variant)` (a function with
   the declared name, doc and signature that binds the call, fills the
   declared defaults and hands every argument to the body by name; ADK's

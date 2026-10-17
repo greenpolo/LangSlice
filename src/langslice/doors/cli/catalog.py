@@ -151,7 +151,8 @@ class Declared:
             self.folder = str(opened.job.folder)
             self.spec = opened.spec
             self.variant = Variant.of(opened.spec, auto=True, door="cli",
-                                      image_model=opened.image_model_connected)
+                                      image_model=opened.image_model_connected,
+                                      brain_scale=opened.ctx.brain_scale)
             self.disabled = tuple(opened.spec.switched_off)
             self.verbs = tuple(opened.listed_verbs())
         finally:

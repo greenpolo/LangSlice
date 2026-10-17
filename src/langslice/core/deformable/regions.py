@@ -18,7 +18,10 @@ import numpy as np
 from scipy import ndimage as ndi
 from scipy.optimize import linear_sum_assignment
 
-#: Gaps in the model's lines shorter than about twice this are closed.
+#: Gaps in the model's lines shorter than about twice this are closed. This
+#: module's distances and areas are the adult mouse brain's; the fit passes the
+#: atlas's brain scale (``core.atlas.size.brain_scale``), which multiplies
+#: them (areas by its square).
 LINE_GAP_CLOSING_MM = 0.03
 #: An enclosed area below this size that sits wholly inside one placed region
 #: (purity above :data:`SMALL_LOOP_PURITY`) and is a small share of it
@@ -40,7 +43,7 @@ OUTLINE_AREA_LIMITS = (0.5, 2.0)
 
 
 def model_extent(
-    lines: np.ndarray, placed_area_px: int, mm_per_px: float,
+    lines: np.ndarray, placed_area_px: int, mm_per_px: float, *, brain_scale: float = 1.0,
 ) -> tuple[np.ndarray | None, float]:
     """(extent, area ratio): everything the model's outermost line encloses.
 
@@ -51,7 +54,7 @@ def model_extent(
     nothing). The ratio is returned either way, for the fit's report.
     """
     lines = np.asarray(lines, dtype=bool)
-    radius = max(1, round(OUTLINE_GAP_CLOSING_MM / mm_per_px))
+    radius = max(1, round(OUTLINE_GAP_CLOSING_MM * brain_scale / mm_per_px))
     padded = np.pad(lines, radius)
     closed = np.asarray(ndi.binary_closing(padded, iterations=radius),
                         dtype=bool)[radius:-radius, radius:-radius] | lines
@@ -62,7 +65,8 @@ def model_extent(
 
 
 def named_regions(
-    lines: np.ndarray, placed: np.ndarray, tissue: np.ndarray, mm_per_px: float,
+    lines: np.ndarray, placed: np.ndarray, tissue: np.ndarray, mm_per_px: float, *,
+    brain_scale: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
     """(labels, unnamed, report) for the areas the model's lines enclose.
 
@@ -78,7 +82,8 @@ def named_regions(
     lines = np.asarray(lines, dtype=bool)
     if lines.shape != placed.shape or tissue.shape != placed.shape:
         raise ValueError("Lines, placed labels and tissue must share one grid")
-    radius = max(1, round(LINE_GAP_CLOSING_MM / mm_per_px))
+    radius = max(1, round(LINE_GAP_CLOSING_MM * brain_scale / mm_per_px))
+    small_loop_mm2 = SMALL_LOOP_MM2 * brain_scale ** 2
     wall = np.asarray(ndi.binary_closing(lines, iterations=radius), dtype=bool) | lines
     # A one-pixel barrier joins diagonal segments without moving area interiors.
     wall = np.asarray(ndi.binary_dilation(wall), dtype=bool)
@@ -96,7 +101,7 @@ def named_regions(
         reasons = []
         if winner == 0 or purity < MIN_NAME_PURITY:
             reasons.append("no_placed_overlap")
-        elif (area_px[cell] * mm_per_px ** 2 < SMALL_LOOP_MM2 and purity > SMALL_LOOP_PURITY
+        elif (area_px[cell] * mm_per_px ** 2 < small_loop_mm2 and purity > SMALL_LOOP_PURITY
               and area_px[cell] / region_sizes[winner] < SMALL_LOOP_SHARE):
             reasons.append("small_loop_inside_one_region")
         named[cell] = not reasons

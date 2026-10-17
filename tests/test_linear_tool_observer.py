@@ -91,7 +91,7 @@ def test_build_tools_forwards_execution_observer(tmp_path):
 
     events = []
     state = StackState(slices=[SliceState("a", 0, 0)])
-    ctx: Any = SimpleNamespace(position_range=(0, 10),
+    ctx: Any = SimpleNamespace(position_range=(0, 10), brain_scale=1.0,
                                section_channels=lambda _id: (("gray",), []),
                                layout=JobLayout(job_folder_for(tmp_path), tmp_path),
                                results_path=str(tmp_path / "linear_results.json"))

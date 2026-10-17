@@ -3,7 +3,8 @@ loader, the fit settings every test runs with, the stand-in image model, and
 the normaliser the agent-text snapshot uses.
 
 ``tests/conftest.py`` applies :data:`PATCHES` once per test process (fits in
-process at the coarse level), so every test sees the same settings whatever
+process at the coarse level, every atlas the adult mouse brain's size), so
+every test sees the same settings whatever
 ran before it; a child interpreter (``tests/cli_child.py``) calls
 :func:`apply_patches` itself.
 """
@@ -104,9 +105,19 @@ def atlas_loader() -> Callable[[str], Any]:
 #: Module attributes every test runs with: fits run in this process (no
 #: spawn pool, whose start-up costs seconds per call) at the coarse detail
 #: level. Same code path, smaller pyramid.
+def _reference_brain(atlas: Any) -> float:
+    """Every test atlas is the size of the adult mouse brain (brain scale 1):
+    the fakes are a few planes, not brains; ``tests/test_brain_scale.py``
+    measures real atlases and sets other sizes itself."""
+    from langslice.core.atlas.size import REFERENCE_VOLUME_MM3
+
+    return REFERENCE_VOLUME_MM3
+
+
 PATCHES: tuple[tuple[str, str, Any], ...] = (
     ("langslice.core.deformation", "USE_PROCESS_POOL", False),
     ("langslice.core.deformation", "DETAIL_LEVEL", "coarse"),
+    ("langslice.core.atlas.size", "brain_volume_mm3", _reference_brain),
 )
 
 

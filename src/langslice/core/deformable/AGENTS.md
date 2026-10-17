@@ -53,7 +53,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   section grid, e.g. `trace_borders`' `extracted_lines.png` with its
   `atlas_to_canvas`) against `borders_merged` (the regions the model was shown:
   `core.atlas.levels.labels_at` at `MODEL_DEPTH`) or `borders`; both softened
-  by the same Gaussian ridge (`settings.LINE_SOFTENING_UM`, fixed at 60 µm).
+  by the same Gaussian ridge (`settings.LINE_SOFTENING_UM`, 60 µm in the
+  adult mouse, times the brain scale).
   Mean squares (`core/deformation.Choice` adds the lines as named regions,
   `labels="model"`, for `traced_borders`). The crossed pairings are refused
   (`metric_for`): lines
@@ -136,6 +137,33 @@ and returns a `record.DeformableRecord`. No custom solver.
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
   candidate is a `CandidateFailure`, never an exception.
 
+## Brain size
+
+Every distance in this package (in mm or µm: working pixels, stiffness
+sigmas, edge sigma, correlation radius, line softening, mask and exclusion
+margins, `TRACE_MOVING_MARGIN_MM`, the restricted taper, the regions module's
+gap closing and smallest loop, the EM's block and background distance, the
+record's `OUTSIZED_MEDIAN_MM` and `MIN_FLAG_AREA_MM2`) is the adult mouse
+brain's, and a fit multiplies it by the atlas's brain scale
+(`core.atlas.size.brain_scale`: the cube root of the atlas's annotated volume
+over the adult Allen mouse's, rounded to 0.05; exactly 1.0 for every atlas of
+the adult CCFv3 brain, about 1.7 for `whs_sd_rat_39um`, 0.7 for DeMBA P4),
+areas by its square. `prepare_fit` / `prepare_warp` read it once
+(`PreparedFit.brain_scale`) and hand it on: `EngineInputs.brain_scale` (the
+stiffness sigmas, recorded in the engine's native parameters with
+`brain_scale`), `EMContext.scale` (`masks.block_px`, `masks.em_parameters`),
+`footprint_masks(..., scale)`, `regions.model_extent` / `named_regions`
+(`brain_scale=`), `record.diagnose(..., brain_scale=)`. The working grid is
+`DETAIL[...].working_um` times the scale, so a rat section is fitted as a
+mouse section drawn smaller: the same working pixels across the brain, the
+same pixel quantities everywhere. Kept in micrometres: the EM's grid
+(`EM_GRID_UM`, the sampling of the slide's holes and debris). An explicit
+`FitSettings.neighbourhood_um` is taken as given; the tools pass
+`settings.neighbourhood_um_for(scale)`. `tests/test_brain_scale.py` pins
+that a brain of scale 1 prepares exactly the inputs it did before scaling,
+and the tests' fake atlases are all scale 1 (`tests/synthetic_stack.py`
+`PATCHES`).
+
 ## Settings (`settings.py`)
 
 Named ladders, physical units: `stiffness` soft/medium/firm
@@ -158,7 +186,7 @@ toward their bright labelling). The edge channel is on by default because
 the intensity metric on its own crossed enlarged ventricles. There is no `stiff`
 setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
 slower, worse outlines) and the linear tool always runs `standard`; line
-softening is the constant `LINE_SOFTENING_UM` = 60. `template` is the default
+softening is the constant `LINE_SOFTENING_UM` = 60 (adult mouse). `template` is the default
 stain atlas image; the agent picks whichever of the atlas's images looks most
 like its sections (on `ccfv3augmented_mouse_25um` the template is the Blue
 Brain averaged Nissl and `single_animal_nissl` is an additional reference).
@@ -206,7 +234,7 @@ both masks with the regions' neighbourhood (`EMContext.neighbourhood`), so
 the weights inside it are the whole-section fit's. Why: the EM learns what
 tissue, artifact and background look like from the image (`muB` from the
 section's own background beyond 500 µm of the footprint, a contrast map per
-0.8 mm block); a neighbourhood a few hundred µm wide has too little of either
+0.8 mm block; both adult mouse, times the brain scale); a neighbourhood a few hundred µm wide has too little of either
 and a restricted footprint would make the tissue stand for background. Its
 first run is the restricted footprint fit, so the warped atlas image outside
 the neighbourhood is nearly the placement; that only touches the contrast
@@ -218,14 +246,15 @@ to the neighbourhood. Traced lines (`section_image="lines"`) and the Elastix
 affine get no EM mask. `em_weights` is a port of
 emlddmm's three-class EM (Tward et al. 2025, doi 10.1038/s41467-025-65317-7)
 with the warp fixed at the first run's: matching J ~ N(f(I_warped), sigmaM)
-with f linear per `EM_BLOCK_PX` (16) block of the `EM_GRID_UM` (50 µm) grid,
+with f linear per `masks.block_px(scale)` block (`EM_BLOCK_PX`, 16, times the
+brain scale) of the `EM_GRID_UM` (50 µm) grid,
 artifact ~ N(muA, sigmaA), background ~ N(muB, sigmaB), `EM_ITERATIONS` (20)
 E/M alternations, emlddmm's ridge. Two departures from emlddmm's defaults,
 commented in the code: sigmas all 0.5 x std(J), fixed (its (1, 2, 5) x std
 flagged nothing, not even a 0.3 mm hole), and priors fixed at (0.9, 0.05,
 0.05) (updated priors ran away on DAPI, where dim tissue has the background's
 intensity). muB is the image's own background, muA the opposite extreme
-quantile of the tissue. `EM_PARAMETERS` (every setting) is part of the
+quantile of the tissue. `em_parameters(scale)` (every setting) is part of the
 deformable cache key of every stain fit, as is the engine (`core.deformation.cache_key`). On
 flat, textureless synthetic tissue a hole of 0.5 mm or more inside one
 uniform region is absorbed by its block's contrast offset and kept.
@@ -255,7 +284,8 @@ named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
 `MIN_FLAG_AREA_MM2`, `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED
 (`displacement_report`, also in `diagnostics["displacement"]`) a maximum
 displacement in the footprint above `OUTSIZED_MAX_FRACTION` (0.1) of the footprint's
-longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6). The median
+longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6, adult mouse;
+times the brain scale, `MIN_FLAG_AREA_MM2` times its square). The median
 limit sits above every observed median.
 
 ## Visual review

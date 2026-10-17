@@ -18,6 +18,13 @@ Two kinds of fit, two kinds of mask:
   tissue and background to learn what each looks like, and a fit's own
   neighbourhood has too little of either) and then keeps both masks inside
   the regions' neighbourhood, as its footprint masks were.
+
+Every distance here is the adult mouse brain's; a fit multiplies the
+anatomy-sized ones (the margins, the EM's contrast block and background
+distance) by the atlas's brain scale (``core.atlas.size.brain_scale``, 1.0
+for the adult CCFv3 brain), passed in as *scale*. The EM's grid stays in
+micrometres: it is the sampling at which holes, tears and debris on the slide
+are seen.
 """
 
 from __future__ import annotations
@@ -28,12 +35,14 @@ from typing import Any
 import cv2
 import numpy as np
 
-#: Widening of the placed atlas footprint so its outline sits inside the metric.
+#: Widening of the placed atlas footprint so its outline sits inside the metric
+#: (adult mouse; times the brain scale).
 MASK_MARGIN_MM = 0.2
 #: Margin around excluded regions also kept out of the moving mask. Excluded
 #: pixels are blanked to background, which leaves an edge; without this margin
 #: that artificial edge still pulls the section's tissue (measured on a
 #: synthetic shifted region: Elastix moved it 92% as far as with no exclusion).
+#: Adult mouse; times the brain scale.
 EXCLUSION_MARGIN_MM = 0.1
 
 
@@ -58,11 +67,13 @@ class Masks:
     damage_zone: np.ndarray
 
 
-def footprint_masks(placed: np.ndarray, excluded: np.ndarray, spacing_mm: float) -> Masks:
+def footprint_masks(placed: np.ndarray, excluded: np.ndarray, spacing_mm: float,
+                    scale: float = 1.0) -> Masks:
     """The footprint masks of a fit whose placed atlas labels are *placed* and
-    whose excluded pixels are *excluded* (both on the working grid)."""
-    footprint = dilate(placed != 0, MASK_MARGIN_MM / spacing_mm)
-    damage_zone = dilate(excluded, EXCLUSION_MARGIN_MM / spacing_mm)
+    whose excluded pixels are *excluded* (both on the working grid), the
+    margins times the brain *scale*."""
+    footprint = dilate(placed != 0, MASK_MARGIN_MM * scale / spacing_mm)
+    damage_zone = dilate(excluded, EXCLUSION_MARGIN_MM * scale / spacing_mm)
     return Masks(fixed=footprint, moving=footprint & ~damage_zone, damage_zone=damage_zone)
 
 
@@ -80,10 +91,13 @@ def footprint_masks(placed: np.ndarray, excluded: np.ndarray, spacing_mm: float)
 # fit. Where this departs from emlddmm's defaults it says so below.
 
 #: The EM runs on a coarse grid, as emlddmm runs on downsampled images
-#: (area-averaged; the weights are upsampled back).
+#: (area-averaged; the weights are upsampled back). Micrometres at every brain
+#: scale: the sampling of the slide's holes, tears and debris.
 EM_GRID_UM = 50.0
 #: emlddmm's ``local_contrast`` block, in EM-grid pixels (16 x 50 um = 0.8 mm):
 #: its serial-section example's [1, 16, 16]. Order 1 (an offset and a gain).
+#: Adult mouse: a fit's block is this times the brain scale, rounded
+#: (:func:`block_px`), so it covers the same anatomy.
 EM_BLOCK_PX = 16
 #: E/M alternations.
 EM_ITERATIONS = 20
@@ -102,18 +116,29 @@ EM_SIGMA_SCALE = 0.5
 #: tissue has the background's intensity (background prior 0.1 -> 0.35, the
 #: brainstem left out). These are its README example's values.
 EM_PRIORS = (0.9, 0.05, 0.05)
-#: Background is sampled this far outside the placed footprint.
+#: Background is sampled this far outside the placed footprint (adult mouse;
+#: times the brain scale).
 EM_BACKGROUND_DISTANCE_UM = 500.0
 #: Section pixels whose P(match) is below this leave the second fit's metric.
 EM_MATCH_THRESHOLD = 0.5
-#: Everything above that changes the mask; part of the deformable cache key.
-EM_PARAMETERS: dict[str, Any] = {
-    "method": "three-class EM after emlddmm (Tward et al. 2025)",
-    "grid_um": EM_GRID_UM, "block_px": EM_BLOCK_PX, "iterations": EM_ITERATIONS,
-    "ridge": EM_RIDGE, "sigma_scale": EM_SIGMA_SCALE,
-    "priors": list(EM_PRIORS), "background_distance_um": EM_BACKGROUND_DISTANCE_UM,
-    "match_threshold": EM_MATCH_THRESHOLD,
-}
+
+
+def block_px(scale: float = 1.0) -> int:
+    """The EM's contrast block in EM-grid pixels at brain *scale*."""
+    return max(2, round(EM_BLOCK_PX * scale))
+
+
+def em_parameters(scale: float = 1.0) -> dict[str, Any]:
+    """Everything above that changes the mask, at brain *scale*; part of the
+    deformable cache key and of a stain fit's record."""
+    return {
+        "method": "three-class EM after emlddmm (Tward et al. 2025)",
+        "grid_um": EM_GRID_UM, "block_px": block_px(scale), "iterations": EM_ITERATIONS,
+        "ridge": EM_RIDGE, "sigma_scale": EM_SIGMA_SCALE,
+        "priors": list(EM_PRIORS),
+        "background_distance_um": EM_BACKGROUND_DISTANCE_UM * scale,
+        "match_threshold": EM_MATCH_THRESHOLD,
+    }
 
 
 def _block_linear(J: np.ndarray, image: np.ndarray, weight: np.ndarray, block: int) -> np.ndarray:
@@ -144,12 +169,14 @@ def _block_linear(J: np.ndarray, image: np.ndarray, weight: np.ndarray, block: i
 
 def em_weights(
     J: np.ndarray, warped_atlas: np.ndarray, footprint: np.ndarray, spacing_mm: float,
+    scale: float = 1.0,
 ) -> dict[str, Any]:
     """Per-pixel class weights on the working grid.
 
     *J* is the fit's section image ([0, 1]), *warped_atlas* the atlas image
     through the first fit, *footprint* the placed atlas footprint (with its
-    margin), all on the working grid of *spacing_mm*. Returns ``WM`` (P(match)),
+    margin), all on the working grid of *spacing_mm*; *scale* is the brain
+    scale (the block and the background distance). Returns ``WM`` (P(match)),
     ``WA`` (artifact), ``WB`` (background), ``predicted`` (the contrast map's
     prediction of the section) on that grid, and ``params`` (the class means,
     widths and priors used).
@@ -165,7 +192,7 @@ def em_weights(
     Ic = (Ic - lo) / max(float(hi - lo), 1e-6)
     sd = float(Jc.std())
     sigma = sd * EM_SIGMA_SCALE
-    r = max(1, round(EM_BACKGROUND_DISTANCE_UM / EM_GRID_UM))
+    r = max(1, round(EM_BACKGROUND_DISTANCE_UM * scale / EM_GRID_UM))
     far = ~(cv2.dilate(fp.astype(np.uint8), cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0)
     inside = Jc[fp] if fp.any() else Jc.ravel()
@@ -183,8 +210,9 @@ def em_weights(
     pM, pA, pB = EM_PRIORS
     WM = np.full(Jc.shape, pM)
     f = Jc
+    block = block_px(scale)
     for _ in range(EM_ITERATIONS):
-        f = _block_linear(Jc, Ic, WM, EM_BLOCK_PX)  # M step: the contrast map
+        f = _block_linear(Jc, Ic, WM, block)  # M step: the contrast map
         lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigma ** 2) / sigma  # E step
         lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sigma ** 2) / sigma
         lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sigma ** 2) / sigma
@@ -207,12 +235,14 @@ class EMContext:
     """What a stain fit's second run needs besides the engine inputs, on the
     working grid: the whole placed *footprint* (with its margin; the EM's
     tissue and background are told apart by it, so a restricted fit passes
-    the unrestricted one), the *damage_zone*, and for a region-restricted
-    fit the regions' *neighbourhood* (None: the whole section)."""
+    the unrestricted one), the *damage_zone*, for a region-restricted
+    fit the regions' *neighbourhood* (None: the whole section), and the
+    atlas's brain *scale*."""
 
     footprint: np.ndarray
     damage_zone: np.ndarray
     neighbourhood: np.ndarray | None = None
+    scale: float = 1.0
 
 
 def em_masks(
@@ -223,7 +253,7 @@ def em_masks(
     scope, the whole section or the neighbourhood; ``params``;
     ``left_out_in_footprint``: their fraction of the placed footprint in that
     scope)."""
-    weights = em_weights(J, warped_atlas, context.footprint, spacing_mm)
+    weights = em_weights(J, warped_atlas, context.footprint, spacing_mm, context.scale)
     fixed = weights["WM"] >= EM_MATCH_THRESHOLD
     moving = ~context.damage_zone
     scope = context.footprint if context.neighbourhood is None else (

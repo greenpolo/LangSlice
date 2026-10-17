@@ -6,6 +6,13 @@ regularize in different units. Physical units (millimetres) are used wherever
 an engine allows it, so changing the detail level does not change how stiff a
 fit is. The similarity metric follows from the image pairing, the engine and,
 for stain fits, ``stain_metric`` (:func:`metric_for`); the step size is fixed.
+
+Every distance here is the adult mouse brain's. A fit multiplies them by the
+atlas's brain scale (``core.atlas.size.brain_scale``: 1.0 for the adult CCFv3
+brain, about 1.7 for the Waxholm rat, 0.7 for DeMBA P4), working pixels
+included, so a rat section is fitted as a mouse section drawn at a smaller
+scale: the same number of working pixels across the brain, the same
+smoothing, margins and capture range relative to its anatomy.
 """
 
 from __future__ import annotations
@@ -56,9 +63,9 @@ class StiffnessLevel:
     """SyN regularization as Gaussian sigmas in millimetres: *update_sigma_mm*
     smooths each step's gradient, *total_sigma_mm* the whole warp.
 
-    The engine converts them to voxels of the working grid (sigma_mm /
-    voxel_mm), so a level means the same physical smoothness at every detail
-    level.
+    The engine converts them to voxels of the working grid (sigma_mm x brain
+    scale / voxel_mm), so a level means the same smoothness at every detail
+    level, relative to the brain's anatomy.
     """
 
     update_sigma_mm: float
@@ -78,9 +85,9 @@ STIFFNESS: dict[str, StiffnessLevel] = {
 class DetailLevel:
     """Working resolution and optimization effort.
 
-    The fit runs on the section resampled to *working_um* (never finer than
-    the section's own pixels); the field is interpolated back to the section
-    grid afterwards.
+    The fit runs on the section resampled to *working_um* times the brain
+    scale (never finer than the section's own pixels); the field is
+    interpolated back to the section grid afterwards.
     """
 
     working_um: float
@@ -96,14 +103,14 @@ DETAIL: dict[str, DetailLevel] = {
 #: SyN its capture range; more iterations at a level rarely change the result
 #: because its convergence test stops it first.
 
-#: Gaussian sigma, in micrometres, that turns a one-pixel line into a soft
+#: Gaussian sigma, in micrometres (adult mouse), that turns a one-pixel line into a soft
 #: ridge both images share. A wider ridge widens the capture range (how far a
 #: misplaced border can be and still be pulled in) at the cost of precision.
 #: Fixed: 30 and 60 um look the same, 120 um slightly worse and adds folds
 #: with Elastix.
 LINE_SOFTENING_UM = 60.0
 
-#: Radius, in micrometres, of the window the local correlation compares
+#: Radius, in micrometres (adult mouse), of the window the local correlation compares
 #: (window side = 2 x radius + 1 working pixels at the finest level; coarser
 #: pyramid levels widen it in proportion).
 CORRELATION_RADIUS_UM = 80.0
@@ -111,16 +118,17 @@ CORRELATION_RADIUS_UM = 80.0
 #: correlation metric; AdvancedNormalizedCorrelation is one global
 #: correlation over the whole mask).
 ELASTIX_STAIN_METRIC: Metric = "mutual_information"
-#: Gaussian sigma, in micrometres, applied before the gradient magnitude of
+#: Gaussian sigma, in micrometres (adult mouse), applied before the gradient magnitude of
 #: the edge channel: enough to quiet pixel noise, small enough to keep a
 #: layer or a ventricle wall as one edge.
 EDGE_SIGMA_UM = 30.0
 #: Metric weight of the edge channel next to 1.0 for the intensities.
 EDGE_CHANNEL_WEIGHT = 1.0
 
-#: Default margin, in micrometres, around the structures a restricted
-#: (sequential) fit is limited to: their own edges plus enough surroundings to
-#: show where those edges should go.
+#: Default margin, in micrometres (adult mouse), around the structures a
+#: restricted (sequential) fit is limited to: their own edges plus enough
+#: surroundings to show where those edges should go. The tools pass this
+#: times the brain scale (:func:`neighbourhood_um_for`).
 DEFAULT_NEIGHBOURHOOD_UM = 300.0
 
 
@@ -142,7 +150,8 @@ class FitSettings:
     #: descendants included); empty fits the whole section. With a previous
     #: record this is one step of a sequential, region-by-region fit.
     structures: tuple[str | int, ...] = field(default_factory=tuple)
-    #: Margin around *structures* the restricted fit may see and move, in um.
+    #: Margin around *structures* the restricted fit may see and move, in um
+    #: as given (the brain scale is not applied to it).
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
     #: Stain fits only (lines ignore it): the intensity metric. Mutual
     #: information is the default (it followed the raters' own corrections
@@ -195,6 +204,11 @@ class FitSettings:
         for name in ("exclude", "structures"):
             data[name] = tuple(data.get(name, ()))
         return cls(**cast(dict[str, Any], data))
+
+
+def neighbourhood_um_for(scale: float) -> float:
+    """The default neighbourhood of a restricted fit at brain *scale*."""
+    return DEFAULT_NEIGHBOURHOOD_UM * scale
 
 
 def metric_for(
