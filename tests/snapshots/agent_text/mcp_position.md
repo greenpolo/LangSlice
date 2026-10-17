@@ -399,11 +399,16 @@ Set sections' orientation and in-plane transform by hand, and show the result.
 
 Mark the atlas regions a section has lost, so that every fit leaves them out.
 
-        Damage is tissue that is missing from the section, or so badly
-        displaced that it would wreck a fit, such as a whole hemisphere, the
-        olfactory bulb or the cortex. Small tears, bubbles, stains, low contrast
-        and folds within an intact outline are not damage and are not marked.
-        A section is damaged exactly when it has marked regions. The marked
+        Mark the regions whose tissue is missing from the section, or lies folded
+        over other anatomy, such as a whole hemisphere, the olfactory bulb or the
+        cortex: the fits leave them out, and the anatomy around them fits
+        cleanly. Tissue that is intact but shifted near its place is not damage;
+        left unmarked, the warp fits it. A marked region is never fitted, so
+        intact tissue inside a mark goes unfitted too. When most of a large
+        region is missing, marking the whole region keeps the anatomy around it
+        safe. Small tears, bubbles, stains, low contrast and folds within an
+        intact outline are not damage and are not marked. A section is damaged
+        exactly when it has marked regions. The marked
         regions are left out of elastix_affine, fireants_syn and the image model's
         trace automatically, and they move with the registration because they
         are named by atlas region. One undoable write.

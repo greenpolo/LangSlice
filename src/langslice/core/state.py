@@ -105,8 +105,8 @@ class SliceState:
     flip: bool = False
     #: Quarter-turn applied before the flip; one of :data:`ROTATIONS`.
     rotation_deg: int = 0
-    #: The atlas regions this section is missing, or has so badly displaced
-    #: that they would wreck a fit (``mark_damage``): acronyms or ids, each
+    #: The atlas regions whose tissue this section is missing, or has folded
+    #: over other anatomy (``mark_damage``): acronyms or ids, each
     #: optionally one side (``"CTX:left"``, :mod:`langslice.core.atlas.sides`).
     #: Every fit and the image model's trace leave them out
     #: (:func:`langslice.core.damage.exclusions`).
