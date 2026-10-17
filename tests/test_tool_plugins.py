@@ -441,8 +441,9 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
             view = ctx.section("s1")
             image = ctx.section_image("s1.png", level=32)
             atlas = ctx.atlas()
-            frame = ctx.fit_frame("s1.png")
+            frame = ctx.fit_frame("s1.png", stain=True)
             return ToolResult({
+                "stain": list(frame.stain.shape) == list(frame.image.shape),
                 "id": view.id, "position": view.position_mm, "size": list(view.file_size),
                 "shape": list(image.shape), "atlas": atlas.name, "plane": atlas.plane,
                 "planes": sorted(frame.atlas), "matrix": frame.atlas_to_section.shape[0],
@@ -463,6 +464,7 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
     assert reply["id"] == "s1.png" and reply["position"] == 2.5 and reply["size"] == [40, 30]
     assert reply["shape"][2] == 3 and reply["matrix"] == 3 and "annotation" in reply["planes"]
     assert reply["placed"]  # no transform yet: no current placement to start from
+    assert reply["stain"]  # the preprocessed channel on the fit grid
     assert Path(reply["work"]).parts[-2:] == ("plugins", "read_it") and Path(reply["work"]).is_dir()
     assert reply["spec_tasks"] == ["position", "transform"] and reply["layers"] == []
 
