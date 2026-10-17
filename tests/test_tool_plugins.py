@@ -402,6 +402,33 @@ def test_a_handler_that_raises_is_a_reply_not_a_crash(make, images: Path):
     assert crashed["error"] == "PLUGIN_FAILED" and "RuntimeError: bug" in crashed["message"]
 
 
+def test_the_fit_frame_carries_the_marked_damage_on_the_native_plane(make, images: Path):
+    ref = make("damage_reader", '''
+        import numpy as np
+        from langslice.plugin_api import ToolResult, ToolSpec
+        def stub():
+            """Read the damage."""
+        def handler(ctx):
+            frame = ctx.fit_frame("s0.png")
+            if frame.excluded is None:
+                return ToolResult({"excluded": None})
+            labels = frame.atlas["annotation"]
+            return ToolResult({"excluded": int(frame.excluded.sum()),
+                               "same_grid": list(frame.excluded.shape) == list(labels.shape),
+                               "inside": bool((labels[frame.excluded] != 0).all())})
+        def tools():
+            return [ToolSpec("damage_of", stub, handler, kind="read", group="Common")]
+    ''')
+    from tests.test_linear_fit_affine_regions import HalvesAtlas
+
+    state, _c, box = box_of(images, ref, atlas=HalvesAtlas())
+    state.by_id("s0.png").position_mm = 1.0
+    assert call(box, "damage_of")["excluded"] is None
+    assert call(box, "mark_damage", section="s0.png", regions=["L"])["status"] == "ok"
+    reply = call(box, "damage_of")
+    assert reply["excluded"] > 0 and reply["same_grid"] and reply["inside"]
+
+
 # --- the context's reads and conversions --------------------------------------------------------
 
 

@@ -108,6 +108,9 @@ class FitFrame:
     ``resolution_um``. ``placed_atlas_to_section`` is the same map under the
     section's stored in-plane transform (its current linear placement, where an
     engine that refines it starts), None while it has no transform.
+    ``excluded`` is the native plane's pixels of the section's marked damage
+    regions (sides included), the regions every native fit leaves out; None
+    while the section has none marked.
     """
 
     id: str
@@ -118,6 +121,7 @@ class FitFrame:
     position_mm: float
     angles: tuple[float, float]
     placed_atlas_to_section: np.ndarray | None = None
+    excluded: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -452,7 +456,13 @@ class ToolContext:
         does not have is skipped."""
         from langslice.core import deformation
         from langslice.core.atlas.images import atlas_images
-        from langslice.core.deformable.plane_images import native_intensity, native_labels
+        from langslice.core.damage import exclusions
+        from langslice.core.deformable.plane_images import (
+            native_intensity,
+            native_labels,
+            placement_left,
+            regions_mask,
+        )
 
         record = self._record(section)
         grid = self._grid(record)
@@ -474,13 +484,21 @@ class ToolContext:
                     dtype=np.float64)
             except ValueError:  # a stored transform no fit can use (stale, turned over)
                 placed = None
+        excluded = None
+        _, marked = exclusions(record)
+        if marked:
+            labels = planes.get("annotation")
+            if labels is None:
+                labels = np.asarray(native_labels(workspace.atlas, placement))
+            excluded = regions_mask(workspace.atlas, labels, marked,
+                                    placement_left(workspace.atlas, placement, marked))
         return FitFrame(
             id=record.id, image=np.asarray(image), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
-            placed_atlas_to_section=placed)
+            placed_atlas_to_section=placed, excluded=excluded)
 
     def atlas_slice(self, section: object, *, kind: str = "template") -> np.ndarray:
         """The atlas plane at the section's position and cutting angles, on
