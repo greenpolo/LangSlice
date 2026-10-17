@@ -190,14 +190,15 @@ def fit_deformable(
                     waited_s=deformation.TRACE_WAIT_S, root=job.folder)
                 identity = {**identity, "trace": trace}
                 traced.setdefault(record.id, (image, lines))
-            settings = choice.settings(*regions)
+            settings = choice.settings(*regions, brain_scale=workspace.brain_scale)
         except deformation.FitRefusal as refusal:
             rows.append({**failure, **refusal.payload, "id": record.id})
             continue
         except (ValueError, OSError) as exc:
             rows.append({**failure, "error": "BAD_SETTINGS", "message": str(exc)})
             continue
-        key = deformation.cache_key(state, grid, settings, identity, previous_key)
+        key = deformation.cache_key(state, grid, settings, identity, previous_key,
+                                    workspace.brain_scale)
         cached = store.get(record.id, key)
         jobs.append(deformation.Job(
             grid=grid, choice=choice, settings=settings, key=key,
@@ -213,7 +214,8 @@ def fit_deformable(
 
     with job.writing():
         before = job.snapshot()
-        done = _apply(job, rows, jobs, expected=expected, starts=starts)
+        done = _apply(job, rows, jobs, expected=expected, starts=starts,
+                      brain_scale=workspace.brain_scale)
         if done.written:
             job.commit(before)
     done = replace(done, traced=traced)
@@ -224,10 +226,11 @@ def fit_deformable(
 
 def _apply(
     job: Job, rows: list[dict[str, Any]], jobs: list[deformation.Job], *,
-    expected: dict[str, str], starts: dict[str, str],
+    expected: dict[str, str], starts: dict[str, str], brain_scale: float = 1.0,
 ) -> DeformableFit:
-    """Every fit's row and, under the job's lock, each section's result as
-    its deformation when its inputs are unchanged."""
+    """Every fit's row (its engine numbers at the atlas's *brain_scale*) and,
+    under the job's lock, each section's result as its deformation when its
+    inputs are unchanged."""
     state = job.state
     store = job.deformations
     written: list[str] = []
@@ -255,7 +258,8 @@ def _apply(
             row.update(stale_row(record.id))
             continue
         record = now
-        row.update(status="ok", engine_settings=deformation.engine_settings(fit.settings),
+        row.update(status="ok",
+                   engine_settings=deformation.engine_settings(fit.settings, brain_scale),
                    **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
                    cached=fit.cached)
         linear = deformation.linear_key(state, record)

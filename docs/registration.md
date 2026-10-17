@@ -286,7 +286,9 @@ The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically. A restricted fit moves only that
 neighbourhood: the masks limit where the fit is measured, not where its
 smooth field reaches, so the step's displacement fades to none over a further
-0.3 mm and the tissue beyond keeps its earlier fit.
+0.3 mm and the tissue beyond keeps its earlier fit. These and the other
+distances below are the adult mouse brain's; for another brain they are
+scaled to its size (see "Brain size" below).
 
 The engine is the SyN (symmetric diffeomorphic) registration of
 [FireANTs](https://github.com/rohitrango/FireANTs), on the GPU when there is
@@ -326,6 +328,30 @@ shows the fitted overlay. These diagnostics report concerns rather than
 rejecting fits. Judge the overlay against internal tissue anatomy.
 Changing a section's position, orientation, cutting angles or linear
 transform clears its deformation; the reply lists affected sections.
+
+### Brain size
+
+The fits' distances were tuned on adult mouse sections. A rat brain or a
+developing mouse brain is a different size, so every distance of a
+deformable fit and of the Elastix affine is multiplied by the atlas brain's
+size factor: the cube root of the atlas's annotated brain volume over the
+adult Allen mouse's (`core/atlas/size.py`), rounded to 0.05. Every atlas of
+the adult CCFv3 brain, at any voxel size, is exactly 1, so its fits are
+unchanged. Measured factors: `whs_sd_rat_39um` 1.7, `swc_female_rat_50um`
+1.4, DeMBA P4 0.7, P10 0.9, P14 0.95.
+
+What is scaled: the working pixels (20 µm in the adult mouse; 34 µm in the
+rat), so a rat section is fitted as a mouse section drawn smaller, with the
+same number of working pixels across the brain; the stiffness smoothing; the
+edge channel's blur and the local-correlation window; the outline and damage
+margins; the restricted neighbourhood (the `elastix_affine` description
+states it at the job's scale) and its taper; the EM's contrast block and how
+far from the tissue it samples background; the image-model line softening,
+gap closing and smallest region; the displacement and smallest-region limits
+of the plausibility flags; and the positioning picture's smallest ruler
+margin and span. The EM's 50 µm grid stays in micrometres: it is the sampling
+at which holes, tears and debris on the slide are seen. A fit's reply
+reports its engine numbers at the job's scale.
 
 ## Landmark triangulation
 

@@ -110,6 +110,9 @@ class EngineInputs:
     edge_weight: float = 0.0
     #: Local correlation window radius in working-grid pixels.
     correlation_radius_px: int = 4
+    #: The atlas's brain scale (``core.atlas.size.brain_scale``): the
+    #: stiffness sigmas, adult mouse millimetres, are multiplied by it.
+    brain_scale: float = 1.0
 
 
 @dataclass
@@ -348,10 +351,13 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     voxel_mm = float(np.mean(inputs.spacing_mm))
     traced = settings.section_image == "lines"
     learning_rate = TRACED_LEARNING_RATE if traced else FIREANTS_LEARNING_RATE
-    total_sigma_mm = stiffness.total_sigma_mm * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0)
+    scale = float(inputs.brain_scale)
+    update_sigma_mm = stiffness.update_sigma_mm * scale
+    total_sigma_mm = (stiffness.total_sigma_mm * scale
+                      * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0))
     # FireANTs takes Gaussian sigmas in voxels of each pyramid level, as ANTs
     # took its variances.
-    grad_sigma = stiffness.update_sigma_mm / voxel_mm
+    grad_sigma = update_sigma_mm / voxel_mm
     warp_sigma = total_sigma_mm / voxel_mm
     radius = max(1, int(inputs.correlation_radius_px))
     edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
@@ -422,7 +428,8 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         "scales": scales, "iterations": list(level.iterations),
         "optimizer": "SGD, ANTs' step rule", "optimizer_lr": learning_rate,
         "smooth_grad_sigma_px": grad_sigma, "smooth_warp_sigma_px": warp_sigma,
-        "update_sigma_mm": stiffness.update_sigma_mm, "total_sigma_mm": total_sigma_mm,
+        "update_sigma_mm": update_sigma_mm, "total_sigma_mm": total_sigma_mm,
+        "brain_scale": scale,
         "balanced_channels": traced,
         "edge_channel": edges,
         "edge_weight": float(inputs.edge_weight) if edges else 0.0,

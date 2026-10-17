@@ -11,6 +11,10 @@ atlas regions.
 Everything that needs the atlas object happens in :func:`prepare_fit`; the
 engine call works on plain arrays, so :func:`fit_prepared` runs several
 fits in a process pool and builds the records back in the caller.
+
+Every distance is the adult mouse brain's times the atlas's brain scale
+(:func:`langslice.core.atlas.size.brain_scale`, 1.0 for the adult CCFv3
+brain), the working grid's micrometres included (``settings`` module text).
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from scipy import ndimage as ndi
 
 from langslice.core.atlas.levels import MODEL_DEPTH, labels_at
 from langslice.core.atlas.sides import split_side
+from langslice.core.atlas.size import brain_scale
 from langslice.core.deformable.engines import (
     FIT_THREADS,
     INVERSE_ITERATIONS,
@@ -41,11 +46,11 @@ from langslice.core.deformable.engines import (
 )
 from langslice.core.deformable.geometry import Placement, WorkingGrid, sample_native
 from langslice.core.deformable.masks import (
-    EM_PARAMETERS,
     MASK_MARGIN_MM,
     EMContext,
     dilate,
     em_masks,
+    em_parameters,
     footprint_masks,
 )
 from langslice.core.deformable.plane_images import (
@@ -78,13 +83,15 @@ LABEL_CHANNEL_WEIGHT = 1.0
 #: Route B's moving mask reaches this far past the placed atlas when the
 #: model's outline is used, so an outline beyond the atlas can draw it out
 #: (the moving image there is drawn borders, with no slide artifacts to fence off).
+#: Adult mouse; times the brain scale.
 TRACE_MOVING_MARGIN_MM = 1.0
 #: Stain normalization percentiles inside the fixed mask.
 STAIN_PERCENTILES = (1.0, 99.0)
 #: A region-restricted step keeps its full displacement inside the region's
 #: fit neighbourhood and fades it (raised cosine) to none over this distance
 #: beyond: ANTs' masks only limit where the metric is measured, so its smooth
-#: field otherwise moves tissue far from the region.
+#: field otherwise moves tissue far from the region. Adult mouse; times the
+#: brain scale.
 RESTRICTED_TAPER_MM = 0.3
 
 
@@ -117,6 +124,8 @@ class PreparedFit:
     #: ``masks.em_masks``). None: one run with the footprint masks (the
     #: Elastix affine, traced lines).
     em: EMContext | None = None
+    #: The atlas's brain scale every distance of this fit was multiplied by.
+    brain_scale: float = 1.0
 
 
 @dataclass
@@ -241,8 +250,9 @@ def prepare_fit(
         if lines is None or np.shape(lines) != (height, width):
             raise ValueError("This setting needs the model's line mask on the section grid")
 
+    scale = brain_scale(atlas)
     grid, native, working_coords, current, footprint = _placed_atlas(
-        atlas, placement, (width, height), settings.detail, previous)
+        atlas, placement, (width, height), settings.detail, previous, scale)
     spacing = float(np.mean(grid.spacing_mm))
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
     # One-sided entries ("CTX:left") need the placement's displayed left.
@@ -254,7 +264,7 @@ def prepare_fit(
     offset = _previous_offset(grid, previous)
     excluded_w = (sample_native(excluded_native, working_coords) if excluded_native is not None
                   else np.zeros(current.shape, dtype=bool))
-    softening_px = LINE_SOFTENING_UM / 1000.0 / spacing
+    softening_px = LINE_SOFTENING_UM * scale / 1000.0 / spacing
 
     moving = placed_atlas_image(
         settings.atlas_image, native, atlas, placement, atlas_to_working, grid.size,
@@ -274,7 +284,7 @@ def prepare_fit(
         fixed = _normalize_stain(fixed, footprint)
 
     kept = (current != 0) & ~excluded_w
-    masks = footprint_masks(current, excluded_w, spacing)
+    masks = footprint_masks(current, excluded_w, spacing, scale)
     fixed_mask, moving_mask = masks.fixed.copy(), masks.moving.copy()
     # Route B with named regions: the section's extent is what the model's
     # outline encloses. Outside it is not section, and that is information the
@@ -283,10 +293,11 @@ def prepare_fit(
     extent = extent_ratio = None
     if settings.labels == "model":
         assert lines_w is not None
-        extent, extent_ratio = model_extent(lines_w, int((current != 0).sum()), spacing)
+        extent, extent_ratio = model_extent(lines_w, int((current != 0).sum()), spacing,
+                                            brain_scale=scale)
     if extent is not None:
-        fixed_mask |= dilate(extent, MASK_MARGIN_MM / spacing)
-        moving_mask = (dilate(current != 0, TRACE_MOVING_MARGIN_MM / spacing)
+        fixed_mask |= dilate(extent, MASK_MARGIN_MM * scale / spacing)
+        moving_mask = (dilate(current != 0, TRACE_MOVING_MARGIN_MM * scale / spacing)
                        & ~masks.damage_zone)
 
     details: dict[str, Any] = {}
@@ -305,10 +316,11 @@ def prepare_fit(
         details["structures"] = sorted(resolve_structures(
             atlas, [split_side(entry)[0] for entry in settings.structures]))
         details["neighbourhood_um"] = settings.neighbourhood_um
+        taper_mm = RESTRICTED_TAPER_MM * scale
         step_weight = _taper_weight(in_reach, spacing, settings.neighbourhood_um / 1000.0,
-                                    (width, height))
+                                    (width, height), taper_mm)
         details["taper_um"] = [settings.neighbourhood_um,
-                               settings.neighbourhood_um + RESTRICTED_TAPER_MM * 1000.0]
+                               settings.neighbourhood_um + taper_mm * 1000.0]
 
     fixed_labels: list[np.ndarray] = []
     moving_labels: list[np.ndarray] = []
@@ -325,7 +337,8 @@ def prepare_fit(
         merged = labels_at(current, atlas, MODEL_DEPTH)
         merged = np.where(kept, merged, 0)
         tissue = footprint if extent is None else extent
-        section_regions, unnamed, report = named_regions(lines_w, merged, tissue, spacing)
+        section_regions, unnamed, report = named_regions(lines_w, merged, tissue, spacing,
+                                                         brain_scale=scale)
         fixed_mask &= ~unnamed
         if extent is not None:
             add_channel("outline", extent, current != 0)
@@ -347,7 +360,8 @@ def prepare_fit(
 
     fixed_edges = moving_edges = None
     if settings.section_image == "stain" and settings.stain_edges:
-        sigma_px = EDGE_SIGMA_UM / 1000.0 / spacing
+        sigma_um = EDGE_SIGMA_UM * scale
+        sigma_px = sigma_um / 1000.0 / spacing
         fixed_edges = edge_image(fixed, fixed_mask, sigma_px)
         source = moving
         if excluded_w.any():
@@ -356,7 +370,7 @@ def prepare_fit(
             # surroundings first so only real edges remain.
             source = _fill_from_surroundings(moving, dilate(excluded_w, 1.0))
         moving_edges = edge_image(source, moving_mask, sigma_px)
-        details["edge_channel"] = {"sigma_um": EDGE_SIGMA_UM, "weight": EDGE_CHANNEL_WEIGHT}
+        details["edge_channel"] = {"sigma_um": sigma_um, "weight": EDGE_CHANNEL_WEIGHT}
 
     inputs = EngineInputs(
         fixed=np.ascontiguousarray(fixed, dtype=np.float32),
@@ -367,12 +381,13 @@ def prepare_fit(
         label_weights=[LABEL_CHANNEL_WEIGHT] * len(fixed_labels),
         fixed_edges=fixed_edges, moving_edges=moving_edges,
         edge_weight=EDGE_CHANNEL_WEIGHT if fixed_edges is not None else 0.0,
-        correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM / 1000.0 / spacing)),
+        correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM * scale / 1000.0 / spacing)),
+        brain_scale=scale,
     )
     em = None
     if settings.engine == "fireants" and settings.section_image == "stain":
         em = EMContext(footprint=masks.fixed, damage_zone=masks.damage_zone,
-                       neighbourhood=neighbourhood)
+                       neighbourhood=neighbourhood, scale=scale)
         details["section_mask"] = "em"
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
@@ -380,16 +395,17 @@ def prepare_fit(
         excluded=excluded, ventricles=ventricles,
         atlas_meta=_atlas_record(atlas, placement, native),
         previous=previous, details=details, excluded_mask=excluded_native,
-        step_weight=step_weight, em=em,
+        step_weight=step_weight, em=em, brain_scale=scale,
     )
 
 
 def _taper_weight(region: np.ndarray, spacing_mm: float, neighbourhood_mm: float,
-                  section_size: tuple[int, int]) -> np.ndarray:
+                  section_size: tuple[int, int],
+                  taper_mm: float = RESTRICTED_TAPER_MM) -> np.ndarray:
     """1 within *neighbourhood_mm* of *region* (working grid), a raised cosine to 0
-    over :data:`RESTRICTED_TAPER_MM` beyond, on the section grid."""
+    over *taper_mm* beyond, on the section grid."""
     distance = np.asarray(ndi.distance_transform_edt(~region), dtype=np.float64) * spacing_mm
-    t = np.clip((distance - neighbourhood_mm) / RESTRICTED_TAPER_MM, 0.0, 1.0)
+    t = np.clip((distance - neighbourhood_mm) / taper_mm, 0.0, 1.0)
     weight = (0.5 * (1.0 + np.cos(np.pi * t))).astype(np.float32)
     return cv2.resize(weight, section_size, interpolation=cv2.INTER_LINEAR)
 
@@ -417,13 +433,14 @@ def prepare_warp(
     landmark warp): the native plane, the placed atlas footprint (as a
     :func:`prepare_fit` at *detail* has it), the ventricles and the atlas
     facts. No images, masks or settings: nothing excluded, no details."""
+    scale = brain_scale(atlas)
     grid, native, _coords, _current, footprint = _placed_atlas(
-        atlas, placement, size, detail, previous)
+        atlas, placement, size, detail, previous, scale)
     return PreparedFit(
         settings=None, placement=placement, grid=grid, inputs=None, native=native,
         footprint=_on_section(footprint, size), excluded=frozenset(),
         ventricles=ventricle_ids(atlas), atlas_meta=_atlas_record(atlas, placement, native),
-        previous=previous,
+        previous=previous, brain_scale=scale,
     )
 
 
@@ -477,23 +494,23 @@ def _previous_offset(grid: WorkingGrid, previous: DeformableRecord | None) -> np
 
 def _placed_atlas(
     atlas: Any, placement: Placement, size: tuple[int, int], detail: str,
-    previous: DeformableRecord | None,
+    previous: DeformableRecord | None, scale: float,
 ) -> tuple[WorkingGrid, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """``(grid, native labels, working-grid native coordinates, labels there,
     footprint)``: the atlas's current frame on the working grid of *detail*
-    (placed, or where *previous* left it) and its footprint widened by
-    :data:`MASK_MARGIN_MM`, on that grid."""
+    times the brain *scale* (placed, or where *previous* left it) and its
+    footprint widened by :data:`MASK_MARGIN_MM` times *scale*, on that grid."""
     if previous is not None and (tuple(previous.section_size) != tuple(size)
                                  or previous.placement.to_dict() != placement.to_dict()):
         raise ValueError("A sequential step must use its previous record's section and placement")
     grid = WorkingGrid.for_section(size, placement.section_mm_per_px,
-                                   DETAIL[detail].working_um / 1000)
+                                   DETAIL[detail].working_um * scale / 1000)
     native = native_labels(atlas, placement)
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
     working_coords = _native_coords(atlas_to_working, _previous_offset(grid, previous),
                                     (grid.size[1], grid.size[0]))
     current = sample_native(native, working_coords)
-    footprint = dilate(current != 0, MASK_MARGIN_MM / float(np.mean(grid.spacing_mm)))
+    footprint = dilate(current != 0, MASK_MARGIN_MM * scale / float(np.mean(grid.spacing_mm)))
     return grid, native, working_coords, current, footprint
 
 
@@ -551,7 +568,7 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
             prepared.placement.atlas_to_section, None, (height, width)))
     diagnostics = diagnose(
         total, mm, diag_warped, diag_placed, prepared.footprint, ventricles=prepared.ventricles,
-        excluded=prepared.excluded, acronyms=acronyms,
+        excluded=prepared.excluded, acronyms=acronyms, brain_scale=prepared.brain_scale,
     )
     back = _sample_field(inverse, np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1))
     error = np.linalg.norm(total + back, axis=-1)[prepared.footprint]
@@ -609,7 +626,7 @@ def run_fit(
     second = run_engine(replace(inputs, fixed_mask=masks.fixed, moving_mask=masks.moving),
                         settings)
     second.native_parameters["section_mask"] = {
-        "kind": "em", **EM_PARAMETERS, "fitted": facts["params"],
+        "kind": "em", **em_parameters(em.scale), "fitted": facts["params"],
         "left_out_in_footprint": facts["left_out_in_footprint"],
         "first_fit_runtime_s": first.runtime_s,
     }

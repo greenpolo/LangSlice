@@ -79,7 +79,8 @@ SECTION_LINK_SHARE = 0.06
 SECTION_LINK_PX = (56, 96)
 #: A picture's ruler spans the positions it holds plus this share of their
 #: span at each end (at least :data:`RULER_MIN_MARGIN_MM`), and at least
-#: :data:`RULER_MIN_SPAN_MM` in all.
+#: :data:`RULER_MIN_SPAN_MM` in all. Both millimetre lengths are the adult
+#: mouse brain's, times the atlas's brain scale (``core.atlas.size``).
 RULER_MARGIN_SHARE = 0.08
 RULER_MIN_MARGIN_MM = 0.15
 RULER_MIN_SPAN_MM = 1.0
@@ -165,20 +166,22 @@ def split(
     return out
 
 
-def ruler_range(values: Sequence[float], bounds: tuple[float, float]) -> tuple[float, float]:
+def ruler_range(values: Sequence[float], bounds: tuple[float, float],
+                brain_scale: float = 1.0) -> tuple[float, float]:
     """The ruler segment for the positions *values*: their span plus a
     margin (:data:`RULER_MARGIN_SHARE`, at least :data:`RULER_MIN_MARGIN_MM`),
-    at least :data:`RULER_MIN_SPAN_MM` long, kept inside the atlas's
-    *bounds* where the positions allow. No values: *bounds*."""
+    at least :data:`RULER_MIN_SPAN_MM` long (both times *brain_scale*), kept
+    inside the atlas's *bounds* where the positions allow. No values: *bounds*."""
     b0, b1 = float(bounds[0]), float(bounds[1])
     if not values:
         return b0, b1
     vmin, vmax = float(min(values)), float(max(values))
-    margin = max((vmax - vmin) * RULER_MARGIN_SHARE, RULER_MIN_MARGIN_MM)
+    min_margin, min_span = RULER_MIN_MARGIN_MM * brain_scale, RULER_MIN_SPAN_MM * brain_scale
+    margin = max((vmax - vmin) * RULER_MARGIN_SHARE, min_margin)
     lo, hi = vmin - margin, vmax + margin
-    if hi - lo < RULER_MIN_SPAN_MM:
+    if hi - lo < min_span:
         centre = (vmin + vmax) / 2.0
-        lo, hi = centre - RULER_MIN_SPAN_MM / 2.0, centre + RULER_MIN_SPAN_MM / 2.0
+        lo, hi = centre - min_span / 2.0, centre + min_span / 2.0
     floor, ceiling = min(b0, vmin - 0.02), max(b1, vmax + 0.02)
     if lo < floor:
         lo, hi = floor, hi + (floor - lo)
@@ -301,6 +304,7 @@ def plan(
     max_width: int = POSITIONING_MAX_WIDTH,
     finest_um: float = 0.0,
     per_picture: int = PER_PICTURE,
+    brain_scale: float = 1.0,
 ) -> list[Layout]:
     """The layouts of *sections* (given in stack order; drawn in position
     order) and *atlas* (``(mm, (width, height) um)`` per thumbnail, any
@@ -310,7 +314,8 @@ def plan(
     The tile is *tile_edge* while the fullest picture's row fits
     *max_width*, else that row's share of it; one micrometres per pixel
     puts the largest item's long edge at the tile, never finer than
-    *finest_um* (a section's own pixels).
+    *finest_um* (a section's own pixels). *brain_scale* sizes the rulers'
+    smallest margin and span (:func:`ruler_range`).
     """
     ordered = position_order(sections)
     marks = sorted(atlas, key=lambda item: item[0])
@@ -328,14 +333,15 @@ def plan(
             [ordered[k] for k in indices], [marks[k] for k in atlas_indices],
             bounds=range_mm, tile=tile, inner=inner, um_per_px=um_per_px, part=part,
             parts=len(pieces), first=indices[0] + 1 if indices else 0,
-            last=indices[-1] + 1 if indices else 0, total=len(ordered)))
+            last=indices[-1] + 1 if indices else 0, total=len(ordered),
+            brain_scale=brain_scale))
     return out
 
 
 def _layout(
     sections: Sequence[SectionEntry], atlas: Sequence[tuple[float, tuple[float, float]]], *,
     bounds: tuple[float, float], tile: int, inner: int, um_per_px: float, part: int, parts: int,
-    first: int, last: int, total: int,
+    first: int, last: int, total: int, brain_scale: float = 1.0,
 ) -> Layout:
     """One picture: *sections* in position order, *atlas* sorted."""
     width = inner + 2 * MARGIN
@@ -351,7 +357,7 @@ def _layout(
         return inner / max(n, 1) - 4
 
     values = [float(e.position_mm) for e in sections if e.position_mm is not None]
-    lo, hi = ruler_range(values + [float(mm) for mm, _e in atlas], bounds)
+    lo, hi = ruler_range(values + [float(mm) for mm, _e in atlas], bounds, brain_scale)
     x0, x1 = float(MARGIN), float(width - MARGIN)
 
     def x_at(mm: float) -> float:
@@ -628,7 +634,7 @@ def positioning_pictures(
     layouts = plan(list(entries.values()), atlas, range_mm=ws.position_range,
                    tile_edge=tile_edge, max_width=max_width,
                    finest_um=max(finest.values(), default=0.0),
-                   per_picture=per_picture or PER_PICTURE)
+                   per_picture=per_picture or PER_PICTURE, brain_scale=ws.brain_scale)
     frame = tuple(float(v) for v in window) if window else ()
     if part is not None:
         if not 0 <= int(part) < len(layouts):

@@ -63,7 +63,7 @@ from langslice.core.deformable.engines import (
     TRACED_TOTAL_SIGMA_FACTOR,
 )
 from langslice.core.deformable.fit import run_prepared
-from langslice.core.deformable.masks import EM_PARAMETERS
+from langslice.core.deformable.masks import em_parameters
 from langslice.core.deformable.plane_images import (
     native_intensity,
     native_labels,
@@ -74,6 +74,7 @@ from langslice.core.deformable.settings import (
     CORRELATION_RADIUS_UM,
     DETAIL,
     STIFFNESS,
+    neighbourhood_um_for,
 )
 from langslice.core.handoff import digest
 from langslice.core.state import SliceState, StackState
@@ -285,8 +286,10 @@ class Choice:
     fit_atlas: str
     stiffness: str
 
-    def settings(self, include: tuple[str, ...], exclude: tuple[str, ...]) -> FitSettings:
-        """The engine settings."""
+    def settings(self, include: tuple[str, ...], exclude: tuple[str, ...], *,
+                 brain_scale: float = 1.0) -> FitSettings:
+        """The engine settings; a restricted fit's neighbourhood is the default
+        at the atlas's *brain_scale* (``core.atlas.size.brain_scale``)."""
         traced = self.fit_section == TRACED_BORDERS
         return FitSettings(
             stiffness=self.stiffness,  # type: ignore[arg-type]
@@ -295,6 +298,7 @@ class Choice:
             section_image="lines" if traced else "stain",
             labels="model" if traced else "none",
             exclude=exclude, structures=include,
+            neighbourhood_um=neighbourhood_um_for(brain_scale),
         )
 
     def echo(self) -> dict[str, str]:
@@ -302,18 +306,19 @@ class Choice:
                 "fit_section": self.fit_section, "fit_atlas": self.fit_atlas}
 
 
-def engine_settings(settings: FitSettings) -> dict[str, Any]:
-    """The engine numbers a setting stands for, in physical units."""
+def engine_settings(settings: FitSettings, brain_scale: float = 1.0) -> dict[str, Any]:
+    """The engine numbers a setting stands for, in physical units, at the
+    atlas's *brain_scale* (the adult mouse's numbers times it)."""
     level = DETAIL[settings.detail]
     metric = settings.metric
-    used: dict[str, Any] = {"metric": metric, "working_um": level.working_um}
+    used: dict[str, Any] = {"metric": metric, "working_um": level.working_um * brain_scale}
     if metric == "local_correlation":
-        used["correlation_radius_um"] = CORRELATION_RADIUS_UM
+        used["correlation_radius_um"] = CORRELATION_RADIUS_UM * brain_scale
     if settings.section_image == "stain" and settings.stain_edges:
         used["edge_channel"] = True
     stiffness = STIFFNESS[settings.stiffness]
-    used.update(update_sigma_mm=stiffness.update_sigma_mm,
-                total_sigma_mm=stiffness.total_sigma_mm,
+    used.update(update_sigma_mm=stiffness.update_sigma_mm * brain_scale,
+                total_sigma_mm=stiffness.total_sigma_mm * brain_scale,
                 iterations=list(level.iterations))
     if settings.labels != "none":
         used["label_map"] = settings.labels
@@ -324,9 +329,11 @@ def engine_settings(settings: FitSettings) -> dict[str, Any]:
 
 def cache_key(
     state: StackState, grid: Grid, settings: FitSettings, image_identity: Any,
-    previous_key: str | None,
+    previous_key: str | None, brain_scale: float = 1.0,
 ) -> str:
-    """Every input of one fit: the same key means the same result."""
+    """Every input of one fit: the same key means the same result. The atlas
+    (in the placement) fixes its *brain_scale*; a stain fit's EM settings
+    are keyed at that scale."""
     return digest({
         "section": grid.record.id, "linear": linear_key(state, grid.record),
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
@@ -338,7 +345,7 @@ def cache_key(
                    list(DETAIL[settings.detail].iterations)],
         **({"traced_engine": [TRACED_LEARNING_RATE, TRACED_TOTAL_SIGMA_FACTOR, "balanced"]}
            if settings.section_image == "lines" else {}),
-        **({"section_mask": EM_PARAMETERS}
+        **({"section_mask": em_parameters(brain_scale)}
            if settings.section_image == "stain" else {}),
     })
 

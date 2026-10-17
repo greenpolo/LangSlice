@@ -50,6 +50,7 @@ from typing import Any, Literal
 
 from langslice.core import appearance as looks
 from langslice.core.atlas.levels import OVERLAY_DEPTH
+from langslice.core.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
 from langslice.core.needs import render
 from langslice.core.toolset import OPTION_SEPARATOR, TOOLS, is_off, options_on
 from langslice.doors.tools.arguments import (
@@ -946,16 +947,22 @@ class Variant:
     #: compared by identity): their tools are declared from their own stubs, and
     #: ``look`` takes ``layers``. Empty: no plugin text is in any declaration.
     plugins: tuple[Any, ...] = ()
+    #: The job's atlas brain's size next to the adult mouse's
+    #: (``core.atlas.size.brain_scale``): the distances a description states
+    #: (:data:`_SCALED_DOCS`) are the adult mouse's times it.
+    brain_scale: float = 1.0
 
     @classmethod
     def of(cls, spec: Any, *, auto: bool, image_model: bool = True, door: str = "agent",
-           prompt: str | None = None, uncapped: bool | None = None) -> Variant:
+           prompt: str | None = None, uncapped: bool | None = None,
+           brain_scale: float = 1.0) -> Variant:
         """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
         *image_model* False: the door cannot reach its image model, so no
         prompt is described. *prompt* is the image model's own base prompt
         (None: the job's own, ``nonlinear.image_prompt``, else LangSlice's
         for the run's plane and provider). *uncapped* (None: the CLI door
-        is) as :attr:`uncapped`."""
+        is) as :attr:`uncapped`; *brain_scale* (the job's workspace's) as
+        :attr:`brain_scale`."""
         traced = bool(spec.has("nonlinear") and spec.nonlinear.uses_image_model and image_model)
         text = ""
         if traced:
@@ -974,7 +981,8 @@ class Variant:
         return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
                    uncapped=door == "cli" if uncapped is None else uncapped,
                    positions=bool(spec.has("position")),
-                   prompt=text, off=frozenset(spec.switched_off), plugins=held)
+                   prompt=text, off=frozenset(spec.switched_off), plugins=held,
+                   brain_scale=float(brain_scale))
 
 
 #: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and
@@ -1016,13 +1024,28 @@ _UNCAPPED_DOCS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+#: Distances a description states, as ``(text, adult mouse micrometres)`` per
+#: verb: worded for a job whose atlas brain is another size
+#: (:attr:`Variant.brain_scale`), the number times the scale.
+_SCALED_DOCS: dict[str, tuple[tuple[str, float], ...]] = {
+    "elastix_affine": (("atlas within 300 um of them", DEFAULT_NEIGHBOURHOOD_UM),),
+}
+
+
+def _scaled_doc(name: str, doc: str, scale: float) -> str:
+    """*doc* with the distances :data:`_SCALED_DOCS` names at brain *scale*."""
+    for text, um in _SCALED_DOCS.get(name, ()):
+        doc = _reworded(name, doc, text, text.replace(f"{um:g} um", f"{um * scale:.0f} um"))
+    return doc
+
+
 def _reworded(name: str, doc: str, capped: str, uncapped: str) -> str:
     """*doc* with the passage *capped* (its line breaks and indentation as
     they fall) replaced by *uncapped*, indented as the passage's line is."""
     pattern = r"\s+".join(re.escape(word) for word in capped.split())
     found = re.search(pattern, doc)
     if found is None:
-        raise RuntimeError(f"{name}: the passage an uncapped door rewords is gone")
+        raise RuntimeError(f"{name}: the passage a variant rewords is gone")
     line = doc.rfind("\n", 0, found.start()) + 1
     indent = doc[line:len(doc) - len(doc[line:].lstrip(" "))]
     return doc[:found.start()] + uncapped.replace("\n", "\n" + indent) + doc[found.end():]
@@ -1171,6 +1194,8 @@ def declaration(name: str, variant: Variant = FULL) -> Declaration:
     if variant.uncapped:
         for capped, uncapped in _UNCAPPED_DOCS.get(name, ()):
             doc = _reworded(name, doc, capped, uncapped)
+    if variant.brain_scale != 1.0:
+        doc = _scaled_doc(name, doc, variant.brain_scale)
     doc = render(doc, variant.off)
     if name == "trace_borders":
         doc = _with_prompt(doc, variant.prompt)

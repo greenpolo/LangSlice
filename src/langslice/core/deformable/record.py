@@ -42,7 +42,8 @@ from langslice.core.deformable.settings import FitSettings
 TISSUE_AREA_RATIO_LIMITS = (0.5, 2.0)
 #: Looser limits for the ventricular system, which collapses or dilates freely.
 VENTRICLE_AREA_RATIO_LIMITS = (0.1, 10.0)
-#: Regions smaller than this (placed area, mm^2) are reported but never flagged.
+#: Regions smaller than this (placed area, mm^2, adult mouse; times the brain
+#: scale squared) are reported but never flagged.
 MIN_FLAG_AREA_MM2 = 0.02
 #: Fraction of footprint pixels with a non-positive Jacobian above which FOLDS is flagged.
 FOLD_FRACTION_LIMIT = 0.001
@@ -54,7 +55,7 @@ OUTSIZED_MAX_FRACTION = 0.1
 #: DISPLACEMENT_OUTSIZED also fires when the median displacement in the footprint
 #: exceeds this, in mm: a wholesale drift a uniform field would hide from the
 #: maximum rule. It sits above the medians of fits whose borders looked
-#: plausible.
+#: plausible. Adult mouse; times the brain scale.
 OUTSIZED_MEDIAN_MM = 0.6
 
 RECORD_VERSION = 1
@@ -75,13 +76,13 @@ def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
 
 
 def displacement_report(
-    field_mm: np.ndarray, mm_per_px: float, footprint: np.ndarray,
+    field_mm: np.ndarray, mm_per_px: float, footprint: np.ndarray, brain_scale: float = 1.0,
 ) -> dict[str, Any]:
     """Max and median displacement in *footprint*, their limits, and whether either is passed.
 
     The maximum's limit is :data:`OUTSIZED_MAX_FRACTION` of the footprint's
     longest extent (the longer side of its bounding box); the median's is
-    :data:`OUTSIZED_MEDIAN_MM`.
+    :data:`OUTSIZED_MEDIAN_MM` times the atlas's *brain_scale*.
     """
     magnitude = np.linalg.norm(field_mm, axis=-1)[footprint]
     rows, cols = np.nonzero(footprint)
@@ -90,10 +91,11 @@ def displacement_report(
     largest = float(magnitude.max()) if magnitude.size else 0.0
     median = float(np.median(magnitude)) if magnitude.size else 0.0
     max_limit = OUTSIZED_MAX_FRACTION * extent_mm
+    median_limit = OUTSIZED_MEDIAN_MM * brain_scale
     return {
         "max_mm": largest, "median_mm": median, "tissue_extent_mm": extent_mm,
-        "max_limit_mm": max_limit, "median_limit_mm": OUTSIZED_MEDIAN_MM,
-        "outsized": bool(magnitude.size) and (largest > max_limit or median > OUTSIZED_MEDIAN_MM),
+        "max_limit_mm": max_limit, "median_limit_mm": median_limit,
+        "outsized": bool(magnitude.size) and (largest > max_limit or median > median_limit),
     }
 
 
@@ -107,8 +109,10 @@ def diagnose(
     ventricles: frozenset[int],
     excluded: frozenset[int],
     acronyms: dict[int, str],
+    brain_scale: float = 1.0,
 ) -> dict[str, Any]:
-    """Per-region area ratios from the Jacobian, fold fraction, and flags.
+    """Per-region area ratios from the Jacobian, fold fraction, and flags; the
+    millimetre limits are the adult mouse's times the atlas's *brain_scale*.
 
     For region R, the warped region is the set of section pixels whose atlas
     point lies in R; its placed area follows from the Jacobian J of the
@@ -127,6 +131,7 @@ def diagnose(
     jac_sum = np.bincount(index_warped[valid], weights=jacobian[valid], minlength=len(ids))
     placed_count = np.bincount(np.searchsorted(ids, placed)[placed != 0], minlength=len(ids))
     pixel_mm2 = mm_per_px ** 2
+    min_flag_area_mm2 = MIN_FLAG_AREA_MM2 * brain_scale ** 2
     regions: list[dict[str, Any]] = []
     flags: list[dict[str, Any]] = []
     for k, uid in enumerate(int(i) for i in ids):
@@ -146,7 +151,7 @@ def diagnose(
             "limits": list(limits),
         }
         regions.append(entry)
-        if uid in excluded or placed_mm2 < MIN_FLAG_AREA_MM2:
+        if uid in excluded or placed_mm2 < min_flag_area_mm2:
             continue
         code = None
         if count[k] == 0:
@@ -164,7 +169,7 @@ def diagnose(
     if fold_fraction > FOLD_FRACTION_LIMIT:
         flags.append({"code": "FOLDS", "fold_fraction": fold_fraction,
                       "limit": FOLD_FRACTION_LIMIT})
-    displacement = displacement_report(field_mm, mm_per_px, footprint)
+    displacement = displacement_report(field_mm, mm_per_px, footprint, brain_scale)
     if displacement["outsized"]:
         flags.append({"code": "DISPLACEMENT_OUTSIZED",
                       **{key: displacement[key] for key in (
@@ -185,10 +190,10 @@ def diagnose(
         "thresholds": {
             "tissue_area_ratio": list(TISSUE_AREA_RATIO_LIMITS),
             "ventricle_area_ratio": list(VENTRICLE_AREA_RATIO_LIMITS),
-            "min_flag_area_mm2": MIN_FLAG_AREA_MM2,
+            "min_flag_area_mm2": min_flag_area_mm2,
             "fold_fraction": FOLD_FRACTION_LIMIT,
             "outsized_max_fraction": OUTSIZED_MAX_FRACTION,
-            "outsized_median_mm": OUTSIZED_MEDIAN_MM,
+            "outsized_median_mm": displacement["median_limit_mm"],
         },
         "note": "Reported, never enforced; thresholds are rough biological defaults.",
     }

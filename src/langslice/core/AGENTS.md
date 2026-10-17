@@ -324,7 +324,8 @@ the angles in a caption (empty for the flat plane).
   (`split`: the fewest even consecutive runs; each atlas position goes to
   the run around it), each picture with its own ruler segment over the
   positions it holds plus a margin (`ruler_range`, at least
-  `RULER_MIN_SPAN_MM`) and a caption `part i of n: k of the N sections
+  `RULER_MIN_SPAN_MM`; both minimums are the adult mouse's, times
+  `Workspace.brain_scale`) and a caption `part i of n: k of the N sections
   (first.tif to last.tif) ...,
   x-y mm` (on a stack whose sections' angles differ, `atlas at the median
   of the sections' cutting angles, ...`). One um/px for every thumbnail of every picture of a call

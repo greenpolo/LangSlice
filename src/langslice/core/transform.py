@@ -131,7 +131,8 @@ def _fit_payload(
 #: The atlas image the Elastix affine fits the section to: the ARA
 #: template's pial outline lies on a fluorescent section's bright rim.
 ELASTIX_ATLAS_IMAGE = "template"
-#: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um).
+#: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um
+#: in the adult mouse, times the atlas's brain scale).
 ELASTIX_DETAIL = "standard"
 
 
@@ -165,7 +166,7 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
 
 def elastix_settings(
     include: Sequence[str] = (), exclude: Sequence[str] = (),
-    atlas_image: str = ELASTIX_ATLAS_IMAGE,
+    atlas_image: str = ELASTIX_ATLAS_IMAGE, brain_scale: float = 1.0,
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
@@ -174,16 +175,19 @@ def elastix_settings(
     :data:`ELASTIX_ATLAS_IMAGE`: ``elastix_affine``'s ``atlas_image``),
     mutual information plus the edge channel (the Elastix stain fit's own
     pairing). *include* becomes the restricted ``structures`` (the regions
-    plus 300 um), *exclude* the excluded regions; one-sided entries such as
-    ``"CTX:left"`` resolve as in every deformable fit.
+    plus 300 um times the atlas's *brain_scale*), *exclude* the excluded
+    regions; one-sided entries such as ``"CTX:left"`` resolve as in every
+    deformable fit.
     """
     from langslice.core.deformable import FitSettings
+    from langslice.core.deformable.settings import neighbourhood_um_for
 
     return FitSettings(
         engine="elastix", detail=ELASTIX_DETAIL,  # type: ignore[arg-type]
         atlas_image=atlas_image,  # type: ignore[arg-type]
         section_image="stain", stain_metric="mutual_information", stain_edges=True,
         exclude=tuple(exclude), structures=tuple(include),
+        neighbourhood_um=neighbourhood_um_for(brain_scale),
     )
 
 
@@ -240,7 +244,7 @@ def elastix_affine(
     image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
     width, height = grid.image.size
     prepared = prepare_fit(image, ctx.atlas, grid.placement,
-                           elastix_settings(include, exclude, atlas_image))
+                           elastix_settings(include, exclude, atlas_image, ctx.brain_scale))
     _check_elastix_region(prepared, ctx.atlas, include)
     assert prepared.inputs is not None  # prepare_fit always builds engine inputs
     result = run_elastix_affine(prepared.inputs)

@@ -457,7 +457,8 @@ def build_tools(
 
         prompt = profile_prompt(image_model, cast(Plane, state.plane))[0]
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
-                         door=door, prompt=prompt, uncapped=scripting)
+                         door=door, prompt=prompt, uncapped=scripting,
+                         brain_scale=ctx.brain_scale)
     if spec.plugins:
         from langslice.doors.plugins import provenance, runtime
 
