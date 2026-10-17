@@ -303,7 +303,7 @@ def build_job_statement(
             "- Submit when the work is complete; address any missing requirements it returns.",
         ]
 
-    if places:
+    if places and (spec.has("transform") or spec.has("nonlinear")):
         method.append(render(
             "- Positions can be revisited throughout registration. If [[?zoom zooms or ]]"
             "repeated looks suggest that a section's placement is wrong, return to atlas "

@@ -5,9 +5,9 @@ opens a job folder reads this first: what the folder holds, which file is
 the truth and which are derived, how to get atlas coordinates for a
 picture, the CLI verbs, their per-call limits, the Python import path and
 what a method returns, and where the agent keeps its own files. Generated
-from code (the verbs, :data:`langslice.ops.registry.VERBS`, their
-declarations and ``Verb.limits``, the job's own transform cap, less the tools
-its ``disabled`` list names), so it
+from code (the verbs the job's run has, :func:`langslice.ops.registry.enabled`
+with the scripting verbs, their declarations and ``Verb.limits``, the job's
+own transform cap), so it
 cannot drift from what the doors offer; written when a job folder is
 created and rewritten whenever a LangSlice that would word it differently
 opens the folder (:func:`write_card`). One screen: the details are one
@@ -23,10 +23,10 @@ from typing import Any
 
 import langslice
 from langslice.core.needs import render
-from langslice.core.toolset import TOOLS, is_off
+from langslice.core.toolset import TOOLS
 from langslice.doors.declarations import summary
 from langslice.job.layout import JobLayout, read_job_file
-from langslice.ops.registry import verbs_for
+from langslice.ops.registry import enabled, verbs_for
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +57,17 @@ def job_spec(layout: JobLayout) -> Any:
     return JobSpec.from_dict((read_job_file(layout) or {}).get("spec") or {})
 
 
+def off_names(spec: Any) -> list[str]:
+    """What the card renders as off for a job of *spec*: its switched-off
+    names and the verbs its run does not have (a task that is off takes its
+    tools out of the run), so the card never names a verb the job refuses."""
+    run = set(enabled(spec, scripting=True))
+    return [*spec.switched_off, *(name for name in verbs_for(spec) if name not in run)]
+
+
 def disabled_names(layout: JobLayout) -> list[str]:
-    """The tools and options the job disables (``JobSpec.disabled``), as its
-    settings hold them."""
-    return job_spec(layout).switched_off
+    """The tools and options that are off for the job (:func:`off_names`)."""
+    return off_names(job_spec(layout))
 
 
 def transform_cap_line(layout: JobLayout) -> str:
@@ -81,7 +88,8 @@ def card_text(layout: JobLayout) -> str:
     """The card for the job folder *layout* (see the module text)."""
     images = str(layout.image_folder) if layout.image_folder is not None else "the images"
     spec = job_spec(layout)
-    disabled = spec.switched_off
+    disabled = off_names(spec)
+    run = set(enabled(spec, scripting=True))
     variant = None
     if spec.plugins:  # the tools plugins add are declared in its run
         from langslice.doors.declarations import Variant
@@ -91,7 +99,7 @@ def card_text(layout: JobLayout) -> str:
         f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}"
         f"{limits_note(verb.limits)}): "
         f"{summary(name, variant) if variant is not None and name not in TOOLS else summary(name)}"
-        for name, verb in verbs_for(spec).items() if not is_off(disabled, name)
+        for name, verb in verbs_for(spec).items() if name in run
     ) + transform_cap_line(layout)
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
                      'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)
