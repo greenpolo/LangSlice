@@ -110,7 +110,9 @@ class FitFrame:
     engine that refines it starts), None while it has no transform.
     ``excluded`` is the native plane's pixels of the section's marked damage
     regions (sides included), the regions every native fit leaves out; None
-    while the section has none marked.
+    while the section has none marked. ``stain`` is the section's
+    preprocessed channel on the same grid as ``image`` (RGB ``uint8``), the
+    picture the native fits read; None unless asked for.
     """
 
     id: str
@@ -122,6 +124,7 @@ class FitFrame:
     angles: tuple[float, float]
     placed_atlas_to_section: np.ndarray | None = None
     excluded: np.ndarray | None = None
+    stain: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -448,12 +451,13 @@ class ToolContext:
         return self._grids[record.id]
 
     def fit_frame(self, section: object, *, atlas: Sequence[str] = (
-            "template", "annotation")) -> FitFrame:
+            "template", "annotation"), stain: bool = False) -> FitFrame:
         """The section and its atlas plane on the fit grid (:class:`FitFrame`).
         Needs a position. *atlas* picks the atlas planes to sample:
         ``annotation`` and any of the atlas's images
         (:func:`langslice.core.atlas.images.atlas_images`); a name the atlas
-        does not have is skipped."""
+        does not have is skipped. *stain* adds the section's preprocessed
+        channel on the grid."""
         from langslice.core import deformation
         from langslice.core.atlas.images import atlas_images
         from langslice.core.damage import exclusions
@@ -498,7 +502,10 @@ class ToolContext:
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
-            placed_atlas_to_section=placed, excluded=excluded)
+            placed_atlas_to_section=placed, excluded=excluded,
+            stain=(np.asarray(deformation.stain_image(
+                workspace, self._door.state, grid, deformation.FIT_LOOK)[0].convert("RGB"))
+                if stain else None))
 
     def atlas_slice(self, section: object, *, kind: str = "template") -> np.ndarray:
         """The atlas plane at the section's position and cutting angles, on
