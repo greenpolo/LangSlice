@@ -13,27 +13,32 @@ that cannot be read, a trace that is missing, stale or failed, a
 fit that failed, a record that cannot be saved) is that section's row, not
 a refusal of the call. With display options, :func:`pictures` draws each
 fit and each traced section's trace through the core.
+
+A deformation made elsewhere (a tool plugin's engine) is written the same
+way: :func:`warp_from_map` builds its record from the full map,
+:func:`apply_warps` writes it as the section's deformation, one undo step.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from PIL import Image
 
 from langslice.core import deformation
 from langslice.core.damage import exclusions
+from langslice.core.handoff import digest
 from langslice.core.state import SliceState
 from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused, frozen_row, unknown_sections
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from langslice.core.display import DisplayOptions
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
@@ -265,7 +270,8 @@ def _apply(
             continue
         record.deformation = deformation.reference(
             folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
-            choice=fit.choice, include=include, exclude=exclude, start=start,
+            step={"start": start, **fit.choice.echo(), "include": list(include),
+                  "exclude": list(exclude)},
             previous=held, numbers=numbers,
         )
         traced = (fit.image_identity or {}).get("trace") if isinstance(
@@ -279,6 +285,127 @@ def _apply(
         row["steps"] = len((record.deformation or {}).get("steps") or [])
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
     return DeformableFit(rows=rows, fitted=fitted, written=written)
+
+
+@dataclass(frozen=True)
+class MappedWarp:
+    """A deformation made elsewhere, as a record not written yet
+    (:func:`warp_from_map`): the section, the record and its key, the linear
+    placement it sits on (``linear_key``), the step the section's reference
+    will list, and the record's numbers (:func:`langslice.core.deformation.summary`)."""
+
+    id: str
+    key: str
+    linear_key: str
+    record: deformation.DeformableRecord
+    step: dict[str, Any]
+    numbers: dict[str, Any]
+
+
+def warp_from_map(
+    job: Job, workspace: Workspace, section: Any, native_xy: Any, *, method: str,
+    step: dict[str, Any] | None = None, provenance: dict[str, Any] | None = None,
+) -> MappedWarp:
+    """The section's deformation from a full map made elsewhere, not written.
+
+    *native_xy* is a float ``(H, W, 2)`` array: for each pixel centre of the
+    section's fit grid (:func:`langslice.core.deformation.fit_grid`'s image,
+    ``(W, H)`` its size), the native atlas-plane pixel ``(x, y)`` it
+    corresponds to, linear placement and deformation together. It becomes a
+    record as every applied deformation is stored: the residual over the
+    section's current linear placement
+    (:func:`langslice.core.deformation.record_from_map`), built on nothing the
+    section held before (``start`` ``linear``). *method* names it (the
+    record's engine and the step's ``method``); *step* adds fields to the
+    step, *provenance* to the record's.
+
+    Refused (nothing built): ``UNKNOWN_SLICE_IDS``; ``INVALID_LINEAR_PLACEMENT``
+    (no position or no usable transform, as a fit refuses); ``BAD_FIELD`` (not
+    a float array of the grid's shape with two channels, or not finite).
+    """
+    record = job.state.resolve(section)
+    if record is None:
+        raise unknown_sections(job.state, [str(section)])
+    try:
+        grid = deformation.fit_grid(job.state, workspace, record)
+    except (ValueError, OSError) as exc:
+        raise Refused("INVALID_LINEAR_PLACEMENT", message=f"{record.id}: {exc}") from exc
+    width, height = grid.image.size
+    array = np.asarray(native_xy)
+    if not np.issubdtype(array.dtype, np.floating):
+        raise Refused("BAD_FIELD", message=f"{record.id}: the map is a float array, not "
+                      f"{array.dtype}.")
+    if array.shape != (height, width, 2):
+        raise Refused("BAD_FIELD", message=f"{record.id}: the map is (H, W, 2) = "
+                      f"({height}, {width}, 2) on the fit grid; got {array.shape}.",
+                      expected_shape=[height, width, 2])
+    if not np.isfinite(array).all():
+        raise Refused("BAD_FIELD", message=f"{record.id}: the map has values that are not "
+                      "finite.")
+    linear = deformation.linear_key(job.state, record)
+    array = np.ascontiguousarray(array, dtype=np.float64)
+    key = digest({"method": method, "linear": linear,
+                  "map": hashlib.sha256(array.tobytes()).hexdigest()})
+    outcome = deformation.record_from_map(
+        workspace, grid, array, method=method,
+        provenance={"tool": method, "linear_key": linear, **(provenance or {})})
+    return MappedWarp(id=record.id, key=key, linear_key=linear, record=outcome,
+                      step={"method": method, "start": "linear", **(step or {})},
+                      numbers=deformation.summary(outcome, None))
+
+
+@dataclass(frozen=True)
+class WarpsApplied:
+    """What :func:`apply_warps` did: one row per warp (``status`` ``ok`` with
+    the record's numbers, or ``error`` with the code) and the sections written."""
+
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    written: list[str] = field(default_factory=list)
+
+
+def apply_warps(job: Job, warps: Sequence[MappedWarp]) -> WarpsApplied:
+    """Write each warp as its section's deformation: ONE undo step.
+
+    Under the job's write lock, per warp: a section whose deformation is
+    frozen is its row ``FROZEN``; one whose linear placement is no longer the
+    one the warp was built on is ``STALE_INPUT``; otherwise the record is saved
+    in the section's folder (``job.deformations``) and the section's
+    ``deformation`` names it, as an applied fit's does, replacing what it held
+    (``undo`` brings that back). A later change to the placement clears it as
+    it clears any deformation.
+    """
+    store = job.deformations
+    rows: list[dict[str, Any]] = []
+    written: list[str] = []
+    with job.writing():
+        before = job.snapshot()
+        for warp in warps:
+            record = job.state.by_id(warp.id)
+            if record is None:
+                rows.append({"id": warp.id, "status": "error", "error": "UNKNOWN_SLICE_IDS"})
+                continue
+            frozen = frozen_row(job, record.id, "deformation")
+            if frozen is not None:
+                rows.append(frozen)
+                continue
+            if deformation.linear_key(job.state, record) != warp.linear_key:
+                rows.append(stale_row(record.id))
+                continue
+            store.put(warp.key, warp.record)
+            try:
+                folder = store.save(record.id, warp.key, warp.record)
+            except OSError as exc:
+                rows.append({"id": record.id, "status": "error",
+                             "error": "RECORD_WRITE_FAILED", "message": str(exc)})
+                continue
+            record.deformation = deformation.reference(
+                folder=job.layout.relative(folder), key=warp.key, linear=warp.linear_key,
+                record=warp.record, step=dict(warp.step), previous=None, numbers=warp.numbers)
+            written.append(record.id)
+            rows.append({"id": record.id, "status": "ok", **warp.numbers})
+        if written:
+            job.commit(before)
+    return WarpsApplied(rows=rows, written=written)
 
 
 def pictures(

@@ -103,6 +103,13 @@ Affine `params` are `[a,b,tx,c,d,ty]` on the oriented section render:
 and y by height. `physical` records rotation, scales, shear, translations
 in millimetres and pivot. A residual's `record` is its folder relative to
 the job folder; coordinate maps include that deformation as well as the affine.
+Each of its `steps` says how a step was made: a native fit's `start`
+(`linear` or `current`), settings and regions; a landmark application's
+`method` `landmark_triangulation`; a deformation a tool plugin wrote
+(`docs/plugins.md`), `{"method": "plugin:<tool>", "start": "linear", "note"?}`,
+whose record has the engine name `plugin:<tool>`, the `inverse_source`
+`fixed-point inversion of the supplied map`, and in its `provenance` the
+`plugin` (`tool`, `call`, `version`, `note`, `meta`).
 
 ## Per-section maps (`sections/<name>/`)
 

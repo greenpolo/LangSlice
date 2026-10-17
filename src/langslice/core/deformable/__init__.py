@@ -12,6 +12,7 @@ from langslice.core.deformable.fit import (
     fit_prepared,
     prepare_fit,
     prepare_warp,
+    warp_from_native_map,
 )
 from langslice.core.deformable.geometry import Placement, placement_from_handoff
 from langslice.core.deformable.plane_images import (
@@ -42,6 +43,7 @@ __all__ = [
     "prepare_warp",
     "resampled_record",
     "ventricle_ids",
+    "warp_from_native_map",
     "warp_section_image",
     "warp_source_points",
     "warped_border_layers",

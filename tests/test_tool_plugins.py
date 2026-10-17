@@ -419,6 +419,7 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
                 "id": view.id, "position": view.position_mm, "size": list(view.file_size),
                 "shape": list(image.shape), "atlas": atlas.name, "plane": atlas.plane,
                 "planes": sorted(frame.atlas), "matrix": frame.atlas_to_section.shape[0],
+                "placed": frame.placed_atlas_to_section is None,
                 "work": str(ctx.work_dir()),
                 "spec_tasks": list(ctx.spec["tasks"]),
                 "layers": [r.name for r in ctx.layers("s1")]})
@@ -434,6 +435,7 @@ def test_the_context_reads_sections_images_and_the_atlas(make, images: Path):
     reply = call(box, "read_it")
     assert reply["id"] == "s1.png" and reply["position"] == 2.5 and reply["size"] == [40, 30]
     assert reply["shape"][2] == 3 and reply["matrix"] == 3 and "annotation" in reply["planes"]
+    assert reply["placed"]  # no transform yet: no current placement to start from
     assert Path(reply["work"]).parts[-2:] == ("plugins", "read_it") and Path(reply["work"]).is_dir()
     assert reply["spec_tasks"] == ["position", "transform"] and reply["layers"] == []
 
@@ -613,6 +615,202 @@ def test_export_maps_copies_the_layers_with_their_manifest(make, images: Path):
     assert any(kind == "plugin_layer" for _path, kind in exported.files)
 
 
+# --- deformations -------------------------------------------------------------------------------
+
+
+NONLINEAR = {"tasks": ["position", "transform", "nonlinear"]}
+
+
+def warp_box(images: Path, *plugins: str, transforms: tuple[str, ...] = ("s0.png", "s1.png"),
+             **spec: Any):
+    """A box whose stack can take deformations; *transforms* get an in-plane shift."""
+    from langslice.core.spec import NonlinearSpec
+
+    state, ctx, box = box_of(images, EXAMPLE, *plugins, nonlinear=NonlinearSpec(provider="none"),
+                             **{**NONLINEAR, **spec})
+    if transforms:
+        assert call(box, "nudge_sections", sections=list(transforms), dx=0.05)["status"] == "ok"
+    return state, ctx, box
+
+
+def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(images: Path):
+    from langslice.core.maps import native_points, section_frame
+    from langslice.ops.exports import export_maps
+    from tests.fixtures.example_plugin import ripple_map
+
+    state, ctx, box = warp_box(images)
+    job = box.job
+    reply = call(box, "ripple_sections", sections=["s0.png"], amplitude_px=1.5)
+    assert reply["written"] == ["s0.png"] and reply["rows"][0]["status"] == "ok", reply
+    assert reply["rows"][0]["displacement_mm"]["max"] > 0.5
+    record = state.by_id("s0.png")
+    held = record.deformation
+    assert held["steps"] == [{"method": "plugin:ripple_sections", "start": "linear",
+                              "note": "ripple 1.5 px"}]
+    warp = job.deformations.current(state, record)
+    assert warp is not None and warp.engine["name"] == "plugin:ripple_sections"
+    assert warp.provenance["plugin"]["tool"] == "ripple_sections"
+    assert warp.provenance["plugin"]["note"] == "ripple 1.5 px"
+    # The map as the plugin computed it: the ripple on the section's current
+    # placement (a shift), ctx.fit_frame's placed_atlas_to_section.
+    from types import SimpleNamespace
+
+    from langslice.core import deformation
+
+    grid = deformation.fit_grid(state, ctx, record)
+    expected = ripple_map(SimpleNamespace(
+        image=np.asarray(grid.image), atlas_to_section=None,
+        placed_atlas_to_section=grid.placement.atlas_to_section), 1.5)
+    assert record.transform["params"][2] == 0.05
+    # The ripple alone: 1.5 fit-grid pixels at most, nothing of the placement.
+    assert reply["rows"][0]["displacement_mm"]["max"] <= 1.5 * warp.mm_per_px + 1e-3
+    frame = section_frame(state, ctx, record)
+    assert tuple(frame.file_size) == (40, 30) and frame.rotation_deg == 0 and not frame.flip
+    gy, gx = np.indices((30, 40), dtype=np.float64)
+    nx, ny = native_points(frame, warp, gx, gy)
+    np.testing.assert_allclose(np.stack([nx, ny], -1), expected, atol=1e-4)
+    # The exported coordinate map is those native points in atlas micrometres.
+    exported = export_maps(job, ctx, ids=["s0.png"])
+    assert "s0.png" in exported.sections, exported
+    import tifffile
+
+    coords = np.moveaxis(tifffile.imread(job.layout.section_dir("s0.png") / "coords.tif"), 0, -1)
+    native_um = (frame.native_to_um[:, 0] * expected[..., 1, None]
+                 + frame.native_to_um[:, 1] * expected[..., 0, None] + frame.native_to_um[:, 2])
+    inside = np.isfinite(coords).all(axis=-1)
+    assert inside.mean() > 0.5
+    np.testing.assert_allclose(coords[inside], native_um[inside], rtol=1e-5, atol=0.05)
+    registration = json.loads((job.layout.folder / "registration.json").read_text())
+    entry = next(item for item in registration["sections"] if item["id"] == "s0.png")
+    assert entry["parameters"]["deformation"]["steps"][0]["method"] == "plugin:ripple_sections"
+
+
+def test_a_deformation_write_is_one_undo_step_and_the_overlay_shows_it(images: Path):
+    state, _c, box = warp_box(images)
+    job = box.job
+    depth = len(job.undo_stack)
+    reply = call(box, "ripple_sections", sections=["s0.png", "s1.png"])
+    assert reply["written"] == ["s0.png", "s1.png"]
+    assert len(job.undo_stack) == depth + 1
+    assert "deformation drawn" in reply["pictures"][0]["caption"]
+    rows = {row["id"]: row for row in call(box, "status")["rows"]}
+    assert rows["s0.png"]["deformation_steps"] == 1
+    key = state.by_id("s0.png").deformation["key"]
+    assert call(box, "undo")["status"] == "ok"
+    assert state.by_id("s0.png").deformation is None and state.by_id("s1.png").deformation is None
+    registration = json.loads((job.layout.folder / "registration.json").read_text())
+    assert all(item["parameters"]["deformation"] is None for item in registration["sections"])
+    assert call(box, "redo")["status"] == "ok"
+    assert state.by_id("s0.png").deformation["key"] == key
+
+
+def test_a_frozen_deformation_is_that_sections_row_and_the_others_are_written(images: Path):
+    state, _c, box = warp_box(images, frozen={"s1.png": ["deformation"]})
+    reply = call(box, "ripple_sections", sections=["s0.png", "s1.png"])
+    rows = {row["id"]: row for row in reply["rows"]}
+    assert rows["s1.png"]["error"] == "FROZEN" and rows["s0.png"]["status"] == "ok"
+    assert reply["written"] == ["s0.png"] and state.by_id("s1.png").deformation is None
+
+
+def test_a_section_without_a_transform_is_refused_as_a_native_fit_refuses_it(images: Path):
+    state, _c, box = warp_box(images, transforms=("s0.png",))
+    reply = call(box, "ripple_sections", sections=["s0.png", "s1.png"])
+    rows = {row["id"]: row for row in reply["rows"]}
+    assert rows["s1.png"]["error"] == "INVALID_LINEAR_PLACEMENT"
+    assert reply["written"] == ["s0.png"] and state.by_id("s1.png").deformation is None
+
+
+def test_a_placement_change_clears_the_deformation_and_undo_brings_both_back(images: Path):
+    state, _c, box = warp_box(images)
+    call(box, "ripple_sections", sections=["s0.png"])
+    key = state.by_id("s0.png").deformation["key"]
+    reply = call(box, "nudge_sections", sections=["s0.png"], dx=0.08)
+    assert reply["deformation_cleared"] == ["s0.png"]
+    assert state.by_id("s0.png").deformation is None
+    call(box, "undo")
+    assert state.by_id("s0.png").deformation["key"] == key
+
+
+FIELDS = '''
+import numpy as np
+from langslice.plugin_api import ToolResult, ToolSpec
+HOOK = lambda: None
+
+def stub(sections: list[str], mode: str = "good"):
+    """Write deformations."""
+
+def handler(ctx, sections, mode="good"):
+    from tests.fixtures.example_plugin import ripple_map
+    rows = []
+    for name in sections:
+        field = ripple_map(ctx.fit_frame(name), 1.0)
+        if mode == "shape":
+            field = field[1:]
+        elif mode == "nan":
+            field[3, 4, 0] = np.nan
+        elif mode == "int":
+            field = field.astype(np.int32)
+        rows.append({"id": name, "map": field, "meta": {"engine": "synthetic"}})
+    if mode == "long":
+        expect = {name: ctx.section_inputs(name) for name in sections}
+        proposals = [ctx.deformation_from_map(row["id"], row["map"]).row() for row in rows]
+        HOOK()
+        return ToolResult(ctx.set_deformations(proposals, expect=expect).reply())
+    if mode == "proposal":
+        proposal = ctx.deformation_from_map(sections[0], rows[0]["map"])
+        picture = ctx.overlay_picture(sections[0], proposal={"deformation": proposal})
+        return ToolResult({"summary": proposal.summary,
+                           "inverse": proposal.inverse_consistency_mm}, [picture])
+    return ToolResult(ctx.set_deformations(rows).reply())
+
+def tools():
+    return [ToolSpec("warp_it", stub, handler, kind="write", group="Nonlinear",
+                     task="nonlinear", writes=("deformation",), long=True),
+            ToolSpec("warp_undeclared", stub, handler, kind="write", group="Nonlinear",
+                     task="nonlinear", writes=("affine",))]
+'''
+
+
+@pytest.mark.parametrize("mode", ["shape", "nan", "int"])
+def test_a_map_that_cannot_be_stored_is_that_sections_row_bad_field(make, images: Path,
+                                                                       mode: str):
+    state, _c, box = warp_box(images, make("fields_plugin", FIELDS))
+    depth = len(box.job.undo_stack)
+    reply = call(box, "warp_it", sections=["s0.png"], mode=mode)
+    assert reply["rows"][0]["error"] == "BAD_FIELD" and reply["written"] == [], reply
+    assert state.by_id("s0.png").deformation is None and len(box.job.undo_stack) == depth
+
+
+def test_a_tool_that_does_not_declare_deformation_cannot_write_one(make, images: Path):
+    state, _c, box = warp_box(images, make("fields_plugin", FIELDS))
+    reply = call(box, "warp_undeclared", sections=["s0.png"])
+    assert reply["error"] == "WRITE_NOT_DECLARED"
+    assert state.by_id("s0.png").deformation is None
+
+
+def test_a_long_tool_writes_its_proposals_and_a_moved_section_is_stale(make, images: Path):
+    ref = make("fields_plugin", FIELDS)
+    state, ctx, box = warp_box(images, ref)
+    from langslice.ops import positions
+
+    sys.modules["fields_plugin"].HOOK = lambda: positions.position_sections(
+        box.job, ctx, [{"id": "s1.png", "position_mm": 2.6}])
+    reply = call(box, "warp_it", sections=["s0.png", "s1.png"], mode="long")
+    rows = {row["id"]: row for row in reply["rows"]}
+    assert rows["s0.png"]["status"] == "ok" and rows["s1.png"]["error"] == "STALE_INPUT"
+    assert state.by_id("s0.png").deformation and state.by_id("s1.png").deformation is None
+
+
+def test_a_proposed_deformation_is_drawn_and_not_written(make, images: Path):
+    state, _c, box = warp_box(images, make("fields_plugin", FIELDS))
+    depth = len(box.job.undo_stack)
+    reply = call(box, "warp_it", sections=["s0.png"], mode="proposal")
+    assert reply["status"] == "ok" and reply["summary"]["displacement_mm"]["max"] > 0
+    assert reply["inverse"]["max"] < 0.01
+    assert "deformation drawn" in reply["pictures"][0]["caption"]
+    assert state.by_id("s0.png").deformation is None and len(box.job.undo_stack) == depth
+
+
 # --- the doors ----------------------------------------------------------------------------------
 
 
@@ -706,8 +904,10 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
     monkeypatch.chdir(folder)
     main(["ops"])
     verbs = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
-    assert [item["name"] for item in verbs][-2:] == ["section_brightness", "nudge_sections"]
-    assert verbs[-1]["kind"] == "write" and verbs[-1]["group"] == "Linear"
+    assert [item["name"] for item in verbs][-3:] == ["section_brightness", "nudge_sections",
+                                                     "ripple_sections"]
+    assert verbs[-2]["kind"] == "write" and verbs[-2]["group"] == "Linear"
+    assert verbs[-1]["kind"] == "write" and verbs[-1]["group"] == "Nonlinear"
     main(["schema", "nudge_sections"])
     schema = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]
     assert set(schema["arguments"]["properties"]) == {"sections", "dx"}

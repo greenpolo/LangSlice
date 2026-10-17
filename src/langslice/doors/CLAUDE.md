@@ -94,12 +94,18 @@ the CLI is a process per call.
   at import); `as_refs` (the library's objects: factory functions by
   `module:qualname`, ToolSpecs as `inline:<digest>`).
   `context.py`: `ToolContext` (reads `sections`, `section_image`, `atlas`,
-  `fit_frame`, `atlas_slice`, `section_inputs`, `read_registration`;
-  conversions `transform_from_matrix` / `transform_from_params`; writes
-  `set_positions`, `set_transforms`, `mark_damage` through `ops/`, `add_layer`
+  `fit_frame` (`placed_atlas_to_section`: the current placement), `atlas_slice`,
+  `section_inputs`, `read_registration`;
+  conversions `transform_from_matrix` / `transform_from_params`, and
+  `deformation_from_map` (a full fit-grid-to-native map as a
+  `DeformationProposal`, `ops.deformable.warp_from_map`); writes
+  `set_positions`, `set_transforms`, `set_deformations`
+  (`ops.deformable.apply_warps`, maps converted before the lock),
+  `mark_damage` through `ops/`, `add_layer`
   through `job/plugin_store`, `expect=` fingerprints refusing `STALE_INPUT`
   rows; `writing()` holds the lock around several writes; a call's writes are
-  one undo step unless another write came between; `overlay_picture`) and
+  one undo step unless another write came between; `overlay_picture`, with a
+  deformation proposal drawn through an in-memory record store) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
   write tool's call as one undo step, `ToolError` / `Refused` / any exception
   as a reply, the reply and pictures from the `ToolResult`). `provenance.py`:

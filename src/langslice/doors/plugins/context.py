@@ -3,7 +3,7 @@
 One :class:`ToolContext` per call (a plugin must not keep it). Reads give
 plain data in LangSlice's documented units and frames; writes go through the
 same operations the native tools use (``ops.positions``, ``ops.transforms``,
-``ops.damage``), so every write is one undo step that checkpoints the state
+``ops.deformable``, ``ops.damage``), so every write is one undo step that checkpoints the state
 and rewrites ``registration.json``, frozen properties are refused (``FROZEN``),
 and a long tool's section that changed meanwhile is refused (``STALE_INPUT``).
 A tool declared ``read`` cannot write; a ``write`` tool writes the section
@@ -105,7 +105,9 @@ class FitFrame:
     maps native atlas pixel centres to ``image`` pixel centres. ``plane`` says
     where the native plane lies in atlas micrometres: ``center_um``, ``dx``,
     ``dy`` (the column and row directions), ``px_um``, ``shape`` and
-    ``resolution_um``.
+    ``resolution_um``. ``placed_atlas_to_section`` is the same map under the
+    section's stored in-plane transform (its current linear placement, where an
+    engine that refines it starts), None while it has no transform.
     """
 
     id: str
@@ -115,6 +117,7 @@ class FitFrame:
     plane: dict[str, Any]
     position_mm: float
     angles: tuple[float, float]
+    placed_atlas_to_section: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +137,26 @@ class TransformProposal:
 
     def row(self) -> dict[str, Any]:
         return {"id": self.id, "transform": self.record}
+
+
+@dataclass(frozen=True)
+class DeformationProposal:
+    """A deformation a method found, as LangSlice stores it, not written yet
+    (:meth:`ToolContext.deformation_from_map`): ``summary`` holds its numbers
+    (``displacement_mm`` max and median over the placed atlas footprint, in
+    millimetres, ``fold_fraction``, ``flags``) and ``inverse_consistency_mm``
+    how well the inverse LangSlice computed undoes it. :meth:`row` is a row
+    for :meth:`ToolContext.set_deformations`;
+    ``overlay_picture(id, proposal={"deformation": proposal})`` draws it."""
+
+    id: str
+    key: str
+    summary: dict[str, Any]
+    inverse_consistency_mm: dict[str, float]
+    _warp: Any = field(repr=False, compare=False)
+
+    def row(self) -> dict[str, Any]:
+        return {"id": self.id, "deformation": self}
 
 
 @dataclass(frozen=True)
@@ -427,6 +450,7 @@ class ToolContext:
         ``annotation`` and any of the atlas's images
         (:func:`langslice.core.atlas.images.atlas_images`); a name the atlas
         does not have is skipped."""
+        from langslice.core import deformation
         from langslice.core.atlas.images import atlas_images
         from langslice.core.deformable.plane_images import native_intensity, native_labels
 
@@ -442,12 +466,21 @@ class ToolContext:
             if kind in atlas:
                 planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
                                           dtype=np.float32)
+        placed = None
+        if record.transform:
+            try:
+                placed = np.asarray(deformation.fit_grid(
+                    self._door.state, workspace, record).placement.atlas_to_section,
+                    dtype=np.float64)
+            except ValueError:  # a stored transform no fit can use (stale, turned over)
+                placed = None
         return FitFrame(
             id=record.id, image=np.asarray(image), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
-            angles=(float(placement.pitch_deg), float(placement.yaw_deg)))
+            angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
+            placed_atlas_to_section=placed)
 
     def atlas_slice(self, section: object, *, kind: str = "template") -> np.ndarray:
         """The atlas plane at the section's position and cutting angles, on
@@ -531,6 +564,51 @@ class ToolContext:
                                  pivot=pivot, mirrored=mirrored, calibration=calibration,
                                  record=stored)
 
+    def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
+                             meta: Mapping[str, Any] | None = None) -> DeformationProposal:
+        """A method's deformable result as the deformation LangSlice stores:
+        *native_xy* is a float ``(H, W, 2)`` array giving, for each pixel
+        centre ``(x, y)`` of the fit grid (:attr:`FitFrame.image`, ``H`` by
+        ``W``), the native atlas pixel ``(x, y)`` (:attr:`FitFrame.atlas`) it
+        corresponds to: the whole map, linear placement and deformation
+        composed, in the frames :meth:`transform_from_matrix` takes. It is
+        stored as every deformation is, the residual over the section's
+        current linear placement, with an inverse LangSlice computes; it
+        replaces whatever deformation the section holds. *note* and *meta*
+        (JSON values) are kept with it. ``ToolError`` ``BAD_FIELD`` for an
+        array of another shape, not float or not finite;
+        ``INVALID_LINEAR_PLACEMENT`` for a section without a position or a
+        transform."""
+        import json
+
+        from langslice.ops import deformable
+
+        record = self._record(section)
+        plain_meta = _plain(dict(meta or {}))
+        try:
+            json.dumps(plain_meta)
+        except (TypeError, ValueError) as exc:
+            raise ToolError("BAD_ARGS", f"meta is JSON values: {exc}") from exc
+        text = str(note or "").strip()
+        try:
+            warp = deformable.warp_from_map(
+                self._door.job, self._door.ctx, record.id, native_xy,
+                method=f"plugin:{self._tool.name}", step={"note": text} if text else {},
+                provenance={"plugin": {"tool": self._tool.name, "call": self.call,
+                                       "version": self._tool.version, "note": text,
+                                       "meta": plain_meta},
+                            "input": "full map: fit-grid pixel centres to native atlas "
+                                     "pixels"})
+        except Refused as refusal:
+            raise ToolError(refusal.code, str(refusal), **{
+                key: value for key, value in refusal.details.items()
+                if key != "message"}) from refusal
+        consistency = warp.record.diagnostics.get("inverse_consistency_mm") or {}
+        return DeformationProposal(
+            id=record.id, key=warp.key, summary=copy.deepcopy(warp.numbers),
+            inverse_consistency_mm={k: round(float(v), 4) for k, v in consistency.items()},
+            _warp=warp)
+
     def read_registration(self, path: str | Path, *, sections: Sequence[str] = (),
                           ) -> dict[str, Any]:
         """A linear registration file made elsewhere (QuickNII or VisuAlign
@@ -559,13 +637,33 @@ class ToolContext:
         """The overlay ``look`` draws of the section (borders on the section,
         captioned), as it stands, or with a *proposal* not yet written:
         ``{"transform": record or params, "position_mm": mm, "angles":
-        (pitch, yaw)}``, any of them. Nothing is saved or written here; the
-        picture is the handler's to return."""
+        (pitch, yaw)}``, any of them, or ``{"deformation": proposal or map}``
+        alone (a :class:`DeformationProposal`, or the map
+        :meth:`deformation_from_map` takes), drawn on the section's current
+        placement. Nothing is saved or written here; the picture is the
+        handler's to return."""
         from langslice.core import look as looks
 
         record = self._record(section)
         state = self._door.state
-        if proposal:
+        store = self._door.job.deformations
+        if proposal and proposal.get("deformation") is not None:
+            if set(proposal) - {"deformation"}:
+                raise ToolError("BAD_ARGS", "a deformation proposal is drawn on the "
+                                "section's current placement: give it alone")
+            warped = proposal["deformation"]
+            if not isinstance(warped, DeformationProposal):
+                warped = self.deformation_from_map(record.id, warped)
+            elif warped.id != record.id:
+                raise ToolError("BAD_ARGS", f"the proposal is {warped.id}'s, not {record.id}'s")
+            store = self._proposal_store(warped)
+            state = StackState.from_dict(copy.deepcopy(state.to_dict()))
+            held = state.by_id(record.id)
+            assert held is not None
+            held.deformation = {"key": warped.key, "linear_key": warped._warp.linear_key,
+                                "steps": [dict(warped._warp.step)]}
+            record = held
+        elif proposal:
             state = StackState.from_dict(copy.deepcopy(state.to_dict()))
             held = state.by_id(record.id)
             assert held is not None
@@ -588,10 +686,20 @@ class ToolContext:
         edge = int(resolution) if resolution else None
         request = looks.LookRequest(mode="overlay", sections=(record.id,), long_edge=edge)
         try:
-            drawn = looks.look(self._door.ctx, state, request, store=self._door.job.deformations)
+            drawn = looks.look(self._door.ctx, state, request, store=store)
         except looks.LookError as exc:
             raise ToolError(exc.code, str(exc)) from exc
         return drawn[0].image
+
+    def _proposal_store(self, proposal: DeformationProposal) -> Any:
+        """A record store that holds *proposal*'s record (in memory only) and
+        reads every other from the job's."""
+        from langslice.core.deformation import RecordStore
+
+        held = self._door.job.deformations
+        store = RecordStore(root=held.root, folder_of=held.folder_of)
+        store.put(proposal.key, proposal._warp.record)
+        return store
 
     @staticmethod
     def caption(image: Image.Image, text: str) -> Image.Image:
@@ -743,6 +851,66 @@ class ToolContext:
                 out[name] = {"id": name, "status": "ok"}
         return WriteResult(written=written, rows=list(out.values()))
 
+    def set_deformations(self, rows: Sequence[Mapping[str, Any]], *,
+                         expect: Mapping[str, str] | None = None) -> WriteResult:
+        """Set deformations. A row is ``{"id", "map": native_xy, "note"?,
+        "meta"?}`` (the full map :meth:`deformation_from_map` takes) or
+        ``{"id", "deformation": proposal}`` (:meth:`DeformationProposal.row`).
+        Each replaces the section's deformation, as the deformation a native
+        fit applies is stored (one undo step for the call; a later change to
+        the section's placement clears it). Per section: a frozen deformation
+        is ``FROZEN``, a map that cannot be stored ``BAD_FIELD``, a section
+        without a position or transform ``INVALID_LINEAR_PLACEMENT``, one whose
+        inputs differ from *expect* (or whose placement moved since its
+        proposal was made) ``STALE_INPUT``. A map is converted before the
+        job's write lock is taken, so a long tool holds it only to write.
+        The ok rows carry the numbers ``DeformationProposal.summary`` has.
+        Needs ``deformation`` in the tool's ``writes``."""
+        from langslice.ops import deformable
+
+        self._require("deformation")
+        job = self._door.job
+        out: dict[str, dict[str, Any]] = {}
+        proposals: list[DeformationProposal] = []
+        for row in rows:
+            name = self._resolve_id(row.get("id"))
+            if not name:
+                out[str(row.get("id"))] = {"id": str(row.get("id")), "status": "error",
+                                           "error": "UNKNOWN_SLICE_IDS"}
+                continue
+            frozen = frozen_row(job, name, "deformation")
+            if frozen is not None:
+                out[name] = frozen
+                continue
+            proposal = row.get("deformation")
+            try:
+                if proposal is None:
+                    if "map" not in row:
+                        raise ToolError("BAD_ARGS", "a row is {id, map, note?, meta?} or "
+                                        "{id, deformation}")
+                    proposal = self.deformation_from_map(
+                        name, row["map"], note=str(row.get("note") or ""),
+                        meta=row.get("meta"))
+                elif not isinstance(proposal, DeformationProposal) or proposal.id != name:
+                    raise ToolError("BAD_ARGS", "deformation is this section's "
+                                    "DeformationProposal (deformation_from_map)")
+            except ToolError as exc:
+                out[name] = {"id": name, "status": "error", "error": exc.code,
+                             "message": exc.message}
+                continue
+            out[name] = {"id": name}
+            proposals.append(proposal)
+        written: list[str] = []
+        with self.writing():
+            stale = self._stale([proposal.id for proposal in proposals], expect)
+            out.update(stale)
+            done = deformable.apply_warps(
+                job, [proposal._warp for proposal in proposals if proposal.id not in stale])
+            for applied in done.rows:
+                out[applied["id"]] = applied
+            written = list(done.written)
+        return WriteResult(written=written, rows=list(out.values()))
+
     def mark_damage(self, rows: Sequence[Mapping[str, Any]], *,
                     expect: Mapping[str, str] | None = None) -> WriteResult:
         """Mark atlas regions a section has lost (``rows``: ``{"id", "regions",
@@ -840,7 +1008,7 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
 
 
 __all__ = [
-    "AffineView", "AtlasView", "FitFrame", "LayerRef", "SectionRaster", "SectionView",
-    "ToolContext",
+    "AffineView", "AtlasView", "DeformationProposal", "FitFrame", "LayerRef", "SectionRaster",
+    "SectionView", "ToolContext",
     "TransformProposal", "WriteResult", "STALE_INPUT",
 ]

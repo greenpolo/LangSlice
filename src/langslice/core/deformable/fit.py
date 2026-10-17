@@ -427,6 +427,45 @@ def prepare_warp(
     )
 
 
+def warp_from_native_map(
+    atlas: Any, placement: Placement, native_xy: np.ndarray, detail: str, *,
+    engine: str, engine_version: str = "", native_parameters: dict[str, Any] | None = None,
+    runtime_s: float = 0.0,
+) -> DeformableRecord:
+    """The record of a full map made elsewhere: *native_xy* ``(H, W, 2)``
+    gives, for each pixel centre ``(x, y)`` of the section grid *placement*
+    refers to, the native atlas-plane pixel ``(x, y)`` it corresponds to.
+
+    Stored as every record is, a residual over *placement*: ``field_mm =
+    (atlas_to_section @ native - pixel) * mm_per_px``, so ``native =
+    inverse(atlas_to_section) @ (pixel + field_mm / mm_per_px)`` gives the map
+    back. The inverse field is the fixed-point inversion :func:`_invert_step`
+    makes of a tapered step (its error is the record's
+    ``inverse_consistency_mm``). Labels, footprint and diagnostics as
+    :func:`finish_fit` makes them for any warp (:func:`prepare_warp` at
+    *detail*); ``engine["name"]`` is *engine*."""
+    native = np.asarray(native_xy, dtype=np.float64)
+    height, width = native.shape[:2]
+    size = (width, height)
+    mm = placement.section_mm_per_px
+    matrix = placement.atlas_to_section
+    yy, xx = np.indices((height, width), dtype=np.float64)
+    nx, ny = native[..., 0], native[..., 1]
+    forward_px = np.stack([matrix[0, 0] * nx + matrix[0, 1] * ny + matrix[0, 2] - xx,
+                           matrix[1, 0] * nx + matrix[1, 1] * ny + matrix[1, 2] - yy], axis=-1)
+    inverse_px = _invert_step(forward_px, -forward_px)
+    prepared = prepare_warp(atlas, placement, size, detail)
+    prepared.grid = WorkingGrid(size, mm, size)
+    record = finish_fit(prepared, EngineResult(
+        field_mm=(forward_px * mm).astype(np.float32),
+        inverse_field_mm=(inverse_px * mm).astype(np.float32),
+        inverse_source="fixed-point inversion of the supplied map",
+        native_parameters=dict(native_parameters or {}), runtime_s=float(runtime_s),
+        engine_version=engine_version))
+    record.engine["name"] = engine
+    return record
+
+
 def _previous_offset(grid: WorkingGrid, previous: DeformableRecord | None) -> np.ndarray | None:
     """Where *previous* left the atlas on the working grid, in pixels (None: placed)."""
     if previous is None:
