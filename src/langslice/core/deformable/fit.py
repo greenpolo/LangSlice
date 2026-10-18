@@ -64,7 +64,7 @@ from langslice.core.deformable.plane_images import (
     ventricle_ids,
     whole_region_ids,
 )
-from langslice.core.deformable.record import DeformableRecord, diagnose
+from langslice.core.deformable.record import DeformableRecord, diagnose, landmark_base_field
 from langslice.core.deformable.regions import model_extent, named_regions
 from langslice.core.deformable.settings import (
     CORRELATION_RADIUS_UM,
@@ -524,8 +524,15 @@ def _atlas_record(atlas: Any, placement: Placement, native: np.ndarray) -> dict[
                 atlas, np.unique(native)).items()}}
 
 
-def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
-    """Interpolate the engine's fields to the section, compose, label and diagnose."""
+def finish_fit(
+    prepared: PreparedFit, result: EngineResult, *, landmark_warp: bool = False,
+) -> DeformableRecord:
+    """Interpolate the engine's fields to the section, compose, label and diagnose.
+
+    DISPLACEMENT_OUTSIZED counts only what the dense fits add beyond the
+    agent's landmark warp: *landmark_warp* marks this record as that warp
+    (nothing added, so it never raises the flag); otherwise a chain holding a
+    landmark application is measured from the latest one."""
     grid = prepared.grid
     mm = prepared.placement.section_mm_per_px
     width, height = grid.section_size
@@ -569,6 +576,7 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
     diagnostics = diagnose(
         total, mm, diag_warped, diag_placed, prepared.footprint, ventricles=prepared.ventricles,
         excluded=prepared.excluded, acronyms=acronyms, brain_scale=prepared.brain_scale,
+        base_field_mm=total if landmark_warp else landmark_base_field(previous),
     )
     back = _sample_field(inverse, np.stack([xx + offset[..., 0], yy + offset[..., 1]], -1))
     error = np.linalg.norm(total + back, axis=-1)[prepared.footprint]

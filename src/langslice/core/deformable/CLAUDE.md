@@ -288,6 +288,17 @@ longest extent, or a median above `OUTSIZED_MEDIAN_MM` (0.6, adult mouse;
 times the brain scale, `MIN_FLAG_AREA_MM2` times its square). The median
 limit sits above every observed median.
 
+DISPLACEMENT_OUTSIZED counts only what the dense fits add beyond the agent's
+landmark warp, so a deliberate large landmark move is never flagged. A
+landmark application (`finish_fit(..., landmark_warp=True)`) measures nothing
+(its base is itself); any other record measures `field - base` where the base
+is the field of the most recent `landmark_triangulation` record in its chain
+(`record.landmark_base_field`, walking `parent`), and a chain without one is
+measured from the linear placement as before. Landmarks applied over a fit
+make that combined field the base for later fits. `displacement["max_mm"]`
+etc. and `beyond_landmark_warp` say which was measured. Folds and region area
+ratios are always measured on the full field.
+
 ## Visual review
 
 Judge fits by drawing the final borders on the ORIGINAL section next to the

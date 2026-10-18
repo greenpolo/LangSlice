@@ -99,6 +99,20 @@ def displacement_report(
     }
 
 
+#: The engine name of a landmark application's record.
+LANDMARK_ENGINE = "landmark_triangulation"
+
+
+def landmark_base_field(record: DeformableRecord | None) -> np.ndarray | None:
+    """The field of the most recent landmark application in *record*'s chain
+    (itself included), or None when the chain has none."""
+    while record is not None:
+        if record.engine.get("name") == LANDMARK_ENGINE:
+            return record.field_mm
+        record = record.parent
+    return None
+
+
 def diagnose(
     field_mm: np.ndarray,
     mm_per_px: float,
@@ -110,9 +124,15 @@ def diagnose(
     excluded: frozenset[int],
     acronyms: dict[int, str],
     brain_scale: float = 1.0,
+    base_field_mm: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Per-region area ratios from the Jacobian, fold fraction, and flags; the
     millimetre limits are the adult mouse's times the atlas's *brain_scale*.
+
+    Folds and area ratios are measured on the whole *field_mm*. With
+    *base_field_mm* (the agent's landmark warp, :func:`landmark_base_field`)
+    DISPLACEMENT_OUTSIZED measures only what *field_mm* adds to it; without,
+    the field's displacement from the linear placement.
 
     For region R, the warped region is the set of section pixels whose atlas
     point lies in R; its placed area follows from the Jacobian J of the
@@ -169,7 +189,10 @@ def diagnose(
     if fold_fraction > FOLD_FRACTION_LIMIT:
         flags.append({"code": "FOLDS", "fold_fraction": fold_fraction,
                       "limit": FOLD_FRACTION_LIMIT})
-    displacement = displacement_report(field_mm, mm_per_px, footprint, brain_scale)
+    displacement = displacement_report(
+        field_mm if base_field_mm is None else field_mm - base_field_mm,
+        mm_per_px, footprint, brain_scale)
+    displacement["beyond_landmark_warp"] = base_field_mm is not None
     if displacement["outsized"]:
         flags.append({"code": "DISPLACEMENT_OUTSIZED",
                       **{key: displacement[key] for key in (

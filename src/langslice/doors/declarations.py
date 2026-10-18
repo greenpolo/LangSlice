@@ -657,9 +657,9 @@ def fireants_syn(
         Per section the displacement (median and max, mm, over the placed atlas),
         the fold fraction and plausibility flags (regions compressed,
         expanded, vanished or folded beyond limits; displacement outsized
-        for the section); and a picture of each section under its new
-        registration with the atlas borders on it. With restrict_to, those
-        regions' borders are drawn thick and the others faint, and the
+        for the section[[?landmark_triangulation , measured beyond any landmark warp]]); and a
+        picture of each section under its new registration with the atlas borders on it. With
+        restrict_to, those regions' borders are drawn thick and the others faint, and the
         picture is zoomed to them when they cover a small part of the
         section.
     """
