@@ -169,6 +169,26 @@ def import_fireants() -> Any:
     return torch
 
 
+def preload() -> None:
+    """Import both engines' libraries without running either: torch and
+    FireANTs (:func:`import_fireants`), SimpleITK, and the ITK Elastix
+    classes the affine uses (ITK loads its modules on first attribute use).
+    Nothing touches the GPU, so a process may fork after it (the agent
+    CLI's warm process, :mod:`langslice.doors.cli.warm`)."""
+    torch = import_fireants()
+    # Switching the deterministic algorithms (:func:`_deterministic`) loads
+    # torch's compiler packages the first time: set them as they are.
+    torch.use_deterministic_algorithms(
+        torch.are_deterministic_algorithms_enabled(),
+        warn_only=torch.is_deterministic_algorithms_warn_only_enabled())
+    import itk
+    import SimpleITK  # noqa: F401
+
+    for name in ("ElastixRegistrationMethod", "ParameterObject", "MultiThreaderBase",
+                 "image_from_array"):
+        getattr(itk, name)
+
+
 def fit_device() -> str:
     """``cuda`` when torch sees a GPU, else ``cpu``."""
     torch = import_fireants()

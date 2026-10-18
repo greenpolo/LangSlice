@@ -221,19 +221,18 @@ def scale_problem(frame: SectionFrame) -> str | None:
 FRAME_CACHE_SECTIONS = 512
 
 
-def section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
-    """The section's linear frame (``ValueError`` when it has none:
-    :func:`placement_problem`). Memoized on the workspace
-    (``Workspace.frame_cache``: one frame per section, at the key of
-    everything it depends on; bounded, ``FRAME_CACHE_SECTIONS``)."""
-    problem = placement_problem(state, record)
-    if problem is not None:
-        raise ValueError(f"{record.id}: {problem}")
-    if state.atlas != workspace.spec.atlas or state.plane != workspace.spec.plane:
-        raise ValueError("State and workspace disagree about the atlas or plane")
+#: Frames this process was handed before it forked (:func:`share_frames`):
+#: section image path -> (the workspace's scope, the frame's key, its atlas,
+#: the frame). A workspace made later (a forked child's) takes a frame from
+#: here only at the same scope, key and atlas object.
+_SHARED_FRAMES: dict[str, tuple[tuple[str, str], tuple[Any, ...], Any, SectionFrame]] = {}
+
+
+def _frame_key(state: StackState, workspace: Workspace, record: SliceState) -> tuple[Any, ...]:
+    """Everything a section's frame depends on within one workspace."""
     path = workspace.image_path(record.id)
     spec = workspace.spec
-    key = (
+    return (
         record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
         float(record.position_mm),  # type: ignore[arg-type]
         state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
@@ -241,12 +240,76 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
         json.dumps((spec.inputs or {}).get("pixel_size_um"), default=str),
         json.dumps(spec.host_preprocessing, sort_keys=True, default=str),
     )
+
+
+#: :func:`_scope`'s spec text per spec object (id -> (weak reference, text)).
+_SPEC_TEXTS: dict[int, tuple[Any, str]] = {}
+
+
+def _scope(workspace: Workspace) -> tuple[str, str]:
+    """What a frame depends on beyond its key: the image folder and the
+    whole job spec."""
+    import weakref
+
+    spec = workspace.spec
+    held = _SPEC_TEXTS.get(id(spec))
+    if held is None or held[0]() is not spec:
+        for key in [key for key, (ref, _text) in _SPEC_TEXTS.items() if ref() is None]:
+            del _SPEC_TEXTS[key]
+        held = (weakref.ref(spec), json.dumps(spec.to_dict(), sort_keys=True, default=str))
+        _SPEC_TEXTS[id(spec)] = held
+    return (os.path.abspath(workspace.image_folder), held[1])
+
+
+def share_frames(state: StackState, workspace: Workspace) -> int:
+    """Compute the frame of every placed section of *state* and keep it for
+    the workspaces this process makes after it forks (the agent CLI's warm
+    process, :mod:`langslice.doors.cli.warm`, calls it before it serves), so
+    a call that writes one section maps only that one. A frame that cannot
+    be computed is left out. Returns how many are kept."""
+    scope = _scope(workspace)
+    kept = 0
+    for record in state.slices:
+        if placement_problem(state, record) is not None:
+            continue
+        try:
+            frame = section_frame(state, workspace, record)
+        except Exception:  # noqa: BLE001 - registration.json says why, at its own write
+            continue
+        _SHARED_FRAMES[workspace.image_path(record.id)] = (
+            scope, _frame_key(state, workspace, record), workspace.atlas, frame)
+        kept += 1
+    return kept
+
+
+def _shared_frame(workspace: Workspace, record: SliceState,
+                  key: tuple[Any, ...]) -> SectionFrame | None:
+    held = _SHARED_FRAMES.get(workspace.image_path(record.id))
+    if held is None or held[1] != key or held[2] is not workspace.atlas:
+        return None
+    return held[3] if held[0] == _scope(workspace) else None
+
+
+def section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
+    """The section's linear frame (``ValueError`` when it has none:
+    :func:`placement_problem`). Memoized on the workspace
+    (``Workspace.frame_cache``: one frame per section, at the key of
+    everything it depends on; bounded, ``FRAME_CACHE_SECTIONS``), and taken
+    from the frames shared before a fork (:func:`share_frames`) when one is
+    there at the same key."""
+    problem = placement_problem(state, record)
+    if problem is not None:
+        raise ValueError(f"{record.id}: {problem}")
+    if state.atlas != workspace.spec.atlas or state.plane != workspace.spec.plane:
+        raise ValueError("State and workspace disagree about the atlas or plane")
+    key = _frame_key(state, workspace, record)
     cache = workspace.frame_cache
     held = cache.get(record.id)
     if held is not None and held[0] == key:
         cache.move_to_end(record.id)
         return cast(SectionFrame, held[1])
-    frame = _section_frame(state, workspace, record)
+    frame = (_shared_frame(workspace, record, key) if _SHARED_FRAMES else None) \
+        or _section_frame(state, workspace, record)
     # One frame per section (the one at its current key); the least recently
     # used section is dropped past FRAME_CACHE_SECTIONS.
     cache[record.id] = (key, frame)

@@ -56,6 +56,9 @@ Codex's `view_image` (2048 px).
 - Rules (`prefix_rule`) apply only to commands that would run outside the
   sandbox; they are not an allowlist of everything the shell may run. A
   "`langslice-job` only" shell is not possible.
+- `rules/langslice.rules` lets every `langslice-job` command run outside the
+  sandbox, and the scripting agent runs its scripts with `langslice-job FOLDER
+  python SCRIPT`: those scripts run outside the sandbox too.
 - Custom agents inherit the parent's sandbox and approval mode unless the file
   sets `sandbox_mode`; unattended, an action needing approval fails and the
   error goes back to the parent.
