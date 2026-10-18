@@ -405,7 +405,11 @@ the angles in a caption (empty for the flat plane).
   `image_prep.prepared_size`, so `registration.json` is rewritten on every
   write without decoding images; memoized on `Workspace.frame_cache` by
   everything it depends on (one frame per section, least recently used out
-  past `FRAME_CACHE_SECTIONS`). A section with no pixel size (neither the file
+  past `FRAME_CACHE_SECTIONS`). `share_frames(state, workspace)` computes
+  every placed section's frame and keeps it for the workspaces the process
+  makes after it forks (`_SHARED_FRAMES`; the agent CLI's warm process,
+  `doors/cli/warm.py`): a later workspace takes one only at the same image
+  folder and job spec (`_scope`), key and atlas object. A section with no pixel size (neither the file
   nor the host gives one) is mapped at the scale its placement pictures draw
   it at, `core.transform.calibrate` on its working frame (uncalibrated: the
   image width mapped onto the atlas plane's width at its CURRENT position,

@@ -1,6 +1,8 @@
 """The ``langslice-job`` command: the agent CLI, the MCP tools as shell commands.
 
 ``langslice-job FOLDER VERB [arguments]`` (:mod:`langslice.doors.cli.job`),
+``langslice-job FOLDER python SCRIPT [ARGS ...]`` (the agent's own script, run
+by the job's environment: :func:`langslice.doors.cli.jobenv.python`),
 ``langslice-job ops`` and ``langslice-job schema [VERB]``
 (:mod:`langslice.doors.cli.catalog`). stdout holds the one JSON envelope:
 whatever else prints there while a command runs (a library's notices,
@@ -10,6 +12,12 @@ else: it starts no agent, server or host and signs nobody in. Those are the
 allowed to run ``langslice-job`` can register a brain without being able to
 start another agent. ``ops`` and ``schema`` are read as commands, so a job
 folder of either name is given as a path (``./ops``).
+
+Run as a program (:func:`main` without arguments: the installed command, a
+background run's child), a job folder's command is answered by the job's
+warm process when one is up (:mod:`langslice.doors.cli.warm`); this module
+imports nothing else until that is decided, so a warm call starts in
+milliseconds.
 """
 
 from __future__ import annotations
@@ -17,17 +25,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-from langslice.doors.cli.catalog import add_parsers as add_catalog_parsers
-from langslice.doors.cli.catalog import ops, schema
-from langslice.doors.cli.envelope import emit, stdout_to_stderr
-from langslice.doors.cli.job import add_arguments
-from langslice.doors.cli.job import run as run_job
-
 #: The catalog commands, read before a job folder.
-CATALOG = {"ops": ops, "schema": schema}
+CATALOG = ("ops", "schema")
 
 
 def build_parser(catalog: bool) -> argparse.ArgumentParser:
+    from langslice.doors.cli.catalog import add_parsers as add_catalog_parsers
+    from langslice.doors.cli.job import add_arguments
+
     parser = argparse.ArgumentParser(
         prog="langslice-job",
         description="The agent CLI: one verb on a LangSlice job folder, JSON on stdout. "
@@ -42,19 +47,37 @@ def build_parser(catalog: bool) -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run one agent-CLI command; its exit code (0, 2, 3 or 4)."""
+    """Run one agent-CLI command; its exit code (0, 2, 3 or 4; a script's own
+    under ``python``). Without *argv* (the process's own command line) the
+    job's warm process answers when it can; with *argv* the call runs here."""
+    if argv is None:
+        from langslice.doors.cli import warm
+
+        code = warm.run(sys.argv[1:])
+        if code is not None:
+            return code
+    return run(list(sys.argv[1:] if argv is None else argv))
+
+
+def run(argv: list[str]) -> int:
+    """One agent-CLI command in this process (a cold call, or a warm
+    process's child); its exit code."""
     # `.env` holds the API keys; a verb that needs a model gets the saved
     # keys when its job opens (doors.jobs).
     from langslice.doors.api.setup import load_credentials
+    from langslice.doors.cli.envelope import emit, stdout_to_stderr
 
-    argv = list(sys.argv[1:] if argv is None else argv)
     catalog = bool(argv) and argv[0] in CATALOG
     args = build_parser(catalog).parse_args(argv)
     load_credentials(saved=False)
     if catalog:
+        from langslice.doors.cli.catalog import ops, schema
+
         with stdout_to_stderr():  # a job's atlas opened by schema prints nothing on stdout
-            envelope = CATALOG[args.command](args)
+            envelope = {"ops": ops, "schema": schema}[args.command](args)
         return emit(envelope)
+    from langslice.doors.cli.job import run as run_job
+
     return run_job(args)
 
 

@@ -11,7 +11,7 @@ whole declared description, the one-line summary, the argument schema and
 or the job of the folder it runs in, otherwise every argument (``hint``
 says how to narrow it). ``schema`` is versioned (:data:`SCHEMA_VERSION`).
 ``schema`` of a job command
-(``init``, ``brief``, ``runs``, ``wait``: :data:`JOB_COMMANDS`) gives its
+(``init``, ``brief``, ``runs``, ``wait``, ``env``, ``python``: :data:`JOB_COMMANDS`) gives its
 summary, usage and flags (``init``'s are its parser's,
 :func:`langslice.doors.cli.job.init_parser`); ``langslice-job FOLDER NAME
 --help`` answers as ``schema NAME`` does (:func:`describe`). Both return
@@ -51,11 +51,16 @@ JOB_COMMANDS: dict[str, str] = {
         "missing; it also imports LangSlice's packages): its python, and `install` puts "
         "pip packages in it, listed in scripts/requirements.txt; `remove` deletes it and "
         "keeps that list, from which `env` rebuilds it.",
+    "python SCRIPT [ARGS ...]": "Run your own Python script with the job's environment's "
+        "python (`env`, made when missing): its output and exit code are the script's. "
+        "Faster than calling that python yourself: LangSlice and the atlas are usually "
+        "loaded already.",
 }
 
 
 def command_names() -> list[str]:
-    """The job commands by name (``init``, ``brief``, ``runs``, ``wait``)."""
+    """The job commands by name (``init``, ``brief``, ``runs``, ``wait``,
+    ``env``, ``python``)."""
     return [key.split()[0] for key in JOB_COMMANDS]
 
 
