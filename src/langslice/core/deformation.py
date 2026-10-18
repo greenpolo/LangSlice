@@ -15,7 +15,7 @@ here:
 - the resolved :class:`Choice` and its engine settings;
 - :class:`RecordStore`: results cached by a digest of every input (the same
   fit again reuses it), applied records saved under the section's folder
-  (``deformable/<key>/``, the parent steps inside), and loaded back to fit on
+  (``deformable/<key>/``, each step's parent a sibling folder it names), and loaded back to fit on
   top of and for placement pictures;
 - :func:`linear_key` and :func:`clear_stale`: a deformation lives on top of
   the linear placement it was fitted at, and any change to that placement
@@ -353,13 +353,25 @@ def cache_key(
 # --- records: cache, disk, the reference on the state ---------------------
 
 
+def folder_name(key: str) -> str:
+    """The folder a record of *key* is saved in: the key's first 24 hex digits."""
+    return key[:24]
+
+
 @dataclass
 class RecordStore:
     """Fitted records by input key (memory, most recent first) and on disk.
 
     On disk a record is ``<folder>/<key[:24]>``: *folder_of* gives a
     section's folder (the job's ``sections/<name>/deformable``); without it,
-    ``<root>/<section filename>``.
+    ``<root>/<section filename>``. A record's parent is a sibling folder
+    there, named in its ``record.json`` (:meth:`DeformableRecord.save`).
+    Nothing removes a saved record: undo returns to a parent's key, and a
+    child reads its parent from the folder.
+
+    A record put here is rounded to the precision it is saved at
+    (:meth:`DeformableRecord.round_to_storage`), so a record from memory and
+    the same record read back are equal, and a fit built on either is the same.
     """
 
     root: Path
@@ -368,9 +380,9 @@ class RecordStore:
 
     def directory(self, section_id: str, key: str) -> Path:
         if self.folder_of is not None:
-            return Path(self.folder_of(section_id)) / key[:24]
+            return Path(self.folder_of(section_id)) / folder_name(key)
         name = re.sub(r"[^a-zA-Z0-9._-]", "_", Path(section_id).name)
-        return self.root / name / key[:24]
+        return self.root / name / folder_name(key)
 
     def get(self, section_id: str, key: str) -> DeformableRecord | None:
         record = self.cache.get(key)
@@ -383,15 +395,21 @@ class RecordStore:
         return record
 
     def put(self, key: str, record: DeformableRecord) -> None:
+        if record.saved_as is None:  # a record with a folder is at storage precision
+            record.round_to_storage()
+        record.saved_as = folder_name(key)
         self.cache[key] = record
         self.cache.move_to_end(key)
         while len(self.cache) > CACHE_SIZE:
             self.cache.popitem(last=False)
 
     def save(self, section_id: str, key: str, record: DeformableRecord) -> Path:
+        """Save *record* under *key* (its parent first, when that is not saved
+        beside it); a record already saved there is kept."""
         folder = self.directory(section_id, key)
         if not (folder / "record.json").exists():
             record.save(folder)
+        record.saved_as = folder.name
         return folder
 
     def current(self, state: StackState, record: SliceState) -> DeformableRecord | None:

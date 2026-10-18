@@ -241,6 +241,26 @@ class JobHandle:
         """The atlas and the section files (:class:`langslice.core.workspace.Workspace`)."""
         return self._opened.ctx
 
+    def section_maps(self, section: str, *, full_resolution: bool = False) -> Any:
+        """One section's maps in memory, written nowhere: the arrays
+        ``export_maps`` writes to ``sections/<name>/``
+        (:class:`langslice.core.maps.SectionMaps`). ``coords`` ``(rows, cols,
+        3)`` float32 atlas micrometres (NaN outside the atlas volume, as
+        ``coords.tif``), ``labels`` ``(rows, cols)`` uint32 atlas ids, ``residual``
+        ``(rows, cols, 2)`` float32 ``(d_row, d_col)`` grid pixels over the
+        whole grid (None without a deformation), ``pixel_to_atlas_um`` (3x3 on
+        ``[row, col, 1]``: ``coords = pixel_to_atlas_um @ [row + d_row, col +
+        d_col, 1]``), ``grid_size`` ``(width, height)``, ``um_per_px``,
+        ``full_resolution``. The grid is the section's working copy, or with
+        *full_resolution* the image file's own pixels. A section without a
+        placement, or whose deformation record or file cannot be read, raises
+        ``ValueError``; an unknown name, ``UNKNOWN_SLICE_IDS``
+        (:class:`langslice.ops.refusal.Refused`, a ``ValueError``)."""
+        from langslice.ops.exports import section_maps
+
+        return section_maps(self._opened.job, self._opened.ctx, section,
+                            full_resolution=full_resolution)
+
     def close(self) -> None:
         """Finish the job's background work: its image-model calls land and
         its pictures are written. The job stays usable; a script that exits

@@ -138,11 +138,12 @@ wording; `registry.py` lists which.
   *gate*; then ONE undo step: the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
   `submit: <summary>` note, `submitted`; then every queued picture written
-  (`job.views.flush`) and, with the workspace, every placed section's maps
-  and the exports (`exports.export_maps`; a failure is logged, the submit
+  (`job.views.flush`) and, with the workspace, the stack's exports
+  (`exports.export_stack`: QuickNII, VisuAlign, `registration.json`, plugin
+  layers; never the per-section maps; a failure is logged, the submit
   stands). Returns `Submitted` (`exported`, `interval_breaks`
   as filenames). Not a long verb: the door
-  holds the job lock for the whole call, the maps included.
+  holds the job lock for the whole call, the exports included.
 - `exports.py` — `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
   stands, no undo step (a long verb: the stack read under the job lock
@@ -163,7 +164,13 @@ wording; `registry.py` lists which.
   persists nothing writes nothing and lists what it would (`written`
   False). A job whose sections show plugin layers also gets
   `exports/plugins/<tool>/` (`job.plugin_store.export_layers`, kind
-  `plugin_layer`). `UNKNOWN_SLICE_IDS`. Returns `Exported`.
+  `plugin_layer`). `UNKNOWN_SLICE_IDS`. Returns `Exported`. The only writer
+  of the per-section maps. `export_stack(job, workspace)`: the exports and
+  `registration.json` alone, under the lock (what `submit` writes).
+  `section_maps(job, workspace, section, full_resolution=)`: one section's
+  `core.maps.SectionMaps` in memory, written nowhere (the library's
+  `JobHandle.section_maps`); `UNKNOWN_SLICE_IDS`, `ValueError` for a
+  section without a placement or an unreadable record or file.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (an Elastix affine fit's record, kind `elastix`), `set_transforms(job,

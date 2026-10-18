@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "langslice"
 version = "0.1.0"
 description = "Agent-driven registration of histological brain sections to BrainGlobe atlases"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "google-genai",
     "google-adk",
@@ -21,8 +21,9 @@ dependencies = [
     "Pillow",
     "tifffile",
     # Windowed and pyramid-level TIFF reads (langslice.core.native) go through
-    # tifffile's zarr store; zarr 3 needs Python 3.11, so 3.10 decodes whole.
-    "zarr>=3; python_version >= '3.11'",
+    # tifffile's zarr store; a deformation record's arrays are an OME-Zarr
+    # store (langslice.core.deformable.ome_warp).
+    "zarr>=3",
     "python-dotenv",
     "itk-elastix",
     # The deformable engine (langslice.core.deformable): fireants_syn and the
@@ -68,6 +69,8 @@ dev = [
     "basedpyright",
     # The layer contracts below (tests/test_import_layers.py runs them).
     "import-linter>=2.1",
+    # The OME-NGFF schema check of the deformation records (tests/test_ome_warp.py).
+    "jsonschema>=4.18",
 ]
 
 [tool.setuptools.packages.find]
@@ -121,7 +124,7 @@ markers = [
 pythonpath = ["src"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 include = [
     "src/langslice/**/*.py",
@@ -135,5 +138,5 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.pyright]
 include = ["src/langslice"]
 extraPaths = ["src"]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 typeCheckingMode = "basic"

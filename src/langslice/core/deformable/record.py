@@ -20,6 +20,13 @@ A sequential fit is a chain: each record's field is the TOTAL residual
 (earlier steps composed in), and ``parent`` is the record before this step,
 so undoing a step is ``record.parent``.
 
+On disk (:meth:`DeformableRecord.save`) a record is a folder: its arrays in
+``warp.ome.zarr`` (:mod:`langslice.core.deformable.ome_warp`, the fields as
+float16) and ``record.json`` (the metadata, written last), which names the
+parent by its folder, a sibling in the same parent folder (in a job, the
+section's ``deformable/``; the folder name is the record's key's first 24
+hex digits).
+
 Plausibility diagnostics are reported, never enforced: a flag says the warp
 compresses, expands or folds tissue more than a rough biological limit, and
 a person or agent decides what that means.
@@ -28,14 +35,15 @@ a person or agent decides what that means.
 from __future__ import annotations
 
 import json
-import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from langslice.core.deformable import ome_warp
 from langslice.core.deformable.geometry import Placement
+from langslice.core.deformable.ome_warp import WARP_STORE, at_storage_precision
 from langslice.core.deformable.settings import FitSettings
 
 #: Area ratio (warped / placed) limits for solid tissue regions.
@@ -58,12 +66,14 @@ OUTSIZED_MAX_FRACTION = 0.1
 #: plausible. Adult mouse; times the brain scale.
 OUTSIZED_MEDIAN_MM = 0.6
 
-RECORD_VERSION = 1
+#: ``record.json``'s format: 2 (the arrays in ``warp.ome.zarr``, the parent by
+#: reference). Any other is refused on loading.
+RECORD_VERSION = 2
 #: The keys ``record.json`` holds (:meth:`DeformableRecord.metadata`); any
 #: other is refused on loading.
-_RECORD_KEYS = ("version", "step", "placement", "section_size", "settings", "field_convention",
-                "inverse_source", "labels", "excluded_ids", "engine", "diagnostics", "atlas",
-                "provenance")
+_RECORD_KEYS = ("version", "step", "parent", "placement", "section_size", "settings",
+                "field_convention", "inverse_source", "labels", "excluded_ids", "engine",
+                "diagnostics", "atlas", "provenance")
 
 
 def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
@@ -249,21 +259,36 @@ class DeformableRecord:
     #: section mask's rejects (``masks.em_masks``); None for a fit with the
     #: footprint masks. For review pictures; nothing reads it back into a fit.
     left_out: np.ndarray | None = None
+    #: The folder this record is saved in, or will be (a job's store names it
+    #: by the record's key, :class:`langslice.core.deformation.RecordStore`):
+    #: a child's ``record.json`` names its parent by it. Set only once the
+    #: fields are at storage precision (:meth:`round_to_storage`).
+    saved_as: str | None = field(default=None, repr=False, compare=False)
 
     @property
     def mm_per_px(self) -> float:
         return self.placement.section_mm_per_px
 
+    def round_to_storage(self) -> None:
+        """Round the fields to the precision they are saved at
+        (:func:`~langslice.core.deformable.ome_warp.at_storage_precision`), so
+        this record equals the one read back."""
+        self.field_mm = at_storage_precision(self.field_mm)
+        if self.inverse_field_mm is not None:
+            self.inverse_field_mm = at_storage_precision(self.inverse_field_mm)
+
     def metadata(self) -> dict[str, Any]:
         return {
             "version": RECORD_VERSION, "step": self.step,
+            "parent": None if self.parent is None else self.parent.saved_as,
             "placement": self.placement.to_dict(),
             "section_size": list(self.section_size),
             "settings": None if self.settings is None else self.settings.to_dict(),
             "field_convention": (
                 "field_mm[y, x] = [dx, dy] mm: section pixel (x, y) at (x, y)*mm_per_px "
                 "corresponds to placed-atlas point (x, y)*mm_per_px + field; native = "
-                "inv(atlas_to_section) @ (pixel + field/mm_per_px)"
+                "inv(atlas_to_section) @ (pixel + field/mm_per_px); stored in "
+                f"{WARP_STORE} as (2, rows, cols) [dy, dx] float16"
             ),
             "inverse_source": self.inverse_source,
             "labels": "leaf atlas ids under the composed warp",
@@ -273,53 +298,78 @@ class DeformableRecord:
         }
 
     def save(self, directory: str | Path) -> Path:
-        """Write ``arrays.npz``, the parent chain in ``parent/``, then ``record.json``
-        last, so an interrupted save leaves no ``record.json`` (the store rewrites it)."""
+        """Write the record in *directory*: its arrays (``warp.ome.zarr``), then
+        ``record.json`` last, so an interrupted save leaves no ``record.json``
+        (the store rewrites it). The fields are rounded to the precision they
+        are saved at first (:meth:`round_to_storage`). The parent is named by its folder, a sibling
+        of *directory*; a parent not saved there is saved there first.
+        ``ValueError`` for a parent that has no folder name
+        (:attr:`saved_as`): save it first, beside this one."""
         out = Path(directory)
-        out.mkdir(parents=True, exist_ok=True)
-        arrays: dict[str, np.ndarray] = {
-            "field_mm": self.field_mm.astype(np.float32), "labels": self.labels,
-            "footprint": self.footprint,
-        }
-        if self.inverse_field_mm is not None:
-            arrays["inverse_field_mm"] = self.inverse_field_mm.astype(np.float32)
-        if self.left_out is not None:
-            arrays["left_out"] = self.left_out.astype(bool)
-        np.savez_compressed(out / "arrays.npz", **arrays)  # pyright: ignore[reportArgumentType]
         if self.parent is not None:
-            self.parent.save(out / "parent")
+            name = self.parent.saved_as
+            if not name:
+                raise ValueError("The parent record has no folder: save it first, "
+                                 "in the same parent folder")
+            if not (out.parent / name / "record.json").exists():
+                self.parent.save(out.parent / name)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "record.json").unlink(missing_ok=True)
+        self.round_to_storage()
+        ome_warp.write(out, self)
         (out / "record.json").write_text(json.dumps(self.metadata(), indent=2,
                                                     default=_json_default) + "\n")
+        self.saved_as = out.name
         return out
 
     @classmethod
     def load(cls, directory: str | Path) -> DeformableRecord:
-        """The record saved in *directory*; ``ValueError`` naming its
-        ``record.json`` when it (or its arrays) cannot be read."""
+        """The record saved in *directory*, its parent chain from the sibling
+        folders ``record.json`` names; ``ValueError`` naming the
+        ``record.json`` that (or whose arrays) cannot be read."""
         root = Path(directory)
-        parent = cls.load(root / "parent") if (root / "parent" / "record.json").exists() else None
+        meta = cls._metadata(root)
+        # A parent that cannot be read raises naming its own record.json.
+        parent = None if meta["parent"] is None else cls.load(root.parent / str(meta["parent"]))
         try:
-            meta = json.loads((root / "record.json").read_text())
-            unknown = sorted(set(meta) - set(_RECORD_KEYS))
-            if unknown:
-                raise ValueError(f"Unknown record key(s) {unknown}")
-            with np.load(root / "arrays.npz") as data:
-                arrays = {key: data[key] for key in data.files}
+            arrays = ome_warp.read(root)
             return cls(
                 placement=Placement.from_dict(meta["placement"]),
                 section_size=(int(meta["section_size"][0]), int(meta["section_size"][1])),
                 settings=None if meta["settings"] is None else FitSettings.from_dict(
                     meta["settings"]),
-                field_mm=arrays["field_mm"], inverse_field_mm=arrays.get("inverse_field_mm"),
-                inverse_source=str(meta["inverse_source"]), labels=arrays["labels"],
-                footprint=arrays["footprint"],
+                field_mm=_present(arrays["field_mm"]), inverse_field_mm=arrays["inverse_field_mm"],
+                inverse_source=str(meta["inverse_source"]), labels=_present(arrays["labels"]),
+                footprint=_present(arrays["footprint"]),
                 excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
                 diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
                 parent=parent, provenance=dict(meta["provenance"]),
-                left_out=arrays.get("left_out"),
+                left_out=arrays["left_out"], saved_as=root.name,
             )
-        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+        except (OSError, ValueError, KeyError) as exc:
             raise ValueError(f"{root / 'record.json'}: {exc}") from exc
+
+    @staticmethod
+    def _metadata(root: Path) -> dict[str, Any]:
+        """*root*'s ``record.json``, checked: its keys and its format."""
+        try:
+            meta = json.loads((root / "record.json").read_text())
+            unknown = sorted(set(meta) - set(_RECORD_KEYS))
+            if unknown:
+                raise ValueError(f"Unknown record key(s) {unknown}")
+            if meta.get("version") != RECORD_VERSION:
+                raise ValueError(f"record format {meta.get('version')!r}, not {RECORD_VERSION}")
+            if "parent" not in meta:
+                raise KeyError("parent")
+            return meta
+        except (OSError, ValueError, KeyError) as exc:
+            raise ValueError(f"{root / 'record.json'}: {exc}") from exc
+
+
+def _present(array: np.ndarray | None) -> np.ndarray:
+    if array is None:
+        raise ValueError("an array is missing")
+    return array
 
 
 def _json_default(value: Any) -> Any:

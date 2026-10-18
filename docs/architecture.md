@@ -51,8 +51,9 @@ share a file lock and reload changed state before calls. Long operations
 compute outside the lock, then validate their inputs before applying;
 conflicting section results are refused as `STALE_INPUT`.
 
-`submit` validates the enabled tasks and writes maps and exports. CLI and
-Python also expose `export_maps` without submission. The [file contract](file_formats.md)
+`submit` validates the enabled tasks and writes the QuickNII and VisuAlign
+exports; the per-section maps are written only by `export_maps` (CLI and
+Python), with or without submission. The [file contract](file_formats.md)
 is independent of which interface produced the registration.
 
 ## Fiji connector and worker

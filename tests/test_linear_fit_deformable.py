@@ -6,6 +6,7 @@ fit with)."""
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -181,12 +182,12 @@ def test_an_unreadable_applied_record_is_refused_and_saves_write_record_json_las
     def interrupted(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("interrupted")
 
-    monkeypatch.setattr(record_module.np, "savez_compressed", interrupted)
+    monkeypatch.setattr(record_module.ome_warp, "write", interrupted)
     with pytest.raises(RuntimeError):
         saved.save(tmp_path / "copy")
     assert not (tmp_path / "copy" / "record.json").exists()
     monkeypatch.undo()
-    (folder / "arrays.npz").unlink()  # the record of the applied deformation is unreadable
+    shutil.rmtree(folder / "warp.ome.zarr")  # the record of the applied deformation is unreadable
     box.job.deformations.cache.clear()
     row = _fit(box, ctx).rows[0]
     assert row["status"] == "error" and row["error"] == "DEFORMATION_UNREADABLE", row

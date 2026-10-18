@@ -581,7 +581,7 @@ photograph, then the fitted overlay. A model may redraw tissue, and a fit
 may degrade a useful trace. Yellow tissue can confuse the line extractor;
 fit metrics do not certify region identity or topology. The job saves the
 attachments, prompts, raw reply, extracted lines and fit separately, and
-`export_maps` (and `submit`) export each section's last reply and its lines
+`export_maps` exports each section's last reply and its lines
 on the section's maps grid, before any fit
 ([`exports/traces/`](file_formats.md#tracesnamenpz)).
 
@@ -600,7 +600,8 @@ the agent may suppress a picture. Long fits compute outside
 the write lock and recheck inputs before applying. A conflicting edit
 produces `STALE_INPUT` for that section; unaffected results still apply.
 
-`submit` checks the enabled tasks before writing maps and exports:
+`submit` checks the enabled tasks before writing the QuickNII and VisuAlign
+exports (the per-section maps are `export_maps`'s alone):
 
 - Positioning requires a written position for every section. Strict spacing
   permits at most 10% deviation from the interval. Reported interval breaks

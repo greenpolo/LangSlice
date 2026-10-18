@@ -269,11 +269,34 @@ parameters, working grid, warped leaf labels (unclipped), the placed
 footprint mask the fixed mask starts from, `left_out` (the section pixels an
 EM section mask dropped, on the section grid, None otherwise; for review
 pictures, never read back into a fit), excluded ids, `native_to_volume_index` (plane pixel → atlas
-volume index, so exports need no atlas object), `save()`/`load()` (parent chain under `parent/`),
+volume index, so exports need no atlas object), `save()`/`load()`,
 and a free-form `provenance` dict saved with the metadata (the linear tool
 stores section id, linear handoff metadata and its inputs there). The job
-folder's maps (`coords.tif`, `labels.tif`, `residual.tif`) and the VisuAlign
-markers are composed from it by `core/maps.py` (`native_points`).
+folder's maps (`coords.tif`, `labels.tif`, `residual.tif`, written by
+`export_maps`) and the VisuAlign markers are composed from it by
+`core/maps.py` (`native_points`).
+
+On disk (`save(directory)` / `load(directory)`, `docs/file_formats.md`):
+`record.json` (format `RECORD_VERSION` 2, written last: a folder without it
+is incomplete) and `warp.ome.zarr` (`ome_warp.py`: a Zarr v3 store in the
+OME-Zarr 0.6 layout; the fields `(2, rows, cols)` `(dy, dx)` float16, Blosc
+zstd + shuffle, read back as `(rows, cols, 2)` float32; `warped_labels`,
+`footprint`, `left_out` lossless; the root's `ome.scene` states section mm
+-> placed atlas mm (a `bijection` of the two `displacements`) -> atlas µm (a
+`sequence`: scale, the placement's inverse affine, the plane-to-volume
+affine, the resolution), written from the record and never read back). No
+other format is read. The parent is BY REFERENCE: `record.json`'s `parent`
+is the parent's folder name (`saved_as`), a sibling folder; `save` saves a
+parent that is not there first (one without `saved_as` is a `ValueError`),
+`load` reads the chain from the siblings. `save` rounds the fields to
+float16 precision in memory first (`round_to_storage`,
+`ome_warp.at_storage_precision`), and `core.deformation.RecordStore.put`
+does the same for every record it holds, so a record in memory equals the
+one read back and a fit built on either is the same (SyN refinements are
+sensitive to their start: a 0.24 µm change of a soft whole-section
+refinement's start moved its result by up to 1 mm on a rat section).
+`RecordStore` saves under `deformable/<key[:24]>` and deletes nothing, so
+undo and every child find their records.
 
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold

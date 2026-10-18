@@ -81,8 +81,9 @@ langslice-job sections/ wait --timeout 600
 
 `runs ID` and `wait ID` address a particular run. `--dry-run` previews a
 write without saving; expensive fits are validated without running them.
-`export_maps` is available through this CLI and Python to export the job's
-present state without submitting it; with the maps it writes each traced
+`export_maps` is available through this CLI and Python to write the job's
+maps from its present state, submitted or not (`submit` writes no maps);
+with the maps it writes each traced
 section's image-model reply to `exports/traces/<name>.npz`
 ([format](file_formats.md#tracesnamenpz)).
 

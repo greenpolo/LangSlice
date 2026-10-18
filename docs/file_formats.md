@@ -13,9 +13,9 @@ A registration file can also be explicitly imported when creating a job.
   state.json            the checkpoint: the truth
   registration.json     its public rendering
   history/              undo and redo steps
-  sections/<name>/      per section (<name>: the filename's stem): its maps,
-                        landmarks.json (readable corresponding pairs),
-                        applied deformation records (deformable/),
+  sections/<name>/      per section (<name>: the filename's stem): its maps
+                        (written by export_maps), landmarks.json (readable
+                        corresponding pairs), deformation records (deformable/),
                         image-model traces (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
@@ -84,7 +84,7 @@ Each section:
 | `mapping` | `linear`, `linear (identity in-plane: no transform written)`, `linear + residual` (the maps hold the complete mapping), or null |
 | `problem` | why there is no matrix (`no position`, an unreadable file, ...), or, with a matrix, that the pixel size is unknown (`uncalibrated`, as the pictures draw it); else null |
 | `parameters_digest` | SHA-256 of the parameters, the matrix and the image facts |
-| `maps` | null before any maps were written; else `files` (kind -> relative path), `grid_size`, `full_resolution`, the grid's `pixel_to_atlas_um`, and `current` (false once the section changed after the maps were written) |
+| `maps` | null until `export_maps` wrote the section's maps (`submit` writes none); else `files` (kind -> relative path), `grid_size`, `full_resolution`, the grid's `pixel_to_atlas_um`, and `current` (false once the section changed after the maps were written) |
 
 ### Section parameters
 
@@ -102,7 +102,8 @@ Affine `params` are `[a,b,tx,c,d,ty]` on the oriented section render:
 `x' = a*x + b*y + tx`, `y' = c*x + d*y + ty`, with x normalized by width
 and y by height. `physical` records rotation, scales, shear, translations
 in millimetres and pivot. A residual's `record` is its folder relative to
-the job folder; coordinate maps include that deformation as well as the affine.
+the job folder ([deformation records](#deformation-records-sectionsnamedeformablekey));
+coordinate maps include that deformation as well as the affine.
 Each of its `steps` says how a step was made: a native fit's `start`
 (`linear` or `current`), settings and regions; a landmark application's
 `method` `landmark_triangulation`; a deformation a tool plugin wrote
@@ -113,8 +114,10 @@ whose record has the engine name `plugin:<tool>`, the `inverse_source`
 
 ## Per-section maps (`sections/<name>/`)
 
-Written at `submit` and by the `export_maps` verb (CLI and library only), for
-every section with a position. Not on every write (they are large). The grid
+Written only by the `export_maps` verb (CLI and library), for every section
+with a position; never on a write or at `submit` (they are large). The
+library's `job.section_maps(section)` returns the same arrays in memory
+without writing them ([library](library.md#reading-results)). The grid
 is the section's working copy (a whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
 file downsampled to at most 3072 px), or with `full_resolution` the file's
 own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
@@ -136,6 +139,50 @@ Float maps are deflate-compressed without TIFF's floating-point predictor,
 which ImageJ 1.x cannot decode. At working size a section's `coords.tif` is
 tens of MB; at full resolution of a whole-slide scan, hundreds.
 
+## Deformation records (`sections/<name>/deformable/<key>/`)
+
+Every deformation a section held (each fit, landmark application and
+plugin warp; `<key>` the first 24 hex digits of the record's input digest)
+is a folder that nothing deletes, so undo can return to it. It holds:
+
+- `record.json`, written last (a folder without it is incomplete):
+  `version` 2, `step` (0 for a deformation on the linear placement),
+  `parent` (the folder name of the record this step was fitted on, a sibling
+  in the same `deformable/` folder, or null), `placement` (atlas, position,
+  plane, angles, `atlas_to_section`: native atlas-plane pixel centres to
+  fit-grid pixel centres, `section_mm_per_px`), `section_size` (the fit
+  grid, `[width, height]`: the oriented section render the fit ran on, not
+  the image file), `settings`, `field_convention`, `inverse_source`,
+  `labels`, `excluded_ids`, `engine`, `diagnostics`, `atlas` (name,
+  orientation, `resolution_um`, `native_size`, `native_to_volume_index`)
+  and `provenance`.
+- `warp.ome.zarr`: the arrays, a Zarr v3 store in the OME-Zarr 0.6 layout,
+  every array one chunk compressed with Blosc zstd and byte shuffle:
+
+| Path | Content |
+|---|---|
+| `coordinateTransformations/field/s0` | float16 `(2, rows, cols)`: `(dy, dx)` in mm on the fit grid. A section point `p = (row, col) * section_mm_per_px` corresponds to the placed atlas point `p + field[:, row, col]`. Stored as float16 (rounding under 0.25 µm on displacements below 0.5 mm; LangSlice reads it as float32) |
+| `coordinateTransformations/inverse_field/s0` | the same for the inverse, on the placed-atlas grid: placed point `q` corresponds to section point `q + inverse_field(q)`; absent when the record has none |
+| `warped_labels/s0` | uint32 `(rows, cols)`: the leaf atlas ids under the composed warp |
+| `footprint/s0` | bool `(rows, cols)`: the placed atlas footprint |
+| `left_out/s0` | bool `(rows, cols)`: the section pixels a fit's EM section mask left out; absent otherwise |
+
+Each group is an OME-Zarr multiscale image of one level whose `s0` scale is
+the grid's millimetres per pixel (1 on the displacement axis, `type`
+`displacement`). The root group's `ome.scene` states the whole mapping with
+the OME-NGFF 0.6 coordinate transformations, so another program can read it
+without LangSlice: coordinate systems `section` and `placed_atlas` (`y`, `x`
+in millimetres) and `atlas` (`axis0`..`axis2` in micrometres, the atlas's
+own axis order, voxel `i`'s centre at `i * resolution`); a `bijection`
+`section` -> `placed_atlas` whose forward and inverse are the
+`displacements` of the two fields (the forward `displacements` alone when
+there is no inverse); a `sequence` `placed_atlas` -> `atlas` of a `scale`
+(mm to placed pixels), an `affine` (placed pixels to native atlas-plane
+pixels: the inverse of `atlas_to_section`), an `affine` from the 2-D plane
+into the 3-D volume (`native_to_volume_index`) and a `scale` by the
+resolution; and an `identity` from each image group's `section` system to
+the scene's. The metadata is written from `record.json` and never read back.
+
 ## Pictures
 
 Each picture a door showed is saved as a folder `<number>_<tool>[_<mode>]/`
@@ -154,7 +201,7 @@ pixels, zero in the caption band); its frame's `residual` names it, and
 
 ## Exports (`exports/`)
 
-Written with the maps. Both are QuickNII-format JSON (`name`, `target`,
+Written at `submit` and by `export_maps`. Both are QuickNII-format JSON (`name`, `target`,
 `aligner`, `slices`: `filename`, `anchoring`, `width`, `height`, `nr`,
 `markers`), one slice per placed section, `width`/`height` the image file's
 pixels and `nr` that index + 1.
@@ -182,7 +229,7 @@ pixels and `nr` that index + 1.
 
 ### `traces/<name>.npz`
 
-Written with the maps, one per mapped section whose last `trace_borders`
+Written with the maps (by `export_maps`), one per mapped section whose last `trace_borders`
 call holds a completed reply (`<name>` as for `sections/<name>/`: the
 filename's stem). A section without one loses the file an earlier export
 left. It holds what the image model returned, before any fit, on the grid

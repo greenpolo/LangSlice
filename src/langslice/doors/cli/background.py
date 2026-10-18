@@ -19,7 +19,7 @@ import secrets
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,7 @@ def record_path(layout: JobLayout, run_id: str) -> Path:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _write(layout: JobLayout, record: dict[str, Any]) -> None:

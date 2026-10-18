@@ -69,11 +69,12 @@ registration.json    its public rendering (formats.py), rewritten on every check
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                      filename when two images share a stem)
-  deformable/<key>/          applied deformation records (RecordStore)
+  deformable/<key>/          deformation records (RecordStore): record.json +
+                             warp.ome.zarr, the parent a sibling it names
   image_correction/<key>/    trace_borders calls, attempt-NN inside
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
-  coords.tif, labels.tif,    the section's maps (formats.py), written at submit
-  labels_fiji.tif,           and by export_maps, never on an ordinary write;
+  coords.tif, labels.tif,    the section's maps (formats.py), written only by
+  labels_fiji.tif,           export_maps (never by a write or by submit);
   labels.csv,                wherever the section maps into the atlas volume
   residual.tif, maps.json
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
@@ -115,8 +116,9 @@ pixel -> atlas matrix of its linear placement (`core.maps`), why it has none
 (`problem`), and its written maps with whether they are still `current`
 (`maps.json`'s `parameters_digest`). The maps (`write_section_maps`:
 `coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
-`residual.tif`, `maps.json`) and the exports are written by
-`ops.exports.export_maps`, at submit and on demand. `Job.persist` False
+`residual.tif`, `maps.json`) are written only by `ops.exports.export_maps`
+(on demand; a section's `maps` entry is null until then), the exports by it
+and at submit (`ops.exports.export_stack`). `Job.persist` False
 writes none of it.
 
 **Resuming with other inputs is refused.** `Job.open` with `spec.resume`

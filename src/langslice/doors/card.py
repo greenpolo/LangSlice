@@ -104,7 +104,8 @@ def card_text(layout: JobLayout) -> str:
     example = render("(`job.status()`[[?position_sections ,\n`job.position_sections("
                      'sections=[{"id": "<file>", "position_mm": 5.2}])`]])', disabled)
     history = render("[[?redo undo/redo||undo]]", disabled)
-    exported = render("[[?export_maps  or by `export_maps`]]", disabled)
+    exported = render("[[?export_maps  written by `export_maps`||, not written by this job's "
+                      "verbs]]", disabled)
     background = render("[[?trace_borders `trace_borders` lands in the background: "
                         "`job.close()`\n(or a `with` block) waits for it. ]]", disabled)
     return f"""# LangSlice job folder
@@ -126,7 +127,7 @@ written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
 - `job.json`: settings (tasks, atlas, plane); `history/`: {history}, a file per step.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
   records), `image_correction/<key>/` (image-model traces), `views/`, and the
-  maps written at submit{exported} (on the image's working copy):
+  maps{exported} (on the image's working copy; submit does not write them):
   - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN outside the atlas.
   - `labels.tif`: uint32 atlas ids per pixel (0 outside the atlas); `labels_fiji.tif`
     + `labels.csv`: a uint16 index Fiji opens, and index -> id, acronym, name, RGB.
