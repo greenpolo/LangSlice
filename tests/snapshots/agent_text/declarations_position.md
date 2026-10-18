@@ -352,7 +352,8 @@ Mark the regions whose tissue is missing from the section, or lies folded
 over other anatomy, such as a whole hemisphere, the olfactory bulb or the
 cortex: the fits leave them out, and the anatomy around them fits
 cleanly. Tissue that is intact but shifted near its place is not damage;
-left unmarked, the warp fits it. A marked region is never fitted, so
+left unmarked, the warp fits it. Tissue shifted further is not
+damage either: move it with landmarks. A marked region is never fitted, so
 intact tissue inside a mark goes unfitted too. When most of a large
 region is missing, marking the whole region keeps the anatomy around it
 safe. Small tears, bubbles, stains, low contrast and folds within an

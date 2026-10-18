@@ -250,7 +250,8 @@ or lies folded over other anatomy, including one hemisphere when needed.
 Those regions are excluded from elastix, `fireants_syn` and image-model
 tracing, so intact tissue inside a mark goes unfitted. Its description tells
 the agent to leave intact tissue shifted near its place unmarked, for the warp
-to fit, and that marking a whole large region when most of it is missing keeps
+to fit, to move tissue shifted further with landmarks, and that marking a
+whole large region when most of it is missing keeps
 the surrounding anatomy safe. Small tears, bubbles and folds within an intact
 outline are not damage. A job can disable this tool
 with `mark_damage` in its [disabled list](#switching-tools-and-options-off).
@@ -366,7 +367,12 @@ reports its engine numbers at the job's scale.
 updates and deletes a batch as one undo step and leaves the registration
 unchanged. Accumulate correspondences across the whole section, including
 its outline and internal anatomy, then call `landmark_triangulation` to apply
-the complete set.
+the complete set. Its description tells the agent to move a piece of tissue
+lying away from its place (more than about 0.4 mm in an adult mouse, scaled to
+the atlas's brain size) with landmarks first and then refine with
+`fireants_syn`, which keeps the landmark move; `fireants_syn`'s description
+says the same in one sentence. A piece closer to its place is left to
+`fireants_syn` alone.
 
 When MCP shrinks pictures to fit its reply budget, it assigns new saved picture
 numbers to the delivered sizes and preserves their exact coordinate geometry.
