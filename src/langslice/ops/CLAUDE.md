@@ -140,8 +140,8 @@ wording; `registry.py` lists which.
   `submit: <summary>` note, `submitted`; then every queued picture written
   (`job.views.flush`) and, with the workspace, the stack's exports
   (`exports.export_stack`: QuickNII, VisuAlign, `registration.json`, plugin
-  layers; never the per-section maps; a failure is logged, the submit
-  stands). Returns `Submitted` (`exported`, `interval_breaks`
+  layers, each completed trace reply; never the per-section maps; a failure
+  is logged, the submit stands). Returns `Submitted` (`exported`, `interval_breaks`
   as filenames). Not a long verb: the door
   holds the job lock for the whole call, the exports included.
 - `exports.py` — `export_maps(job, workspace, ids=,
@@ -166,7 +166,8 @@ wording; `registry.py` lists which.
   `exports/plugins/<tool>/` (`job.plugin_store.export_layers`, kind
   `plugin_layer`). `UNKNOWN_SLICE_IDS`. Returns `Exported`. The only writer
   of the per-section maps. `export_stack(job, workspace)`: the exports and
-  `registration.json` alone, under the lock (what `submit` writes).
+  `registration.json` under the lock, and each placed section's completed
+  trace reply on its working copy's grid (what `submit` writes).
   `section_maps(job, workspace, section, full_resolution=)`: one section's
   `core.maps.SectionMaps` in memory, written nowhere (the library's
   `JobHandle.section_maps`); `UNKNOWN_SLICE_IDS`, `ValueError` for a

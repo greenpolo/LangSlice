@@ -229,7 +229,8 @@ pixels and `nr` that index + 1.
 
 ### `traces/<name>.npz`
 
-Written with the maps (by `export_maps`), one per mapped section whose last `trace_borders`
+Written at `submit` (on the section's working-copy grid) and with the maps by
+`export_maps` (on the maps' grid), one per placed section whose last `trace_borders`
 call holds a completed reply (`<name>` as for `sections/<name>/`: the
 filename's stem). A section without one loses the file an earlier export
 left. It holds what the image model returned, before any fit, on the grid
