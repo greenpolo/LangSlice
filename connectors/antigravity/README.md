@@ -73,8 +73,10 @@ replaced by yours:
 ```
 
 `read_url(*)` gives sandboxed commands the web (package downloads, papers,
-documentation). The `read_file` rules let a script run in the sandbox with the
-job's own environment import LangSlice: its checkout or installation, the
+documentation). The scripting agent runs its scripts with `langslice-job
+FOLDER python SCRIPT`, a `langslice-job` command, so they run outside the
+sandbox too. The `read_file` rules let a script run in the sandbox with the
+job's own environment's python import LangSlice: its checkout or installation, the
 Python it runs on (for a uv environment, `~/.local/share/uv/python`), and the
 atlases. Antigravity on Linux ignores `unsandboxed(...)` rules.
 

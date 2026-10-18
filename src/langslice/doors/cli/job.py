@@ -95,13 +95,18 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     """``FOLDER VERB [arguments]``, the ``langslice-job`` command's
     (:mod:`langslice.doors.cli.jobcli`)."""
     p.add_argument("folder", help="The job folder, or the image folder beside it")
-    p.add_argument("verb", help="A verb (`langslice-job ops`), init, runs [ID] or wait [ID]")
+    p.add_argument("verb", help="A verb (`langslice-job ops`), init, brief, runs [ID], "
+                   "wait [ID], env or python SCRIPT [ARGS ...]")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="--args JSON|@file, --name value, --dry-run, --background, "
                    "--verbose, --timeout SECONDS")
 
 
 def run(args: argparse.Namespace) -> int:
+    if canonical_verb(args.verb) == "python" and not HELP_FLAGS & set(args.rest[:1]):
+        from langslice.doors.cli.jobenv import python
+
+        return python(args.folder, list(args.rest))  # the script's own output and exit code
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     with stdout_to_stderr():
         envelope = execute(args.folder, args.verb, list(args.rest))
@@ -192,8 +197,11 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
         return
     try:
         paths = [str(item.get("path")) for item in envelope.artifacts]
+        from langslice.doors.cli.warm import in_child
+
         log_call(layout.logs_dir, {
             "verb": verb, "arguments": list(rest), "ok": envelope.ok, "exit": envelope.exit,
+            "warm": in_child(),
             **({"error": envelope.error.get("code")} if envelope.error else {}),
             **({"run": run_id} if run_id else {}),
             "warnings": len(envelope.warnings), "artifacts": paths,

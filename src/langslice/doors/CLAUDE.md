@@ -12,7 +12,7 @@ every door is generated from them and from the registry (`ops/registry.py`:
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `brief` and `env` | Claude Code, Antigravity, Codex |
+| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `brief`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`cli/warm.py`) | Claude Code, Antigravity, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
@@ -47,7 +47,8 @@ the `ToolBox` the opening-read gate (`require_opening`, `opening_read`, `opening
 armed by the MCP door only). Deliberately different: the host owns the loop
 for MCP and the CLI (no turn budget, nudges, debrief, image working set or
 quota accounting there); pictures are files and artifacts in the CLI, inline elsewhere;
-the CLI is a process per call.
+each CLI call is a process of its own (cold, or the child the job's warm
+process forks for it, `cli/warm.py`).
 
 ## Files
 
@@ -298,9 +299,48 @@ the CLI is a process per call.
   (`docs/agents.md`), a command of its own so that allowing it allows
   no agent, server, host or login:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,
-    also `python -m langslice.doors.cli.jobcli`): `ops` and `schema` first
-    (run inside `stdout_to_stderr`, their envelope printed after),
-    anything else `FOLDER VERB`; returns the exit code.
+    also `python -m langslice.doors.cli.jobcli`): `main()` without argv
+    (the process's own command line) asks the job's warm process first
+    (`warm.run`), importing nothing else until that is decided (the
+    package's `__init__` imports its command groups where it builds its
+    parser); `run(argv)`, the call in this process (a cold call, a warm
+    child's): `ops` and `schema` first (run inside `stdout_to_stderr`,
+    their envelope printed after), anything else `FOLDER VERB`; returns the
+    exit code.
+  - `warm.py` — the warm process (`docs/agents.md`, "The warm process"):
+    one fork server per job folder and Python environment (`identity`:
+    interpreter, flags, import path, LangSlice's folder), standard library
+    only on the client's side. Client `run(argv)`: `job_folder` (not
+    `init`, `ops`, `schema`), `request` (argv, cwd, environment, `envkey`,
+    the streams' encodings and buffering), the fds of stdin/stdout/stderr
+    by `SCM_RIGHTS`, `ready` / `go` / `started` / `exit` or `signal`;
+    `FORWARDED` signals passed on; None (run cold) before a call starts, and
+    `start_server` (detached, `BOOT`; not while one holds `<key>.lock`, nor
+    for `REFUSED_S` after one could not serve). `runtime_dir`
+    (`$XDG_RUNTIME_DIR/langslice-warm`, else `/tmp/langslice-warm-<uid>`,
+    0700), `Place` (`.sock`, `.lock`, `.log`, `.refused`). Server
+    `serve_main`: the lock, `warm_up` (the CLI's modules,
+    `core.deformable.engines.preload`, the job opened read-only, its tools,
+    atlas arrays, `core.maps.share_frames`, the oblique template volumes when
+    its sections are tilted; `_quiet_pools` stops dask's, zarr's,
+    fsspec's and the sampling threads; `gc.freeze`), `Server` (one thread,
+    `selectors`; `refusal`: protocol, identity, `Sources.changed` (the
+    loaded first-party modules, the import path's folders, the atlas
+    folder: `stale`, it stops listening and exits when its calls end),
+    `ENV_PREFIXES` / `HOME` (`envkey`); a fork per call, its process group
+    killed when the client goes (`SIGKILL`) or signals; `reap`; idle
+    `check` (stale code, a gone job, frames shared again when `state.json`
+    changed); `IDLE_S`). Child `_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
+    fds on 0-2, cwd, environment, `sys.argv` / `sys.path` / `sys.executable`,
+    `_streams`, `_fresh_process` (tempdir, tz, logging, `formats.source`,
+    numpy's seed), `jobcli.run`, `as_python` (exit codes, tracebacks,
+    Ctrl-C as Python gives them), `_end` (threads, `atexit`, flush,
+    `os._exit`). `in_child()`. `run_script(interpreter, rest)`: the job
+    environment's python asked for its path (`PROBE`), `_cannot_run_here`
+    (another Python, or a package of the environment's own already loaded
+    here: then `os.execv` that python), its `.pth` files (not
+    `PARENT_PTH`), `_run_main` (a fresh `__main__`, `__file__` absolute,
+    `sys.argv[0]` as given).
   - `envelope.py` — the `FIXES` texts are written with `[[?needs ...]]`
     marks and rendered for the job's disabled list (`DISABLED`, set by
     `job.call` once the job is open);
@@ -357,7 +397,17 @@ the CLI is a process per call.
     in, so its python imports LangSlice; `install` (uv pip, else pip) and
     `scripts/requirements.txt` (`REQUIREMENTS`: the environment's own
     packages, pinned, read from its `*.dist-info`); `remove` keeps that list,
-    from which `ensure` rebuilds. `ENV_FAILED` when a step fails.
+    from which `ensure` rebuilds; `ensure` makes it once under
+    `logs/env.lock` (`ENV_LOCK`), however many calls ask together, and marks
+    it made (`env/.langslice-ready`, `READY`). `ENV_FAILED` when a step fails.
+    `python(folder, rest)` — `langslice-job FOLDER python SCRIPT [ARGS ...]`
+    (handled by `job.run` before any parsing, the script's arguments
+    verbatim; `FOLDER python --help` answers as a job command): the
+    environment made when missing, the call logged, then the script in this
+    warm child (`warm.run_script`) or this process replaced by the
+    environment's python (`os.execv`; `subprocess.call` on Windows); a call
+    that cannot start prints its refusal's envelope (`NO_JOB`,
+    `BAD_ARGUMENTS`, `ENV_FAILED`).
   - `transcripts.py` — `langslice session-end --harness claude-code|antigravity`,
     the hook of the Claude Code (`SubagentStop`) and Antigravity (`Stop`)
     plugins: the hook's JSON on stdin, the transcript (`transcript_path`), the
@@ -367,7 +417,8 @@ the CLI is a process per call.
     size (`slim`); a transcript that submitted (`SUBMIT_PATTERN`) also removes
     the job's `env/`. Never raises; prints `{}`.
   - `background.py` — `--background`: `start` (a record in
-    `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module) + `FOLDER VERB --args ...
+    `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module, so
+    the job's warm process answers it too) + `FOLDER VERB --args ...
     --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish` (in the
     child), `read` (a running run whose process is gone, or that never
     started within `START_GRACE_S`, is `lost`; the process probed with a null
@@ -376,7 +427,8 @@ the CLI is a process per call.
 
 ## Live shared editing
 
-Each CLI call and each `open_job` opens the job as it stands (`Job.load`),
+Each CLI call and each `open_job` opens the job as it stands (`Job.load`;
+a warm call too, in its forked child),
 and every tool call runs `Job.sync` first, so an agent run and CLI calls on
 one folder see each other's writes, history included
 (`tests/test_agent_cli.py` interleaves them). Every write holds the job

@@ -44,7 +44,7 @@ The job contains identical `AGENTS.md` and `CLAUDE.md` reference cards;
 `brief` writes `BRIEF.md` and returns the opening pictures as file paths.
 The coding agent opens those pictures with its image reader and decides what
 to do next. Keep its scripts in the job's `scripts/` and other work in
-`scratch/`.
+`scratch/`, and run them with `langslice-job FOLDER python scripts/NAME.py`.
 
 A job made with [tool plugins](plugins.md) (`langslice linear run FOLDER
 --tool-plugin MODULE:FACTORY`, or `create_job(plugins=...)` in Python) has
@@ -131,6 +131,46 @@ its cache, so a package used by many jobs is stored once; else pip), and lists
 the environment's packages, pinned, in `scripts/requirements.txt`.
 `env remove` deletes `env/` and keeps that list; the next `env` rebuilds the
 environment from it. LangSlice's own environment is never changed.
+
+`langslice-job FOLDER python SCRIPT [ARGS ...]` runs a script with that
+python (making `env/` first when it is missing). Its stdout, stderr and exit
+code are the script's, as `env/bin/python SCRIPT ARGS` gives them: `sys.argv`,
+the working folder, the script's folder first on `sys.path`, then the
+environment's own packages, then LangSlice's. It is the faster way to run
+one: in the job's warm process (below) the script starts with LangSlice, the
+engines and the atlas already loaded.
+
+### The warm process
+
+Each `langslice-job FOLDER ...` call is a process of its own, and most of a
+cold call's time is starting: importing ITK's Elastix, torch and FireANTs,
+and loading the atlas. The first call on a job folder runs cold and starts
+the job's warm process, detached; it loads all of that once, computes
+every placed section's frame, and then answers later
+calls on the folder by forking a child per call. The child runs the cold
+call's own code with the caller's arguments, working folder, environment
+variables and standard streams, so a warm call writes what a cold one writes
+on stdout and stderr, ends with the same exit code, takes the job folder's
+lock as its own process, and runs in parallel with other calls. Ctrl-C and
+`SIGTERM` sent to the call reach the child; a call whose `langslice-job`
+process is killed is killed too. `init`, `ops` and `schema` always run cold,
+and so does a call whose environment differs where the loaded libraries read
+it at start (`PYTHON*`, `OMP_*`, `CUDA_*`, `TORCH*`, `HOME` and similar), or
+whose environment's own packages shadow ones the warm process has loaded
+(a `python` script, which then runs in its environment's python).
+
+The warm process never runs stale code: before each call it checks the
+files of the modules it loaded from outside the standard library and
+site-packages (LangSlice's own, a tool plugin's), the import path's folders
+and the atlas's folder. When one changed, that call runs cold, the warm
+process stops taking calls and exits once its running calls end, and the
+call starts a new one. It exits after 30 minutes without a call. It never
+touches the GPU, so each call initialises CUDA itself as a cold call does.
+`LANGSLICE_WARM=0` runs every call cold. It is Linux only; elsewhere every
+call is cold. Its socket, lock and log are in `$XDG_RUNTIME_DIR/langslice-warm/`
+(else `/tmp/langslice-warm-<uid>/`), readable by the user alone, and it
+serves only that user's processes. `logs/calls.jsonl` marks each call `warm`
+or not.
 
 ### Transcripts
 

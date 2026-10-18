@@ -81,4 +81,6 @@ included:
 (each part of a compound command must match) and reading under the named path
 run. Replace the path with your job folder (`//` starts an absolute path).
 The scripting variant also needs `Edit(//data/brains/M04/**)`, and the main
-session needs whatever else it should be allowed to do.
+session needs whatever else it should be allowed to do. The scripting
+agent runs its scripts with `langslice-job FOLDER python SCRIPT`, so allowing
+`langslice-job` allows any script it writes.

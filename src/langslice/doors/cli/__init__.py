@@ -19,10 +19,11 @@ import sys
 from typing import Any
 
 import langslice
-from langslice.doors.cli.linear import add_run_parser, run_linear
-from langslice.doors.cli.mcp import add_mcp_parser, run_mcp
-from langslice.doors.cli.transcripts import add_parser as add_session_end_parser
-from langslice.doors.cli.transcripts import run as run_session_end
+
+# The command groups are imported where the parser is built, not here: the
+# agent CLI's entry point (``jobcli``, a module of this package) decides
+# whether its warm process answers before anything heavy is loaded
+# (:mod:`langslice.doors.cli.warm`).
 
 #: The commands that drive a host (the hosts layer), by module path: command
 #: -> (module, its add-parser function, its run function). The module is
@@ -40,6 +41,10 @@ def _host_command(command: str, part: int) -> Any:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from langslice.doors.cli.linear import add_run_parser
+    from langslice.doors.cli.mcp import add_mcp_parser
+    from langslice.doors.cli.transcripts import add_parser as add_session_end_parser
+
     parser = argparse.ArgumentParser(
         prog="langslice",
         description="Register brain sections to BrainGlobe atlases with VLM agents and image-gen",
@@ -101,10 +106,16 @@ def main(argv: list[str] | None = None) -> None:
     elif command in HOST_COMMANDS:
         _host_command(command, 1)(args)
     elif command == "run":
+        from langslice.doors.cli.linear import run_linear
+
         run_linear(args)
     elif command == "mcp":
+        from langslice.doors.cli.mcp import run_mcp
+
         run_mcp(args)
     elif command == "session-end":
+        from langslice.doors.cli.transcripts import run as run_session_end
+
         run_session_end(args)
     else:
         parser.print_help()

@@ -17,6 +17,11 @@ it when the agent's session ends (:mod:`langslice.doors.cli.transcripts`).
 Subcommands: ``env`` (make it when missing; its paths and packages),
 ``env install PACKAGE [PACKAGE ...]`` (pip requirement strings) and
 ``env remove``.
+
+``langslice-job FOLDER python SCRIPT [ARGS ...]`` (:func:`python`) runs the
+agent's script as the environment's python would (made first when missing):
+in the job's warm process when one answers (:mod:`langslice.doors.cli.warm`,
+with that python's import path), else that python itself.
 """
 
 from __future__ import annotations
@@ -71,9 +76,29 @@ def python_of(folder: Path) -> Path:
     return folder / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+#: Held while the environment is made (``logs/env.lock``): calls started
+#: together on a job without one make it once.
+ENV_LOCK = "env.lock"
+#: Written in ``env/`` once it is made, its packages installed.
+READY = ".langslice-ready"
+
+
 def ensure(layout: JobLayout) -> bool:
-    """Make the job's environment when it is missing; True when it was
+    """Make the job's environment when it is missing (once, under
+    :data:`ENV_LOCK`, however many calls ask at once); True when it was
     rebuilt from ``scripts/requirements.txt``."""
+    from filelock import FileLock
+
+    if (env_dir(layout) / READY).exists():
+        return False
+    layout.logs_dir.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(layout.logs_dir / ENV_LOCK), timeout=INSTALL_TIMEOUT_S):
+        built = _make(layout)
+        (env_dir(layout) / READY).touch()
+        return built
+
+
+def _make(layout: JobLayout) -> bool:
     folder = env_dir(layout)
     if python_of(folder).exists():
         return False
@@ -140,7 +165,7 @@ def describe(layout: JobLayout) -> dict[str, Any]:
     python = python_of(folder)
     return {
         "python": str(python),
-        "run": f"{python} scripts/<script>.py",
+        "run": f"langslice-job {layout.folder} python scripts/<script>.py [ARGS ...]",
         "install": f"langslice-job {layout.folder} env install PACKAGE [PACKAGE ...]",
         "packages": [f"{name}=={version}" for name, version in installed(folder)],
         "requirements": str(layout.folder / REQUIREMENTS),
@@ -170,3 +195,46 @@ def _site_packages(folder: Path) -> Path:
 def _parent_sites() -> list[str]:
     """The site-packages of the environment LangSlice runs in."""
     return [path for path in site.getsitepackages() if Path(path).is_dir()]
+
+
+#: ``python``'s usage, in its refusals.
+PYTHON_USAGE = "langslice-job FOLDER python SCRIPT [ARGS ...]"
+
+
+def python(folder: str, rest: list[str]) -> int:
+    """``langslice-job FOLDER python SCRIPT [ARGS ...]``: *rest* (the script
+    and its arguments, verbatim) run by the job's environment's python, the
+    environment made first when missing (:func:`ensure`). Its stdout, stderr
+    and exit code are the script's, as ``env/bin/python SCRIPT ARGS`` gives
+    them; in the job's warm process (:func:`langslice.doors.cli.warm.run_script`)
+    the script runs in this process with that python's import path, else this
+    process becomes that python. A call that cannot start the script prints
+    the envelope of its refusal (``NO_JOB``, ``BAD_ARGUMENTS``,
+    ``ENV_FAILED``) and returns its exit code."""
+    from langslice.doors.cli import warm
+    from langslice.doors.cli.envelope import emit
+    from langslice.doors.jobs import NoJob, find
+    from langslice.doors.trace import log_call
+
+    try:
+        layout = JobLayout(find(folder))
+    except NoJob as exc:
+        return emit(Envelope.failure("NO_JOB", str(exc)))
+    if not rest or rest[0].startswith("-"):
+        return emit(Envelope.failure(
+            "BAD_ARGUMENTS", f"python takes a script and its arguments: {PYTHON_USAGE} "
+            "(no interpreter options).", verb="python"))
+    try:
+        ensure(layout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return emit(Envelope.failure("ENV_FAILED", str(exc), verb="python"))
+    log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest),
+                               "warm": warm.in_child()})
+    interpreter = python_of(env_dir(layout))
+    if warm.in_child():
+        return warm.run_script(interpreter, rest)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":  # no exec there: the script's exit code is passed on
+        return subprocess.call([str(interpreter), *rest])
+    os.execv(interpreter, [str(interpreter), *rest])
