@@ -106,7 +106,11 @@ BRIEF.md             the agent CLI's brief (`langslice-job FOLDER brief`, `init`
 `state.json` stays the one working source; `formats.py` renders it for scripts and other programs, in BrainGlobe micrometres (the
 atlas's axis order, voxel `i`'s centre at `i * resolution`) and image-file
 pixels `[row, col]`, and never reads any of it back. `Job.checkpoint`
-rewrites `registration.json` atomically after the state
+writes the state and owes `registration.json`; it is rewritten atomically
+once, as the outermost hold of the job folder's lock ends
+(`FolderLock.before_release` calls `Job._write_derived`, still holding the
+lock), so a write that checkpoints twice in one hold (the write, then the
+deformations it made stale) maps the stack once, from the state it leaves
 (`formats.write_registration`, through `Job.workspace`, which `Job.open`,
 `Job.load` and the tool door set; a failure is logged, never raised): per
 section its parameters in public units (atlas, plane, orientation, the six
@@ -176,7 +180,9 @@ longer exist be taken over by the images it is opened with.
   lock is taken before the file lock, so threads of one process exclude
   each other even where the file lock cannot be used; a waiter given
   `abort` asks it every `ABORT_POLL_S` and raises `LockYielded` when it says
-  so (background work giving way, below).
+  so (background work giving way, below). `before_release`: callbacks run,
+  still holding it, as a thread's outermost hold ends (the job's derived
+  files, above; each `Job` registers its own when its `lock` is set).
 - `background.py` — `BackgroundWork` (`Job.background`, made on first
   use): long work that runs while the agent carries on. `start(kind,
   sections, land, wait_for_images=)` returns a `Work` at once (`id` `w1`,

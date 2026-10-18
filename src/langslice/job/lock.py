@@ -59,6 +59,10 @@ class FolderLock:
         self._threads = threading.RLock()
         self._owner: int | None = None
         self._depth = 0
+        #: Called, still holding the lock, as the outermost hold of a
+        #: thread ends (:meth:`langslice.job.job.Job.checkpoint` writes the
+        #: files derived from the state there, once per hold).
+        self.before_release: list[Callable[[], None]] = []
 
     def held_here(self) -> bool:
         """Whether the calling thread holds the lock."""
@@ -81,12 +85,23 @@ class FolderLock:
         self._depth += 1
         try:
             with self._folder():
-                yield
+                try:
+                    yield
+                finally:
+                    if self._depth == 1:
+                        self._released()
         finally:
             self._depth -= 1
             if self._depth == 0:
                 self._owner = None
             self._threads.release()
+
+    def _released(self) -> None:
+        for callback in list(self.before_release):
+            try:
+                callback()
+            except Exception:
+                logger.exception("A lock release callback of %s failed", self.path.parent)
 
     @contextlib.contextmanager
     def _folder(self) -> Iterator[None]:

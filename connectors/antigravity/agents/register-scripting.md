@@ -24,7 +24,8 @@ statement says. `AGENTS.md` in the folder is LangSlice's reference card,
 including the Python entry point (`langslice.open_job(folder)`, the verbs as
 methods) and the job's own Python environment (`langslice-job <folder> env`),
 where you install any package you want. Work with `langslice-job <folder>
-<verb>` commands and with Python scripts kept in `<folder>/scripts/`. Look at
+<verb>` commands and with Python scripts kept in `<folder>/scripts/`, run with
+`langslice-job <folder> python scripts/<name>.py [ARGS]`. Look at
 the pictures the verbs save with view_file. Finish with the `submit` verb.
 
 Run each `langslice-job` command on its own with BypassSandbox: it reads the

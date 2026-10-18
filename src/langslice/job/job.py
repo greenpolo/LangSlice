@@ -620,6 +620,9 @@ class Job:
         self.history = history or History(layout.history_dir)
         #: The pictures the model was shown, saved with their layers.
         self.views: ViewStore = ViewStore(layout)
+        #: ``registration.json`` and the landmark files are owed: the state
+        #: was checkpointed in the lock hold that is still open (:meth:`checkpoint`).
+        self._derived_due = False
         #: The job folder's write lock (:meth:`writing`), across processes.
         self.lock = FolderLock(layout.folder)
         #: Sections the host gave a damage note (``inputs.damaged``); the note
@@ -657,6 +660,18 @@ class Job:
         self._state_stamp = _stamp(self.checkpoint_path)
         self._undo_stamp = _stamp(self.undo_path)
         self.wire_views()
+
+    @property
+    def lock(self) -> FolderLock:
+        """The job folder's write lock; the files derived from the state are
+        written as its outermost hold ends (:meth:`checkpoint`)."""
+        return self._lock
+
+    @lock.setter
+    def lock(self, lock: FolderLock) -> None:
+        self._lock = lock
+        if self._write_derived not in lock.before_release:
+            lock.before_release.append(self._write_derived)
 
     def wire_views(self) -> None:
         """Number each saved picture's ``step`` with the undo history's depth
@@ -790,9 +805,15 @@ class Job:
     # --- checkpoint and observers ------------------------------------------------
 
     def checkpoint(self) -> None:
-        """Write the state (atomically, versioned) and its public rendering,
-        ``registration.json`` (:func:`langslice.job.formats.write_registration`;
-        a failure there is logged, never raised), then tell every observer."""
+        """Write the state (atomically, versioned), then tell every observer.
+
+        Its public rendering, ``registration.json``
+        (:func:`langslice.job.formats.write_registration`; a failure there is
+        logged, never raised), and the landmark files follow once, as the
+        outermost hold of the job folder's lock ends: a write that
+        checkpoints several times in one hold (the write, then the
+        deformations it made stale) maps the stack once, from the state it
+        leaves, still under the lock."""
         from langslice.core.landmarks import stale
 
         for record in self.state.slices:
@@ -803,9 +824,17 @@ class Job:
         with self.lock.held():
             write_checkpoint(self.state, self.checkpoint_path)
             self._state_stamp = _stamp(self.checkpoint_path)
-            formats.write_registration(self.layout, self.state, self.workspace)
-            formats.write_landmarks(self.layout, self.state)
+            self._derived_due = True
         self._notify()
+
+    def _write_derived(self) -> None:
+        """``registration.json`` and the landmark files of the state as it
+        stands, when a checkpoint owes them (called by the lock, held)."""
+        if not self._derived_due or not self.persist:
+            return
+        self._derived_due = False
+        formats.write_registration(self.layout, self.state, self.workspace)
+        formats.write_landmarks(self.layout, self.state)
 
     @contextlib.contextmanager
     def writing(self) -> Iterator[dict[str, Any] | None]:
