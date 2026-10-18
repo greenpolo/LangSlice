@@ -166,6 +166,30 @@ def _statement_md(label: str, spec: Any, with_notes: bool = False) -> str:
     return f"# Job statement: {label}\n\n{text}\n"
 
 
+def _cli_md(folder: Path) -> str:
+    """What the agent CLI gives a coding agent of a job: the job folder's
+    reference card (``AGENTS.md``) and the statement ``brief`` writes."""
+    import dataclasses
+
+    from langslice.doors.card import card_text
+    from langslice.doors.cli.brief import build
+    from langslice.doors.jobs import create
+
+    images = folder.parent / "cli_images"
+    if not images.exists():
+        write_sections(images)
+    spec = dataclasses.replace(_specs(images)["auto"], resume=False)
+    opened = create(spec, atlas_loader=atlas_loader(), emit=lambda _m: None, door="cli")
+    try:
+        card = card_text(opened.job.layout)
+        statement = build(opened, pictures=False).statement
+    finally:
+        opened.close()
+    norm = Normaliser(images)
+    return "\n".join(["# Agent CLI: reference card", "", norm.text(card), "",
+                      "# Agent CLI: brief statement", "", norm.text(statement), ""])
+
+
 #: Scripted refusals on the synthetic three-section job (no fits). Each is
 #: (label, spec key, calls); a call is (tool, args, kwargs).
 def _refusal_script() -> list[tuple[str, str, list[tuple[str, tuple[Any, ...], dict[str, Any]]]]]:
@@ -247,6 +271,7 @@ def _artifacts(folder: Path) -> dict[str, Callable[[], str]]:
             "position and angles frozen, tools disabled", specs["frozen"]),
         "job_statement_auto": lambda: _statement_md("auto picture size", specs["auto"]),
         "refusals": lambda: _refusals_md(folder),
+        "cli_card_and_brief": lambda: _cli_md(folder),
     }
 
 
@@ -266,6 +291,7 @@ def _normalised(text: str, folder_hint: Path | None = None) -> str:
     "declarations_full", "declarations_auto", "declarations_position", "declarations_host",
     "mcp_transform", "mcp_position", "job_statement_default", "job_statement_position",
     "job_statement_known_position", "job_statement_frozen", "job_statement_auto", "refusals",
+    "cli_card_and_brief",
 ])
 def test_agent_text_matches_snapshot(name: str, artifacts: dict[str, Callable[[], str]]) -> None:
     got = _normalised(artifacts[name]())
