@@ -19,7 +19,7 @@ written to `BRIEF.md` here. Open every picture, then work as it says.
 - `job.json`: settings (tasks, atlas, plane); `history/`: undo/redo, a file per step.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
   records), `image_correction/<key>/` (image-model traces), `views/`, and the
-  maps written at submit or by `export_maps` (on the image's working copy):
+  maps written by `export_maps` (on the image's working copy; submit does not write them):
   - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN outside the atlas.
   - `labels.tif`: uint32 atlas ids per pixel (0 outside the atlas); `labels_fiji.tif`
     + `labels.csv`: a uint16 index Fiji opens, and index -> id, acronym, name, RGB.
