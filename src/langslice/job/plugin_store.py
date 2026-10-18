@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +71,7 @@ def register_layer(
     ref = {
         "id": f"{tool}/{number}", "name": name, "kind": layer.kind, "frame": layer.frame,
         "file": layout.relative(stem.with_suffix(suffix)), "tool": tool, "call": call,
-        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "created": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if persist:
         manifest["tool"] = tool

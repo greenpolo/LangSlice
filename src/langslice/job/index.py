@@ -15,7 +15,7 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +68,7 @@ def register(
         "format_version": INDEX_FORMAT_VERSION, "job_id": job_id,
         "job_folder": str(Path(os.path.abspath(folder))),
         "host_channel": host_channel,
-        "created_at": created_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "created_at": created_at or datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if fallback is not None:
         record["fallback"] = fallback

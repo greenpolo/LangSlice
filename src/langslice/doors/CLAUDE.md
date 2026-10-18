@@ -162,7 +162,8 @@ the CLI is a process per call.
   `JobHandle`: every verb the job has as a method (the tool, same
   arguments, run inside `job.views.captured()`, then the pictures flushed,
   so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
-  `imported`, `close` (image-model calls settled, pictures flushed), a
+  `imported`, `section_maps(section, full_resolution=)` (a section's maps in
+  memory, `ops.exports.section_maps`), `close` (image-model calls settled, pictures flushed), a
   context manager. A method's reply is `library_reply`: a `Reply` (a dict
   of JSON values, `plain`; its status rows `core.status.with_uniform_rows`;
   the pictures' files under `artifacts` as the CLI lists them,

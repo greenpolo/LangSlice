@@ -73,7 +73,6 @@ def test_read_region_reads_a_window_of_any_tiff_layout(tmp_path: Path):
 
 
 def test_read_region_reads_a_coarser_pyramid_level(tmp_path: Path):
-    pytest.importorskip("zarr")  # without it (Python 3.10) a TIFF is decoded whole
     rgb = (np.random.default_rng(0).random((900, 1200, 3)) * 255).astype(np.uint8)
     with tifffile.TiffWriter(tmp_path / "pyramid.tif") as writer:
         writer.write(rgb, tile=(256, 256), subifds=1)

@@ -261,6 +261,7 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
     create(spec_for(images, ["nonlinear"], **_external()))
     with langslice.open_job(images) as job:
         assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
+        assert job.export_maps()["status"] == "ok"
         folder = Path(job.folder)
         flat_differs = 0
         for name, stem in zip(IDS, STEMS, strict=True):
@@ -270,6 +271,11 @@ def test_maps_of_a_mixed_stack_match_single_angle_maps(images):
             coords = tifffile.imread(folder / "sections" / stem / "coords.tif")
             np.testing.assert_allclose(np.moveaxis(np.squeeze(coords), 0, -1), single.coords,
                                        rtol=0, atol=1e-3, equal_nan=True)
+            # The library's in-memory maps are the files' arrays.
+            held = job.section_maps(name)
+            np.testing.assert_array_equal(held.labels, labels)
+            np.testing.assert_array_equal(np.moveaxis(held.coords, -1, 0), np.squeeze(coords))
+            assert held.residual is None
             # The plane matters: the flat plane gives other coordinates.
             from langslice.core.maps import section_frame
 

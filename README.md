@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/greenpolo/LangSlice/blob/main/LICENSE"><img alt="License: BSD-3-Clause" src="https://img.shields.io/badge/License-BSD%203--Clause-blue.svg"></a>
-  <a href="https://www.python.org/downloads/"><img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10+-blue.svg"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-blue.svg"></a>
   <a href="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml/badge.svg"></a>
   <a href="https://langslice.readthedocs.io"><img alt="Documentation Status" src="https://readthedocs.org/projects/langslice/badge/?version=latest"></a>
 </p>
@@ -41,7 +41,7 @@ langslice login        # ChatGPT sign-in; or set OPENAI_API_KEY / GEMINI_API_KEY
 On Windows, run the same `conda env create` and `conda activate` commands in
 Miniforge Prompt or PowerShell with conda initialized. Python 3.11 on Windows
 is tested in CI. Atlases are downloaded by BrainGlobe on first use into the
-user's `.brainglobe` folder. Python 3.10 or newer is required; the environment
+user's `.brainglobe` folder. Python 3.11 or newer is required; the environment
 includes the deformable engine (FireANTs on torch), the Claude Desktop server and the ABBA
 launcher.
 

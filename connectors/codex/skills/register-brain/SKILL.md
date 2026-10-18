@@ -75,8 +75,9 @@ When the subagent returns, do not trust its summary alone:
 - `langslice-job FOLDER status`: the job's state, tasks and open items;
   confirm the job was submitted.
 - Open `FOLDER/registration.json` (derived from `state.json`, the truth) and
-  the maps and exports under `FOLDER/exports/` (`quicknii.json`,
-  `visualign.json`) and each section's maps. `docs/file_formats.md` in the
+  the exports under `FOLDER/exports/` (`quicknii.json`, `visualign.json`).
+  Submit writes no per-section maps: `langslice-job FOLDER export_maps`
+  writes them when they are wanted. `docs/file_formats.md` in the
   LangSlice repository describes every file.
 - Look at the pictures the job saved (`views/`, paths in `artifacts`) by
   opening them, and tell the user in plain words what looks right and what does not.

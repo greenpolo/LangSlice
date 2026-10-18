@@ -699,7 +699,8 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
     assert tuple(frame.file_size) == (40, 30) and frame.rotation_deg == 0 and not frame.flip
     gy, gx = np.indices((30, 40), dtype=np.float64)
     nx, ny = native_points(frame, warp, gx, gy)
-    np.testing.assert_allclose(np.stack([nx, ny], -1), expected, atol=1e-4)
+    # Within the record's float16 storage of the field (well under 1e-3 native px).
+    np.testing.assert_allclose(np.stack([nx, ny], -1), expected, atol=1e-3)
     # The exported coordinate map is those native points in atlas micrometres.
     exported = export_maps(job, ctx, ids=["s0.png"])
     assert "s0.png" in exported.sections, exported
@@ -710,7 +711,8 @@ def test_a_written_map_comes_back_through_the_maps_and_the_coordinate_export(ima
                  + frame.native_to_um[:, 1] * expected[..., 0, None] + frame.native_to_um[:, 2])
     inside = np.isfinite(coords).all(axis=-1)
     assert inside.mean() > 0.5
-    np.testing.assert_allclose(coords[inside], native_um[inside], rtol=1e-5, atol=0.05)
+    # Within the field's float16 storage (under half a micrometre here).
+    np.testing.assert_allclose(coords[inside], native_um[inside], rtol=1e-5, atol=0.5)
     registration = json.loads((job.layout.folder / "registration.json").read_text())
     entry = next(item for item in registration["sections"] if item["id"] == "s0.png")
     assert entry["parameters"]["deformation"]["steps"][0]["method"] == "plugin:ripple_sections"

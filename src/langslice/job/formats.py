@@ -12,8 +12,8 @@ input:
   micrometres, plus the section's derived files. Small; rewritten atomically
   on every checkpoint (:func:`write_registration`, called by
   ``Job.checkpoint``).
-- per section (``sections/<name>/``), on submit and on demand
-  (``export_maps``, :func:`write_section_maps`): ``coords.tif``,
+- per section (``sections/<name>/``), on demand only (``export_maps``,
+  :func:`write_section_maps`; submit does not write them): ``coords.tif``,
   ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv`` (wherever the
   section maps into the atlas volume), ``residual.tif`` (only with a deformation)
   and ``maps.json`` (what the maps were written from: grid, matrix, the
@@ -87,9 +87,10 @@ CONVENTION = (
     "Image pixels are [row, col] of the image FILE as stored (no rotation or flip "
     "applied; those are in the mapping), pixel centres at integers, row 0 at the top. "
     "pixel_to_atlas_um maps [row, col, 1] to atlas micrometres under the linear "
-    "placement; with a deformation, coords.tif holds the complete mapping and "
-    "residual.tif the displacement d such that atlas_um = pixel_to_atlas_um @ "
-    "[row + d_row, col + d_col, 1] on that grid."
+    "placement; with a deformation, the maps export_maps writes hold the complete "
+    "mapping: coords.tif, and residual.tif the displacement d such that atlas_um = "
+    "pixel_to_atlas_um @ [row + d_row, col + d_col, 1] on that grid (a section's "
+    "maps entry is null until they are written)."
 )
 #: What ``registration.json`` says about itself.
 NOTE = (

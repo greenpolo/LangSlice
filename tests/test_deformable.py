@@ -298,11 +298,12 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     striatum = truth == STR
     assert (np.linalg.norm(second.field_mm - field, axis=-1)[striatum].mean()
             <= np.linalg.norm(first.field_mm - field, axis=-1)[striatum].mean() + 0.003)
+    first.save(tmp_path / "first")  # a record names its parent, saved beside it
     second.save(tmp_path / "rec")
     loaded = DeformableRecord.load(tmp_path / "rec")
     assert loaded.step == 1 and loaded.parent is not None and loaded.parent.step == 0
     assert np.array_equal(loaded.labels, second.labels)
-    assert np.allclose(loaded.field_mm, second.field_mm)
+    assert np.array_equal(loaded.field_mm, second.field_mm)  # saving rounded it
     assert np.allclose(loaded.placement.atlas_to_section, second.placement.atlas_to_section)
     meta = json.loads((tmp_path / "rec" / "record.json").read_text())
     meta["placement"]["origin"] = 0

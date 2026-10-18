@@ -38,8 +38,9 @@ Registration requirements still apply. See [registration tools](registration.md)
 `trace_borders` starts background work. Subsequent replies deliver its
 completion notice; leaving the `with` block or calling `close()` waits for
 pending traces and picture writes. `submit(...)` checks the job and writes
-maps and exports. `export_maps(full_resolution=False)` exports placed
-sections at any point without submitting; `True` uses the source pixels.
+the QuickNII and VisuAlign exports, not the per-section maps.
+`export_maps(full_resolution=False)` writes the maps of placed sections at
+any point, submitted or not; `True` uses the source pixels.
 Each traced section's image-model reply is exported with its maps, to
 `exports/traces/<name>.npz` ([format](file_formats.md#tracesnamenpz)).
 
@@ -156,7 +157,20 @@ when its credentials are present; otherwise it leaves tracing off.
 
 `langslice.coordinate_map(view_json)` returns a saved picture's pixel-to-atlas
 coordinates as a `(rows, cols, 3)` float32 array in atlas micrometres,
-including its deformation. `langslice.load_atlas(name)` loads a cached
+including its deformation.
+
+`job.section_maps(section, full_resolution=False)` returns one section's
+maps in memory, writing nothing: the arrays `export_maps` writes, as a
+`langslice.core.maps.SectionMaps`. `coords` is `(rows, cols, 3)` float32
+atlas micrometres (NaN outside the atlas volume), `labels` `(rows, cols)`
+uint32 atlas ids, `residual` `(rows, cols, 2)` float32 `(d_row, d_col)` in
+grid pixels over the whole grid (None without a deformation),
+`pixel_to_atlas_um` the grid's 3x3 matrix on `[row, col, 1]`, so that
+`coords = pixel_to_atlas_um @ [row + d_row, col + d_col, 1]`, plus
+`grid_size` (`(width, height)`), `um_per_px` and `full_resolution`. The grid
+is the section's working copy, or with `full_resolution=True` the image
+file's own pixels. A section without a placement raises `ValueError` saying
+why. `langslice.load_atlas(name)` loads a cached
 BrainGlobe atlas. The handle exposes `folder`, `imported`, `image_model`
 and, for lower-level work, `job`, `state` and `workspace`.
 

@@ -1,0 +1,19 @@
+The JSON schemas of OME-NGFF (OME-Zarr) 0.6, copied unmodified from
+https://github.com/ome/ngff-spec/tree/cf2d4e994981bc7a368c569b1622b32c6ab2aab1/schemas
+for tests/test_ome_warp.py, which validates the deformation records' metadata.
+
+The specification is distributed under the W3C Software and Document License
+(https://www.w3.org/copyright/software-license-2023/):
+
+  By obtaining and/or copying this work, you (the licensee) agree that you have
+  read, understood, and will comply with the following terms and conditions:
+  Permission to copy, modify, and distribute this work, with or without
+  modification, for any purpose and without fee or royalty is hereby granted,
+  provided that you include the following on ALL copies of the work or portions
+  thereof, including modifications: the full text of this NOTICE in a location
+  viewable to users of the redistributed or derivative work; any pre-existing
+  intellectual property disclaimers, notices, or terms and conditions; notice of
+  any changes or modifications.
+
+This specification includes material copied from or derived from the Community
+Specification Template. Copyright (c) 2025 W3C (MIT, ERCIM, Keio, Beihang).

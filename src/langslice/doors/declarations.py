@@ -780,8 +780,9 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
     ids, uint32), labels_fiji.tif + labels.csv (a uint16 index Fiji opens
     without loss, and its table), residual.tif (the deformation, when one
     is applied) and maps.json. Then exports/quicknii.json and
-    exports/visualign.json, and registration.json again. submit writes the
-    same files; nothing in the state changes.
+    exports/visualign.json, and registration.json again. Only this writes
+    the per-section maps (submit writes the exports alone); nothing in the
+    state changes.
 
     Args:
         slices: Filenames (the extension may be left off); empty is every

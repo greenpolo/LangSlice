@@ -1,7 +1,7 @@
 """Writing a job's derived files: each section's maps and the stack's exports.
 
 ``export_maps`` (a verb of the CLI and the library, not of the model-facing
-doors) and ``submit`` write, from the stack as it stands:
+doors) writes, from the stack as it stands:
 
 - per placed section (``sections/<name>/``, :mod:`langslice.job.formats`):
   ``coords.tif``, ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv``,
@@ -20,6 +20,11 @@ doors) and ``submit`` write, from the stack as it stands:
   sections, with a manifest each (:func:`langslice.job.plugin_store.export_layers`),
   only when a section has layers.
 
+``submit`` writes the stack's exports alone (:func:`export_stack`: the
+QuickNII and VisuAlign files, ``registration.json``, the plugin layers),
+never the per-section maps or trace replies. :func:`section_maps` computes
+one section's maps in memory, writing nothing.
+
 Nothing in the state changes (no undo step). A job that persists nothing
 (``Job.persist`` False, a dry run) writes nothing and reports what would be
 written.
@@ -37,6 +42,7 @@ from langslice.ops.refusal import unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.deformable.record import DeformableRecord
+    from langslice.core.maps import SectionMaps
     from langslice.core.state import SliceState, StackState
     from langslice.core.workspace import Workspace
     from langslice.job.job import Job
@@ -174,6 +180,46 @@ def export_maps(
     return Exported(files=files, sections=done, skipped=skipped,
                     full_resolution=bool(full_resolution), written=persist,
                     seconds=time.perf_counter() - started)
+
+
+def export_stack(job: Job, workspace: Workspace) -> Exported:
+    """Write the stack's exports and ``registration.json`` (no per-section
+    maps; see the module text), under the job lock, from the stack as it
+    stands. A job that persists nothing writes nothing (``written`` False)."""
+    from langslice.core.layers import atlas_facts
+
+    started = time.perf_counter()
+    if not job.persist:
+        return Exported(written=False)
+    with job.writing():
+        files = _write_exports(job, workspace, atlas_facts(workspace.atlas))
+    return Exported(files=files, seconds=time.perf_counter() - started)
+
+
+def section_maps(
+    job: Job, workspace: Workspace, section: str, *, full_resolution: bool = False,
+) -> SectionMaps:
+    """One section's maps as :func:`export_maps` writes them, in memory and
+    written nowhere (:class:`langslice.core.maps.SectionMaps`: ``coords``,
+    ``labels``, ``residual`` (None without a deformation), the grid's
+    ``pixel_to_atlas_um``, ``grid_size``, ``um_per_px``), from the stack as
+    it stands after a sync. ``UNKNOWN_SLICE_IDS`` for a name that is no
+    section's; ``ValueError`` saying why for a section without a placement,
+    or whose applied record or image file cannot be read."""
+    from langslice.core.maps import placement_problem, section_frame
+    from langslice.core.state import StackState
+
+    with job.writing():
+        state = StackState.from_dict(job.snapshot())
+    record = state.resolve(section)
+    if record is None:
+        raise unknown_sections(state, [str(section)])
+    problem = placement_problem(state, record)
+    if problem is not None:
+        raise ValueError(f"{record.id}: {problem}")
+    frame = section_frame(state, workspace, record)
+    warp, _stored = _warp(job, state, record)
+    return _section_maps(workspace, frame, warp, full_resolution)
 
 
 def _completed_trace(record: SliceState) -> dict[str, Any] | None:

@@ -183,9 +183,15 @@ def test_init_takes_a_long_inline_json(capsys, images):
 # --- what a finished job must hold ---------------------------------------------------------
 
 
-def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = ()) -> dict[str, Any]:
+def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = (),
+                    maps_exported: bool = False) -> dict[str, Any]:
     """Submitted, ``registration.json`` and the exports written, every
-    section mapped with its maps; the sections in *residual* carry a warp."""
+    section placed and without maps (submit writes none) unless the test
+    exported them (*maps_exported*); then, exported on demand
+    (``export_maps``), every section mapped with its maps; the sections in
+    *residual* carry a warp."""
+    import langslice
+
     document = json.loads((job_folder / "registration.json").read_text())
     assert document["submitted"] is True
     assert set(document["exports"]) == {"quicknii", "visualign"}
@@ -194,6 +200,14 @@ def assert_exported(job_folder: Path, *, residual: tuple[str, ...] = ()) -> dict
     for entry, stem in zip(document["sections"], STEMS, strict=True):
         assert entry["problem"] is None, entry
         assert entry["pixel_to_atlas_um"] is not None
+        if not maps_exported:
+            assert entry["maps"] is None
+            assert not (job_folder / "sections" / stem / "coords.tif").exists()
+    with langslice.open_job(job_folder) as job:
+        assert job.export_maps()["status"] == "ok"
+    document = json.loads((job_folder / "registration.json").read_text())
+    for entry, stem in zip(document["sections"], STEMS, strict=True):
+        assert entry["maps"]["current"] is True
         for name in ("coords.tif", "labels.tif", "maps.json"):
             assert (job_folder / "sections" / stem / name).is_file(), (stem, name)
         warped = entry["parameters"]["deformation"]
@@ -420,7 +434,7 @@ def test_4_nonlinear_verbs_called_directly_through_the_library(images):
         assert all((job.state.by_id(name).image_correction or {}).get("status") == "ok"
                    for name in (ID0, ID1))
         assert job.state.by_id(ID2).image_correction is None
-    assert_exported(images / "langslice", residual=IDS)
+    assert_exported(images / "langslice", residual=IDS, maps_exported=True)
 
 
 # --- 5. Nonlinear without an image model --------------------------------------------------

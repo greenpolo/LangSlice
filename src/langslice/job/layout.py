@@ -52,7 +52,7 @@ import re
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -358,7 +358,7 @@ class JobLayout:
         try:
             self.logs_dir.mkdir(parents=True, exist_ok=True)
             record = {"kind": kind, **fields,
-                      "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+                      "at": datetime.now(UTC).isoformat(timespec="seconds")}
             with (self.logs_dir / EVENTS_FILE).open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, default=str) + "\n")
         except OSError:
@@ -397,7 +397,7 @@ def write_job_file(layout: JobLayout, **fields: Any) -> dict[str, Any]:
 
     held = read_job_file(layout) or {}
     record = {**held, **fields, FORMAT_KEY: JOB_FORMAT_VERSION}
-    record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    record.setdefault("created_at", datetime.now(UTC).isoformat(timespec="seconds"))
     if layout.image_folder is not None:
         record["image_folder"] = stored_image_folder(layout)
     write_json_atomic(str(layout.job_file), dict(sorted(record.items())))

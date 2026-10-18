@@ -32,8 +32,9 @@ class Submitted:
     interval_breaks: list[str] = field(default_factory=list)
     #: Whether the corrected order was reversed to run the atlas way.
     reversed: bool = False
-    #: The maps and exports written after the step (``ops.exports``), when
-    #: the call had the workspace; None otherwise or when writing failed.
+    #: The stack's exports written after the step (``ops.exports.export_stack``;
+    #: no per-section maps), when the call had the workspace; None otherwise
+    #: or when writing failed.
     exported: Exported | None = None
 
 
@@ -88,9 +89,10 @@ def submit(
     noted, never asked of the agent), the cleaned *notes* and a
     ``submit: <summary>`` note, ``submitted``. Then every queued picture is
     written to the job folder before this returns, and, with *workspace*,
-    every placed section's maps and the stack's exports
-    (:func:`langslice.ops.exports.export_maps`; a failure there is logged,
-    the submit stands).
+    the stack's exports (:func:`langslice.ops.exports.export_stack`: QuickNII,
+    VisuAlign, ``registration.json``, plugin layers; a failure there is
+    logged, the submit stands). The per-section maps are not written: the
+    ``export_maps`` verb writes them on demand.
     """
     breaks = clean_breaks(job, interval_breaks)
     job.background.wait_all()
@@ -124,12 +126,12 @@ def submit(
     job.views.flush()
     exported = None
     if workspace is not None and job.persist:
-        from langslice.ops.exports import export_maps
+        from langslice.ops.exports import export_stack
 
         try:
-            exported = export_maps(job, workspace)
+            exported = export_stack(job, workspace)
         except Exception:  # the derived files must never undo a submit
-            logger.warning("Could not write the maps and exports at submit", exc_info=True)
+            logger.warning("Could not write the exports at submit", exc_info=True)
     return Submitted(summary=summary_text, notes=clean_notes,
                      interval_breaks=break_ids(state), reversed=reversed_order,
                      exported=exported)
