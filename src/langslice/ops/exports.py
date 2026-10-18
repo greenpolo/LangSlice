@@ -20,10 +20,10 @@ doors) writes, from the stack as it stands:
   sections, with a manifest each (:func:`langslice.job.plugin_store.export_layers`),
   only when a section has layers.
 
-``submit`` writes the stack's exports alone (:func:`export_stack`: the
-QuickNII and VisuAlign files, ``registration.json``, the plugin layers),
-never the per-section maps or trace replies. :func:`section_maps` computes
-one section's maps in memory, writing nothing.
+``submit`` writes the stack's exports (:func:`export_stack`: the QuickNII
+and VisuAlign files, ``registration.json``, the plugin layers, and the trace
+replies on each section's working-copy grid), never the per-section maps.
+:func:`section_maps` computes one section's maps in memory, writing nothing.
 
 Nothing in the state changes (no undo step). A job that persists nothing
 (``Job.persist`` False, a dry run) writes nothing and reports what would be
@@ -185,14 +185,32 @@ def export_maps(
 def export_stack(job: Job, workspace: Workspace) -> Exported:
     """Write the stack's exports and ``registration.json`` (no per-section
     maps; see the module text), under the job lock, from the stack as it
-    stands. A job that persists nothing writes nothing (``written`` False)."""
+    stands, and each placed section's completed trace reply on its working
+    copy's grid (``exports/traces/<name>.npz``, as :func:`export_maps`
+    writes it). A job that persists nothing writes nothing (``written``
+    False)."""
     from langslice.core.layers import atlas_facts
+    from langslice.core.maps import placement_problem, section_frame
+    from langslice.core.state import StackState
 
     started = time.perf_counter()
     if not job.persist:
         return Exported(written=False)
     with job.writing():
-        files = _write_exports(job, workspace, atlas_facts(workspace.atlas))
+        state = StackState.from_dict(job.snapshot())
+    files: list[tuple[str, str]] = []
+    for record in state.in_order():
+        if _completed_trace(record) is None or placement_problem(state, record) is not None:
+            continue
+        try:
+            size = section_frame(state, workspace, record).working_size
+        except (OSError, ValueError) as exc:
+            logger.warning("Could not export the trace reply of %s: %s", record.id, exc)
+            continue
+        files += _export_trace(job, workspace, state, record,
+                               (int(size[0]), int(size[1])), False)
+    with job.writing():
+        files += _write_exports(job, workspace, atlas_facts(workspace.atlas))
     return Exported(files=files, seconds=time.perf_counter() - started)
 
 
