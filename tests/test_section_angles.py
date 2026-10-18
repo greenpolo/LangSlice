@@ -240,6 +240,12 @@ def test_per_section_angles_are_kept_through_trace_fit_submit_and_export(images)
         assert {name: job.state.by_id(name).cutting_angles_deg for name in IDS} == (
             SECTION_ANGLES)
         folder = Path(job.folder)
+        # Submit writes the traced section's reply, never its maps;
+        # export_stack writes it again without submitting.
+        reply = folder / "exports" / "traces" / "s1.npz"
+        assert reply.is_file() and not (folder / "sections" / "s1" / "coords.tif").exists()
+        reply.unlink()
+        assert str(reply) in job.export_stack() and reply.is_file()
         # Each fitted record was fitted on its section's own plane.
         for name, stem in ((ID0, "s0"), (ID1, "s1")):
             records = [json.loads(path.read_text()) for path in

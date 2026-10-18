@@ -164,7 +164,8 @@ process forks for it, `cli/warm.py`).
   arguments, run inside `job.views.captured()`, then the pictures flushed,
   so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
   `imported`, `section_maps(section, full_resolution=)` (a section's maps in
-  memory, `ops.exports.section_maps`), `close` (image-model calls settled, pictures flushed), a
+  memory, `ops.exports.section_maps`), `export_stack()` (what `submit`
+  writes after its step, `ops.exports.export_stack`), `close` (image-model calls settled, pictures flushed), a
   context manager. A method's reply is `library_reply`: a `Reply` (a dict
   of JSON values, `plain`; its status rows `core.status.with_uniform_rows`;
   the pictures' files under `artifacts` as the CLI lists them,

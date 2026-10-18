@@ -170,7 +170,10 @@ grid pixels over the whole grid (None without a deformation),
 `grid_size` (`(width, height)`), `um_per_px` and `full_resolution`. The grid
 is the section's working copy, or with `full_resolution=True` the image
 file's own pixels. A section without a placement raises `ValueError` saying
-why. `langslice.load_atlas(name)` loads a cached
+why. `job.export_stack()` writes what `submit` writes after its step, without
+submitting (the QuickNII and VisuAlign exports, `registration.json`, the
+image-model trace replies; no per-section maps) and returns the files
+written. `langslice.load_atlas(name)` loads a cached
 BrainGlobe atlas. The handle exposes `folder`, `imported`, `image_model`
 and, for lower-level work, `job`, `state` and `workspace`.
 
