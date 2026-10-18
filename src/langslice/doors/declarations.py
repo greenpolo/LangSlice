@@ -539,7 +539,8 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
     over other anatomy, such as a whole hemisphere, the olfactory bulb or the
     cortex: the fits leave them out, and the anatomy around them fits
     cleanly. Tissue that is intact but shifted near its place is not damage;
-    left unmarked, the warp fits it. A marked region is never fitted, so
+    left unmarked, the warp fits it.[[?landmark_triangulation  Tissue shifted further is not
+    damage either: move it with landmarks.]] A marked region is never fitted, so
     intact tissue inside a mark goes unfitted too. When most of a large
     region is missing, marking the whole region keeps the anatomy around it
     safe. Small tears, bubbles, stains, low contrast and folds within an
@@ -632,7 +633,8 @@ def fireants_syn(
     from the section's current registration (its linear placement, and its
     deformation when it has one), so each fit builds on the one before;
     undo goes back. Fit the whole section first, then refine regions with
-    restrict_to. The section's marked damage regions are left out
+    restrict_to.[[?landmark_triangulation  A piece displaced more than about 400 um from its
+    place is moved with landmarks first.]] The section's marked damage regions are left out
     automatically. Needs a position and a transform. Applied as the
     section's deformation, one undoable write; a later change to the
     section's position, orientation, cutting angles or transform clears it.
@@ -800,6 +802,16 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
                   delete: list[str] = [], view: bool = True) -> dict[str, Any]:
     """Add, update or delete persistent corresponding landmarks. Does not apply a warp.
 
+    When a piece of tissue lies away from its place in the atlas outline (a
+    cerebellum or olfactory bulb pulled off across a gap, a shifted
+    hemisphere, a folded-back flap), move it with landmarks before a dense
+    fit: pair points on the piece with their places in the atlas, apply them
+    with landmark_triangulation[[?fireants_syn , then refine with fireants_syn, which
+    keeps the landmark move and finishes the fit. Rough pairs are enough.
+    fireants_syn alone moves such a piece only part of the way and stretches
+    borders across the gap. A piece within about 400 um of its place needs no
+    pairs: fireants_syn fits it alone]].
+
     Build corresponding pairs across the full section and atlas before calling
     landmark_triangulation to apply the set. Pair IDs are stable. Every batch
     is one undo step. Atlas and section endpoints are explicitly named.
@@ -828,7 +840,7 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     stays where it was. [[?mark_damage  An atlas region with no tissue on the
     section (torn or missing) takes no pair: mark it with mark_damage; a region
     only partly missing keeps its pairs on the part that is present. ]]Tissue with no
-    atlas counterpart (a detached fragment, debris) takes no pair either.
+    atlas counterpart (debris, or tissue from another section) takes no pair either.
     With no pairs and no delete, nothing is written and the reply lists the pairs.
 
     Args:
@@ -1029,11 +1041,18 @@ _UNCAPPED_DOCS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+#: How far a displaced piece lies from its place before a dense fit alone no
+#: longer reaches it, so landmarks move it first (adult mouse; sagittal and
+#: horizontal sections, 2026-10-17).
+LANDMARK_MOVE_UM = 400.0
+
 #: Distances a description states, as ``(text, adult mouse micrometres)`` per
 #: verb: worded for a job whose atlas brain is another size
 #: (:attr:`Variant.brain_scale`), the number times the scale.
 _SCALED_DOCS: dict[str, tuple[tuple[str, float], ...]] = {
     "elastix_affine": (("atlas within 300 um of them", DEFAULT_NEIGHBOURHOOD_UM),),
+    "fireants_syn": (("more than about 400 um from its", LANDMARK_MOVE_UM),),
+    "set_landmarks": (("within about 400 um of its", LANDMARK_MOVE_UM),),
 }
 
 
