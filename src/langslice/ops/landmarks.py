@@ -680,6 +680,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
                 runtime_s=time.monotonic() - started,
                 engine_version=scipy.__version__,
             ),
+            landmark_warp=True,
         )
         result.engine["name"] = "landmark_triangulation"
     except Refused:

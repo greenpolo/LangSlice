@@ -330,6 +330,9 @@ the CCFv3 grid extended 0.35 mm at the front; it downloads on first use.
 The reply reports displacement, fold fraction and plausibility flags, and
 shows the fitted overlay. These diagnostics report concerns rather than
 rejecting fits. Judge the overlay against internal tissue anatomy.
+The outsized-displacement flag counts only what the fit adds beyond the
+section's landmark warp (a deliberate landmark move is never flagged); with
+no landmark warp it is measured from the linear placement.
 Changing a section's position, orientation, cutting angles or linear
 transform clears its deformation; the reply lists affected sections.
 
