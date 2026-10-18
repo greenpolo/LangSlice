@@ -261,6 +261,15 @@ class JobHandle:
         return section_maps(self._opened.job, self._opened.ctx, section,
                             full_resolution=full_resolution)
 
+    def export_stack(self) -> list[str]:
+        """Write what ``submit`` writes after its step, without submitting: the
+        stack's exports, ``registration.json`` and each completed trace reply
+        (``ops.exports.export_stack``), never the per-section maps. Returns
+        the files written."""
+        from langslice.ops.exports import export_stack
+
+        return [path for path, _kind in export_stack(self._opened.job, self._opened.ctx).files]
+
     def close(self) -> None:
         """Finish the job's background work: its image-model calls land and
         its pictures are written. The job stays usable; a script that exits
