@@ -103,7 +103,6 @@ NOTE = (
 # --- the registration parameters ----------------------------------------------------
 
 
-
 @functools.lru_cache(maxsize=1)
 def source() -> dict[str, Any]:
     """The code this process runs, read once: the git commit of the LangSlice

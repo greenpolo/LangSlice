@@ -323,14 +323,19 @@ class DeformableRecord:
         return out
 
     @classmethod
-    def load(cls, directory: str | Path) -> DeformableRecord:
+    def load(cls, directory: str | Path,
+             _children: frozenset[str] = frozenset()) -> DeformableRecord:
         """The record saved in *directory*, its parent chain from the sibling
         folders ``record.json`` names; ``ValueError`` naming the
-        ``record.json`` that (or whose arrays) cannot be read."""
+        ``record.json`` that (or whose arrays) cannot be read, or whose chain
+        comes back to itself."""
         root = Path(directory)
         meta = cls._metadata(root)
+        if root.name in _children:
+            raise ValueError(f"{root / 'record.json'}: its parent chain comes back to it")
         # A parent that cannot be read raises naming its own record.json.
-        parent = None if meta["parent"] is None else cls.load(root.parent / str(meta["parent"]))
+        parent = None if meta["parent"] is None else cls.load(
+            root.parent / str(meta["parent"]), _children | {root.name})
         try:
             arrays = ome_warp.read(root)
             return cls(
