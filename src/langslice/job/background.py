@@ -14,6 +14,8 @@ and keeps a notice per finished work until it is asked for:
 - :meth:`BackgroundWork.notices` pops the work finished since the last call
   (a door puts their notices at the head of its next reply);
 - :meth:`BackgroundWork.running` lists the work still running (status);
+- :meth:`BackgroundWork.busy` names the running work on sections: a write to
+  such a section is refused, ``SECTION_BUSY`` (:meth:`langslice.job.job.Job.busy_refusal`);
 - :meth:`BackgroundWork.wait_all` waits for every piece (submit).
 
 The callable is the caller's (an operation's fit), so this module imports
@@ -31,7 +33,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -48,6 +50,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RUNNING, DONE, FAILED = "running", "done", "failed"
+#: The refusal of a write to a section that running work will write when it lands.
+SECTION_BUSY = "SECTION_BUSY"
 #: A piece of work's states.
 STATUSES = (RUNNING, DONE, FAILED)
 #: Work threads one job runs at once. Each mostly waits for an image-model
@@ -192,6 +196,19 @@ class BackgroundWork:
                 return work
         return None
 
+    def busy(self, sections: Iterable[str]) -> dict[str, Work]:
+        """The running work on each of *sections* that has one, by section,
+        leaving out the work whose landing is running on the calling thread
+        (its own writes are what it was started for)."""
+        landing = getattr(_WORKER, "landing", None)
+        found: dict[str, Work] = {}
+        for section in sections:
+            for work in self.running():
+                if section in work.sections and work.id != landing:
+                    found[str(section)] = work
+                    break
+        return found
+
     def notices(self) -> list[Work]:
         """The work finished since the last call, each handed out once."""
         with self._lock:
@@ -283,6 +300,8 @@ class BackgroundWork:
         if retry:
             for section in entry.wait_for:
                 self._job.wait_image_job(section, None)
+        outer = getattr(_WORKER, "landing", None)
+        _WORKER.landing = entry.work.id
         try:
             with self._pictures(entry) as drawn:
                 landed = entry.land()
@@ -294,6 +313,8 @@ class BackgroundWork:
         except Exception as exc:
             logger.warning("Background work %s failed", entry.work.id, exc_info=True)
             landed = Landed(status=FAILED, text=f"{type(exc).__name__}: {exc}")
+        finally:
+            _WORKER.landing = outer
         self._finish(entry, landed)
 
     @contextmanager

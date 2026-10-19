@@ -59,7 +59,7 @@ another version is refused. The same names are importable from
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
-| `task` | `position`, `transform`, `nonlinear` or `None`: the tool exists only while that task is on |
+| `task` | `position`, `transform`, `nonlinear` or `None`: the tool exists only while that task is on; `angles`: while the agent may write the cutting angles, as `position_sections` does (the position task on, or the transform task leaving the angles to the agent) |
 | `writes` | The section properties it may write (`position`, `angles`, `orientation`, `affine`, `deformation`). A write outside this set is refused; a tool that writes only properties frozen on every section is not offered |
 | `long` | Computes outside the job's write lock and applies under it (see [long tools](#long-tools-and-stale_input)) |
 | `limits` | The most one call takes: `{"sections": 4}` refuses a longer `sections` argument (`TOO_MANY_SECTIONS`); `{"pictures": 2}` sends at most two pictures |
@@ -98,7 +98,7 @@ One per call; a handler must not keep it.
 | `ctx.section_raster(id, level=, channels=)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
 | `ctx.section_image(id, ...)` | Only the `array` of `section_raster`. **Its pixels are not `section_px`** (see [frames](#frames)) |
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
-| `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `excluded` (the native plane's pixels of the section's marked damage regions, sides included, which every native fit leaves out; None when none are marked), `damage_zone` (`excluded` widened by the margin the native fits also leave out of their comparison, 0.1 mm scaled to the atlas's brain size), `stain` with `stain=True` (the section's preprocessed channel on the grid of `image`, the picture the native fits read), `plane` (the plane in atlas micrometres) |
+| `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `excluded` (the native plane's pixels of the section's marked damage regions, sides included, which every native fit leaves out; None when none are marked), `damage_zone` (`excluded` widened by the margin the native fits also leave out of their comparison, 0.1 mm scaled to the atlas's brain size), `stain` with `stain=True` (the section's preprocessed channel on the grid of `image`, the picture the native fits read), `applied_map` (the native atlas pixel of every fit-grid pixel through the section's current registration, its deformation included, `(H, W, 2)` as `deformation_from_map` takes it: where an engine that builds on a landmark warp or an earlier fit starts; None without a deformation), `plane` (the plane in atlas micrometres) |
 | `ctx.atlas_slice(id, kind=)` | One of those atlas planes |
 | `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, appearance, damage marks); for [`expect=`](#long-tools-and-stale_input) |
 | `ctx.read_registration(path)` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements` (`id`, `position_mm`, `pitch_deg`, `yaw_deg`), nothing written |
@@ -111,6 +111,14 @@ and gives a `TransformProposal`: the transform as an Elastix fit would store it
 `record`), refining the section's current placement.
 `ctx.transform_from_params(id, params)` does the same for six normalized
 numbers `[a, b, tx, c, d, ty]`. `proposal.row()` is a row for `set_transforms`.
+
+`ctx.angles_from_plane(normal_um, point_um)` takes a plane in atlas
+micrometres (a normal and a point on it, the atlas's axis order, as
+`fit_frame.plane` gives one: its normal is `dx` x `dy`) and gives the
+placement that says it in the stack's conventions: `position_mm` (where the
+plane crosses the volume's in-plane centre), `pitch_deg` and `yaw_deg`.
+Nothing is written; a plane tilted past what a cutting angle can say is
+`BAD_PLANE`.
 
 `ctx.deformation_from_map(id, native_xy, note="", meta=None)` takes a
 deformable method's result: `native_xy` is a float array `(H, W, 2)`, `H` by
@@ -176,11 +184,33 @@ A tool declared `long=True` is not run under the job's write lock. It reads
 `ctx.section_inputs(id)` for each section first, computes (an engine can take
 minutes while the agent or other commands keep working), then writes with
 `expect={id: digest}` (for a deformation, the digest without
-`deformation=True`: it covers the placement the map was computed on). A section whose placement, appearance or damage changed
+`deformation=True` covers the placement the map was computed on; with it,
+the deformation it built on too). A section whose placement, appearance or damage changed
 meanwhile comes back as that section's row `STALE_INPUT`, nothing written for
 it; the others are written. A long call's writes are one undo step too, unless
 another write landed on the job between two of them: then they stay separate
 steps, so `undo` never takes back a write that was not the call's.
+
+### Background work
+
+`ctx.start_work(sections, land)` starts `land` as a piece of the job's
+background work on `sections` and returns its id (`w3`) at once; the tool
+returns meanwhile (a tool that does is declared `long=True`). On a work
+thread `land(ctx)` gets a context of its own, computes and writes through it
+(`with ctx.writing():` makes its writes one undo step; pass `expect=` digests
+taken at the start), and returns a `ToolResult` whose `reply["notice"]` is
+the notice's text, the rest of the reply its result, and whose pictures are
+saved and numbered with the job's. A `ToolError` or refusal it raises fails
+the work with its message. As for `trace_borders`: the next tool reply
+carries the notice under `background` with the pictures; `status` lists the
+work still running; `submit` waits for it; the agent session waits for it
+when the model ends its turn; an agent-CLI call that started work waits for
+it before the process ends and puts the notice on its reply.
+
+While the work runs, any write to its sections, by any tool, native or
+plugin, is refused `SECTION_BUSY` naming the work (a call over several
+sections gives that section's row); so is starting work on a section that
+already has some. The work's own landing is not refused.
 
 ## Layers
 

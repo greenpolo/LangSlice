@@ -1,4 +1,5 @@
-"""Tool plugins: loading, gating, writes, layers, doors, provenance, invariance.
+"""Tool plugins: loading, gating, writes, layers, doors, provenance, invariance,
+background work and the SECTION_BUSY refusal.
 
 The example plugin (``tests/fixtures/example_plugin.py``: a read tool and a
 write tool) and small plugins written per test go through the same path a
@@ -21,7 +22,7 @@ from PIL import Image
 
 from langslice.core import plugins as core_plugins
 from langslice.core.plugins import Layer, PluginError
-from langslice.core.spec import JobSpec
+from langslice.core.spec import JobSpec, TransformSpec
 from langslice.core.toolset import tools_for, valid_names
 from langslice.doors.declarations import FULL, Variant, declaration
 from langslice.doors.tools.toolbox import build_tools
@@ -1179,3 +1180,209 @@ def test_a_mark_made_from_section_image_pixels_is_drawn_on_the_feature(
     size = max(plain.shape[:2])
     assert np.hypot(*(centre(drawn, rgb(0)) - feature)) < 0.03 * size  # the point
     assert np.hypot(*(centre(drawn, rgb(2)) - feature)) < 0.03 * size  # the mask's outline
+
+
+# --- background work, SECTION_BUSY, the applied map, planes, the angles task ------------------
+
+
+LATER = '''
+import threading
+from langslice.plugin_api import ToolResult, ToolSpec
+from tests.fixtures.example_plugin import ripple_map
+
+GATE = threading.Event()
+SEEN = {}
+
+def stub(sections: list[str]) -> dict:
+    """Ripple sections in the background.
+
+    Args:
+        sections: Filenames.
+    """
+
+def handler(ctx, sections):
+    expect = {name: ctx.section_inputs(name, deformation=True) for name in sections}
+    SEEN["applied"] = {name: ctx.fit_frame(name).applied_map is not None for name in sections}
+
+    def land(lctx):
+        GATE.wait(10)
+        rows = [{"id": name, "map": ripple_map(lctx.fit_frame(name), 1.0)} for name in sections]
+        done = lctx.set_deformations(rows, expect=expect)
+        image = lctx.overlay_picture(sections[0])
+        return ToolResult({"notice": f"rippled {', '.join(done.written)}.",
+                           "written": done.written}, [image])
+
+    return ToolResult({"work": ctx.start_work(sections, land)})
+
+def tools():
+    return [ToolSpec("ripple_later", stub, handler, kind="write", group="Nonlinear",
+                     task="nonlinear", writes=("deformation",), long=True)]
+'''
+
+
+@pytest.fixture
+def later(make, images: Path):
+    import sys
+
+    ref = make("ripple_later_plugin", LATER)
+    state, ctx, box = warp_box(images, ref)
+    module = sys.modules["ripple_later_plugin"]
+    module.GATE.clear()
+    yield state, box, module
+    module.GATE.set()
+    box.job.background.wait_all()
+
+
+def test_plugin_work_starts_at_once_lands_as_its_own_step_and_its_notice_comes_next(later):
+    state, box, module = later
+    job = box.job
+    depth = len(job.undo_stack)
+    reply = call(box, "ripple_later", sections=["s0.png"])
+    assert reply["status"] == "ok" and reply["work"] == "w1"
+    assert job.background.get("w1").status == "running"
+    assert state.by_id("s0.png").deformation is None
+    assert call(box, "status")["background_running"][0]["kind"] == "ripple_later"
+    module.GATE.set()
+    job.background.wait_all()
+    assert state.by_id("s0.png").deformation is not None
+    assert len(job.undo_stack) == depth + 1
+    after = call(box, "status")
+    notice = after["background"][0]
+    assert notice.startswith("w1 ripple_later of s0.png finished: rippled s0.png.")
+    assert any(item.get("work") == "w1" for item in after.get("pictures", []))
+    call(box, "undo")
+    assert state.by_id("s0.png").deformation is None
+
+
+def test_a_write_to_a_section_with_work_running_is_refused_section_busy(later):
+    state, box, module = later
+    call(box, "ripple_later", sections=["s0.png"])
+    busy = call(box, "mark_damage", section="s0.png", regions=[])
+    assert busy["error"] == "SECTION_BUSY" and busy["work"] == ["w1"]
+    assert "ripple_later is running on s0.png (work w1)" in busy["message"]
+    nudged = call(box, "nudge_sections", sections=["s0.png", "s1.png"], dx=0.01)
+    rows = {row["id"]: row for row in nudged["rows"]}
+    assert rows["s0.png"]["error"] == "SECTION_BUSY" and rows["s1.png"]["status"] == "ok"
+    again = call(box, "ripple_later", sections=["s0.png"])
+    assert again["error"] == "SECTION_BUSY"
+    angles = call(box, "position_sections", cutting_angles={"pitch_deg": 1.0, "yaw_deg": 0.0})
+    assert angles["error"] == "SECTION_BUSY"  # one plane for the stack, s0 among it
+    module.GATE.set()
+    box.job.background.wait_all()
+    assert state.by_id("s0.png").deformation is not None  # its own landing is not refused
+    assert call(box, "mark_damage", section="s0.png", regions=[])["status"] == "ok"
+
+
+PROBE = '''
+import numpy as np
+from langslice.plugin_api import ToolResult, ToolSpec
+FRAMES = {}
+def stub(section: str) -> dict:
+    """Read a section's frame.
+
+    Args:
+        section: Filename.
+    """
+def handler(ctx, section):
+    frame = FRAMES[section] = ctx.fit_frame(section)
+    plane = frame.plane
+    found = ctx.angles_from_plane(np.cross(plane["dx"], plane["dy"]), plane["center_um"])
+    return ToolResult({"applied": frame.applied_map is not None, **found})
+def tools():
+    return [ToolSpec("frame_probe", stub, handler, kind="read", group="Common")]
+'''
+
+
+def test_the_fit_frame_carries_the_applied_deformation_as_a_native_map(make, images: Path):
+    import sys
+
+    from tests.fixtures.example_plugin import ripple_map
+
+    ref = make("frame_probe_plugin", PROBE)
+    _state, _c, box = warp_box(images, ref)
+    frames = sys.modules["frame_probe_plugin"].FRAMES
+    assert call(box, "frame_probe", section="s0.png")["applied"] is False
+    call(box, "ripple_sections", sections=["s0.png"], amplitude_px=1.5)
+    assert call(box, "frame_probe", section="s0.png")["applied"] is True
+    held = frames["s0.png"]
+    expected = ripple_map(held, 1.5)
+    assert held.applied_map.shape == expected.shape
+    assert np.abs(held.applied_map - expected).max() < 0.05
+
+
+def test_a_plane_from_the_fit_frame_gives_back_the_stacks_placement(make, images: Path):
+    ref = make("frame_probe_plugin", PROBE)
+    state, _c, box = warp_box(images, ref)
+    assert call(box, "position_sections",
+                cutting_angles={"pitch_deg": 4.0, "yaw_deg": -3.0})["status"] == "ok"
+    found = call(box, "frame_probe", section="s1.png")
+    assert found["pitch_deg"] == pytest.approx(4.0, abs=1e-6)
+    assert found["yaw_deg"] == pytest.approx(-3.0, abs=1e-6)
+    assert found["position_mm"] == pytest.approx(state.by_id("s1.png").position_mm, abs=1e-6)
+
+
+ANGLE_TOOL = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+def stub():
+    """Look at the angles. Writes nothing."""
+def handler(ctx):
+    return ToolResult({})
+def tools():
+    return [ToolSpec("angle_look", stub, handler, kind="read", group="Positioning",
+                     task="angles")]
+'''
+
+
+def test_an_angles_tool_exists_whenever_the_agent_may_write_the_cutting_angles(make,
+                                                                               images: Path):
+    ref = make("angle_look_plugin", ANGLE_TOOL)
+    _s, _c, box = box_of(images, ref)
+    assert "angle_look" in enabled(box.job.spec)
+    _s, _c, only_transform = box_of(images, ref, tasks=["transform"])
+    assert "angle_look" not in enabled(only_transform.job.spec)
+    _s, _c, angles_free = box_of(images, ref, tasks=["transform"],
+                                 transform=TransformSpec(angles=True))
+    assert "angle_look" in enabled(angles_free.job.spec)
+
+
+MARK_LATER = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+def stub(section: str) -> dict:
+    """Move a section to 3.3 mm in the background.
+
+    Args:
+        section: Filename.
+    """
+def handler(ctx, section):
+    def land(lctx):
+        lctx.set_positions([{"id": section, "position_mm": 3.3}])
+        return ToolResult({"notice": "moved."})
+    return ToolResult({"work": ctx.start_work([section], land)})
+def tools():
+    return [ToolSpec("mark_later", stub, handler, kind="write", group="Common", long=True,
+                     writes=("position",))]
+'''
+
+
+def test_the_agent_cli_waits_for_work_a_plugin_verb_started_and_brings_its_notice(
+        make, images: Path, capsys, monkeypatch):
+    import json
+
+    from langslice.doors.cli.jobcli import main
+    from tests.cli_child import install
+
+    ref = make("mark_later_plugin", MARK_LATER)
+    job = _library_job(images, plugins=[ref])
+    folder = str(job.folder)
+    job.close()
+    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda _n: _slab())
+    install(lambda _n: _slab(), monkeypatch.setattr)
+    code = main([folder, "mark_later", "--args", json.dumps({"section": "s0.png"})])
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert code == 0 and out["ok"] is True, out
+    assert out["result"]["background"][0].endswith("mark_later of s0.png finished: moved.")
+    import langslice
+
+    again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
+    assert again.state.by_id("s0.png").position_mm == pytest.approx(3.3)
+    again.close()

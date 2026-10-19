@@ -62,20 +62,23 @@ def unknown_sections(state: StackState, refs: Any) -> Refused:
 
 
 def check_frozen(job: Job, section_ids: Collection[str], *properties: str) -> None:
-    """Raise :class:`Refused` ``FROZEN`` when a write to *properties* of any of
-    *section_ids* would change what the job froze: the whole call refuses,
-    nothing written."""
-    found = job.frozen_refusal(section_ids, *properties)
+    """Raise :class:`Refused` ``SECTION_BUSY`` when background work is running
+    on any of *section_ids* (:meth:`~langslice.job.job.Job.busy_refusal`), else
+    ``FROZEN`` when a write to *properties* of any of them would change what
+    the job froze: the whole call refuses, nothing written."""
+    found = job.busy_refusal(section_ids) or job.frozen_refusal(section_ids, *properties)
     if found is not None:
         raise Refused(found.pop("error"), **found)
 
 
 def frozen_row(job: Job, section_id: str, *properties: str) -> dict[str, Any] | None:
-    """One section's ``FROZEN`` row (``id``, ``status`` ``error``, ``error``,
-    ``properties``, ``message``), as a per-section answer carries it, when a
-    write to *properties* would change what the job froze there, else None."""
-    found = job.frozen_refusal([section_id], *properties)
+    """One section's ``SECTION_BUSY`` or ``FROZEN`` row (``id``, ``status``
+    ``error``, ``error``, ``message``; ``work`` or ``properties``), as a
+    per-section answer carries it, as :func:`check_frozen` decides, else None."""
+    found = job.busy_refusal([section_id]) or job.frozen_refusal([section_id], *properties)
     if found is None:
         return None
-    return {"id": section_id, "status": "error", "error": found["error"],
-            "properties": found["properties"], "message": found["message"]}
+    extra = ({"work": found["work"]} if "work" in found
+             else {"properties": found["properties"]})
+    return {"id": section_id, "status": "error", "error": found["error"], **extra,
+            "message": found["message"]}

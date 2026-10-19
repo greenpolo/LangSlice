@@ -571,7 +571,8 @@ The atlas determines which borders exist even when tissue boundaries are
 indistinct. Only physically missing tissue justifies omitting them.
 
 The tool runs in the background. `status` lists pending work, later tool
-replies deliver completed results, and `submit` waits for them. A completed
+replies deliver completed results, and `submit` waits for them. While it
+runs, a write to its section by any tool is refused `SECTION_BUSY`. A completed
 fit is its own undo step. Identical inputs reuse the saved reply; a changed
 placement or preprocessing recipe requires a new trace. Results whose
 inputs changed while they ran are refused as `STALE_INPUT`.
@@ -596,7 +597,9 @@ across sessions. Their reply says which step it took back or forward: `undone`
 (or `redone`) holds the `sections` it touched and the `fields` it changed,
 then the status rows of those sections and the remaining depth. Change tools return review pictures unless `view=False`;
 a host's `force_view=True` (`linear run --force-view`) forces `view=True`, and the argument is not offered. It defaults to false, so
-the agent may suppress a picture. Long fits compute outside
+the agent may suppress a picture. Work running in the background
+(`trace_borders`, a plugin's) holds its sections: any write to them is refused
+`SECTION_BUSY`, naming the work, until it lands. Long fits compute outside
 the write lock and recheck inputs before applying. A conflicting edit
 produces `STALE_INPUT` for that section; unaffected results still apply.
 

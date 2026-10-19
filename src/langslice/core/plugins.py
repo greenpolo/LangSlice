@@ -24,13 +24,17 @@ from typing import Any
 import numpy as np
 
 from langslice.core import frozen as freeze
-from langslice.core.toolset import GROUPS, TOOLS, Group, Kind, ToolDef
+from langslice.core.toolset import GROUPS, TOOLS, Group, Kind, ToolDef, positions_on
 
 #: The plugin API's version. A plugin that names another is refused.
 PLUGIN_API_VERSION = 1
 
 #: The tasks a plugin tool can belong to (the tool is on only while it is).
 TASKS: tuple[str, ...] = tuple(freeze.TASK_PROPERTIES)
+#: A tool's ``task`` beyond the tasks: ``angles`` exists whenever the agent may
+#: write the cutting angles (as ``position_sections`` does: the position task
+#: on, or the transform task leaving the angles to the agent).
+ANGLES = "angles"
 
 #: A tool name: a Python identifier, so a script can call it as a method.
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -89,7 +93,8 @@ class ToolSpec:
     kind: Kind
     group: Group
     #: ``position`` | ``transform`` | ``nonlinear`` | None: the tool exists only
-    #: while that task is on.
+    #: while that task is on; ``angles``: while the agent may write the cutting
+    #: angles (as ``position_sections``).
     task: str | None = None
     #: The section properties the tool may write (``langslice.core.frozen.PROPERTIES``).
     writes: tuple[str, ...] = ()
@@ -258,8 +263,9 @@ def check_tool(tool: Any, *, taken: Sequence[str] = ()) -> str | None:
         return f"{where}: kind is read or write; got {tool.kind!r}"
     if tool.group not in GROUPS:
         return f"{where}: group is one of {', '.join(GROUPS)}; got {tool.group!r}"
-    if tool.task is not None and tool.task not in TASKS:
-        return f"{where}: unknown task {tool.task!r}; the tasks are {', '.join(TASKS)}"
+    if tool.task is not None and tool.task not in (*TASKS, ANGLES):
+        return (f"{where}: unknown task {tool.task!r}; the tasks are {', '.join(TASKS)} "
+                f"(or {ANGLES!r})")
     if not callable(tool.handler):
         return f"{where}: the handler is not callable"
     if not callable(tool.stub):
@@ -290,6 +296,8 @@ def tool_def(tool: ToolSpec) -> ToolDef:
     task = tool.task
 
     def when(spec: Any, _task: str | None = task) -> bool:
+        if _task == ANGLES:
+            return positions_on(spec)
         return _task is None or bool(spec.has(_task))
 
     return ToolDef(tool.name, tool.kind, tool.group, when=when, long=tool.long,

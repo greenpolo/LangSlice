@@ -626,7 +626,8 @@ you can carry on with other sections. When the work finishes, the next
 tool reply starts with its notice: the fit's numbers, then its
 pictures (the fitted borders, and the trace on the section), each with
 its number and caption. status
-lists the work still running; submit waits for it.
+lists the work still running; submit waits for it. A write to this
+section is refused until the work lands.
 
 Args:
     section: Filename (the extension may be left off).
