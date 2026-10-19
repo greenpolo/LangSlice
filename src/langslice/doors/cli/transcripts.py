@@ -27,9 +27,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-#: A job folder named on a command line or in a script.
+#: A job folder named on a command line or in a script; unquoted, a Windows
+#: path holds backslashes, which a POSIX shell reads as escapes.
+_UNQUOTED = r"[^\s\"';|&]+" if sys.platform == "win32" else r"[^\s\"'\\;|&]+"
 FOLDER_PATTERNS = (
-    re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|([^\s"'\\;|&]+))"""),
+    re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
     re.compile(r"""open_job\(\s*(?:r?"([^"]+)"|r?'([^']+)')"""),
 )
 #: A submit, on the command line or through the library.
@@ -72,8 +74,9 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
     session = str(hook.get("agent_id") or hook.get("conversationId")
                   or hook.get("session_id") or transcript.stem)
     copies = []
-    submitted = SUBMIT_PATTERN.search(_unescaped(text)) is not None
-    for folder in job_folders(text, Path(str(hook.get("cwd") or "."))):
+    said = _said(text)
+    submitted = SUBMIT_PATTERN.search(said) is not None
+    for folder in job_folders(said, Path(str(hook.get("cwd") or "."))):
         layout = JobLayout(folder)
         target = layout.trace_dir / f"{harness}_{_safe(session)}.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -97,14 +100,15 @@ def transcript_path(hook: dict[str, Any]) -> Path | None:
 
 
 def job_folders(text: str, cwd: Path) -> list[Path]:
-    """The job folders *text* names (each a job folder, or the image folder
-    beside one), in the order first named."""
+    """The job folders *text* (a transcript's strings, :func:`_said`) names
+    (each a job folder, or the image folder beside one), in the order first
+    named."""
     from langslice.doors.jobs import NoJob, find
 
     found: list[Path] = []
     seen: set[str] = set()
     for pattern in FOLDER_PATTERNS:
-        for match in pattern.finditer(_unescaped(text)):
+        for match in pattern.finditer(text):
             name = next(group for group in match.groups() if group is not None)
             if name in NOT_FOLDERS or name in seen or name.startswith("-"):
                 continue
@@ -143,9 +147,27 @@ def slim(value: Any) -> Any:
     return value
 
 
-def _unescaped(text: str) -> str:
-    """JSON-escaped command lines read as typed (quotes, backslashes)."""
-    return text.replace('\\"', '"').replace("\\\\", "\\")
+def _said(text: str) -> str:
+    """Every string of a JSON-lines transcript as it was typed, one per line
+    (a line that is not JSON as it is)."""
+    out: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            out.append(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for line in text.splitlines():
+        try:
+            walk(json.loads(line))
+        except ValueError:
+            out.append(line)
+    return "\n".join(out)
 
 
 def _safe(name: str) -> str:
