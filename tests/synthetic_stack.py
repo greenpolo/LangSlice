@@ -23,6 +23,7 @@ from PIL import Image
 
 #: Stand-in for the temporary folder every run works in.
 ROOT_TOKEN = "<ROOT>"
+ROOTED_PATH = re.compile(re.escape(ROOT_TOKEN) + r"[^\s`'\"]*")
 #: Stand-in for a hex digest.
 HEX_TOKEN = "<hex>"
 #: Hex runs this long or longer are digests (cache keys and record folders
@@ -172,6 +173,8 @@ class Normaliser:
     def text(self, value: str) -> str:
         for root in self.roots:
             value = value.replace(root, ROOT_TOKEN)
+        # A path under the root is written with "/" on every platform.
+        value = ROOTED_PATH.sub(lambda m: m.group(0).replace("\\", "/"), value)
         return HEX_RUN.sub(HEX_TOKEN, value)
 
     def data(self, value: Any, key: str = "") -> Any:

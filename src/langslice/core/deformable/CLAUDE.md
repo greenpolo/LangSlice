@@ -11,7 +11,9 @@ markers read an applied record (`core/maps.py`); the ABBA connector receives
 it as landmark pairs (`core/abba_warp.py`). `engines.py` is LangSlice's one
 itk-elastix registration wrapper; `engines.preload()` imports torch, FireANTs,
 SimpleITK and the ITK Elastix classes without running a fit or touching the GPU
-(the agent CLI's warm process forks after it).
+(the agent CLI's warm process forks after it). On Windows, `import_fireants` gives
+FireANTs' import a stand-in `fcntl` (it imports the Unix-only module for a
+multi-GPU file lock LangSlice never takes).
 
 ## What it does
 
