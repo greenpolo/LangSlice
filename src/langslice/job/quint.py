@@ -25,11 +25,15 @@ from typing import Any
 import numpy as np
 
 from langslice import __version__
+from langslice.core.atlas.images import AUGMENTED_AP_OFFSET_MM, AUGMENTED_ATLAS
 
 #: The QuickNII ``.cutlas`` target of a BrainGlobe atlas. QuickNII and
 #: VisuAlign ship the Allen CCFv3 at 25 um only
 #: (``ABA_Mouse_CCFv3_2017_25um.cutlas``; DeepSlice writes the same name),
 #: so every Allen resolution is exported to it (:data:`_TARGET_RESOLUTION_UM`).
+#: The augmented CCFv3 atlas is the Allen 25 um volume with 38 more planes at
+#: the front and 24 behind, so it is exported to the Allen target on the Allen
+#: grid, shifted by ``AUGMENTED_AP_OFFSET_MM`` (:func:`_on_allen_grid`).
 #: The rat name is DeepSlice's, the one its QuickNII files open with. The
 #: Kim atlas name follows the same pattern; any other atlas is exported to
 #: ``<name>.cutlas``.
@@ -39,6 +43,7 @@ _KNOWN_TARGETS: dict[str, str] = {
     "allen_mouse_50um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "allen_mouse_100um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "whs_sd_rat_39um": "WHS_Rat_v4_39um.cutlas",
+    AUGMENTED_ATLAS: "ABA_Mouse_CCFv3_2017_25um.cutlas",
     "kim_unified_25um": "Kim_UnifiedMouse_v1_25um.cutlas",
 }
 #: A target whose voxels differ from the BrainGlobe atlas's: its voxel size.
@@ -48,6 +53,24 @@ _KNOWN_TARGETS: dict[str, str] = {
 _TARGET_RESOLUTION_UM: dict[str, float] = {
     "ABA_Mouse_CCFv3_2017_25um.cutlas": 25.0,
 }
+
+
+#: The Allen CCFv3 25 um volume's shape in BrainGlobe's ``asr`` order.
+_CCFV3_25UM_SHAPE = (528, 320, 456)
+
+
+def _on_allen_grid(atlas: dict[str, Any]) -> tuple[dict[str, Any], np.ndarray]:
+    """For the augmented atlas, the Allen 25 um atlas record and the shift
+    (atlas micrometres) from the job's coordinates to the Allen volume's:
+    the front extension is cut off. Any other atlas: itself, no shift."""
+    shift = np.zeros(3)
+    if atlas.get("name") != AUGMENTED_ATLAS:
+        return atlas, shift
+    orientation = str(atlas["orientation"])
+    if orientation != "asr":
+        raise ValueError(f"{AUGMENTED_ATLAS}: expected orientation asr, got {orientation}")
+    shift[0] = AUGMENTED_AP_OFFSET_MM * 1000.0
+    return {**atlas, "name": "allen_mouse_25um", "shape": list(_CCFV3_25UM_SHAPE)}, shift
 
 
 # ---------------------------------------------------------------------------
@@ -187,9 +210,10 @@ def atlas_um_to_quicknii_points(points_um: Any, atlas: dict[str, Any]) -> np.nda
     """BrainGlobe atlas micrometres (``(n, 3)``, the atlas's axis order) as
     QuickNII voxel coordinates (x ML, y AP, z DV, voxel edges). *atlas* is
     ``registration.json``'s atlas record (orientation, shape, resolution_um)."""
+    atlas, shift = _on_allen_grid(atlas)
     bg_space, quicknii_space = _quicknii_spaces(atlas)
     resolution = np.asarray(atlas["resolution_um"], dtype=np.float64)
-    edges = np.asarray(points_um, dtype=np.float64).reshape(-1, 3) / resolution
+    edges = (np.asarray(points_um, dtype=np.float64).reshape(-1, 3) - shift) / resolution
     edges = edges + VOXEL_EDGE_TO_CENTRE
     return np.asarray(bg_space.map_points_to(quicknii_space, edges), dtype=np.float64)
 
@@ -197,14 +221,17 @@ def atlas_um_to_quicknii_points(points_um: Any, atlas: dict[str, Any]) -> np.nda
 def quicknii_points_to_atlas_um(points: Any, atlas: dict[str, Any]) -> np.ndarray:
     """The inverse of :func:`atlas_um_to_quicknii_points`: QuickNII voxel
     coordinates (``(n, 3)``: x ML, y AP, z DV, voxel edges, on the atlas's
-    own grid) as BrainGlobe atlas micrometres in the atlas's axis order."""
+    own grid) as BrainGlobe atlas micrometres in the atlas's axis order.
+    For the augmented atlas the anchoring is on the Allen grid and the
+    micrometres are the augmented atlas's (0.35 mm further from the front)."""
+    atlas, shift = _on_allen_grid(atlas)
     bg_space, quicknii_space = _quicknii_spaces(atlas)
     forward = np.asarray(bg_space.transformation_matrix_to(quicknii_space), dtype=np.float64)
     values = np.asarray(points, dtype=np.float64).reshape(-1, 3)
     homogeneous = np.column_stack([values, np.ones(len(values))])
     edges = (np.linalg.inv(forward) @ homogeneous.T).T[:, :3]
     resolution = np.asarray(atlas["resolution_um"], dtype=np.float64)
-    return (edges - VOXEL_EDGE_TO_CENTRE) * resolution
+    return (edges - VOXEL_EDGE_TO_CENTRE) * resolution + shift
 
 
 def quicknii_target(atlas_name: str) -> str:

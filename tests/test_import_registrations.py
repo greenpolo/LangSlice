@@ -558,3 +558,65 @@ def _assert_redraws(redrawn: Workspace, placement: Any) -> None:
 
 def _by_section(result):
     return {placement.section_id: placement for placement in result.placements}
+
+
+class BareCCFAtlas(DeepAtlas):
+    """An empty volume with the Allen CCFv3 25 um grid (``allen_mouse_25um``,
+    528 planes) or the augmented one (``ccfv3augmented_mouse_25um``, 566)."""
+
+    resolution = (25.0, 25.0, 25.0)
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        planes = 566 if name.startswith("ccfv3augmented") else 528
+        self.annotation = np.zeros((planes, 320, 456), dtype=np.uint8)
+        self.template = self.reference = self.annotation
+
+
+def test_augmented_atlas_shares_the_allen_target_with_a_fixed_offset(stack: Path, tmp_path: Path):
+    """``ccfv3augmented_mouse_25um`` is the Allen 25 um volume with 38 more
+    planes in front: its QuickNII target is the Allen one and its anchorings
+    are on the Allen grid, so the same file read onto either atlas differs
+    by the front extension's offset (0.350 mm = 14 planes) in position, and
+    in nothing else."""
+    from langslice.core.atlas.images import AUGMENTED_AP_OFFSET_MM
+
+    allen, augmented = BareCCFAtlas("allen_mouse_25um"), BareCCFAtlas("ccfv3augmented_mouse_25um")
+    on_allen = make_workspace(stack, allen)
+    on_augmented = make_workspace(stack, augmented)
+    document = job_export(export_rows(on_allen, PER_SECTION), atlas_facts(allen))
+    assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
+    path = write_export(tmp_path / "allen25.json", document)
+    first = _by_section(imports.import_placements(path, on_allen))
+    second = _by_section(imports.import_placements(path, on_augmented))
+    assert set(first) == set(second) == {g.section_id for g in PER_SECTION}
+    for given in PER_SECTION:
+        a, b = first[given.section_id], second[given.section_id]
+        assert (a.rotation_deg, a.flip) == (b.rotation_deg, b.flip)
+        assert b.position_mm - a.position_mm == pytest.approx(AUGMENTED_AP_OFFSET_MM, abs=1e-5)
+        assert a.pitch_deg == pytest.approx(b.pitch_deg, abs=1e-6)
+        assert a.yaw_deg == pytest.approx(b.yaw_deg, abs=1e-6)
+        assert np.allclose(a.params, b.params, atol=1e-6, rtol=0)
+    assert AUGMENTED_AP_OFFSET_MM == 0.35
+
+
+def test_augmented_export_import_round_trip_is_the_identity(stack: Path, tmp_path: Path):
+    """An augmented job's quicknii.json is written on the Allen grid (the same
+    file as the Allen job's for a plane 0.350 mm further back) and reads back
+    onto the augmented atlas as the placements it was made from."""
+    augmented = BareCCFAtlas("ccfv3augmented_mouse_25um")
+    workspace = make_workspace(stack, augmented)
+    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(augmented))
+    assert document["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
+    result = imports.import_placements(write_export(tmp_path / "aug.json", document), workspace)
+    for given in PER_SECTION:
+        assert_recovered(_by_section(result)[given.section_id], given,
+                         params_for(workspace, given), ROUNDED)
+    # Written onto the Allen grid: the Allen job at the same position minus
+    # 0.350 mm anchors identically.
+    allen = BareCCFAtlas("allen_mouse_25um")
+    shifted = [Given(g.section_id, g.position_mm - 0.35, g.pitch_deg, g.yaw_deg,
+                     g.rotation_deg, g.flip, g.knobs) for g in PER_SECTION]
+    reference = job_export(export_rows(make_workspace(stack, allen), shifted), atlas_facts(allen))
+    for ours, theirs in zip(document["slices"], reference["slices"], strict=True):
+        np.testing.assert_allclose(ours["anchoring"], theirs["anchoring"], atol=2e-3)

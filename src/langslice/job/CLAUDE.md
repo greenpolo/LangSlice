@@ -382,7 +382,9 @@ longer exist be taken over by the images it is opened with.
   through `ops.exports`), the atlas micrometre <-> QuickNII voxel
   conversions and their inverses (read by `imports.py`), the `.cutlas` target per
   atlas (every Allen resolution exported to the 25 um target, its voxel
-  grid rescaled).
+  grid rescaled; `ccfv3augmented_mouse_25um` to the same target on the Allen
+  grid, shifted by `core.atlas.images.AUGMENTED_AP_OFFSET_MM`, in both
+  directions).
 
 The frame record and the on-demand coordinate map are the core's
 (`core/layers.py`, `core/CLAUDE.md`).

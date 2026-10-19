@@ -27,9 +27,12 @@ TEMPLATE = "template"
 #: exactly the CCFv3 extent is offered that template as one more image,
 #: resampled onto its own grid.
 BORROWED_NISSL = "ccfv3augmented_nissl"
-_AUGMENTED = "ccfv3augmented_mouse_25um"
-_AUGMENTED_VOXEL_MM = 0.025
-_AUGMENTED_AP_OFFSET_MM = 0.35
+AUGMENTED_ATLAS = "ccfv3augmented_mouse_25um"
+AUGMENTED_VOXEL_MM = 0.025
+#: The augmented atlas's front extension beyond the CCFv3 extent: a CCFv3 plane
+#: sits this far (14 planes of 25 um) behind the same plane's index in it.
+#: Checked by annotation agreement (best match at 14 planes, 91 % of a mid plane).
+AUGMENTED_AP_OFFSET_MM = 0.35
 _CCFV3_EXTENT_MM = (13.2, 8.0, 11.4)
 _borrowed: dict[tuple[str, tuple[int, ...]], np.ndarray] = {}
 
@@ -40,7 +43,7 @@ def _takes_borrowed_nissl(atlas: Any) -> bool:
     except Exception:  # noqa: BLE001 - not a BrainGlobe-style atlas
         return False
     extent = np.asarray(context.shape) * np.asarray(context.resolution_um) / 1000.0
-    return (context.orientation == "asr" and getattr(atlas, "atlas_name", "") != _AUGMENTED
+    return (context.orientation == "asr" and getattr(atlas, "atlas_name", "") != AUGMENTED_ATLAS
             and bool(np.allclose(extent, _CCFV3_EXTENT_MM, atol=0.026)))
 
 
@@ -53,10 +56,10 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
     annotation = np.asarray(atlas.annotation)
     key = (str(getattr(atlas, "atlas_name", "?")), annotation.shape)
     if key not in _borrowed:
-        source = np.asarray(load_atlas(_AUGMENTED).template)
-        step = np.asarray(atlas_space_context(atlas).resolution_um) / 1000.0 / _AUGMENTED_VOXEL_MM
+        source = np.asarray(load_atlas(AUGMENTED_ATLAS).template)
+        step = np.asarray(atlas_space_context(atlas).resolution_um) / 1000.0 / AUGMENTED_VOXEL_MM
         # Voxel centres: augmented index = step * index + 0.5 * step - 0.5 (+ the AP offset).
-        offset = 0.5 * step - 0.5 + np.array([_AUGMENTED_AP_OFFSET_MM / _AUGMENTED_VOXEL_MM, 0, 0])
+        offset = 0.5 * step - 0.5 + np.array([AUGMENTED_AP_OFFSET_MM / AUGMENTED_VOXEL_MM, 0, 0])
         volume = affine_transform(source, step, offset=offset,  # pyright: ignore[reportArgumentType]  # scipy takes a per-axis offset; its stub says float
                                   output_shape=annotation.shape, order=1, output=source.dtype)
         volume[annotation == 0] = 0  # the averaged template glows faintly beyond the tissue
