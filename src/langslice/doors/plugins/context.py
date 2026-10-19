@@ -1126,7 +1126,8 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
 
     to_index = plane_index_affine(atlas, float(placement.position_mm), placement.plane,
                                   float(placement.pitch_deg), float(placement.yaw_deg))
-    swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # [x, y, 1] -> [row, col, 1]
+    # [x, y, 1] -> [row, col, 1]
+    swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     native_to_um = np.diag(res) @ to_index @ swap
     return {"center_um": centre.tolist(), "dx": dx.tolist(), "dy": dy.tolist(),
             "px_um": px, "shape": size, "resolution_um": res.tolist(),
