@@ -553,12 +553,15 @@ def import_placements(
     *,
     section_ids: Iterable[str] | None = None,
     orientations: Mapping[str, tuple[int, bool]] | None = None,
+    planes: Mapping[str, tuple[float, float, float]] | None = None,
 ) -> ImportResult:
     """Every matched section's placement in the job's terms (see the module
     text). *workspace* gives the job's atlas, plane, section files and
     calibration; *section_ids* the sections (default: the folder's images,
     named as the job names them). *orientations* fixes a section's
-    ``(rotation_deg, flip)`` (default: chosen per section).
+    ``(rotation_deg, flip)`` (default: chosen per section). *planes* fixes a
+    section's ``(position_mm, pitch_deg, yaw_deg)`` (default: the file's own):
+    its six numbers are then the file's map projected onto that plane.
     A section whose entry cannot be placed is listed under ``refused`` with
     the reason; an ambiguous match raises :class:`AmbiguousMatch`."""
     from langslice.core.discovery import discover_slices
@@ -621,7 +624,8 @@ def import_placements(
             placement = placement_from_pixel_map(
                 matrix, atlas=atlas_object, plane=plane, sizes=sizes,
                 file_um_per_px=float(value),
-                orientation=(orientations or {}).get(section_id))
+                orientation=(orientations or {}).get(section_id),
+                at=(planes or {}).get(section_id))
         except ValueError as exc:
             refused[section_id] = str(exc)
             continue

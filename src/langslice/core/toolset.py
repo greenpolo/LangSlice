@@ -208,11 +208,16 @@ def off_names(spec: Any) -> list[str]:
     (:attr:`ToolDef.writes`) is frozen on every section
     (:attr:`~langslice.core.spec.JobSpec.frozen_everywhere`), and the mirror and
     the quarter turn (``interactive_transform:flip``, ``:rotate``) when the
-    orientation is. A tool a task
-    switched off is not listed: it is not in the run at all."""
+    orientation is, and the plugin tools the job's atlas or plane does not
+    fit (:func:`langslice.core.plugins.not_offered`), so no text names them.
+    A tool a task switched off is not listed: it is not in the run at all."""
     names = list(spec.disabled)
+    if getattr(spec, "plugins", None):
+        from langslice.core import plugins
+
+        names.extend(plugins.not_offered(spec))
     if not spec.frozen:
-        return names
+        return list(dict.fromkeys(names))
     everywhere = spec.frozen_everywhere
     for tool in tools_for(spec).values():
         if tool.writes and set(tool.writes) <= everywhere and tool.when(spec):

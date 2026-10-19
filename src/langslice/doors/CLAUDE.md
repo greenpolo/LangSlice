@@ -100,7 +100,8 @@ process forks for it, `cli/warm.py`).
   `module:qualname`, ToolSpecs as `inline:<digest>`).
   `context.py`: `ToolContext` (reads `sections`, `section_image`, `atlas`,
   `fit_frame` (`placed_atlas_to_section`: the current placement), `atlas_slice`,
-  `section_inputs`, `read_registration`;
+  `section_inputs`, `read_registration` (each section in its current
+  orientation, `params`, `at=` a fixed plane); `section_raster(raw=)`;
   conversions `transform_from_matrix` / `transform_from_params`, and
   `deformation_from_map` (a full fit-grid-to-native map as a
   `DeformationProposal`, `ops.deformable.warp_from_map`); writes
@@ -109,7 +110,8 @@ process forks for it, `cli/warm.py`).
   `mark_damage` through `ops/`, `add_layer`
   through `job/plugin_store`, `expect=` fingerprints refusing `STALE_INPUT`
   rows; `writing()` holds the lock around several writes; a call's writes are
-  one undo step unless another write came between; `overlay_picture`, with a
+  one undo step unless another write came between; `overlay_picture` and
+  `positioning_picture` (a proposal drawn on a copy of the state), with a
   deformation proposal drawn through an in-memory record store) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
   write tool's call as one undo step, `ToolError` / `Refused` / any exception

@@ -15,6 +15,7 @@ The public import path of the types is ``langslice.plugin_api``.
 
 from __future__ import annotations
 
+import fnmatch
 import inspect
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -24,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from langslice.core import frozen as freeze
+from langslice.core.spec import PLANES
 from langslice.core.toolset import GROUPS, TOOLS, Group, Kind, ToolDef, positions_on
 
 #: The plugin API's version. A plugin that names another is refused.
@@ -112,6 +114,14 @@ class ToolSpec:
     #: Anything the plugin wants kept with the tool in the job's provenance
     #: (JSON values), e.g. the text of a tool description it was given.
     meta: Mapping[str, Any] = field(default_factory=dict)
+    #: The atlases the tool is offered on: shell-style patterns for the job's
+    #: atlas name (``("allen_mouse_*um", "ccfv3augmented_mouse_25um")``); empty
+    #: means every atlas. On any other atlas the tool does not exist (it is off
+    #: as a disabled tool is: not declared, not listed, named in no text).
+    atlases: tuple[str, ...] = ()
+    #: The section planes the tool is offered on (``coronal``, ``sagittal``,
+    #: ``horizontal``); empty means every plane.
+    planes: tuple[str, ...] = ()
 
 
 @dataclass
@@ -288,7 +298,27 @@ def check_tool(tool: Any, *, taken: Sequence[str] = ()) -> str | None:
     for group in tool.needs:
         if not group or not all(isinstance(item, str) and item for item in group):
             return f"{where}: needs is a tuple of non-empty tuples of names"
+    if isinstance(tool.atlases, str) or not all(
+            isinstance(item, str) and item for item in tool.atlases):
+        return f"{where}: atlases is a tuple of non-empty name patterns"
+    if isinstance(tool.planes, str) or any(item not in PLANES for item in tool.planes):
+        return f"{where}: planes are among {', '.join(PLANES)}; got {tuple(tool.planes)!r}"
     return None
+
+
+def offered_on(tool: ToolSpec, atlas: str, plane: str) -> bool:
+    """Whether *tool* is offered on a job with atlas name *atlas* and section
+    *plane* (``ToolSpec.atlases`` and ``planes``)."""
+    return ((not tool.atlases or any(fnmatch.fnmatchcase(atlas, pattern)
+                                     for pattern in tool.atlases))
+            and (not tool.planes or plane in tool.planes))
+
+
+def not_offered(spec: Any) -> list[str]:
+    """The names of the plugin tools of *spec* that its atlas or plane does
+    not fit; they count as switched off, so no text names them."""
+    return [tool.name for _plugin, tool in tool_specs(spec).values()
+            if not offered_on(tool, str(spec.atlas), str(spec.plane))]
 
 
 def tool_def(tool: ToolSpec) -> ToolDef:
@@ -296,6 +326,8 @@ def tool_def(tool: ToolSpec) -> ToolDef:
     task = tool.task
 
     def when(spec: Any, _task: str | None = task) -> bool:
+        if not offered_on(tool, str(spec.atlas), str(spec.plane)):
+            return False
         if _task == ANGLES:
             return positions_on(spec)
         return _task is None or bool(spec.has(_task))
