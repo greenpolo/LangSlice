@@ -36,7 +36,9 @@ whose imports are core-only:
   core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
   `ToolError`, `PluginError`, `PLUGIN_API_VERSION`), `check_tool` (the
   one-line reasons a tool declaration is refused), `tool_def` (a plugin tool
-  as a `ToolDef`: `when` is its task being on) and the registry of loaded
+  as a `ToolDef`: `when` is its task being on and its `atlases` / `planes` fitting
+  the job; `not_offered` names the tools they exclude, which `toolset.off_names`
+  counts as switched off so no text names them) and the registry of loaded
   plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
   `set_loader` is how `doors/plugins` registers the code that imports a
   plugin: the core imports nothing by name). `JobSpec.plugins` /

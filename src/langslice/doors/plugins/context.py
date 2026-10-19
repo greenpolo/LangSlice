@@ -397,21 +397,34 @@ class ToolContext:
         return section_inputs(self._door.state, self._record(section), deformation=deformation)
 
     def section_image(self, section: object, *, level: str | int = "auto",
-                      channels: Sequence[str] | None = None) -> np.ndarray:
+                      channels: Sequence[str] | None = None, raw: bool = False) -> np.ndarray:
         """The pixels of :meth:`section_raster`. Their frame is NOT the image
         file's (turned and flipped as the orientation sets it, and reduced):
         convert coordinates with :meth:`section_raster`'s methods before they
         go in a ``section_px`` layer."""
-        return self.section_raster(section, level=level, channels=channels).array
+        return self.section_raster(section, level=level, channels=channels, raw=raw).array
 
     def section_raster(self, section: object, *, level: str | int = "auto",
-                       channels: Sequence[str] | None = None) -> SectionRaster:
+                       channels: Sequence[str] | None = None, raw: bool = False,
+                       ) -> SectionRaster:
         """The section as its orientation sets it (RGB ``uint8`` ``array``,
         never larger than the source) with the frame it is in
         (:class:`SectionRaster`). *level* is the long edge in pixels, or ``low`` /
         ``medium`` / ``high`` / ``auto`` (the job's picture size). *channels*:
-        raw channel names, or ``["preprocessed"]`` for the channel the fits
-        read; None is the default appearance."""
+        raw channel names (drawn in their colours with the channel display
+        properties the agent set), or ``["preprocessed"]`` for the channel the
+        fits read; None is the default appearance (the preprocessed blend
+        when the job preprocesses).
+
+        *raw* gives the file's own pixels, turned and flipped as the
+        orientation sets it and reduced to *level*: with no *channels*, the
+        file as an image viewer shows it (8-bit RGB; what a delivered PNG
+        is), no preprocessing and no channel properties; with exactly one
+        channel name, that raw channel as gray RGB (three equal planes), as
+        read from the file, whatever display properties the agent set.
+        The pixels come from the working copy (a file longer than 3072
+        pixels is already reduced), so *level* at or above the file's long
+        edge gives the file itself for a file of that size or less."""
         from langslice.core.appearance import preprocessed_settings
         from langslice.core.channels import with_properties
         from langslice.core.maps import render_sizes
@@ -429,12 +442,21 @@ class ToolContext:
             raise ToolError("BAD_ARGS", f"level is a pixel size or one of "
                             f"{', '.join(PICTURE_EDGES)}; got {level!r}")
         look: Any = None
-        if channels:
+        if raw:
+            names = [str(name) for name in channels or ()]
+            if len(names) > 1 or names == ["preprocessed"]:
+                raise ToolError("BAD_ARGS", "raw takes no channel (the file as it is) or one "
+                                "raw channel name")
+            look = {"channel": names[0]} if names else {"file": True}
+        elif channels:
             names = [str(name) for name in channels]
             look = (preprocessed_settings(self._door.state, record.id)
                     if names == ["preprocessed"]
                     else with_properties(self._door.state, {"overlay": names}))
-        image = render_slice(self._door.ctx, record, long_edge=edge, look=look)
+        try:
+            image = render_slice(self._door.ctx, record, long_edge=edge, look=look)
+        except ValueError as exc:  # a channel the section does not have
+            raise ToolError("BAD_ARGS", str(exc)) from exc
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
             file_size=tuple(render_sizes(self._door.ctx, record.id).file_size),  # type: ignore[arg-type]
@@ -680,25 +702,72 @@ class ToolContext:
             _warp=warp)
 
     def read_registration(self, path: str | Path, *, sections: Sequence[str] = (),
+                          at: Mapping[object, Mapping[str, Any]] | None = None,
                           ) -> dict[str, Any]:
         """A linear registration file made elsewhere (QuickNII or VisuAlign
         JSON/XML, DeepSlice CSV/JSON/XML, a LangSlice ``registration.json``)
-        as placements for this job's sections: ``{"placements": [{"id",
-        "position_mm", "pitch_deg", "yaw_deg"}], "refused": {id: reason},
-        "missing": [id]}``. Nothing is written."""
+        as placements for this job's sections. Nothing is written. Returns
+        ``{"placements": [...], "refused": {id: reason}, "missing": [id],
+        "unmatched": [file names]}``; a placement is ``{"id", "position_mm",
+        "pitch_deg", "yaw_deg", "rotation_deg", "flip", "params",
+        "pixel_size_um", "pixel_size_source", "out_of_plane_um",
+        "in_plane"}``.
+
+        Each section is read in its CURRENT orientation (quarter turn and
+        flip as the agent set them), so ``rotation_deg`` and ``flip`` are the
+        section's own and ``params`` (six normalized numbers ``[a, b, tx, c,
+        d, ty]``) are for the oriented render: pass them to
+        :meth:`set_transforms` as ``{"id", "params"}`` (or
+        :meth:`transform_from_params`) once the section holds the placement
+        they were read at. ``in_plane`` reads them as rotation, scales and
+        shear on that render (:func:`~langslice.core.affine.decompose_affine`).
+        *at* ``{section: {"position_mm", "angles": (pitch, yaw)}}`` reads the
+        file's map on a plane of your choosing (the section's final position
+        and angles, e.g. a stack's propagated angle): ``params`` are then the
+        file's map projected onto that plane and ``out_of_plane_um`` is how
+        far the map lies off it; without *at* the file's own plane is used
+        and ``out_of_plane_um`` is about 0. ``params`` is None, with the
+        reason in ``params_note``, when the job has no pixel size for the
+        section (the six numbers are relative to a pixel size, so they mean
+        nothing to a job that would calibrate otherwise)."""
         from langslice.job.imports import import_placements
 
         state = self._door.state
         names = [self._record(ref).id for ref in sections] or [r.id for r in state.slices]
+        planes: dict[str, tuple[float, float, float]] = {}
+        for ref, plane in (at or {}).items():
+            name = self._record(ref).id
+            record = state.by_id(name)
+            assert record is not None
+            position = plane.get("position_mm", record.position_mm)
+            angles = plane.get("angles") or (record.pitch_deg, record.yaw_deg)
+            if position is None:
+                raise ToolError("NO_POSITION", f"{name} has no position to read the file at")
+            planes[name] = (float(position), float(angles[0]), float(angles[1]))
         result = import_placements(
             Path(path), self._door.ctx, section_ids=names,
-            orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices})
-        return {
-            "placements": [{"id": p.section_id, "position_mm": round(float(p.position_mm), 4),
-                            "pitch_deg": round(float(p.pitch_deg), 3),
-                            "yaw_deg": round(float(p.yaw_deg), 3)}
-                           for p in result.placements],
-            "refused": dict(result.refused), "missing": list(result.missing)}
+            orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
+            planes=planes)
+        rows = []
+        for p in result.placements:
+            calibrated = p.pixel_size_source != "imported"
+            rows.append({
+                "id": p.section_id, "position_mm": round(float(p.position_mm), 4),
+                "pitch_deg": round(float(p.pitch_deg), 3),
+                "yaw_deg": round(float(p.yaw_deg), 3),
+                "rotation_deg": int(p.rotation_deg), "flip": bool(p.flip),
+                "params": [float(v) for v in p.params] if calibrated else None,
+                **({} if calibrated else {
+                    "params_note": "the job has no pixel size for this section; the file's "
+                                   "numbers imply one, which this job would not use"}),
+                "pixel_size_um": float(p.pixel_size_um),
+                "pixel_size_source": p.pixel_size_source,
+                "out_of_plane_um": round(float(p.placement.out_of_plane_um), 3),
+                "in_plane": {k: (round(float(v), 5) if isinstance(v, float) else v)
+                             for k, v in p.placement.in_plane.items()},
+            })
+        return {"placements": rows, "refused": dict(result.refused),
+                "missing": list(result.missing), "unmatched": list(result.unmatched)}
 
     # --- output for the agent ---------------------------------------------------------------
 
@@ -760,6 +829,62 @@ class ToolContext:
         except looks.LookError as exc:
             raise ToolError(exc.code, str(exc)) from exc
         return drawn[0].image
+
+    def positioning_picture(self, ids: Sequence[object], *,
+                            proposal: Mapping[object, Mapping[str, Any]] | None = None,
+                            resolution: int | None = None, part: int | None = None,
+                            ) -> list[Image.Image]:
+        """The positioning picture ``position_sections`` shows (``look`` mode
+        ``positioning``: the sections in order beside the atlas planes at
+        their positions, captioned), as it stands, or with a *proposal* not
+        yet written: ``{section: {"position_mm": mm, "angles": (pitch,
+        yaw)}}``, either key, for any of the sections. A proposed picture has
+        a last caption band saying it is not written. A long stack is several
+        pictures (parts of the stack): all are returned, in order, or with
+        *part* (0-based) only that one. Sections without a position are left
+        out of the atlas column as in ``look``. *resolution* is the long edge
+        of each section's tile (None: the job's level). Nothing is saved or
+        written here; the pictures are the handler's to return. Refused
+        (``POSITIONING_OFF``) where the job disables ``look:positioning``."""
+        from langslice.core import look as looks
+        from langslice.doors.tools.changing import _positions
+
+        if self._door.spec.off("look:positioning"):
+            raise ToolError("POSITIONING_OFF", "the positioning picture is switched off for "
+                            "this job")
+        names = [self._record(ref).id for ref in ids]
+        state = self._door.state
+        if proposal:
+            state = StackState.from_dict(copy.deepcopy(state.to_dict()))
+            for ref, change in proposal.items():
+                held = state.by_id(self._record(ref).id)
+                assert held is not None
+                unknown = set(change) - {"position_mm", "angles"}
+                if unknown:
+                    raise ToolError("BAD_ARGS", "a positioning proposal gives position_mm and/or "
+                                    f"angles per section; got {sorted(unknown)}")
+                if change.get("position_mm") is not None:
+                    held.position_mm = float(change["position_mm"])
+                if change.get("angles") is not None:
+                    held.cutting_angles_deg = {"pitch": float(change["angles"][0]),
+                                               "yaw": float(change["angles"][1])}
+                held.deformation = None
+        records = [state.by_id(name) for name in names]
+        positions = _positions([float(r.position_mm) for r in records
+                                if r is not None and r.position_mm is not None])
+        edge = int(resolution) if resolution else None
+        request = looks.LookRequest(mode="positioning", sections=tuple(names),
+                                    positions_mm=tuple(positions), long_edge=edge,
+                                    part=part)
+        try:
+            drawn = looks.look(self._door.ctx, state, request, store=self._door.job.deformations)
+        except looks.LookError as exc:
+            raise ToolError(exc.code, str(exc)) from exc
+        images = [picture.image for picture in drawn]
+        if proposal:
+            images = [self.caption(image, "proposal: positions and angles drawn as proposed, "
+                                   "NOT written") for image in images]
+        return images
 
     def _proposal_store(self, proposal: DeformationProposal) -> Any:
         """A record store that holds *proposal*'s record (in memory only) and

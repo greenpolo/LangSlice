@@ -186,6 +186,7 @@ def placement_from_pixel_map(
     sizes: RenderSizes,
     file_um_per_px: float,
     orientation: tuple[int, bool] | None = None,
+    at: tuple[float, float, float] | None = None,
 ) -> RecoveredPlacement:
     """LangSlice's placement of a section whose image file's pixel
     ``[row, col, 1]`` (centres at integers) maps to atlas micrometres by the
@@ -199,6 +200,11 @@ def placement_from_pixel_map(
     exact tie the smaller quarter turn, unflipped first). ``ValueError`` for a
     degenerate map, a plane of another orientation, or a position the atlas
     cannot draw.
+
+    *at* ``(position_mm, pitch_deg, yaw_deg)`` fixes the plane the section is
+    drawn on instead of the map's own: the in-plane numbers are then the map
+    projected onto that plane (least squares, as for a snapped flat plane),
+    and ``out_of_plane_um`` says how far the given map lies from it.
     """
     matrix = np.asarray(pixel_to_atlas_um, dtype=np.float64)
     if matrix.shape != (3, 3) or not np.isfinite(matrix).all():
@@ -208,11 +214,15 @@ def placement_from_pixel_map(
     normal = np.cross(matrix[:, 0], matrix[:, 1])
     if np.linalg.norm(normal) <= 1e-12 * max(1.0, float(np.abs(matrix[:, :2]).max()) ** 2):
         raise ValueError("the map is degenerate (its image axes are parallel)")
-    pitch, yaw = plane_angles(normal, atlas, plane)
+    if at is None:
+        pitch, yaw = plane_angles(normal, atlas, plane)
+    else:
+        pitch, yaw = float(at[1]), float(at[2])
     normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
     exact_normal = build_rotation_matrix(pitch, yaw, row_axis=row_axis,
                                          col_axis=col_axis)[:, normal_axis]
-    position = plane_position_mm(matrix[:, 2], exact_normal, atlas, plane)
+    position = (plane_position_mm(matrix[:, 2], exact_normal, atlas, plane) if at is None
+                else float(at[0]))
     native_to_um = _native_to_um(atlas, position, plane, pitch, yaw)
 
     # File pixel -> native plane pixel ([row, col]), least squares onto the

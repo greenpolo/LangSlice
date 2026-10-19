@@ -1386,3 +1386,315 @@ def test_the_agent_cli_waits_for_work_a_plugin_verb_started_and_brings_its_notic
     again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
     assert again.state.by_id("s0.png").position_mm == pytest.approx(3.3)
     again.close()
+
+
+# --- offered by atlas and plane -----------------------------------------------------------------
+
+BY_ATLAS = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def mouse_stub():
+    """Place from the mouse model. [[?rat_only Not for rats: use `rat_only`.]]"""
+
+def rat_stub():
+    """Place from the rat model."""
+
+def plain_stub():
+    """Look around. [[?mouse_only Try `mouse_only` first.]][[?rat_only Try `rat_only` too.]]"""
+
+def handler(ctx):
+    return ToolResult({})
+
+def tools():
+    return [
+        ToolSpec("mouse_only", mouse_stub, handler, kind="read", group="Common",
+                 atlases=("allen_mouse_*um", "ccfv3augmented_mouse_25um"), planes=("coronal",)),
+        ToolSpec("rat_only", rat_stub, handler, kind="read", group="Common",
+                 atlases=("whs_sd_rat_39um",)),
+        ToolSpec("plain", plain_stub, handler, kind="read", group="Common"),
+    ]
+'''
+
+
+@pytest.mark.parametrize("atlas, plane, expected", [
+    ("allen_mouse_25um", "coronal", {"mouse_only", "plain"}),
+    ("allen_mouse_10um", "coronal", {"mouse_only", "plain"}),
+    ("ccfv3augmented_mouse_25um", "coronal", {"mouse_only", "plain"}),
+    ("allen_mouse_25um", "sagittal", {"plain"}),
+    ("whs_sd_rat_39um", "coronal", {"rat_only", "plain"}),
+    ("kim_unified_25um", "coronal", {"plain"}),
+])
+def test_a_tool_is_offered_only_on_its_atlases_and_planes_and_no_text_names_it(
+        make, images: Path, atlas: str, plane: str, expected: set[str]):
+    ref = make("by_atlas", BY_ATLAS)
+    spec = JobSpec(image_folder=str(images), plugins=[ref], atlas=atlas, plane=plane)
+    names = {"mouse_only", "rat_only", "plain"}
+    assert names & set(enabled(spec)) == expected
+    assert names & set(tools_for(spec)) == names  # defined everywhere, on only where offered
+    assert set(spec.switched_off) >= names - expected
+    from langslice.core.needs import render
+
+    for name in expected:
+        text = declaration(name, _variant(spec)).doc
+        for absent in names - expected:
+            assert f"`{absent}`" not in text, (name, absent, text)
+    plain_text = declaration("plain", _variant(spec)).doc
+    for present in expected - {"plain"}:
+        assert f"`{present}`" in plain_text  # the sentence is there where the tool is
+    assert render("[[?mouse_only `mouse_only`]]", spec.switched_off) == (
+        "`mouse_only`" if "mouse_only" in expected else "")
+
+
+def _variant(spec: JobSpec) -> Variant:
+    return Variant.of(spec, auto=False)
+
+
+def test_atlas_and_plane_patterns_are_checked_and_recorded(make, images: Path):
+    bad = make("bad_atlases", BY_ATLAS.replace('planes=("coronal",)', 'planes=("axial",)'))
+    with pytest.raises(ValueError, match="planes are among"):
+        JobSpec(image_folder=str(images), plugins=[bad])
+    ref = make("by_atlas_prov", BY_ATLAS)
+    spec = JobSpec(image_folder=str(images), plugins=[ref])
+    from langslice.doors.plugins.provenance import records
+
+    tools = {item["name"]: item for item in records(_variant(spec))[0]["tools"]}
+    assert tools["mouse_only"]["atlases"] == ["allen_mouse_*um", "ccfv3augmented_mouse_25um"]
+    assert tools["mouse_only"]["planes"] == ["coronal"]
+    assert "atlases" not in tools["plain"] and "planes" not in tools["plain"]
+
+
+# --- the positioning picture, the raw section, a registration read ----------------------------
+
+PICTURES = '''
+import numpy as np
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(proposed: bool = False, part: int | None = None):
+    """Draw."""
+
+def handler(ctx, proposed=False, part=None):
+    ids = ["s0.png", "s1.png", "s2.png"]
+    proposal = {"s0.png": {"position_mm": 6.0, "angles": (4.0, -3.0)}} if proposed else None
+    images = ctx.positioning_picture(ids, proposal=proposal, part=part)
+    return ToolResult({"count": len(images), "sizes": [list(im.size) for im in images]}, images)
+
+def tools():
+    return [ToolSpec("draw", stub, handler, kind="read", group="Common")]
+'''
+
+
+def test_positioning_picture_draws_the_stack_and_a_proposal_without_writing(make, images: Path):
+    ref = make("pictures", PICTURES)
+    state, _c, box = box_of(images, ref)
+    before = state.to_dict()
+    depth = len(box.job.undo_stack)
+    plain = call(box, "draw")
+    drawn = call(box, "draw", proposed=True)
+    assert plain["status"] == drawn["status"] == "ok" and plain["count"] == drawn["count"] == 1
+    assert state.to_dict() == before and len(box.job.undo_stack) == depth
+    # the proposal's picture carries one more caption band
+    assert drawn["sizes"][0][0] == plain["sizes"][0][0]
+    assert drawn["sizes"][0][1] > plain["sizes"][0][1]
+
+
+def test_positioning_picture_is_refused_where_the_job_disables_it(make, images: Path):
+    ref = make("pictures_off", PICTURES)
+    _s, _c, box = box_of(images, ref, disabled=["look:positioning"])
+    assert call(box, "draw")["error"] == "POSITIONING_OFF"
+
+
+RAW = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(section: str, channel: str = ""):
+    """Read."""
+
+def handler(ctx, section, channel=""):
+    names = [channel] if channel else None
+    default = ctx.section_raster(section, level=64).array
+    raw = ctx.section_raster(section, level=64, channels=names, raw=True).array
+    tinted = ctx.section_raster(section, level=64, channels=names).array if names else default
+    return ToolResult({"default": default.tolist(), "raw": raw.tolist(),
+                       "tinted": tinted.tolist()})
+
+def tools():
+    return [ToolSpec("rasters", stub, handler, kind="read", group="Common")]
+'''
+
+
+def test_raw_section_raster_is_the_oriented_file_not_the_preprocessed_blend(make, images: Path):
+    ref = make("raw_plugin", RAW)
+    rng = np.random.default_rng(3)
+    delivered = rng.integers(0, 120, size=(30, 40, 3), dtype=np.uint8)  # dim, like a stain
+    Image.fromarray(delivered).save(images / "s0.png")
+    state, ctx, box = box_of(images, ref, n=0)
+    ctx.spec.preprocess = "auto"
+    record = state.by_id("s0.png")
+    for rotation, flip in ((0, False), (0, True), (90, True)):
+        record.rotation_deg, record.flip = rotation, flip
+        ctx.source_cache.clear()
+        ctx.render_cache.clear()
+        reply = call(box, "rasters", section="s0.png")
+        expected = np.rot90(delivered, k=rotation // 90)  # PIL's ROTATE_90 turns counter-clockwise
+        expected = expected[:, ::-1] if flip else expected
+        np.testing.assert_array_equal(np.array(reply["raw"], dtype=np.uint8), expected)
+    # the default appearance preprocesses (CLAHE, blend): not the file
+    assert not np.array_equal(np.array(reply["default"], dtype=np.uint8), expected)
+
+
+def test_raw_section_raster_of_one_channel_is_that_page_as_gray(make, images: Path):
+    import tifffile
+
+    ref = make("raw_channel_plugin", RAW)
+    rng = np.random.default_rng(4)
+    pages = rng.integers(0, 255, size=(2, 30, 40), dtype=np.uint8)
+    tifffile.imwrite(images / "s0.tif", pages)
+    state, ctx, box = box_of(images, ref, n=0, inputs={"channel_names": ["DAPI", "GFP"]})
+    ctx.spec.preprocess = "auto"
+    record = state.by_id("s0.tif")
+    record.flip = True
+    ctx.source_cache.clear()
+    ctx.render_cache.clear()
+    reply = call(box, "rasters", section="s0.tif", channel="GFP")
+    raw = np.array(reply["raw"], dtype=np.uint8)
+    plane = np.array(pages[1][:, ::-1])
+    assert (raw[..., 0] == raw[..., 1]).all() and (raw[..., 1] == raw[..., 2]).all()
+    np.testing.assert_array_equal(raw[..., 0], plane)
+    # without raw the channel is drawn in its colour
+    assert not np.array_equal(np.array(reply["tinted"], dtype=np.uint8), raw)
+    # more than one channel, or the preprocessed one, is no raw read
+    again = call(box, "rasters", section="s0.tif", channel="nope")
+    assert again["error"] == "BAD_ARGS"
+
+
+PLACER = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(path: str, at_stack: bool = False):
+    """Place from a registration file."""
+
+def handler(ctx, path, at_stack=False):
+    first = ctx.read_registration(path)
+    rows = first["placements"]
+    stack = (sum(r["pitch_deg"] for r in rows) / len(rows),
+             sum(r["yaw_deg"] for r in rows) / len(rows))
+    read, angles = first, None
+    if at_stack:
+        at = {r["id"]: {"position_mm": r["position_mm"], "angles": stack} for r in rows}
+        read = ctx.read_registration(path, at=at)
+        angles = {"pitch_deg": stack[0], "yaw_deg": stack[1]}
+    with ctx.writing():
+        a = ctx.set_positions(
+            [{"id": r["id"], "position_mm": r["position_mm"]} for r in read["placements"]],
+            cutting_angles=angles)
+        b = ctx.set_transforms([{"id": r["id"], "params": r["params"], "note": "from file"}
+                                for r in read["placements"]])
+    return ToolResult({"read": read, "positions": a.reply(), "transforms": b.reply()})
+
+def tools():
+    return [ToolSpec("place_from_file", stub, handler, kind="write", group="Linear",
+                     task="transform", writes=("position", "angles", "affine"))]
+'''
+
+
+def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_step(
+        make, images: Path, tmp_path: Path):
+    from langslice.core.layers import atlas_facts
+    from langslice.job.quint import job_export
+    from tests.test_import_registrations import (
+        DeepAtlas,
+        Given,
+        export_rows,
+        knobs,
+        params_for,
+    )
+
+    ref = make("place_file", PLACER)
+    atlas = DeepAtlas()
+    given = [
+        Given("s0.png", 0.62, 3.5, -2.0, 0, False, knobs(12.0, 1.1, 0.92, 0.2, -0.1, 0.08)),
+        Given("s1.png", 1.0, 3.5, -2.0, 0, True, knobs(-8.0, 1.0, 1.0, 0.0, 0.1, 0.0)),
+        Given("s2.png", 1.33, 3.5, -2.0, 90, False, knobs(5.0, 0.95, 1.05, 0.0, 0.0, 0.0)),
+    ]
+    state, ctx, box = box_of(images, ref, atlas=atlas, inputs={"pixel_size_um": 25.0})
+    # the agent's orientation: s1 flipped, s2 turned a quarter
+    state.by_id("s1.png").flip = True
+    state.by_id("s2.png").rotation_deg = 90
+    ctx.render_cache.clear()
+    file = tmp_path / "deepslice.json"
+    file.write_text(json.dumps(job_export(export_rows(ctx, given), atlas_facts(atlas))))
+
+    depth = len(box.job.undo_stack)
+    reply = call(box, "place_from_file", path=str(file))
+    assert reply["status"] == "ok", reply
+    rows = {row["id"]: row for row in reply["read"]["placements"]}
+    assert [(rows[g.section_id]["rotation_deg"], rows[g.section_id]["flip"]) for g in given] \
+        == [(0, False), (0, True), (90, False)]
+    for g in given:  # the six numbers are for the oriented render
+        np.testing.assert_allclose(rows[g.section_id]["params"], params_for(ctx, g), atol=1e-6)
+        assert rows[g.section_id]["out_of_plane_um"] < 1e-3
+    assert len(box.job.undo_stack) == depth + 1  # positions + transforms: one undo step
+    held = state.by_id("s1.png")
+    assert held.position_mm == pytest.approx(1.0, abs=1e-4)
+    assert held.transform is not None and held.transform["note"] == "from file"
+    assert call(box, "undo")["status"] == "ok"
+    assert state.by_id("s1.png").transform is None and state.by_id("s1.png").position_mm == 2.5
+
+
+def test_a_registration_read_at_the_stack_plane_projects_onto_it(
+        make, images: Path, tmp_path: Path):
+    from langslice.core.layers import atlas_facts
+    from langslice.job.quint import job_export
+    from tests.test_import_registrations import DeepAtlas, Given, export_rows, knobs
+
+    ref = make("place_file_at", PLACER)
+    atlas = DeepAtlas()
+    given = [Given(f"s{i}.png", 1.0 + 0.3 * i, 3.0 + i, -2.0 + 0.5 * i, 0, False,
+                   knobs(2.0 * i, 1.0, 1.0, 0.0, 0.0, 0.0)) for i in range(3)]
+    state, ctx, box = box_of(images, ref, atlas=atlas, inputs={"pixel_size_um": 25.0})
+    file = tmp_path / "deepslice.json"
+    file.write_text(json.dumps(job_export(export_rows(ctx, given), atlas_facts(atlas))))
+    depth = len(box.job.undo_stack)
+    reply = call(box, "place_from_file", path=str(file), at_stack=True)
+    assert reply["status"] == "ok", reply
+    rows = reply["read"]["placements"]
+    # drawn at the stack's mean angles, not at the sections' own
+    assert {round(r["pitch_deg"], 3) for r in rows} == {4.0}
+    assert [r["out_of_plane_um"] > 1 for r in rows] == [True, False, True]
+    assert all(r["out_of_plane_um"] < 500 for r in rows)
+    assert len(box.job.undo_stack) == depth + 1
+    assert state.by_id("s0.png").pitch_deg == pytest.approx(4.0)
+    assert state.by_id("s0.png").transform["params"] == pytest.approx(rows[0]["params"])
+
+
+def test_a_registration_read_without_a_pixel_size_gives_no_numbers(
+        make, images: Path, tmp_path: Path):
+    from langslice.core.layers import atlas_facts
+    from langslice.job.quint import job_export
+    from tests.test_import_registrations import (
+        DeepAtlas,
+        Given,
+        export_rows,
+        knobs,
+        make_workspace,
+    )
+
+    ref = make("read_file_uncal", '''
+        from langslice.plugin_api import ToolResult, ToolSpec
+        def stub(path: str):
+            """Read a registration."""
+        def handler(ctx, path):
+            return ToolResult({"read": ctx.read_registration(path)})
+        def tools():
+            return [ToolSpec("read_registration_file", stub, handler, kind="read", group="Common")]
+    ''')
+    atlas = DeepAtlas()
+    given = [Given("s0.png", 1.0, 0.0, 0.0, 0, False, knobs(0.0, 1.0, 1.0, 0.0, 0.0, 0.0))]
+    state, _ctx, box = box_of(images, ref, atlas=atlas)  # no pixel size
+    file = tmp_path / "x.json"
+    file.write_text(json.dumps(job_export(
+        export_rows(make_workspace(images, atlas), given), atlas_facts(atlas))))
+    reply = call(box, "read_registration_file", path=str(file))
+    row = reply["read"]["placements"][0]
+    assert row["pixel_size_source"] == "imported"
+    assert row["params"] is None and "no pixel size" in row["params_note"]

@@ -133,6 +133,11 @@ def _look_image(
             raise ValueError(f"{record.id} has no channel {name!r}; channels: {', '.join(names)}")
         return planes[names.index(name)]
 
+    if look.get("file"):  # the file as it is, no channel properties, no preprocessing
+        from langslice.core.image_prep import read_working_image
+
+        image, _factor = read_working_image(ctx.image_path(record.id))
+        return framed(image.convert("RGB"))
     properties = look.get("properties") or {}
     ranges = (channels.intensity_ranges(ctx, record.id)
               if any((value or {}).get("contrast_limits") is not None

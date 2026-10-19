@@ -35,6 +35,8 @@ def records(variant: Variant) -> list[dict[str, Any]]:
                 "name": tool.name, "kind": tool.kind, "group": tool.group, "task": tool.task,
                 "writes": list(tool.writes), "long": tool.long, "limits": dict(tool.limits),
                 "version": tool.version,
+                **({"atlases": list(tool.atlases)} if tool.atlases else {}),
+                **({"planes": list(tool.planes)} if tool.planes else {}),
                 **({"meta": dict(tool.meta)} if tool.meta else {}),
                 "declaration": {"name": tool.name, "description": declared.doc,
                                 "arguments": arguments_schema(tool.name, variant)},
