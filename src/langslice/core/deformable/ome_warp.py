@@ -28,8 +28,8 @@ programs through the OME-NGFF 0.6 coordinate transformations (RFC-5):
   stored losslessly.
 
 Every array is one chunk, Blosc zstd with byte shuffle. The fields are
-written as float16 (about 0.25 µm of rounding on a displacement under a
-millimetre) and read back as float32; :func:`at_storage_precision` rounds a
+written as float16 (rounding of at most 0.25 µm on a displacement under
+0.5 mm, 0.5 µm under 1 mm) and read back as float32; :func:`at_storage_precision` rounds a
 field the same way, so a record kept in memory equals the one read back.
 The scene metadata is derived from the record for other readers; LangSlice
 reads only the arrays (the placement comes from ``record.json``).

@@ -64,9 +64,9 @@ RANDOM_SEED = 20261002
 FIREANTS_LEARNING_RATE = 0.8
 #: A fit of traced lines (``section_image="lines"``: the image model's lines
 #: and the regions they enclose against the atlas borders and regions) is run
-#: as the antspyx SyN it replaced ran it, which these three settings restore;
-#: tuned on Carey (seven brains, the image model's saved replies, scored
-#: against the raters), where FireANTs at the stain fit's settings followed
+#: at ANTs SyN's settings, which these three settings give; tuned on Carey
+#: (seven brains, the image model's saved replies, scored against the
+#: raters), where FireANTs at the stain fit's settings followed
 #: hallucinated lines, folded and labelled worse than ANTs. The step is ANTs'
 #: own 0.2 voxel (0.4 half-pixels), half the stain fit's.
 TRACED_LEARNING_RATE = 0.4

@@ -87,8 +87,8 @@ and returns a `record.DeformableRecord`. No custom solver.
   with ANTs' step rule (`engines._global_step_sgd`: the gradient scaled so
   its largest vector moves `FIREANTS_LEARNING_RATE` (0.8) half-pixels of the
   level; Adam's per-pixel scaling moved excluded regions as far as any).
-  A fit of traced lines (`section_image="lines"`) is run as antspyx SyN ran
-  it before FireANTs replaced it: half the step (`TRACED_LEARNING_RATE`,
+  A fit of traced lines (`section_image="lines"`) is run at ANTs SyN's
+  settings: half the step (`TRACED_LEARNING_RATE`,
   0.4 = ANTs' 0.2 voxel), the whole warp smoothed `TRACED_TOTAL_SIGMA_FACTOR`
   (2x) wider than its stiffness says, and ITK's multi-metric rule
   (`_channel_loss(balanced=True)`: each channel's gradient scaled to unit

@@ -79,9 +79,14 @@ def test_a_record_names_its_parent_and_loads_it_from_the_sibling_folder(tmp_path
     assert loaded.inverse_field_mm is None and loaded.left_out is None
     assert loaded.parent is not None and loaded.parent.saved_as == "first"
     assert np.array_equal(loaded.parent.field_mm, first.field_mm)
+    # A chain that comes back to itself is unreadable, not endless.
+    looped = json.loads((tmp_path / "first" / "record.json").read_text())
+    (tmp_path / "first" / "record.json").write_text(json.dumps({**looped, "parent": "second"}))
+    with pytest.raises(ValueError, match="comes back to it"):
+        DeformableRecord.load(tmp_path / "second")
     # A parent that is gone: the error names the parent's record.json.
     (tmp_path / "first" / "record.json").unlink()
-    with pytest.raises(ValueError, match=r"first/record\.json"):
+    with pytest.raises(ValueError, match=r"first[/\\]record\.json"):
         DeformableRecord.load(tmp_path / "second")
 
 
