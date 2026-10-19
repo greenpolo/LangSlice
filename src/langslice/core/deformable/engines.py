@@ -26,8 +26,10 @@ import contextlib
 import io
 import logging
 import os
+import sys
 import threading
 import time
+import types
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -144,6 +146,26 @@ def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
 _TORCH_LOCK = threading.Lock()
 
 
+@contextlib.contextmanager
+def _windows_fcntl() -> Iterator[None]:
+    """On Windows, a stand-in ``fcntl`` for the length of FireANTs' import:
+    FireANTs (1.5.1) imports the Unix-only module at the top of
+    ``fireants.io.image`` for a file lock only its multi-GPU training takes,
+    which LangSlice never runs. Removed afterwards, so no other library takes
+    the stand-in for a working lock."""
+    if sys.platform != "win32" or "fcntl" in sys.modules:
+        yield
+        return
+    stand_in = types.ModuleType("fcntl")
+    stand_in.LOCK_EX, stand_in.LOCK_UN = 2, 8  # type: ignore[attr-defined]
+    stand_in.flock = lambda *_args: None  # type: ignore[attr-defined]
+    sys.modules["fcntl"] = stand_in
+    try:
+        yield
+    finally:
+        del sys.modules["fcntl"]
+
+
 def import_fireants() -> Any:
     """Import torch and FireANTs' SyN (``RuntimeError`` with the install hint).
 
@@ -159,7 +181,7 @@ def import_fireants() -> Any:
                      "fireants.interpolator", "fireants.registration.abstract",
                      "fireants.io.image"):
             logging.getLogger(name).setLevel(logging.ERROR)
-        with contextlib.redirect_stdout(io.StringIO()):  # "Using FFO: False"
+        with contextlib.redirect_stdout(io.StringIO()), _windows_fcntl():  # "Using FFO: False"
             from fireants.registration.syn import SyNRegistration  # noqa: F401
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise RuntimeError(
