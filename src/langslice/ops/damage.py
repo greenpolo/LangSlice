@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from langslice.core.damage import DamagePictureError, damage_picture, normalized_entries
-from langslice.ops.refusal import Refused, unknown_sections
+from langslice.ops.refusal import Refused, check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.display import DisplayOptions
@@ -92,7 +92,7 @@ def mark_damage(
     (:func:`langslice.core.damage.damage_picture`); a picture that fails is
     ``render_failed``, the write standing.
 
-    Refused (nothing written): ``UNKNOWN_SLICE_IDS``; ``BAD_ARGS`` (regions
+    Refused (nothing written): ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY``; ``BAD_ARGS`` (regions
     not a list, or a side that does not exist); ``UNKNOWN_REGIONS``;
     ``NO_SIDES`` (a side on a sagittal stack).
     """
@@ -118,6 +118,7 @@ def mark_damage(
         record = state.resolve(section)
         if record is None:
             raise unknown_sections(state, [str(section)])
+        check_frozen(job, [record.id])  # no frozen property: refused only while work runs on it
         by_user = record.id in job.host_damaged
         user = _user_note(job, record)
         agent = str(note or "").strip() if names else ""

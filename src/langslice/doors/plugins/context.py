@@ -16,16 +16,16 @@ from __future__ import annotations
 import contextlib
 import copy
 import types
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
 
 from langslice.core import frozen as freeze
-from langslice.core.plugins import Layer, ToolError, ToolSpec
+from langslice.core.plugins import Layer, ToolError, ToolResult, ToolSpec
 from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.state import SliceState, StackState
 from langslice.ops.inputs import STALE_INPUT, section_inputs, stale_row
@@ -126,6 +126,7 @@ class FitFrame:
     position_mm: float
     angles: tuple[float, float]
     placed_atlas_to_section: np.ndarray | None = None
+    applied_map: np.ndarray | None = None
     excluded: np.ndarray | None = None
     damage_zone: np.ndarray | None = None
     stain: np.ndarray | None = None
@@ -494,6 +495,13 @@ class ToolContext:
                     dtype=np.float64)
             except ValueError:  # a stored transform no fit can use (stale, turned over)
                 placed = None
+        applied = None
+        if record.deformation:
+            from langslice.core.deformable.render import composed_native_grid
+
+            held = self._door.job.deformations.current(self._door.state, record)
+            if held is not None and tuple(held.section_size) == image.size:
+                applied = np.stack(composed_native_grid(held, 1), axis=-1)
         excluded = zone = None
         _, marked = exclusions(record)
         if marked:
@@ -511,10 +519,38 @@ class ToolContext:
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
-            placed_atlas_to_section=placed, excluded=excluded, damage_zone=zone,
+            placed_atlas_to_section=placed, applied_map=applied, excluded=excluded,
+            damage_zone=zone,
             stain=(np.asarray(deformation.stain_image(
                 workspace, self._door.state, grid, deformation.FIT_LOOK)[0].convert("RGB"))
                 if stain else None))
+
+    def angles_from_plane(self, normal_um: Sequence[float], point_um: Sequence[float],
+                          ) -> dict[str, float]:
+        """The placement of the plane through *point_um* with normal
+        *normal_um* (atlas micrometres, the atlas's axis order, as
+        :attr:`FitFrame.plane` gives a plane): ``position_mm`` (where it crosses
+        the volume's in-plane centre, the stack's position convention),
+        ``pitch_deg`` and ``yaw_deg`` (the stack's cutting-angle convention).
+        Nothing is written. ``ToolError`` ``BAD_PLANE`` for a plane tilted
+        past what a cutting angle can say."""
+        from langslice.core.import_geometry import plane_angles, plane_position_mm
+        from langslice.core.space import Plane
+
+        atlas = self._door.ctx.atlas
+        plane = cast(Plane, self._door.state.plane)
+        normal = np.asarray(normal_um, dtype=np.float64)
+        point = np.asarray(point_um, dtype=np.float64)
+        if normal.shape != (3,) or point.shape != (3,) or not (
+                np.isfinite(normal).all() and np.isfinite(point).all()) or not normal.any():
+            raise ToolError("BAD_PLANE", "normal_um and point_um are three finite numbers, "
+                            "the normal not zero")
+        try:
+            pitch, yaw = plane_angles(normal, atlas, plane)
+        except ValueError as exc:
+            raise ToolError("BAD_PLANE", str(exc)) from exc
+        return {"position_mm": float(plane_position_mm(point, normal, atlas, plane)),
+                "pitch_deg": float(pitch), "yaw_deg": float(yaw)}
 
     def atlas_slice(self, section: object, *, kind: str = "template") -> np.ndarray:
         """The atlas plane at the section's position and cutting angles, on
@@ -743,6 +779,49 @@ class ToolContext:
 
         return caption(image, text)
 
+    # --- background work --------------------------------------------------------------------
+
+    def start_work(self, sections: Sequence[object],
+                   land: Callable[[ToolContext], ToolResult]) -> str:
+        """Start *land* as a piece of the job's background work on *sections*
+        and return its id at once (``w3``); the tool returns meanwhile.
+
+        On a work thread ``land(ctx)`` computes and writes through *ctx*, a
+        context of its own for the same tool (``with ctx.writing():`` makes
+        its writes one undo step; pass ``expect=`` digests taken at the
+        start, as a long tool does). Its :class:`ToolResult` is the work's
+        notice: ``reply["notice"]`` (one paragraph) its text, the reply its
+        result and the pictures saved and numbered with the job's. A
+        :class:`ToolError` or :class:`Refused` it raises fails the work with
+        its message. The next tool reply carries the notice
+        (``background``); ``status`` lists running work; ``submit`` waits
+        for it. While it runs, a write to any of *sections*, by any tool, is
+        refused ``SECTION_BUSY``; so is starting it while other work runs
+        there."""
+        from langslice.job.background import DONE, FAILED, Landed
+
+        job = self._door.job
+        ids = [self._record(section).id for section in sections]
+        busy = job.busy_refusal(ids)
+        if busy is not None:
+            raise Refused(busy.pop("error"), **busy)
+        door, tool = self._door, self._tool
+
+        def landing() -> Landed:
+            context = ToolContext(door, tool, f"{self.call}-bg")
+            try:
+                result = land(context)
+            except (ToolError, Refused) as exc:
+                return Landed(status=FAILED, text=str(getattr(exc, "message", "") or exc))
+            reply = dict(result.reply)
+            return Landed(status=DONE, text=str(reply.pop("notice", "") or "done."),
+                          pictures=[item if isinstance(item, Image.Image)
+                                    else Image.fromarray(np.asarray(item))
+                                    for item in result.pictures],
+                          result=_plain(reply))
+
+        return job.background.start(tool.name, ids, landing, wait_for_images=False).id
+
     # --- writing ----------------------------------------------------------------------------
 
     def _require(self, *properties: str) -> None:
@@ -788,7 +867,11 @@ class ToolContext:
             if expect is None or name not in expect:
                 continue
             record = self._door.state.by_id(name)
-            if record is not None and section_inputs(self._door.state, record) != expect[name]:
+            if record is None:
+                continue
+            now = {section_inputs(self._door.state, record, deformation=flag)
+                   for flag in (False, True)}  # taken with or without the deformation
+            if expect[name] not in now:
                 rows[name] = stale_row(name)
         return rows
 

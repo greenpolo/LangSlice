@@ -84,6 +84,8 @@ FIXES: dict[str, str] = {
     "FROZEN": "The user froze these properties of these sections (the reply names them): "
               "leave them out of the call.",
     "STALE_INPUT": "The section changed while this ran; run the verb again for it.",
+    "SECTION_BUSY": "Background work is running on this section (the reply names it); "
+    "write to it once the work lands.",
     "JOB_BUSY": "Another writer held the job folder's lock; retry.",
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
     "NOTHING_WRITTEN": "Each section's row under result.results names its problem.",

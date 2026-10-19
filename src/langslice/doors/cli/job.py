@@ -481,10 +481,12 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     before = job.snapshot() if dry_run else None
     with captured() as saved:
         reply = tool(**arguments)
+        waits = verbs[verb].image_model or bool(job.background.running())
         if verbs[verb].image_model:
             job.settle_image_corrections()  # this process ends: the calls land now
-            job.background.wait_all()  # and the work they start (their pictures saved)
-    if verbs[verb].image_model and isinstance(reply, dict):
+        if waits:
+            job.background.wait_all()  # and the work started (its pictures saved)
+    if waits and isinstance(reply, dict):
         from langslice.doors.tools.toolbox import with_notices
 
         reply = with_notices(job, reply)

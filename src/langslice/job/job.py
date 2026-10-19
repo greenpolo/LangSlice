@@ -58,7 +58,7 @@ from langslice.core.frozen import FROZEN
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
 from langslice.job import formats
-from langslice.job.background import BackgroundWork, in_worker
+from langslice.job.background import SECTION_BUSY, BackgroundWork, in_worker
 from langslice.job.checkpoint import (
     read_checkpoint,
     relative_to,
@@ -1010,6 +1010,21 @@ class Job:
         named = [name for name in freeze.PROPERTIES if any(name in held for held in hit.values())]
         return {"error": FROZEN, "ids": list(hit), "properties": named,
                 "message": freeze.message(named, list(hit), len(self.state.slices))}
+
+    def busy_refusal(self, section_ids: Collection[str]) -> dict[str, Any] | None:
+        """``{"error": "SECTION_BUSY", "ids", "work", "message"}`` when background
+        work is running on any of *section_ids* (it will write them when it
+        lands, from what they hold now), else None. The landing of that work
+        itself is not refused."""
+        busy = self._background.busy(section_ids) if self._background is not None else {}
+        if not busy:
+            return None
+        works = list({work.id: work for work in busy.values()}.values())
+        running = "; ".join(f"{work.kind} is running on {', '.join(work.sections)} (work {work.id})"
+                            for work in works)
+        return {"error": SECTION_BUSY, "ids": list(busy), "work": [work.id for work in works],
+                "message": f"{running}. Nothing written: write to it once the work lands "
+                           "(its notice comes with a later reply)."}
 
     def clear_stale_deformations(self) -> list[str]:
         """Drop deformations whose linear placement changed; checkpoint; their ids.
