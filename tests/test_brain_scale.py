@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 
 import numpy as np
@@ -14,7 +13,14 @@ from langslice.core.atlas import size
 from langslice.core.deformable import FitSettings, prepare_fit
 from langslice.core.deformable.masks import em_masks, em_parameters
 from langslice.core.deformable.record import diagnose
-from tests.deformable_synthetic import SyntheticAtlas, bump_field, placement, render_section
+from tests.deformable_synthetic import (
+    SyntheticAtlas,
+    bump_field,
+    input_fingerprint,
+    placement,
+    render_section,
+    same_inputs,
+)
 
 
 @pytest.fixture
@@ -46,7 +52,7 @@ def _cases(atlas: SyntheticAtlas) -> dict[str, tuple[Image.Image, FitSettings, n
     }
 
 
-def _digest(prepared) -> str:
+def _digest(prepared) -> tuple[str, list[float]]:
     """Every array and number a prepared fit hands the engines and the EM."""
     inputs = prepared.inputs
     arrays = [inputs.fixed_mask, inputs.moving_mask, inputs.fixed, inputs.moving,
@@ -61,18 +67,25 @@ def _digest(prepared) -> str:
     numbers = json.dumps([list(inputs.spacing_mm), list(inputs.origin_mm),
                           inputs.correlation_radius_px, inputs.edge_weight,
                           inputs.label_weights, prepared.details], sort_keys=True, default=str)
-    return hashlib.sha1(b"".join(np.ascontiguousarray(a).tobytes() for a in arrays)
-                        + numbers.encode()).hexdigest()[:16]
+    return input_fingerprint(arrays, numbers)
 
 
 #: What prepare_fit built for these fits at standard detail before distances
 #: followed the brain's size (main at 8ac2c91b), hashed: the adult mouse brain
 #: (scale 1) must keep getting exactly these.
 BEFORE_SCALING = {
-    "stain": "6d5e3fea8ba3a81d",
-    "restricted": "df10e6019118df06",
-    "elastix": "f85c5c9e70fbd805",
-    "traced": "668d1cbb15bad557",
+    "stain": ("6e410b4365cd6375", [
+        61225.60, 50625.84, 24728.41, 15330.64, 7092.25, 3009.99, 7696.39, 3688.30]),
+    "restricted": ("c53db7ebfb9a2e44", [
+        61225.60, 50625.84, 24728.41, 15330.64, 7564.62, 3362.36, 6534.27, 2685.52, 10189.07,
+        9643.09]),
+    "elastix": ("158bc238d8b45124", [
+        61225.60, 50625.84, 26067.32, 15765.94, 14436.51, 8142.36, 14402.35, 8905.77, 8117.22,
+        7601.52]),
+    "traced": ("593e0c925340ef04", [
+        10360.54, 7447.87, 11390.50, 8564.82, 47038.00, 45973.85, 34183.00, 32101.02, 4606.00,
+        4271.28, 4767.00, 4433.09, 2955.00, 2648.08, 527.00, 407.74, 46511.00, 45427.19, 33581.00,
+        31440.59, 4622.00, 4277.06, 4809.00, 4465.11, 2956.00, 2642.72, 543.00, 418.44]),
 }
 
 
@@ -81,7 +94,7 @@ def test_the_adult_mouse_brain_prepares_the_fits_it_did_before_scaling(atlas):
     for name, (image, settings, lines) in _cases(atlas).items():
         prepared = prepare_fit(image, atlas, placement(), settings, lines=lines)
         assert prepared.brain_scale == 1.0
-        assert _digest(prepared) == BEFORE_SCALING[name], name
+        assert same_inputs(_digest(prepared), BEFORE_SCALING[name]), name
 
 
 def test_the_adult_mouse_brain_keeps_its_diagnostics_and_em_settings():

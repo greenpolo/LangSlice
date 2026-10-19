@@ -71,6 +71,9 @@ dev = [
     "import-linter>=2.1",
     # The OME-NGFF schema check of the deformation records (tests/test_ome_warp.py).
     "jsonschema>=4.18",
+    # The anthropic-api provider's imports (type check, tests/test_anthropic_api_provider.py).
+    "anthropic>=1.13",
+    "httpx2",
 ]
 
 [tool.setuptools.packages.find]

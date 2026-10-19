@@ -9,7 +9,8 @@ documented convention: section pixel p shows the placed-atlas point
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import hashlib
+from collections.abc import Callable, Sequence
 
 import cv2
 import numpy as np
@@ -124,3 +125,21 @@ def fit_section(section_image, atlas, placement, settings=None, **options):
 
     prepared = prepare_fit(section_image, atlas, placement, settings or FitSettings(), **options)
     return finish_fit(prepared, run_engine(prepared.inputs, prepared.settings))
+
+
+def input_fingerprint(arrays: Sequence[np.ndarray], numbers: str = "") -> tuple[str, list[float]]:
+    """What a fit is handed, comparable across library releases: integer and
+    boolean arrays, every shape and *numbers* hashed exactly; each float array
+    as its sum and sum of squares, to compare with :func:`same_inputs` (a SciPy
+    release moves a filtered edge channel by ~1e-6 per pixel)."""
+    arrays = [np.ascontiguousarray(a) for a in arrays]
+    floats = [a.astype(np.float64) for a in arrays if a.dtype.kind == "f"]
+    exact = b"".join(str((a.shape, a.dtype.str)).encode() + (b"" if a.dtype.kind == "f" else a.tobytes())
+                     for a in arrays)
+    sums = [s for a in floats for s in (float(a.sum()), float((a * a).sum()))]
+    return hashlib.sha1(exact + numbers.encode()).hexdigest()[:16], sums
+
+
+def same_inputs(fingerprint: tuple[str, list[float]], expected: tuple[str, list[float]]) -> bool:
+    return (fingerprint[0] == expected[0] and len(fingerprint[1]) == len(expected[1])
+            and bool(np.allclose(fingerprint[1], expected[1], rtol=1e-5, atol=0, equal_nan=True)))
