@@ -1449,6 +1449,33 @@ def _variant(spec: JobSpec) -> Variant:
     return Variant.of(spec, auto=False)
 
 
+TASKED = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def tasked_stub():
+    """Say hello.[[?elastix_affine  It also fits transforms.]] Done."""
+
+def tasked(ctx):
+    return ToolResult({})
+
+def tools():
+    return [ToolSpec("tasked", tasked_stub, tasked, kind="read", group="Common")]
+'''
+
+
+def test_a_plugin_sentence_naming_a_tool_of_a_task_that_is_off_is_dropped(make, images: Path):
+    ref = make("tasked_plugin", TASKED)
+    for tasks, disabled, named in ((["position", "transform"], [], True),
+                                   (["position"], [], False),
+                                   (["position", "transform"], ["elastix_affine"], False)):
+        spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=tasks, disabled=disabled)
+        text = declaration("tasked", _variant(spec)).doc
+        assert ("It also fits transforms." in text) is named, (tasks, disabled, text)
+    # the native declarations keep their pinned wording whatever the tasks
+    spec = JobSpec(image_folder=str(images), plugins=[ref], tasks=["position"])
+    assert "elastix_affine" in declaration("mark_damage", _variant(spec)).doc
+
+
 def test_atlas_and_plane_patterns_are_checked_and_recorded(make, images: Path):
     bad = make("bad_atlases", BY_ATLAS.replace('planes=("coronal",)', 'planes=("axial",)'))
     with pytest.raises(ValueError, match="planes are among"):
@@ -1567,6 +1594,32 @@ def test_raw_section_raster_of_one_channel_is_that_page_as_gray(make, images: Pa
     assert again["error"] == "BAD_ARGS"
 
 
+CHANNELS = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(section: str):
+    """Read."""
+
+def handler(ctx, section):
+    return ToolResult({"names": list(ctx.channels(section))})
+
+def tools():
+    return [ToolSpec("channel_names", stub, handler, kind="read", group="Common")]
+'''
+
+
+def test_channels_names_the_raw_channels_section_raster_takes(make, images: Path):
+    import tifffile
+
+    ref = make("channels_plugin", CHANNELS)
+    Image.fromarray(np.zeros((30, 40, 3), np.uint8)).save(images / "s0.png")
+    tifffile.imwrite(images / "s1.tif", np.zeros((2, 30, 40), np.uint8))
+    _state, _ctx, box = box_of(images, ref, n=0, inputs={"channel_names": ["DAPI", "GFP"]})
+    assert call(box, "channel_names", section="s1.tif")["names"] == ["DAPI", "GFP"]
+    assert call(box, "channel_names", section="s0.png")["names"] == ["gray"]
+    assert call(box, "channel_names", section="nope.png")["error"] == "UNKNOWN_SLICE_IDS"
+
+
 PLACER = '''
 from langslice.plugin_api import ToolResult, ToolSpec
 
@@ -1639,6 +1692,70 @@ def test_a_registration_is_read_in_the_current_orientation_and_written_as_one_st
     assert held.transform is not None and held.transform["note"] == "from file"
     assert call(box, "undo")["status"] == "ok"
     assert state.by_id("s1.png").transform is None and state.by_id("s1.png").position_mm == 2.5
+
+
+READER = '''
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(path: str, on: str = "file"):
+    """Read a registration."""
+
+def handler(ctx, path, on="file"):
+    return ToolResult(ctx.read_registration(path, registered_on=on))
+
+def tools():
+    return [ToolSpec("read_file_registration", stub, handler, kind="read", group="Common")]
+'''
+
+
+def test_a_registration_made_on_the_oriented_section_is_read_for_that_orientation(
+        make, images: Path, tmp_path: Path):
+    from langslice.core.layers import atlas_facts
+    from langslice.core.maps import SWAP, orientation_matrix, render_sizes
+    from langslice.job.quint import job_export
+    from tests.test_import_registrations import (
+        DeepAtlas,
+        Given,
+        knobs,
+        params_for,
+        pixel_map,
+    )
+
+    ref = make("read_oriented", READER)
+    atlas = DeepAtlas()
+    given = [
+        Given("s0.png", 0.62, 3.5, -2.0, 0, False, knobs(12.0, 1.1, 0.92, 0.2, -0.1, 0.08)),
+        Given("s1.png", 1.0, 3.5, -2.0, 0, True, knobs(-8.0, 1.0, 1.0, 0.0, 0.1, 0.0)),
+        Given("s2.png", 1.33, 3.5, -2.0, 90, False, knobs(5.0, 0.95, 1.05, 0.0, 0.0, 0.0)),
+        Given("s3.png", 1.5, 3.5, -2.0, 270, True, knobs(-5.0, 1.05, 0.95, 0.1, 0.0, 0.0)),
+    ]
+    state, ctx, box = box_of(images, ref, n=4, atlas=atlas, inputs={"pixel_size_um": 25.0})
+    for g in given:
+        record = state.by_id(g.section_id)
+        record.flip, record.rotation_deg = g.flip, g.rotation_deg
+    ctx.render_cache.clear()
+    rows = []
+    for index, g in enumerate(given):  # the registration was made on the ORIENTED image
+        size = render_sizes(ctx, g.section_id).file_size
+        turned = (size[1], size[0]) if g.rotation_deg % 180 == 90 else size
+        to_oriented = SWAP @ orientation_matrix(size, g.rotation_deg, g.flip) @ SWAP
+        rows.append({"filename": g.section_id, "width": turned[0], "height": turned[1],
+                     "nr": index + 1, "markers": [],
+                     "pixel_to_atlas_um": pixel_map(ctx, g) @ np.linalg.inv(to_oriented)})
+    file = tmp_path / "oriented.json"
+    file.write_text(json.dumps(job_export(rows, atlas_facts(atlas))))
+    reply = call(box, "read_file_registration", path=str(file), on="oriented")
+    assert reply["status"] == "ok" and not reply["refused"], reply
+    found = {row["id"]: row for row in reply["placements"]}
+    for g in given:  # the placement and numbers a file made on the stored file would give
+        row = found[g.section_id]
+        assert (row["rotation_deg"], row["flip"]) == (g.rotation_deg, g.flip)
+        assert row["position_mm"] == pytest.approx(g.position_mm, abs=1e-3)
+        np.testing.assert_allclose(row["params"], params_for(ctx, g), atol=1e-6)
+    # read as a file-frame registration the same entries put a mirror or a turn in the numbers
+    as_file = call(box, "read_file_registration", path=str(file))["placements"]
+    wrong = {row["id"]: row for row in as_file}
+    assert not np.allclose(wrong["s1.png"]["params"], params_for(ctx, given[1]), atol=1e-3)
 
 
 def test_a_registration_read_at_the_stack_plane_projects_onto_it(

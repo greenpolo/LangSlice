@@ -57,7 +57,8 @@ process forks for it, `cli/warm.py`).
   re-indented by `model_doc`). The description is the tool's only
   description: the job statement names the tools and describes none.
   `Variant` (`auto`, `door`, `uncapped`, `forced_view`, `positions`,
-  `prompt`, `brain_scale`; `Variant.of(spec, auto=, image_model=, door=, prompt=,
+  `prompt`, `brain_scale`, `absent` (the tools a task that is off leaves out: plugin
+  stubs render by it, native text does not); `Variant.of(spec, auto=, image_model=, door=, prompt=,
   uncapped=, brain_scale=)`) is
   what of a run changes a declaration (`dropped_arguments`, each dropped
   argument's `Args` entry cut from the description): `off` (the job's
@@ -100,8 +101,10 @@ process forks for it, `cli/warm.py`).
   `module:qualname`, ToolSpecs as `inline:<digest>`).
   `context.py`: `ToolContext` (reads `sections`, `section_image`, `atlas`,
   `fit_frame` (`placed_atlas_to_section`: the current placement), `atlas_slice`,
-  `section_inputs`, `read_registration` (each section in its current
-  orientation, `params`, `at=` a fixed plane); `section_raster(raw=)`;
+  `section_inputs`, `channels` (a section's raw channel names),
+  `read_registration` (each section in its current orientation, `params`, `at=` a
+  fixed plane, `registered_on="oriented"` for a file made on the oriented
+  render); `section_raster(raw=)`;
   conversions `transform_from_matrix` / `transform_from_params`, and
   `deformation_from_map` (a full fit-grid-to-native map as a
   `DeformationProposal`, `ops.deformable.warp_from_map`); writes

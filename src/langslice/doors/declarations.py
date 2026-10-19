@@ -962,6 +962,11 @@ class Variant:
     prompt: str = ""
     #: What the job disables (``JobSpec.disabled``).
     off: frozenset[str] = frozenset()
+    #: The tools the run lacks because their task is off. A tool plugin's text
+    #: renders by these as well as by ``off`` (a plugin sentence that needs
+    #: ``elastix_affine`` stands only where the Linear task is on); the native
+    #: declarations keep their pinned wording and render by ``off`` alone.
+    absent: frozenset[str] = frozenset()
     #: The tool plugins the job loads (:class:`langslice.core.plugins.LoadedPlugin`,
     #: compared by identity): their tools are declared from their own stubs, and
     #: ``look`` takes ``layers``. Empty: no plugin text is in any declaration.
@@ -995,9 +1000,12 @@ class Variant:
             else:
                 text = base_prompt(str(spec.plane), spec.nonlinear.provider)
         from langslice.core.plugins import of_spec
+        from langslice.core.toolset import tools_for
 
         held = tuple(of_spec(spec))
-        return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view),
+        absent = frozenset(name for name, tool in tools_for(spec).items()
+                           if not tool.when(spec)) if held else frozenset()
+        return cls(auto=bool(auto), door=door, forced_view=bool(spec.force_view), absent=absent,
                    uncapped=door == "cli" if uncapped is None else uncapped,
                    positions=bool(spec.has("position")),
                    prompt=text, off=frozenset(spec.switched_off), plugins=held,
@@ -1222,7 +1230,7 @@ def declaration(name: str, variant: Variant = FULL) -> Declaration:
             doc = _reworded(name, doc, capped, uncapped)
     if variant.brain_scale != 1.0:
         doc = _scaled_doc(name, doc, variant.brain_scale)
-    doc = render(doc, variant.off)
+    doc = render(doc, variant.off if name in STUBS else variant.off | variant.absent)
     if name == "trace_borders":
         doc = _with_prompt(doc, variant.prompt)
     dropped = dropped_arguments(name, variant)
