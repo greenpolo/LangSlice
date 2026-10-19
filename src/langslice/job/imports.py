@@ -96,6 +96,7 @@ from langslice.core.import_geometry import (
     implied_pixel_size_um,
     placement_from_pixel_map,
 )
+from langslice.core.maps import SWAP, orientation_matrix
 from langslice.core.space import Plane
 from langslice.job.quint import (
     anchoring_from_pixel_map,
@@ -554,6 +555,7 @@ def import_placements(
     section_ids: Iterable[str] | None = None,
     orientations: Mapping[str, tuple[int, bool]] | None = None,
     planes: Mapping[str, tuple[float, float, float]] | None = None,
+    registered_on: str = "file",
 ) -> ImportResult:
     """Every matched section's placement in the job's terms (see the module
     text). *workspace* gives the job's atlas, plane, section files and
@@ -563,11 +565,20 @@ def import_placements(
     section's ``(position_mm, pitch_deg, yaw_deg)`` (default: the file's own):
     its six numbers are then the file's map projected onto that plane.
     A section whose entry cannot be placed is listed under ``refused`` with
-    the reason; an ambiguous match raises :class:`AmbiguousMatch`."""
+    the reason; an ambiguous match raises :class:`AmbiguousMatch`.
+
+    *registered_on* says which image the file's entries were made on:
+    ``"file"`` (default) the section's image file as stored, ``"oriented"`` the
+    section as its orientation turns and flips it (what a tool that drew
+    ``section_raster`` and registered that picture holds); the entry's width,
+    height and fractions then refer to the oriented image, and the placement is
+    read for the orientation in *orientations* (default: none)."""
     from langslice.core.discovery import discover_slices
     from langslice.core.layers import atlas_facts
     from langslice.core.maps import render_sizes
 
+    if registered_on not in ("file", "oriented"):
+        raise ValueError(f"registered_on is 'file' or 'oriented'; got {registered_on!r}")
     held = source if isinstance(source, RegistrationFile) else read_registration(source)
     if section_ids is None:
         section_ids = [os.path.basename(path)
@@ -592,16 +603,23 @@ def import_placements(
         except (OSError, ValueError) as exc:
             refused[section_id] = str(exc)
             continue
+        turn = (orientations or {}).get(section_id, (0, False)) if registered_on == "oriented" \
+            else (0, False)
+        shown = (sizes.file_size[1], sizes.file_size[0]) if int(turn[0]) % 180 == 90 \
+            else sizes.file_size
         if entry.size is not None:
             registered = entry.size[0] / float(entry.size[1])
-            here = sizes.file_size[0] / float(sizes.file_size[1])
+            here = shown[0] / float(shown[1])
             if abs(registered / here - 1.0) > ASPECT_TOLERANCE:
                 problems.append(
                     f"registered on a {entry.size[0]} x {entry.size[1]} image, the file is "
-                    f"{sizes.file_size[0]} x {sizes.file_size[1]}: placed by the same "
+                    f"{shown[0]} x {shown[1]}: placed by the same "
                     "fractions of width and height")
-        prepared.append((index, section_id, rule, sizes,
-                         pixel_map_on(fractions, sizes.file_size), problems))
+        matrix = pixel_map_on(fractions, shown)
+        if registered_on == "oriented":  # file pixels -> oriented pixels, as [row, col, 1]
+            matrix = matrix @ SWAP @ orientation_matrix(sizes.file_size, int(turn[0]),
+                                                        bool(turn[1])) @ SWAP
+        prepared.append((index, section_id, rule, sizes, matrix, problems))
 
     implied = [implied_pixel_size_um(matrix) for *_rest, matrix, _p in prepared]
     known = {section_id: workspace.calibration(section_id) for _i, section_id, *_r in prepared}

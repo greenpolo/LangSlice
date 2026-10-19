@@ -75,6 +75,11 @@ that names it in the other tools' descriptions (written with [needs
 marks](registration.md#switching-tools-and-options-off), `[[?other_tool ...]]`)
 is dropped. The provenance records the two fields.
 
+A plugin's description is also rendered by the tools the job's tasks leave out: a
+sentence written `[[?elastix_affine ...]]` in a plugin's stub stands only where the
+Linear task is on and `elastix_affine` is not disabled or frozen away. (The native
+tools' texts keep naming a tool of a task that is off, as their text snapshot pins.)
+
 The checks run when the factory is called: a name that clashes, an unknown
 `task`, `planes` that are no plane, `atlases` that are not name patterns, `writes` outside the five properties, `writes` on a read tool, a bad
 limit, a stub with no docstring, another API version. Each is refused with one
@@ -103,13 +108,14 @@ One per call; a handler must not keep it.
 | Call | Gives |
 |---|---|
 | `ctx.sections()`, `ctx.section(id)` | `SectionView`: `id`, `index`, `file_size`, `pixel_size_um`, `pixel_size_source`, `position_mm`, `angles`, `flip`, `rotation_deg`, `affine` (`kind`, the six normalized numbers `matrix`, `knobs`, `mirrored`), `deformation`, `damaged_regions`, `damage_note`, `layers`, `frozen` |
+| `ctx.channels(id)` | The names of the section's raw channels in file order (`red`, `green`, `blue` or `gray` for a colour file; the host's names or `ch1`, `ch2`... for a multi-page file): what `channels=[name]` takes |
 | `ctx.section_raster(id, level=, channels=, raw=False)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: see [what a raster shows](#what-a-raster-shows) for what `channels` and `raw` give; `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
 | `ctx.section_image(id, ...)` | Only the `array` of `section_raster` (same arguments). **Its pixels are not `section_px`** (see [frames](#frames)) |
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
 | `ctx.fit_frame(id)` | `FitFrame`: the section on its fit grid (`image`), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `excluded` (the native plane's pixels of the section's marked damage regions, sides included, which every native fit leaves out; None when none are marked), `damage_zone` (`excluded` widened by the margin the native fits also leave out of their comparison, 0.1 mm scaled to the atlas's brain size), `stain` with `stain=True` (the section's preprocessed channel on the grid of `image`, the picture the native fits read), `applied_map` (the native atlas pixel of every fit-grid pixel through the section's current registration, its deformation included, `(H, W, 2)` as `deformation_from_map` takes it: where an engine that builds on a landmark warp or an earlier fit starts; None without a deformation), `plane` (the plane in atlas micrometres: `center_um`, `dx`, `dy`, `px_um`, `shape`, and `native_to_um`, the 3x3 taking a native pixel centre `[x, y, 1]` to its atlas micrometres, voxel centres at index times resolution) |
 | `ctx.atlas_slice(id, kind=)` | One of those atlas planes |
 | `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, appearance, damage marks); for [`expect=`](#long-tools-and-stale_input) |
-| `ctx.read_registration(path, sections=(), at=None)` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements`, nothing written; see [reading a registration](#reading-a-registration) |
+| `ctx.read_registration(path, sections=(), at=None, registered_on="file")` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements`, nothing written; see [reading a registration](#reading-a-registration) |
 | `ctx.layers(id)` | The layers the section shows |
 
 **Converting.** `ctx.transform_from_matrix(id, matrix)` takes the 2x3 map from
@@ -217,7 +223,7 @@ or a smaller `level` is resampled with Lanczos.
 
 ### Reading a registration
 
-`ctx.read_registration(path, sections=(), at=None)` reads a file from QuickNII,
+`ctx.read_registration(path, sections=(), at=None, registered_on="file")` reads a file from QuickNII,
 VisuAlign, DeepSlice or `registration.json` for the job's sections (default all)
 and returns `{"placements", "refused": {id: reason}, "missing": [id],
 "unmatched": [names in the file]}`. It writes nothing. A placement:
@@ -230,6 +236,14 @@ and returns `{"placements", "refused": {id: reason}, "missing": [id],
 | `in_plane` | The six numbers as rotation, scales and shear on the render |
 | `pixel_size_um`, `pixel_size_source` | The calibration the numbers are relative to (`imported` means the job had none and the file's maps implied one) |
 | `out_of_plane_um` | How far the file's map lies off the plane it was read on (about 0 on the file's own plane) |
+
+`registered_on="oriented"` says the file's entries were made on the section as its
+orientation turns and flips it (the image `section_raster` gives a method), not on the
+image file as stored: the entry's width, height and fractions then refer to the oriented
+image, and the numbers come out for the same orientation the section holds. A tool that
+hands an engine `section_raster` and reads its answer back uses it; with the default
+`"file"` an engine's answer about a flipped or turned section would come back with the
+flip in its numbers.
 
 `at={id: {"position_mm": mm, "angles": (pitch, yaw)}}` reads a section's map on a
 plane of your choosing (a section's final position and angles, e.g. a stack's

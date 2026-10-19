@@ -389,6 +389,14 @@ class ToolContext:
             species=self._door.ctx.species, plane=str(self._door.state.plane),
             shape=tuple(int(v) for v in np.shape(atlas.annotation)))
 
+    def channels(self, section: object) -> tuple[str, ...]:
+        """The names of the section's raw channels, in file order (``red``,
+        ``green``, ``blue``, or ``gray``, for a colour file; the host's names or
+        ``ch1``, ``ch2``... for a multi-page file): what ``section_raster(...,
+        channels=[name])`` takes."""
+        names, _planes = self._door.ctx.section_channels(self._record(section).id)
+        return tuple(str(name) for name in names)
+
     def section_inputs(self, section: object, *, deformation: bool = False) -> str:
         """A digest of what a computation on the section reads (its placement,
         appearance and damage marks; with *deformation* its deformation too).
@@ -703,7 +711,7 @@ class ToolContext:
 
     def read_registration(self, path: str | Path, *, sections: Sequence[str] = (),
                           at: Mapping[object, Mapping[str, Any]] | None = None,
-                          ) -> dict[str, Any]:
+                          registered_on: str = "file") -> dict[str, Any]:
         """A linear registration file made elsewhere (QuickNII or VisuAlign
         JSON/XML, DeepSlice CSV/JSON/XML, a LangSlice ``registration.json``)
         as placements for this job's sections. Nothing is written. Returns
@@ -729,7 +737,13 @@ class ToolContext:
         and ``out_of_plane_um`` is about 0. ``params`` is None, with the
         reason in ``params_note``, when the job has no pixel size for the
         section (the six numbers are relative to a pixel size, so they mean
-        nothing to a job that would calibrate otherwise)."""
+        nothing to a job that would calibrate otherwise).
+
+        *registered_on* is the image the file's entries were made on:
+        ``"file"`` (default) the image file as stored, ``"oriented"`` the
+        section as its orientation turns and flips it, which is what a method
+        sees when the plugin hands it :meth:`section_raster`; the six numbers
+        are for the oriented render either way."""
         from langslice.job.imports import import_placements
 
         state = self._door.state
@@ -747,7 +761,7 @@ class ToolContext:
         result = import_placements(
             Path(path), self._door.ctx, section_ids=names,
             orientations={r.id: (r.rotation_deg, r.flip) for r in state.slices},
-            planes=planes)
+            planes=planes, registered_on=registered_on)
         rows = []
         for p in result.placements:
             calibrated = p.pixel_size_source != "imported"
