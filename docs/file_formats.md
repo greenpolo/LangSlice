@@ -214,7 +214,13 @@ pixels and `nr` that index + 1.
   voxel edges). Allen mouse jobs at any supported resolution export to
   `ABA_Mouse_CCFv3_2017_25um.cutlas` with its anchoring rescaled to that
   target's voxels (voxel-edge coordinates scale with the voxel size; the
-  volumes span the same millimetres). The rat target is DeepSlice's name
+  volumes span the same millimetres). `ccfv3augmented_mouse_25um` (the Allen
+  25 um volume with 38 more planes in front and 24 behind) exports to the
+  same target on the Allen grid: positions are 0.350 mm (14 planes) further from
+  the front than in the Allen volume, and an anchoring is read back onto the
+  augmented atlas with the same offset, so one QuickNII or DeepSlice file
+  placed on `allen_mouse_25um` and on the augmented atlas differs by 0.350 mm
+  in position and in nothing else. The rat target is DeepSlice's name
   (`WHS_Rat_v4_39um.cutlas`); for other atlases the QuickNII target is
   assumed to share the BrainGlobe voxel grid (untested). `target` is the
   `.cutlas` name for known atlases.
@@ -272,7 +278,7 @@ cutting angles, orientation and affine transforms. Tasks default to
 | Format | What is read |
 |---|---|
 | QuickNII / VisuAlign JSON or XML | Target atlas and each section's anchoring, dimensions and filename |
-| DeepSlice CSV, JSON or XML | Section anchorings and dimensions; CSV assumes the mouse target |
+| DeepSlice CSV, JSON or XML | Section anchorings and dimensions; CSV assumes the mouse target (also for jobs on `ccfv3augmented_mouse_25um`, read on the Allen grid) |
 | LangSlice `registration.json` | Each section's `pixel_to_atlas_um` and source image size |
 
 Matching tries the basename first, then the stem ignoring case, then a
