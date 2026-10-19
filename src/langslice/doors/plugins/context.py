@@ -1097,7 +1097,9 @@ class ToolContext:
 def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
     """The native atlas plane's frame in atlas micrometres (``center_um``,
     ``dx``, ``dy``: the display column and row directions, ``px_um``,
-    ``shape``, ``resolution_um``), the plane
+    ``shape``, ``resolution_um``; ``native_to_um``: 3x3 from a native pixel
+    centre ``[x, y, 1]`` to its point in atlas micrometres, exactly the plane
+    sampled, voxel centres at index times resolution), the plane
     :func:`langslice.core.oblique.sample_oblique_plane` samples."""
     from langslice.core.oblique import build_rotation_matrix, plane_axes
 
@@ -1120,8 +1122,15 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
         dx, dy = d_row, d_col
         px = [float(res[row_axis]), float(res[col_axis])]
         size = [shape[col_axis], shape[row_axis]]
+    from langslice.core.oblique import plane_index_affine
+
+    to_index = plane_index_affine(atlas, float(placement.position_mm), placement.plane,
+                                  float(placement.pitch_deg), float(placement.yaw_deg))
+    swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # [x, y, 1] -> [row, col, 1]
+    native_to_um = np.diag(res) @ to_index @ swap
     return {"center_um": centre.tolist(), "dx": dx.tolist(), "dy": dy.tolist(),
-            "px_um": px, "shape": size, "resolution_um": res.tolist()}
+            "px_um": px, "shape": size, "resolution_um": res.tolist(),
+            "native_to_um": native_to_um.tolist()}
 
 
 __all__ = [
