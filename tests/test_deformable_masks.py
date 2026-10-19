@@ -10,7 +10,6 @@ the footprint masks, built exactly as before.
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
@@ -33,8 +32,10 @@ from langslice.core.deformable.masks import (
 from tests.deformable_synthetic import (
     SyntheticAtlas,
     bump_field,
+    input_fingerprint,
     placement,
     render_section,
+    same_inputs,
 )
 
 needs_engine = pytest.mark.skipif(importlib.util.find_spec("fireants") is None,
@@ -128,11 +129,15 @@ def test_masks_are_deterministic():
 
 
 #: The engine inputs (masks, images, edge channels) prepare_fit built for
-#: these settings before the EM mask and FireANTs (main at f1770df2), hashed:
+#: these settings before the EM mask and FireANTs (main at f1770df2), as fingerprints:
 #: the Elastix affine, a restricted step's and a whole-section fit's first run.
 UNCHANGED_INPUTS = {
-    "elastix": "e2f30d21c9f654c0", "restricted": "0268a4b5cabe8142",
-    "first_run": "e2f30d21c9f654c0",
+    "elastix": ("85b2b163014fdea2", [
+        23948.11, 19925.92, 9606.64, 5949.57, 3090.42, 1370.41, 3199.30, 1548.77]),
+    "restricted": ("66b977e835f94980", [
+        23948.11, 19925.92, 9606.64, 5949.57, 2993.03, 1291.40, 2502.89, 959.24]),
+    "first_run": ("85b2b163014fdea2", [
+        23948.11, 19925.92, 9606.64, 5949.57, 3090.42, 1370.41, 3199.30, 1548.77]),
 }
 
 
@@ -148,10 +153,10 @@ def test_the_affine_and_restricted_steps_get_the_inputs_they_always_got(atlas):
         prepared = prepare_fit(image, atlas, placement(), settings)
         inputs = prepared.inputs
         assert inputs is not None
-        digest = hashlib.sha1(b"".join(np.ascontiguousarray(a).tobytes() for a in (
+        fingerprint = input_fingerprint([
             inputs.fixed_mask, inputs.moving_mask, inputs.fixed, inputs.moving,
-            inputs.fixed_edges, inputs.moving_edges))).hexdigest()[:16]
-        assert digest == UNCHANGED_INPUTS[name], name
+            inputs.fixed_edges, inputs.moving_edges])
+        assert same_inputs(fingerprint, UNCHANGED_INPUTS[name]), name
         assert (prepared.em is None) == (name == "elastix"), name
 
 
