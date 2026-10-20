@@ -236,13 +236,16 @@ class EMContext:
     working grid: the whole placed *footprint* (with its margin; the EM's
     tissue and background are told apart by it, so a restricted fit passes
     the unrestricted one), the *damage_zone*, for a region-restricted
-    fit the regions' *neighbourhood* (None: the whole section), and the
-    atlas's brain *scale*."""
+    fit the regions' *neighbourhood* (None: the whole section), the
+    atlas's brain *scale*, and *section_keep*: section pixels a caller's own
+    mask keeps in the comparison (None: every pixel; a script's
+    ``fit_fireants(mask=)``), which the EM mask never adds back."""
 
     footprint: np.ndarray
     damage_zone: np.ndarray
     neighbourhood: np.ndarray | None = None
     scale: float = 1.0
+    section_keep: np.ndarray | None = None
 
 
 def em_masks(
@@ -255,6 +258,8 @@ def em_masks(
     scope)."""
     weights = em_weights(J, warped_atlas, context.footprint, spacing_mm, context.scale)
     fixed = weights["WM"] >= EM_MATCH_THRESHOLD
+    if context.section_keep is not None:
+        fixed &= context.section_keep
     moving = ~context.damage_zone
     scope = context.footprint if context.neighbourhood is None else (
         context.footprint & context.neighbourhood)

@@ -80,7 +80,9 @@ sentence written `[[?elastix_affine ...]]` in a plugin's stub stands only where 
 Linear task is on and `elastix_affine` is not disabled or frozen away. (The native
 tools' texts keep naming a tool of a task that is off, as their text snapshot pins.)
 
-The checks run when the factory is called: a name that clashes, an unknown
+The checks run when the factory is called: a name that clashes (with a native
+tool, another plugin tool, or `script`, the name a script's writes are
+recorded under), an unknown
 `task`, `planes` that are no plane, `atlases` that are not name patterns, `writes` outside the five properties, `writes` on a read tool, a bad
 limit, a stub with no docstring, another API version. Each is refused with one
 line.
@@ -98,7 +100,11 @@ exception is a reply `PLUGIN_FAILED` naming it, and the job carries on.
 
 ## `ToolContext`
 
-One per call; a handler must not keep it.
+One per call; a handler must not keep it. A script gets the same context as
+`job.context` ([your own method](library.md#your-own-method)): its writes are
+recorded as `script` instead of `plugin:<tool>`, each outermost write is one
+undo step, its reads sync the job first, and `work_dir` and `start_work` are
+refused (`NOT_FOR_SCRIPTS`).
 
 **The job.** `ctx.spec` (the job's spec as a read-only mapping), `ctx.job_dir`,
 `ctx.work_dir()` (`<job>/plugins/<tool>/`, made on use), `ctx.task_on(task)`.
@@ -117,6 +123,9 @@ One per call; a handler must not keep it.
 | `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, appearance, damage marks); for [`expect=`](#long-tools-and-stale_input) |
 | `ctx.read_registration(path, sections=(), at=None, registered_on="file")` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements`, nothing written; see [reading a registration](#reading-a-registration) |
 | `ctx.layers(id)` | The layers the section shows |
+| `ctx.atlas_plane(position_mm, pitch_deg=0, yaw_deg=0, kinds=)` | `AtlasPlane`: the atlas plane at any position and angles, on its native grid (`atlas`, `plane` as `fit_frame` gives them) |
+| `ctx.atlas_volume(kind)` | A whole atlas volume (`annotation` or one of the atlas's images), read only |
+| `ctx.to_atlas_um(id, xy, frame="file")`, `ctx.from_atlas_um(id, xyz_um, frame="file")`, `ctx.plane_distance_um(id, xyz_um)`, `ctx.region_at(id, xy, frame="file")` | Section points (`[x, y]` pixels of the file, or `frame="fit"` of the fit grid) to atlas micrometres through the current registration, its deformation included, and back (projected onto the section's plane, through the deformation's inverse); how far atlas points lie off the plane; the region (`id`, `acronym`, `name`) under each point |
 
 **Converting.** `ctx.transform_from_matrix(id, matrix)` takes the 2x3 map from
 the fit grid's pixels to native atlas pixels that registration engines return
@@ -133,6 +142,20 @@ placement that says it in the stack's conventions: `position_mm` (where the
 plane crosses the volume's in-plane centre), `pitch_deg` and `yaw_deg`.
 Nothing is written; a plane tilted past what a cutting angle can say is
 `BAD_PLANE`.
+
+`ctx.write_frame(id, folder, format="tif")` writes an outside engine's
+inputs (the section, its preprocessed channel and the atlas plane placed on
+the fit grid, the atlas plane on its native grid, `frame.json`; spacing 1,
+origin 0); `ctx.map_from_itk(id, source, fixed="section", atlas="placed")`
+reads its answer (an ITK/ANTs displacement field or transform file, a
+SimpleITK object, an array of pixel displacements) as the full map
+`deformation_from_map` takes, and `ctx.transform_from_itk(...)` an affine as a
+`TransformProposal` ([an outside engine's files](library.md#an-outside-engines-files)).
+`ctx.fit_fireants(id, settings=, mask=, start=, em=, marked=)` and
+`ctx.fit_elastix(id, restrict_to=, exclude=, atlas_image=, mask=, marked=)`
+run the native engines with settings and a section mask of the caller's own
+and return a `DeformationProposal` / `TransformProposal`, not written
+([the native engines](library.md#the-native-engines-with-settings-of-your-own)).
 
 `ctx.deformation_from_map(id, native_xy, note="", meta=None)` takes a
 deformable method's result: `native_xy` is a float array `(H, W, 2)`, `H` by
@@ -341,7 +364,7 @@ native atlas pixels to fit-grid pixels; `transform_from_matrix` and
 `deformation_from_map` take maps the other way.
 
 `look` takes `layers=[names]` (or `["all"]`) for modes `section` and `overlay`
-once the job has plugins. Points and lines are drawn with a dark halo, label
+on every job (a script leaves layers too, under `plugins/script/`). Points and lines are drawn with a dark halo, label
 and scalar rasters as outlines (a scalar at its `level`), never as translucent
 fills. `section_px` layers follow the section through the picture (and its
 applied deformation in an overlay); `atlas_um` layers are placed on the
@@ -374,7 +397,7 @@ writers do not count toward a task's requirement that one of its own tools
 stays on. An agent CLI reply from a plugin tool is the plugin's reply as it is.
 
 A job without plugins is unchanged: no plugin text is in any declaration, reply
-or picture, and `look` has no `layers` argument.
+or picture.
 
 ## Provenance
 
@@ -448,4 +471,7 @@ between calls.
 | `BAD_MATRIX`, `BAD_FIELD` | A degenerate or non-finite linear map; a deformation map that is not a finite float `(H, W, 2)` array on the fit grid |
 | `BAD_LAYER`, `UNKNOWN_PLUGIN_LAYER` | A malformed layer; `look` naming a layer no drawn section has |
 | `PLUGIN_FAILED` | The handler raised something other than `ToolError` |
+| `NOT_FOR_SCRIPTS` | `work_dir` or `start_work` from a script's `job.context` |
+| `ENGINE_MISSING`, `FIT_FAILED`, `REGION_TOO_SMALL`, `UNKNOWN_REGIONS`, `NO_SIDES` | `fit_fireants` / `fit_elastix`: the engine does not import, failed, or the regions given cannot be fitted |
+| `DEFORMATION_UNREADABLE` | A point conversion through a deformation whose record or inverse cannot be read |
 | `MCP_TOOL_ERROR`, `MCP_TIMEOUT`, `MCP_UNAVAILABLE` | The adapter's server answered with an error, did not answer, or is not running |

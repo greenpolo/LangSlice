@@ -20,8 +20,11 @@ A registration file can also be explicitly imported when creating a job.
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   exports/              linear_results.json, spend.json, quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
-  plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/)
-  logs/                 the agent CLI's calls and background runs; env.lock, held while env/ is made
+  plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
+                        plugins/script/: the layers a script left through job.context
+  logs/                 the agent CLI's calls and background runs, events.jsonl (job events,
+                        a script_write line per write a script's job.context landed);
+                        env.lock, held while env/ is made
   trace/                agent transcripts: the built-in agent's trace, a coding agent's session copied in by its harness plugin
   env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
   scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
@@ -110,7 +113,15 @@ Each of its `steps` says how a step was made: a native fit's `start`
 (`docs/plugins.md`), `{"method": "plugin:<tool>", "start": "linear", "note"?}`,
 whose record has the engine name `plugin:<tool>`, the `inverse_source`
 `fixed-point inversion of the supplied map`, and in its `provenance` the
-`plugin` (`tool`, `call`, `version`, `note`, `meta`).
+`plugin` (`tool`, `call`, `version`, `note`, `meta`). One a script wrote
+through the library's `job.context` ([your own method](library.md#your-own-method))
+is the same with `script` for `plugin:<tool>` and a provenance `script`
+(`call`, `note`, `meta`, `argv0`: the path of the running script); its
+`fit_fireants` puts the engine's settings in `meta`. A transform written by a
+tool plugin has the `kind` `plugin:<tool>`, by a script `script` (and its
+`note`; from `fit_elastix`, the call's settings under `fit` in `state.json`).
+A `script_write` line in `logs/events.jsonl` (`property`, `sections`, `notes`,
+`argv0`, `call`) marks each write a script landed.
 
 ## Per-section maps (`sections/<name>/`)
 
@@ -197,7 +208,12 @@ rule), `borders.png` and a frame in `view.json`.
 micrometres. An `fireants_syn` picture showing its deformation adds
 `residual.tif` (float32, `(2, rows, cols)`, `(d_row, d_col)` in picture
 pixels, zero in the caption band); its frame's `residual` names it, and
-`coordinate_map` applies it.
+`coordinate_map` applies it. A script's preview of a proposal not written
+(`preview_overlay`, `preview_positioning`) is tool `script`
+(`<number>_script_overlay`, `<number>_script_positioning`), its caption
+saying `NOT written`, its recipe a `transport_snapshot` (a zoom crops the
+saved picture); a linear proposal's overlay keeps its layers and frame, a
+deformation proposal's has none.
 
 ## Exports (`exports/`)
 
@@ -354,7 +370,8 @@ pictures use `transport_snapshot` and subsequent zooms crop that snapshot.
 
 ## Plugin layers
 
-A tool plugin leaves layers on sections (`docs/plugins.md`). Each tool keeps
+A tool plugin leaves layers on sections (`docs/plugins.md`), and so does a
+script through `job.context` (as tool `script`). Each tool keeps
 its files under `plugins/<tool>/`; nothing else of the job is written by it.
 `plugins/<tool>/layers.json` is the manifest of every layer the tool ever made:
 `tool`, `next` (the number of the next layer file) and `layers`, each with `id`

@@ -190,8 +190,8 @@ def look(
     ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the
     mode: ``look:<mode>`` in its ``disabled`` list).
 
-    *plugin_layers* names the layers tool plugins left on the sections (``"all"``:
-    every one) to draw on the pictures of mode ``section`` or ``overlay``
+    *plugin_layers* names the layers tool plugins and scripts left on the
+    sections (``"all"``: every one) to draw on the pictures of mode ``section`` or ``overlay``
     (:mod:`langslice.core.plugin_layers`); the reply's ``layers`` says which
     were drawn. Refused: ``BAD_ARGS`` in another mode, ``UNKNOWN_PLUGIN_LAYER``
     for a name no drawn section has.

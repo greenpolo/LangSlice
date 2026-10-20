@@ -20,6 +20,7 @@ from langslice.core.plugins import (
 from langslice.doors.plugins import loader as _loader
 from langslice.doors.plugins.context import (
     AffineView,
+    AtlasPlane,
     AtlasView,
     DeformationProposal,
     FitFrame,
@@ -35,7 +36,8 @@ from langslice.doors.plugins.loader import as_refs, load
 _loader.install()
 
 __all__ = [
-    "PLUGIN_API_VERSION", "AffineView", "AtlasView", "DeformationProposal", "FitFrame", "Layer",
+    "PLUGIN_API_VERSION", "AffineView", "AtlasPlane", "AtlasView", "DeformationProposal",
+    "FitFrame", "Layer",
     "LayerRef",
     "PluginError", "SectionRaster", "SectionView", "ToolContext", "ToolError", "ToolResult",
     "ToolSpec",

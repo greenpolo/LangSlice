@@ -40,6 +40,8 @@ whose imports are core-only:
   the job; `not_offered` names the tools they exclude, which `toolset.off_names`
   counts as switched off so no text names them) and the registry of loaded
   plugins (`LoadedPlugin`, `loaded`, `of_spec`, `tool_defs`, `tool_specs`;
+  `SCRIPT_CALLER` `"script"`, what a script's `job.context` writes are recorded
+  as, a name no plugin tool takes;
   `set_loader` is how `doors/plugins` registers the code that imports a
   plugin: the core imports nothing by name). `JobSpec.plugins` /
   `plugin_config` are validated by loading (`toolset.tools_for`), so a bad
@@ -421,7 +423,11 @@ the angles in a caption (empty for the flat plane).
   why a section has no map. `native_points(frame, warp, x, y)`: native
   plane `(x, y)` of file points, through an applied deformation exactly as
   its record composes it (carried onto the fit grid, displaced by its
-  field, bilinear with replicated edges, then its placement undone).
+  field, bilinear with replicated edges, then its placement undone);
+  `file_points(frame, warp, nx, ny)` the way back through the record's
+  inverse field; `file_to_fit(frame, fit_size)` the file's pixels onto a
+  record's fit grid; `point_rows` lays a list of points out as rows for a
+  2-D sampler (`cv2.remap` takes at most 32767 per axis).
   `section_maps(workspace, frame, warp, full_resolution=)`: `SectionMaps`
   on the working copy's grid (or the file's): coordinates (NaN off the
   atlas volume), atlas ids (`core.deformable.geometry.sample_native`, nearest, as the
@@ -448,6 +454,14 @@ the angles in a caption (empty for the flat plane).
   `ANGLE_EPSILON_DEG` read as 0; a plane more than `MAX_TILT_DEG` from the
   job's plane is refused. `plane_angles`, `plane_position_mm`,
   `implied_pixel_size_um`.
+- `itk_io.py` — images and transforms in the ITK world (SimpleITK), for an
+  engine run outside LangSlice: `write_image` (TIFF, or NIfTI / MHA / NRRD on
+  a grid of spacing 1, origin 0), `mapped_points` (where a transform file, a
+  displacement-field image, a SimpleITK object or a pixel-displacement array
+  sends each pixel centre of a grid; ITK's fixed-to-moving convention,
+  `TransformToDisplacementField`), `inverted` (`InvertDisplacementField`),
+  `linear_matrix` (a transform as a 3x3 affine; `ValueError` when it is not
+  affine). The library's `write_frame` / `map_from_itk` / `transform_from_itk`.
 - `jpeg.py` — the doors' one JPEG encoding (below).
 - `handoff.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,

@@ -43,6 +43,9 @@ Args:
         section in "overlay".
     warp: "applied" draws each section with its deformation, "none" with
         its linear placement only.
+    layers: Names of the layers left on the sections (status lists them),
+        or ["all"], drawn as marks and outlines on the "section" and "overlay" pictures. The reply says which layers
+        were drawn. Empty draws none.
     depth: Atlas ontology depth whose region boundaries "borders"
         draws (0 = root, as in BrainGlobe; larger is finer).
 

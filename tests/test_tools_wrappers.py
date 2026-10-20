@@ -122,7 +122,7 @@ def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_pa
     assert top["problems"] == [{"argument": "(top level)", "unknown": ["zoom"],
                                 "accepted": ["mode", "sections", "positions_mm", "channels",
                                              "atlas_layers", "atlas_opacity", "warp",
-                                             "depth"]}]
+                                             "layers", "depth"]}]
     assert top["message"].endswith("Nothing was done.")
 
     write = _tool(box, "position_sections")

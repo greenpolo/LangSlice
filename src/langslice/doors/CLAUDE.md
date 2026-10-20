@@ -13,7 +13,7 @@ every door is generated from them and from the registry (`ops/registry.py`:
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
 | MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
 | agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `brief`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`cli/warm.py`) | Claude Code, Antigravity, Codex |
-| library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included | a script |
+| library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
 the native ones on every door: the toolbox (agent and MCP), `ops` / `schema`
@@ -99,7 +99,14 @@ process forks for it, `cli/warm.py`).
   SHA-256s) and registers the `LoadedPlugin` with the core (`install()` runs
   at import); `as_refs` (the library's objects: factory functions by
   `module:qualname`, ToolSpecs as `inline:<digest>`).
-  `context.py`: `ToolContext` (reads `sections`, `section_image`, `atlas`,
+  `context.py`: `Caller` (who a context works for: `Caller.of_tool(spec)` a
+  plugin tool, labels `plugin:<tool>`; `Caller.script()` a script's
+  `job.context`, label `script`, every property writable the job leaves free,
+  no `work_dir` / `start_work` (`NOT_FOR_SCRIPTS`), `in_tool_call` False: its
+  reads sync the job first and its placement writes drop the deformations
+  they made stale, `merge_calls` False: each outermost write one undo step;
+  `provenance`: a deformation record's `plugin` or `script` entry, the latter
+  with `argv0`); `ToolContext(door, caller, call)` (reads `sections`, `section_image`, `atlas`,
   `fit_frame` (`placed_atlas_to_section`: the current placement), `atlas_slice`,
   `section_inputs`, `channels` (a section's raw channel names),
   `read_registration` (each section in its current orientation, `params`, `at=` a
@@ -111,9 +118,16 @@ process forks for it, `cli/warm.py`).
   `set_positions`, `set_transforms`, `set_deformations`
   (`ops.deformable.apply_warps`, maps converted before the lock),
   `mark_damage` through `ops/`, `add_layer`
-  through `job/plugin_store`, `expect=` fingerprints refusing `STALE_INPUT`
-  rows; `writing()` holds the lock around several writes; a call's writes are
-  one undo step unless another write came between; `overlay_picture` and
+  through `job/plugin_store` (a script's under `plugins/script/`), `expect=` fingerprints refusing `STALE_INPUT`
+  rows; `writing()` holds the lock around several writes; a plugin call's writes are
+  one undo step unless another write came between; `atlas_plane` /
+  `atlas_volume` (`AtlasPlane`: a plane at any placement), `to_atlas_um` /
+  `from_atlas_um` / `plane_distance_um` / `region_at` (`ops.points`),
+  `write_frame` / `map_from_itk` / `transform_from_itk` (`core.itk_io`: an
+  outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
+  (`ops.deformable.fit_record`, `ops.transforms.elastix_fit`: the native
+  engines with settings and a mask of the caller's own, a proposal not
+  written, the settings in its `meta` / the record's `fit`); `overlay_picture` and
   `positioning_picture` (a proposal drawn on a copy of the state), with a
   deformation proposal drawn through an in-memory record store) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
@@ -123,9 +137,9 @@ process forks for it, `cli/warm.py`).
   `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
   adapter plugin (LangSlice as a client of a configured server, allow-list,
   `server__tool` names, `inputs` / `results` mapping through the context).
-  `declarations.Variant.plugins` makes `declaration` read a plugin stub and
-  `look` take `layers` (dropped without plugins or without `section` and
-  `overlay` modes).
+  `declarations.Variant.plugins` makes `declaration` read a plugin stub;
+  `look` takes `layers` on every job (plugins and scripts leave them; dropped
+  without the `section` and `overlay` modes).
 - `statement.py` — the job statement every door gives a registration agent:
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
   max_resolution=, image_model_off=, auto=)` (`agent.prompt.build_job_statement`
@@ -168,7 +182,16 @@ process forks for it, `cli/warm.py`).
   `JobHandle`: every verb the job has as a method (the tool, same
   arguments, run inside `job.views.captured()`, then the pictures flushed,
   so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
-  `imported`, `section_maps(section, full_resolution=)` (a section's maps in
+  `imported`, `context` (one `ScriptContext` per handle, on the toolbox's
+  `door`: the plugin `ToolContext` with `Caller.script()`; each outermost
+  write gets a call id `script-<pid>-<n>`, a conversion before it shares the
+  write's, and a landed write a `script_write` line in `logs/events.jsonl`;
+  `preview_overlay` / `preview_positioning` draw a proposal through
+  `overlay_picture` / `positioning_picture`, caption it `NOT written` and save
+  it as tool `script` with a `transport_snapshot` recipe, flushed before they
+  return `SavedPicture`s (a linear proposal's overlay keeps its frame and
+  layers, a deformation's none); its docstring is the how-to the card points
+  to), `section_maps(section, full_resolution=)` (a section's maps in
   memory, `ops.exports.section_maps`), `export_stack()` (what `submit`
   writes after its step, `ops.exports.export_stack`), `close` (image-model calls settled, pictures flushed), a
   context manager. A method's reply is `library_reply`: a `Reply` (a dict
@@ -203,7 +226,8 @@ process forks for it, `cli/warm.py`).
   own `transform.max_parallel` when lower; less the verbs its `disabled` list
   names, `disabled_names`), `schema init` and `--help`, the
   Python entry point and what a method returns, and to keep the agent's own
-  files in `scripts/` and `scratch/` of the job folder, not `/tmp`; first,
+  files in `scripts/` and `scratch/` of the job folder, not `/tmp`; one line
+  pointing a method of the agent's own to `help(job.context)`; first,
   run `brief` and read `BRIEF.md`; under 85 lines, `tests/test_agent_cli.py`),
   `write_card` (writes where missing or worded differently; never raises).
   Written by every door that opens or makes a job.
@@ -211,7 +235,8 @@ process forks for it, `cli/warm.py`).
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
   file per job folder) and `log_call` (`logs/calls.jsonl`).
-- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`; sets
+- `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`, which
+  keeps the `Door` it built as `door`; sets
   `Job.picture_cap` to `MAX_IMAGES_PER_CALL` (4), or to None with
   `scripting=True` (the CLI and the library); every tool wrapped,
   innermost first, by the opening gate (writes), `_strict`,

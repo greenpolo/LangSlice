@@ -201,7 +201,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    "sections per call):",
                    'job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])',
                    "schema init", "reply.images", "`scripts/`", "never in /tmp",
-                   "`env install PACKAGE ...`"):
+                   "`env install PACKAGE ...`", "`job.context`"):
         assert needle in agents, needle
     assert len(agents.splitlines()) < 85  # one screen, its verb list included
     code, envelope = cli(capsys, str(images), "status")

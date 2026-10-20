@@ -534,6 +534,11 @@ class Job:
     cached: bool = False
 
 
+def engine_lock() -> threading.Lock:
+    """The lock one in-process deformable fit holds (fits share the engine)."""
+    return _ENGINE_LOCK
+
+
 def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
     """Prepare and run every job without a result, concurrently when several."""
     prepared = []

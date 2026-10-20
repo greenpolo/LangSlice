@@ -219,6 +219,7 @@ def elastix_affine(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
+    mask: np.ndarray | None = None,
 ) -> ElastixFit:
     """Refine one section's placement with an Elastix intensity affine.
 
@@ -231,7 +232,9 @@ def elastix_affine(
     exactly as a deformable stain fit prepares them (section and atlas masks,
     excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
     and :func:`langslice.core.deformable.engines.run_elastix_affine` fits an affine
-    from the identity. Raises on a placement, region or engine failure.
+    from the identity. *mask* (bool, the fit grid's ``(H, W)``, True where
+    the section is compared) narrows the section's mask further (a
+    script's own). Raises on a placement, region or engine failure.
     """
     from dataclasses import replace
 
@@ -247,6 +250,10 @@ def elastix_affine(
                            elastix_settings(include, exclude, atlas_image, ctx.brain_scale))
     _check_elastix_region(prepared, ctx.atlas, include)
     assert prepared.inputs is not None  # prepare_fit always builds engine inputs
+    if mask is not None:
+        from langslice.core.deformable.fit import with_section_mask
+
+        with_section_mask(prepared, mask)
     result = run_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.

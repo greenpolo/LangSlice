@@ -67,6 +67,11 @@ when `look:positioning` is off. The job statement, tool descriptions,
 reference card, `status` reply and `error.fix` texts leave out every
 sentence that needs what is off, or word it another way.
 
+Switching a tool off saves the agent's context: it is not a guard against
+the agent using a method. A script's own writes through the library's
+[`job.context`](library.md#your-own-method) are not gated by `disabled`; what
+a job freezes holds for them as for every tool.
+
 Sections are addressed by filename, or by a stem unique within the job.
 Positions are millimetres along the atlas's slicing axis; in a coronal atlas
 with BrainGlobe's `asr` orientation, they run from the anterior edge toward
@@ -112,7 +117,8 @@ Three common freezes:
   one, else the identity).
 - A section left out of Nonlinear: `{"s_007.tif": ["deformation"]}`.
 
-Every write that would change a frozen property is refused, in every door,
+Every write that would change a frozen property is refused, in every door
+and through a script's [`job.context`](library.md#your-own-method),
 with `FROZEN` naming the sections and properties; nothing is written for the
 refused section, and the others in a per-section call still are
 (`position_sections` and `set_transforms` refuse the whole call). The

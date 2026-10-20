@@ -172,6 +172,17 @@ wording; `registry.py` lists which.
   `core.maps.SectionMaps` in memory, written nowhere (the library's
   `JobHandle.section_maps`); `UNKNOWN_SLICE_IDS`, `ValueError` for a
   section without a placement or an unreadable record or file.
+  `applied_record(job, state, record)`: the section's applied deformation
+  record, None when linear.
+- `points.py` — section points and atlas points through a section's current
+  registration, writing nothing (a script's `job.context.to_atlas_um`,
+  `from_atlas_um`, `plane_distance_um`, `region_at`): `atlas_points(job,
+  workspace, section, xy, frame="file"|"fit")` -> `AtlasPoints` (`um`, NaN
+  outside the volume; `native`, `ids`, `inside`; `core.maps.native_points`),
+  `section_points(job, workspace, section, xyz_um, frame=)` -> `SectionPoints`
+  (`xy`, `off_plane_um`: each point projected onto the plane, then
+  `core.maps.file_points`). Refused: `UNKNOWN_SLICE_IDS`,
+  `INVALID_LINEAR_PLACEMENT`, `DEFORMATION_UNREADABLE`, `BAD_ARGS`.
 - `transforms.py` — the stored transform: `transform_record` (knobs,
   `shear` optional (0), to the record), `same_transform`, `fit_transform`
   (an Elastix affine fit's record, kind `elastix`), `set_transforms(job,
@@ -210,7 +221,13 @@ wording; `registry.py` lists which.
   `restrict_box`: the regions' bounding box on that section's canvas as
   `[x0, y0, x1, y1]` fractions (`region_box`; `core.canvas.zoom_box`'s
   zoom). Refused: `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. Returns `AffineFit`
-  (`rows`, `fitted`).
+  (`rows`, `fitted`). `elastix_fit(job, workspace, section, restrict_to=,
+  exclude=, atlas_image=, mask=, marked=True)`: one Elastix affine from the
+  section's current placement, written nowhere (`core.transform.ElastixFit`;
+  a script's `job.context.fit_elastix`): regions checked, the marked regions
+  added to `exclude` unless `marked` is False, `mask` narrowing the section
+  mask; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`, `UNKNOWN_REGIONS`,
+  `NO_SIDES`, `REGION_TOO_SMALL`, `FIT_FAILED`.
 - `deformable.py` — `fit_deformable(job, workspace, records, choice,
   restrict_to=, options=)`: one deformation (a resolved
   `deformation.Choice`) on top of each section's applied deformation, or its
@@ -257,6 +274,14 @@ wording; `registry.py` lists which.
   lock, each replacing the section's deformation (step `start` `linear`);
   per row `FROZEN`, `STALE_INPUT` (the placement is not the one the warp was
   built on), `RECORD_WRITE_FAILED`. Returns `WarpsApplied`.
+  `fit_record(job, workspace, section, settings, start="linear"|"current",
+  mask=, em=True, marked=True)`: one FireANTs stain fit with a
+  `FitSettings` of the caller's own, in this process under the engine lock,
+  written nowhere (a script's `job.context.fit_fireants`): the record;
+  `mask` through `core.deformable.fit.with_section_mask`, `em` False runs
+  once, `marked` adds the section's marked regions to `exclude`. Refused:
+  `UNKNOWN_SLICE_IDS`, `ENGINE_MISSING`, `BAD_ARGS`, `INVALID_LINEAR_PLACEMENT`,
+  `FIT_FAILED`.
 
 - `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
   restrict_to=, options=, workers=)`: LangSlice's own

@@ -27,6 +27,8 @@ where you install any package you want. Work with `langslice-job <folder>
 <verb>` commands and with Python scripts kept in `<folder>/scripts/`, run with
 `langslice-job <folder> python scripts/<name>.py [ARGS]`. Look at
 the pictures the verbs save with view_file. Finish with the `submit` verb.
+A method of your own (an affine, a displacement field) goes into the job through
+`job.context`; `help(job.context)` shows how.
 
 Run each `langslice-job` command on its own with BypassSandbox: it reads the
 atlas and the images and calls the image model outside the sandbox.

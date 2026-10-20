@@ -24,7 +24,7 @@ from PIL import Image
 from langslice.core import plugins as core
 from langslice.core.plugins import ToolError, ToolResult, ToolSpec
 from langslice.doors.declarations import Variant, declaration
-from langslice.doors.plugins.context import ToolContext
+from langslice.doors.plugins.context import Caller, ToolContext
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.ops.refusal import Refused
 
@@ -106,7 +106,7 @@ def body(door: Door, tool: ToolSpec, variant: Variant) -> Callable[..., Any]:
         if refused is not None:
             return refused
         call_id = getattr(tool_context, "function_call_id", None) or uuid.uuid4().hex[:8]
-        context = ToolContext(door, tool, str(call_id))
+        context = ToolContext(door, Caller.of_tool(tool), str(call_id))
         try:
             if tool.kind == "write" and not tool.long:
                 with context.writing():  # everything the call writes is one undo step

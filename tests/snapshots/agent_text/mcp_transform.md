@@ -56,6 +56,9 @@ Draw pictures of sections and the atlas. Writes nothing.
                 section in "overlay".
             warp: "applied" draws each section with its deformation, "none" with
                 its linear placement only.
+            layers: Names of the layers left on the sections (status lists them),
+                or ["all"], drawn as marks and outlines on the "section" and "overlay" pictures. The reply says which layers
+                were drawn. Empty draws none.
             depth: Atlas ontology depth whose region boundaries "borders"
                 draws (0 = root, as in BrainGlobe; larger is finer).
 
@@ -72,6 +75,7 @@ Draw pictures of sections and the atlas. Writes nothing.
 - `atlas_layers` (array of string):
 - `atlas_opacity` (number):
 - `warp` (string, one of ['applied', 'none']):
+- `layers` (array of string):
 - `depth` (integer):
 
 ## zoom

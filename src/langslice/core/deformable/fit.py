@@ -399,6 +399,32 @@ def prepare_fit(
     )
 
 
+def with_section_mask(prepared: PreparedFit, mask: np.ndarray) -> PreparedFit:
+    """*prepared* with its section mask narrowed to *mask* (bool, the section
+    grid's ``(H, W)``, True where the section is compared): the fixed mask
+    and, for a stain fit, the EM mask of its second run (which never adds
+    a pixel back). In place; returns *prepared*. ``ValueError`` for a mask of
+    another shape or one that leaves nothing to compare."""
+    width, height = prepared.footprint.shape[1], prepared.footprint.shape[0]
+    keep = np.asarray(mask)
+    if keep.shape != (height, width):
+        raise ValueError(f"the mask is the fit grid's (H, W) = ({height}, {width}); "
+                         f"got {keep.shape}")
+    if prepared.inputs is None:
+        raise ValueError("A prepared warp has no engine fit to mask")
+    working = prepared.grid.to_working(keep.astype(np.float32)) > 0.5
+    fixed = prepared.inputs.fixed_mask & working
+    if not fixed.any():
+        raise ValueError("The mask leaves no section pixel to compare")
+    prepared.inputs = replace(prepared.inputs, fixed_mask=fixed)
+    if prepared.em is not None:
+        held = prepared.em.section_keep
+        prepared.em = replace(prepared.em, section_keep=working if held is None
+                              else held & working)
+    prepared.details["section_mask_given"] = int(keep.sum())
+    return prepared
+
+
 def _taper_weight(region: np.ndarray, spacing_mm: float, neighbourhood_mm: float,
                   section_size: tuple[int, int],
                   taper_mm: float = RESTRICTED_TAPER_MM) -> np.ndarray:

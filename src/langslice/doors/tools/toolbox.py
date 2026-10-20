@@ -315,6 +315,9 @@ class ToolBox:
     #: versions, source digests, each tool's declaration as the model sees it;
     #: :mod:`langslice.doors.plugins.provenance`); empty without plugins.
     plugins: list[dict[str, Any]] = field(default_factory=list)
+    #: What every tool body of the box shares (the job, the workspace, the
+    #: picture level, the image model): a script's ``job.context`` sits on it.
+    door: Door | None = None
 
     @property
     def names(self) -> list[str]:
@@ -426,6 +429,7 @@ def build_tools(
     run = Door(job=job, ctx=ctx, spec=spec, box=box, level=level,
                traces_on=traces_on,
                image_model=image_model)
+    box.door = run
 
     def sync_job() -> None:
         """Before every call: pick up a state file changed on disk."""

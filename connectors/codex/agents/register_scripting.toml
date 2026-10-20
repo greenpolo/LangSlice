@@ -12,6 +12,8 @@ statement says. AGENTS.md in the folder is LangSlice's reference card (files,
 coordinates, verbs, exit codes). Work only with `langslice-job <folder> <verb>`
 commands and with Python scripts that use the LangSlice library (`langslice.open_job(folder)`), kept in `<folder>/scripts/` and run with `langslice-job <folder> python scripts/<name>.py [ARGS]`, look at the pictures they save (paths are in `artifacts`), and
 finish with the `submit` verb.
+A method of your own (an affine, a displacement field) goes into the job through
+`job.context`; `help(job.context)` shows how.
 
 You do nothing else. If the job cannot be completed, say why and stop.
 """
