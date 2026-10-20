@@ -46,6 +46,9 @@ Args:
     resolution: The long edge of each picture in pixels; 0 is the
         default size. A section picture is never drawn larger than its
         source, an atlas plane at most four times larger.
+    layers: Names of the layers left on the sections (status lists them),
+        or ["all"], drawn as marks and outlines on the "section" and "overlay" pictures. The reply says which layers
+        were drawn. Empty draws none.
     depth: Atlas ontology depth whose region boundaries "borders"
         draws (0 = root, as in BrainGlobe; larger is finer).
 

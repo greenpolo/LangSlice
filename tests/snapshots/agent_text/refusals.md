@@ -26,7 +26,7 @@
 ```json
 {
  "error": "UNKNOWN_ARGUMENTS",
- "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, channels, atlas_layers, atlas_opacity, warp, depth. Nothing was done.",
+ "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, channels, atlas_layers, atlas_opacity, warp, layers, depth. Nothing was done.",
  "problems": [
   {
    "accepted": [
@@ -37,6 +37,7 @@
     "atlas_layers",
     "atlas_opacity",
     "warp",
+    "layers",
     "depth"
    ],
    "argument": "(top level)",

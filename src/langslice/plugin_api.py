@@ -11,6 +11,7 @@ changes when they do incompatibly.
 from langslice.doors.plugins import (
     PLUGIN_API_VERSION,
     AffineView,
+    AtlasPlane,
     AtlasView,
     DeformationProposal,
     FitFrame,
@@ -28,7 +29,8 @@ from langslice.doors.plugins import (
 )
 
 __all__ = [
-    "PLUGIN_API_VERSION", "AffineView", "AtlasView", "DeformationProposal", "FitFrame", "Layer",
+    "PLUGIN_API_VERSION", "AffineView", "AtlasPlane", "AtlasView", "DeformationProposal",
+    "FitFrame", "Layer",
     "LayerRef",
     "PluginError", "SectionRaster", "SectionView", "ToolContext", "ToolError", "ToolResult",
     "ToolSpec",

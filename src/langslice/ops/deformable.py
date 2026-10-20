@@ -14,9 +14,11 @@ fit that failed, a record that cannot be saved) is that section's row, not
 a refusal of the call. With display options, :func:`pictures` draws each
 fit and each traced section's trace through the core.
 
-A deformation made elsewhere (a tool plugin's engine) is written the same
-way: :func:`warp_from_map` builds its record from the full map,
+A deformation made elsewhere (a tool plugin's engine, a script's) is written
+the same way: :func:`warp_from_map` builds its record from the full map,
 :func:`apply_warps` writes it as the section's deformation, one undo step.
+:func:`fit_record` runs the deformable engine once with settings of the
+caller's own and writes nothing (a script's ``job.context.fit_fireants``).
 """
 
 from __future__ import annotations
@@ -566,6 +568,68 @@ def refuse_without_engine() -> None:
     not import."""
     if not engine_ready():
         raise Refused("ENGINE_MISSING", message=deformation.ENGINE_MISSING + ".")
+
+
+def fit_record(
+    job: Job, workspace: Workspace, section: Any, settings: Any, *,
+    start: str = "linear", mask: Any = None, em: bool = True, marked: bool = True,
+) -> deformation.DeformableRecord:
+    """One FireANTs SyN fit of the section with *settings* (a
+    :class:`~langslice.core.deformable.settings.FitSettings`: a stain fit, any
+    stiffness, detail, atlas image, metric, edge channel, regions), written
+    nowhere: the record (``field_mm`` the residual over the section's linear
+    placement, composed onto its applied deformation with *start*
+    ``current``).
+
+    *mask* (bool, the fit grid's ``(H, W)``, True where the section is
+    compared) narrows the section mask (:func:`langslice.core.deformable.fit.with_section_mask`);
+    *em* False runs once with the footprint masks, without the EM section
+    mask's second run; *marked* adds the section's marked damage regions to
+    the settings' ``exclude``, as every native fit leaves them out.
+
+    Refused: ``UNKNOWN_SLICE_IDS``, ``ENGINE_MISSING``, ``BAD_ARGS`` (settings
+    that are not a FireANTs stain fit, a start that is neither, ``current``
+    without a deformation), ``INVALID_LINEAR_PLACEMENT``, ``FIT_FAILED`` (the
+    engine or the masks failed, the message says how).
+    """
+    from langslice.core.deformable import FitSettings
+    from langslice.core.deformable.fit import prepare_fit, run_prepared, with_section_mask
+
+    record = job.state.resolve(section)
+    if record is None:
+        raise unknown_sections(job.state, [str(section)])
+    if not isinstance(settings, FitSettings) or settings.engine != "fireants" or (
+            settings.section_image != "stain" or settings.labels != "none"):
+        raise Refused("BAD_ARGS", message="settings are a FireANTs stain fit's FitSettings "
+                      "(engine fireants, section_image stain, labels none).")
+    if start not in ("linear", "current"):
+        raise Refused("BAD_ARGS", message="start is 'linear' or 'current'.")
+    refuse_without_engine()
+    try:
+        grid = deformation.fit_grid(job.state, workspace, record)
+    except (ValueError, OSError) as exc:
+        raise Refused("INVALID_LINEAR_PLACEMENT", message=f"{record.id}: {exc}") from exc
+    previous = None
+    if start == "current":
+        previous = job.deformations.current(job.state, record)
+        if previous is None:
+            raise Refused("BAD_ARGS", message=f"{record.id} has no deformation to start from.")
+    if marked:
+        _kept, dropped = exclusions(record, ())
+        settings = replace(settings, exclude=tuple(dict.fromkeys(
+            (*settings.exclude, *dropped))))
+    try:
+        image, _look = deformation.stain_image(workspace, job.state, grid, deformation.FIT_LOOK)
+        prepared = prepare_fit(image, workspace.atlas, grid.placement, settings,
+                               previous=previous)
+        if mask is not None:
+            with_section_mask(prepared, mask)
+        if not em:
+            prepared.em = None
+        with deformation.engine_lock():
+            return run_prepared(prepared)
+    except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
+        raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
 
 
 def region_entries(workspace: Workspace, state: Any, entries: Any) -> tuple[str, ...]:

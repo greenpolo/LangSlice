@@ -80,6 +80,13 @@ def _warp(job: Job, state: StackState, record: SliceState,
     return loaded, str(held.get("record") or "") or None
 
 
+def applied_record(job: Job, state: StackState, record: SliceState,
+                   ) -> DeformableRecord | None:
+    """The section's applied deformation record (None: linear);
+    ``ValueError`` when one is applied but cannot be read."""
+    return _warp(job, state, record)[0]
+
+
 def export_maps(
     job: Job, workspace: Workspace, ids: Sequence[str] | None = None, *,
     full_resolution: bool = False,

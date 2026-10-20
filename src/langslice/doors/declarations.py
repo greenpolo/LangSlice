@@ -145,8 +145,8 @@ def look(
         resolution: The long edge of each picture in pixels; 0 is the
             default size. A section picture is never drawn larger than its
             source, an atlas plane at most four times larger.
-        layers: Names of the layers that tools have left on the sections, or
-            ["all"], drawn as marks and outlines on the [[#look:section=\"section\"||~
+        layers: Names of the layers left on the sections (status lists them),
+            or ["all"], drawn as marks and outlines on the [[#look:section=\"section\"||~
             look:overlay=\"overlay\"]] pictures. The reply says which layers
             were drawn. Empty draws none.
         depth: Atlas ontology depth whose region boundaries "borders"
@@ -968,8 +968,8 @@ class Variant:
     #: declarations keep their pinned wording and render by ``off`` alone.
     absent: frozenset[str] = frozenset()
     #: The tool plugins the job loads (:class:`langslice.core.plugins.LoadedPlugin`,
-    #: compared by identity): their tools are declared from their own stubs, and
-    #: ``look`` takes ``layers``. Empty: no plugin text is in any declaration.
+    #: compared by identity): their tools are declared from their own stubs.
+    #: Empty: no plugin text is in any declaration.
     plugins: tuple[Any, ...] = ()
     #: The job's atlas brain's size next to the adult mouse's
     #: (``core.atlas.size.brain_scale``): the distances a description states
@@ -1177,9 +1177,7 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
             dropped.append("positions_mm")
         if not modes & {"overlay", "atlas", "positioning"}:  # an atlas to layer
             dropped.append("atlas_layers")
-    if name == "look" and not variant.plugins:
-        dropped.append("layers")  # nothing leaves layers without tool plugins
-    elif name == "look" and not set(options_on(variant.off, "look")) & {"section", "overlay"}:
+    if name == "look" and not set(options_on(variant.off, "look")) & {"section", "overlay"}:
         dropped.append("layers")  # they are drawn on those two modes only
     if name == "grep_atlas" and is_off(variant.off, "grep_atlas:points"):
         dropped.append("points")

@@ -18,5 +18,7 @@ where you install any package you want. Work with `langslice-job <folder>
 <verb>` commands and with Python scripts kept in `<folder>/scripts/`, run with
 `langslice-job <folder> python scripts/<name>.py [ARGS]`. Look at the pictures
 the verbs save with Read. Finish with the `submit` verb.
+A method of your own (an affine, a displacement field) goes into the job through
+`job.context`; `help(job.context)` shows how.
 
 You do nothing else. If the job cannot be completed, say why and stop.

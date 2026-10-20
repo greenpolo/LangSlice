@@ -40,6 +40,10 @@ ANGLES = "angles"
 
 #: A tool name: a Python identifier, so a script can call it as a method.
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+#: What a script's own writes through ``job.context`` are recorded as (a
+#: transform's ``kind``, a deformation's ``method``, the maker of its layers
+#: and pictures): no plugin tool takes the name.
+SCRIPT_CALLER = "script"
 
 #: The kinds of layer.
 LAYER_KINDS: tuple[str, ...] = ("points", "lines", "labels", "scalar", "picture")
@@ -264,6 +268,8 @@ def check_tool(tool: Any, *, taken: Sequence[str] = ()) -> str | None:
         return f"tool name {name!r} is not an identifier (letters, digits, underscores)"
     if name in TOOLS:
         return f"{where} clashes with the native tool of that name"
+    if name == SCRIPT_CALLER:
+        return f"{where} is the name a script's own writes are recorded under"
     if name in taken:
         return f"{where} clashes with another plugin tool of that name"
     if tool.api_version != PLUGIN_API_VERSION:

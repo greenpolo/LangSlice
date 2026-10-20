@@ -1,14 +1,19 @@
-"""The context a plugin tool's handler gets: what it may read and write.
+"""The context a plugin tool's handler gets, and a script's ``job.context``:
+what it may read and write.
 
-One :class:`ToolContext` per call (a plugin must not keep it). Reads give
+One :class:`ToolContext` per plugin call (a plugin must not keep it); a
+script's (:class:`langslice.doors.library.ScriptContext`) lives as long as
+its job handle. Who is calling is a :class:`Caller`: a plugin tool
+(:meth:`Caller.of_tool`) or a script (:meth:`Caller.script`). Reads give
 plain data in LangSlice's documented units and frames; writes go through the
 same operations the native tools use (``ops.positions``, ``ops.transforms``,
 ``ops.deformable``, ``ops.damage``), so every write is one undo step that checkpoints the state
 and rewrites ``registration.json``, frozen properties are refused (``FROZEN``),
-and a long tool's section that changed meanwhile is refused (``STALE_INPUT``).
+and a section that changed since a digest was taken is refused (``STALE_INPUT``).
 A tool declared ``read`` cannot write; a ``write`` tool writes the section
-properties named in its :attr:`~langslice.core.plugins.ToolSpec.writes` only.
-Files go under :meth:`ToolContext.work_dir` and nowhere else.
+properties named in its :attr:`~langslice.core.plugins.ToolSpec.writes` only;
+a script writes any property the job does not freeze. A plugin's files go
+under :meth:`ToolContext.work_dir` and nowhere else.
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core import frozen as freeze
-from langslice.core.plugins import Layer, ToolError, ToolResult, ToolSpec
+from langslice.core.plugins import SCRIPT_CALLER, Layer, ToolError, ToolResult, ToolSpec
 from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.state import SliceState, StackState
 from langslice.ops.inputs import STALE_INPUT, section_inputs, stale_row
@@ -130,6 +135,21 @@ class FitFrame:
     excluded: np.ndarray | None = None
     damage_zone: np.ndarray | None = None
     stain: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class AtlasPlane:
+    """An atlas plane at a placement of your choosing
+    (:meth:`ToolContext.atlas_plane`), on its native grid: ``atlas`` the
+    planes sampled (``annotation`` and the atlas's images asked for), ``plane``
+    where it lies in atlas micrometres (as :attr:`FitFrame.plane`:
+    ``native_to_um``, ``px_um``, ``shape``, ...), at ``position_mm`` and
+    ``angles`` ``(pitch_deg, yaw_deg)``."""
+
+    position_mm: float
+    angles: tuple[float, float]
+    atlas: dict[str, np.ndarray]
+    plane: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -287,18 +307,86 @@ def _plain(value: Any) -> Any:
     return value
 
 
+# --- who is calling ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Caller:
+    """Who a :class:`ToolContext` works for: a plugin tool, or a script.
+
+    ``name`` names it where a layer or background work records its maker
+    (the tool's name, ``script``); ``label`` is what its writes are recorded
+    as (a transform's ``kind``, a deformation's ``method`` and engine:
+    ``plugin:<tool>`` or ``script``); ``kind`` and ``writes`` what it may
+    write; ``version`` the plugin's own. ``work_dir``: it has a folder of
+    its own (``plugins/<tool>/``); ``in_tool_call``: the tool door around it
+    brings the job up to date before the call and drops the deformations
+    its writes made stale after it; a script is in no tool call, so its
+    reads sync first and its placement writes drop them themselves (in the
+    same undo step); ``merge_calls``: its outermost writes join one undo
+    step (one tool call) unless another write came between; ``background``:
+    it may start background work."""
+
+    name: str
+    label: str
+    kind: str
+    writes: tuple[str, ...]
+    version: str | None = None
+    work_dir: bool = True
+    in_tool_call: bool = True
+    merge_calls: bool = True
+    background: bool = True
+
+    @classmethod
+    def of_tool(cls, tool: ToolSpec) -> Caller:
+        """A plugin tool's call."""
+        return cls(name=tool.name, label=f"plugin:{tool.name}", kind=tool.kind,
+                   writes=tuple(tool.writes), version=tool.version)
+
+    @classmethod
+    def script(cls) -> Caller:
+        """A script's ``job.context``: writes every property the job leaves free,
+        recorded as ``script``; no folder of its own (a script keeps its
+        files in ``scripts/`` and ``scratch/``) and no background work (the
+        script is the computation)."""
+        return cls(name=SCRIPT_CALLER, label=SCRIPT_CALLER, kind="write",
+                   writes=tuple(freeze.PROPERTIES), work_dir=False, in_tool_call=False,
+                   merge_calls=False, background=False)
+
+    @property
+    def is_script(self) -> bool:
+        return self.name == SCRIPT_CALLER
+
+    def provenance(self, call: str, note: str, meta: Any) -> dict[str, Any]:
+        """What a deformation record keeps of the caller that wrote it:
+        ``plugin`` (tool, call, version, note, meta) or ``script`` (call,
+        note, meta, and ``argv0``, the running script's path as started)."""
+        if self.is_script:
+            import sys
+
+            return {"script": {"call": call, "note": note, "meta": meta,
+                               "argv0": str(sys.argv[0]) if sys.argv else ""}}
+        return {"plugin": {"tool": self.name, "call": call, "version": self.version,
+                           "note": note, "meta": meta}}
+
+
+def _not_for_scripts(what: str) -> ToolError:
+    return ToolError("NOT_FOR_SCRIPTS", what)
+
+
 # --- the context -------------------------------------------------------------------------
 
 
 class ToolContext:
-    """What one plugin tool call can read and write (see the module text)."""
+    """What one plugin tool call, or a script, can read and write (see the
+    module text)."""
 
-    def __init__(self, door: Door, tool: ToolSpec, call: str) -> None:
+    def __init__(self, door: Door, caller: Caller, call: str) -> None:
         self._door = door
-        self._tool = tool
+        self._caller = caller
         #: The call's id, as the layers it makes record it.
         self.call = call
-        self._grids: dict[str, Any] = {}
+        self._grids: dict[tuple[str, str], Any] = {}
         self._depth = 0  # open ``writing()`` blocks
         #: The call's undo step so far: the mark it began at, ``job.pushed``
         #: after it and the undo entry on top then; None before any write.
@@ -308,8 +396,8 @@ class ToolContext:
 
     @property
     def tool(self) -> str:
-        """The tool's name."""
-        return self._tool.name
+        """The tool's name (``script`` for a script)."""
+        return self._caller.name
 
     @property
     def spec(self) -> Mapping[str, Any]:
@@ -323,8 +411,13 @@ class ToolContext:
 
     def work_dir(self) -> Path:
         """``<job>/plugins/<tool>/``: the one place this tool writes files
-        (scratch, logs, an engine's inputs and outputs). Made on first use."""
-        path = self._door.job.layout.plugin_dir(self._tool.name)
+        (scratch, logs, an engine's inputs and outputs). Made on first use.
+        A script has none (``NOT_FOR_SCRIPTS``): it keeps its files in the
+        job folder's ``scripts/`` and ``scratch/``."""
+        if not self._caller.work_dir:
+            raise _not_for_scripts("a script keeps its files in the job folder's scripts/ "
+                                   "and scratch/")
+        path = self._door.job.layout.plugin_dir(self._caller.name)
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -334,7 +427,14 @@ class ToolContext:
 
     # --- reading ------------------------------------------------------------------------
 
+    def _fresh(self) -> None:
+        """A script's read first picks up what another writer saved (a plugin
+        call is inside a tool call that did)."""
+        if not self._caller.in_tool_call:
+            self._door.job.sync()
+
     def _record(self, section: object) -> SliceState:
+        self._fresh()
         state = self._door.state
         record = state.resolve(section)
         if record is None:
@@ -373,6 +473,7 @@ class ToolContext:
 
     def sections(self) -> list[SectionView]:
         """Every section, in stack order."""
+        self._fresh()
         return [self._view(record) for record in self._door.state.in_order()]
 
     def section(self, section: object) -> SectionView:
@@ -476,14 +577,17 @@ class ToolContext:
 
         if record.position_mm is None:
             raise ToolError("NO_POSITION", f"{record.id} has no position yet")
-        if record.id not in self._grids:
+        # Keyed by what the grid is drawn from: a script's context outlives a
+        # placement change.
+        key = (record.id, section_inputs(self._door.state, record))
+        if key not in self._grids:
             try:
-                self._grids[record.id] = deformation.fit_grid(
+                self._grids[key] = deformation.fit_grid(
                     self._door.state, self._door.ctx, record,
                     transform={"params": list(IDENTITY_PARAMS)})
             except ValueError as exc:
                 raise ToolError("INVALID_LINEAR_PLACEMENT", f"{record.id}: {exc}") from exc
-        return self._grids[record.id]
+        return self._grids[key]
 
     def fit_frame(self, section: object, *, atlas: Sequence[str] = (
             "template", "annotation"), stain: bool = False) -> FitFrame:
@@ -656,7 +760,7 @@ class ToolContext:
         mirrored = bool(decompose_affine(values)["mirrored"])
         calibration = {"section_um_per_px": round(float(um_per_px), 4), "source": source}
         stored = {
-            "kind": f"plugin:{self._tool.name}", "params": values,
+            "kind": self._caller.label, "params": values,
             "physical": {**knobs, "pivot": list(pivot)}, "calibration": calibration,
             "mirrored": mirrored, "note": str(note or "").strip(),
         }
@@ -693,10 +797,8 @@ class ToolContext:
         try:
             warp = deformable.warp_from_map(
                 self._door.job, self._door.ctx, record.id, native_xy,
-                method=f"plugin:{self._tool.name}", step={"note": text} if text else {},
-                provenance={"plugin": {"tool": self._tool.name, "call": self.call,
-                                       "version": self._tool.version, "note": text,
-                                       "meta": plain_meta},
+                method=self._caller.label, step={"note": text} if text else {},
+                provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
                                      "pixels"})
         except Refused as refusal:
@@ -746,6 +848,7 @@ class ToolContext:
         are for the oriented render either way."""
         from langslice.job.imports import import_placements
 
+        self._fresh()
         state = self._door.state
         names = [self._record(ref).id for ref in sections] or [r.id for r in state.slices]
         planes: dict[str, tuple[float, float, float]] = {}
@@ -782,6 +885,370 @@ class ToolContext:
             })
         return {"placements": rows, "refused": dict(result.refused),
                 "missing": list(result.missing), "unmatched": list(result.unmatched)}
+
+    # --- an atlas plane anywhere -------------------------------------------------------------
+
+    def atlas_plane(self, position_mm: float, *, pitch_deg: float = 0.0, yaw_deg: float = 0.0,
+                    kinds: Sequence[str] = ("template", "annotation")) -> AtlasPlane:
+        """The atlas plane at *position_mm* (atlas millimetres along the
+        slicing axis, the stack's convention) and cutting angles *pitch_deg*
+        / *yaw_deg*, whichever section holds it, on the native atlas grid
+        (:class:`AtlasPlane`): ``annotation`` and the atlas's images among
+        *kinds* (a name the atlas does not have is skipped). Nothing is
+        written."""
+        from langslice.core.atlas.images import atlas_images
+        from langslice.core.deformable.geometry import Placement
+        from langslice.core.deformable.plane_images import native_intensity, native_labels
+
+        workspace = self._door.ctx
+        values = [float(position_mm), float(pitch_deg), float(yaw_deg)]
+        if not np.isfinite(values).all():
+            raise ToolError("BAD_ARGS", "position_mm, pitch_deg and yaw_deg are finite numbers")
+        placement = Placement(atlas_name=str(self._door.state.atlas), position_mm=values[0],
+                              plane=self._door.state.plane,  # type: ignore[arg-type]
+                              pitch_deg=values[1], yaw_deg=values[2],
+                              atlas_to_section=np.eye(3), section_mm_per_px=1.0)
+        planes: dict[str, np.ndarray] = {}
+        if "annotation" in kinds:
+            planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
+        for kind in atlas_images(workspace.atlas):
+            if kind in kinds:
+                planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
+                                          dtype=np.float32)
+        return AtlasPlane(position_mm=values[0], angles=(values[1], values[2]), atlas=planes,
+                          plane=_plane_frame(workspace.atlas, placement))
+
+    def atlas_volume(self, kind: str = "template") -> np.ndarray:
+        """The atlas's whole volume *kind* (``annotation`` or one of its
+        images) on its own grid, the atlas's axis order (read only: copy it
+        before changing it)."""
+        from langslice.core.atlas.images import atlas_images
+        from langslice.core.atlas.images import atlas_volume as volume
+
+        atlas = self._door.ctx.atlas
+        if kind == "annotation":
+            return np.asarray(atlas.annotation)
+        if kind not in atlas_images(atlas):
+            raise ToolError("BAD_ARGS", f"kind is annotation or one of "
+                            f"{', '.join(atlas_images(atlas))}; got {kind!r}")
+        return volume(atlas, kind)
+
+    # --- points through the registration ----------------------------------------------------
+
+    def to_atlas_um(self, section: object, xy: Any, *, frame: str = "file") -> np.ndarray:
+        """Section points *xy* (``(N, 2)`` ``[x, y]`` pixels: of the image file
+        as stored with *frame* ``file``, the ``section_px`` of layers; of the
+        fit grid, :attr:`FitFrame.image`, with ``fit``) in atlas micrometres,
+        ``(N, 3)`` in the atlas's axis order, through the section's current
+        registration, its deformation included; NaN outside the atlas volume."""
+        from langslice.ops.points import atlas_points
+
+        record = self._record(section)
+        return self._points(atlas_points, record.id, xy, frame).um
+
+    def from_atlas_um(self, section: object, xyz_um: Any, *, frame: str = "file",
+                      ) -> np.ndarray:
+        """Atlas points *xyz_um* (``(N, 3)`` micrometres, the atlas's axis
+        order) as ``[x, y]`` pixels of the section (*frame* as
+        :meth:`to_atlas_um`), each projected onto the section's atlas plane
+        and carried back through its current registration, its deformation's
+        inverse included. :meth:`plane_distance_um` says how far off the
+        plane each point lies."""
+        from langslice.ops.points import section_points
+
+        record = self._record(section)
+        return self._points(section_points, record.id, xyz_um, frame).xy
+
+    def plane_distance_um(self, section: object, xyz_um: Any) -> np.ndarray:
+        """How far each atlas point *xyz_um* lies off the section's atlas
+        plane, in micrometres, ``(N,)``."""
+        from langslice.ops.points import section_points
+
+        record = self._record(section)
+        return self._points(section_points, record.id, xyz_um, "file").off_plane_um
+
+    def region_at(self, section: object, xy: Any, *, frame: str = "file",
+                  ) -> list[dict[str, Any] | None]:
+        """The atlas region under each section point *xy* (*frame* as
+        :meth:`to_atlas_um`) through the section's current registration:
+        ``{"id", "acronym", "name"}`` per point, None outside the atlas."""
+        from langslice.ops.points import atlas_points
+
+        record = self._record(section)
+        found = self._points(atlas_points, record.id, xy, frame)
+        structures = self._door.ctx.atlas.structures
+        out: list[dict[str, Any] | None] = []
+        for value in found.ids.tolist():
+            if not value:
+                out.append(None)
+                continue
+            try:
+                entry = structures[int(value)]
+                out.append({"id": int(value), "acronym": str(entry["acronym"]),
+                            "name": str(entry["name"])})
+            except KeyError:
+                out.append({"id": int(value), "acronym": None, "name": None})
+        return out
+
+    def _points(self, function: Callable[..., Any], name: str, values: Any, frame: str) -> Any:
+        try:
+            return function(self._door.job, self._door.ctx, name, values, frame=frame)
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
+
+    # --- an outside engine's files -----------------------------------------------------------
+
+    def write_frame(self, section: object, folder: str | Path, *, format: str = "tif",
+                    ) -> dict[str, Path]:
+        """Write what an engine outside LangSlice registers, into *folder*:
+        on the fit grid (:attr:`FitFrame.image`'s pixels), ``section``
+        (RGB), ``stain`` (the preprocessed channel the native fits read,
+        gray) and ``placed_template`` / ``placed_annotation`` (the atlas
+        plane drawn on that grid at the section's current placement, so the
+        two images already overlap where the placement puts them); on the
+        native atlas grid ``template`` and ``annotation``; and
+        ``frame.json`` (the sizes, ``placed_atlas_to_section``,
+        ``atlas_to_section``, ``native_to_um``, the fit grid's millimetres
+        per pixel, the files). *format* is the images' suffix (``tif``, or
+        ``nii.gz``, ``nii``, ``mha``, ``nrrd`` through SimpleITK); every
+        image has spacing 1 and origin 0, so an engine's answer is in pixels
+        (:meth:`map_from_itk` reads it back). Returns ``{name: path}``.
+        Writes nothing in the job."""
+        import json
+
+        import cv2
+
+        from langslice.core.itk_io import IMAGE_FORMATS, write_image
+
+        if format not in IMAGE_FORMATS:
+            raise ToolError("BAD_ARGS", f"format is one of {', '.join(IMAGE_FORMATS)}; "
+                            f"got {format!r}")
+        record = self._record(section)
+        f = self.fit_frame(record.id, stain=True)
+        height, width = f.image.shape[:2]
+        placed = (f.placed_atlas_to_section if f.placed_atlas_to_section is not None
+                  else f.atlas_to_section)
+        target = Path(folder)
+        target.mkdir(parents=True, exist_ok=True)
+        stain = np.asarray(Image.fromarray(np.asarray(f.stain)).convert("L"))
+        images: dict[str, np.ndarray] = {
+            "section": np.asarray(f.image, dtype=np.uint8),
+            "stain": stain,
+            "template": np.asarray(f.atlas["template"], dtype=np.float32),
+            "annotation": np.asarray(f.atlas["annotation"]).astype(np.uint32),
+            "placed_template": cv2.warpAffine(
+                np.asarray(f.atlas["template"], dtype=np.float32), placed[:2], (width, height),
+                flags=cv2.INTER_LINEAR, borderValue=0.0),
+            "placed_annotation": cv2.warpAffine(
+                np.asarray(f.atlas["annotation"]).astype(np.float32), placed[:2],
+                (width, height), flags=cv2.INTER_NEAREST, borderValue=0.0).astype(np.uint32),
+        }
+        written = {name: write_image(target / f"{name}.{format}", array)
+                   for name, array in images.items()}
+        grid = self._grid(record)
+        info = {
+            "section": record.id,
+            "fit_size": [int(width), int(height)],
+            "native_size": [int(f.atlas["annotation"].shape[1]),
+                            int(f.atlas["annotation"].shape[0])],
+            "fit_mm_per_px": float(grid.placement.section_mm_per_px),
+            "placed_atlas_to_section": np.asarray(placed).tolist(),
+            "atlas_to_section": np.asarray(f.atlas_to_section).tolist(),
+            "native_to_um": f.plane["native_to_um"],
+            "position_mm": f.position_mm, "angles": list(f.angles),
+            "files": {name: path.name for name, path in written.items()},
+            "convention": "Pixel centres at integers, [x, y] = [column, row]; every image "
+                          "spacing 1, origin 0. section, stain and placed_* on the fit grid; "
+                          "template and annotation on the native atlas grid. "
+                          "placed_atlas_to_section (3x3 on [x, y, 1]) takes a native atlas "
+                          "pixel to the fit-grid pixel the current placement puts it on; "
+                          "native_to_um a native pixel [x, y, 1] to atlas micrometres.",
+        }
+        frame_file = target / "frame.json"
+        frame_file.write_text(json.dumps(info, indent=1) + "\n", encoding="utf-8")
+        return {**written, "frame": frame_file}
+
+    def map_from_itk(self, section: object, source: Any, *, fixed: str = "section",
+                     atlas: str = "placed", spacing: float = 1.0) -> np.ndarray:
+        """An outside engine's answer as the full map
+        :meth:`deformation_from_map` and :meth:`set_deformations` take
+        (``(H, W, 2)`` native atlas pixels of every fit-grid pixel centre).
+
+        *source*: a displacement-field image file (``.nii.gz``, ``.mha``,
+        ``.nrrd``...), a transform file (``.mat``, ``.txt``, ``.tfm``,
+        ``.h5``: ANTs' and ITK's), a ``SimpleITK`` transform or vector image,
+        or a float array ``(H, W, 2)`` of displacements ``(dx, dy)`` in
+        fit-grid pixels. Read in ITK's convention: it maps each FIXED image
+        point to the MOVING point it corresponds to. *fixed* says which image
+        was fixed: ``section`` (the section's ``stain`` or ``section`` of
+        :meth:`write_frame`) or ``atlas`` (then the map is inverted, on the
+        fit grid). *atlas* says which atlas image the engine used:
+        ``placed`` (``placed_template``, on the fit grid) or ``native``
+        (``template``; with *fixed* ``section`` only). *spacing* is the
+        images' spacing per pixel when they were not :meth:`write_frame`'s."""
+        from langslice.core.itk_io import inverted, mapped_points
+
+        if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
+            raise ToolError("BAD_ARGS", "fixed is 'section' or 'atlas'; atlas is 'placed' or "
+                            "'native'")
+        if fixed == "atlas" and atlas == "native":
+            raise ToolError("BAD_ARGS", "a field with the atlas fixed is read on the fit grid: "
+                            "register against placed_template (atlas='placed')")
+        record = self._record(section)
+        width, height = self._grid(record).image.size
+        try:
+            points = mapped_points(source, (width, height), spacing=float(spacing))
+            if fixed == "atlas":
+                points = inverted(points)
+        except (ValueError, RuntimeError) as exc:
+            raise ToolError("BAD_FIELD", f"{record.id}: {exc}") from exc
+        if atlas == "native":
+            return points
+        to_native = np.linalg.inv(self._placed(record))
+        return np.stack([to_native[0, 0] * points[..., 0] + to_native[0, 1] * points[..., 1]
+                         + to_native[0, 2],
+                         to_native[1, 0] * points[..., 0] + to_native[1, 1] * points[..., 1]
+                         + to_native[1, 2]], axis=-1)
+
+    def transform_from_itk(self, section: object, source: Any, *, fixed: str = "section",
+                           atlas: str = "placed", spacing: float = 1.0,
+                           note: str = "") -> TransformProposal:
+        """An outside engine's affine (a transform file such as ANTs'
+        ``0GenericAffine.mat``, or a ``SimpleITK`` transform; *fixed*,
+        *atlas* and *spacing* as :meth:`map_from_itk`, either way round) as
+        a :class:`TransformProposal`, like :meth:`transform_from_matrix`.
+        ``BAD_MATRIX`` for a transform that is not affine."""
+        from langslice.core.itk_io import linear_matrix
+
+        if fixed not in ("section", "atlas") or atlas not in ("placed", "native"):
+            raise ToolError("BAD_ARGS", "fixed is 'section' or 'atlas'; atlas is 'placed' or "
+                            "'native'")
+        record = self._record(section)
+        size = self._grid(record).image.size
+        try:
+            matrix = linear_matrix(source, (int(size[0]), int(size[1])), spacing=float(spacing))
+        except (ValueError, RuntimeError) as exc:
+            raise ToolError("BAD_MATRIX", f"{record.id}: {exc}") from exc
+        if fixed == "atlas":
+            if abs(np.linalg.det(matrix[:2, :2])) < 1e-12:
+                raise ToolError("BAD_MATRIX", f"{record.id}: the map is degenerate")
+            matrix = np.linalg.inv(matrix)
+        if atlas == "placed":
+            matrix = np.linalg.inv(self._placed(record)) @ matrix
+        return self.transform_from_matrix(record.id, matrix[:2], note=note)
+
+    def _placed(self, record: SliceState) -> np.ndarray:
+        """3x3: native atlas pixels -> fit-grid pixels under the section's
+        current placement (its stored transform, else none)."""
+        from langslice.core import deformation
+
+        if record.transform:
+            try:
+                return np.asarray(deformation.fit_grid(
+                    self._door.state, self._door.ctx, record).placement.atlas_to_section,
+                    dtype=np.float64)
+            except ValueError as exc:
+                raise ToolError("INVALID_LINEAR_PLACEMENT", f"{record.id}: {exc}") from exc
+        return np.asarray(self._grid(record).placement.atlas_to_section, dtype=np.float64)
+
+    # --- the native engines, with settings of your own --------------------------------------
+
+    def fit_fireants(self, section: object, *, settings: Any = None, mask: Any = None,
+                     start: str = "linear", em: bool = True, marked: bool = True,
+                     note: str = "") -> DeformationProposal:
+        """Run FireANTs SyN (the engine ``fireants_syn`` runs) on the section
+        with settings of your own and return the result as a
+        :class:`DeformationProposal`, NOT written (:meth:`set_deformations`
+        writes it, recorded as this caller's, with the settings in its
+        provenance ``meta``).
+
+        *settings*: a :class:`langslice.core.deformable.FitSettings` or a
+        mapping of its fields over ``fireants_syn``'s ``medium`` defaults
+        (``stiffness`` ``soft`` / ``medium`` / ``firm``, ``detail``
+        ``coarse`` / ``standard``, ``atlas_image``, ``stain_metric``,
+        ``stain_edges``, ``structures`` and ``neighbourhood_um`` to fit
+        some regions only, ``exclude``). *mask*: bool, the fit grid's
+        ``(H, W)`` (:attr:`FitFrame.image`), True where the section is
+        compared (left out: a tear, a bubble). *start* ``linear`` fits from
+        the linear placement, ``current`` on top of the applied deformation.
+        *em* False skips the EM section mask's second run; *marked* False
+        leaves the section's marked damage regions in the fit."""
+        from dataclasses import fields as dataclass_fields
+
+        from langslice.core import deformation
+        from langslice.core.deformable import FitSettings
+        from langslice.core.deformable.render import composed_native_grid
+        from langslice.ops.deformable import fit_record
+
+        record = self._record(section)
+        workspace = self._door.ctx
+        base = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
+                                  stiffness="medium").settings(
+            (), (), brain_scale=workspace.brain_scale)
+        if settings is None:
+            chosen = base
+        elif isinstance(settings, FitSettings):
+            chosen = settings
+        elif isinstance(settings, Mapping):
+            known = {item.name for item in dataclass_fields(FitSettings)}
+            unknown = sorted(set(settings) - known)
+            if unknown:
+                raise ToolError("BAD_ARGS", f"unknown settings {unknown}; FitSettings has "
+                                f"{sorted(known)}")
+            try:
+                chosen = replace(base, **dict(settings))  # checked as it is made
+            except (TypeError, ValueError) as exc:
+                raise ToolError("BAD_ARGS", str(exc)) from exc
+        else:
+            raise ToolError("BAD_ARGS", "settings is a FitSettings or a mapping of its fields")
+        keep = None
+        if mask is not None:
+            keep = np.asarray(mask).astype(bool)
+        try:
+            fitted = fit_record(self._door.job, workspace, record.id, chosen, start=start,
+                                mask=keep, em=bool(em), marked=bool(marked))
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
+        native_xy = np.stack(composed_native_grid(fitted, 1), axis=-1).astype(np.float64)
+        meta = {"engine": "fireants", "settings": fitted.settings.to_dict()
+                if fitted.settings is not None else chosen.to_dict(),
+                "start": start, "em": bool(em), "marked": bool(marked),
+                "mask_pixels": None if keep is None else int(keep.sum()),
+                "runtime_s": round(float(fitted.engine.get("runtime_s", 0.0)), 1)}
+        return self.deformation_from_map(record.id, native_xy,
+                                         note=note or "FireANTs SyN, settings of the caller's",
+                                         meta=meta)
+
+    def fit_elastix(self, section: object, *, restrict_to: Sequence[str] = (),
+                    exclude: Sequence[str] = (), atlas_image: str = "template",
+                    mask: Any = None, marked: bool = True,
+                    note: str = "") -> TransformProposal:
+        """Run the Elastix affine (the engine ``elastix_affine`` runs) on the
+        section from its current placement and return the result as a
+        :class:`TransformProposal`, NOT written (:meth:`set_transforms`
+        writes it; its record keeps the call's settings under ``fit``).
+        *restrict_to* / *exclude*: region entries (``"CTX:left"`` for one
+        side); *mask* (bool, the fit grid's ``(H, W)``) True where the
+        section is compared; *marked* False keeps the section's marked
+        damage regions in the fit."""
+        from langslice.ops.transforms import elastix_fit
+
+        record = self._record(section)
+        keep = None if mask is None else np.asarray(mask).astype(bool)
+        try:
+            fitted = elastix_fit(self._door.job, self._door.ctx, record.id,
+                                 restrict_to=list(restrict_to), exclude=list(exclude),
+                                 atlas_image=str(atlas_image), mask=keep, marked=bool(marked))
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
+        proposal = self.transform_from_params(record.id, fitted.params,
+                                              note=note or "Elastix affine, settings of the "
+                                              "caller's")
+        stored = {**proposal.record, "fit": {
+            "engine": "elastix", "restrict_to": list(fitted.report.get("include") or ()),
+            "exclude": list(fitted.report.get("exclude") or ()), "atlas_image": atlas_image,
+            "marked": bool(marked), "mask_pixels": None if keep is None else int(keep.sum())}}
+        return replace(proposal, record=stored)
 
     # --- output for the agent ---------------------------------------------------------------
 
@@ -939,15 +1406,18 @@ class ToolContext:
         there."""
         from langslice.job.background import DONE, FAILED, Landed
 
+        if not self._caller.background:
+            raise _not_for_scripts("a script runs its own computation: compute, then write "
+                                   "with expect=")
         job = self._door.job
         ids = [self._record(section).id for section in sections]
         busy = job.busy_refusal(ids)
         if busy is not None:
             raise Refused(busy.pop("error"), **busy)
-        door, tool = self._door, self._tool
+        door, caller = self._door, self._caller
 
         def landing() -> Landed:
-            context = ToolContext(door, tool, f"{self.call}-bg")
+            context = ToolContext(door, caller, f"{self.call}-bg")
             try:
                 result = land(context)
             except (ToolError, Refused) as exc:
@@ -959,33 +1429,34 @@ class ToolContext:
                                     for item in result.pictures],
                           result=_plain(reply))
 
-        return job.background.start(tool.name, ids, landing, wait_for_images=False).id
+        return job.background.start(caller.name, ids, landing, wait_for_images=False).id
 
     # --- writing ----------------------------------------------------------------------------
 
     def _require(self, *properties: str) -> None:
-        if self._tool.kind != "write":
-            raise ToolError("READ_TOOL_WRITES", f"{self._tool.name} is declared a read tool and "
+        caller = self._caller
+        if caller.kind != "write":
+            raise ToolError("READ_TOOL_WRITES", f"{caller.name} is declared a read tool and "
                             "writes nothing; declare kind='write'")
-        outside = [name for name in properties if name not in self._tool.writes]
+        outside = [name for name in properties if name not in caller.writes]
         if outside:
-            raise ToolError("WRITE_NOT_DECLARED", f"{self._tool.name} writes {outside} but "
-                            f"declares writes={list(self._tool.writes)}")
+            raise ToolError("WRITE_NOT_DECLARED", f"{caller.name} writes {outside} but "
+                            f"declares writes={list(caller.writes)}")
 
     @contextlib.contextmanager
     def writing(self) -> Iterator[ToolContext]:
         """Hold the job's write lock around several writes: everything
-        written inside is ONE undo step, and so is everything one call
-        writes, unless another write landed on the job between two of the
+        written inside is ONE undo step. A plugin call's writes are one step
+        too, unless another write landed on the job between two of the
         call's (then they stay separate steps, so undo never takes back
-        someone else's write). A long tool computes first and applies
-        inside, passing ``expect=`` to the writes so a section that changed
-        meanwhile is refused."""
+        someone else's write); a script's outermost writes are a step each.
+        A long tool computes first and applies inside, passing ``expect=``
+        to the writes so a section that changed meanwhile is refused."""
         job = self._door.job
         with job.writing():
             outermost = self._depth == 0
             mark = job.pushed
-            if outermost and self._step is not None:
+            if outermost and self._step is not None and self._caller.merge_calls:
                 start, pushed, top = self._step
                 if job.pushed == pushed and job.undo_stack and job.undo_stack[-1] is top:
                     mark = start  # nothing else wrote since the call's last write
@@ -1052,10 +1523,21 @@ class ToolContext:
             for name, asked, used in ([] if done is None else done.clamped):
                 out[name]["clamped_from_mm"] = round(float(asked), 4)
                 out[name]["position_mm"] = round(float(used), 4)
+            cleared = self._cleared()
         reply = WriteResult(written=written, rows=list(out.values()))
         if done is not None and done.cutting_angles is not None:
             reply.details["cutting_angles"] = dict(done.cutting_angles)
+        if cleared:
+            reply.details["deformation_cleared"] = cleared
         return reply
+
+    def _cleared(self) -> list[str]:
+        """Outside a tool call (a script), the deformations a placement write
+        made stale, dropped in its undo step (inside one the tool door does
+        it after the call)."""
+        if self._caller.in_tool_call:
+            return []
+        return self._door.job.clear_stale_deformations()
 
     def _resolve_id(self, ref: object) -> str:
         record = self._door.state.resolve(ref)
@@ -1105,7 +1587,11 @@ class ToolContext:
                     continue
                 written += done
                 out[name] = {"id": name, "status": "ok"}
-        return WriteResult(written=written, rows=list(out.values()))
+            cleared = self._cleared()
+        reply = WriteResult(written=written, rows=list(out.values()))
+        if cleared:
+            reply.details["deformation_cleared"] = cleared
+        return reply
 
     def set_deformations(self, rows: Sequence[Mapping[str, Any]], *,
                          expect: Mapping[str, str] | None = None) -> WriteResult:
@@ -1203,7 +1689,8 @@ class ToolContext:
     def add_layer(self, section: object, layer: Layer) -> LayerRef:
         """Leave *layer* on the section so ``look`` can draw it (``layers=``)
         and ``status`` lists it. The layer's file goes under this tool's
-        folder; the reference joins the section's state, so undoing the call
+        folder (a script's under ``plugins/script/``); the reference joins
+        the section's state, so undoing the call (a script's: the write)
         that made it hides it. A layer of the same name on the section
         replaces the earlier one. Only a ``write`` tool leaves layers."""
         from langslice.job.plugin_store import register_layer
@@ -1220,7 +1707,7 @@ class ToolContext:
             record = self._door.state.by_id(record_id)
             assert record is not None
             before = job.snapshot()
-            ref = register_layer(job.layout, record, self._tool.name, self.call, layer,
+            ref = register_layer(job.layout, record, self._caller.name, self.call, layer,
                                  persist=job.persist)
             job.commit(before)
         return LayerRef(id=ref["id"], section=record.id, name=ref["name"], kind=ref["kind"],
@@ -1231,6 +1718,11 @@ class ToolContext:
         record = self._record(section)
         return [LayerRef(id=ref["id"], section=record.id, name=ref["name"], kind=ref["kind"],
                          frame=ref["frame"], file=ref["file"]) for ref in record.layers]
+
+
+def _as_tool_error(refusal: Refused) -> ToolError:
+    return ToolError(refusal.code, str(refusal), **{
+        key: value for key, value in refusal.details.items() if key != "message"})
 
 
 def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
@@ -1274,7 +1766,7 @@ def _plane_frame(atlas: Any, placement: Any) -> dict[str, Any]:
 
 
 __all__ = [
-    "AffineView", "AtlasView", "DeformationProposal", "FitFrame", "LayerRef", "SectionRaster",
-    "SectionView", "ToolContext",
+    "AffineView", "AtlasPlane", "AtlasView", "Caller", "DeformationProposal", "FitFrame",
+    "LayerRef", "SectionRaster", "SectionView", "ToolContext",
     "TransformProposal", "WriteResult", "STALE_INPUT",
 ]

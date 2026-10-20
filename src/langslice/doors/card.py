@@ -169,6 +169,7 @@ Keep your own files here, never in /tmp: scripts in `scripts/`, the rest (montag
 tables) in `scratch/`; LangSlice never reads them. Every picture a verb shows is saved here.
 Run a script with `langslice-job {layout.folder} python scripts/NAME.py [ARGS]`: the job's
 `env/` python, LangSlice usually loaded already. `env install PACKAGE ...` adds packages there.
+Your own method (an affine, a warp field) goes in through `job.context`: `help(job.context)`.
 """
 
 

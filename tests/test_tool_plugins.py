@@ -1060,8 +1060,9 @@ def test_a_job_without_plugins_shows_no_trace_of_the_seam(images: Path):
     assert box.plugins == [] and "plugins" not in (read_job_file(box.job.layout) or {})
     assert "layers" not in state.to_dict()["slices"][0] and "plugins" not in spec.to_dict()
     assert "layers" not in call(box, "status")["rows"][0]
-    assert "layers" not in inspect.signature(tool_named(box, "look")).parameters
-    assert "layers" not in declaration("look", FULL).signature.parameters
+    # look's layers draws what plugins and scripts leave: on every job.
+    assert "layers" in inspect.signature(tool_named(box, "look")).parameters
+    assert "layers" in declaration("look", FULL).signature.parameters
     with_plugins = JobSpec(image_folder=str(images), plugins=[EXAMPLE])
     declared = declaration("look", Variant.of(with_plugins, auto=True))
     assert "layers" in declared.signature.parameters

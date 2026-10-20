@@ -113,6 +113,11 @@ cap them at 2048 px. `look --resolution N` requests a long edge of at least
 128 px, bounded by the viewer and source. A clamped request is reported.
 Picture resolution does not change the registration.
 
+A coding agent that writes its own method (an affine, a displacement field, an
+outside engine's answer) puts its result into the job through the library's
+`job.context` ([your own method](library.md#your-own-method)); the job folder's
+card points to it.
+
 The CLI and the library cap no pictures or sections per call: `look`,
 `grep_atlas_view`, `set_preprocessed_channel_properties` and the change tools
 save and return every picture they draw, and `interactive_transform` and

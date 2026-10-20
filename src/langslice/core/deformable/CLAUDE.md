@@ -136,6 +136,10 @@ and returns a `record.DeformableRecord`. No custom solver.
   `section_mask`: the EM's settings, its fitted means and widths, the
   fraction of the footprint in the fit's scope left out, the first run's time;
   `left_out` the dropped section pixels in that scope). `run_prepared` runs one in this process.
+  `with_section_mask(prepared, mask)` narrows a prepared fit's section mask to
+  a caller's own (bool on the section grid: the fixed mask, and the EM's
+  second run through `EMContext.section_keep`, which `em_masks` intersects;
+  a script's `fit_fireants(mask=)`, the Elastix affine's `mask=`).
   `fit_prepared` runs 1–8 prepared fits (different sections or settings):
   on a GPU one after another in the caller, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing

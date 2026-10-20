@@ -256,6 +256,53 @@ def _fit_elastix(
     return AffineFit(rows=rows, fitted=written)
 
 
+def elastix_fit(
+    job: Job, workspace: Workspace, section: Any, *, restrict_to: Sequence[str] = (),
+    exclude: Sequence[str] = (), atlas_image: str = "template", mask: Any = None,
+    marked: bool = True,
+) -> Any:
+    """One Elastix affine of the section from its current placement, written
+    nowhere (a script's ``job.context.fit_elastix``):
+    :class:`langslice.core.transform.ElastixFit` (``params``, the six
+    normalized numbers; ``report``; ``engine``). *restrict_to* / *exclude*
+    are region entries (checked, ``"CTX:left"`` for one side); *marked* adds
+    the section's marked damage regions to *exclude*, as ``elastix_affine``
+    leaves them out; *mask* (bool, the fit grid's ``(H, W)``, True where the
+    section is compared) narrows the section's mask.
+
+    Refused: ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``BAD_ARGS`` (an image
+    the atlas does not have), ``UNKNOWN_REGIONS``, ``NO_SIDES``,
+    ``REGION_TOO_SMALL``, ``FIT_FAILED``.
+    """
+    from langslice.core.affine import IDENTITY_PARAMS
+    from langslice.core.atlas.images import atlas_images
+    from langslice.core.transform import RegionTooSmall, elastix_affine
+    from langslice.ops.deformable import region_entries
+
+    record = job.state.resolve(section)
+    if record is None:
+        raise unknown_sections(job.state, [str(section)])
+    if record.position_mm is None:
+        raise Refused("NO_POSITION", message=f"{record.id} has no position yet.")
+    if atlas_image not in atlas_images(workspace.atlas):
+        raise Refused("BAD_ARGS", message=f"atlas_image is one of this atlas's images: "
+                      f"{list(atlas_images(workspace.atlas))}.")
+    include = region_entries(workspace, job.state, list(restrict_to))
+    dropped = region_entries(workspace, job.state, list(exclude))
+    if marked:
+        include, marks = exclusions(record, include)
+        dropped = tuple(dict.fromkeys((*dropped, *marks)))
+    stored = (record.transform or {}).get("params")
+    start = list(stored) if stored is not None and len(stored) == 6 else list(IDENTITY_PARAMS)
+    try:
+        return elastix_affine(job.state, workspace, record, start, include=include,
+                              exclude=dropped, atlas_image=atlas_image, mask=mask)
+    except RegionTooSmall as exc:
+        raise Refused("REGION_TOO_SMALL", message=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
+        raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
+
+
 # --- interactive_transform -------------------------------------------------------------
 
 @dataclass(frozen=True)

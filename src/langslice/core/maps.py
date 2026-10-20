@@ -24,7 +24,9 @@ FILE as stored (no rotation or flip applied: those are part of the mapping).
   them (memoized on the workspace, so every write can rewrite
   ``registration.json`` cheaply).
 - :func:`native_points`: native atlas-plane ``(x, y)`` of section points,
-  linear or through an applied deformation.
+  linear or through an applied deformation; :func:`file_points` the way
+  back (through the record's inverse field); :func:`file_to_fit` the file's
+  pixels onto a record's fit grid.
 - :func:`section_maps`: the per-pixel maps on a grid (the working copy by
   default, or the file's own pixels): coordinates (NaN outside the atlas
   volume), atlas ids (nearest neighbour on the native plane, as the
@@ -421,10 +423,7 @@ def native_points(
         return apply(frame.file_to_native(), x, y)
     import cv2
 
-    fit_size = (int(warp.section_size[0]), int(warp.section_size[1]))
-    fit_unturned = unturned(fit_size, frame.rotation_deg)
-    to_fit = (orientation_matrix(fit_unturned, frame.rotation_deg, frame.flip)
-              @ pixel_center_map(frame.file_size, fit_unturned))
+    to_fit = file_to_fit(frame, (int(warp.section_size[0]), int(warp.section_size[1])))
     qx, qy = apply(to_fit, x, y)
     map_x = np.ascontiguousarray(qx, dtype=np.float32)
     map_y = np.ascontiguousarray(qy, dtype=np.float32)
@@ -436,6 +435,63 @@ def native_points(
     px = qx + dx.astype(np.float64) * scale
     py = qy + dy.astype(np.float64) * scale
     return apply(np.linalg.inv(warp.placement.atlas_to_section), px, py)
+
+
+#: Points per row when a list of points is sampled as a 2-D map (``cv2.remap``
+#: takes at most 32767 rows or columns).
+POINT_ROW = 1024
+
+
+def point_rows(values: np.ndarray) -> np.ndarray:
+    """A 1-D array of point coordinates laid out as rows of :data:`POINT_ROW`
+    (the last padded with its last value), for a 2-D sampler; ``[:n]`` of
+    the result's ravel gives the points back."""
+    flat = np.ravel(np.asarray(values, dtype=np.float64))
+    pad = (-len(flat)) % POINT_ROW if len(flat) > POINT_ROW else 0
+    if pad:
+        flat = np.concatenate([flat, np.full(pad, flat[-1])])
+    return flat.reshape(-1, min(len(flat), POINT_ROW) or 1)
+
+
+def file_to_fit(frame: SectionFrame, fit_size: tuple[int, int]) -> np.ndarray:
+    """3x3 on ``[x, y, 1]``: the file's pixel centres -> pixel centres of a
+    fit grid of *fit_size* ``(width, height)`` (the oriented render a
+    deformable record and ``fit_frame`` are on)."""
+    fit_unturned = unturned(fit_size, frame.rotation_deg)
+    return (orientation_matrix(fit_unturned, frame.rotation_deg, frame.flip)
+            @ pixel_center_map(frame.file_size, fit_unturned))
+
+
+def file_points(
+    frame: SectionFrame, warp: DeformableRecord | None, x: np.ndarray, y: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """The file points ``(x, y)`` that show native atlas-plane points ``(x,
+    y)``: :func:`native_points` the other way. Without *warp* the linear
+    placement inverted; with it, the point placed on the record's fit grid,
+    moved by the record's inverse field (bilinear, edges replicated), then
+    carried back to the file. ``ValueError`` for a record without an inverse."""
+    if warp is None:
+        return apply(np.linalg.inv(frame.file_to_native()), x, y)
+    if warp.inverse_field_mm is None:
+        raise ValueError("the applied deformation has no inverse field")
+    import cv2
+
+    shape, count = np.shape(x), int(np.size(x))
+    px, py = apply(warp.placement.atlas_to_section, np.asarray(x, dtype=np.float64),
+                   np.asarray(y, dtype=np.float64))
+    map_x = np.ascontiguousarray(point_rows(px), dtype=np.float32)
+    map_y = np.ascontiguousarray(point_rows(py), dtype=np.float32)
+    scale = 1.0 / warp.mm_per_px
+    inverse = warp.inverse_field_mm
+    dx = cv2.remap(np.ascontiguousarray(inverse[..., 0], dtype=np.float32), map_x, map_y,
+                   cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE).ravel()[:count]
+    dy = cv2.remap(np.ascontiguousarray(inverse[..., 1], dtype=np.float32), map_x, map_y,
+                   cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE).ravel()[:count]
+    qx = np.reshape(px, shape) + dx.reshape(shape).astype(np.float64) * scale
+    qy = np.reshape(py, shape) + dy.reshape(shape).astype(np.float64) * scale
+    to_file = np.linalg.inv(file_to_fit(frame, (int(warp.section_size[0]),
+                                                int(warp.section_size[1]))))
+    return apply(to_file, qx, qy)
 
 
 # --- the per-pixel maps -----------------------------------------------------------------
