@@ -18,6 +18,7 @@ import asyncio
 import difflib
 import json
 import os
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -132,6 +133,12 @@ def _mcp_md(label: str, tasks: list[str], folder: Path) -> str:
     from langslice.core.spec import JobSpec
     from langslice.doors.mcp.server import build_server
 
+    # Each listing gets its own images folder: the server adopts a job folder
+    # an earlier listing left, which would carry that listing's tasks.
+    own = folder.parent / f"mcp_{label}" / folder.name
+    if not own.exists():
+        shutil.copytree(folder, own, ignore=shutil.ignore_patterns("langslice"))
+    folder = own
     spec = JobSpec(image_folder=str(folder), tasks=tasks, **_BASE)
     server = build_server(lambda image_folder: dataclasses.replace(spec, image_folder=image_folder),
                           str(folder), atlas_loader=atlas_loader())
