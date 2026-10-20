@@ -56,6 +56,9 @@ Draw pictures of sections and the atlas. Writes nothing.
                 section in "overlay".
             warp: "applied" draws each section with its deformation, "none" with
                 its linear placement only.
+            layers: Names of the layers left on the sections (status lists them),
+                or ["all"], drawn as marks and outlines on the "section" and "overlay" pictures. The reply says which layers
+                were drawn. Empty draws none.
             depth: Atlas ontology depth whose region boundaries "borders"
                 draws (0 = root, as in BrainGlobe; larger is finer).
 
@@ -72,6 +75,7 @@ Draw pictures of sections and the atlas. Writes nothing.
 - `atlas_layers` (array of string):
 - `atlas_opacity` (number):
 - `warp` (string, one of ['applied', 'none']):
+- `layers` (array of string):
 - `depth` (integer):
 
 ## zoom
@@ -357,42 +361,54 @@ Read a text file of the job folder, with line numbers. Writes nothing.
 - `offset` (integer):
 - `limit` (integer):
 
-## interactive_transform
+## position_sections
 
-Set sections' orientation and in-plane transform by hand, and show the result.
+Set where sections sit along the slicing axis, and the stack's cutting angles.
 
-        For a few sections at a time, in a look-and-adjust loop. Values are
-        absolute: a value given replaces the section's current one, and a value
-        left out keeps it (a section without a transform starts from the
-        identity). The quarter turn is applied first, then the flip. A changed
-        orientation keeps the other values: the transform is rebuilt on the new
-        orientation, and the reply says so. One undoable write; the image files
-        are never modified.
+        Positions are atlas millimetres along the slicing axis; a value outside
+        the atlas range is clamped into it and reported. The stack's order
+        follows the positions. A changed position or angle clears the
+        deformation of each section it moves (the reply lists them). One
+        undoable write.
 
-        Whether a section is mirrored can only be decided from a visible notch,
-        or from a cutting angle oblique enough that the two hemispheres'
-        anatomy differs.
+        Cutting angles tilt the atlas plane every section is cut at; every
+        section gets the same angles, and every later atlas picture is drawn at
+        them. Pitch 0 and yaw 0 is the atlas's flat plane. A tilt moves each
+        edge of the plane along the slicing axis: an edge D mm from the
+        picture's centre moves about D x tan(angle) mm (10 degrees moves an edge
+        4 mm from the centre about 0.7 mm). Which edge moves which way, for
+        positive angles, by the plane the stack is cut in (edges as the pictures
+        show them):
+
+        - coronal: pitch puts the top edge at a larger position (mm) than the
+          bottom edge; yaw puts the right edge at a larger position than the
+          left edge.
+        - sagittal: pitch puts the left edge at a larger position than the
+          right edge; yaw puts the bottom edge at a larger position than the
+          top edge.
+        - horizontal: pitch puts the right edge at a larger position than the
+          left edge; yaw puts the top edge at a larger position than the
+          bottom edge.
+
+        Negative angles move the edges the opposite way.
 
         Args:
-            sections: One to four objects: "id" (filename; the extension may be
-                left off) and any of "flip" (true mirrors the section
-                left-right), "rotate_quarter" (0, 90, 180 or 270 degrees
-                counter-clockwise), "rotation_deg" (degrees counter-clockwise
-                about the pivot, the canvas centre),
-                "scale_x" and "scale_y" (multipliers about the pivot; 1.0 keeps
-                the size), "shear" (a slant applied before the rotation: each
-                point moves sideways by shear times its distance below the pivot,
-                in units of scale_x), "translate_x_mm" (right) and
-                "translate_y_mm" (down). A section appears once per call.
+            sections: [{"id": "<filename>", "position_mm": <number>}]; the
+                extension may be left off.
+            cutting_angles: {"pitch_deg": <number>, "yaw_deg": <number>} for the
+                whole stack; empty leaves the angles as they are.
             view: True returns the picture described below; false returns none.
 
         Returns:
-            Per section its orientation, its transform as the values above,
-            and whether anything was written; and a picture of each section
-            under its new transform with the atlas borders on it.
+            What was written and what was clamped, the stack's order after the
+            call, the rows that changed, and a positioning picture of the
+            written sections: the atlas at their new positions above a
+            millimetre ruler, the sections below it, each joined by a line to
+            its position.
         
 
-- `sections` (array of any, required):
+- `sections` (array of any):
+- `cutting_angles` (any):
 - `view` (boolean):
 
 ## mark_damage
@@ -431,53 +447,6 @@ Mark the atlas regions a section has lost, so that every fit leaves them out.
 - `section` (string, required):
 - `regions` (array of string, required):
 - `note` (string):
-
-## elastix_affine
-
-Fit sections' in-plane affine transforms automatically with elastix.
-
-        For a few sections at a time. Elastix refines each section's current
-        placement (from the identity when it has no transform) by matching its
-        preprocessed channel against an atlas image, inner anatomy included. It
-        adjusts from where the
-        section is and does not search from scratch: it moves a section by
-        small amounts and does not turn it over. The section's marked damage
-        regions are left out automatically. Each fit is written as the
-        section's transform, one undoable write for the call.
-
-        Use restrict_to when a few clearly recognizable, surviving regions
-        provide better registration evidence than the whole section. Those
-        regions guide a whole-section affine transform. Review the wider
-        overlay afterward as well.
-
-        A region too small for elastix is skipped with REGION_TOO_SMALL; use
-        a larger region or interactive_transform. No fit is written for it.
-
-        Args:
-            sections: One to four filenames (the extension may be left off).
-            restrict_to: Regions to fit by (acronyms, names or ids, descendants
-                included; "CTX:left" or "CTX:right" for one side): only the
-                atlas within 300 um of them, against the tissue the fit lays
-                there. Empty fits by every region.
-            atlas_image: One of the atlas's images (the job statement lists
-                them: "template" and any other reference images the atlas ships,
-                by their names); pick the one that looks most like the sections.
-            view: True returns the picture described below; false returns none.
-
-        Returns:
-            Per section the transform (rotation_deg, scale_x,
-            scale_y, shear, translate_x_mm, translate_y_mm about the canvas
-            centre); and a picture of each fitted section
-            under its new transform with the atlas borders on it. With
-            restrict_to, those regions' borders are drawn thick and the others
-            faint, and the picture is zoomed to them when they cover a small
-            part of the section.
-        
-
-- `sections` (array of string, required):
-- `restrict_to` (array of string):
-- `atlas_image` (string):
-- `view` (boolean):
 
 ## note
 
