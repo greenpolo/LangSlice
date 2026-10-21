@@ -104,7 +104,7 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     (work,) = job.background.notices()
     assert work.status == "done", work.notice
     assert work.notice.startswith("w1 trace_borders of s0.png finished: the trace landed "
-                                  "and FireANTs fitted the traced borders (medium stiffness) on "
+                                  "and FireANTs fitted the traced borders (80 um smoothness) on "
                                   "top of its linear placement.")
     assert "undo removes it while it is the latest step" in work.notice
     record = job.state.by_id(ID)
@@ -112,7 +112,7 @@ def test_the_trace_returns_at_once_and_its_fit_lands_as_one_undo_step(tmp_path, 
     held = record.deformation
     assert held is not None and len(held["steps"]) == 1
     assert held["steps"][0]["fit_section"] == deformation.TRACED_BORDERS
-    assert held["steps"][0]["stiffness"] == "medium"
+    assert held["steps"][0]["smoothness_um"] == 80.0
     assert len(job.undo_stack) == depth + 2  # the landing is its own step
     assert job.undo()
     record = job.state.by_id(ID)

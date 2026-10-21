@@ -24,8 +24,9 @@ programs through the OME-NGFF 0.6 coordinate transformations (RFC-5):
   mm (the ``displacement`` axis first, as the spec orders it; the record
   holds ``(rows, cols, 2)`` ``(dx, dy)`` float32);
 - ``warped_labels`` (the leaf ids under the composed warp), ``footprint``
-  and ``left_out``: multiscale images of one level on the section grid,
-  stored losslessly.
+  ``left_out`` and ``weights`` (the engine's own P(match) sorting of the
+  section, float16; absent when the engine estimated nothing): multiscale
+  images of one level on the section grid, stored losslessly.
 
 Every array is one chunk, Blosc zstd with byte shuffle. The fields are
 written as float16 (rounding of at most 0.25 µm on a displacement under
@@ -54,7 +55,8 @@ FIELD_DTYPE = np.float16
 FIELD_GROUP = "coordinateTransformations/field"
 INVERSE_GROUP = "coordinateTransformations/inverse_field"
 #: The record's other arrays, by the image group that holds each.
-IMAGE_GROUPS = {"labels": "warped_labels", "footprint": "footprint", "left_out": "left_out"}
+IMAGE_GROUPS = {"labels": "warped_labels", "footprint": "footprint", "left_out": "left_out",
+                "weights": "weights"}
 LEVEL = "s0"
 SECTION, PLACED, ATLAS = "section", "placed_atlas", "atlas"
 BLOSC_LEVEL = 5
@@ -227,7 +229,7 @@ def _field(root: Any, group: str) -> np.ndarray:
 def read(directory: str | Path) -> dict[str, np.ndarray | None]:
     """The arrays of ``<directory>/warp.ome.zarr``: ``field_mm`` and
     ``inverse_field_mm`` (``(rows, cols, 2)`` float32 ``(dx, dy)``, the
-    inverse None when not stored), ``labels``, ``footprint`` and ``left_out``
+    inverse None when not stored), ``labels``, ``footprint``, ``left_out`` and ``weights``
     (None when not stored). ``FileNotFoundError`` without the store."""
     import zarr
 

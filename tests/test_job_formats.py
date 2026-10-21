@@ -44,8 +44,8 @@ def _fit_and_draw(handle: Any, ids: list[str], *, long_edge: int | None = None) 
     from langslice.core.display import default_options
     from langslice.ops.deformable import fit_deformable
 
-    choice = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                stiffness="medium")
+    choice = deformation.Choice(fit_section="preprocessed", fit_atlas="template",
+                                smoothness_um=80.0)
     options = (default_options("overlay") if long_edge is None
                else default_options("overlay", long_edge=long_edge))
     job, workspace = handle.job, handle.workspace

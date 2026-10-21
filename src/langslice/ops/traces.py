@@ -251,7 +251,7 @@ def land_trace(
         text = ("the trace landed; its fit equals the deformation the section already holds, "
                 "so nothing changed. " + facts)
     else:
-        text = ("the trace landed and FireANTs fitted the traced borders (medium stiffness"
+        text = ("the trace landed and FireANTs fitted the traced borders (80 um smoothness"
                 + (f", restricted to {', '.join(regions)}" if regions else "")
                 + f") on top of {built_on}. The deformation is applied as its own undo "
                 "step: undo removes it while it is the latest step. " + facts)

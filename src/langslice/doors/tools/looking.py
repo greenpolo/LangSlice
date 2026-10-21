@@ -69,10 +69,9 @@ def can_change(door: Door) -> list[str]:
             fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")
         out.append("deformations" + (f" ({', '.join(fits)})" if fits else ""))
     if has("set_channel"):
-        out.append("channel display and the derived channels' recipes (the preprocessed "
-                   "channel among them)")
+        out.append("channel display and the derived channels' recipes")
     if has("set_mask"):
-        out.append("the masks fits take")
+        out.append("masks for the fits")
     added = [name for name, tool in tools_for(spec).items()
              if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)]
     if added:  # tools tool plugins added (a job without plugins has none)
