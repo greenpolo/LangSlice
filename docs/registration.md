@@ -465,25 +465,11 @@ it, but with other endpoints now), `pending` (saved, not in it) or `stale`
 others). A `warp` block says which pairs the current warp was built from
 (`built_from`), which pairs are not in it as they are (`not_applied`), which
 were deleted but still shape it (`deleted_still_in_warp`), and in a `note` that
-`landmark_triangulation` must run again to apply the set. A call with no pairs,
-no holds and no `delete` writes nothing and returns this listing. `status` rows carry
+`landmark_triangulation` must run again to apply the set. A call with no pairs
+and no `delete` writes nothing and returns this listing. `status` rows carry
 `landmarks: {total, pending, stale, warp}` for a section with pairs (`pending`
-counts `moved` and pending holds too, and `holds` is the number of holds when
-there are any; `warp` says in words whether the applied warp matches the
-pairs and holds), and `can_change` names the landmark tools when they are on.
-
-`set_landmarks` also takes `holds`: each a single section point `{picture, x,
-y}`, resolved exactly as a pair's section endpoint (the same pictures, zooms,
-warp and refusals, named `holds[i] (new hold)`). A hold is a spot
-`landmark_triangulation` keeps where it is, placed by the agent on anatomy
-that is already right. Holds get IDs `H1`, `H2`, ... (never reused), are added
-and deleted, never edited (`delete` takes hold IDs as it takes pair IDs, and
-`["all"]` clears pairs and holds together), and get no pair picture. The reply
-lists the new ones under `added_holds` (pairs stay under `changed`) and every
-hold under `holds` with a `state`, `applied` (in the current warp) or
-`pending`; a hold has no atlas endpoint and is never stale. The `warp` block
-adds `holds_in_warp`, and a deleted hold that still shapes the warp is under
-`deleted_still_in_warp`.
+counts `moved` too; `warp` says in words whether the applied warp matches the
+pairs), and `can_change` names the landmark tools when they are on.
 
 Place both endpoints of a pair on the same overlay (or a zoom of it) where you
 can: the atlas point where a border is drawn, the section point where that
@@ -494,9 +480,10 @@ which keeps its place"). Read endpoints off a close zoom, its grid lines 10 to 2
 pixels apart: read off a coarse grid, a point can miss the border meant by 20
 pixels or more. Spread the pairs over the outline and the internal anatomy: a pair on
 the outline moves the outline, and a pair on an internal landmark (the midline,
-a ventricle, a fibre tract) moves the anatomy inside. No pair is needed to keep
-a spot where it is: `landmark_triangulation` adds automatic holds between the
-pairs, and a hold of the agent's own keeps a chosen spot. An atlas region with no tissue on the section (torn or missing) takes no
+a ventricle, a fibre tract) moves the anatomy inside. A pair moves the tissue
+around it out to the neighbouring pairs and the image corners, so tissue that is
+already right takes pairs too: a pair with both endpoints on the same point of
+an overlay keeps that spot where it is. An atlas region with no tissue on the section (torn or missing) takes no
 pair; `mark_damage` records it. `mark_damage` marks whole regions, so mark a
 region only when it is missing; a region only partly present keeps its pairs on
 the part that is present. Tissue with no atlas counterpart (a detached fragment,
@@ -554,41 +541,24 @@ A section whose `deformation` is frozen takes neither tool: both refuse it
 with `FROZEN`.
 
 `landmark_triangulation` requires at least three pairs and a written linear
-placement. The agent is responsible for anatomical coverage. Before the mesh is
-built it adds **automatic holds** between the pairs: a regular lattice over the
-section frame, spaced one seventh of its longer side (about 35 points on a
-typical frame), keeping only the lattice points on the placed atlas footprint
-(the deformable fit's fixed mask) and leaving out every lattice point within 0.7 spacings of the
-section point of any pair, so a pair moves its own neighbourhood freely and the
-holds fill only the gaps between pairs. Each hold corresponds to itself against
-the baseline the warp is applied on (the linear placement, or the earlier
-deformation it composes onto): it keeps that spot where it is. Without them a
-pair on the outline would drag distant anatomy through the large triangles that
-reach the four fixed corners. Automatic holds are recomputed from the current
-pairs on every application; they are not pairs, are listed nowhere and cannot
-be edited. `holds="none"` adds none (the default is `"automatic"`); its
-description says to choose it when a piece lies across a gap of empty slide
-from its place, where automatic holds land on the tissue beside the piece and
-the piece's pairs fold the mesh pulling past them, and to keep the tissue that
-is already right with holds of the agent's own placed off the piece's path.
-The agent's holds (`set_landmarks` `holds`) correspond to themselves against
-the same baseline and are used with either choice; the automatic lattice
-clears only the pairs, not them. The mesh's vertices are the four corners, the
-pairs, the agent's holds, then the automatic holds. The reply says which holds
-were used (`holds`: the choice, `automatic_holds`: their count,
-`placed_holds`: the agent's hold IDs, and `holds_note` in words), and the
-result picture draws automatic holds as small white dots with a black ring and
-no label, the agent's as labelled squares. Changing the choice or the holds
-makes a different warp (the application's revision digests the pairs, the
-agent's holds and the choice). The mesh is a Delaunay
-triangulation of the pairs' and holds' section points in their pixel aspect
-ratio, with VisuAlign's four fixed corners 10% outside the frame, and a
-piecewise affine pull-back to the matching atlas points. Only this tool adds
-holds: the VisuAlign mesh itself (`core/triangulation.py`) is exact for any
-point set it is given. Its inverse uses the same
-triangle connectivity. Repeated section points (the refusal names the pairs
-under `pairs` and the agent's holds under `holds`) and zero-area source
-triangles are refused as invalid geometry.
+placement. The agent is responsible for anatomical coverage. The warp is built
+from the pairs and VisuAlign's four fixed corners alone, as VisuAlign builds
+it: a Delaunay triangulation of the pairs' section points in their pixel
+aspect ratio, with the four corners 10% outside the frame, and a piecewise
+affine pull-back to the matching atlas points (`core/triangulation.py`). Each
+pair therefore moves the tissue around it out to the neighbouring pairs and the
+corners, and a pair on the outline with no pair beside it drags distant anatomy
+through the large triangles that reach the corners. The description tells the
+agent to place pairs on tissue that is already right as well: a pair whose two
+endpoints are one point of an overlay corresponds to that spot against the
+baseline the warp is applied on (the linear placement, or the earlier
+deformation it composes onto), so it keeps the spot where it is. LangSlice adds
+no points of its own. A state saved by an earlier version whose landmark warp
+carries automatic holds (`landmark_holds`, fold vertices named `~K`) still
+opens: those fields are ignored, and applying the same pairs builds the warp
+again from the pairs. Its inverse uses the same
+triangle connectivity. Repeated section points (the reply names the pairs) and
+zero-area source triangles are refused as invalid geometry.
 
 Folds are accepted, as VisuAlign accepts them (expert registrations contain
 them): a triangle whose atlas points wind the other way from its section
@@ -597,11 +567,9 @@ overlap, the inverse takes the unfolded triangles first and then the folded
 ones, each in mesh order, so the result is deterministic and a fold never
 overrides sound anatomy. The reply reports `folds`: `area_fraction` (the share
 of the section frame covered by folded triangles), `pairs` (the pair IDs at
-their corners, so they can be fixed), `holds` (the agent's hold IDs at their
-corners, when any), the first triangles with their pair and hold IDs (an
-automatic hold at a corner is named `automatic hold`, with no id), and
-`triangle_count`. The result picture outlines each folded triangle in
-magenta between its vertices' section points, holds included (a triangle at the frame's edge
+their corners, so they can be fixed), the first triangles with their pair
+IDs, and `triangle_count`. The result picture outlines each folded triangle in
+magenta between its vertices' section points (a triangle at the frame's edge
 shows only its non-corner edges). Displacement and existing biological
 plausibility diagnostics (which flag a fold fraction past a threshold) are
 reported for review. The reply lists `built_from` (the pair IDs the warp was made

@@ -607,6 +607,90 @@ def test_the_reply_names_the_region_at_each_atlas_endpoint_and_flags_one_outside
         job.close()
 
 
+# --- the mesh: the pairs and the four fixed corners, as VisuAlign builds it ------------
+
+
+def _mesh_of(current):
+    from langslice.core.triangulation import PiecewiseAffine
+
+    params = current.engine["native_parameters"]
+    source, target = np.array(params["source_xy"]), np.array(params["target_xy"])
+    return PiecewiseAffine(source, target, np.array(params["simplices"])), source, target
+
+
+def test_the_warp_is_built_from_the_pairs_and_the_corners_alone(tmp_path):
+    job, ws, record = setup(tmp_path)
+    try:
+        edits = saved_pairs(job, ws, record)
+        edits[2]["atlas"]["x"] += 14
+        landmarks.set_landmarks(job, ws, record.id, edits)
+        reply = landmarks.landmark_triangulation(job, ws, record.id)
+        assert reply["built_from"] == ["L1", "L2", "L3"]
+        assert not any("hold" in key for key in reply)
+        current = job.deformations.current(job.state, record)
+        params = current.engine["native_parameters"]
+        assert params["pair_count"] == 3 and len(params["source_xy"]) == 4 + 3
+        assert set(params) == {"source_xy", "target_xy", "simplices", "margin", "pair_count"}
+        assert not any("hold" in key for key in current.provenance)
+        assert not any("hold" in key for key in record.deformation)
+        # with no pair beside it, a moved pair moves tissue far from it too
+        moved = np.hypot(*np.moveaxis(np.asarray(current.field_mm), -1, 0))
+        size = np.asarray(deformation.fit_grid(job.state, ws, record).image.size)
+        col, row = np.rint(np.array([0.9, 0.9]) * size - 0.5).astype(int)
+        assert moved[row, col] > 0
+    finally:
+        job.close()
+
+
+def test_a_pair_with_both_endpoints_on_one_point_keeps_that_spot(tmp_path):
+    job, ws, record = setup(tmp_path)
+    try:
+        # saved_pairs' endpoints are one point of the current registration:
+        # L1 and L2 keep their spots, L3 moves.
+        edits = saved_pairs(job, ws, record)
+        edits[2]["atlas"]["x"] += 14
+        landmarks.set_landmarks(job, ws, record.id, edits)
+        landmarks.landmark_triangulation(job, ws, record.id)
+        mesh, source, target = _mesh_of(job.deformations.current(job.state, record))
+        kept = source[4:6]
+        assert np.allclose(target[4:6], kept, atol=1e-6)
+        assert np.allclose(mesh.map(kept), kept, atol=1e-6)
+        assert np.hypot(*(target[6] - source[6])) > 1
+    finally:
+        job.close()
+
+
+def test_a_state_saved_with_automatic_holds_still_opens_and_applies_again(tmp_path):
+    job, ws, record = setup(tmp_path)
+    try:
+        edits = _folded_pairs(job, ws, record)
+        landmarks.set_landmarks(job, ws, record.id, edits)
+        landmarks.landmark_triangulation(job, ws, record.id)
+        # what an earlier version saved: automatic holds and a fold through one
+        before = job.snapshot()
+        record.deformation["landmark_holds"] = [[0.5, 0.5], [0.25, 0.75]]
+        record.deformation["landmark_folds"] = {"area_fraction": 0.01,
+                                                "triangles": [["L1", "L2", "~0"], ["~1"]]}
+        record.deformation["landmark_revision"] = "an-earlier-revision"
+        job.commit(before)
+        reloaded = Job.load(job.spec, ws, folder=job.layout.folder)
+        try:
+            again = reloaded.state.by_id(record.id)
+            assert again.deformation["landmark_holds"] == [[0.5, 0.5], [0.25, 0.75]]
+            assert look.look(reloaded, ws, "overlay", sections=[record.id]).pictures
+            listing = landmarks.set_landmarks(reloaded, ws, record.id)
+            assert {row["state"] for row in listing["landmarks"]} == {"applied"}
+            rebuilt = landmarks.landmark_triangulation(reloaded, ws, record.id)
+            assert rebuilt["written"]
+            assert "landmark_holds" not in again.deformation
+            assert all(not i.startswith("~") for tri in rebuilt["folds"]["triangles"]
+                       for i in tri)
+        finally:
+            reloaded.close()
+    finally:
+        job.close()
+
+
 # --- one coordinate system: a picture, its zooms and the atlas drawn on it -------------
 
 

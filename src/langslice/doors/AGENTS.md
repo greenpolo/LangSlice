@@ -478,10 +478,8 @@ all land.
 
 `set_landmarks` and `landmark_triangulation` are ordinary Nonlinear write verbs
 on all doors. Typed `LandmarkPair` and `LandmarkPoint` arguments expose explicit
-atlas/section endpoints and x,y PIXELS in a referenced picture; `set_landmarks`'
-`holds` is a list of `LandmarkPoint` (section points), and
-`landmark_triangulation`'s `holds` the enum `HoldMode` (`automatic`, `none`);
-nested unknown keys are checked recursively. `set_landmarks` defaults to one contextual
+atlas/section endpoints and x,y PIXELS in a referenced picture; nested unknown
+keys are checked recursively. `set_landmarks` defaults to one contextual
 side-by-side template/preprocessed crop for each edited pair (at most four
 with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`

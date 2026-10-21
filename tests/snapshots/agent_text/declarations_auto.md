@@ -596,7 +596,7 @@ Returns:
 
 ## set_landmarks
 
-Add, update or delete persistent corresponding landmarks and holds. Does not apply a warp.
+Add, update or delete persistent corresponding landmarks. Does not apply a warp.
 
 When a piece of tissue lies away from its place in the atlas outline (a
 cerebellum or olfactory bulb pulled off across a gap, a shifted
@@ -630,29 +630,23 @@ zoom, its grid lines 10 to 20 pixels apart: read off a coarse grid, a point can
 miss the border you meant by 20 pixels or more. Spread pairs over the outline and
 the internal anatomy: a pair on the outline moves the outline, and a pair
 on an internal landmark (the midline, a ventricle, a fibre tract) moves the
-anatomy inside. Place no pair on a spot just to keep it where it is:
-landmark_triangulation adds automatic holds between the pairs, so a pair
-moves its neighbourhood up to the nearby holds and tissue far from every pair
-stays where it was. A hold of your own is one section point that
-landmark_triangulation keeps where it is, with or without the automatic
-holds: place holds on anatomy that is already right, such as the main tissue
-beside a piece whose pairs must move it across a gap.  An atlas
-region with no tissue on the section (torn or missing) takes no pair: mark it
-with mark_damage; a region only partly missing keeps its pairs on the part
-that is present. Tissue with no atlas counterpart (debris, or tissue from
-another section) takes no pair either. With no pairs, holds or delete, nothing
-is written and the reply lists the pairs and holds.
+anatomy inside. A pair moves the tissue around it, out to the neighbouring
+pairs and the image corners, so tissue that is already right takes pairs
+too: a pair with both endpoints on the same point (one pixel
+of an overlay) keeps that spot where it is.  An atlas region
+with no tissue on the section (torn or missing) takes no pair: mark it with
+mark_damage; a region
+only partly missing keeps its pairs on the part that is present. Tissue with no
+atlas counterpart (debris, or tissue from another section) takes no pair either.
+With no pairs and no delete, nothing is written and the reply lists the pairs.
 
 Args:
     section: Section filename (the extension may be left off).
     pairs: New pairs: {atlas: {picture, x, y}, section: {picture, x, y}}.
         Updates add id and either or both endpoints; omitted endpoints stay.
         At most four added/edited pairs with view true.
-    holds: New holds: {picture, x, y}, a point on a picture of the
-        section, as a pair's section endpoint. IDs H1, H2, ...; a hold is
-        not edited: delete it and add another.
-    delete: Stable pair and hold IDs to delete from this section, or
-        ["all"] to delete every pair and hold of this section.
+    delete: Stable pair IDs to delete from this section, or ["all"] to
+        delete every pair of this section.
     view: Show one contextual side-by-side crop for each added/edited pair:
         atlas TEMPLATE and section PREPROCESSED. False shows no pictures.
 
@@ -663,12 +657,10 @@ Returns:
     each: id, atlas and section as {picture, x, y}, and state: applied (in
     the landmark warp applied now, as they are), moved (in it, but at other
     endpoints now), pending (saved, not in it) or stale (placed against an
-    earlier atlas plane); with the count of each; every hold (`holds`): id,
-    section as {picture, x, y}, and state applied or pending, the new ones
-    under `added_holds`; and `warp`: the pairs and holds the current warp
-    was built from, those not in it, those deleted but still shaping it,
-    and that landmark_triangulation must run again to apply the set as it
-    stands.
+    earlier atlas plane); with the count of each; and `warp`: the pairs the
+    current warp was built from, those not in it, those deleted but still
+    shaping it, and that landmark_triangulation must run again to apply the
+    set as it stands.
 
 
 ## landmark_triangulation
@@ -676,45 +668,31 @@ Returns:
 Apply this section's saved landmark set as a piecewise affine warp.
 
 Requires at least three corresponding pairs, with coverage across the full
-section; the tool cannot assess anatomical coverage. Before it builds the
-mesh it adds automatic holds between the pairs: a regular lattice of spots over
-the tissue, left out near any pair, each kept where it currently is (its
-current placement: linear, or the earlier deformation this composes onto). A
-pair therefore moves its neighbourhood up to the nearby holds, and tissue far
-from every pair stays where it was. Automatic holds are not pairs: they are
-listed nowhere, cannot be edited, and are recomputed from the pairs on every
-application; the picture draws them as small unlabeled dots. Turn them off
-(holds "none") when a piece lies across a gap of empty slide from its
-place: the automatic holds land on the tissue beside the piece, and its
-pairs fold the mesh pulling past them; keep the tissue that is already right
-with holds of your own (set_landmarks holds), placed off the piece's path to
-its place, which are kept where they are with either choice and drawn as
-labelled squares. Uses VisuAlign's
-section-domain Delaunay mesh in pixels over the pairs and holds, and
-four fixed corners 10% outside the section. Repeated section points,
-zero-area triangles and stale atlas planes are refused. Folded triangles are
-applied, as VisuAlign does: the reply gives the share of the section they
-cover and the pairs at their corners (a hold of yours at a corner is named by
-its ID, an automatic hold as such), and the picture outlines them in magenta.
-The inverse uses the same triangles (unfolded ones first where folded ones
-overlap). Composes a correction onto the current deformation; undo removes
-the application. Editing pairs or holds alone never warps: pairs added,
-moved or deleted, and holds added or deleted, after an application change
-nothing until this runs again.
+section; the tool cannot assess anatomical coverage. Each pair moves the
+tissue around it, out to the neighbouring pairs and the image corners, so
+place pairs on tissue that is already right as well, not only on tissue
+that must move: a pair with both endpoints on the same point of an overlay
+keeps that spot where it is now (its current placement: linear, or the
+earlier deformation this composes onto). Uses VisuAlign's section-domain
+Delaunay mesh in pixels over the pairs, and four fixed corners 10% outside
+the section. Repeated section points, zero-area triangles and stale atlas
+planes are refused. Folded triangles are applied, as VisuAlign does: the
+reply gives the share of the section they cover and the pairs at their
+corners, and the picture outlines them in magenta. The inverse uses the
+same triangles (unfolded ones first where folded ones overlap). Composes a
+correction onto the current deformation; undo removes the application.
+Editing pairs alone never warps: pairs added, moved or deleted after an
+application change nothing until this runs again.
 
 Args:
     section: Section filename (the extension may be left off).
-    holds: "automatic" adds the automatic holds; "none" adds none, so only
-        the pairs, your holds and the four fixed corners shape the warp.
     view: Show the resulting registration under atlas borders.
     resolution: The long edge of the picture in pixels, as for look; 0 is
         the default size.
 
 Returns:
-    Landmark count, `built_from` (the pair IDs the warp was made of), the
-    holds used (`holds` as asked, how many automatic holds were added,
-    `placed_holds`: your hold IDs) in words (`holds_note`), whether
-    applied/composed,
+    Landmark count, `built_from` (the pair IDs the warp was made of),
+    whether applied/composed,
     displacement_mm (the whole deformation now applied) and
     step_displacement_mm (only the change this application made over the
     warp it replaced), diagnostics and any folds. The picture's
