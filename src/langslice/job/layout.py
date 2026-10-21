@@ -83,6 +83,7 @@ RESULTS_FILE = "linear_results.json"
 SPEND_FILE = "spend.json"
 #: Under ``sections/<name>/``.
 DEFORMABLE_DIR = "deformable"
+MASKS_DIR = "masks"
 IMAGE_CORRECTION_DIR = "image_correction"
 SECTION_VIEWS_DIR = "views"
 #: The public rendering of the state (:mod:`langslice.job.formats`, which
@@ -325,6 +326,10 @@ class JobLayout:
     def deformable_dir(self, section_id: str) -> Path:
         """Where a section's applied deformation records live (one per key)."""
         return self.section_dir(section_id) / DEFORMABLE_DIR
+
+    def masks_dir(self, section_id: str) -> Path:
+        """Where a section's masks live (``<name>.npz``; never deleted)."""
+        return self.section_dir(section_id) / MASKS_DIR
 
     def image_correction_dir(self, section_id: str) -> Path:
         """Where a section's ``trace_borders`` calls live (one per call key)."""

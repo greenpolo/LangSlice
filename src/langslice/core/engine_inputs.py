@@ -1,0 +1,78 @@
+"""What a fit was given and what it estimated itself: the two blocks every fit
+tool's reply and every deformation record's provenance carry.
+
+``inputs`` names what the engine read: the section image (a channel, with the
+digest of its recipe), the atlas image as asked and as resolved, the section
+mask (``"none"`` or a mask's name, kind and staleness), the atlas-side damage
+marks, the regions the fit was restricted to and the engine's own brightness
+scaling in words. ``estimated`` names what the engine worked out by itself
+(its own sorting of the section and the fraction it left out), or is null.
+Both name what was used and nothing about quality.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+#: The brightness scaling of the native engines (FireANTs, Elastix), in words.
+NATIVE_BRIGHTNESS = "1st-99th percentile inside the atlas outline to 0-1"
+
+
+def recipe_digest(recipe: dict[str, Any] | None) -> str:
+    """Eight hex digits of *recipe*'s JSON; ``default`` when the channel has no
+    recipe of its own (LangSlice's default recipe, or a raw channel)."""
+    if recipe is None:
+        return "default"
+    text = json.dumps(recipe, sort_keys=True, default=str)
+    return hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
+def damage_block(regions: list[str] | tuple[str, ...], margin_mm: float) -> dict[str, Any]:
+    """The damage entry of ``inputs``: the atlas-side regions left out of the
+    fit and the margin around them, always applied, never on the section side."""
+    return {"regions": list(regions), "margin_mm": float(margin_mm), "side": "atlas"}
+
+
+@dataclass(frozen=True)
+class InputsBlock:
+    """What one fit read, for one section."""
+
+    section_image: str
+    #: Eight hex digits of the section image's recipe, ``default`` when None.
+    section_recipe: str
+    #: The atlas image as the call named it (``nissl``) and as it resolved
+    #: (``ccfv3augmented_nissl``).
+    atlas_image: str
+    atlas_image_resolved: str
+    #: ``"none"`` or ``{"name", "kind", "stale"}``.
+    mask: str | dict[str, Any]
+    #: ``{"regions", "margin_mm", "side": "atlas"}`` (:func:`damage_block`).
+    damage: dict[str, Any]
+    restrict_to: list[str] = field(default_factory=list)
+    #: The engine's own scaling of the images, in words.
+    brightness: str = NATIVE_BRIGHTNESS
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "section_image": self.section_image, "section_recipe": self.section_recipe,
+            "atlas_image": self.atlas_image, "atlas_image_resolved": self.atlas_image_resolved,
+            "mask": self.mask if isinstance(self.mask, str) else dict(self.mask),
+            "damage": dict(self.damage), "restrict_to": list(self.restrict_to),
+            "brightness": self.brightness,
+        }
+
+
+@dataclass(frozen=True)
+class EstimatedBlock:
+    """What an engine worked out itself: where its own sorting is saved, and
+    the fraction of the section it left out."""
+
+    #: ``saved with the deformation; set_mask source fit``, or None.
+    sorting: str | None = None
+    left_out_fraction: float | None = None
+
+    def payload(self) -> dict[str, Any]:
+        return {"sorting": self.sorting, "left_out_fraction": self.left_out_fraction}
