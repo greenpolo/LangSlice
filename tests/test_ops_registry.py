@@ -35,7 +35,7 @@ def _names(spec: Any, *, scripting: bool = False, image_model: bool = True) -> l
 MODEL_VERBS = [name for name, verb in VERBS.items() if not verb.scripting]
 
 #: The tools of every run, whatever its tasks.
-EVERY_RUN = ["look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
+EVERY_RUN = ["look", "zoom", "set_channel",
              "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files",
              "read_file", "note", "undo", "redo", "submit"]
 
@@ -49,9 +49,9 @@ def folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 def test_the_tools_a_model_is_offered():
     assert MODEL_VERBS == [
-        "look", "zoom", "set_channel_properties", "set_preprocessed_channel_properties",
+        "look", "zoom", "set_channel",
         "grep_atlas", "grep_atlas_view", "status", "list_files", "search_files", "read_file",
-        "position_sections", "interactive_transform", "mark_damage",
+        "position_sections", "interactive_transform", "mark_damage", "set_mask",
         "elastix_affine", "fireants_syn", "set_landmarks", "landmark_triangulation",
         "trace_borders",
         "note", "undo", "redo", "submit",
@@ -99,6 +99,10 @@ def test_the_gating_table(folder: Path):
     assert "trace_borders" not in set(enabled(_spec(folder, tasks=["nonlinear"]),
                                               image_model=False))
     assert not {"fireants_syn", "trace_borders"} & has(tasks=["position", "transform"])
+    # Masks are for the fits: where there is a linear or a nonlinear task.
+    assert "set_mask" in has(tasks=["transform"]) and "set_mask" in has(tasks=["nonlinear"])
+    assert "set_mask" not in has(tasks=["position"])
+    assert "set_mask" not in has(tasks=["transform"], disabled=["set_mask"])
     # Damage marking is a host switch.
     assert "mark_damage" in has(tasks=["position"])
     assert "mark_damage" not in has(tasks=["position"], disabled=["mark_damage"])

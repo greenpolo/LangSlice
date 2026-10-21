@@ -176,7 +176,8 @@ is a folder that nothing deletes, so undo can return to it. It holds:
 | `coordinateTransformations/inverse_field/s0` | the same for the inverse, on the placed-atlas grid: placed point `q` corresponds to section point `q + inverse_field(q)`; absent when the record has none |
 | `warped_labels/s0` | uint32 `(rows, cols)`: the leaf atlas ids under the composed warp |
 | `footprint/s0` | bool `(rows, cols)`: the placed atlas footprint |
-| `left_out/s0` | bool `(rows, cols)`: the section pixels a fit's EM section mask left out; absent otherwise |
+| `left_out/s0` | bool `(rows, cols)`: the section pixels an engine's own sorting left out; absent otherwise |
+| `weights` | float16 `(rows, cols)` in [0, 1]: the engine's own tissue sorting (P(match)) on the fit grid, `set_mask(source="fit")` copies it; absent when the engine estimated none |
 
 Each group is an OME-Zarr multiscale image of one level whose `s0` scale is
 the grid's millimetres per pixel (1 on the displacement axis, `type`
@@ -406,3 +407,16 @@ tools: `ref`, `module`, `factory`, `version`, `package_version`, `api_version`,
 (when given) and `declaration` (`name`, `description`, `arguments`: the tool as
 the model reads it). `logs/events.jsonl` has a `plugins` line whenever that
 record changes.
+
+## Masks (`sections/<stem>/masks/<name>.npz`)
+
+One file per mask a section holds (`set_mask`; see `registration.md`). Arrays:
+`weights` float16 `(rows, cols)` in [0, 1] on the section's fit grid, `grid`
+`[width, height]`, `made` the ISO time. Files are never deleted: undo only hides
+the state reference, and a mask made again under a name that exists gets a new
+file (`<name>.2.npz`). `state.json` holds the entry under the section's
+`masks`, absent while empty: `kind` (`em` or `fit`), `channel`, `atlas_image`
+(resolved), `params` (the EM starting points used), `inputs` (the digest of the
+registration it was made at), `file` and `left_out` (the fraction of the placed
+footprint under 0.5). A deformation record's `provenance` holds the `inputs` and
+`estimated` blocks of the fit that made it.

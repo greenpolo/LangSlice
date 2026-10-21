@@ -82,7 +82,7 @@ def test_display_properties_change_pictures_and_never_the_preprocessed_channel(
     plain = _pixels(render_slice(ctx, record, long_edge=512,
                                  look=channels.with_properties(state, overlay)))
 
-    done = ops_appearance.set_channel_properties(
+    done = ops_appearance.set_raw_channel(
         job, ctx, "red", contrast_limits=[20, 120], gamma=0.5, colormap="magenta")
     assert done.changed and len(job.undo_stack) == 1
     assert done.properties == {"contrast_limits": [20.0, 120.0], "gamma": 0.5,
@@ -105,11 +105,11 @@ def test_display_properties_change_pictures_and_never_the_preprocessed_channel(
     assert looks.preprocessed_settings(state, record.id) is None
 
     # An argument left out keeps its value; reset clears them all.
-    again = ops_appearance.set_channel_properties(job, ctx, "red", gamma=2.0)
+    again = ops_appearance.set_raw_channel(job, ctx, "red", gamma=2.0)
     assert again.properties is not None and again.properties["contrast_limits"] == [20.0, 120.0]
-    assert ops_appearance.set_channel_properties(job, ctx, "red", reset=True).properties is None
+    assert ops_appearance.set_raw_channel(job, ctx, "red", reset=True).properties is None
     assert "channels" not in state.appearance
-    assert not ops_appearance.set_channel_properties(job, ctx, "red", reset=True).changed
+    assert not ops_appearance.set_raw_channel(job, ctx, "red", reset=True).changed
     assert len(job.undo_stack) == 3  # the unchanged call took no step
     job.undo()
     assert state.appearance["channels"]["red"]["gamma"] == 2.0
@@ -119,7 +119,7 @@ def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
     """Set once, a channel's display stays: checkpointed with the job, and a
     job reopened from the folder keeps it."""
     job, ctx = _open(tmp_path, atlas)
-    ops_appearance.set_channel_properties(job, ctx, "red", gamma=0.5, colormap="magenta")
+    ops_appearance.set_raw_channel(job, ctx, "red", gamma=0.5, colormap="magenta")
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved is not None
     held = saved.appearance["channels"]["red"]
@@ -133,13 +133,13 @@ def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
 def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
     with pytest.raises(Refused) as unknown:
-        ops_appearance.set_channel_properties(job, ctx, "dapi", gamma=2.0)
+        ops_appearance.set_raw_channel(job, ctx, "dapi", gamma=2.0)
     assert unknown.value.code == "UNKNOWN_CHANNEL"
     assert unknown.value.details["channels"] == ["blue", "green", "red"]
     for bad in ({"contrast_limits": [120, 20]}, {"contrast_limits": [1]},
                 {"gamma": 0.0}, {"colormap": "plaid"}):
         with pytest.raises(Refused) as refused:
-            ops_appearance.set_channel_properties(job, ctx, "red", **bad)
+            ops_appearance.set_raw_channel(job, ctx, "red", **bad)
         assert refused.value.code == "BAD_ARGS"
     assert job.state.appearance == {} and not job.undo_stack
 
@@ -227,37 +227,35 @@ def test_recipes_override_per_section_and_reset(tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
     state = job.state
     options = default_options("section")
-    done = ops_appearance.set_preprocessed(job, ctx, None, clahe_clip=2.0,
-                                           shown=state.in_order()[:1], options=options)
-    assert done.written.in_force == {"stack": {
-        "channel_weights": None, "clahe_clip": 2.0, "clahe_tiles": 8,
-        "n4": False, "denoise": False}}
+    done = ops_appearance.set_channel(job, ctx, "preprocessed", None, clahe_clip=2.0,
+                                      shown=state.in_order()[:1], options=options)
+    assert done.in_force["stack"]["clahe_clip"] == 2.0
+    assert done.in_force["stack"]["weights"] is None
     assert len(done.pictures) == 1 and done.pictures[0].before_settings is None
     assert done.pictures[0].after_settings == looks.preprocessed_settings(state, "s0.png")
     assert not np.array_equal(np.asarray(done.pictures[0].before),
                               np.asarray(done.pictures[0].after))
 
-    ops_appearance.set_preprocessed(job, ctx, ["s1.png"], channel_weights=[0, 1, 0])
+    ops_appearance.set_channel(job, ctx, "preprocessed", ["s1.png"], weights={"green": 1.0})
     stack = looks.preprocessed_settings(state, "s0.png")
     assert stack is not None and stack["clahe_clip"] == 2.0
     override = looks.preprocessed_settings(state, "s1.png")
-    assert override is not None and override["channel_weights"] == [0.0, 1.0, 0.0]
-    ops_appearance.set_preprocessed(job, ctx, ["s1.png"], reset=True)
+    assert override is not None and override["weights"] == {"green": 1.0}
+    ops_appearance.set_channel(job, ctx, "preprocessed", ["s1.png"], reset=True)
     assert looks.preprocessed_settings(state, "s1.png") == stack
-    ops_appearance.set_preprocessed(job, ctx, None, reset=True)
+    ops_appearance.set_channel(job, ctx, "preprocessed", None, reset=True)
     assert looks.preprocessed_settings(state, "s0.png") is None
-    assert state.appearance == {} and len(job.undo_stack) == 4
+    assert len(job.undo_stack) == 4
 
     refusals = {
-        "UNKNOWN_SLICE_IDS": dict(section_ids=["nope.png"]),
-        "CHANNEL_COUNT_MISMATCH": dict(section_ids=None, channel_weights=[1, 1]),
-        "BAD_ARGS": dict(section_ids=None, clahe_clip=-1.0),
+        "UNKNOWN_SLICE_IDS": dict(sections=["nope.png"]),
+        "BAD_ARGS": dict(sections=None, clahe_clip=-1.0),
     }
     for code, kwargs in refusals.items():
         with pytest.raises(Refused) as refused:
-            ops_appearance.set_preprocessed(job, ctx, **kwargs)
+            ops_appearance.set_channel(job, ctx, "preprocessed", **kwargs)
         assert refused.value.code == code
-    assert state.appearance == {} and len(job.undo_stack) == 4
+    assert len(job.undo_stack) == 4
 
 
 # --- what the algorithms read ------------------------------------------------------

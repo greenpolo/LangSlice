@@ -125,6 +125,17 @@ FIXES: dict[str, str] = {
                     "LangSlice (see the message).",
     "FIT_FAILED": "See the message; try other settings or regions.",
     "RENDER_FAILED": "See the message; check the section file opens, then retry.",
+    "UNKNOWN_MASK": "Make the mask first[[?set_mask  with set_mask]]; `status` lists each "
+                    "section's masks.",
+    "STALE_MASK": "The section moved since this mask was made; make the mask again"
+                  "[[?set_mask  with set_mask]].",
+    "MASK_UNSUPPORTED": "This engine sorts tissue itself and takes no mask; the message names "
+                        "the engines that do.",
+    "NO_DEFORMATION": "The section holds no deformation; fit one first, or make the mask "
+                      "with source \"em\".",
+    "NO_SORTING": "The section's deformation saved no sorting; make the mask with source "
+                  "\"em\".",
+    "HAS_DEFORMATION": "Undo the deformation first, or fit a warp on it.",
     "FIT_ATLAS_UNAVAILABLE": "Use atlas_image \"template\" (the reference template).",
     "NO_PICTURE": "Look first[[?zoom : zoom takes a box on a picture already drawn]].",
     "UNKNOWN_PICTURE": "Use a picture number from a reply's `pictures`, or views.jsonl.",

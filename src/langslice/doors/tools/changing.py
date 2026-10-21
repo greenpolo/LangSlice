@@ -23,6 +23,7 @@ from langslice.doors.tools.door import Door, as_list, pictured
 from langslice.ops import damage as ops_damage
 from langslice.ops import history as ops_history
 from langslice.ops import look as ops_look
+from langslice.ops import masks as ops_masks
 from langslice.ops import notes as ops_notes
 from langslice.ops import positions as ops_positions
 from langslice.ops import submit as ops_submit
@@ -164,6 +165,33 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
         return result
 
+    def set_mask(section: str, name: str, source: str = "em",
+                 channel: str = "preprocessed", atlas_image: str = "nissl",
+                 sorting: dict[str, float] | None = None, delete: bool = False,
+                 view: bool = True) -> dict[str, Any]:
+        try:
+            done = ops_masks.set_mask(
+                job, ctx, section, str(name), source=str(source or "em"),
+                channel=str(channel or "preprocessed"), atlas_image=str(atlas_image or "nissl"),
+                sorting=dict(sorting or {}), delete=bool(delete))
+        except Refused as refusal:
+            return refusal.payload()
+        if done.deleted:
+            return {"status": "ok", "id": done.id, "name": done.name, "deleted": True,
+                    **door.answered(done.id)}
+        entry = done.entry or {}
+        result: dict[str, Any] = {
+            "status": "ok", "id": done.id, "name": done.name, "source": entry.get("kind"),
+            "channel": entry.get("channel"), "atlas_image": entry.get("atlas_image"),
+            "params": entry.get("params"), "left_out": round(float(entry.get("left_out", 0)), 4),
+            **door.answered(done.id),
+        }
+        if not shows(view):
+            return result
+        shown = ops_look.show_result(job, ctx, "set_mask", "section", [done.id],
+                                     masks=[done.name])
+        return pictured(result, shown)
+
     def note(text: str) -> dict[str, Any]:
         try:
             return {"status": "ok", "notes": ops_notes.add_note(job, text)}
@@ -216,5 +244,5 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     return {
         "position_sections": position_sections,
         "interactive_transform": interactive_transform, "mark_damage": mark_damage,
-        "note": note, "undo": undo, "redo": redo, "submit": submit,
+        "set_mask": set_mask, "note": note, "undo": undo, "redo": redo, "submit": submit,
     }

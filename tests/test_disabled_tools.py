@@ -95,7 +95,9 @@ def test_a_tool_disables_its_options():
     ({"tasks": ["nonlinear"], "disabled": ["landmark_triangulation"]},
      "set_landmarks is on and needs landmark_triangulation"),
     ({"tasks": ["nonlinear"], "disabled": ["look:section", "look:overlay"]},
-     "fireants_syn is on and needs look:overlay"),
+     "set_mask is on and needs look:section"),
+    ({"tasks": ["nonlinear"], "disabled": ["look:section"]},
+     "set_mask is on and needs look:section"),
     ({"disabled": ["look:section", "look:atlas", "look:overlay", "look:positioning"]},
      "every look mode is off"),
     ({"tasks": ["position"], "disabled": ["look:positioning", "look:overlay"]},
@@ -172,6 +174,12 @@ def _pattern(name: str) -> re.Pattern[str]:
         return re.compile(r"\"flip\"|\{id, flip|[Mm]irroring|mirrored or turned|mirrors the")
     if name == "interactive_transform:rotate":  # a key of the sections, or the turn itself
         return re.compile(r"rotate_quarter|quarter turn is applied")
+    if name == "fireants_syn:metric":  # the argument, or one of its two values
+        return re.compile(r"\bmetric\b|mutual_information|local_correlation")
+    if name == "fireants_syn:edges":  # the argument
+        return re.compile(r"\bedges:|\"edges\"|edges \(the gradient")
+    if name == "fireants_syn:detail":  # the argument, or a value of it
+        return re.compile(r"\bdetail:|\"detail\"|\"coarse\"")
     if name == "grep_atlas:points":  # the argument, or what the tool says of its points
         return re.compile(r"\"points\"|region is drawn at|only points are given"
                           r"|look the region up at|its region and containing")
@@ -272,7 +280,8 @@ COMBINATIONS = [
     ["fireants_syn", "trace_borders", "mark_damage"],
     ["grep_atlas", "grep_atlas_view", "mark_damage", "zoom"],
     ["list_files", "search_files", "read_file", "note", "redo"],
-    ["position_sections", "set_channel_properties", "set_preprocessed_channel_properties"],
+    ["position_sections", "set_channel", "set_mask"],
+    ["set_mask", "set_channel", "fireants_syn:metric", "fireants_syn:edges"],
     ["interactive_transform:flip", "interactive_transform"],
     ["elastix_affine", "fireants_syn", "look:positioning"],
     ["set_landmarks", "landmark_triangulation"],
@@ -305,6 +314,8 @@ def test_no_text_names_what_the_job_disables(stack_folder: Path, disabled: list[
                 if (where.startswith("schema ") and name.startswith("look:")
                         and not where.startswith("schema look ")):
                     continue  # a schema's quoted keys are not the look's modes
+                if (name.startswith("fireants_syn:") and "elastix_affine" in where):
+                    continue  # elastix_affine has an edges argument of its own
                 for hit in _pattern(name).finditer(text):
                     around = text[max(0, hit.start() - 60):hit.end() + 40].replace("\n", " ")
                     problems.append(
