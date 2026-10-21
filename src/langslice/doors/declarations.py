@@ -606,8 +606,8 @@ def set_mask(
             registration, against atlas_image. "fit": the sorting the
             section's applied deformation saved with it, copied as it was
             (NO_DEFORMATION or NO_SORTING when it has none).
-        channel: The section channel to sort (a raw channel, "preprocessed" or
-            one made with set_channel); "em" only.
+        channel: The section channel to sort (a raw channel, "preprocessed"~
+            [[?set_channel  or one you made with set_channel]]); "em" only.
         atlas_image: The atlas image the sorting compares with ("nissl" is the
             atlas's Nissl image where it has one, else its template); "em"
             only.
@@ -669,9 +669,9 @@ def elastix_affine(
             atlas within 300 um of them, against the tissue the fit lays
             there. Only the ANTs and Elastix fits take it. Empty fits by
             every region.
-        section_image: The section channel to match: "preprocessed" (the
-            channel set_channel makes by default), a raw channel's name[[?set_channel
-            , or a channel made with set_channel]].
+        section_image: The section channel to match: "preprocessed" (the channel
+            the fits and the image model read by default), a raw channel's name~
+            [[?set_channel  or a channel you made with set_channel]].
         atlas_image: One of the atlas's images (the job statement lists
             them: "template" and any other reference images the atlas ships,
             by their names) or "nissl", the atlas's Nissl image where it has
@@ -738,9 +738,9 @@ def fireants_syn(
             the section are both cut to the regions' neighbourhood and the
             displacement fades to nothing beyond it. Only the ANTs and
             Elastix fits take it. Empty fits by every region.
-        section_image: The section channel to match: "preprocessed" (the
-            channel set_channel makes by default), a raw channel's name[[?set_channel
-            , or a channel made with set_channel]].
+        section_image: The section channel to match: "preprocessed" (the channel
+            the fits and the image model read by default), a raw channel's name~
+            [[?set_channel  or a channel you made with set_channel]].
         atlas_image: One of the atlas's images (the job statement lists
             them: "template" and any other reference images the atlas ships,
             by their names) or "nissl", the atlas's Nissl image where it has
@@ -782,8 +782,8 @@ def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -
 
     LangSlice's own nonlinear method, packaged: the image model is shown the
     section with its placed atlas borders and draws them on the section's
-    anatomy; when it answers, FireANTs fits the traced borders (medium
-    stiffness) on top of the section's current registration and the
+    anatomy; when it answers, FireANTs fits the traced borders (80 um
+    smoothness) on top of the section's current registration and the
     deformation is applied as its own undoable step. The section needs a
     position and a transform; its marked damage regions are left out of
     what the model is shown. With restrict_to, the model is shown only those

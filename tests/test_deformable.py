@@ -25,6 +25,7 @@ from langslice.core.deformable.geometry import Placement
 from langslice.core.deformable.plane_images import native_intensity, whole_region_ids
 from langslice.core.deformable.record import jacobian_determinant
 from langslice.core.deformable.regions import model_extent, named_regions
+from langslice.core.deformable.settings import DETAIL
 from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
 from tests.deformable_synthetic import (
     CTX,
@@ -102,6 +103,27 @@ def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped)
 
 
 @needs_engine
+@needs_engine
+def test_the_fine_level_runs_its_five_pyramid_levels(atlas, warped):
+    field, image, truth = warped
+    record = fit_section(image, atlas, placement(), _settings(detail="fine", **MI))
+    assert record.settings is not None and record.settings.detail == "fine"
+    options = record.engine["native_parameters"]["SyNRegistration"]
+    assert options["iterations"] == [100, 70, 50, 25, 10]
+    error, flipped, magnitude = _errors(record, field, truth)
+    assert error < 0.4 * magnitude
+
+
+@needs_engine
+def test_smoothness_sets_the_update_and_total_sigmas_in_um(atlas, warped):
+    field, image, truth = warped
+    record = fit_section(image, atlas, placement(), _settings(
+        detail="coarse", smoothness_um=120.0, **MI))
+    used = record.engine["native_parameters"]["SyNRegistration"]
+    assert used["update_sigma_mm"] == pytest.approx(0.12)
+    assert used["total_sigma_mm"] == pytest.approx(0.03)
+
+
 def test_excluded_region_does_not_drive_the_fit(atlas):
     engine = "fireants"
     # Only the thalamus is displaced; everywhere else the placement is right.
@@ -253,10 +275,19 @@ def test_fit_settings_validation():
     for kind in ("borders", "borders_merged"):
         with pytest.raises(ValueError, match="traced lines only"):
             FitSettings(section_image="stain", atlas_image=kind)
-    with pytest.raises(ValueError, match="stiffness"):
-        FitSettings(stiffness="stiff")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="stiffness is gone"):
+        FitSettings(stiffness="medium")  # type: ignore[call-arg]
+    for bad in (0.0, 4.0, 5000.0):
+        with pytest.raises(ValueError, match="smoothness_um"):
+            FitSettings(smoothness_um=bad)
     with pytest.raises(ValueError, match="detail"):
-        FitSettings(detail="fine")  # type: ignore[arg-type]
+        FitSettings(detail="finest")  # type: ignore[arg-type]
+    assert FitSettings(detail="fine").detail == "fine"
+    assert DETAIL["fine"].working_um == 10.0 and DETAIL["fine"].iterations == (100, 70, 50, 25, 10)
+    # A record saved with a stiffness level reads it as the smoothness it meant.
+    legacy = {**FitSettings().to_dict(), "stiffness": "firm"}
+    del legacy["smoothness_um"]
+    assert FitSettings.from_dict(legacy).smoothness_um == 120.0
     assert FitSettings.from_dict(FitSettings().to_dict()) == FitSettings()
     assert FitSettings().metric == "mutual_information" and FitSettings().stain_edges
     # Elastix has no local correlation: its stand-in.
@@ -274,7 +305,7 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
 
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
-                                                               stiffness="firm", **MI))
+                                                               smoothness_um=120.0, **MI))
     second = fit_section(image, atlas, placement(),
                          _settings(detail="coarse", structures=("STR",),
                                    neighbourhood_um=250, **MI), previous=first)
@@ -356,7 +387,7 @@ def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped
     results = fit_prepared([prepare_fit(image, atlas, placement(), settings) for settings in (
         FitSettings(engine="fireants", detail="coarse", **MI),
-        FitSettings(engine="fireants", detail="coarse", stiffness="firm", **MI),
+        FitSettings(engine="fireants", detail="coarse", smoothness_um=120.0, **MI),
     )])
     assert len(results) == 2
     for result in results:
@@ -392,12 +423,13 @@ class _TwoImageAtlas:
 
 
 def test_atlas_images_are_the_atlas_own(atlas):
-    assert atlas_images(atlas) == ("template",)
+    assert atlas_images(atlas) == ("template", "nissl")  # nissl: the accepted alias
     two = _TwoImageAtlas(atlas)
-    assert atlas_images(two) == ("template", "second")
+    assert atlas_images(two) == ("template", "second", "nissl")
     assert np.array_equal(atlas_volume(two, "template"), np.asarray(atlas.template))
-    with pytest.raises(ValueError, match="its images: template, second"):
-        atlas_volume(two, "nissl")
+    assert np.array_equal(atlas_volume(two, "nissl"), np.asarray(atlas.template))
+    with pytest.raises(ValueError, match="its images: template, second, nissl"):
+        atlas_volume(two, "gfp")
 
 
 class _Ccfv3At50um:
@@ -422,8 +454,8 @@ def test_a_ccfv3_atlas_borrows_the_augmented_nissl_at_the_offset(atlas, monkeypa
     images._borrowed.clear()
     try:
         ccf = _Ccfv3At50um()
-        assert atlas_images(ccf) == ("template", images.BORROWED_NISSL)
-        assert atlas_images(atlas) == ("template",)  # not the CCFv3 extent
+        assert atlas_images(ccf) == ("template", images.BORROWED_NISSL, "nissl")
+        assert atlas_images(atlas) == ("template", "nissl")  # not the CCFv3 extent
         volume = atlas_volume(ccf, images.BORROWED_NISSL)
         assert volume.shape == ccf.annotation.shape
         # 50 um voxel i is centred (i + 0.5) * 0.05 mm into the CCFv3, 0.35 mm more

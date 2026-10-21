@@ -50,18 +50,32 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     first = ops_deformable.fireants_syn(job, ctx, [ID])
     (row,) = first.rows
     assert row["status"] == "ok" and row["written"]
-    assert row["settings"] == {"stiffness": "medium", "fit_section": "fit",
-                               "fit_atlas": "template"}
+    assert row["settings"] == {"smoothness_um": 80.0, "mask": "none",
+                               "fit_section": "preprocessed", "fit_atlas": "nissl"}
+    # The reply names what the fit read; the synthetic atlas has no Nissl, so
+    # "nissl" is its template. FireANTs sorts nothing by itself any more.
+    assert first.settings == {
+        "section_image": "preprocessed", "atlas_image": "nissl",
+        "atlas_image_resolved": "template", "mask": "none", "restrict_to": [],
+        "smoothness_um": 80.0, "metric": "mutual_information", "edges": True,
+        "detail": "standard"}
+    assert row["inputs"]["section_image"] == "preprocessed"
+    assert row["inputs"]["atlas_image_resolved"] == "template"
+    assert row["inputs"]["mask"] == "none" and row["inputs"]["damage"]["side"] == "atlas"
+    assert row["estimated"] is None
     assert len(job.undo_stack) == depth + 1
     held = job.state.slices[0].deformation
     assert held is not None and [step["start"] for step in held["steps"]] == ["linear"]
 
-    second = ops_deformable.fireants_syn(job, ctx, ["s0.png"], stiffness="soft", restrict_to=["TH"])
+    second = ops_deformable.fireants_syn(job, ctx, ["s0.png"], smoothness_um=50.0,
+                                         restrict_to=["TH"])
     assert second.rows[0]["status"] == "ok", second.rows
     held = job.state.slices[0].deformation
     assert held is not None
     assert [step["start"] for step in held["steps"]] == ["linear", "current"]
-    assert held["steps"][1]["include"] == ["TH"] and held["steps"][1]["stiffness"] == "soft"
+    assert held["steps"][1]["include"] == ["TH"]
+    assert held["steps"][1]["smoothness_um"] == 50.0
+    assert second.rows[0]["inputs"]["restrict_to"] == ["TH"]
     assert len(job.undo_stack) == depth + 2
     assert job.undo()  # undo is how to start over
     assert len(job.state.slices[0].deformation["steps"]) == 1  # type: ignore[index]
@@ -78,9 +92,13 @@ def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
 
 @pytest.mark.parametrize("kwargs,code", [
     ({"sections": []}, "BAD_ARGS"),
-    ({"sections": [ID], "stiffness": "stiff"}, "BAD_ARGS"),
+    ({"sections": [ID], "smoothness_um": 1.0}, "BAD_ARGS"),
+    ({"sections": [ID], "metric": "ssd"}, "BAD_ARGS"),
+    ({"sections": [ID], "detail": "ultra"}, "BAD_ARGS"),
     ({"sections": [ID], "atlas_image": "borders"}, "BAD_ARGS"),
-    ({"sections": [ID], "atlas_image": "nissl"}, "BAD_ARGS"),  # not this atlas's image
+    ({"sections": [ID], "atlas_image": "no_such_image"}, "BAD_ARGS"),
+    ({"sections": [ID], "section_image": "nope"}, "UNKNOWN_CHANNEL"),
+    ({"sections": [ID], "mask": "missing"}, "UNKNOWN_MASK"),
     ({"sections": ["nope.png"]}, "UNKNOWN_SLICE_IDS"),
     ({"sections": [ID], "restrict_to": ["NOPE"]}, "UNKNOWN_REGIONS"),
     ({"sections": [ID], "restrict_to": "TH"}, "BAD_ARGS"),

@@ -255,10 +255,14 @@ class DeformableRecord:
     #: (the linear agent's tool stores its section id, the linear handoff
     #: metadata and the fit inputs it chose).
     provenance: dict[str, Any] = field(default_factory=dict)
-    #: Section pixels (on the section grid) the fit's metric left out: the EM
-    #: section mask's rejects (``masks.em_masks``); None for a fit with the
-    #: footprint masks. For review pictures; nothing reads it back into a fit.
+    #: Section pixels (on the section grid) the fit's metric left out, for an
+    #: engine that estimates its own weighting; None otherwise. For review
+    #: pictures; nothing reads it back into a fit.
     left_out: np.ndarray | None = None
+    #: The engine's own three-class sorting of the section: P(match), float16
+    #: on the section (fit) grid; None when the engine estimated nothing.
+    #: ``set_mask`` with source ``fit`` copies it into a section mask.
+    weights: np.ndarray | None = None
     #: The folder this record is saved in, or will be (a job's store names it
     #: by the record's key, :class:`langslice.core.deformation.RecordStore`):
     #: a child's ``record.json`` names its parent by it. Set only once the
@@ -276,6 +280,8 @@ class DeformableRecord:
         self.field_mm = at_storage_precision(self.field_mm)
         if self.inverse_field_mm is not None:
             self.inverse_field_mm = at_storage_precision(self.inverse_field_mm)
+        if self.weights is not None:
+            self.weights = np.asarray(self.weights).astype(np.float16)
 
     def metadata(self) -> dict[str, Any]:
         return {
@@ -349,7 +355,7 @@ class DeformableRecord:
                 excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
                 diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
                 parent=parent, provenance=dict(meta["provenance"]),
-                left_out=arrays["left_out"], saved_as=root.name,
+                left_out=arrays["left_out"], weights=arrays["weights"], saved_as=root.name,
             )
         except (OSError, ValueError, KeyError) as exc:
             raise ValueError(f"{root / 'record.json'}: {exc}") from exc

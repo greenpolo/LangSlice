@@ -46,11 +46,9 @@ from langslice.core.deformable.engines import (
 )
 from langslice.core.deformable.geometry import Placement, WorkingGrid, sample_native
 from langslice.core.deformable.masks import (
+    EM_MATCH_THRESHOLD,
     MASK_MARGIN_MM,
-    EMContext,
     dilate,
-    em_masks,
-    em_parameters,
     footprint_masks,
 )
 from langslice.core.deformable.plane_images import (
@@ -119,11 +117,6 @@ class PreparedFit:
     #: neighbourhood, fading to 0 over :data:`RESTRICTED_TAPER_MM`); None
     #: for a fit over the whole section.
     step_weight: np.ndarray | None = None
-    #: A stain fit's EM context on the working grid: the fit runs twice, the
-    #: second time with the EM section mask (:func:`run_prepared`,
-    #: ``masks.em_masks``). None: one run with the footprint masks (the
-    #: Elastix affine, traced lines).
-    em: EMContext | None = None
     #: The atlas's brain scale every distance of this fit was multiplied by.
     brain_scale: float = 1.0
 
@@ -237,13 +230,19 @@ def prepare_fit(
     *,
     lines: np.ndarray | None = None,
     previous: DeformableRecord | None = None,
+    section_weights: np.ndarray | None = None,
 ) -> PreparedFit:
     """Build the working-grid images and masks for one candidate.
 
     *section_image* is the section on the grid *placement* refers to; *lines*
     (route B) is the model's line mask on that same grid. With *previous*,
     this is the next step of a sequential fit: the atlas starts where
-    *previous* left it and the result composes onto it.
+    *previous* left it and the result composes onto it. *section_weights*
+    (float, the section grid's ``(H, W)``: a section mask's EM weights,
+    :func:`langslice.core.section_masks.section_weights`) are thresholded at
+    :data:`~langslice.core.deformable.masks.EM_MATCH_THRESHOLD` and ANDed into the
+    fixed mask (:func:`with_section_mask`); None compares every pixel the
+    footprint covers.
     """
     width, height = section_image.size
     if settings.section_image == "lines" or settings.labels == "model":
@@ -321,6 +320,13 @@ def prepare_fit(
                                     (width, height), taper_mm)
         details["taper_um"] = [settings.neighbourhood_um,
                                settings.neighbourhood_um + taper_mm * 1000.0]
+    if section_weights is not None:
+        weights = np.asarray(section_weights, dtype=np.float32)
+        if weights.shape != (height, width):
+            raise ValueError(f"section_weights is the section grid's (H, W) = ({height}, "
+                             f"{width}); got {weights.shape}")
+        fixed_mask &= grid.to_working(weights) >= EM_MATCH_THRESHOLD
+        details["section_mask"] = "weights thresholded at 0.5"
 
     fixed_labels: list[np.ndarray] = []
     moving_labels: list[np.ndarray] = []
@@ -384,26 +390,20 @@ def prepare_fit(
         correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM * scale / 1000.0 / spacing)),
         brain_scale=scale,
     )
-    em = None
-    if settings.engine == "fireants" and settings.section_image == "stain":
-        em = EMContext(footprint=masks.fixed, damage_zone=masks.damage_zone,
-                       neighbourhood=neighbourhood, scale=scale)
-        details["section_mask"] = "em"
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
         footprint=_on_section(footprint, (width, height)),
         excluded=excluded, ventricles=ventricles,
         atlas_meta=_atlas_record(atlas, placement, native),
         previous=previous, details=details, excluded_mask=excluded_native,
-        step_weight=step_weight, em=em, brain_scale=scale,
+        step_weight=step_weight, brain_scale=scale,
     )
 
 
 def with_section_mask(prepared: PreparedFit, mask: np.ndarray) -> PreparedFit:
     """*prepared* with its section mask narrowed to *mask* (bool, the section
     grid's ``(H, W)``, True where the section is compared): the fixed mask
-    and, for a stain fit, the EM mask of its second run (which never adds
-    a pixel back). In place; returns *prepared*. ``ValueError`` for a mask of
+    (a mask never adds a pixel back). In place; returns *prepared*. ``ValueError`` for a mask of
     another shape or one that leaves nothing to compare."""
     width, height = prepared.footprint.shape[1], prepared.footprint.shape[0]
     keep = np.asarray(mask)
@@ -417,10 +417,6 @@ def with_section_mask(prepared: PreparedFit, mask: np.ndarray) -> PreparedFit:
     if not fixed.any():
         raise ValueError("The mask leaves no section pixel to compare")
     prepared.inputs = replace(prepared.inputs, fixed_mask=fixed)
-    if prepared.em is not None:
-        held = prepared.em.section_keep
-        prepared.em = replace(prepared.em, section_keep=working if held is None
-                              else held & working)
     prepared.details["section_mask_given"] = int(keep.sum())
     return prepared
 
@@ -640,33 +636,9 @@ def finish_fit(
     )
 
 
-def run_fit(
-    inputs: EngineInputs, settings: FitSettings, em: EMContext | None,
-) -> EngineResult:
-    """The engine work of one prepared fit, on plain arrays (a pool worker runs it).
-
-    With *em* (a stain fit): a first run with the
-    footprint masks, the EM weights of the section against the atlas image it
-    warped (``masks.em_masks``), and a second run from the same start with
-    the EM masks, whose result is the fit's. Its native parameters record the
-    EM's (``section_mask``) and ``left_out`` the section pixels it dropped.
-    """
-    first = run_engine(inputs, settings)
-    if em is None:
-        return first
-    spacing = np.asarray(inputs.spacing_mm, dtype=np.float32)
-    warped = _remap(inputs.moving, first.field_mm / spacing)
-    masks, facts = em_masks(inputs.fixed, warped, em, float(np.mean(inputs.spacing_mm)))
-    second = run_engine(replace(inputs, fixed_mask=masks.fixed, moving_mask=masks.moving),
-                        settings)
-    second.native_parameters["section_mask"] = {
-        "kind": "em", **em_parameters(em.scale), "fitted": facts["params"],
-        "left_out_in_footprint": facts["left_out_in_footprint"],
-        "first_fit_runtime_s": first.runtime_s,
-    }
-    second.runtime_s += first.runtime_s
-    second.left_out = facts["left_out"]
-    return second
+def run_fit(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
+    """The engine work of one prepared fit, on plain arrays (a pool worker runs it)."""
+    return run_engine(inputs, settings)
 
 
 def run_prepared(prepared: PreparedFit) -> DeformableRecord:
@@ -713,11 +685,8 @@ def fit_prepared(
     return results
 
 
-def _engine_args(
-    prepared: PreparedFit,
-) -> tuple[EngineInputs, FitSettings, EMContext | None]:
-    """The engine's inputs, settings and EM context of a fit; a
-    :func:`prepare_warp` has none."""
+def _engine_args(prepared: PreparedFit) -> tuple[EngineInputs, FitSettings]:
+    """The engine's inputs and settings of a fit; a :func:`prepare_warp` has none."""
     if prepared.inputs is None or prepared.settings is None:
         raise ValueError("A prepared warp has no engine fit to run")
-    return prepared.inputs, prepared.settings, prepared.em
+    return prepared.inputs, prepared.settings

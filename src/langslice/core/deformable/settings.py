@@ -6,6 +6,7 @@ regularize in different units. Physical units (millimetres) are used wherever
 an engine allows it, so changing the detail level does not change how stiff a
 fit is. The similarity metric follows from the image pairing, the engine and,
 for stain fits, ``stain_metric`` (:func:`metric_for`); the step size is fixed.
+The smoothness of the warp is one number in micrometres (``smoothness_um``).
 
 Every distance here is the adult mouse brain's. A fit multiplies them by the
 atlas's brain scale (``core.atlas.size.brain_scale``: 1.0 for the adult CCFv3
@@ -17,19 +18,16 @@ smoothing, margins and capture range relative to its anatomy.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import InitVar, asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
 #: ``ants``: SyN, fitted by FireANTs (the record's engine version names the
 #: library); ``elastix``: the Elastix affine's inputs, never a deformation.
 Engine = Literal["fireants", "elastix"]
-#: There is no ``stiff``: it never gave the best-looking fit and left
-#: enlarged ventricles unfilled.
-Stiffness = Literal["soft", "medium", "firm"]
 #: ``standard`` is what the linear tool always uses. ``coarse`` looks the same
-#: at a fraction of the time, for quick previews and tests; a 10 um level
-#: was 4-5x slower with no visible gain.
-Detail = Literal["coarse", "standard"]
+#: at a fraction of the time, for quick previews and tests; ``fine`` works at
+#: 10 um with one more pyramid level (4-5x slower than ``standard``).
+Detail = Literal["coarse", "standard", "fine"]
 #: Any of the atlas's images (:func:`langslice.core.atlas.images.atlas_images`:
 #: ``template`` and the atlas's additional references, by BrainGlobe's names;
 #: checked against the atlas when the fit samples it), or one of
@@ -58,27 +56,16 @@ Labels = Literal["none", "model"]
 BORDER_IMAGES: frozenset[str] = frozenset({"borders", "borders_merged"})
 
 
-@dataclass(frozen=True)
-class StiffnessLevel:
-    """SyN regularization as Gaussian sigmas in millimetres: *update_sigma_mm*
-    smooths each step's gradient, *total_sigma_mm* the whole warp.
-
-    The engine converts them to voxels of the working grid (sigma_mm x brain
-    scale / voxel_mm), so a level means the same smoothness at every detail
-    level, relative to the brain's anatomy.
-    """
-
-    update_sigma_mm: float
-    total_sigma_mm: float
-
-
-#: Soft lets a region bend at roughly the scale of a large nucleus; firm keeps
-#: the residual to smooth, larger-scale shape change.
-STIFFNESS: dict[str, StiffnessLevel] = {
-    "soft": StiffnessLevel(update_sigma_mm=0.05, total_sigma_mm=0.0),
-    "medium": StiffnessLevel(update_sigma_mm=0.08, total_sigma_mm=0.02),
-    "firm": StiffnessLevel(update_sigma_mm=0.12, total_sigma_mm=0.04),
-}
+#: The default smoothness, in micrometres (adult mouse): the Gaussian sigma
+#: that smooths each SyN step's gradient (the "update" sigma). The whole
+#: warp's sigma is :data:`TOTAL_SIGMA_FRACTION` of it. 80 um is what the
+#: former ``medium`` stiffness meant (update 0.08 mm, total 0.02 mm).
+DEFAULT_SMOOTHNESS_UM = 80.0
+#: Total (whole-warp) sigma as a fraction of the update sigma.
+TOTAL_SIGMA_FRACTION = 0.25
+#: Bounds of ``smoothness_um``: below the finest working grid it means
+#: nothing, above a few millimetres the warp is a translation.
+SMOOTHNESS_BOUNDS_UM = (5.0, 2000.0)
 
 
 @dataclass(frozen=True)
@@ -97,6 +84,7 @@ class DetailLevel:
 DETAIL: dict[str, DetailLevel] = {
     "coarse": DetailLevel(working_um=40.0, iterations=(80, 50, 25)),
     "standard": DetailLevel(working_um=20.0, iterations=(100, 70, 50, 25)),
+    "fine": DetailLevel(working_um=10.0, iterations=(100, 70, 50, 25, 10)),
 }
 #: SyN halves the grid at each level before the last (shrink factors
 #: 2^(n-1)..1, smoothing n-1..0 voxels): the extra coarse levels are what give
@@ -140,9 +128,14 @@ class FitSettings:
     ``structures`` entry."""
 
     engine: Engine = "fireants"
-    stiffness: Stiffness = "medium"
+    #: The warp's smoothness in micrometres (adult mouse; times the brain
+    #: scale): the update sigma of SyN, the whole warp's being
+    #: :data:`TOTAL_SIGMA_FRACTION` of it.
+    smoothness_um: float = DEFAULT_SMOOTHNESS_UM
     detail: Detail = "standard"
-    atlas_image: AtlasImage = "template"
+    #: An atlas image name, or ``nissl`` (resolved against the atlas when the
+    #: fit samples it, :func:`langslice.core.atlas.images.resolve_image`).
+    atlas_image: AtlasImage = "nissl"
     section_image: SectionImage = "stain"
     exclude: tuple[str | int, ...] = field(default_factory=tuple)
     labels: Labels = "none"
@@ -161,9 +154,18 @@ class FitSettings:
     #: gradient magnitude of the stain and of the atlas image, as a second
     #: metric next to the intensities (:func:`langslice.core.deformable.fit.edge_image`).
     stain_edges: bool = True
+    #: Refused: stiffness is gone, :attr:`smoothness_um` replaced it.
+    stiffness: InitVar[Any] = None
 
-    def __post_init__(self) -> None:
-        for name, kind in (("engine", Engine), ("stiffness", Stiffness), ("detail", Detail),
+    def __post_init__(self, stiffness: Any = None) -> None:
+        if stiffness is not None:
+            raise ValueError("stiffness is gone: give smoothness_um, the warp's smoothness "
+                             "in micrometres")
+        if not (isinstance(self.smoothness_um, (int, float))
+                and SMOOTHNESS_BOUNDS_UM[0] <= self.smoothness_um <= SMOOTHNESS_BOUNDS_UM[1]):
+            raise ValueError("smoothness_um must be a number of micrometres between "
+                             f"{SMOOTHNESS_BOUNDS_UM[0]:g} and {SMOOTHNESS_BOUNDS_UM[1]:g}")
+        for name, kind in (("engine", Engine), ("detail", Detail),
                            ("section_image", SectionImage),
                            ("labels", Labels), ("stain_metric", StainMetric)):
             value = getattr(self, name)
@@ -197,10 +199,16 @@ class FitSettings:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> FitSettings:
         """Rebuild from :meth:`to_dict` output; ``ValueError`` naming any unknown key."""
-        unknown = sorted(set(value) - set(cls.__dataclass_fields__))
+        data = dict(value)
+        # A record saved before smoothness_um: its stiffness level, as the
+        # update sigma it meant (soft 50, medium 80, firm 120 um).
+        legacy = data.pop("stiffness", None)
+        if legacy is not None and "smoothness_um" not in data:
+            data["smoothness_um"] = {"soft": 50.0, "medium": 80.0, "firm": 120.0}.get(
+                legacy, DEFAULT_SMOOTHNESS_UM)
+        unknown = sorted(set(data) - set(cls.__dataclass_fields__))
         if unknown:
             raise ValueError(f"Unknown fit setting key(s) {unknown}")
-        data = dict(value)
         for name in ("exclude", "structures"):
             data[name] = tuple(data.get(name, ()))
         return cls(**cast(dict[str, Any], data))
