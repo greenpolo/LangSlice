@@ -198,6 +198,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         }
 
     def set_landmarks(section: str, pairs: list[dict[str, Any]], delete: list[str],
+                      holds: list[dict[str, Any]] | None = None,
                       view: bool = True) -> dict[str, Any]:
         if shows(view) and len(pairs) > 4:
             return {"status": "error", "error": "TOO_MANY_LANDMARK_VIEWS",
@@ -207,10 +208,11 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                "pictures; the pairs are listed in the reply), or send them in "
                                "calls of four or fewer."}
         try:
-            result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete)
+            result = ops_landmarks.set_landmarks(job, ctx, section, pairs, delete,
+                                                 as_list(holds))
         except Refused as refusal:
             return refusal.payload()
-        if not shows(view) or not result["changed"]:
+        if not shows(view) or not result["changed"]:  # a hold gets no picture
             return result
         from langslice.core.landmark_views import pair_picture
         from langslice.core.layers import collecting
@@ -229,7 +231,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["render_failed"] = str(exc)
             return result
 
-    def landmark_triangulation(section: str, view: bool = True,
+    def landmark_triangulation(section: str, holds: str = "automatic", view: bool = True,
                                resolution: int = 0) -> dict[str, Any]:
         edge: int | None = None
         if resolution and door.level == AUTO_RESOLUTION:
@@ -241,7 +243,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         else:
             note = ""
         try:
-            result = ops_landmarks.landmark_triangulation(job, ctx, section)
+            result = ops_landmarks.landmark_triangulation(job, ctx, section, holds=holds)
         except Refused as refusal:
             return refusal.payload()
         if note:
