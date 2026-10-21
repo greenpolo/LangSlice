@@ -590,7 +590,7 @@ and the `look` renderers note theirs; `ops.deformable.pictures` notes
 the deformation fits (`fireants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door
-the pictures it labels itself (`set_preprocessed_channel_properties`'
+the pictures it labels itself (`set_channel`'
 before/after). With
 nothing collecting, a note costs nothing. The job saves the pictures
 (`langslice.job.views`, `job/CLAUDE.md`).

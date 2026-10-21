@@ -187,7 +187,7 @@ refused with the filenames listed, `core.state.unknown_sections`), in every
 argument, label, caption and status line; ordinary writes answer with the
 rows they changed (`Door.answered`) plus `n_sections`; `status`, `undo`,
 `redo` and `submit` return the whole table, and `status` also the channel
-display settings, the preprocessed channel's recipe, the background work
+display settings, the derived channels' recipes, the background work
 still running and what this run lets the agent change.
 
 ## Host controls
@@ -290,8 +290,11 @@ every section (`require_deformation`), the line says every section and
 deformation at its current `linear_key`; otherwise `submit` has no
 deformation gate.
 
-- `fireants_syn(sections, restrict_to=, atlas_image=, stiffness=, view=)`:
-  FireANTs SyN on the preprocessed channel against one of the atlas's images, on
+- `set_channel(name, ...)` and `set_mask(section, name, ...)`: the channels
+  and the section masks the fits read by name.
+- `fireants_syn(sections, restrict_to=, section_image=, atlas_image=, mask=,
+  smoothness_um=, metric=, edges=, detail=, view=)`:
+  FireANTs SyN on a channel against one of the atlas's images, on
   top of each section's current registration (each fit builds on the one
   before; undo is how to start over), the marked damage regions left out;
   at most 4 sections per call; `ENGINE_MISSING` without torch and fireants.
@@ -323,7 +326,7 @@ deformation gate.
 job statement carries the job, the facts, the tools by name, the
 constraints and a short Method per task that is on (with
 `interactive_transform`, the alignment lines open by aligning each section by
-hand before any fitting algorithm runs; with `set_preprocessed_channel_properties`,
+hand before any fitting algorithm runs; a Method line says a fit's reply names the channel, atlas image and mask it used; with `set_channel`,
 the Method's first line makes the counterstain alone, enhanced, the channel
 every section is registered on): place each section on
 its own evidence and compare before writing; review the whole stack and

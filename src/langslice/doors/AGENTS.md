@@ -80,7 +80,7 @@ process forks for it, `cli/warm.py`).
   verbs answer once their work has landed); `uncapped` (the CLI and the
   library, `build_tools(scripting=True)`): `_UNCAPPED_DOCS` words the
   picture and section counts of `look`, `grep_atlas_view`,
-  `set_preprocessed_channel_properties`, `interactive_transform` and
+  `set_channel`, `interactive_transform` and
   `elastix_affine` without the ADK and MCP cap; `brain_scale` (the job's
   atlas brain's, `core.atlas.size`, passed by the toolbox and the CLI's
   `schema` for a job): `_SCALED_DOCS` states the distances a description

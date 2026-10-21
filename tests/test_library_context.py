@@ -306,18 +306,29 @@ def test_an_atlas_plane_anywhere_matches_the_sections_own(images: Path):
 def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: Path):
     with make(images) as job:
         c = job.context
+        from langslice.core.plugins import ToolError
+        from langslice.ops import masks as ops_masks
+
         frame = c.fit_frame(ID0)
-        mask = np.ones(frame.image.shape[:2], dtype=bool)
-        mask[:, : mask.shape[1] // 3] = False
-        proposal = c.fit_fireants(ID0, settings={"stiffness": "soft", "detail": "coarse"},
-                                  mask=mask, note="soft, left third out")
+        with pytest.raises(ToolError) as array_refused:  # a mask is a name, not an array
+            c.fit_fireants(ID0, mask=np.ones(frame.image.shape[:2], dtype=bool))
+        assert array_refused.value.code == "BAD_ARGS" and "set_mask" in str(array_refused.value)
+        with pytest.raises(ToolError) as unknown:
+            c.fit_fireants(ID0, mask="nope")
+        assert unknown.value.code == "UNKNOWN_MASK"
+        ops_masks.set_mask(job.job, job.workspace, ID0, "tissue", source="em")
+        assert c.mask(ID0, "tissue").kind == "em"
+        proposal = c.fit_fireants(ID0, settings={"smoothness_um": 50.0, "detail": "coarse"},
+                                  mask="tissue", note="soft, em mask")
         assert job.state.by_id(ID0).deformation is None
         done = c.set_deformations([proposal.row()])
         assert done.written == [ID0], done.rows
         record = job.job.deformations.current(job.state, job.state.by_id(ID0))
         meta = record.provenance["script"]["meta"]
-        assert meta["settings"]["stiffness"] == "soft" and meta["engine"] == "fireants"
-        assert meta["mask_pixels"] == int(mask.sum())
+        assert meta["settings"]["smoothness_um"] == 50.0 and meta["engine"] == "fireants"
+        assert meta["mask"] == "tissue"
+        assert record.provenance["inputs"]["mask"]["name"] == "tissue"
+        assert record.provenance["inputs"]["atlas_image"] == "nissl"
         assert job.state.by_id(ID0).deformation["steps"][-1]["method"] == "script"
         from langslice.core.plugins import ToolError
 
@@ -330,12 +341,16 @@ def test_elastix_with_a_mask_is_a_proposal_recorded_with_its_settings(images: Pa
     with make(images) as job:
         c = job.context
         frame = c.fit_frame(ID1)
-        mask = np.ones(frame.image.shape[:2], dtype=bool)
-        mask[: mask.shape[0] // 4] = False
-        proposal = c.fit_elastix(ID1, mask=mask)
+        from langslice.core.plugins import ToolError
+
+        with pytest.raises(ToolError) as array_refused:
+            c.fit_elastix(ID1, mask=np.ones(frame.image.shape[:2], dtype=bool))
+        assert array_refused.value.code == "BAD_ARGS"
+        proposal = c.fit_elastix(ID1)
         assert proposal.record["kind"] == "script"
         assert proposal.record["fit"]["engine"] == "elastix"
-        assert proposal.record["fit"]["mask_pixels"] == int(mask.sum())
+        assert proposal.record["fit"]["mask"] == "none"
+        assert proposal.record["fit"]["inputs"]["atlas_image"] == "nissl"
         assert job.state.by_id(ID1).transform["params"] == TRANSFORMS[ID1]
         assert c.set_transforms([proposal.row()]).written == [ID1]
 

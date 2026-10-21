@@ -126,7 +126,7 @@ def inputs_block(
                                      else None),
         atlas_image=atlas_image,
         atlas_image_resolved=resolved or resolve_image(workspace.atlas, atlas_image),
-        mask=held, damage=damage_block(damage, damage_margin_mm(workspace)),
+        mask=held, damage=damage_block(list(damage), damage_margin_mm(workspace)),
         restrict_to=list(restrict_to), brightness=brightness)
 
 
@@ -310,8 +310,10 @@ def fit_deformable(
         if not traced_choice:
             blocks[len(jobs) - 1] = inputs_block(
                 state, workspace, record, section_image=choice.fit_section,
-                atlas_image=choice.fit_atlas, mask=choice.mask, damage=own[1],
-                restrict_to=restrict_to, resolved=_resolved(workspace, choice.fit_atlas))
+                atlas_image=choice.fit_atlas, mask=choice.mask,
+                damage=[str(name) for name in own[1]],
+                restrict_to=[str(name) for name in restrict_to],
+                resolved=_resolved(workspace, choice.fit_atlas))
         inherited = regions != own
         rows.append({"id": record.id, "job": len(jobs) - 1,
                      **({"trace_regions": {"include": list(regions[0]),
@@ -752,7 +754,7 @@ def fit_record(
         previous = job.deformations.current(job.state, record)
         if previous is None:
             raise Refused("BAD_ARGS", message=f"{record.id} has no deformation to start from.")
-    _kept, dropped = exclusions(record, tuple(settings.structures))
+    _kept, dropped = exclusions(record, tuple(str(name) for name in settings.structures))
     if marked:
         settings = replace(settings, exclude=tuple(dict.fromkeys(
             (*settings.exclude, *dropped))))
@@ -768,7 +770,8 @@ def fit_record(
     block = inputs_block(
         job.state, workspace, record, section_image=appearance.PREPROCESSED,
         atlas_image=str(settings.atlas_image), mask=label,
-        damage=dropped if marked else (), restrict_to=settings.structures,
+        damage=[str(name) for name in dropped] if marked else [],
+        restrict_to=[str(name) for name in settings.structures],
         resolved=_resolved(workspace, str(settings.atlas_image)))
     estimated = estimated_block(outcome)
     outcome.provenance = {**outcome.provenance, "inputs": block.payload(),
@@ -885,7 +888,9 @@ def fireants_syn(
                                 smoothness_um=float(smoothness_um), mask=_mask_label(mask))
     done = fit_deformable(
         job, workspace, records, choice, restrict_to=regions,
-        overrides={"stain_metric": metric_name, "stain_edges": bool(edges), "detail": level})
+        overrides={"stain_metric": metric_name, "stain_edges": bool(edges),
+                   # ``standard`` is the tool's own level (``deformation.DETAIL_LEVEL``)
+                   **({} if level == "standard" else {"detail": level})})
     return replace(done, settings={
         "section_image": channel, "atlas_image": kind,
         "atlas_image_resolved": _resolved(workspace, kind), "mask": choice.mask,

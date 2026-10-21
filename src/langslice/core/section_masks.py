@@ -95,17 +95,23 @@ class MaskView:
 # --- the registration a mask was made at -----------------------------------------------
 
 
+def registration_parts(state: StackState, record: SliceState) -> dict[str, Any]:
+    """What ``ops.inputs.section_inputs`` and :func:`registration_digest` both
+    digest: the linear placement, the fit appearance and the damage marks."""
+    return {
+        "linear": linear_key(state, record),
+        "fit_look": looks.preprocessed_settings(state, record.id),
+        "damage": {"regions": list(record.damaged_regions)},
+    }
+
+
 def registration_digest(state: StackState, record: SliceState) -> str:
     """A digest of what a mask of *record* depends on: its linear placement,
     its fit appearance, its damage marks and its applied deformation. The same
     content as ``ops.inputs.section_inputs(..., deformation=True)``, which a
     mask stores at creation (core cannot import ops)."""
-    held: dict[str, Any] = {
-        "linear": linear_key(state, record),
-        "fit_look": looks.preprocessed_settings(state, record.id),
-        "damage": {"regions": list(record.damaged_regions)},
-        "deformation": (record.deformation or {}).get("key"),
-    }
+    held = {**registration_parts(state, record),
+            "deformation": (record.deformation or {}).get("key")}
     text = json.dumps(held, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()
 
