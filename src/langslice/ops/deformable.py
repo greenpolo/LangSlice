@@ -118,7 +118,8 @@ def inputs_block(
     entry = (record.masks or {}).get(mask) if mask != ops_masks.NO_MASK else None
     held: str | dict[str, Any] = ops_masks.NO_MASK
     if mask != ops_masks.NO_MASK:
-        held = {"name": mask, "kind": (entry or {}).get("kind"), "stale": False}
+        held = {"name": mask, "kind": (entry or {}).get("kind"), "stale": False,
+                "earlier_registration": ops_masks.made_earlier(state, record, mask)}
     return InputsBlock(
         section_image=section_image,
         section_recipe=recipe_digest(appearance.derived_settings(state, section_image, record.id)

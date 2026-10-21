@@ -247,7 +247,7 @@ Returns:
     One row per section in stack order: filename, position, distance
     to the next placed section, flip and quarter turn, transform,
     damaged regions and damage note, deformation steps, masks
-    (name, source, stale). Also the
+    (name, source, and whether it was made at an earlier registration). Also the
     cutting angles, the interval breaks, the raw channels' display
     settings ("auto": automatic contrast limits), the derived channels'
     recipes (the preprocessed channel's, and any other you made), the
@@ -429,9 +429,10 @@ that takes it by name ignores the pixels under 0.5. It sorts the
 section's pixels into tissue, artifact and background by their brightness
 in a channel and by where the atlas puts tissue, as the fits' own estimate
 does, and it is the only way a fit leaves out a hole, a tear or a stain.
-The mask belongs to the section as it stands: a change to its position,
-orientation, cutting angles, transform or deformation makes it stale, and
-a fit refuses it until it is made again. The marked damage regions are not part of a mask; every
+The mask sits on the section's own pixels, so it stays usable after
+fits and moves; status says when it was made at an earlier registration.
+Turning or flipping the section makes a fit refuse it until it is made
+again. The marked damage regions are not part of a mask; every
 fit leaves them out of the atlas on its own. Undoable.
 
 Args:

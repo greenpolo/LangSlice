@@ -50,7 +50,7 @@ def test_the_digest_a_mask_stores_is_the_fit_inputs_digest(tmp_path: Path, atlas
     assert registration_digest(state, record) == section_inputs(state, record, deformation=True)
 
 
-def test_an_em_mask_is_made_listed_stale_after_a_write_and_deleted(tmp_path: Path, atlas):
+def test_an_em_mask_is_made_listed_stays_usable_after_a_write_and_deleted(tmp_path: Path, atlas):
     state, _, box = _setup(tmp_path, atlas)
     tool = _tool(box, "set_mask")
     made = tool(ID, "tissue", view=False)
@@ -59,25 +59,41 @@ def test_an_em_mask_is_made_listed_stale_after_a_write_and_deleted(tmp_path: Pat
     assert 0.0 <= made["left_out"] <= 1.0
     assert len(box.job.undo_stack) == 1
     row = _tool(box, "status")()["rows"][0]
-    assert row["masks"] == [{"name": "tissue", "kind": "em", "stale": False}]
+    assert row["masks"] == [{"name": "tissue", "kind": "em", "stale": False,
+                             "earlier_registration": False}]
     assert (tmp_path / "langslice" / "sections" / "s0" / "masks" / "tissue.npz").exists()
-    # A write to the section's placement makes it stale; a fit refuses it.
+    # A new registration is information, not a refusal.
     _tool(box, "interactive_transform")([{"id": ID, "rotation_deg": 3.0}], view=False)
-    assert _tool(box, "status")()["rows"][0]["masks"][0]["stale"] is True
-    fit = _tool(box, "elastix_affine")([ID], mask="tissue", view=False)
-    assert fit["results"][0]["error"] == "STALE_MASK"
-    # Made again it is fresh, and the reply of a fit names it.
-    tool(ID, "tissue", view=False)
+    entry = _tool(box, "status")()["rows"][0]["masks"][0]
+    assert entry["stale"] is False and entry["earlier_registration"] is True
     fit = _tool(box, "elastix_affine")([ID], mask="tissue", view=False)
     assert fit["status"] == "ok", fit
-    assert fit["results"][0]["inputs"]["mask"] == {"name": "tissue", "kind": "em",
-                                                    "stale": False}
+    assert fit["results"][0]["inputs"]["mask"]["name"] == "tissue"
+    assert fit["results"][0]["inputs"]["mask"]["earlier_registration"] is True
+    # Turning the section changes the pixels' meaning: a fit refuses the mask.
+    state.slices[0].rotation_deg = 90
+    assert _tool(box, "status")()["rows"][0]["masks"][0]["stale"] is True
+    refused = _tool(box, "elastix_affine")([ID], mask="tissue", view=False)
+    assert refused["results"][0]["error"] == "STALE_MASK"
+    state.slices[0].rotation_deg = 0
     assert tool(ID, "tissue", delete=True)["deleted"] is True
     assert tool(ID, "tissue", delete=True)["error"] == "UNKNOWN_MASK"
     assert tool(ID, "bad name!", view=False)["error"] == "BAD_ARGS"
     assert tool(ID, "none", view=False)["error"] == "BAD_ARGS"
     assert tool(ID, "m", channel="nope", view=False)["error"] == "UNKNOWN_CHANNEL"
     assert tool(ID, "m", sorting={"bogus": 1}, view=False)["error"] == "BAD_ARGS"
+
+
+def test_a_mask_stays_usable_by_a_second_fit_that_builds_on_the_first(tmp_path: Path, atlas):
+    _, _, box = _setup(tmp_path, atlas)
+    _tool(box, "set_mask")(ID, "tissue", view=False)
+    first = _tool(box, "fireants_syn")([ID], mask="tissue", view=False, detail="coarse")
+    assert first["status"] == "ok", first
+    second = _tool(box, "fireants_syn")([ID], mask="tissue", view=False, detail="coarse")
+    assert second["status"] == "ok", second
+    row = second["results"][0]
+    assert row["steps"] == 2 and row["inputs"]["mask"]["name"] == "tissue"
+    assert row["inputs"]["mask"]["earlier_registration"] is True
 
 
 def test_the_mask_is_drawn_on_the_section_and_look_outlines_it(tmp_path: Path, atlas):

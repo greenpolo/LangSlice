@@ -293,7 +293,7 @@ The stack as it stands, and what this run lets you change. Writes nothing.
             One row per section in stack order: filename, position, distance
             to the next placed section, flip and quarter turn, transform,
             damaged regions and damage note, deformation steps, masks
-            (name, source, stale). Also the
+            (name, source, and whether it was made at an earlier registration). Also the
             cutting angles, the interval breaks, the raw channels' display
             settings ("auto": automatic contrast limits), the derived channels'
             recipes (the preprocessed channel's, and any other you made), the

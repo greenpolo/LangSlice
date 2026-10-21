@@ -278,11 +278,12 @@ holds). FireANTs and Elastix cut the weights at 0.5 and AND them into the
 section mask; a tool plugin's engine uses them as its own limits say (soft
 weights, or by dropping matches, or not at all). FireANTs no longer sorts the
 section itself: with `mask="none"` every pixel inside the placed atlas outline
-counts. A mask is stale once the section's position, orientation, cutting
-angles, transform, appearance, damage marks or deformation change since it was
-made: a fit refuses it (`STALE_MASK`), and `status` lists each section's masks
-(name, kind, stale). A fit that writes a deformation therefore leaves the mask
-it used stale; make it again at the new registration. `look(masks=[name])`
+counts. A mask lives on the section's own pixels, so a new registration does not
+invalidate it: after fits, moves or a changed deformation it stays usable, and
+`status` and `look` mark it `earlier_registration` (it was made at an earlier
+registration; information only). It is stale only once the section is turned or
+flipped (`STALE_MASK`: a fit refuses it; make it again). `status` lists each
+section's masks (name, kind, stale, earlier_registration). `look(masks=[name])`
 outlines a mask where its weight is 0.5 on `section` and `overlay` pictures.
 
 `mark_damage` records atlas regions whose tissue is missing from the section

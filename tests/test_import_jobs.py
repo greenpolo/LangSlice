@@ -181,8 +181,10 @@ def nonlinear_on_top(capsys: pytest.CaptureFixture[str], folder: Path,
     mapping = {entry["id"]: entry["mapping"] for entry in document["sections"]}
     assert mapping == {**{name: "linear + residual" for name in ids[:-1]},
                        ids[-1]: "linear"}, mapping
+    # Submit writes no maps; they are written on demand (export_maps).
+    ok(capsys, folder, "export_maps")
     for entry in document["sections"]:
-        assert entry["maps"], entry
+        assert (folder / entry["folder"] / "maps.json").is_file(), entry
 
 
 # --- from a LangSlice job's exports ------------------------------------------------------

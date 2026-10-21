@@ -105,7 +105,8 @@ def test_sorting_widths_and_means_can_be_given(tmp_path: Path, atlas):
 
 def _meta(state: StackState, record: SliceState, **over: Any) -> dict[str, Any]:
     return {"kind": "em", "channel": "preprocessed", "atlas_image": "template",
-            "params": {"match_sd": 0.1}, "inputs": section_masks.registration_digest(state, record),
+            "params": {"match_sd": 0.1}, "inputs": section_masks.grid_digest(record),
+            "registration": section_masks.registration_digest(state, record),
             "left_out": 0.04, **over}
 
 
@@ -163,21 +164,25 @@ def test_bad_masks_are_refused(tmp_path: Path):
     assert not record.masks
 
 
-def test_a_mask_goes_stale_when_the_registration_moves(tmp_path: Path):
+def test_a_new_registration_marks_a_mask_earlier_but_a_turn_makes_it_stale(tmp_path: Path):
     layout = JobLayout(tmp_path / "job", tmp_path)
     layout.ensure()
     state = StackState(atlas="a", slices=[SliceState(ID, 0, 0, position_mm=1.0)])
     record = state.slices[0]
     section_masks.write_mask(layout, record, "m", np.ones((6, 6)), _meta(state, record))
-    assert section_masks.mask_rows(state, record) == [{"name": "m", "kind": "em", "stale": False}]
+    assert section_masks.mask_rows(state, record) == [
+        {"name": "m", "kind": "em", "stale": False, "earlier_registration": False}]
     record.position_mm = 1.5
+    view = section_masks.read_mask(layout, state, record, "m")
+    assert not view.stale and view.earlier_registration
+    record.position_mm = 1.0
+    assert not section_masks.read_mask(layout, state, record, "m").earlier_registration
+    record.damaged_regions = ["TH"]  # the damage marks are part of the registration
+    assert section_masks.read_mask(layout, state, record, "m").earlier_registration
+    record.flip = True  # the pixels' meaning changes
     view = section_masks.read_mask(layout, state, record, "m")
     assert view.stale
     assert section_masks.mask_rows(state, record)[0]["stale"] is True
-    record.position_mm = 1.0
-    assert not section_masks.read_mask(layout, state, record, "m").stale
-    record.damaged_regions = ["TH"]  # the damage marks are part of what the mask was made at
-    assert section_masks.read_mask(layout, state, record, "m").stale
 
 
 def test_the_status_rows_list_a_sections_masks(tmp_path: Path):
@@ -189,7 +194,8 @@ def test_the_status_rows_list_a_sections_masks(tmp_path: Path):
     section_masks.write_mask(layout, state.slices[0], "hole", np.ones((6, 6)),
                              _meta(state, state.slices[0]))
     rows = status_rows(state)
-    assert rows[0]["masks"] == [{"name": "hole", "kind": "em", "stale": False}]
+    assert rows[0]["masks"] == [{"name": "hole", "kind": "em", "stale": False,
+                                  "earlier_registration": False}]
     assert "masks" not in rows[1]
 
 

@@ -416,7 +416,8 @@ One file per mask a section holds (`set_mask`; see `registration.md`). Arrays:
 the state reference, and a mask made again under a name that exists gets a new
 file (`<name>.2.npz`). `state.json` holds the entry under the section's
 `masks`, absent while empty: `kind` (`em` or `fit`), `channel`, `atlas_image`
-(resolved), `params` (the EM starting points used), `inputs` (the digest of the
+(resolved), `params` (the EM starting points used), `inputs` (the digest of the section's
+orientation, which the mask's pixels sit on), `registration` (the digest of the
 registration it was made at), `file` and `left_out` (the fraction of the placed
 footprint under 0.5). A deformation record's `provenance` holds the `inputs` and
 `estimated` blocks of the fit that made it.

@@ -270,7 +270,7 @@ the angles in a caption (empty for the flat plane).
   picture, a section named by its filename alone (no index):
   `status_rows` (a section with plugin layers carries `layers`: name, kind,
   frame, tool, which `uniform_rows` takes as an extra field; a section with
-  masks carries `masks`: name, kind, stale), `compact_rows` (a model's:
+  masks carries `masks`: name, kind, stale, earlier_registration), `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
@@ -286,9 +286,10 @@ the angles in a caption (empty for the flat plane).
   written by `write_mask` (never deleted: a mask made again under a name gets
   `<name>.2.npz`, so an undone state still finds its file) and read by
   `read_mask` -> `MaskView` (float32 weights, `stale` when
-  `registration_digest` — placement, fit appearance, damage marks, applied
+  `grid_digest` — the section's orientation — differs; `earlier_registration`
+  when `registration_digest` — placement, fit appearance, damage marks, applied
   deformation, the content of `ops.inputs.section_inputs(...,
-  deformation=True)` — differs). `em_sorting` makes the three-class EM sorting
+  deformation=True)` — differs: information, never a refusal). `em_sorting` makes the three-class EM sorting
   at the section's current registration (atlas image through the applied
   deformation; footprint = the placed outline widened by `MASK_MARGIN_MM`;
   `deformable.masks.em_weights` on the 20 µm grid, upsampled); `fit_weights`

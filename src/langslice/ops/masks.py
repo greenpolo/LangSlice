@@ -87,8 +87,8 @@ def set_mask(
     CURRENT registration (the atlas placed through its transform and applied
     deformation), with the optional starting points *sorting*
     (:data:`SORTING_KEYS`); ``fit``: the sorting the section's applied
-    deformation saved with its record, copied. The mask is stale once the
-    section's placement, appearance, damage marks or deformation change
+    deformation saved with its record, copied. The mask is stale only once the
+    section is turned or flipped; a new registration only marks it made at an earlier one
     (:func:`langslice.core.section_masks.read_mask`); making it again replaces it.
     *delete* removes the entry (the weights file stays; undo brings the entry
     back).
@@ -128,7 +128,12 @@ def set_mask(
 
 
 def _from_fit(job: Job, workspace: Workspace, record: SliceState, name: str) -> dict[str, Any]:
-    from langslice.core.section_masks import fit_weights, registration_digest, write_mask
+    from langslice.core.section_masks import (
+        fit_weights,
+        grid_digest,
+        registration_digest,
+        write_mask,
+    )
 
     if job.deformations.current(job.state, record) is None:
         raise Refused("NO_DEFORMATION", message=f"{record.id} holds no deformation, so there "
@@ -144,7 +149,8 @@ def _from_fit(job: Job, workspace: Workspace, record: SliceState, name: str) -> 
     if footprint is not None and footprint.shape == inside.shape and footprint.any():
         inside = inside[footprint]
     meta = {"kind": "fit", "channel": "", "atlas_image": str(atlas), "params": {},
-            "inputs": registration_digest(job.state, record),
+            "inputs": grid_digest(record),
+            "registration": registration_digest(job.state, record),
             "left_out": float(inside.mean()) if inside.size else 0.0}
     return _write(job, record, name, weights, meta, write_mask)
 
@@ -153,7 +159,12 @@ def _from_em(
     job: Job, workspace: Workspace, record: SliceState, name: str, *, channel: str,
     atlas_image: str, params: dict[str, float],
 ) -> dict[str, Any]:
-    from langslice.core.section_masks import em_sorting, registration_digest, write_mask
+    from langslice.core.section_masks import (
+        em_sorting,
+        grid_digest,
+        registration_digest,
+        write_mask,
+    )
 
     if record.position_mm is None:
         raise Refused("NO_POSITION", message=f"{record.id} has no position yet.")
@@ -181,7 +192,8 @@ def _from_em(
         raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
     meta = {"kind": "em", "channel": channel, "atlas_image": resolved,
             "params": facts.get("params", {}),
-            "inputs": registration_digest(job.state, record),
+            "inputs": grid_digest(record),
+            "registration": registration_digest(job.state, record),
             "left_out": float(facts.get("left_out", 0.0))}
     return _write(job, record, name, weights, meta, write_mask)
 
@@ -223,3 +235,12 @@ def section_weights(job: Job, record: SliceState, name: str) -> np.ndarray | Non
         raise Refused("STALE_MASK", message=f"{record.id}'s mask {label!r} was made before the "
                       "section changed; make it again with set_mask.")
     return weights_of(view)
+
+
+def made_earlier(state: Any, record: SliceState, name: str) -> bool:
+    """Whether the mask *name* of *record* was made at an earlier registration
+    (information for the reply and ``status``, never a refusal)."""
+    from langslice.core.section_masks import made_earlier as earlier
+
+    entry = (record.masks or {}).get(name)
+    return bool(entry) and earlier(state, record, entry)
