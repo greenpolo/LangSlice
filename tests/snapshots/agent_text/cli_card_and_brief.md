@@ -30,25 +30,24 @@ written to `BRIEF.md` here. Open every picture, then work as it says.
 Maps and pictures are derived, never read back: editing one changes no registration.
 
 ## Pictures and coordinates
-Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame)
-and, for a section on its atlas, `labels.tif` (uint32 atlas ids per pixel) and
-`borders.png` (the drawn borders); a deformable fit's adds `residual.tif`.
-`langslice.coordinate_map("<picture>/view.json")`: every pixel's atlas position,
-(rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in the atlas's own
-axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
-posterior, 1 superior to inferior, 2 right to left), voxel i's centre at
-i * resolution. Pixels are (row, col), centres at integers. Section positions
-in `state.json` and the verbs are millimetres along the slicing axis.
+Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame) and, for a section
+on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders); a
+deformable fit's adds `residual.tif`. `langslice.coordinate_map("<picture>/view.json")`: every
+pixel's atlas position, (rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in
+the atlas's own axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
+posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * resolution. Pixels
+are (row, col), centres at integers. Section positions in `state.json` and the verbs are
+millimetres along the slicing axis.
 
 ## CLI (JSON on stdout: ok, result, artifacts, warnings, next)
 `langslice-job <ROOT>/langslice VERB --args '{...}'` (or `--key value`); `--dry-run`
-(writes nothing), `--background` then `wait [id]` (`runs` lists background runs), `--verbose`.
-Pictures come back as file paths under `artifacts`, each with its `index` in the
-reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad arguments, 3 refused by the job
-(`error.code`, `error.fix`), 4 internal. Calls may run in parallel (each write holds the
-folder's lock; a long verb re-checks each section first: `STALE_INPUT`, run it again for
-that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` (or
-`VERB --help`) gives the arguments, `langslice-job schema init` the job flags.
+(writes nothing), `--background` then `wait [id]` (within 30 s: the answer, or `STILL_RUNNING`:
+wait again; `runs` lists runs), `--verbose`. Pictures come back as file paths under `artifacts`,
+each with its `index` in the reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad
+arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal. Calls may run in
+parallel (each write holds the folder's lock; a long verb re-checks each section first:
+`STALE_INPUT`, run it again for that section). `langslice-job ops` lists the verbs;
+`langslice-job schema VERB` (or `VERB --help`) gives the arguments, `schema init` the job flags.
 - `look` (read, Common): Draw pictures of sections and the atlas. Writes nothing.
 - `zoom` (read, Common): Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 - `set_channel` (write, Common): Set how a channel is displayed, or the recipe of a channel made from the raw ones.
@@ -69,6 +68,7 @@ that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` 
 - `note` (write, Common): Append one line to the run notes, which are saved with the results.
 - `undo` (write, Common): Undo the last write. A tool call, or a finished piece of background work, is one step.
 - `redo` (write, Common): Redo the write that ``undo`` reversed.
+- `restore_registration` (write, Common): Put back a registration a section held before: its orientation, transform and deformation.
 - `submit` (write, Common): End the run. Call this exactly once, last.
 - `export_maps` (read, Common, long): Write each placed section's maps and the stack's exports, from the job as it stands.
 
@@ -106,7 +106,7 @@ Run facts:
 - Atlas layers on this host: template, nissl, borders.
 - Picture size is yours to choose: look's resolution runs from 128 to 2000 pixels.
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `set_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `submit`, `export_maps`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `set_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `note`, `undo`, `redo`, `restore_registration`, `submit`, `export_maps`.
 
 Constraints:
 - `submit` is refused unless every section has a position of its own, damaged sections included.
@@ -135,7 +135,7 @@ Opening pictures: `langslice-job <ROOT>/langslice brief` saves them as picture f
 Commands:
 - Every tool is a command: `langslice-job <ROOT>/langslice TOOL --args '{...}'` (or `--name value`); `langslice-job schema TOOL` gives its arguments and description. Pictures come back as files under `artifacts` (kind `view`, in the order the reply's `pictures` lists their numbers); open them to see them.
 - `--dry-run` runs a write without writing and reports what would change; the fits are only checked, not run.
-- Long tools (elastix_affine, fireants_syn, export_maps) can run with `--background`, which answers at once with a run id; `wait ID` collects the answer.
+- Long tools (elastix_affine, fireants_syn, export_maps) can run with `--background`, which answers at once with a run id; `wait ID` answers within 30 s with the run's answer, or STILL_RUNNING while it runs (wait again).
 - Commands may run in parallel: each write holds the job folder's lock, and a long tool re-checks each section before it applies (STALE_INPUT when the section changed meanwhile: run it again for that section).
 
 Status table (filename, position, spacing to the next placed section, flags):

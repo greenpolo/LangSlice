@@ -96,6 +96,49 @@ class FolderLock:
                 self._owner = None
             self._threads.release()
 
+    @contextlib.contextmanager
+    def threads(self) -> Iterator[None]:
+        """This process's other threads kept out for the block, as :meth:`held`
+        keeps them out; the folder's lock is not taken (reentrant)."""
+        with self._threads:
+            yield
+
+    @contextlib.contextmanager
+    def held_if_free(self) -> Iterator[bool]:
+        """The lock for the block when no other process holds it (yields
+        True), else nothing more than :meth:`threads` (yields False): never
+        waits for another process's writer. Where the folder lock cannot be
+        used, the same as :meth:`held`."""
+        with self._threads:
+            if self.held_here() or self._unusable or not self.path.parent.is_dir():
+                with self.held():
+                    yield True
+                return
+            from filelock import Timeout
+
+            lock = self._file_lock()
+            try:
+                lock.acquire(timeout=0)
+            except Timeout:
+                yield False
+                return
+            except PermissionError:
+                with self.held():  # unwritable: held() works without the lock
+                    yield True
+                return
+            try:
+                with self.held():  # the file lock is reentrant: no wait
+                    yield True
+            finally:
+                lock.release()
+
+    def _file_lock(self) -> Any:
+        if self._lock is None:
+            from filelock import FileLock
+
+            self._lock = FileLock(str(self.path), timeout=self.timeout)
+        return self._lock
+
     def _released(self) -> None:
         for callback in list(self.before_release):
             try:
@@ -109,14 +152,11 @@ class FolderLock:
         if self._unusable or not self.path.parent.is_dir():
             yield
             return
-        if self._lock is None:
-            from filelock import FileLock
-
-            self._lock = FileLock(str(self.path), timeout=self.timeout)
+        lock = self._file_lock()
         from filelock import Timeout
 
         try:
-            self._lock.acquire()
+            lock.acquire()
         except Timeout as exc:
             raise JobBusy(f"{self.path.parent} is locked by another writer (waited "
                           f"{self.timeout:g} s)") from exc
@@ -129,4 +169,4 @@ class FolderLock:
         try:
             yield
         finally:
-            self._lock.release()
+            lock.release()

@@ -63,7 +63,8 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
         step = np.asarray(atlas_space_context(atlas).resolution_um) / 1000.0 / AUGMENTED_VOXEL_MM
         # Voxel centres: augmented index = step * index + 0.5 * step - 0.5 (+ the AP offset).
         offset = 0.5 * step - 0.5 + np.array([AUGMENTED_AP_OFFSET_MM / AUGMENTED_VOXEL_MM, 0, 0])
-        volume = affine_transform(source, step, offset=offset,  # pyright: ignore[reportArgumentType]  # scipy takes a per-axis offset; its stub says float
+        # The scale as a diagonal matrix: a 1-D one makes SciPy warn on every call.
+        volume = affine_transform(source, np.diag(step), offset=offset,  # pyright: ignore[reportArgumentType]  # scipy takes a per-axis offset; its stub says float
                                   output_shape=annotation.shape, order=1, output=source.dtype)
         volume[annotation == 0] = 0  # the averaged template glows faintly beyond the tissue
         _borrowed.clear()  # one atlas at a time: a 10 um volume is gigabytes

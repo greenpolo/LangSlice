@@ -9,6 +9,7 @@ the plugins a ``JobSpec`` names.
 
 from __future__ import annotations
 
+from langslice.core.deformation import flag_words
 from langslice.core.plugins import (
     PLUGIN_API_VERSION,
     Layer,
@@ -41,5 +42,5 @@ __all__ = [
     "LayerRef",
     "PluginError", "SectionRaster", "SectionView", "ToolContext", "ToolError", "ToolResult",
     "ToolSpec",
-    "TransformProposal", "WriteResult", "as_refs", "load",
+    "TransformProposal", "WriteResult", "as_refs", "flag_words", "load",
 ]

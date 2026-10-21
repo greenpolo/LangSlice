@@ -30,7 +30,8 @@ every task, and splitting it re-pays for that reading.
 
 The toolbox: shared tools for the everyday operations (`look` with its four
 modes, `zoom`, the two channel tools, `grep_atlas` / `grep_atlas_view`,
-`status`, the job-folder tools, `note` / `undo` / `redo` / `submit`) and one
+`status`, the job-folder tools, `note` / `undo` / `redo` / `restore_registration` /
+`submit`) and one
 tool per registration method (`position_sections`,
 `interactive_transform`, `mark_damage`, `elastix_affine`, `fireants_syn`,
 `trace_borders`). Every change tool returns its own picture after the write
@@ -38,7 +39,10 @@ tool per registration method (`position_sections`,
 `position_sections`, the section under its new registration with the atlas
 borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
 (zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
-previews; everything is undoable, and undo is how two fits are compared.
+previews; everything is undoable. Each registration a section holds is
+numbered (`job/registrations.py`), and `restore_registration` puts one
+section's earlier one back whatever was written since, which is how two
+fits of a section are compared; undo takes back only the job's last write.
 `interactive_transform` batches up to four independent sections in one
 call and one undo step; a dependent refinement waits for the first
 picture. Every picture is saved in the job folder with a number, so `zoom`
@@ -336,7 +340,8 @@ improve it; mark a damaged section's lost regions before fitting it; fit
 the whole section first, then regions. With more than one deformable method
 in the job (`fireants_syn` and the in-tree engine plugins `stalign_lddmm`,
 `spomialign`, `emlddmm_stack`), the Method says none is the default, asks the
-agent to try more than one per section and keep the best by looking, and
+agent to try more than one per section and keep the best by looking
+(`restore_registration` puts an earlier fit of a section back), and
 says in one line each what the present methods are (`prompt.DEFORMABLE_METHODS`,
 the methods' own papers' claims; Nash approved the wording 2026-10-21). The
 counterstain line comes first in every Method, positioning off included.

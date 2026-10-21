@@ -308,7 +308,10 @@ undo and every child find their records.
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
 fraction in the footprint, inverse consistency, and flags REGION_COMPRESSED /
-EXPANDED / VANISHED / FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. Limits are the
+EXPANDED / VANISHED / FOLDED, FOLDS and DISPLACEMENT_OUTSIZED. A fit's reply lists them (`core.deformation.summary`: whole-section flags first,
+at most `MAX_FLAGS`, each region flag with its acronym); a notice words them in one
+line, each code once and a region code with its regions (`core.deformation.flag_words`,
+also `langslice.plugin_api.flag_words`). Limits are the
 named constants `TISSUE_AREA_RATIO_LIMITS` (0.5, 2),
 `VENTRICLE_AREA_RATIO_LIMITS` (0.1, 10) for `VS` and descendants,
 `MIN_FLAG_AREA_MM2`, `FOLD_FRACTION_LIMIT`, and for DISPLACEMENT_OUTSIZED

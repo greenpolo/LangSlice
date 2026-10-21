@@ -241,7 +241,11 @@ process forks for it, `cli/warm.py`).
   `Job.picture_cap` to `MAX_IMAGES_PER_CALL` (4), or to None with
   `scripting=True` (the CLI and the library); every tool wrapped,
   innermost first, by the opening gate (writes), `_strict`,
-  `_clears_stale_deformations`, `_saves_views` (the pictures a body returns
+  for a write `_clears_stale_deformations` and `_names_registrations`
+  (`registrations_named`: `registration` `{section: number}`, the registrations
+  the call's writes left in this thread, `Job.registered_since`, for the
+  sections whose status row in the reply does not show it; a reply with a
+  `registration` of its own keeps it), `_saves_views` (the pictures a body returns
   saved and numbered, their numbers and captions under `pictures`; a reply
   that already lists `pictures`, saved by its operation, is left as it is),
   `_announces_work` (`with_notices`: the notices of background work
@@ -255,7 +259,9 @@ process forks for it, `cli/warm.py`).
   tool bodies (`looking.py`: `look`, `zoom`, the two channel tools,
   `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
-  `mark_damage`, `note`, `undo`, `redo`, `submit`; `fitting.py`:
+  `mark_damage`, `note`, `undo`, `redo`, `restore_registration` (0 lists,
+  `ops.registrations.listing`; a number puts it back and shows the
+  section's overlay), `submit`; `fitting.py`:
   `elastix_affine`, `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
@@ -421,7 +427,9 @@ process forks for it, `cli/warm.py`).
     parser `init_parser`: the job flags of `linear run`, `--notes`,
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
-    `brief`, `runs` (`runs [ID]`, `wait [ID]`), and `env` (`jobenv.command`). `CHECKED_ONLY`:
+    `brief`, `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
+    `background.WAIT_S` (30 s), then `STILL_RUNNING` with the run's state and
+    the command that waits again), and `env` (`jobenv.command`). `CHECKED_ONLY`:
     `trace_borders`, `elastix_affine` and `fireants_syn`
     are checked, not run, by `--dry-run`, and so is every plugin tool (a verb not in `VERBS`).
   - `jobenv.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
@@ -435,7 +443,9 @@ process forks for it, `cli/warm.py`).
     it made (`env/.langslice-ready`, `READY`). `ENV_FAILED` when a step fails.
     `python(folder, rest)` — `langslice-job FOLDER python SCRIPT [ARGS ...]`
     (handled by `job.run` before any parsing, the script's arguments
-    verbatim; `FOLDER python --help` answers as a job command): the
+    verbatim; `FOLDER python --help` answers as a job command;
+    `script_path`: a relative SCRIPT the working folder does not hold is the
+    job folder's, made absolute): the
     environment made when missing, the call logged, then the script in this
     warm child (`warm.run_script`) or this process replaced by the
     environment's python (`os.execv`; `subprocess.call` on Windows); a call
@@ -456,7 +466,9 @@ process forks for it, `cli/warm.py`).
     child), `read` (a running run whose process is gone, or that never
     started within `START_GRACE_S`, is `lost`; the process probed with a null
     signal, on Windows with psutil when installed, else
-    `OpenProcess`/`GetExitCodeProcess`), `listing`, `latest`, `wait`.
+    `OpenProcess`/`GetExitCodeProcess`), `listing`, `latest`, `wait`
+    (`WAIT_S`: what `wait` waits without `--timeout`, well inside the time a
+    harness gives a command).
 
 ## Live shared editing
 
@@ -469,8 +481,11 @@ folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit): the
 tool door wraps every verb in it, except the long ones (`VERBS[name].long`:
 `elastix_affine`, `fireants_syn`, `trace_borders`,
 `export_maps`), which compute outside it and take it to apply, refusing a
-section whose inputs changed (`ops.inputs`, `STALE_INPUT`); the lock timing
-out is `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write
+section whose inputs changed (`ops.inputs`, `STALE_INPUT`), and the reads
+(`kind` "read"), which never wait for another process's writer
+(`Job.reading`: the state as last saved); the lock timing
+out is `JOB_BUSY` (exit 3). Every call runs as its verb (`Job.acting`), so the
+registrations its writes leave are listed as made by it. `tests/test_job_concurrency.py`: an agent write
 during a fit survives, a moved section is refused, concurrent CLI processes
 all land.
 

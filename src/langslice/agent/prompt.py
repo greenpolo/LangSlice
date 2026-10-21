@@ -383,14 +383,15 @@ def build_job_statement(
             + "."
         )
         if len(engines) > 1:
-            method.append(
+            method.append(render(
                 "- Several published deformable methods are available; none is the default, "
                 "and each suits different sections. Try more than one on each section, compare "
                 "their overlays, and keep the one whose borders best follow the section's "
-                "internal anatomy (undo returns to the earlier fit). Each fit builds on the "
-                "section's current registration, so methods can be chained, for example a "
-                "stack-wide fit refined per section."
-            )
+                "internal anatomy ([[?restore_registration `restore_registration` puts an "
+                "earlier fit of a section back||undo returns to the earlier fit]]). Each fit "
+                "builds on the section's current registration, so methods can be chained, for "
+                "example a stack-wide fit refined per section.", off
+            ))
             method.extend(f"  - `{name}`: {DEFORMABLE_METHODS[name]}" for name in engines)
 
     if any(name in tool_names for name in ("elastix_affine", "fireants_syn")):

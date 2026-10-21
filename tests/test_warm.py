@@ -193,7 +193,8 @@ def same(place: dict[str, Path], *argv: str, cwd_name: str | None = None) -> tup
     for name in ("cold", "warm"):
         folder = place[name]
         args = [str(folder) if arg == "{folder}" else arg for arg in argv]
-        cwd = folder / "langslice" if cwd_name == "job" else None
+        cwd = (folder / "langslice" if cwd_name == "job"
+               else folder if cwd_name == "images" else None)
         results.append(run(place, str(folder), *args, warm=name == "warm", cwd=cwd))
     cold, warm = results
     for stream in ("stdout", "stderr"):
@@ -250,6 +251,14 @@ def test_python_runs_the_script_as_the_job_environments_python(warm):
         assert shown["path0"].endswith("/langslice/scripts")
         assert shown["exe"].endswith("/langslice/env/bin/python")
     assert hot.returncode == 1 and hot.stderr == "a message\n"
+    # From another folder (here the images'), a relative script the job keeps
+    # in its scripts/ is the job's.
+    _cold, elsewhere = same(place, "python", "scripts/probe.py", "{folder}",
+                            cwd_name="images")
+    assert elsewhere.returncode == 0, elsewhere.stderr
+    shown = json.loads(elsewhere.stdout.splitlines()[0])
+    assert shown["argv"][0].endswith("/langslice/scripts/probe.py")
+    assert shown["file"].endswith("/langslice/scripts/probe.py")
     _cold, raised = same(place, "python", "scripts/probe.py", "{folder}", "raise",
                          cwd_name="job")
     assert raised.returncode == 1

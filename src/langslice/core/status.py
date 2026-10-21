@@ -107,7 +107,7 @@ ROW_FIELDS: tuple[str, ...] = (
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
     "transform_mirrored", "deformation_steps", "landmarks", "caveats",
-    "frozen", "damage_by_user",
+    "frozen", "damage_by_user", "registration",
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):
 #: ``frozen`` (the properties the user froze on the section) and

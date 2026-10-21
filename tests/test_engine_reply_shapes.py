@@ -68,3 +68,25 @@ def test_a_sorting_that_set_nothing_aside_draws_no_picture():
     weights[5:15, 5:15] = 0.0
     picture = _sorting_picture(ctx, frame, weights, "t")
     assert isinstance(picture, Image.Image) and captions == ["t"]
+
+
+def test_a_notice_names_each_flag_once_with_its_regions():
+    from langslice.plugin_api import flag_words
+
+    summary = {"flags": [
+        {"code": "FOLDS", "fold_fraction": 0.3},
+        {"code": "DISPLACEMENT_OUTSIZED", "max_mm": 3.0},
+        {"code": "REGION_COMPRESSED", "region": "CA1", "area_ratio": 0.4},
+        {"code": "REGION_EXPANDED", "region": "VL", "area_ratio": 2.5},
+        {"code": "REGION_COMPRESSED", "region": "DG", "area_ratio": 0.3},
+        {"code": "REGION_COMPRESSED", "region": "CA1", "area_ratio": 0.4},
+    ], "more_flags": 2}
+    assert flag_words(summary) == ("FOLDS, DISPLACEMENT_OUTSIZED, REGION_COMPRESSED (CA1, DG), "
+                                   "REGION_EXPANDED (VL), 2 more")
+    assert flag_words({"flags": []}) == "none"
+
+
+def test_two_calls_at_once_get_folders_of_their_own(tmp_path):
+    ctx = SimpleNamespace(work_dir=lambda: tmp_path)
+    first, second = _blocks.call_folder(ctx, "warp"), _blocks.call_folder(ctx, "warp")  # pyright: ignore[reportArgumentType]
+    assert first != second and first.is_dir() and second.is_dir()

@@ -54,7 +54,7 @@ def test_the_tools_a_model_is_offered():
         "position_sections", "interactive_transform", "mark_damage", "set_mask",
         "elastix_affine", "fireants_syn", "set_landmarks", "landmark_triangulation",
         "trace_borders",
-        "note", "undo", "redo", "submit",
+        "note", "undo", "redo", "restore_registration", "submit",
     ]
 
 
@@ -103,6 +103,10 @@ def test_the_gating_table(folder: Path):
     assert "set_mask" in has(tasks=["transform"]) and "set_mask" in has(tasks=["nonlinear"])
     assert "set_mask" not in has(tasks=["position"])
     assert "set_mask" not in has(tasks=["transform"], disabled=["set_mask"])
+    # A section's earlier registration goes back where a task writes one.
+    assert "restore_registration" in has(tasks=["transform"])
+    assert "restore_registration" in has(tasks=["nonlinear"])
+    assert "restore_registration" not in has(tasks=["position"])
     # Damage marking is a host switch.
     assert "mark_damage" in has(tasks=["position"])
     assert "mark_damage" not in has(tasks=["position"], disabled=["mark_damage"])

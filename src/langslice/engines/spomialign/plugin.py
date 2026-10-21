@@ -261,13 +261,6 @@ def _inputs(frame: Any, plane_image: np.ndarray, on_grid: bool,
             **extra}
 
 
-def _call_folder(ctx: ToolContext, transform: str) -> Path:
-    calls = ctx.work_dir() / "calls"
-    calls.mkdir(parents=True, exist_ok=True)
-    n = len([p for p in calls.iterdir() if p.is_dir()])
-    return calls / f"{n:04d}_{transform}"
-
-
 def _weights_missing() -> list[str]:
     hub = Path(os.environ.get("TORCH_HOME") or Path.home() / ".cache" / "torch")
     return [name for name in WEIGHTS if not (hub / "hub" / "checkpoints" / name).exists()]
@@ -476,7 +469,7 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
                       inputs, resolved))
     if not ready:
         return ToolResult({"rows": rows, "settings": settings})
-    folder = _call_folder(ctx, transform)
+    folder = _blocks.call_folder(ctx, transform)
     answers = _engine(config, folder, transform, matches, [item[2] for item in ready])
     pictures = []
     with ctx.writing():
@@ -544,7 +537,7 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
                     smoothness_um, matches, view)
 
     return [ToolSpec("spomialign", spomialign, handler, kind="write", group="Nonlinear",
-                     writes=("affine", "deformation"), limits={"sections": 4},
+                     writes=("affine", "deformation"), limits={"sections": 4}, long=True,
                      version="2",
                      meta={"method": "SPOmiAlign", "paper": "Wang et al. 2026, Brief Bioinform",
                            "commit": "c7f8b7a", "engine": "langslice.engines.spomialign"})]

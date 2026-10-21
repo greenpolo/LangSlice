@@ -135,6 +135,22 @@ wording; `registry.py` lists which.
 - `history.py` — `undo(job)` / `redo(job)`: `Stepped` (`done`, `moved`: the
   sections whose position the step changed, which the tool door's gates
   forget, `depth`); `moved_positions(before, state)`.
+- `registrations.py` — `restore_registration`'s operations over the job's
+  registration store (`job/registrations.py`): `listing(job, section)` ->
+  `Listed` (`held`, the number the section holds; `rows`: per registration
+  `registration`, `by`, `at`, the transform's kind, `deformation_steps`,
+  `held`, and `not_here` for one whose deformation was fitted at another
+  position or cutting angles; the registration the section holds is listed
+  first when it never was; no state written); `restore(job, section, number)`
+  -> `Restored` (`registration`, `replaced`, `written`: False when the section
+  holds it already): orientation, transform and deformation set as the entry
+  holds them, ONE undo step, the other sections untouched. Refused, nothing
+  written: `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGISTRATION` (with `registrations`,
+  the section's numbers), `SECTION_BUSY` / `FROZEN` (`check_frozen` with the
+  properties it would change: `orientation`, `affine`, `deformation`),
+  `REGISTRATION_ELSEWHERE` (its deformation's `linear_key` is not the one the
+  section would have: another position or cutting angles), `DEFORMATION_UNREADABLE`
+  (its record folder is gone). The verb `restore_registration`.
 - `submit.py` — `submit(job, summary=, notes=, interval_breaks=,
   traces=, workspace=, gate=)`: first every piece of the job's
   background work is waited for (`Job.background.wait_all`: under the door's
@@ -306,7 +322,8 @@ wording; `registry.py` lists which.
   medium; on top of the applied deformation; by *restrict_to*'s regions only) with
   `fit_deformable` and applies it as its own undo step, its notice saying so
   and that undo removes it while it is the latest step, with the
-  displacement, fold fraction and flags; with *options* the fit and the
+  displacement, fold fraction and flags (`core.deformation.flag_words`: each
+  code once, a region code with its regions); with *options* the fit and the
   trace are drawn and saved with the work. A section whose
   `inputs.section_inputs` (with the deformation) moved since the call, or
   whose trace was undone or made at another placement, gets nothing: a
@@ -385,7 +402,9 @@ wording; `registry.py` lists which.
 - `views.py` — `status(job)` (`StackStatus`: the status rows, angles,
   breaks as the filenames of the sections after each gap,
   `core.state.break_ids`; a row with properties the user froze carries
-  `frozen: [...]`, one the user gave a damage note `damage_by_user: true`).
+  `frozen: [...]`, one the user gave a damage note `damage_by_user: true`,
+  one holding a listed registration its number, `registration`; every write's
+  `changed` rows are these rows).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
   "Nonlinear", tool, limits)`, in the order every door lists them; `tool` is
@@ -405,7 +424,8 @@ wording; `registry.py` lists which.
   `position_sections` with the `position` task or the stack's cutting angles
   left to the agent (`transform.angles`, `positions_on`);
   `interactive_transform` and `elastix_affine` with `transform`; `fireants_syn`
-  with `nonlinear`; `trace_borders` with `nonlinear` and an image model (a
+  with `nonlinear`; `set_mask` and `restore_registration` with `transform` or
+  `nonlinear`; `trace_borders` with `nonlinear` and an image model (a
   task whose properties are all frozen on every section is not on,
   `JobSpec.has`; a tool that writes only properties frozen on every section,
   `ToolDef.writes`, is off: `JobSpec.switched_off`). A

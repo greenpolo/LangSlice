@@ -47,8 +47,11 @@ none of this in any declaration, reply or picture.
 
 `state.json` is the checkpoint; every write creates an undo step and rewrites
 the derived `registration.json` once, as the write's hold of the job folder's
-lock ends. Source images remain immutable. Processes
-share a file lock and reload changed state before calls. The agent CLI's calls
+lock ends. Each undo step also lists the registration it leaves each section
+in `sections/<name>/registrations.jsonl`, which `restore_registration` reads
+back. Source images remain immutable. Processes
+share a file lock and reload changed state before calls; a read never waits
+for the lock and reads the state as last saved. The agent CLI's calls
 on one job folder are answered by that folder's warm process
 (`doors/cli/warm.py`, [details](agents.md#the-warm-process)): it loads the
 libraries and the atlas once and forks a child per call, which runs the cold

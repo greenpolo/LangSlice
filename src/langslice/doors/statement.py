@@ -138,7 +138,8 @@ def opening_for_cli(folder: str, pictures: int | None,
                        spec, "plugins", None) else "") + ".", disabled),
         f"- Long tools ({', '.join(long_verbs(disabled, spec))}) can run with `--background`, "
         "which "
-        "answers at once with a run id; `wait ID` collects the answer.",
+        "answers at once with a run id; `wait ID` answers within 30 s with the run's "
+        "answer, or STILL_RUNNING while it runs (wait again).",
         "- Commands may run in parallel: each write holds the job folder's lock, and a "
         "long tool re-checks each section before it applies (STALE_INPUT when the "
         "section changed meanwhile: run it again for that section).",

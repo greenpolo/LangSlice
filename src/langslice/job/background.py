@@ -96,6 +96,9 @@ class Work:
     #: Each picture's index caption (empty when its drawing gave none).
     captions: list[str] = field(default_factory=list)
     result: dict[str, Any] = field(default_factory=dict)
+    #: The registration each section holds after its landing, by section
+    #: (:mod:`langslice.job.registrations`).
+    registrations: dict[str, int] = field(default_factory=dict)
     #: Whether :meth:`BackgroundWork.notices` handed the notice out.
     delivered: bool = False
 
@@ -109,12 +112,16 @@ class Work:
 
 
 def notice_text(work: Work, text: str) -> str:
-    """``"<id> <kind> of <sections> finished|failed: <text> Pictures #n, #m."``"""
+    """``"<id> <kind> of <sections> finished|failed: <text> Now registration
+    <n> of <section>. Pictures #n, #m."``"""
     sections = ", ".join(work.sections) or "the stack"
     verb = "finished" if work.status == DONE else "failed"
+    held = (" Now registration " + ", ".join(f"{number} of {section}" for section, number
+                                             in work.registrations.items()) + "."
+            if work.registrations else "")
     pictures = (" Pictures " + ", ".join(f"#{seq}" for seq in work.pictures) + "."
                 if work.pictures else "")
-    return f"{work.id} {work.kind} of {sections} {verb}: {text.strip()}{pictures}"
+    return f"{work.id} {work.kind} of {sections} {verb}: {text.strip()}{held}{pictures}"
 
 
 def in_worker() -> bool:
@@ -302,10 +309,12 @@ class BackgroundWork:
                 self._job.wait_image_job(section, None)
         outer = getattr(_WORKER, "landing", None)
         _WORKER.landing = entry.work.id
+        mark = len(self._job.registered)
         try:
-            with self._pictures(entry) as drawn:
+            with self._pictures(entry) as drawn, self._job.acting(entry.work.kind):
                 landed = entry.land()
                 drawn.extend(landed.pictures)
+            entry.work.registrations = self._job.registered_since(mark)
         except LockYielded:
             with self._lock:
                 entry.claimed = False

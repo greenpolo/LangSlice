@@ -161,6 +161,82 @@ def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, 
     agent.close()
 
 
+def test_a_read_never_waits_for_another_writer_and_sees_what_it_saved(capsys, images):
+    """A read while another job holds the folder's lock (a plugin tool that
+    holds it while it computes) answers at once from the state as it stands,
+    and the job's history stays whole: the next write's sync reads it back."""
+    import threading
+    import time
+
+    holder = langslice.open_job(images)
+    written, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with holder.job.writing():
+            holder.position_sections(sections=[{"id": ID2, "position_mm": 0.2}], view=False)
+            written.set()
+            release.wait(60)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    try:
+        assert written.wait(60)
+        started = time.monotonic()
+        code, envelope = cli(capsys, str(images), "status")
+        assert code == 0, envelope
+        rows = {row["id"]: row for row in envelope["result"]["rows"]}
+        assert rows[ID2]["position_mm"] == 0.2      # what the holder saved
+        code, envelope = cli(capsys, str(images), "look", "--mode", "section",
+                             "--sections", ID0)
+        assert code == 0, envelope
+        assert time.monotonic() - started < 60      # not the lock's 300 s
+    finally:
+        release.set()
+        thread.join()
+        holder.close()
+    # The history came through whole: undo takes the holder's write back.
+    code, envelope = cli(capsys, str(images), "undo")
+    assert code == 0, envelope
+    assert saved(images)[ID2].get("position_mm") is None
+
+
+def test_a_job_that_read_while_locked_out_writes_on_the_state_as_saved(images):
+    """A job (the agent's, the library's) that read another writer's state
+    while that writer held the lock (:meth:`Job.reading`) puts its own back
+    first when it next writes, so the other's write enters its history as
+    that job's step, not as an edit from outside."""
+    import threading
+
+    reader, writer = langslice.open_job(images), langslice.open_job(images)
+    written, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with writer.job.writing():
+            writer.position_sections(sections=[{"id": ID2, "position_mm": 0.2}], view=False)
+            written.set()
+            release.wait(60)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    try:
+        assert written.wait(60)
+        depth = len(reader.job.undo_stack)
+        reader.status()
+        assert reader.state.resolve(ID2).position_mm == 0.2
+        assert len(reader.job.undo_stack) == depth   # a read wrote no step
+    finally:
+        release.set()
+        thread.join()
+    reader.note(text="after the read")
+    # One step for the writer's write (read back with its history), one for the note.
+    assert len(reader.job.undo_stack) == depth + 2
+    reader.undo()
+    reader.undo()
+    assert reader.state.resolve(ID2).position_mm is None
+    reader.close()
+    writer.close()
+
+
 @pytest.mark.slow
 def test_cli_processes_writing_at_once_all_land(images):
     # Each commit waits 0.4 s inside its write: without the lock, writers
