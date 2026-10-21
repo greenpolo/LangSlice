@@ -186,9 +186,20 @@ class AffineFit:
     fitted: list[str] = field(default_factory=list)
 
 
+HAS_DEFORMATION = "HAS_DEFORMATION"
+
+
+def has_deformation_row(record: SliceState) -> dict[str, Any]:
+    """The row of a section refused a linear refit because it holds a deformation."""
+    return {"id": record.id, "status": "error", "error": HAS_DEFORMATION,
+            "message": f"{record.id} holds a deformation, which a new transform would "
+            "leave misplaced; undo the deformation first, or fit a warp on it."}
+
+
 def _fit_elastix(
     job: Job, workspace: Workspace, records: Sequence[SliceState], *, fit_atlas: str,
-    restrict_to: tuple[str, ...],
+    restrict_to: tuple[str, ...], section_image: str = "preprocessed", asked_atlas: str = "",
+    mask: str = "none", edges: bool = True,
 ) -> AffineFit:
     """Fit an Elastix affine per section and write each fit as its transform.
 
@@ -196,7 +207,14 @@ def _fit_elastix(
     *fit_atlas* (:func:`langslice.core.transform.fit_elastix`), by the
     *restrict_to* regions only (empty: every region); each section's marked
     regions are left out on their own (:func:`langslice.core.damage.exclusions`).
-    A section whose affine is frozen is refused (``FROZEN``), and so is a fit
+    The fit reads *section_image* (a channel of the section) with the section
+    mask *mask* by name (``"none"`` or one the section holds; a stale one is
+    that section's row, ``STALE_MASK``) and, with *edges*, the edge channel
+    pair; every ok row carries the ``inputs`` the fit read
+    (:class:`langslice.core.engine_inputs.InputsBlock`) and ``estimated``
+    (null: Elastix estimates no weighting).
+    A section that holds a deformation is refused (``HAS_DEFORMATION``), and
+    so is one whose affine is frozen, and so is a fit
     that turns over a section whose orientation is frozen
     (:func:`reverses_orientation`; its row says ``FROZEN``). Every fit that
     succeeded is
@@ -210,6 +228,8 @@ def _fit_elastix(
     the others.
     """
     from langslice.core.transform import fit_elastix
+    from langslice.ops import masks as ops_masks
+    from langslice.ops.deformable import inputs_block
 
     state = job.state
     rows: list[dict[str, Any]] = []
@@ -221,10 +241,19 @@ def _fit_elastix(
         if frozen is not None:
             rows.append(frozen)
             continue
+        if record.deformation:
+            rows.append(has_deformation_row(record))
+            continue
         kept, dropped = exclusions(record, restrict_to)
         try:
+            weights = ops_masks.section_weights(job, record, mask)
+        except Refused as refusal:
+            rows.append({"id": record.id, **refusal.payload()})
+            continue
+        try:
             outcome = fit_elastix(state, workspace, record, include=kept, exclude=dropped,
-                                  atlas_image=fit_atlas)
+                                  atlas_image=fit_atlas, channel=section_image, edges=edges,
+                                  section_weights=weights)
         except Exception as exc:  # nothing is written for this section
             logger.warning("elastix_affine failed for %s: %s", record.id, exc)
             rows.append({"id": record.id, "status": "error",
@@ -233,6 +262,11 @@ def _fit_elastix(
         rows.append(outcome)
         if outcome["status"] != "ok":
             continue
+        outcome["inputs"] = inputs_block(
+            state, workspace, record, section_image=section_image,
+            atlas_image=asked_atlas or fit_atlas, mask=mask, damage=dropped,
+            restrict_to=restrict_to, resolved=fit_atlas).payload()
+        outcome["estimated"] = None
         turn = _turn_deg(record.transform, outcome)
         if turn > LARGE_TURN_DEG:
             outcome["turn_deg"] = round(turn, 1)
@@ -258,49 +292,69 @@ def _fit_elastix(
 
 def elastix_fit(
     job: Job, workspace: Workspace, section: Any, *, restrict_to: Sequence[str] = (),
-    exclude: Sequence[str] = (), atlas_image: str = "template", mask: Any = None,
-    marked: bool = True,
+    exclude: Sequence[str] = (), atlas_image: str = "nissl", mask: str = "none",
+    marked: bool = True, section_image: str = "preprocessed", edges: bool = True,
 ) -> Any:
     """One Elastix affine of the section from its current placement, written
     nowhere (a script's ``job.context.fit_elastix``):
     :class:`langslice.core.transform.ElastixFit` (``params``, the six
-    normalized numbers; ``report``; ``engine``). *restrict_to* / *exclude*
+    normalized numbers; ``report``; ``engine``; ``inputs``, what it read).
+    *restrict_to* / *exclude*
     are region entries (checked, ``"CTX:left"`` for one side); *marked* adds
     the section's marked damage regions to *exclude*, as ``elastix_affine``
-    leaves them out; *mask* (bool, the fit grid's ``(H, W)``, True where the
-    section is compared) narrows the section's mask.
+    leaves them out; *mask* is ``"none"`` or the name of one of the section's
+    masks (:mod:`langslice.ops.masks`), its weights under 0.5 left out.
 
     Refused: ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``BAD_ARGS`` (an image
-    the atlas does not have), ``UNKNOWN_REGIONS``, ``NO_SIDES``,
+    the atlas does not have), ``UNKNOWN_CHANNEL``, ``UNKNOWN_MASK``,
+    ``STALE_MASK``, ``HAS_DEFORMATION``, ``UNKNOWN_REGIONS``, ``NO_SIDES``,
     ``REGION_TOO_SMALL``, ``FIT_FAILED``.
     """
+    from dataclasses import replace
+
+    from langslice.core import appearance
     from langslice.core.affine import IDENTITY_PARAMS
-    from langslice.core.atlas.images import atlas_images
+    from langslice.core.atlas.images import resolve_image
     from langslice.core.transform import RegionTooSmall, elastix_affine
-    from langslice.ops.deformable import region_entries
+    from langslice.ops import masks as ops_masks
+    from langslice.ops.deformable import inputs_block, region_entries
 
     record = job.state.resolve(section)
     if record is None:
         raise unknown_sections(job.state, [str(section)])
     if record.position_mm is None:
         raise Refused("NO_POSITION", message=f"{record.id} has no position yet.")
-    if atlas_image not in atlas_images(workspace.atlas):
-        raise Refused("BAD_ARGS", message=f"atlas_image is one of this atlas's images: "
-                      f"{list(atlas_images(workspace.atlas))}.")
+    if record.deformation:
+        raise Refused(HAS_DEFORMATION, message=has_deformation_row(record)["message"])
+    try:
+        resolved = resolve_image(workspace.atlas, str(atlas_image))
+    except ValueError as exc:
+        raise Refused("BAD_ARGS", message=str(exc)) from exc
+    known = appearance.channel_names(job.state, workspace, record)
+    if section_image not in known:
+        raise Refused("UNKNOWN_CHANNEL", channel=section_image, channels=list(known))
     include = region_entries(workspace, job.state, list(restrict_to))
     dropped = region_entries(workspace, job.state, list(exclude))
+    weights = ops_masks.section_weights(job, record, mask)
+    marks: tuple[str, ...] = ()
     if marked:
         include, marks = exclusions(record, include)
         dropped = tuple(dict.fromkeys((*dropped, *marks)))
     stored = (record.transform or {}).get("params")
     start = list(stored) if stored is not None and len(stored) == 6 else list(IDENTITY_PARAMS)
     try:
-        return elastix_affine(job.state, workspace, record, start, include=include,
-                              exclude=dropped, atlas_image=atlas_image, mask=mask)
+        fit = elastix_affine(job.state, workspace, record, start, include=include,
+                             exclude=dropped, atlas_image=resolved, channel=section_image,
+                             edges=edges, section_weights=weights)
     except RegionTooSmall as exc:
         raise Refused("REGION_TOO_SMALL", message=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
         raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
+    block = inputs_block(job.state, workspace, record, section_image=section_image,
+                         atlas_image=str(atlas_image),
+                         mask=str(mask or ops_masks.NO_MASK).strip(), damage=dropped,
+                         restrict_to=include, resolved=resolved)
+    return replace(fit, inputs=block.payload())
 
 
 # --- interactive_transform -------------------------------------------------------------
@@ -586,35 +640,45 @@ def elastix_affine(
     workspace: Workspace,
     sections: Sequence[str],
     restrict_to: Sequence[str] = (),
-    atlas_image: str = "template",
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
+    mask: str = "none",
+    edges: bool = True,
 ) -> AffineFit:
     """Fit an in-plane affine with Elastix, per section; ONE undo step for the fits.
 
-    Each section's current placement is refined against *atlas_image* (one of
-    the atlas's images, :func:`langslice.core.atlas.images.atlas_images`).
+    Each section's current placement is refined by matching its channel
+    *section_image* against *atlas_image* (one of
+    the atlas's images, :func:`langslice.core.atlas.images.atlas_images`;
+    ``nissl`` is its Nissl image where it has one, else its template), with
+    the section mask *mask* by name (``"none"`` or one each section holds) and,
+    with *edges*, the edge channel pair.
     *sections* are one or more filenames
     (``StackState.resolve``).
     *restrict_to* fits by those atlas regions only (sides allowed; empty:
     every region). Each section's marked damage regions are left out
-    automatically (:func:`langslice.core.damage.exclusions`).
+    automatically (:func:`langslice.core.damage.exclusions`). A section that
+    holds a deformation is that section's row ``HAS_DEFORMATION``.
 
     Every ok row of a call with *restrict_to* carries ``restrict_box``: the
     regions' bounding box on that section's canvas as ``[x0, y0, x1, y1]``
     fractions (``core.canvas.zoom_box``'s zoom), so a later picture can zoom
     on them; absent when the regions are not in that plane. Refused (nothing
     fitted): ``UNKNOWN_SLICE_IDS``, ``BAD_ARGS`` (``atlas_image`` not one of the
-    atlas's images, a region that is not text, no section named).
+    atlas's images, a region that is not text, no section named),
+    ``UNKNOWN_CHANNEL``, ``UNKNOWN_MASK``.
     """
-    from langslice.core.atlas.images import atlas_images
+    from langslice.core.atlas.images import resolve_image
+    from langslice.ops.deformable import refuse_unknown_inputs
 
     if not sections:
         raise Refused("BAD_ARGS", message="sections must name one or more sections")
 
-    image = str(atlas_image).strip()
-    offered = atlas_images(workspace.atlas)
-    if image not in offered:
-        raise Refused("BAD_ARGS", message=f"atlas_image is one of this atlas's images: "
-                      f"{list(offered)}", atlas_image=list(offered))
+    asked = str(atlas_image or "nissl").strip()
+    try:
+        image = resolve_image(workspace.atlas, asked)
+    except ValueError as exc:
+        raise Refused("BAD_ARGS", message=str(exc)) from exc
     if any(not isinstance(name, str) for name in restrict_to):
         raise Refused("BAD_ARGS", message="restrict_to lists atlas regions")
     records = []
@@ -623,8 +687,11 @@ def elastix_affine(
         if record is None:
             raise unknown_sections(job.state, [str(ref)])
         records.append(record)
+    channel = refuse_unknown_inputs(job, workspace, records, section_image, mask)
+    label = str(mask or "none").strip()
     result = _fit_elastix(job, workspace, records, fit_atlas=image,
-                          restrict_to=tuple(restrict_to))
+                          restrict_to=tuple(restrict_to), section_image=channel,
+                          asked_atlas=asked, mask=label, edges=bool(edges))
     if restrict_to:
         for row in result.rows:
             record = job.state.by_id(str(row.get("id")))

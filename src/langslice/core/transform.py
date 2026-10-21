@@ -128,9 +128,10 @@ def _fit_payload(
 
 # --- the Elastix affine ----------------------------------------------------
 
-#: The atlas image the Elastix affine fits the section to: the ARA
-#: template's pial outline lies on a fluorescent section's bright rim.
-ELASTIX_ATLAS_IMAGE = "template"
+#: The atlas image the Elastix affine fits the section to: ``nissl``, the
+#: atlas's Nissl image where it has one, else its template
+#: (:func:`langslice.core.atlas.images.default_image`).
+ELASTIX_ATLAS_IMAGE = "nissl"
 #: Working grid of the Elastix affine (``core.deformable.settings.DETAIL``: 20 um
 #: in the adult mouse, times the atlas's brain scale).
 ELASTIX_DETAIL = "standard"
@@ -166,15 +167,15 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
 
 def elastix_settings(
     include: Sequence[str] = (), exclude: Sequence[str] = (),
-    atlas_image: str = ELASTIX_ATLAS_IMAGE, brain_scale: float = 1.0,
+    atlas_image: str = ELASTIX_ATLAS_IMAGE, brain_scale: float = 1.0, edges: bool = True,
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
     The section's preprocessed channel against *atlas_image* (one of the
     atlas's images, :func:`langslice.core.atlas.images.atlas_images`; default
     :data:`ELASTIX_ATLAS_IMAGE`: ``elastix_affine``'s ``atlas_image``),
-    mutual information plus the edge channel (the Elastix stain fit's own
-    pairing). *include* becomes the restricted ``structures`` (the regions
+    mutual information plus, with *edges*, the edge channel (the Elastix stain
+    fit's own pairing). *include* becomes the restricted ``structures`` (the regions
     plus 300 um times the atlas's *brain_scale*), *exclude* the excluded
     regions; one-sided entries such as ``"CTX:left"`` resolve as in every
     deformable fit.
@@ -185,7 +186,7 @@ def elastix_settings(
     return FitSettings(
         engine="elastix", detail=ELASTIX_DETAIL,  # type: ignore[arg-type]
         atlas_image=atlas_image,  # type: ignore[arg-type]
-        section_image="stain", stain_metric="mutual_information", stain_edges=True,
+        section_image="stain", stain_metric="mutual_information", stain_edges=bool(edges),
         exclude=tuple(exclude), structures=tuple(include),
         neighbourhood_um=neighbourhood_um_for(brain_scale),
     )
@@ -208,6 +209,9 @@ class ElastixFit:
     grid_image: Image.Image
     fit_image: Image.Image
     engine: dict[str, Any]
+    #: What the fit read, named (``core.engine_inputs.InputsBlock.payload()``);
+    #: set by the operation that ran it (``ops.transforms.elastix_fit``).
+    inputs: dict[str, Any] | None = None
 
 
 def elastix_affine(
@@ -219,7 +223,9 @@ def elastix_affine(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
-    mask: np.ndarray | None = None,
+    channel: str = "preprocessed",
+    edges: bool = True,
+    section_weights: np.ndarray | None = None,
 ) -> ElastixFit:
     """Refine one section's placement with an Elastix intensity affine.
 
@@ -227,14 +233,15 @@ def elastix_affine(
     scale its pictures draw it, :func:`calibrate`) and never searches from
     scratch: the atlas plane is placed there on the deformable fit grid
     (``deformation.fit_grid``), the
-    section's preprocessed channel (:func:`langslice.core.deformation.stain_image`)
-    and the placed atlas template are prepared
+    section's *channel* (:func:`langslice.core.deformation.stain_image`)
+    and the placed atlas image are prepared
     exactly as a deformable stain fit prepares them (section and atlas masks,
     excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
     and :func:`langslice.core.deformable.engines.run_elastix_affine` fits an affine
-    from the identity. *mask* (bool, the fit grid's ``(H, W)``, True where
-    the section is compared) narrows the section's mask further (a
-    script's own). Raises on a placement, region or engine failure.
+    from the identity. *section_weights* (float, the fit grid's ``(H, W)``;
+    a section mask's weights) narrow the section's mask: pixels under 0.5 are
+    left out. *edges* False drops the edge channel pair. Raises on a placement,
+    region or engine failure.
     """
     from dataclasses import replace
 
@@ -244,16 +251,14 @@ def elastix_affine(
 
     start = [float(v) for v in start_params]
     grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
-    image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
+    image, look = deformation.stain_image(ctx, state, grid, channel)
     width, height = grid.image.size
-    prepared = prepare_fit(image, ctx.atlas, grid.placement,
-                           elastix_settings(include, exclude, atlas_image, ctx.brain_scale))
+    prepared = prepare_fit(
+        image, ctx.atlas, grid.placement,
+        elastix_settings(include, exclude, atlas_image, ctx.brain_scale, edges),
+        section_weights=section_weights)
     _check_elastix_region(prepared, ctx.atlas, include)
     assert prepared.inputs is not None  # prepare_fit always builds engine inputs
-    if mask is not None:
-        from langslice.core.deformable.fit import with_section_mask
-
-        with_section_mask(prepared, mask)
     result = run_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.
@@ -291,6 +296,9 @@ def fit_elastix(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
+    channel: str = "preprocessed",
+    edges: bool = True,
+    section_weights: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """``elastix_affine`` for one positioned section.
 
@@ -321,7 +329,8 @@ def fit_elastix(
             record.yaw_deg,
         )
         fit = elastix_affine(state, ctx, record, start,
-                             include=include, exclude=exclude, atlas_image=atlas_image)
+                             include=include, exclude=exclude, atlas_image=atlas_image,
+                             channel=channel, edges=edges, section_weights=section_weights)
     except RegionTooSmall as error:
         return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
                 "message": render(str(error), ctx.spec.switched_off)}

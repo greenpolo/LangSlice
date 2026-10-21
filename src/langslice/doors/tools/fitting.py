@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from langslice.core.atlas.images import atlas_images
+from langslice.core.atlas.images import resolve_image
 from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
 from langslice.doors.tools.door import Door, as_list, pictured
@@ -40,15 +40,16 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return bool(view) or bool(spec.force_view)
 
     def atlas_refusal(atlas_image: str) -> dict[str, Any] | None:
-        kind = str(atlas_image or "template").strip()
-        offered = list(atlas_images(ctx.atlas))
-        if kind not in offered:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": f"{job.state.atlas} has no atlas image {kind!r}; its images: "
-                    f"{', '.join(offered)}.", "atlas_image": offered}
+        kind = str(atlas_image or "nissl").strip()
+        try:
+            resolve_image(ctx.atlas, kind)
+        except ValueError as exc:
+            return {"status": "error", "error": "BAD_ARGS", "message": str(exc)}
         return None
 
-    def elastix_affine(sections: list[str], restrict_to: list[str], atlas_image: str,
+    def elastix_affine(sections: list[str], restrict_to: list[str],
+                       section_image: str = "preprocessed", atlas_image: str = "nissl",
+                       mask: str = "none", edges: bool = True,
                        view: bool = True) -> dict[str, Any]:
         try:
             regions = ops_deformable.region_entries(ctx, job.state, as_list(restrict_to))
@@ -66,8 +67,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         except Refused as refusal:
             return refusal.payload()
         try:
-            done = ops_transforms.elastix_affine(job, ctx, named, regions,
-                                                 str(atlas_image or "template"))
+            done = ops_transforms.elastix_affine(
+                job, ctx, named, regions, str(section_image or "preprocessed"),
+                str(atlas_image or "nissl"), str(mask or "none"), bool(edges))
         except Refused as refusal:
             return refusal.payload()
         fits = [row for row in done.rows if row.get("status") == "ok"]
@@ -81,6 +83,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         result: dict[str, Any] = {
             "status": "ok" if fits else "error",
             **({} if fits else {"error": "NOTHING_FITTED"}),
+            "settings": {
+                "section_image": str(section_image or "preprocessed"),
+                "atlas_image": str(atlas_image or "nissl"), "mask": str(mask or "none"),
+                "restrict_to": list(regions), "edges": bool(edges)},
             "results": done.rows,
         }
         if not fits or not shows(view):
@@ -96,13 +102,17 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                                      zooms=zooms, highlight=regions)
         return pictured(result, shown)
 
-    def fireants_syn(sections: list[str], restrict_to: list[str], atlas_image: str,
-                 stiffness: str, view: bool = True) -> dict[str, Any]:
+    def fireants_syn(sections: list[str], restrict_to: list[str],
+                     section_image: str = "preprocessed", atlas_image: str = "nissl",
+                     mask: str = "none", smoothness_um: float = 80.0,
+                     metric: str = "mutual_information", edges: bool = True,
+                     detail: str = "standard", view: bool = True) -> dict[str, Any]:
         try:
             check_section_count(job, "fireants_syn", len(as_list(sections)))
-            done = ops_deformable.fireants_syn(job, ctx, as_list(sections),
-                                           restrict_to=as_list(restrict_to),
-                                           atlas_image=atlas_image, stiffness=stiffness)
+            done = ops_deformable.fireants_syn(
+                job, ctx, as_list(sections), restrict_to=as_list(restrict_to),
+                section_image=section_image, atlas_image=atlas_image, mask=mask,
+                smoothness_um=smoothness_um, metric=metric, edges=edges, detail=detail)
         except Refused as refusal:
             return refusal.payload()
         rows = done.rows
@@ -110,6 +120,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         result: dict[str, Any] = {
             "status": "ok" if ok else "error",
             **({} if ok else {"error": "NOTHING_FITTED"}),
+            "settings": done.settings,
             "results": rows,
             **({"changed": door.changed(done.written)["changed"]} if done.written else {}),
         }

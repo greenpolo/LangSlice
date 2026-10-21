@@ -311,13 +311,13 @@ def build_job_statement(
             "alignment.", off
         ))
 
-    if method and not spec.off("set_preprocessed_channel_properties"):
+    if method and not spec.off("set_channel"):
         # First in the Method: the channel every later step looks at and fits.
         method.insert(
             2,
             "- Before placing or fitting a section, make its counterstain the channel "
             "you register on: set the preprocessed channel "
-            "(`set_preprocessed_channel_properties`) to the counterstain alone, "
+            "(`set_channel`, name \"preprocessed\") to the counterstain alone, "
             "enhanced, and judge alignment and run fits on it."
         )
 
@@ -355,9 +355,14 @@ def build_job_statement(
                if "trace_borders" in tool_names else "")
             + "; undo a fit that does not improve the alignment"
             + render("[[?fireants_syn  and fit that section again with different `fireants_syn` "
-                     "settings, such as another stiffness or another atlas image]]", off)
+                     "settings, such as another smoothness_um or another atlas image]]", off)
             + "."
         )
+
+    if any(name in tool_names for name in ("elastix_affine", "fireants_syn")):
+        if not method:
+            method = ["", "Method:"]
+        method.append("- A fit's reply names the channel, atlas image and mask it used.")
 
     return "\n".join(
         [

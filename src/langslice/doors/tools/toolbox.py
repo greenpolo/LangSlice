@@ -71,7 +71,7 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
         return every
     if name == "position_sections" and not sections:
         return every  # the cutting angles alone: every section
-    if name == "set_preprocessed_channel_properties" and not sections:
+    if name == "set_channel" and not sections:
         return every
     if name == "look" and not sections and args.get("mode") != "atlas":
         return every
