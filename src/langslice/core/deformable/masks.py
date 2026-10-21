@@ -1,23 +1,20 @@
 """Where each image counts: the masks every fit is given.
 
-Two kinds of fit, two kinds of mask:
+Two kinds of mask:
 
-- FOOTPRINT masks (:func:`footprint_masks`): the Elastix affine, every
-  fit of traced lines and the first run of every stain fit. Section (fixed)
+- FOOTPRINT masks (:func:`footprint_masks`): every fit. Section (fixed)
   mask = placed atlas footprint widened by :data:`MASK_MARGIN_MM`; atlas
   (moving) mask = the same footprint minus the excluded regions and an
-  :data:`EXCLUSION_MARGIN_MM` margin around them (the damage zone).
-- EM masks (:func:`em_masks`): a stain fit, whole-section or restricted to
-  regions. It is fitted once with the footprint masks; :func:`em_weights` then asks, pixel by pixel,
-  whether the section matches the warped atlas image, is an artifact or is
-  background, and the fit is run again from the same start with section mask
-  = P(match) >= :data:`EM_MATCH_THRESHOLD` over the whole grid and atlas mask
-  = everything but the damage zone. Holes, tears, folds and debris drop out
-  of the metric; the footprint no longer limits where tissue may go. A
-  restricted fit estimates the classes over the whole section (the EM needs
-  tissue and background to learn what each looks like, and a fit's own
-  neighbourhood has too little of either) and then keeps both masks inside
-  the regions' neighbourhood, as its footprint masks were.
+  :data:`EXCLUSION_MARGIN_MM` margin around them (the damage zone). The
+  damage zone is atlas-side and always applied; it never masks the section.
+- The EM SORTING (:func:`em_weights`), made by ``set_mask`` through
+  :func:`langslice.core.section_masks.em_sorting` and saved per section: it
+  asks, pixel by pixel, whether the section matches the atlas image placed
+  at the section's registration, is an artifact or is background. A fit
+  given such a mask as its section mask compares only the pixels whose
+  P(match) is at least :data:`EM_MATCH_THRESHOLD`
+  (:func:`langslice.core.deformable.fit.prepare_fit`, ``section_weights``);
+  no fit makes one by itself.
 
 Every distance here is the adult mouse brain's; a fit multiplies the
 anatomy-sized ones (the margins, the EM's contrast block and background
@@ -119,8 +116,13 @@ EM_PRIORS = (0.9, 0.05, 0.05)
 #: Background is sampled this far outside the placed footprint (adult mouse;
 #: times the brain scale).
 EM_BACKGROUND_DISTANCE_UM = 500.0
-#: Section pixels whose P(match) is below this leave the second fit's metric.
+#: Section pixels whose P(match) is below this are left out of a fit's metric
+#: (the weights are thresholded here when a fit takes them).
 EM_MATCH_THRESHOLD = 0.5
+
+
+#: The keys of a sorting (``em_weights(sorting=)``, ``set_mask``'s ``sorting``).
+SORTING_KEYS = ("match_sd", "background_sd", "artifact_sd", "background_mean", "artifact_mean")
 
 
 def block_px(scale: float = 1.0) -> int:
@@ -169,7 +171,7 @@ def _block_linear(J: np.ndarray, image: np.ndarray, weight: np.ndarray, block: i
 
 def em_weights(
     J: np.ndarray, warped_atlas: np.ndarray, footprint: np.ndarray, spacing_mm: float,
-    scale: float = 1.0,
+    scale: float = 1.0, sorting: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Per-pixel class weights on the working grid.
 
@@ -180,7 +182,16 @@ def em_weights(
     ``WA`` (artifact), ``WB`` (background), ``predicted`` (the contrast map's
     prediction of the section) on that grid, and ``params`` (the class means,
     widths and priors used).
+
+    *sorting* overrides what is otherwise estimated from the image, in the
+    section image's own brightness (0-1): ``match_sd``, ``background_sd``,
+    ``artifact_sd`` (the three class widths) and ``background_mean``,
+    ``artifact_mean`` (the two fixed class means). Any may be omitted.
     """
+    given = {k: float(v) for k, v in (sorting or {}).items()}
+    unknown = sorted(set(given) - set(SORTING_KEYS))
+    if unknown:
+        raise ValueError(f"Unknown sorting key(s) {unknown}; the keys are {list(SORTING_KEYS)}")
     full = J.shape
     k = max(spacing_mm * 1000.0 / EM_GRID_UM, 1e-3)
     small = (max(2, round(full[1] * k)), max(2, round(full[0] * k)))
@@ -192,6 +203,12 @@ def em_weights(
     Ic = (Ic - lo) / max(float(hi - lo), 1e-6)
     sd = float(Jc.std())
     sigma = sd * EM_SIGMA_SCALE
+    sigmaM = given.get("match_sd", sigma)
+    sigmaB = given.get("background_sd", sigma)
+    sigmaA = given.get("artifact_sd", sigma)
+    for name, width in (("match_sd", sigmaM), ("background_sd", sigmaB), ("artifact_sd", sigmaA)):
+        if not width > 0:
+            raise ValueError(f"{name} must be above 0")
     r = max(1, round(EM_BACKGROUND_DISTANCE_UM * scale / EM_GRID_UM))
     far = ~(cv2.dilate(fp.astype(np.uint8), cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0)
@@ -205,17 +222,18 @@ def em_weights(
         muB = float(np.median(Jc[far]))
     else:
         muB = float(np.percentile(Jc, 0.1 if np.median(inside) > Jc.mean() else 99.9))
+    muB = given.get("background_mean", muB)
     qlo, qhi = np.percentile(inside, (0.1, 99.9))
-    muA = float(qlo if abs(qlo - muB) > abs(qhi - muB) else qhi)
+    muA = given.get("artifact_mean", float(qlo if abs(qlo - muB) > abs(qhi - muB) else qhi))
     pM, pA, pB = EM_PRIORS
     WM = np.full(Jc.shape, pM)
     f = Jc
     block = block_px(scale)
     for _ in range(EM_ITERATIONS):
         f = _block_linear(Jc, Ic, WM, block)  # M step: the contrast map
-        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigma ** 2) / sigma  # E step
-        lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sigma ** 2) / sigma
-        lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sigma ** 2) / sigma
+        lM = pM * np.exp(-(Jc - f) ** 2 / 2 / sigmaM ** 2) / sigmaM  # E step
+        lA = pA * np.exp(-(Jc - muA) ** 2 / 2 / sigmaA ** 2) / sigmaA
+        lB = pB * np.exp(-(Jc - muB) ** 2 / 2 / sigmaB ** 2) / sigmaB
         total = lM + lA + lB
         total = total + total.max() * 1e-12
         WM, WA, WB = lM / total, lA / total, lB / total
@@ -225,50 +243,6 @@ def em_weights(
 
     return {
         "WM": up(WM), "WA": up(WA), "WB": up(WB), "predicted": up(f),
-        "params": {"muA": muA, "muB": muB, "sigmaM": sigma, "sigmaA": sigma, "sigmaB": sigma,
+        "params": {"muA": muA, "muB": muB, "sigmaM": sigmaM, "sigmaA": sigmaA, "sigmaB": sigmaB,
                    "priors": list(EM_PRIORS)},
     }
-
-
-@dataclass(frozen=True)
-class EMContext:
-    """What a stain fit's second run needs besides the engine inputs, on the
-    working grid: the whole placed *footprint* (with its margin; the EM's
-    tissue and background are told apart by it, so a restricted fit passes
-    the unrestricted one), the *damage_zone*, for a region-restricted
-    fit the regions' *neighbourhood* (None: the whole section), the
-    atlas's brain *scale*, and *section_keep*: section pixels a caller's own
-    mask keeps in the comparison (None: every pixel; a script's
-    ``fit_fireants(mask=)``), which the EM mask never adds back."""
-
-    footprint: np.ndarray
-    damage_zone: np.ndarray
-    neighbourhood: np.ndarray | None = None
-    scale: float = 1.0
-    section_keep: np.ndarray | None = None
-
-
-def em_masks(
-    J: np.ndarray, warped_atlas: np.ndarray, context: EMContext, spacing_mm: float,
-) -> tuple[Masks, dict[str, Any]]:
-    """The second fit's masks from the first fit's warped atlas image, and the
-    EM's facts (``left_out``: the section pixels the mask drops from the fit's
-    scope, the whole section or the neighbourhood; ``params``;
-    ``left_out_in_footprint``: their fraction of the placed footprint in that
-    scope)."""
-    weights = em_weights(J, warped_atlas, context.footprint, spacing_mm, context.scale)
-    fixed = weights["WM"] >= EM_MATCH_THRESHOLD
-    if context.section_keep is not None:
-        fixed &= context.section_keep
-    moving = ~context.damage_zone
-    scope = context.footprint if context.neighbourhood is None else (
-        context.footprint & context.neighbourhood)
-    left_out = ~fixed
-    if context.neighbourhood is not None:
-        fixed, moving = fixed & context.neighbourhood, moving & context.neighbourhood
-        left_out = left_out & context.neighbourhood
-    facts = {
-        "left_out": left_out, "params": weights["params"],
-        "left_out_in_footprint": float(left_out[scope].mean()) if scope.any() else 0.0,
-    }
-    return Masks(fixed=fixed, moving=moving, damage_zone=context.damage_zone), facts
