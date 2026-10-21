@@ -13,7 +13,7 @@ dependencies = [
     "pydantic>=2",
     "litellm>=1.83.3",
     "openai",
-    "brainglobe-atlasapi",
+    "brainglobe-atlasapi>=3.0.1",
     "brainglobe-space",
     "numpy",
     "opencv-python-headless",

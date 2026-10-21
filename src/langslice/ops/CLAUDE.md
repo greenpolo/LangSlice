@@ -117,9 +117,9 @@ wording; `registry.py` lists which.
   `NO_SORTING`). `UNKNOWN_CHANNEL`, `UNKNOWN_MASK` (delete), `BAD_ARGS`,
   `NO_POSITION`, `FIT_FAILED`. `read` / `section_weights(job, record, name)`
   are what a fit reads: `"none"` gives None, a name gives the weights
-  (`UNKNOWN_MASK`, `STALE_MASK` when the section's registration digest,
-  `core.section_masks.registration_digest`, which `ops.inputs.section_inputs(...,
-  deformation=True)` returns too, differs from the one it was made at). The
+  (`UNKNOWN_MASK`, `STALE_MASK` when the section's orientation, the grid
+  digest `core.section_masks.grid_digest`, differs from the one it was made on; a
+  changed registration only marks it `earlier_registration`). The
   verb `set_mask`.
 - `notes.py` — `add_note(job, text)`.
 - `files.py` — read-only file access over the job folder for the native agent

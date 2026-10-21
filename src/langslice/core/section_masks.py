@@ -82,7 +82,9 @@ class _Layout(Protocol):
 @dataclass(frozen=True, eq=False)
 class MaskView:
     """A mask as a fit reads it: *weights* float32 on the fit grid, *stale*
-    when the section's registration changed since it was made."""
+    when the section's pixel grid changed since it was made (it was turned or
+    flipped), *earlier_registration* when its registration (placement,
+    deformation, appearance, damage) changed since: information, never a refusal."""
 
     name: str
     kind: str
@@ -90,6 +92,7 @@ class MaskView:
     stale: bool
     params: dict[str, Any]
     left_out: float
+    earlier_registration: bool = False
 
 
 # --- the registration a mask was made at -----------------------------------------------
@@ -116,15 +119,31 @@ def registration_digest(state: StackState, record: SliceState) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def grid_digest(record: SliceState) -> str:
+    """A digest of what gives a mask's pixels their meaning: the section and how
+    its image is oriented (the mask lives on that oriented grid), nothing about
+    where the atlas sits."""
+    held = {"id": record.id, "rotation_deg": record.rotation_deg, "flip": bool(record.flip)}
+    return hashlib.sha256(json.dumps(held, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def is_stale(state: StackState, record: SliceState, entry: dict[str, Any]) -> bool:
-    """Whether the registration *entry* was made at differs from the current one."""
-    return str(entry.get("inputs", "")) != registration_digest(state, record)
+    """Whether the section's pixel grid differs from the one *entry* was made on."""
+    return str(entry.get("inputs", "")) != grid_digest(record)
+
+
+def made_earlier(state: StackState, record: SliceState, entry: dict[str, Any]) -> bool:
+    """Whether the section's registration differs from the one *entry* was made at."""
+    return str(entry.get("registration", "")) != registration_digest(state, record)
 
 
 def mask_rows(state: StackState, record: SliceState) -> list[dict[str, Any]]:
-    """``[{name, kind, stale}]`` of *record*'s masks (the status rows)."""
+    """``[{name, kind, stale, earlier_registration}]`` of *record*'s masks (the
+    status rows)."""
     return [{"name": name, "kind": str(entry.get("kind")),
-             "stale": is_stale(state, record, entry)} for name, entry in record.masks.items()]
+             "stale": is_stale(state, record, entry),
+             "earlier_registration": made_earlier(state, record, entry)}
+            for name, entry in record.masks.items()]
 
 
 # --- making a sorting ------------------------------------------------------------------
@@ -237,6 +256,7 @@ def write_mask(
     """Save *weights* as *record*'s mask *name* and return its state entry
     (also set as ``record.masks[name]``). *meta* carries ``kind`` (``em`` or
     ``fit``), ``channel``, ``atlas_image`` (resolved), ``params``, ``inputs``
+    (:func:`grid_digest` at creation), ``registration``
     (:func:`registration_digest` at creation) and ``left_out``. ``ValueError``
     for a bad name, kind or weights."""
     if not NAME_PATTERN.match(name) or name in RESERVED_NAMES:
@@ -263,6 +283,7 @@ def write_mask(
         "kind": kind, "channel": str(meta.get("channel", "")),
         "atlas_image": str(meta.get("atlas_image", "")),
         "params": dict(meta.get("params") or {}), "inputs": str(meta.get("inputs", "")),
+        "registration": str(meta.get("registration", "")),
         "file": layout.relative(path), "left_out": float(meta.get("left_out", 0.0)),
     }
     record.masks[name] = entry
@@ -282,6 +303,7 @@ def read_mask(layout: _Layout, state: StackState, record: SliceState, name: str)
         raise ValueError(f"{record.id}'s mask {name!r} cannot be read ({path}): {exc}") from exc
     return MaskView(name=name, kind=str(entry["kind"]), weights=weights,
                     stale=is_stale(state, record, entry), params=dict(entry.get("params") or {}),
+                    earlier_registration=made_earlier(state, record, entry),
                     left_out=float(entry.get("left_out", 0.0)))
 
 

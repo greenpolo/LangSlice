@@ -731,7 +731,8 @@ def _draw_masks(
                 record.rotation_deg, record.flip), dtype=np.float32)
             shown = _draw_scalar(picture, mapper, Layer.scalar(
                 raster, frame="section_px", level=0.5, name=name), _colour(index))
-            entry.update(kind=view.kind, stale=bool(view.stale), drawn=True, shown=shown)
+            entry.update(kind=view.kind, stale=bool(view.stale), drawn=True, shown=shown,
+                         earlier_registration=bool(view.earlier_registration))
         except KeyError:
             entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
                          "set_mask")
