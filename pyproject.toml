@@ -95,10 +95,10 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "layers"
-name = "Layers: hosts > doors : agent > ops > job > core"
+name = "Layers: hosts, engines > doors : agent > ops > job > core"
 type = "layers"
 containers = ["langslice"]
-layers = ["hosts", "doors : agent", "ops", "job", "core"]
+layers = ["hosts : engines", "doors : agent", "ops", "job", "core"]
 
 [[tool.importlinter.contracts]]
 id = "no-models-below-doors"
