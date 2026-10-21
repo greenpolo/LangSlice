@@ -222,6 +222,22 @@ def test_preprocessed_recipe_returns_before_and_after_pictures(tmp_path: Path):
     assert not np.array_equal(default, changed)
 
 
+def test_a_new_derived_channel_has_no_before_and_status_says_where_it_exists(tmp_path: Path):
+    state, _ctx, box = _rgb(tmp_path)
+    result = _tool(box, "set_channel")("inverted", sections=["s0.png"], invert=True)
+    assert result["status"] == "ok", result
+    (only,) = result["pictures"]  # no "default appearance" before for a channel that is new
+    assert "after this call" in only["caption"]
+    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
+    entry = _tool(box, "status")()["derived_channels"]["inverted"]
+    assert entry["stack"].startswith("none") and entry["sections"] == ["s0.png"]
+    # Changing it again has a real before; so does the existing preprocessed channel.
+    again = _tool(box, "set_channel")("inverted", sections=["s0.png"], invert=True, gamma=0.5)
+    assert len(again["pictures"]) == 2
+    default = _tool(box, "status")()["derived_channels"]["preprocessed"]
+    assert default["stack"] == "default"
+
+
 def test_a_section_recipe_wins_and_a_reset_returns_to_the_stack(tmp_path: Path):
     state, _, box = _rgb(tmp_path)
     tool = _tool(box, "set_channel")

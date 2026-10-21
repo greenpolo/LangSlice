@@ -100,6 +100,17 @@ def default_image(atlas: Any) -> str:
     return TEMPLATE
 
 
+def nissl_note(atlas: Any, asked: str) -> str | None:
+    """What the reply says when *asked* is the default :data:`NISSL` and the atlas's template IS
+    a Nissl (``ccfv3augmented_mouse_25um``): the request was honoured, not replaced. None for
+    any other name or atlas."""
+    if (asked == NISSL and default_image(atlas) == TEMPLATE
+            and getattr(atlas, "atlas_name", "") == AUGMENTED_ATLAS):
+        return ("your default \"nissl\" request was honoured: this atlas's template is a "
+                "Nissl (the Blue Brain averaged Nissl)")
+    return None
+
+
 def resolve_image(atlas: Any, name: str) -> str:
     """*name* as a real image name of *atlas*: :data:`NISSL` becomes
     :func:`default_image`; any other name must be one of the atlas's images.

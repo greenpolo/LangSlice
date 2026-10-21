@@ -179,7 +179,7 @@ Returns:
     The settings or recipe now in force, the channels there are, and for
     a derived channel, up to 4 of the sections (spread over the stack when
     none are named) two pictures each: the channel before this call, then
-    after it.
+    after it; a channel this call creates has no before, so one picture each.
 
 
 ## grep_atlas

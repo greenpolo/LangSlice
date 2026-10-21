@@ -185,7 +185,7 @@ def test_an_elastix_failure_is_refused_cleanly(tmp_path: Path, atlas, monkeypatc
 
     monkeypatch.setattr(engines, "run_elastix_affine", broken)
     result = _tool(box, "elastix_affine")([ID])
-    assert result["status"] == "error" and result["error"] == "NOTHING_FITTED"
+    assert result["status"] == "error" and result["error"] == "FIT_FAILED"
     row = result["results"][0]
     assert row["error"] == "FIT_FAILED" and "non-finite" in row["message"]
     assert state.slices[0].transform is None

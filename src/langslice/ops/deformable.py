@@ -40,6 +40,7 @@ from langslice.core.engine_inputs import (
     EstimatedBlock,
     InputsBlock,
     damage_block,
+    mask_block,
     recipe_digest,
 )
 from langslice.core.handoff import digest
@@ -113,13 +114,13 @@ def inputs_block(
     digest, the atlas image as asked and as resolved, the section mask
     (``"none"`` or its name, kind and staleness), the atlas-side damage and
     the regions the fit was restricted to."""
-    from langslice.core.atlas.images import resolve_image
+    from langslice.core.atlas.images import nissl_note, resolve_image
 
     entry = (record.masks or {}).get(mask) if mask != ops_masks.NO_MASK else None
-    held: str | dict[str, Any] = ops_masks.NO_MASK
+    held = mask_block()
     if mask != ops_masks.NO_MASK:
-        held = {"name": mask, "kind": (entry or {}).get("kind"), "stale": False,
-                "earlier_registration": ops_masks.made_earlier(state, record, mask)}
+        held = mask_block(mask, (entry or {}).get("kind"), False,
+                          ops_masks.made_earlier(state, record, mask))
     return InputsBlock(
         section_image=section_image,
         section_recipe=recipe_digest(appearance.derived_settings(state, section_image, record.id)
@@ -128,7 +129,8 @@ def inputs_block(
         atlas_image=atlas_image,
         atlas_image_resolved=resolved or resolve_image(workspace.atlas, atlas_image),
         mask=held, damage=damage_block(list(damage), damage_margin_mm(workspace)),
-        restrict_to=list(restrict_to), brightness=brightness)
+        restrict_to=list(restrict_to), brightness=brightness,
+        atlas_image_note=nissl_note(workspace.atlas, atlas_image))
 
 
 def estimated_block(record: deformation.DeformableRecord) -> EstimatedBlock | None:

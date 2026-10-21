@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import Any
 
 from langslice.core import layers
+from langslice.core.atlas.images import nissl_note
 from langslice.core.display import default_options
 from langslice.core.sizes import picture_edge
 from langslice.core.state import unknown_sections
@@ -186,6 +187,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             "params": entry.get("params"), "left_out": round(float(entry.get("left_out", 0)), 4),
             **door.answered(done.id),
         }
+        said = nissl_note(ctx.atlas, str(atlas_image or "nissl"))
+        if said:
+            result["atlas_image_note"] = said
         if not shows(view):
             return result
         shown = ops_look.show_result(job, ctx, "set_mask", "section", [done.id],

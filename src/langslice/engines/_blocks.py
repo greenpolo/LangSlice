@@ -71,15 +71,10 @@ def refuse_mask(tool: str, mask: str, why: str) -> None:
 
 
 def _margin_mm(frame: Any) -> float | None:
-    """The margin the damage zone adds around the marked regions, measured on the frame."""
-    if frame.excluded is None or frame.damage_zone is None:
-        return None
-    marked = np.asarray(frame.excluded, bool)
-    zone = np.asarray(frame.damage_zone, bool)
-    if not marked.any() or not zone.any():
-        return None
-    distance = cv2.distanceTransform((~marked).astype(np.uint8), cv2.DIST_L2, 3)
-    return round(float(distance[zone].max()) * float(np.mean(frame.plane["px_um"])) / 1000.0, 3)
+    """The margin the damage zone adds around the marked regions (every engine here leaves the
+    zone out, as the native fits do), as the frame states it."""
+    margin = getattr(frame, "damage_margin_mm", None)
+    return None if margin is None else float(margin)
 
 
 def inputs_block(ctx: ToolContext, frame: Any, *, section_image: str, atlas_image: str,
@@ -95,11 +90,14 @@ def inputs_block(ctx: ToolContext, frame: Any, *, section_image: str, atlas_imag
         "section_recipe": str(recipe or "default"),
         "atlas_image": atlas_image,
         "atlas_image_resolved": resolved,
-        "mask": "none" if mask is None else {
-            "name": mask.name, "kind": mask.kind, "stale": bool(mask.stale)},
+        **({"atlas_image_note": note} if atlas_image == NISSL and (
+            note := getattr(frame, "atlas_image_note", None)) else {}),
+        "mask": {"name": "none", "kind": None, "stale": False, "earlier_registration": False}
+        if mask is None else {
+            "name": mask.name, "kind": mask.kind, "stale": bool(mask.stale),
+            "earlier_registration": bool(getattr(mask, "earlier_registration", False))},
         "damage": {"regions": list(ctx.section(frame.id).damaged_regions),
                    "margin_mm": _margin_mm(frame), "side": "atlas"},
-        "restrict_to": [],
         "brightness": brightness,
     }
 

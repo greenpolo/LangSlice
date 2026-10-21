@@ -77,8 +77,10 @@ class BeforeAfter:
     labels them)."""
 
     record: SliceState
-    before_settings: Look
-    before: Image.Image
+    #: None with ``before``: the channel did not exist before this call (a new derived
+    #: name has no appearance to compare against).
+    before_settings: Look | None
+    before: Image.Image | None
     after_settings: Look
     after: Image.Image
 
@@ -116,12 +118,14 @@ def preprocess(
     state = job.state
     ids = None if section_ids is None else list(section_ids)
     pairs: list[BeforeAfter] = []
+    new = name != looks.PREPROCESSED and name not in looks.derived_names(state)
     if options is not None:
         try:
             earlier = [
-                (record, looks.derived_settings(state, name, record.id),
-                 framed_section(workspace, state, record, options,
-                                look=looks.derived_settings(state, name, record.id)))
+                (record, None if new else looks.derived_settings(state, name, record.id),
+                 None if new else framed_section(
+                     workspace, state, record, options,
+                     look=looks.derived_settings(state, name, record.id)))
                 for record in shown
             ]
             for record, was, before in earlier:

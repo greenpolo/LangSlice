@@ -31,8 +31,10 @@ same ingest every host uses, and gets the same handle. Both take
 model profile (:func:`langslice.providers.profiles.image_model`) or a model
 of the caller's own (``docs/library.md``).
 
-An image-model verb (``trace_borders``) returns once its call has started;
-the call lands in the background. :meth:`JobHandle.close` (or leaving the
+An image-model verb (``trace_borders``) and a long engine tool (``fireants_syn``,
+a plugin's ``stalign_lddmm``) return once the call has started; it lands in the
+background and :meth:`JobHandle.wait` returns the landing result (notice,
+pictures). :meth:`JobHandle.close` (or leaving the
 ``with`` block) waits for it, and a script that exits without either has
 every open job closed for it at exit, while threads can still start
 (:func:`langslice.job.views.at_exit`).
@@ -560,6 +562,31 @@ class JobHandle:
         from langslice.ops.exports import export_stack
 
         return [path for path, _kind in export_stack(self._opened.job, self._opened.ctx).files]
+
+    def wait(self, timeout: float | None = None) -> Reply:
+        """Wait for the job's background work (a fit or trace a tool started and
+        answered ``started`` for) to land, and return its landing result as the
+        agent CLI's ``langslice-job FOLDER VERB`` does: ``background`` holds each
+        finished work's notice (what it wrote, its numbers, its picture numbers),
+        ``work`` its summaries (id, kind, sections, status), the pictures on
+        ``artifacts`` and ``images``. Work that finished meanwhile is delivered
+        once, here or at the head of the next reply. *timeout* seconds (None: as
+        long as it takes) leave work still running listed under ``running``."""
+        from langslice.doors.tools.toolbox import with_notices, work_pictures
+
+        job = self._opened.job
+        job.background.wait_all(timeout)
+        job.views.flush()
+        before = {work.id for work in job.background.all() if work.delivered}
+        reply = with_notices(job, {"status": "ok"})
+        done = [work for work in job.background.all()
+                if work.delivered and work.id not in before]
+        reply.setdefault("background", [])
+        reply["work"] = [work.summary() for work in done]
+        reply["running"] = [work.id for work in job.background.running()]
+        out = library_reply("wait", reply, [])
+        out["artifacts"] = work_pictures(job, reply, start=0)
+        return out
 
     def close(self) -> None:
         """Finish the job's background work: its image-model calls land and

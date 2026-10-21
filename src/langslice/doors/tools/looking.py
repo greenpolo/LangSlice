@@ -79,14 +79,21 @@ def can_change(door: Door) -> list[str]:
     return out
 
 
+#: What ``status`` gives as the stack recipe of a derived channel made for some sections only.
+ONLY_ON_SECTIONS = "none: this channel exists only on the sections listed"
+
+
 def derived_summary(state: Any) -> dict[str, Any]:
     """Each derived channel's recipe for ``status``: its stack recipe (or ``"default"``)
     and the sections that hold one of their own."""
     out: dict[str, Any] = {}
     for name in looks.derived_names(state):
-        out[name] = {"stack": looks.derived_settings(state, name, "") or "default"}
         own = sorted(section for section in (
             (state.appearance.get("derived") or {}).get(name, {}).get("sections") or {}))
+        stack = looks.derived_settings(state, name, "")
+        if stack is None and own and name != looks.PREPROCESSED:
+            stack = ONLY_ON_SECTIONS  # made for those sections alone: nothing stack-wide
+        out[name] = {"stack": stack or "default"}
         if own:
             out[name]["sections"] = own
     out.setdefault(looks.PREPROCESSED, {"stack": "default"})
@@ -192,6 +199,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             label = f"{record.id}  {done.name} channel"
             for when, image, settings in (("BEFORE", pair.before, pair.before_settings),
                                           ("AFTER", pair.after, pair.after_settings)):
+                if image is None:  # a new channel has no before
+                    continue
                 parts.append(layers.note(
                     caption(image, f"{label}  {when} ({looks.describe(settings)})"),
                     sections=(record.id,), mode=when.lower(),
