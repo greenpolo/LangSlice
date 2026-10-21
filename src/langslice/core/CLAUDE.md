@@ -269,13 +269,44 @@ the angles in a caption (empty for the flat plane).
 - `status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
   `status_rows` (a section with plugin layers carries `layers`: name, kind,
-  frame, tool, which `uniform_rows` takes as an extra field), `compact_rows` (a model's:
+  frame, tool, which `uniform_rows` takes as an extra field; a section with
+  masks carries `masks`: name, kind, stale), `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
   status rows: rows with a field outside `ROW_FIELDS`, such as
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
+- `section_masks.py` — a section's masks, saved per section
+  (`SliceState.masks`: kind `em` | `fit`, channel, resolved atlas image,
+  params, the registration digest it was made at, file, left-out fraction;
+  absent from the serialized state while empty). A mask is a float16 weight
+  image `(H, W)` in [0, 1] on the fit grid, in
+  `sections/<stem>/masks/<name>.npz` (`weights`, `grid` `[W, H]`, `made`),
+  written by `write_mask` (never deleted: a mask made again under a name gets
+  `<name>.2.npz`, so an undone state still finds its file) and read by
+  `read_mask` -> `MaskView` (float32 weights, `stale` when
+  `registration_digest` — placement, fit appearance, damage marks, applied
+  deformation, the content of `ops.inputs.section_inputs(...,
+  deformation=True)` — differs). `em_sorting` makes the three-class EM sorting
+  at the section's current registration (atlas image through the applied
+  deformation; footprint = the placed outline widened by `MASK_MARGIN_MM`;
+  `deformable.masks.em_weights` on the 20 µm grid, upsampled); `fit_weights`
+  copies the applied record's saved sorting (`DeformableRecord.weights`).
+  A mask is section-side; the damage marks are atlas-side, always applied, and
+  never mask the section. A fit takes a mask as
+  `prepare_fit(section_weights=)`, thresholded at 0.5.
+- `engine_inputs.py` — the two blocks every fit reply and record provenance
+  carry: `InputsBlock` (section image and its recipe digest, atlas image as
+  asked and resolved, mask, the atlas-side damage entry, `restrict_to`, the
+  engine's brightness scaling in words) and `EstimatedBlock` (the engine's own
+  saved sorting and the fraction it left out). They name what was used, never
+  quality.
+- `atlas/images.py` — `atlas_images` ends with the alias `nissl`;
+  `default_image(atlas)` is what it stands for (the borrowed Nissl; the
+  augmented atlas's template; an additional reference whose name contains
+  `nissl`; else `template`); `resolve_image` checks a name and resolves the
+  alias, and `atlas_volume` resolves it too.
 - `damage.py` — damage by atlas region (`SliceState.damaged_regions`;
   `SliceState.damaged` is read-only: the section has marked regions;
   `damage_note` is words only, a host's `inputs.damaged` note first). `exclusions(record, restrict_to, exclude)`: the

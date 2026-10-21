@@ -92,7 +92,7 @@ and returns a `record.DeformableRecord`. No custom solver.
   A fit of traced lines (`section_image="lines"`) is run at ANTs SyN's
   settings: half the step (`TRACED_LEARNING_RATE`,
   0.4 = ANTs' 0.2 voxel), the whole warp smoothed `TRACED_TOTAL_SIGMA_FACTOR`
-  (2x) wider than its stiffness says, and ITK's multi-metric rule
+  (2x) wider than its smoothness says, and ITK's multi-metric rule
   (`_channel_loss(balanced=True)`: each channel's gradient scaled to unit
   length before its weight, the length estimated from the warped images at
   each step). At the stain fit's settings it folded and labelled worse than
@@ -128,18 +128,14 @@ and returns a `record.DeformableRecord`. No custom solver.
   `AffineResult.matrix_mm` (section mm -> placed-atlas mm, the field's
   direction); a non-finite or singular matrix raises. `_elastix_register` is
   the one Elastix call (images, masks, extra pairs, the global thread count).
-- `fit.run_fit(inputs, settings, em)` is a prepared fit's
-  engine work on plain arrays: one run, or for a stain fit, whole-section or
-  restricted (`PreparedFit.em`, a `masks.EMContext`) a run with the footprint masks, the EM
-  masks from the atlas image it warped (`masks.em_masks`) and a second run
-  from the same start, whose result counts (its native parameters gain
-  `section_mask`: the EM's settings, its fitted means and widths, the
-  fraction of the footprint in the fit's scope left out, the first run's time;
-  `left_out` the dropped section pixels in that scope). `run_prepared` runs one in this process.
-  `with_section_mask(prepared, mask)` narrows a prepared fit's section mask to
-  a caller's own (bool on the section grid: the fixed mask, and the EM's
-  second run through `EMContext.section_keep`, which `em_masks` intersects;
-  a script's `fit_fireants(mask=)`, the Elastix affine's `mask=`).
+- `fit.run_fit(inputs, settings)` is a prepared fit's engine work on plain
+  arrays: one run. No fit sorts the section by itself: `prepare_fit(...,
+  section_weights=)` takes a section mask's weights (float, the section grid;
+  `core/section_masks.py`), thresholds them at `EM_MATCH_THRESHOLD` (0.5) and
+  ANDs them into the fixed mask. `run_prepared` runs one in this process.
+  `with_section_mask(prepared, mask)` narrows a prepared fit's fixed mask to
+  a caller's own (bool on the section grid; a script's `fit_fireants(mask=)`,
+  the Elastix affine's `mask=`).
   `fit_prepared` runs 1–8 prepared fits (different sections or settings):
   on a GPU one after another in the caller, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
@@ -147,10 +143,10 @@ and returns a `record.DeformableRecord`. No custom solver.
 
 ## Brain size
 
-Every distance in this package (in mm or µm: working pixels, stiffness
+Every distance in this package (in mm or µm: working pixels, the smoothness
 sigmas, edge sigma, correlation radius, line softening, mask and exclusion
 margins, `TRACE_MOVING_MARGIN_MM`, the restricted taper, the regions module's
-gap closing and smallest loop, the EM's block and background distance, the
+gap closing and smallest loop, the EM sorting's block and background distance, the
 record's `OUTSIZED_MEDIAN_MM` and `MIN_FLAG_AREA_MM2`) is the adult mouse
 brain's, and a fit multiplies it by the atlas's brain scale
 (`core.atlas.size.brain_scale`: the cube root of the atlas's annotated volume
@@ -158,8 +154,8 @@ over the adult Allen mouse's, rounded to 0.05; exactly 1.0 for every atlas of
 the adult CCFv3 brain, about 1.7 for `whs_sd_rat_39um`, 0.7 for DeMBA P4),
 areas by its square. `prepare_fit` / `prepare_warp` read it once
 (`PreparedFit.brain_scale`) and hand it on: `EngineInputs.brain_scale` (the
-stiffness sigmas, recorded in the engine's native parameters with
-`brain_scale`), `EMContext.scale` (`masks.block_px`, `masks.em_parameters`),
+smoothness sigmas, recorded in the engine's native parameters with
+`brain_scale`), the EM sorting's scale (`masks.block_px`, `masks.em_parameters`),
 `footprint_masks(..., scale)`, `regions.model_extent` / `named_regions`
 (`brain_scale=`), `record.diagnose(..., brain_scale=)`. The working grid is
 `DETAIL[...].working_um` times the scale, so a rat section is fitted as a
@@ -174,10 +170,15 @@ and the tests' fake atlases are all scale 1 (`tests/synthetic_stack.py`
 
 ## Settings (`settings.py`)
 
-Named ladders, physical units: `stiffness` soft/medium/firm
-(`settings.STIFFNESS`: update/total Gaussian sigma in mm, converted to
-voxels); `detail` coarse/standard (working µm and pyramid depth/iterations —
-the extra levels are SyN's capture range); `atlas_image`, `section_image`, `exclude`,
+Physical units: `smoothness_um` (the update Gaussian sigma of SyN in µm, adult
+mouse, times the brain scale; the whole warp's sigma is
+`TOTAL_SIGMA_FRACTION` = 0.25 of it; default 80, bounds 5-2000; the former
+`stiffness` is a `ValueError`, and a saved record's `stiffness` reads as
+soft 50 / medium 80 / firm 120); `detail` coarse/standard/fine (working µm and
+pyramid depth/iterations — the extra levels are SyN's capture range; `fine`
+is 10 µm with five levels, 4-5x slower than `standard`);
+`atlas_image` (default `nissl`, resolved against the atlas where the fit
+samples it: `atlas.images.default_image`), `section_image`, `exclude`,
 `labels`, `structures`, `neighbourhood_um`, `preprocess`, and for stain fits
 `stain_metric` (`mutual_information` | `local_correlation`) and
 `stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
@@ -185,17 +186,19 @@ from pairing, engine and stain metric (`metric_for`); lines against
 an atlas image and the stain against `borders`/`borders_merged` are refused.
 The step size is fixed.
 
-Stain defaults, and why: with the EM section mask, mutual information
+Stain defaults, and why: with the EM section mask (now made by `set_mask`),
+mutual information
 recovered more of the human raters' own corrections than local correlation
 on Carey 2026 brightfield and LSD_910 immunofluorescence, did less harm where
 the raters moved little, and was within noise of it on pl_projections when
 the fit read the DAPI counterstain (where indicator channels were blended in, it was pulled
 toward their bright labelling). The edge channel is on by default because
 the intensity metric on its own crossed enlarged ventricles. There is no `stiff`
-setting (it left enlarged ventricles unfilled), no `fine` detail (4-5x
-slower, worse outlines) and the linear tool always runs `standard`; line
-softening is the constant `LINE_SOFTENING_UM` = 60 (adult mouse). `template` is the default
-stain atlas image; the agent picks whichever of the atlas's images looks most
+setting (it left enlarged ventricles unfilled); `fine` detail was measured
+4-5x slower with no visible gain and exists for a caller who asks for it; line
+softening is the constant `LINE_SOFTENING_UM` = 60 (adult mouse). The default
+stain atlas image is the atlas's Nissl where it has one (`nissl`), else its
+template; the agent picks whichever of the atlas's images looks most
 like its sections (on `ccfv3augmented_mouse_25um` the template is the Blue
 Brain averaged Nissl and `single_animal_nissl` is an additional reference).
 On synthetic sections (flat regions, no texture) local correlation recovers a
@@ -217,9 +220,8 @@ one side, excluding RSP/VIS/PTLp by name also drops the intact hemisphere;
 
 ## Masks (`masks.py`)
 
-One module builds every mask. FOOTPRINT masks (`footprint_masks`: the
-Elastix affine, traced lines, and the first run of every stain fit, whole or
-restricted; a restricted fit's are cut to the regions' neighbourhood): fixed = placed atlas footprint widened by `MASK_MARGIN_MM`
+One module builds every mask. FOOTPRINT masks (`footprint_masks`: every fit; a
+restricted fit's are cut to the regions' neighbourhood): fixed = placed atlas footprint widened by `MASK_MARGIN_MM`
 (0.2); moving = that footprint minus the damage zone, the excluded regions
 widened by `EXCLUSION_MARGIN_MM` (blanking alone left an edge that still
 pulled tissue). Excluded regions are blanked on the native plane for EVERY
@@ -233,27 +235,23 @@ costs); moving = the placed atlas widened by `TRACE_MOVING_MARGIN_MM` (1.0;
 drawn borders, nothing to fence off) minus the damage zone, so an outline
 beyond the atlas can draw it out.
 
-EM masks (`em_masks`, every stain fit's second run, given an `EMContext`):
-the section mask is P(match) >= `EM_MATCH_THRESHOLD` (0.5) over the whole
-working grid, the atlas mask everything except the damage zone. A
-region-restricted fit (`structures`) estimates the classes over the WHOLE
-working grid, against the UNRESTRICTED placed footprint, and then intersects
-both masks with the regions' neighbourhood (`EMContext.neighbourhood`), so
-the weights inside it are the whole-section fit's. Why: the EM learns what
-tissue, artifact and background look like from the image (`muB` from the
-section's own background beyond 500 µm of the footprint, a contrast map per
-0.8 mm block; both adult mouse, times the brain scale); a neighbourhood a few hundred µm wide has too little of either
-and a restricted footprint would make the tissue stand for background. Its
-first run is the restricted footprint fit, so the warped atlas image outside
-the neighbourhood is nearly the placement; that only touches the contrast
-blocks straddling the neighbourhood's edge. The taper
-(`PreparedFit.step_weight`) is applied to the second run's field as before:
-the EM mask bounds the metric inside the neighbourhood only, the field still
-fades to nothing over `RESTRICTED_TAPER_MM` beyond it. `left_out` is limited
-to the neighbourhood. Traced lines (`section_image="lines"`) and the Elastix
-affine get no EM mask. `em_weights` is a port of
+The EM sorting (`em_weights`; made by `core/section_masks.em_sorting`, which
+`set_mask` calls, never by a fit): the section's P(match) is a section mask;
+a fit given one compares only pixels with P(match) >= `EM_MATCH_THRESHOLD`
+(0.5), ANDed into the footprint's fixed mask (`prepare_fit(section_weights=)`);
+the atlas (moving) mask is not touched, and the damage zone stays atlas-side.
+`em_sorting` places the atlas image through the section's CURRENT registration
+(its applied deformation included), takes the placed footprint widened by
+`MASK_MARGIN_MM`, runs `em_weights` on the 20 µm working grid and upsamples
+P(match) to the fit grid. The classes are estimated over the whole section
+(the EM needs tissue and background to learn what each looks like): `muB`
+from the section's own background beyond 500 µm of the footprint, a contrast
+map per 0.8 mm block (both adult mouse, times the brain scale). `sorting`
+overrides `match_sd`, `background_sd`, `artifact_sd`, `background_mean`,
+`artifact_mean` (brightness 0-1; `masks.SORTING_KEYS`) that are otherwise
+estimated. `em_weights` is a port of
 emlddmm's three-class EM (Tward et al. 2025, doi 10.1038/s41467-025-65317-7)
-with the warp fixed at the first run's: matching J ~ N(f(I_warped), sigmaM)
+with the warp held: matching J ~ N(f(I_warped), sigmaM)
 with f linear per `masks.block_px(scale)` block (`EM_BLOCK_PX`, 16, times the
 brain scale) of the `EM_GRID_UM` (50 µm) grid,
 artifact ~ N(muA, sigmaA), background ~ N(muB, sigmaB), `EM_ITERATIONS` (20)
@@ -262,10 +260,9 @@ commented in the code: sigmas all 0.5 x std(J), fixed (its (1, 2, 5) x std
 flagged nothing, not even a 0.3 mm hole), and priors fixed at (0.9, 0.05,
 0.05) (updated priors ran away on DAPI, where dim tissue has the background's
 intensity). muB is the image's own background, muA the opposite extreme
-quantile of the tissue. `em_parameters(scale)` (every setting) is part of the
-deformable cache key of every stain fit, as is the engine (`core.deformation.cache_key`). On
-flat, textureless synthetic tissue a hole of 0.5 mm or more inside one
-uniform region is absorbed by its block's contrast offset and kept.
+quantile of the tissue. On flat, textureless synthetic tissue a hole of 0.5 mm
+or more inside one uniform region is absorbed by its block's contrast offset
+and kept.
 
 ## The record (`record.py`)
 
@@ -274,9 +271,11 @@ placed-atlas point + field (brainglobe-registration's direction); native =
 inv(atlas_to_section) @ (pixel + field/mm_per_px), the order `core/maps.native_points` composes. A sequential record's field is
 the total. Also: inverse field (or None), engine name/version/runtime/native
 parameters, working grid, warped leaf labels (unclipped), the placed
-footprint mask the fixed mask starts from, `left_out` (the section pixels an
-EM section mask dropped, on the section grid, None otherwise; for review
-pictures, never read back into a fit), excluded ids, `native_to_volume_index` (plane pixel → atlas
+footprint mask the fixed mask starts from, `left_out` (section pixels an engine's
+own weighting dropped, on the section grid, None otherwise; for review
+pictures, never read back into a fit), `weights` (the engine's own P(match)
+sorting, float16 on the section grid, None when it estimated nothing: the
+source of `set_mask`'s `fit` kind), excluded ids, `native_to_volume_index` (plane pixel → atlas
 volume index, so exports need no atlas object), `save()`/`load()`,
 and a free-form `provenance` dict saved with the metadata (the linear tool
 stores section id, linear handoff metadata and its inputs there). The job
@@ -289,7 +288,7 @@ On disk (`save(directory)` / `load(directory)`, `docs/file_formats.md`):
 is incomplete) and `warp.ome.zarr` (`ome_warp.py`: a Zarr v3 store in the
 OME-Zarr 0.6 layout; the fields `(2, rows, cols)` `(dy, dx)` float16, Blosc
 zstd + shuffle, read back as `(rows, cols, 2)` float32; `warped_labels`,
-`footprint`, `left_out` lossless; the root's `ome.scene` states section mm
+`footprint`, `left_out`, `weights` (float16) lossless; the root's `ome.scene` states section mm
 -> placed atlas mm (a `bijection` of the two `displacements`) -> atlas µm (a
 `sequence`: scale, the placement's inverse affine, the plane-to-volume
 affine, the resolution), written from the record and never read back). No

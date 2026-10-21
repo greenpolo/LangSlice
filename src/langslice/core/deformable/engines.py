@@ -40,7 +40,7 @@ import numpy as np
 from langslice.core.deformable.settings import (
     DETAIL,
     ELASTIX_STAIN_METRIC,
-    STIFFNESS,
+    TOTAL_SIGMA_FRACTION,
     FitSettings,
     Metric,
 )
@@ -73,8 +73,8 @@ FIREANTS_LEARNING_RATE = 0.8
 #: own 0.2 voxel (0.4 half-pixels), half the stain fit's.
 TRACED_LEARNING_RATE = 0.4
 #: The whole warp of a traced fit is smoothed this many times wider than its
-#: stiffness says (medium: 0.04 mm instead of 0.02), so a stray or invented
-#: line bends the atlas less locally.
+#: smoothness says (80 um: a total sigma of 0.04 mm instead of 0.02), so a
+#: stray or invented line bends the atlas less locally.
 TRACED_TOTAL_SIGMA_FACTOR = 2.0
 #: Each pyramid level halves the grid (shrink factors 2^(n-1)..1 for n levels).
 FIREANTS_SHRINK = 2
@@ -113,7 +113,7 @@ class EngineInputs:
     #: Local correlation window radius in working-grid pixels.
     correlation_radius_px: int = 4
     #: The atlas's brain scale (``core.atlas.size.brain_scale``): the
-    #: stiffness sigmas, adult mouse millimetres, are multiplied by it.
+    #: smoothness sigmas, adult mouse, are multiplied by it.
     brain_scale: float = 1.0
 
 
@@ -128,8 +128,8 @@ class EngineResult:
     runtime_s: float
     engine_version: str
     notes: list[str] = field(default_factory=list)
-    #: Section pixels the fit's metric left out (an EM section mask,
-    #: ``masks.em_masks``), on the working grid; None for a footprint mask.
+    #: Section pixels the fit's metric left out, on the working grid (an
+    #: engine that estimates its own weighting reports them); None otherwise.
     left_out: np.ndarray | None = None
 
 
@@ -389,13 +389,12 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     start = time.perf_counter()
     device = fit_device()
     level = DETAIL[settings.detail]
-    stiffness = STIFFNESS[settings.stiffness]
     voxel_mm = float(np.mean(inputs.spacing_mm))
     traced = settings.section_image == "lines"
     learning_rate = TRACED_LEARNING_RATE if traced else FIREANTS_LEARNING_RATE
     scale = float(inputs.brain_scale)
-    update_sigma_mm = stiffness.update_sigma_mm * scale
-    total_sigma_mm = (stiffness.total_sigma_mm * scale
+    update_sigma_mm = settings.smoothness_um / 1000.0 * scale
+    total_sigma_mm = (update_sigma_mm * TOTAL_SIGMA_FRACTION
                       * (TRACED_TOTAL_SIGMA_FACTOR if traced else 1.0))
     # FireANTs takes Gaussian sigmas in voxels of each pyramid level, as ANTs
     # took its variances.

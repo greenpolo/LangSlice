@@ -19,6 +19,9 @@ from langslice.core.space import atlas_space_context
 
 #: The name of the atlas's main image (BrainGlobe's ``template``).
 TEMPLATE = "template"
+#: The alias every engine's ``atlas_image`` defaults to: the atlas's Nissl
+#: where it has or borrows one, else its template (:func:`default_image`).
+NISSL = "nissl"
 
 #: On Harry Carey's advice (BrainGlobe), kept as the standing design: the Allen CCFv3 atlases
 #: ship no Nissl, but ``ccfv3augmented_mouse_25um`` is the CCFv3 grid extended
@@ -68,23 +71,54 @@ def _borrowed_nissl(atlas: Any) -> np.ndarray:
     return _borrowed[key]
 
 
-def atlas_images(atlas: Any) -> tuple[str, ...]:
-    """The atlas's image names: ``template``, then its additional references
-    in BrainGlobe's order."""
+def _own_images(atlas: Any) -> tuple[str, ...]:
+    """The atlas's real image names, without the :data:`NISSL` alias."""
     extra = getattr(atlas, "additional_references", None)
     names = (TEMPLATE, *(str(name) for name in (extra.keys() if extra is not None else ())))
     return (*names, BORROWED_NISSL) if _takes_borrowed_nissl(atlas) else names
 
 
+def atlas_images(atlas: Any) -> tuple[str, ...]:
+    """The atlas's image names: ``template``, then its additional references
+    in BrainGlobe's order, then the alias :data:`NISSL` (always accepted;
+    :func:`default_image` says what it stands for)."""
+    return (*_own_images(atlas), NISSL)
+
+
+def default_image(atlas: Any) -> str:
+    """The real image name :data:`NISSL` stands for on *atlas*: the borrowed
+    Nissl (:data:`BORROWED_NISSL`) where the atlas takes it; the template of
+    ``ccfv3augmented_mouse_25um`` (itself a Nissl); an additional reference
+    whose name contains ``nissl``; else ``template``."""
+    if _takes_borrowed_nissl(atlas):
+        return BORROWED_NISSL
+    if getattr(atlas, "atlas_name", "") == AUGMENTED_ATLAS:
+        return TEMPLATE
+    for name in _own_images(atlas):
+        if "nissl" in name.lower():
+            return name
+    return TEMPLATE
+
+
+def resolve_image(atlas: Any, name: str) -> str:
+    """*name* as a real image name of *atlas*: :data:`NISSL` becomes
+    :func:`default_image`; any other name must be one of the atlas's images.
+    ``ValueError`` names the images the atlas has."""
+    if name == NISSL:
+        return default_image(atlas)
+    if name not in _own_images(atlas):
+        raise ValueError(f"{getattr(atlas, 'atlas_name', 'This atlas')} has no image {name!r}; "
+                         f"its images: {', '.join(atlas_images(atlas))}")
+    return name
+
+
 def atlas_volume(atlas: Any, name: str) -> np.ndarray:
     """The atlas image *name* (one of :func:`atlas_images`) as a volume on the
     atlas grid; ``ValueError`` names the images the atlas has."""
+    name = resolve_image(atlas, name)
     if name == TEMPLATE:
         return np.asarray(atlas.template)
-    if name == BORROWED_NISSL and _takes_borrowed_nissl(atlas):
+    if name == BORROWED_NISSL:
         return _borrowed_nissl(atlas)
     extra = getattr(atlas, "additional_references", None)
-    if extra is None or name not in extra.keys():
-        raise ValueError(f"{getattr(atlas, 'atlas_name', 'This atlas')} has no image {name!r}; "
-                         f"its images: {', '.join(atlas_images(atlas))}")
-    return np.asarray(extra[name])
+    return np.asarray(extra[name])  # pyright: ignore[reportOptionalSubscript]  # resolve_image checked it

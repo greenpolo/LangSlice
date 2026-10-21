@@ -54,6 +54,21 @@ def test_state_round_trips_and_resolves_by_filename_only():
     assert again.resolve("nope.png") is None
 
 
+def test_masks_are_left_out_of_the_serialized_state_while_empty():
+    state = _stack()
+    assert all("masks" not in row for row in state.to_dict()["slices"])
+    assert StackState.from_dict(state.to_dict()) == state
+    entry = {"kind": "em", "channel": "preprocessed", "atlas_image": "template",
+             "params": {"match_sd": 0.1}, "inputs": "abc",
+             "file": "sections/s1/masks/hole.npz", "left_out": 0.05}
+    state.slices[1].masks["hole"] = entry
+    rows = state.to_dict()["slices"]
+    assert "masks" not in rows[0] and rows[1]["masks"] == {"hole": entry}
+    assert StackState.from_dict(state.to_dict()) == state
+    # A state written before masks existed still loads.
+    assert StackState.from_dict(_stack().to_dict()).slices[1].masks == {}
+
+
 def test_a_stem_two_files_share_names_neither_and_the_refusal_says_why():
     state = StackState(slices=[SliceState("a.png", 0, 0), SliceState("a.tif", 1, 1),
                                SliceState("3.png", 2, 2)])

@@ -9,9 +9,9 @@ here:
   :data:`FIT_LONG_EDGE` with its linear placement
   (:func:`langslice.core.handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
-  the section's preprocessed channel (:mod:`langslice.core.appearance`, set by
-  ``set_preprocessed_channel_properties``), or the image model's traced lines
-  mapped onto that grid;
+  the section's channel (:mod:`langslice.core.appearance`, a raw channel or a
+  derived one such as ``preprocessed``, set by ``set_channel``), or the image
+  model's traced lines mapped onto that grid;
 - the resolved :class:`Choice` and its engine settings;
 - :class:`RecordStore`: results cached by a digest of every input (the same
   fit again reuses it), applied records saved under the section's folder
@@ -63,7 +63,6 @@ from langslice.core.deformable.engines import (
     TRACED_TOTAL_SIGMA_FACTOR,
 )
 from langslice.core.deformable.fit import run_prepared
-from langslice.core.deformable.masks import em_parameters
 from langslice.core.deformable.plane_images import (
     native_intensity,
     native_labels,
@@ -72,8 +71,9 @@ from langslice.core.deformable.plane_images import (
 from langslice.core.deformable.render import composed_native_grid
 from langslice.core.deformable.settings import (
     CORRELATION_RADIUS_UM,
+    DEFAULT_SMOOTHNESS_UM,
     DETAIL,
-    STIFFNESS,
+    TOTAL_SIGMA_FRACTION,
     neighbourhood_um_for,
 )
 from langslice.core.handoff import digest
@@ -200,16 +200,18 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
 
 
 def stain_image(
-    ctx: Workspace, state: StackState, grid: Grid, fit_section: str,
+    ctx: Workspace, state: StackState, grid: Grid, channel: str,
 ) -> tuple[Image.Image, Any]:
-    """``(image, identity)`` of the stain a fit reads: the section's
-    preprocessed channel (:mod:`langslice.core.appearance`).
+    """``(image, identity)`` of the channel a fit reads on the fit grid
+    (:mod:`langslice.core.appearance`): ``preprocessed``, a raw channel or a
+    derived one.
 
-    Traced fit sections draw their pictures on it too. A raw channel is a
-    preprocessed-channel recipe, not a fit section.
+    Traced fit sections draw their pictures on the preprocessed channel too.
     """
-    if fit_section not in FIT_SECTIONS:
-        raise ValueError(f"Unknown fit section {fit_section!r}")
+    if channel in FIT_SECTIONS:  # COMPAT (integrator removes): callers still pass a fit section
+        channel = "preprocessed"
+    if channel != "preprocessed":  # INTEGRATOR: replace with appearance.channel_image (chunk B)
+        raise ValueError(f"Unknown channel {channel!r}")
     record = grid.record
     look = looks.preprocessed_settings(state, record.id)
     image = looks.preprocessed_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
@@ -284,7 +286,21 @@ class Choice:
 
     fit_section: str
     fit_atlas: str
-    stiffness: str
+    #: The warp's smoothness in micrometres (``FitSettings.smoothness_um``).
+    smoothness_um: float = DEFAULT_SMOOTHNESS_UM
+    #: The section mask by name (``"none"`` or a mask of the section,
+    #: :mod:`langslice.core.section_masks`); its weights reach the fit through
+    #: :attr:`Job.section_weights`.
+    mask: str = "none"
+    #: COMPAT (integrator removes): the former stiffness level, read as
+    #: ``smoothness_um`` (soft 50, medium 80, firm 120).
+    stiffness: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.stiffness is not None:
+            object.__setattr__(self, "smoothness_um", {
+                "soft": 50.0, "medium": 80.0, "firm": 120.0}[self.stiffness])
+            object.__setattr__(self, "stiffness", None)
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...], *,
                  brain_scale: float = 1.0) -> FitSettings:
@@ -292,7 +308,7 @@ class Choice:
         at the atlas's *brain_scale* (``core.atlas.size.brain_scale``)."""
         traced = self.fit_section == TRACED_BORDERS
         return FitSettings(
-            stiffness=self.stiffness,  # type: ignore[arg-type]
+            smoothness_um=self.smoothness_um,
             detail=DETAIL_LEVEL,  # type: ignore[arg-type]
             atlas_image="borders_merged" if self.fit_atlas == FIT_BORDERS else self.fit_atlas,
             section_image="lines" if traced else "stain",
@@ -301,8 +317,8 @@ class Choice:
             neighbourhood_um=neighbourhood_um_for(brain_scale),
         )
 
-    def echo(self) -> dict[str, str]:
-        return {"stiffness": self.stiffness,
+    def echo(self) -> dict[str, Any]:
+        return {"smoothness_um": self.smoothness_um, "mask": self.mask,
                 "fit_section": self.fit_section, "fit_atlas": self.fit_atlas}
 
 
@@ -316,9 +332,10 @@ def engine_settings(settings: FitSettings, brain_scale: float = 1.0) -> dict[str
         used["correlation_radius_um"] = CORRELATION_RADIUS_UM * brain_scale
     if settings.section_image == "stain" and settings.stain_edges:
         used["edge_channel"] = True
-    stiffness = STIFFNESS[settings.stiffness]
-    used.update(update_sigma_mm=stiffness.update_sigma_mm * brain_scale,
-                total_sigma_mm=stiffness.total_sigma_mm * brain_scale,
+    update_sigma_mm = settings.smoothness_um / 1000.0 * brain_scale
+    used.update(smoothness_um=settings.smoothness_um * brain_scale,
+                update_sigma_mm=update_sigma_mm,
+                total_sigma_mm=update_sigma_mm * TOTAL_SIGMA_FRACTION,
                 iterations=list(level.iterations))
     if settings.labels != "none":
         used["label_map"] = settings.labels
@@ -329,24 +346,23 @@ def engine_settings(settings: FitSettings, brain_scale: float = 1.0) -> dict[str
 
 def cache_key(
     state: StackState, grid: Grid, settings: FitSettings, image_identity: Any,
-    previous_key: str | None, brain_scale: float = 1.0,
+    previous_key: str | None, brain_scale: float = 1.0, mask_identity: Any = None,
 ) -> str:
     """Every input of one fit: the same key means the same result. The atlas
-    (in the placement) fixes its *brain_scale*; a stain fit's EM settings
-    are keyed at that scale."""
+    (in the placement) fixes its *brain_scale*; *mask_identity* names the
+    section mask the fit was given (its file, ``None`` for no mask)."""
     return digest({
         "section": grid.record.id, "linear": linear_key(state, grid.record),
         "grid": [FIT_LONG_EDGE, list(grid.image.size)],
         "placement": grid.placement.to_dict(), "image": image_identity,
         "settings": settings.to_dict(), "start": previous_key or "linear",
-        # The engine and, for a stain fit, the EM section mask: a record from
-        # another engine or mask is not reused.
+        # The engine and the section mask: a record from another engine or
+        # mask is not reused.
         "engine": ["fireants", FIREANTS_VERSION, FIREANTS_LEARNING_RATE, INVERSE_ITERATIONS,
                    list(DETAIL[settings.detail].iterations)],
         **({"traced_engine": [TRACED_LEARNING_RATE, TRACED_TOTAL_SIGMA_FACTOR, "balanced"]}
            if settings.section_image == "lines" else {}),
-        **({"section_mask": em_parameters(brain_scale)}
-           if settings.section_image == "stain" else {}),
+        **({"section_mask": mask_identity} if mask_identity is not None else {}),
     })
 
 
@@ -532,6 +548,9 @@ class Job:
     lines: np.ndarray | None
     result: DeformableRecord | CandidateFailure | None = None
     cached: bool = False
+    #: The section mask's weights (float, the fit grid's ``(H, W)``;
+    #: :func:`langslice.core.section_masks.section_weights`); None for no mask.
+    section_weights: np.ndarray | None = None
 
 
 def engine_lock() -> threading.Lock:
@@ -549,7 +568,7 @@ def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
         try:
             prepared.append(prepare_fit(
                 job.image, ctx.atlas, job.grid.placement, job.settings, lines=job.lines,
-                previous=job.previous,
+                previous=job.previous, section_weights=job.section_weights,
             ))
             waiting.append(job)
         except Exception as exc:  # noqa: BLE001 - a bad candidate must not sink the rest

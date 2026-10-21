@@ -133,6 +133,13 @@ class SliceState:
     #: the checkpoint, so undoing the call that made a layer hides it. Left
     #: out of the serialized state while empty.
     layers: list[dict[str, Any]] = field(default_factory=list)
+    #: This section's masks (``set_mask``, :mod:`langslice.core.section_masks`),
+    #: by name: ``{"kind": "em" | "fit", "channel", "atlas_image" (resolved),
+    #: "params", "inputs" (the digest of the section's registration it was
+    #: made at), "file" (relative to the job folder), "left_out"}``. Part of
+    #: the checkpoint; the files are never deleted, so undo only hides the
+    #: reference. Left out of the serialized state while empty.
+    masks: dict[str, dict[str, Any]] = field(default_factory=dict)
     caveats: list[str] = field(default_factory=list)
     #: This section's own cutting angles, ``{"pitch": deg, "yaw": deg}``:
     #: the atlas plane every picture, fit and map of it is drawn at. Equal
@@ -306,8 +313,9 @@ class StackState:
             for row in rows:
                 row.pop(ANGLES_KEY, None)
         for row in rows:
-            if not row.get("layers"):  # most jobs have none: the state reads as it always has
-                row.pop("layers", None)
+            for optional in ("layers", "masks"):
+                if not row.get(optional):  # most jobs have none: the state reads as it always has
+                    row.pop(optional, None)
         return data
 
     @classmethod

@@ -11,7 +11,7 @@ from PIL import Image
 
 from langslice.core.atlas import size
 from langslice.core.deformable import FitSettings, prepare_fit
-from langslice.core.deformable.masks import em_masks, em_parameters
+from langslice.core.deformable.masks import em_parameters
 from langslice.core.deformable.record import diagnose
 from tests.deformable_synthetic import (
     SyntheticAtlas,
@@ -53,30 +53,26 @@ def _cases(atlas: SyntheticAtlas) -> dict[str, tuple[Image.Image, FitSettings, n
 
 
 def _digest(prepared) -> tuple[str, list[float]]:
-    """Every array and number a prepared fit hands the engines and the EM."""
+    """Every array and number a prepared fit hands the engines."""
     inputs = prepared.inputs
     arrays = [inputs.fixed_mask, inputs.moving_mask, inputs.fixed, inputs.moving,
               *inputs.fixed_labels, *inputs.moving_labels, prepared.footprint]
     arrays += [a for a in (inputs.fixed_edges, inputs.moving_edges, prepared.step_weight)
                if a is not None]
-    if prepared.em is not None:
-        masks, facts = em_masks(inputs.fixed, inputs.moving, prepared.em,
-                                float(np.mean(inputs.spacing_mm)))
-        arrays += [prepared.em.footprint, prepared.em.damage_zone, masks.fixed, masks.moving,
-                   facts["left_out"]]
     numbers = json.dumps([list(inputs.spacing_mm), list(inputs.origin_mm),
                           inputs.correlation_radius_px, inputs.edge_weight,
                           inputs.label_weights, prepared.details], sort_keys=True, default=str)
     return input_fingerprint(arrays, numbers)
 
 
-#: What prepare_fit built for these fits at standard detail before distances
+#: What prepare_fit built for these fits (the stain and restricted hashes since the EM left
+#: prepare_fit; their arrays are unchanged) at standard detail before distances
 #: followed the brain's size (main at 8ac2c91b), hashed: the adult mouse brain
 #: (scale 1) must keep getting exactly these.
 BEFORE_SCALING = {
-    "stain": ("6e410b4365cd6375", [
+    "stain": ("89e7d2c23e6af7b2", [
         61225.60, 50625.84, 24728.41, 15330.64, 7092.25, 3009.99, 7696.39, 3688.30]),
-    "restricted": ("c53db7ebfb9a2e44", [
+    "restricted": ("1e6ce51ba2094e48", [
         61225.60, 50625.84, 24728.41, 15330.64, 7564.62, 3362.36, 6534.27, 2685.52, 10189.07,
         9643.09]),
     "elastix": ("158bc238d8b45124", [
@@ -130,7 +126,6 @@ def test_a_larger_brain_is_fitted_as_the_mouse_drawn_smaller(atlas, scaled):
     assert prepared.details["edge_channel"]["sigma_um"] == 60.0
     taper = prepared.details["taper_um"]
     assert taper[1] - taper[0] == pytest.approx(600.0)
-    assert prepared.em is not None and prepared.em.scale == 2.0
     params = em_parameters(2.0)
     assert params["block_px"] == 32 and params["background_distance_um"] == 1000.0
     assert params["grid_um"] == 50.0  # the slide's holes and debris keep their size

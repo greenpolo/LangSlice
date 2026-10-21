@@ -25,7 +25,8 @@ NATIVE_TO_VOLUME = [[0.0, 0.0, 200.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]
 
 
 def _record(seed: int = 0, parent: DeformableRecord | None = None, *,
-            left_out: bool = False, inverse: bool = True) -> DeformableRecord:
+            left_out: bool = False, inverse: bool = True,
+            weights: bool = False) -> DeformableRecord:
     rng = np.random.default_rng(seed)
     placement = Placement("allen_mouse_25um", 5.0, "coronal", 0.0, 0.0, ATLAS_TO_SECTION, MM)
     return DeformableRecord(
@@ -39,6 +40,7 @@ def _record(seed: int = 0, parent: DeformableRecord | None = None, *,
         atlas={"resolution_um": [25.0, 25.0, 25.0], "orientation": "asr",
                "native_to_volume_index": NATIVE_TO_VOLUME},
         left_out=(rng.random((H, W)) > 0.9) if left_out else None,
+        weights=rng.random((H, W)).astype(np.float16) if weights else None,
     )
 
 
@@ -63,6 +65,28 @@ def test_a_record_round_trips_at_float16_precision(tmp_path: Path):
     assert np.array_equal(loaded.footprint, record.footprint)
     assert loaded.left_out is not None and np.array_equal(loaded.left_out, record.left_out)
     assert loaded.saved_as == "a" and loaded.parent is None
+
+
+def test_weights_round_trip_as_float16_and_none_is_allowed(tmp_path: Path):
+    record = _record(weights=True)
+    assert record.weights is not None
+    record.save(tmp_path / "a")
+    loaded = DeformableRecord.load(tmp_path / "a")
+    assert loaded.weights is not None and loaded.weights.dtype == np.float16
+    assert loaded.weights.shape == (H, W)
+    assert np.array_equal(loaded.weights, record.weights)
+    assert "weights" in {name for name, _ in __import__("zarr").open_group(
+        str(tmp_path / "a" / "warp.ome.zarr"), mode="r").members()}
+    # A float32 sorting is rounded to the precision it is saved at, as the fields are.
+    wide = _record(weights=False)
+    wide.weights = np.random.default_rng(3).random((H, W)).astype(np.float32)
+    wide.save(tmp_path / "b")
+    again = DeformableRecord.load(tmp_path / "b")
+    assert again.weights is not None and np.array_equal(again.weights, wide.weights)
+    assert wide.weights.dtype == np.float16
+    # None stays None: no array in the store.
+    _record().save(tmp_path / "c")
+    assert DeformableRecord.load(tmp_path / "c").weights is None
 
 
 def test_a_record_names_its_parent_and_loads_it_from_the_sibling_folder(tmp_path: Path):
@@ -132,7 +156,7 @@ def _validator(schema_name: str):
 
 @pytest.mark.parametrize("inverse", [True, False])
 def test_the_store_metadata_is_valid_ome_zarr_0_6(tmp_path: Path, inverse: bool):
-    _record(left_out=True, inverse=inverse).save(tmp_path / "a")
+    _record(left_out=True, inverse=inverse, weights=True).save(tmp_path / "a")
     store = tmp_path / "a" / ome_warp.WARP_STORE
     root = _attributes(store)
     for name in ("scene.schema", "ome_zarr.schema"):
