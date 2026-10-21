@@ -620,13 +620,8 @@ and the status row's counts (`warp` in words), `applied_pairs` the pairs the
 current landmark warp was built from and `warp_report` which pairs are in it,
 not in it, or deleted but still shaping it; `draw_folds` outlines the applied warp's folded
 triangles (`landmark_folds` in the deformation reference) on a warped
-overlay, and `draw_holds` draws the applied warp's automatic holds
-(`landmark_holds`: edge fractions) as small unlabeled dots there (a fold's
-automatic hold vertex is `~K` in `landmark_folds`, an agent's hold its id,
-placed from `landmark_placed_holds`). `draw_landmarks` draws the section's
-own holds (`landmarks.holds`) as labelled squares on section panels;
-`hold_states` / `applied_holds` give a hold's `applied` / `pending` state,
-which `warp_report` (`holds_in_warp`) and `landmark_counts` (`holds`) read. An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
+overlay (a vertex that is no pair of the section, such as the `~K` an
+earlier version's automatic holds left in a saved warp, is skipped). An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
 times past its voxels. Positioning index
 captions include per-section landmark counts without cluttering thumbnails.
 
@@ -636,9 +631,8 @@ corners, and inverse evaluation on the same mesh connectivity. Repeated
 sources and zero-area source triangles are `DegenerateMesh` (with the vertex
 indices); folds (a target triangle winding the other way) are accepted:
 `folded` marks them, the forward map is the source Delaunay's, and the inverse
-tries unfolded triangles before folded ones, each in simplex order. The
-module knows nothing of automatic holds: `ops/landmarks.py` adds them to the
-point set it passes in, so VisuAlign parity holds for any set given.
+tries unfolded triangles before folded ones, each in simplex order.
+`ops/landmarks.py` passes it the pairs alone, as VisuAlign meshes them.
 `landmark_views.py` draws each edited pair as a contextual template/preprocessed
 section crop (the atlas panel with the region borders), retains a 60% anatomical window and panel geometry, and labels
 the selected pair. Crop zooms preserve exact panel mappings and refuse gutters.

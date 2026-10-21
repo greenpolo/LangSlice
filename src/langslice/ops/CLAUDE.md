@@ -434,44 +434,30 @@ the job folder through one hook (`Job.views.shown`, `src/langslice/job/`).
 
 ## Landmark verbs
 
-`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=, holds=)` atomically
-adds/updates/deletes stable corresponding pairs and adds/deletes the agent's
-holds, ONE undo step for the batch, and applies no deformation. A hold is one
-section point (resolved by `_endpoint` as a pair's section endpoint, labelled
-`holds[i] (new hold)` in a refusal), id `H<next_hold_id>`, stored under the
-section's `landmarks.holds`; it is never edited and never stale; `delete`
-takes hold ids too, `["all"]` clears both. The reply keeps pairs under
-`changed` and new holds under `added_holds`, lists the holds under `holds`
-(`core.landmarks.hold_states`: `applied` / `pending`), and the tool door draws
-no picture for a hold. It resolves the exact saved picture recipe and
+`landmarks.py`: `set_landmarks(job, workspace, section, pairs=, delete=)` atomically
+adds/updates/deletes stable corresponding pairs, ONE undo step for the batch,
+and applies no deformation. It resolves the exact saved picture recipe and
 explicit atlas/section roles; it refuses captions, gutters, out-of-image
 coordinates, missing geometry and stale atlas planes. Section endpoints are
 original-image edge fractions; atlas endpoints are native plane pixels.
-`landmark_triangulation(job, workspace, section, holds="automatic"|"none")` explicitly applies the full
-set, at least three pairs and the section's holds, on its written linear
-placement (`BAD_ARGS` for another `holds`; the revision digests the pairs,
-the holds and the choice, so a changed choice is a new warp). The first application
+`landmark_triangulation(job, workspace, section)` explicitly applies the full
+set, at least three pairs, on its written linear placement. The first application
 composes onto the current deformation via its stored inverse. Consecutive
 landmark applications replace the landmark method against that original
 baseline (`current.parent`), retaining its key and steps in state; a different
-intervening method establishes a new baseline. With `holds="automatic"`, before the mesh is built it adds
-automatic holds (`automatic_holds`: a lattice at `HOLD_SPACING` of the section's
-longer side, without the points within `HOLD_CLEARANCE` spacings of a pair's
-section point; shifted a little (`HOLD_SHIFTS`) when a hold makes the mesh
-degenerate); `"none"` adds none. Every hold, the agent's and the automatic
-ones, corresponds to itself against the baseline (target = source,
-the pair targets being in the baseline's section coordinates); the vertex order
-is four corners, pairs, the agent's holds, automatic holds. Automatic holds are recomputed on every application, kept in
-`native_parameters` (`pair_count`, `placed_hold_count`, `hold_count`), the provenance
-(`holds`, `placed_holds`, `automatic_holds_xy`) and the deformation reference
-(`landmark_hold_mode`, `landmark_holds`, `landmark_placed_holds`: id -> fraction), never
-listed as pairs; the reply carries `holds`, `automatic_holds`, `placed_holds` and
-`holds_note`, and a fold names an automatic hold `automatic hold` and an agent's
-hold by its id (`folds.pairs` and `folds.holds`). The VisuAlign mesh supplies dense
+intervening method establishes a new baseline. The mesh is the pairs and the
+four fixed corners only, as VisuAlign builds it (vertex order: corners, pairs;
+`native_parameters.pair_count`); nothing is added to the pairs, so tissue
+that should keep its place takes a pair whose endpoints are one point (its
+target is its source, the pair targets being in the baseline's section
+coordinates). The revision digests the pairs with the mesh's kind, so a warp an
+earlier version saved with automatic holds is built again from the same
+pairs; its hold fields (`landmark_holds`, `~K` fold vertices) are read and
+ignored. The VisuAlign mesh supplies dense
 forward and same-connectivity inverse fields to the usual record composition
 and diagnostic machinery without running an engine. Unreadable current records,
 missing inverses, repeated section points, zero-area source triangles (named by
-pair id under `pairs` and hold id under `holds`) and stale atlas endpoints (named by pair id) are refused. Folded
+pair id) and stale atlas endpoints (named by pair id) are refused. Folded
 triangles are applied and reported (`folds`: area fraction, pair ids; stored as
 `landmark_folds` in the deformation reference, which also holds
 `landmark_pairs`, the pair-to-geometry digest `applied` is read from). A
