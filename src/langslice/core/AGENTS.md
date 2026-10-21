@@ -183,13 +183,20 @@ the angles in a caption (empty for the flat plane).
   (512, the working frame every fit is computed on). Cached on the
   workspace (`render_cache`, `render_scale`): read, never mutate.
 - `appearance.py` and `channels.py` — the channel model, as in napari. The
-  raw channels are never edited. Each section has ONE preprocessed channel
-  (`StackState.appearance["preprocessed"]`: a stack-wide recipe and
-  per-section overrides of channel weights, CLAHE, N4, denoising;
-  `validate_settings`, `set_settings`, `preprocessed_settings`,
-  `preprocessed_image`), the default recipe (None) being the default render
-  exactly; the Elastix affine and every deformable fit
-  (`deformation.stain_image`) and the image-model routes
+  raw channels are never edited. Derived channels are stack-wide recipes by
+  name (`StackState.appearance["derived"]` = `{name: {"stack": recipe,
+  "sections": {id: override}}}`; recipe = `weights` {raw name: weight} or None
+  for coverage weights, CLAHE clip and tiles, N4, denoise, `contrast_limits`
+  and `gamma` (fractions of the blended image), `invert`; `validate_recipe`,
+  `derived_settings`, `set_derived`, `derived_names`, `channel_names`,
+  `channel_image(ws, state, record, name, long_edge=)` for a raw or derived
+  name, `tone` for the stretch and invert steps, `weights_for`). `preprocessed`
+  is one: LangSlice's default recipe (None) is the default render exactly; the
+  older `appearance["preprocessed"]` entry (positional `channel_weights`, no
+  tone steps) is read through `migrate` and moved to `derived` by the next
+  write, never written again; `preprocessed_settings`, `set_settings`,
+  `preprocessed_image` stay as wrappers. The Elastix affine and every
+  deformable fit (`deformation.stain_image`) and the image-model routes
   (`handoff.prepare_linear_registration(preprocessed=True)`; a recipe joins
   the call key) read it. Geometry (calibration, the maps)
   is measured on the default render. `channels.py`: each raw
@@ -284,7 +291,7 @@ the angles in a caption (empty for the flat plane).
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
-  highlight=, region_only=, layers=, depth=), store=)`
+  highlight=, region_only=, layers=, masks=, depth=), store=)`
   returns one `LookPicture` per section (`section`:
   `display.framed_section`; `overlay`: `placement.placement_pictures` mode
   `overlay`, the applied deformation unless `warp` is `none`), per position
@@ -295,8 +302,12 @@ the angles in a caption (empty for the flat plane).
   when its angles are the median of differing sections'
   (`atlas_caption(median=)`). Defaults never read the job's state: every section,
   every raw channel with its display properties (`channels` may instead
-  name raw channels, or `["preprocessed"]`), `ATLAS_LAYER_DEFAULTS` per
-  mode. Each picture has an index caption (position, angles, um/px, the
+  name raw channels, or one derived channel alone: `["preprocessed"]`, or a
+  name made with `set_channel`), `ATLAS_LAYER_DEFAULTS` per
+  mode. `masks=` names masks of the section outlined where their weight is
+  0.5 on `section` and `overlay` pictures (`_draw_masks`: the weights from
+  `section_masks.read_mask` drawn as a scalar layer by `plugin_layers`; a
+  mask the section lacks is a note, no module is `UNKNOWN_MASK`). Each picture has an index caption (position, angles, um/px, the
   channel settings in force) and a JSON recipe `{"renderer": "look",
   "args", "state", "base", "shown", "um_per_px"}`: the request (a
   positioning picture's: the whole call's sections and positions and its

@@ -11,7 +11,8 @@ section and atlas pictures below):
   (each with its display setting or automatic contrast limits,
   :mod:`langslice.core.channels`; one is gray, several are added in distinct
   colours, ABBA's multichannel display), or the version ``preprocessed``
-  (what registration reads); neither is the section's default render.
+  (what registration reads) or another derived channel's name; neither is the
+  section's default render.
 - ``atlas_channels`` — what of the ATLAS is shown: any of the atlas's images
   (``template`` and the additional references the BrainGlobe atlas ships,
   by their names, :mod:`langslice.core.atlas.images`) and ``borders`` (the
@@ -40,10 +41,9 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.appearance import (
-    PREPROCESSED,
     Look,
     channel_colors,
-    preprocessed_settings,
+    derived_settings,
 )
 from langslice.core.atlas.core import get_reference_slice
 from langslice.core.atlas.images import TEMPLATE, atlas_images
@@ -143,7 +143,8 @@ class DisplayOptions:
     zoom: tuple[float, ...]
     #: Raw channel names shown (empty: the default render, or the version).
     channels: tuple[str, ...]
-    #: ``preprocessed``, or empty.
+    #: A derived channel's name (``preprocessed``, or one made with ``set_channel``),
+    #: or empty.
     version: str
     atlas_channels: tuple[str, ...]
     atlas_opacity: float
@@ -198,8 +199,8 @@ class DisplayOptions:
         ``preprocessed`` is the preprocessed channel, no channels
         the default render (None); raw channels carry their display
         properties."""
-        if self.version == PREPROCESSED:
-            return preprocessed_settings(state, record.id)
+        if self.version:
+            return derived_settings(state, self.version, record.id)
         if not self.channels:
             return None
         # One channel is stretched too, in gray (the `channels` strip is the
@@ -222,8 +223,8 @@ class DisplayOptions:
         """Caption fragment naming what of the section is shown ("" for the
         default render): each raw channel with its display setting, ``auto``
         without *state* (:func:`langslice.core.channels.display_words`)."""
-        if self.version == PREPROCESSED:
-            return "  [preprocessed channel]"
+        if self.version:
+            return f"  [{self.version} channel]"
         if not self.channels:
             return ""
         held = all_properties(state) if state is not None else {}
