@@ -465,17 +465,15 @@ set, at least three pairs, on its written linear placement. The first applicatio
 composes onto the current deformation via its stored inverse. Consecutive
 landmark applications replace the landmark method against that original
 baseline (`current.parent`), retaining its key and steps in state; a different
-intervening method establishes a new baseline. Before the mesh is built it adds
-automatic holds (`automatic_holds`: a lattice at `HOLD_SPACING` of the section's
-longer side, without the points within `HOLD_CLEARANCE` spacings of a pair's
-section point; shifted a little (`HOLD_SHIFTS`) when a hold makes the mesh
-degenerate), each corresponding to itself against the baseline (target = source,
-the pair targets being in the baseline's section coordinates); the vertex order
-is four corners, pairs, holds. Holds are recomputed on every application, kept in
-`native_parameters` (`pair_count`, `hold_count`), the provenance
-(`automatic_holds_xy`) and the deformation reference (`landmark_holds`), never
-listed as pairs; the reply carries `automatic_holds` and `holds_note`, and a fold
-through a hold names it `automatic hold` (pair ids only). The VisuAlign mesh supplies dense
+intervening method establishes a new baseline. The mesh is the pairs and the
+four fixed corners only, as VisuAlign builds it (vertex order: corners, pairs;
+`native_parameters.pair_count`); nothing is added to the pairs, so tissue
+that should keep its place takes a pair whose endpoints are one point (its
+target is its source, the pair targets being in the baseline's section
+coordinates). The revision digests the pairs with the mesh's kind, so a warp an
+earlier version saved with automatic holds is built again from the same
+pairs; its hold fields (`landmark_holds`, `~K` fold vertices) are read and
+ignored. The VisuAlign mesh supplies dense
 forward and same-connectivity inverse fields to the usual record composition
 and diagnostic machinery without running an engine. Unreadable current records,
 missing inverses, repeated section points, zero-area source triangles (named by

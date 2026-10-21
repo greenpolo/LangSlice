@@ -47,9 +47,6 @@ def stale(state: StackState, record: SliceState, pair: dict[str, Any]) -> bool:
     return pair.get("plane") != plane_context(state, record)
 
 
-#: A fold names an automatic hold vertex ``~K``: the K-th hold.
-HOLD_PREFIX = "~"
-
 
 def pair_key(pair: dict[str, Any]) -> str:
     """What of a pair the landmark warp is made from: its two endpoints."""
@@ -263,13 +260,11 @@ def draw_folds(
     image: Image.Image, panel: dict[str, Any], record: SliceState, *, warp: Any = None
 ) -> None:
     """Outline the folded triangles of the applied landmark warp, between the
-    section endpoints of their pairs (a fixed corner vertex has none)."""
+    section endpoints of their pairs (a fixed corner vertex has none; a vertex
+    a warp saved by an earlier version names otherwise is skipped)."""
     folds = (record.deformation or {}).get("landmark_folds") or {}
     by_id = {pair["id"]: pair["section_fraction_xy"]
              for pair in record.landmarks.get("pairs", [])}
-    # A hold vertex of a fold is named ``~K``: the K-th automatic hold.
-    for k, fraction in enumerate((record.deformation or {}).get("landmark_holds") or []):
-        by_id[f"{HOLD_PREFIX}{k}"] = fraction
     draw = ImageDraw.Draw(image)
     for ids in folds.get("triangles", []):
         points = [
@@ -283,20 +278,6 @@ def draw_folds(
         draw.line(path, fill=FOLD_COLOUR, width=3)
 
 
-def draw_holds(
-    image: Image.Image, panel: dict[str, Any], record: SliceState, *, warp: Any = None
-) -> None:
-    """Small unlabeled dots at the automatic holds of the applied landmark warp
-    (spots kept where they were), on a warped section panel."""
-    draw = ImageDraw.Draw(image)
-    x0, y0, x1, y1 = panel["bounds"]
-    for fraction in (record.deformation or {}).get("landmark_holds") or []:
-        x, y = (float(v) for v in section_picture_point(panel, fraction, warp))
-        if x0 <= x < x1 and y0 <= y < y1:
-            draw.ellipse((x - 3.5, y - 3.5, x + 3.5, y + 3.5), fill="black")
-            draw.ellipse((x - 2.5, y - 2.5, x + 2.5, y + 2.5), fill="#ffffff")
-
-
 def draw_landmarks(
     image: Image.Image,
     panels: list[dict[str, Any]],
@@ -308,7 +289,6 @@ def draw_landmarks(
     for panel in panels:
         if panel["role"] == "section" and panel.get("warp_key"):
             draw_folds(image, panel, record, warp=warp)
-            draw_holds(image, panel, record, warp=warp)
     placed: list[tuple[str, np.ndarray, str, bool]] = []
     for pair in record.landmarks.get("pairs", []):
         for panel in panels:
