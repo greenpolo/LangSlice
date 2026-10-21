@@ -15,8 +15,7 @@ import hashlib
 import json
 from typing import Any
 
-from langslice.core import appearance as looks
-from langslice.core.deformation import linear_key
+from langslice.core.section_masks import registration_digest, registration_parts
 from langslice.core.state import SliceState, StackState
 
 #: A section whose inputs changed while its result was computed.
@@ -31,11 +30,9 @@ def section_inputs(
     appearance, its damage (the marked regions, which every fit leaves
     out), and with *deformation* its applied deformation
     (a fit on top of it), with *trace* its image correction."""
-    held: dict[str, Any] = {
-        "linear": linear_key(state, record),
-        "fit_look": looks.preprocessed_settings(state, record.id),
-        "damage": {"regions": list(record.damaged_regions)},
-    }
+    if deformation and not trace:  # a section mask stores this one (one source of truth)
+        return registration_digest(state, record)
+    held: dict[str, Any] = registration_parts(state, record)
     if deformation:
         held["deformation"] = (record.deformation or {}).get("key")
     if trace:

@@ -246,9 +246,11 @@ class ScriptContext(ToolContext):
         return result
 
     def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
-                             meta: Mapping[str, Any] | None = None) -> DeformationProposal:
+                             meta: Mapping[str, Any] | None = None, weights: Any = None,
+                             provenance: Mapping[str, Any] | None = None) -> DeformationProposal:
         self._begin()
-        return super().deformation_from_map(section, native_xy, note=note, meta=meta)
+        return super().deformation_from_map(section, native_xy, note=note, meta=meta,
+                                            weights=weights, provenance=provenance)
 
     def set_positions(self, rows: Sequence[Mapping[str, Any]], *,
                       cutting_angles: Mapping[str, float] | None = None,

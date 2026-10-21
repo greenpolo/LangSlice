@@ -99,10 +99,9 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert nope["error"] == "UNKNOWN_SLICE_IDS" and nope["unknown"] == ["nope.png"]
     assert nope["filenames"] == ["s0.png"]
     assert fit(["s0.png"], ["XYZ"])["error"] == "UNKNOWN_REGIONS"
-    unavailable = fit(["s0.png"], [], "nissl")
-    assert unavailable["error"] == "BAD_ARGS"
-    assert unavailable["atlas_image"] == ["template"]
-    assert fit(["s0.png"], [], "spline")["error"] == "BAD_ARGS"
+    assert fit(["s0.png"], atlas_image="spline")["error"] == "BAD_ARGS"
+    assert fit(["s0.png"], section_image="nope")["error"] == "UNKNOWN_CHANNEL"
+    assert fit(["s0.png"], mask="missing")["error"] == "UNKNOWN_MASK"
     assert fit([])["error"] == "BAD_ARGS"
     many = fit(["s0.png"] * 5)
     assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4,
@@ -118,6 +117,11 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
                                     "translate_x_mm", "translate_y_mm", "pivot"}
     assert row["calibration"] == {"section_um_per_px": 25.0, "source": "host"}
     assert row["regions"]["include"] == ["TH"]
+    # The reply names what the fit read; Elastix estimates nothing itself.
+    assert row["inputs"]["atlas_image"] == "nissl"
+    assert row["inputs"]["atlas_image_resolved"] == "template"
+    assert row["inputs"]["mask"] == "none" and row["estimated"] is None
+    assert result["settings"]["section_image"] == "preprocessed"
     box_fractions = row["restrict_box"]
     assert len(box_fractions) == 4 and 0 <= box_fractions[0] < box_fractions[2] <= 1
     (record,) = box.job.views.records()

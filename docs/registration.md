@@ -33,8 +33,9 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 
 | Name | Removes |
 |---|---|
-| `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
-| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage` | the tool, as its task or host switch would |
+| `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `set_mask` | the tool, as its task or host switch would (`set_mask` exists where the Linear or Nonlinear task is on; with it off, the `mask` argument of the fits and `look`'s `masks` go too) |
+| `fireants_syn:metric`, `fireants_syn:edges`, `fireants_syn:detail` | that argument of `fireants_syn`, which then keeps its default |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
 | `export_maps` | the scripting verb |
 | `look:section`, `look:atlas`, `look:overlay`, `look:positioning` | that `look` mode |
@@ -238,18 +239,51 @@ display only, never fit geometry or stored transforms. Source image files are ne
 
 ## Channels and damage
 
-`set_channel_properties` changes raw-channel display contrast, gamma and
-colormap across the stack. Automatic contrast is computed per section.
-These settings affect pictures, not fits.
-
-`set_preprocessed_channel_properties` changes the channel blend, CLAHE,
-N4 correction and denoising used by the fits and image model, stack-wide or
-per section. It returns before/after pictures. Its description and the
-job statement's Method tell the agent to register on the counterstain
+`set_channel` writes channels. A **raw channel** is a channel of the image
+files, named as the reply lists them; it is never edited, and setting it
+(contrast limits, gamma, colormap) changes only how `look` draws it: pictures,
+not fits. Automatic contrast is computed per section. A **derived channel** is
+a stack-wide recipe over the raw channels: weights, CLAHE, N4 correction,
+denoising, a contrast stretch (`contrast_limits`, `gamma`) and `invert`.
+`preprocessed` is the derived channel the fits and the image model read by
+default (LangSlice's own recipe until it is set); any other name makes another
+derived channel a fit can read as its `section_image`. A recipe applies
+stack-wide, or as the override of the `sections` named; `reset` returns
+`preprocessed` to the default recipe and deletes another derived channel. It
+returns the before/after pictures of up to four sections. Its description and
+the job statement's Method tell the agent to register on the counterstain
 (DAPI, Hoechst, Nissl, NeuroTrace) alone, enhanced, with every labelling
-channel at weight 0. Inspect that channel with
-`look(channels=["preprocessed"])`. Both channel tools are available in every
+channel at weight 0. Inspect a derived channel with `look(channels=[name])`.
+`status` lists each derived channel's recipe. The tool is available in every
 job; ABBA's agent-preprocessing switch controls which raw channels it exports.
+
+## Masks
+
+A **mask** is a per-section weight image from 0 to 1 on the section's fit grid,
+saved under the job folder (`sections/<stem>/masks/<name>.npz`, float16; see
+`file_formats.md`). It is **section-side** and has one of two kinds, both a
+three-class EM sorting of the section's pixels into tissue that matches the
+atlas image, artifact and background (after Tward et al. 2025): `em`, made by
+`set_mask` at the section's current registration (the atlas image placed
+through its transform and applied deformation, on a 20 µm working grid, from a
+channel you choose, with optional starting points `match_sd`, `background_sd`,
+`artifact_sd`, `background_mean`, `artifact_mean`), and `fit`, copied from the
+sorting the section's applied deformation saved when its engine estimated one
+(`NO_DEFORMATION` / `NO_SORTING` when there is none). There is no threshold
+source and no drawn mask. The **damage marks** are atlas-side and always
+applied: they never mask the section.
+
+A fit takes a mask by name (`mask="none"`, the default, or a name the section
+holds). FireANTs and Elastix cut the weights at 0.5 and AND them into the
+section mask; a tool plugin's engine uses them as its own limits say (soft
+weights, or by dropping matches, or not at all). FireANTs no longer sorts the
+section itself: with `mask="none"` every pixel inside the placed atlas outline
+counts. A mask is stale once the section's position, orientation, cutting
+angles, transform, appearance, damage marks or deformation change since it was
+made: a fit refuses it (`STALE_MASK`), and `status` lists each section's masks
+(name, kind, stale). A fit that writes a deformation therefore leaves the mask
+it used stale; make it again at the new registration. `look(masks=[name])`
+outlines a mask where its weight is 0.5 on `section` and `overlay` pictures.
 
 `mark_damage` records atlas regions whose tissue is missing from the section
 or lies folded over other anatomy, including one hemisphere when needed.
@@ -276,7 +310,7 @@ and MCP; any number through the CLI and the library, within the job's
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement against one of the atlas's images. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a channel of the section (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -289,10 +323,21 @@ a larger region or `interactive_transform`.
 
 ## FireANTs deformation
 
-`fireants_syn` fits the atlas to the section's preprocessed stain, starting from
-its current linear placement and any applied deformation. Each fit builds
-on the previous one and can be undone. It accepts one to four sections,
-`stiffness="soft"|"medium"|"firm"` and optional `restrict_to` regions.
+`fireants_syn` fits the atlas to a channel of the section (`section_image`,
+default `preprocessed`), starting from its current linear placement and any
+applied deformation. Each fit builds on the previous one and can be undone. It
+accepts one to four sections and: `atlas_image` (default `"nissl"`), `mask`
+(default `"none"`), `smoothness_um` (default 80), `metric`
+(`mutual_information`, the default, or `local_correlation`), `edges` (default
+on), `detail` (`coarse`, `standard`, `fine`) and optional `restrict_to`
+regions. The step size, the iterations per level and the pyramid are fixed.
+Its reply carries `settings` (the call) and, per section, `inputs` (the
+channel and a digest of its recipe, the atlas image as asked and as resolved,
+the mask, the atlas-side damage regions and margin, the regions restricted
+to, and the brightness scaling in words) and `estimated` (null for FireANTs,
+which sorts nothing itself); the deformation record's provenance holds the same
+blocks. The reply names what was used and nothing about how well it worked.
+`restrict_to` belongs to `fireants_syn` and `elastix_affine` only.
 The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically. A restricted fit moves only that
 neighbourhood: the masks limit where the fit is measured, not where its
@@ -304,28 +349,20 @@ scaled to its size (see "Brain size" below).
 The engine is the SyN (symmetric diffeomorphic) registration of
 [FireANTs](https://github.com/rohitrango/FireANTs), on the GPU when there is
 one (about a second per section) and on the CPU otherwise, with ANTs' step rule: mutual information plus an edge channel,
-four pyramid levels, the stiffness as Gaussian smoothing of each step and of
-the whole warp. Identical inputs give identical fields.
+four pyramid levels (five at `fine`), `smoothness_um` as the Gaussian smoothing
+of each step (the whole warp is smoothed a quarter as much). Identical inputs give identical fields.
 
-A stain fit runs twice, over the whole section or restricted to regions. The
-first run measures the section inside the placed atlas outline widened by
-0.2 mm (for a restricted fit, only within the regions' neighbourhood). Then each section pixel is
-classed as matching the atlas image the first run warped, as an artifact, or
-as background (a three-class EM after Tward et al. 2025, on a 50 µm grid with
-a linear contrast per 0.8 mm block). The second run starts again from the
-same placement, measures every section pixel that matches with probability
-at least 0.5 anywhere in the picture, and lets the atlas reach everywhere
-except the marked damage: holes, tears and debris drop out, and the outline
-no longer bounds where tissue may go. A restricted fit classes the pixels
-over the whole section (the classes need tissue and background to learn
-from) and then keeps both masks within its regions' neighbourhood; its
-field still fades to nothing over 0.3 mm beyond the neighbourhood. The fitted record keeps the pixels left
-out, for review pictures; the agent's replies and pictures do not change.
-The Elastix affine and fits of traced borders keep the outline masks and
-run once.
+A stain fit runs once. It measures the section inside the placed atlas outline
+widened by 0.2 mm (for a restricted fit, only within the regions'
+neighbourhood), less the section pixels a named mask's weights put under 0.5.
+The Elastix affine and fits of traced borders run once the same way.
 
 Both registration engines accept any of the atlas's own images as
-`atlas_image`: BrainGlobe's `"template"` (the default) and every additional
+`atlas_image`, and the alias `"nissl"`, their default: the atlas's Nissl image
+where it has or borrows one (the borrowed `ccfv3augmented_nissl` on an Allen
+CCFv3 atlas; the template of `ccfv3augmented_mouse_25um`, which is a Nissl; an
+additional reference whose name contains "nissl"), else its template. The reply
+names the image it resolved to. The images are BrainGlobe's `"template"` and every additional
 reference the atlas ships, under BrainGlobe's names (for example
 `ccfv3augmented_mouse_25um`, whose template is the Blue Brain averaged Nissl,
 also ships a single-animal Nissl). The job statement lists them, and `look`
@@ -356,15 +393,15 @@ unchanged. Measured factors: `whs_sd_rat_39um` 1.7, `swc_female_rat_50um`
 
 What is scaled: the working pixels (20 µm in the adult mouse; 34 µm in the
 rat), so a rat section is fitted as a mouse section drawn smaller, with the
-same number of working pixels across the brain; the stiffness smoothing; the
+same number of working pixels across the brain; `smoothness_um`; the
 edge channel's blur and the local-correlation window; the outline and damage
 margins; the restricted neighbourhood (the `elastix_affine` description
-states it at the job's scale) and its taper; the EM's contrast block and how
+states it at the job's scale) and its taper; a mask's EM contrast block and how
 far from the tissue it samples background; the image-model line softening,
 gap closing and smallest region; the displacement and smallest-region limits
 of the plausibility flags; and the positioning picture's smallest ruler
-margin and span. The EM's 50 µm grid stays in micrometres: it is the sampling
-at which holes, tears and debris on the slide are seen. A fit's reply
+margin and span. The EM's grid stays at the sampling at which holes, tears and
+debris on the slide are seen. A fit's reply
 reports its engine numbers at the job's scale.
 
 ## Landmark triangulation

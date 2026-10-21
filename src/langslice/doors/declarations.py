@@ -590,13 +590,13 @@ def set_mask(
     """Make, replace or delete a named mask of one section: which tissue a fit compares.
 
     A mask holds a weight from 0 to 1 for each pixel of the section; a fit
-    that takes it by name ignores the pixels under 0.5. It sorts the section's pixels into tissue, artifact
-    and background by their brightness in a channel and by where the atlas
-    puts tissue, as the fits' own estimate does, and it is the only way a
-    fit leaves out a hole, a tear or a stain. The mask belongs to the section
-    as it stands: a change to its position, orientation, cutting angles,
-    transform or deformation makes it stale, and a fit refuses it until it
-    is made again. The marked damage regions are not part of a mask; every
+    that takes it by name ignores the pixels under 0.5. It sorts the
+    section's pixels into tissue, artifact and background by their brightness
+    in a channel and by where the atlas puts tissue, as the fits' own estimate
+    does, and it is the only way a fit leaves out a hole, a tear or a stain.
+    The mask belongs to the section as it stands: a change to its position,
+    orientation, cutting angles, transform or deformation makes it stale, and
+    a fit refuses it until it is made again. The marked damage regions are not part of a mask; every
     fit leaves them out of the atlas on its own. Undoable.
 
     Args:

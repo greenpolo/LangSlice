@@ -90,7 +90,7 @@ def _no_fit(monkeypatch) -> list[list[str]]:
     """Stand in for the Elastix fit: the cap is checked before it runs."""
     asked: list[list[str]] = []
 
-    def fit(job, ctx, sections, regions, atlas_image):
+    def fit(job, ctx, sections, regions, *_inputs):
         names = list(sections)
         asked.append(names)
         return AffineFit(rows=[{"id": name, "status": "error", "error": "FIT_FAILED"}

@@ -323,6 +323,7 @@ def show_result(
     job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
     positions_mm: Sequence[float] = (), zooms: Mapping[str, Sequence[float]] | None = None,
     highlight: Sequence[str] = (), resolution: int | None = None,
+    masks: Sequence[str] = (),
 ) -> Looked:
     """The picture a change tool shows of what it wrote, drawn as ``look``
     draws *mode* and saved under *tool* (so it has a number, a caption and a
@@ -337,6 +338,8 @@ def show_result(
     are shown (None: all); the rest are ``not_shown`` (with the ``look`` call that
     draws them), and a section whose picture fails is ``failed``. *resolution*
     is the long edge of each picture, as ``look``'s (None: the job's level).
+    *masks* names masks of the sections outlined on a ``section`` or ``overlay``
+    picture (``set_mask``'s picture).
     """
     state = job.state
     drawn: list[looks.LookPicture] = []
@@ -357,7 +360,8 @@ def show_result(
                 window = tuple(float(v) for v in windows.get(section) or ())
                 request = looks.LookRequest(mode=mode, sections=(section,), zoom=window,
                                             highlight=tuple(str(v) for v in highlight),
-                                            long_edge=edge)
+                                            long_edge=edge,
+                                            masks=tuple(str(v) for v in masks))
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
                 except Exception as exc:  # noqa: BLE001 - the write stands; say why

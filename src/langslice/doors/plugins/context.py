@@ -1270,10 +1270,9 @@ class ToolContext:
         else:
             raise ToolError("BAD_ARGS", "settings is a FitSettings or a mapping of its fields")
         try:
-            resolved = resolve_image(workspace.atlas, str(chosen.atlas_image))
+            resolve_image(workspace.atlas, str(chosen.atlas_image))
         except ValueError as exc:
             raise ToolError("BAD_ARGS", str(exc)) from exc
-        chosen = replace(chosen, atlas_image=resolved)
         try:
             fitted = fit_record(self._door.job, workspace, record.id, chosen, start=start,
                                 mask=label, marked=bool(marked))

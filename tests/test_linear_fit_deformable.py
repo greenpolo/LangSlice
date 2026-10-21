@@ -36,7 +36,7 @@ needs_engine = pytest.mark.skipif(not ops_deformable.engine_ready(),
                                 reason="fireants_syn needs FireANTs")
 
 
-def _choice(fit_section: str = "preprocessed", fit_atlas: str = "template",
+def _choice(fit_section: str = "preprocessed", fit_atlas: str = "nissl",
             smoothness_um: float = 80.0) -> deformation.Choice:
     """One fit setting for ``ops.deformable.fit_deformable`` (SyN)."""
     return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas,

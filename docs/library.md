@@ -289,25 +289,33 @@ image), read only.
 
 ### The native engines with settings of your own
 
-`c.fit_fireants(id, settings=None, mask=None, start="linear", em=True,
-marked=True, note="")` runs FireANTs SyN, the engine `fireants_syn` runs, and
-returns a `DeformationProposal` NOT written. `settings` is a
+`c.fit_fireants(id, settings=None, mask="none", start="linear", marked=True,
+note="")` runs FireANTs SyN, the engine `fireants_syn` runs, and returns a
+`DeformationProposal` NOT written. `settings` is a
 `langslice.core.deformable.FitSettings` or a mapping of its fields over
-`fireants_syn`'s `medium` defaults: `stiffness` (`soft`, `medium`, `firm`),
-`detail` (`coarse`, `standard`), `atlas_image`, `stain_metric`
+`fireants_syn`'s defaults: `smoothness_um` (80), `detail` (`coarse`,
+`standard`, `fine`), `atlas_image` (`"nissl"`), `stain_metric`
 (`mutual_information`, `local_correlation`), `stain_edges`, `structures` and
-`neighbourhood_um` (some regions only), `exclude`. `mask` is a bool array of
-the fit grid's `(H, W)`, True where the section is compared (left out: a
-tear, a bubble); it narrows the EM section mask too. `start="current"` fits on
-top of the applied deformation; `em=False` skips the EM mask's second run;
-`marked=False` keeps the section's marked damage regions in the fit.
-`c.fit_elastix(id, restrict_to=(), exclude=(), atlas_image="template",
-mask=None, marked=True, note="")` runs the Elastix affine `elastix_affine`
-runs, from the current placement, and returns a `TransformProposal`.
+`neighbourhood_um` (some regions only), `exclude`. `mask` is `"none"` or the
+NAME of a mask of the section that `set_mask` made (`c.mask(id, name)` reads
+one: `UNKNOWN_MASK`, `STALE_MASK`); an array is refused (`BAD_ARGS`, make the
+mask with `set_mask` so the job holds it). `start="current"` fits on top of the
+applied deformation; `marked=False` keeps the section's marked damage regions
+in the fit. The proposal's provenance holds the fit's `inputs` and `estimated`
+blocks, as a tool's reply does.
+`c.fit_elastix(id, restrict_to=(), exclude=(), atlas_image="nissl",
+mask="none", marked=True, note="")` runs the Elastix affine `elastix_affine`
+runs, from the current placement, and returns a `TransformProposal` (refused
+`HAS_DEFORMATION` on a section that holds a deformation).
 `set_deformations` / `set_transforms` write them as the script's: the
-FireANTs settings, start, EM, mask size and runtime in the deformation's
+FireANTs settings, start, mask name and runtime in the deformation's
 provenance `meta`, the Elastix call's settings under the transform record's
-`fit`.
+`fit`. `c.channel_names(id)` lists the channels a fit can read, and
+`c.fit_frame(id, channel="preprocessed")` gives one of them on the fit grid
+(`frame.channel`, `frame.channel_name`; `stain=True` is the same for
+`preprocessed`); `atlas=("nissl",)` asks for the atlas's Nissl plane.
+`c.deformation_from_map(..., weights=)` stores an engine's own sorting (float
+`(H, W)` on the fit grid) with the record, where `set_mask(source="fit")` finds it.
 
 ### Marks of your own on the pictures
 
