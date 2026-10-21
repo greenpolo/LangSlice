@@ -274,7 +274,9 @@ the angles in a caption (empty for the flat plane).
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
   `ROW_FIELDS` field on every row, null or its `ROW_DEFAULTS` value where
   absent, for `ROW_KEYS` `rows` and `changed`, and only for a list of
-  status rows: rows with a field outside `ROW_FIELDS`, such as
+  status rows (`frozen`, `damage_by_user` and `registration`, the number of
+  the registration the section holds, are set by `ops.views.status`): rows
+  with a field outside `ROW_FIELDS`, such as
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
 - `section_masks.py` — a section's masks, saved per section

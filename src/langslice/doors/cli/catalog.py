@@ -46,7 +46,8 @@ JOB_COMMANDS: dict[str, str] = {
              "written to BRIEF.md in the job folder.",
     "runs [ID]": "The background runs (newest first), or one run: running, finished "
                 "(with its answer) or lost.",
-    "wait [ID]": "Wait for a background run (the latest without ID); --timeout SECONDS.",
+    "wait [ID]": "Wait for a background run (the latest without ID): its answer, or "
+                "STILL_RUNNING after 30 s (wait again); --timeout SECONDS.",
     "env [install PACKAGE ...|remove]": "The job's own Python environment (made when "
         "missing; it also imports LangSlice's packages): its python, and `install` puts "
         "pip packages in it, listed in scripts/requirements.txt; `remove` deletes it and "
@@ -99,7 +100,8 @@ def command_entry(name: str) -> dict[str, Any]:
         entry["usage"] = "langslice-job IMAGE_FOLDER init [--flag value ...]"
         entry["flags"] = flags_table(init_parser())
     elif name == "wait":
-        entry["flags"] = [{"flag": "--timeout", "aliases": [], "default": None,
+        # background.WAIT_S, not imported: `schema` runs without the job modules.
+        entry["flags"] = [{"flag": "--timeout", "aliases": [], "default": 30.0,
                            "help": "Seconds to wait before answering with the run still "
                                    "running", "choices": None, "takes_value": True,
                            "metavar": "SECONDS"}]
@@ -226,7 +228,8 @@ def ops(_args: argparse.Namespace) -> Envelope:
         "usage": "langslice-job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
                  "[--background] [--verbose]",
         "long": "A long verb computes outside the job lock and may take minutes: run it "
-                "with --background (answers at once with a run id), then `wait ID`.",
+                "with --background (answers at once with a run id), then `wait ID` (it "
+                "answers within 30 s; wait again while it says STILL_RUNNING).",
         "job_commands": JOB_COMMANDS,
     }, next=["langslice-job FOLDER brief", "langslice-job schema VERB"])
 

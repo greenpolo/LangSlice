@@ -6,7 +6,9 @@ positioning picture, or the section under its new transform with the atlas
 borders on it; where the job disables ``look:positioning``, the overlay of
 each section ``position_sections`` wrote) unless the call's ``view`` is false
 and the host does not force it (``JobSpec.force_view``). ``mark_damage`` always shows the marked
-regions. ``note``, ``undo``, ``redo`` and ``submit`` answer with rows.
+regions. ``restore_registration`` lists a section's registrations, or puts one
+back and shows the section's overlay. ``note``, ``undo``, ``redo`` and
+``submit`` answer with rows.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from langslice.ops import look as ops_look
 from langslice.ops import masks as ops_masks
 from langslice.ops import notes as ops_notes
 from langslice.ops import positions as ops_positions
+from langslice.ops import registrations as ops_registrations
 from langslice.ops import submit as ops_submit
 from langslice.ops import transforms as ops_transforms
 from langslice.ops.refusal import Refused
@@ -230,6 +233,27 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             return {"status": "error", "error": "NOTHING_TO_REDO"}
         return stepped("redone", "redo_depth", step)
 
+    def restore_registration(section: str, registration: int = 0,
+                             view: bool = True) -> dict[str, Any]:
+        try:
+            if not registration:
+                listed = ops_registrations.listing(job, str(section))
+                return {"status": "ok", "id": listed.id, "registrations": listed.rows,
+                        **({"held": listed.held} if listed.held is not None else {})}
+            done = ops_registrations.restore(job, str(section), int(registration))
+        except Refused as refusal:
+            return refusal.payload()
+        result: dict[str, Any] = {
+            "status": "ok", "id": done.id, "registration": done.registration,
+            **({"replaced": done.replaced} if done.replaced not in (None, done.registration)
+               else {}),
+            "written": done.written, **door.answered(done.id),
+        }
+        if not shows(view):
+            return result
+        shown = ops_look.show_result(job, ctx, "restore_registration", "overlay", [done.id])
+        return pictured(result, shown)
+
     def submit(summary: str, notes: list[str], interval_breaks: list[str],
                tool_context: Any = None) -> dict[str, Any]:
         try:
@@ -248,5 +272,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     return {
         "position_sections": position_sections,
         "interactive_transform": interactive_transform, "mark_damage": mark_damage,
-        "set_mask": set_mask, "note": note, "undo": undo, "redo": redo, "submit": submit,
+        "set_mask": set_mask, "note": note, "undo": undo, "redo": redo,
+        "restore_registration": restore_registration, "submit": submit,
     }

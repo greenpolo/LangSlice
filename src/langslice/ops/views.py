@@ -35,7 +35,9 @@ def status(job: Job) -> StackStatus:
     """The status table (``status``). A section with properties the user froze
     (``JobSpec.frozen``) carries them as ``frozen: [...]``, one the user gave
     a damage note (``inputs.damaged``: a note, not damage)
-    ``damage_by_user: true``; the others carry neither."""
+    ``damage_by_user: true``; the others carry neither. A section holding a
+    listed registration carries its number, ``registration``
+    (:mod:`langslice.job.registrations`)."""
     state = job.state
     rows = status_rows(state)
     held = freeze.sections_of(job.spec.frozen, [row["id"] for row in rows])
@@ -44,5 +46,9 @@ def status(job: Job) -> StackStatus:
             row["frozen"] = held[row["id"]]
         if row["id"] in job.host_damaged:
             row["damage_by_user"] = True
+        record = state.by_id(row["id"])
+        number = job.registrations.number_of(state, record) if record is not None else None
+        if number is not None:
+            row["registration"] = number
     return StackStatus(rows=rows, cutting_angles_deg=stack_angles_entry(state),
                        interval_breaks=break_ids(state))

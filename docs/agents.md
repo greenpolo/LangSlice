@@ -76,10 +76,14 @@ Long calls can run detached:
 ```bash
 langslice-job sections/ fireants_syn --sections s01.tif --background
 langslice-job sections/ runs
-langslice-job sections/ wait --timeout 600
+langslice-job sections/ wait
 ```
 
-`runs ID` and `wait ID` address a particular run. A detached run needs a
+`runs ID` and `wait ID` address a particular run. `wait` answers within 30
+seconds: with the run's answer, or, while it still runs, `STILL_RUNNING`
+(exit 3) with the run's state and the command that waits again, so an agent
+polls instead of holding a command its harness may end as too long.
+`--timeout SECONDS` sets how long it waits. A detached run needs a
 shell that lets a process outlive the command that started it; a sandbox that
 ends them when the command returns (Claude Code's) loses every run
 (`RUN_LOST`), so there a long verb runs without `--background`, in the
@@ -144,7 +148,10 @@ the environment's packages, pinned, in `scripts/requirements.txt`.
 environment from it. LangSlice's own environment is never changed.
 
 `langslice-job FOLDER python SCRIPT [ARGS ...]` runs a script with that
-python (making `env/` first when it is missing). Its stdout, stderr and exit
+python (making `env/` first when it is missing). A relative SCRIPT that is not
+a file from the working folder is the job folder's, so `scripts/NAME.py` runs
+the job's script from any folder (`sys.argv[0]` is then its absolute path).
+Its stdout, stderr and exit
 code are the script's, as `env/bin/python SCRIPT ARGS` gives them: `sys.argv`,
 the working folder, the script's folder first on `sys.path`, then the
 environment's own packages, then LangSlice's. It is the faster way to run
@@ -287,7 +294,10 @@ An interrupted job resumes from its checkpoint. Resuming with different
 supplied inputs is refused with `INPUTS_CHANGED`, and `init` with other job
 settings than the saved job's with `SETTINGS_CHANGED`; `--fresh` starts the job
 over. Every write is checkpointed and undoable. Calls through different
-interfaces pick up each other's saved changes.
+interfaces pick up each other's saved changes. A write waits for the job
+folder's lock while another holds it (up to 300 s, then `JOB_BUSY`); a read
+(`look`, `zoom`, `status`, the atlas and job-folder tools) never waits: it
+reads the job as it was last saved.
 
 The built-in agent prints token usage per model call. LangSlice sets no limit
 on model turns, tool calls, tokens or time, and nothing stops a run for what it

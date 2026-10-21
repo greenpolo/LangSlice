@@ -176,6 +176,38 @@ def _clears_stale_deformations(tool: Any, job: Job) -> Any:
     return run
 
 
+def _names_registrations(tool: Any, job: Job) -> Any:
+    """After a write: the registration each section it changed now holds
+    (:mod:`langslice.job.registrations`), as ``registration``
+    ``{section: number}``, for the sections whose status row in the reply does
+    not show it already (:func:`registrations_named`)."""
+
+    @functools.wraps(tool)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        mark = len(job.registered)
+        result = tool(*args, **kwargs)
+        return registrations_named(job, result, mark)
+
+    return run
+
+
+def registrations_named(job: Job, result: Any, mark: int) -> Any:
+    """*result* with ``registration`` ``{section: number}``: the registrations
+    this thread's writes left since ``len(job.registered)`` was *mark*, less
+    the ones its status rows (``changed``, ``rows``) show; a reply that has a
+    ``registration`` of its own keeps it."""
+    held = job.registered_since(mark)
+    if not held or not isinstance(result, dict) or "registration" in result:
+        return result
+    shown = {row.get("id"): row.get("registration") for key in ("changed", "rows")
+             for row in (result.get(key) or []) if isinstance(row, dict)}
+    named = {section: number for section, number in held.items()
+             if shown.get(section) != number}
+    if named:
+        result["registration"] = named
+    return result
+
+
 def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
     """Save every picture *tool* returns in the job folder, with its layers,
     and list their numbers under ``pictures``.
@@ -459,16 +491,23 @@ def build_tools(
 
     @contextlib.contextmanager
     def guarded(name: str) -> Iterator[None]:
-        """Around every call: a verb runs whole under the job folder's write
+        """Around every call, named for the registrations it leaves
+        (:meth:`Job.acting`): a write runs whole under the job folder's write
         lock, after the state is brought up to date (:meth:`Job.writing`); a
-        long verb (``VERBS[name].long``) only syncs, computes outside the
-        lock and takes it itself to apply, re-checking its sections."""
-        if verbs[name].long:
-            sync_job()
-            yield
-            return
-        with job.writing():
-            yield
+        read never waits for another process's writer (:meth:`Job.reading`:
+        the state as it stands); a long verb (``VERBS[name].long``) only
+        syncs, computes outside the lock and takes it itself to apply,
+        re-checking its sections."""
+        with job.acting(name):
+            if verbs[name].long:
+                sync_job()
+                yield
+            elif verbs[name].kind == "read":
+                with job.reading():
+                    yield
+            else:
+                with job.writing():
+                    yield
 
     verbs = verbs_for(spec)
     bodies: dict[str, Callable[..., Any]] = {
@@ -497,10 +536,17 @@ def build_tools(
         """A write behind the door's opening-read gate (armed by MCP only)."""
         return _opening_gate(tool, box) if verbs[name].kind == "write" else tool
 
+    def after_write(name: str, tool: Any) -> Any:
+        """A write's stale deformations cleared, and the registrations it left
+        named; a read changes neither."""
+        if verbs[name].kind != "write":
+            return tool
+        return _names_registrations(_clears_stale_deformations(tool, job), job)
+
     box.tools = [
         _serialized(
-            _announces_work(_saves_views(_clears_stale_deformations(
-                _strict(behind_gate(name, declare(name, bodies[name], variant))), job),
+            _announces_work(_saves_views(after_write(
+                name, _strict(behind_gate(name, declare(name, bodies[name], variant)))),
                 job, ctx), job),
             lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
         for name in enabled(spec, scripting=scripting, image_model=image_model_connected)

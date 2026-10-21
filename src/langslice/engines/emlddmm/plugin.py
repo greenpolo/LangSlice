@@ -57,7 +57,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from langslice.engines import _blocks
-from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec
+from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec, flag_words
 
 HERE = Path(__file__).resolve().parent
 NAME = "emlddmm"
@@ -464,8 +464,8 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
         taken[k] = sec["id"]
     limit = float(config["memory_limit_gb"])
     if memory > limit:
-        fits = next((s for s in np.arange(slot_um, 5000.0, 5.0)
-                     if _memory_gb(int(_slots(z, s, cos)[0].max()) + 1, len(gy), len(gx),
+        fits = next((float(s) for s in np.arange(slot_um, 5000.0, 5.0)
+                     if _memory_gb(int(_slots(z, float(s), cos)[0].max()) + 1, len(gy), len(gx),
                                    config["dtype"]) <= limit), None)
         advice = "fewer sections or a smaller field"
         if fits is not None:
@@ -580,13 +580,6 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     if "error" in out:
         raise ToolError("ENGINE_FAILED", f"emlddmm failed: {out['error']}")
     return out
-
-
-def _call_folder(ctx: ToolContext, tool: str) -> Path:
-    calls = ctx.work_dir() / "calls"
-    calls.mkdir(parents=True, exist_ok=True)
-    n = len([p for p in calls.iterdir() if p.is_dir()])
-    return calls / f"{n:04d}_{tool}"
 
 
 def _relative(path: Path, ctx: ToolContext) -> str:
@@ -805,7 +798,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     lattices = [_lattice(sec, off) for sec, off in zip(secs, st["off_xy"], strict=True)]
     params = {"mode": "stack", "atlas": atlas.name, "image": st["resolved"], "cfg": cfg,
               "sorting": sort, "warp": warp, "mu": _mu(st)}
-    folder = _call_folder(ctx, "stack")
+    folder = _blocks.call_folder(ctx, "stack")
     arrays = _arrays(st, [lat["q"] for lat in lattices])
     digests = {sec["id"]: ctx.section_inputs(sec["id"], deformation=True) for sec in secs}
     settings = {"section_image": section_image, "atlas_image": atlas_image, "mask": mask,
@@ -918,7 +911,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                                  r["set_aside"]["WB"], r["set_aside"]["WA"], r["written"],
                                  r["problem"]])
         problems = [f"{r['id']} ({r['problem']})" for r in rows if r["problem"]]
-        flagged = [f"{r['id']} ({' '.join(_flags(r['summary']))})" for r in rows
+        flagged = [f"{r['id']} ({flag_words(r['summary'])})" for r in rows
                    if _flags(r["summary"])]
         shown = sorted((r for r in rows if r["id"] in written),
                        key=lambda r: (not _flags(r["summary"]), -r["moved"][0]))[:OVERLAYS]
@@ -981,7 +974,7 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     secs = st["secs"]
     params = {"mode": "plane", "atlas": atlas.name, "image": st["resolved"], "cfg": cfg,
               "sorting": {}, "warp": False, "mu": _mu(st), "up_vector": (-st["dy"]).tolist()}
-    folder = _call_folder(ctx, "plane")
+    folder = _blocks.call_folder(ctx, "plane")
     out = _engine(config, folder, _arrays(st, [np.zeros((0, 2)) for _ in secs]), params)
     A, A0, A2d = (np.asarray(out[k], np.float64) for k in ("A", "A0", "A2d"))
     # The slot planes' common normal is A's first row (the gradient of the slot coordinate), the

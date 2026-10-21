@@ -44,7 +44,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from langslice.engines import _blocks
-from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec
+from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec, flag_words
 
 HERE = Path(__file__).resolve().parent
 NAME = "STalign"
@@ -374,13 +374,6 @@ def _engine(config: dict[str, Any], folder: Path, arrays: dict[str, Any],
     return out
 
 
-def _call_folder(ctx: ToolContext, tool: str) -> Path:
-    calls = ctx.work_dir() / "calls"
-    calls.mkdir(parents=True, exist_ok=True)
-    n = len([p for p in calls.iterdir() if p.is_dir()])
-    return calls / f"{n:04d}_{tool}"
-
-
 def _frame(ctx: ToolContext, name: str, atlas_image: str, section_image: str,
            ) -> tuple[Any, np.ndarray, str]:
     """The section's fit frame, the atlas image asked for on it and the name that resolved to."""
@@ -450,7 +443,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                 "displacement_um": displacement_um,
                 "sorting": sorting or {"method": "classic"}, "iterations": iterations,
                 "device": config["device"]}
-    folder = _call_folder(ctx, "lddmm")
+    folder = _blocks.call_folder(ctx, "lddmm")
     rows = []
     for name in sections:
         view_of = ctx.section(name)
@@ -531,8 +524,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                                     done.rows[0].get("message", ""))
             summary = warp.summary
             relative = here.relative_to(lctx.job_dir) if here.is_relative_to(lctx.job_dir) else here
-            flags = ", ".join(str(flag.get("code"))
-                              for flag in summary.get("flags") or []) or "none"
+            flags = flag_words(summary)
             left = (f"; its sorting left out {estimated['left_out_fraction']:.0%} of the tissue "
                     "and is saved with the deformation") if estimated and (
                         estimated["left_out_fraction"] is not None) else ""
@@ -591,7 +583,7 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
     if not sections:
         raise ToolError("BAD_ARGS", "name one to eight sections")
     atlas = ctx.atlas()
-    folder = _call_folder(ctx, "plane")
+    folder = _blocks.call_folder(ctx, "plane")
     params = {"nt": 4, "sigmaM": 2.0, "sigmaB": 2.0, "sigmaA": 2.0, "muA": 3.0, "muB": 0.0}
     rows, pictures = [], []
     for name in sections:

@@ -867,6 +867,33 @@ def redo() -> dict[str, Any]:
     ...
 
 
+def restore_registration(section: str, registration: int = 0,
+                         view: bool = True) -> dict[str, Any]:
+    """Put back a registration a section held before: its orientation, transform and deformation.
+
+    Each registration a section holds gets a number, kept whatever is
+    written after it: the `registration` of its status row and of the reply
+    to the write that left it. Undo takes back the job's last write; this
+    returns one section to any earlier registration, such as a fit made
+    before another method's, and leaves the other sections as they are. One
+    undoable write. A deformation fitted with the section at another position
+    or other cutting angles is refused until the section is back there.
+
+    Args:
+        section: Filename (the extension may be left off).
+        registration: The number to put back; 0 lists the section's
+            registrations (number, the tool that made it, when) and writes
+            nothing.
+        view: Return a picture of the section under the registration put
+            back.
+
+    Returns:
+        The registration the section holds now and the one it replaced, its
+        row, and the picture; or the list.
+    """
+    ...
+
+
 def submit(
     summary: str,
     notes: list[str],
@@ -1036,14 +1063,14 @@ STUBS: dict[str, Callable[..., Any]] = {
         position_sections, interactive_transform, mark_damage, set_mask,
         elastix_affine, fireants_syn, set_landmarks, landmark_triangulation,
         trace_borders,
-        note, undo, redo, submit, export_maps,
+        note, undo, redo, restore_registration, submit, export_maps,
     )
 }
 
 #: The change tools: each returns its picture unless ``view`` is false.
 VIEW_TOOLS: tuple[str, ...] = (
     "set_channel", "set_mask", "position_sections", "interactive_transform", "elastix_affine",
-    "fireants_syn", "set_landmarks", "landmark_triangulation",
+    "fireants_syn", "set_landmarks", "landmark_triangulation", "restore_registration",
 )
 
 # --- the run's variant ------------------------------------------------------------

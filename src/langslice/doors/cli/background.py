@@ -32,6 +32,10 @@ CHILD_COMMAND: list[str] = [sys.executable, "-m", "langslice.doors.cli.jobcli"]
 START_GRACE_S = 120.0
 #: How often ``wait`` looks.
 POLL_S = 0.25
+#: How long ``wait`` waits without ``--timeout`` before it answers
+#: ``STILL_RUNNING``: a harness ends a command it finds too long, so a wait
+#: answers well within that and the agent waits again.
+WAIT_S = 30.0
 
 
 def runs_dir(layout: JobLayout) -> Path:

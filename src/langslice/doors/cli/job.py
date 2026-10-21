@@ -797,14 +797,18 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
                                    if "envelope" in record else {})},
                         next=[] if record.get("state") != "running"
                         else [f"langslice-job {job_folder} wait {run_id}"])
-    record = background.wait(layout, run_id, options.get("timeout"))
+    waited = float(options.get("timeout", background.WAIT_S))
+    record = background.wait(layout, run_id, waited)
     if record is None:
         return Envelope.failure("UNKNOWN_RUN", f"No run {run_id}.", job=job_folder)
     state = record.get("state")
     if state == "running":
-        return Envelope.failure("STILL_RUNNING", f"Run {run_id} is still running.",
-                                result=background.brief(record), job=job_folder,
-                                exit=EXIT_REFUSED)
+        still = Envelope.failure("STILL_RUNNING",
+                                 f"Run {run_id} is still running (waited {waited:g} s).",
+                                 result=background.brief(record), job=job_folder,
+                                 exit=EXIT_REFUSED)
+        still.next = [f"langslice-job {job_folder} wait {run_id}"]
+        return still
     if state != "finished" or not isinstance(record.get("envelope"), dict):
         return Envelope.failure("RUN_LOST", f"Run {run_id} ended without an answer.",
                                 result=background.brief(record), job=job_folder,

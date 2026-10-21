@@ -192,7 +192,11 @@ A write returns a `WriteResult`: `ok` is false when the call was refused whole
 (`status` `ok` or `error` with the code: `FROZEN`, `STALE_INPUT`,
 `UNKNOWN_SLICE_IDS`, ...) and `written` the ids written. `result.reply()` is
 those as reply fields. A read tool that writes, or a write outside `writes`, is
-refused (`READ_TOOL_WRITES`, `WRITE_NOT_DECLARED`).
+refused (`READ_TOOL_WRITES`, `WRITE_NOT_DECLARED`). The door adds `registration`
+`{section: number}` to the tool's reply for each section whose registration the
+call changed (the number `restore_registration` takes; see
+[writes](registration.md#writes-review-and-submission)), and a background notice ends
+with it.
 
 A deformation is written as a native fit's is: the record is saved in the
 section's folder (`sections/<name>/deformable/<key>/`, its engine
@@ -329,7 +333,13 @@ STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `la
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
-`damage_margin_mm` and `atlas_image_note`.
+`damage_margin_mm` and `atlas_image_note`. All three are long tools: an engine computes
+outside the job's write lock, so its minutes never hold up the other commands, and writes
+with `expect=`. Each call's files go in a folder of its own,
+`plugins/<tool>/calls/NNNN_<kind>/`, made when the call starts, so calls running at once
+never share one. A notice words a fit's plausibility flags as the native fits do: each code
+once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
+on a `DeformationProposal.summary`: `FOLDS, REGION_COMPRESSED (CA1, DG)`).
 
 Each engine's description opens with what the method is and where it comes from (its paper),
 as `fireants_syn`'s does. A job with more than one deformable method (`fireants_syn` and any of

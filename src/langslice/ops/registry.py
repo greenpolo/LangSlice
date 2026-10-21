@@ -55,6 +55,7 @@ from langslice.ops import (
     masks,
     notes,
     positions,
+    registrations,
     submit,
     traces,
     transforms,
@@ -133,6 +134,7 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "note": notes.add_note,
     "undo": history.undo,
     "redo": history.redo,
+    "restore_registration": registrations.restore,
     "submit": submit.submit,
     "export_maps": exports.export_maps,
 }

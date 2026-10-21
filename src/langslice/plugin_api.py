@@ -26,6 +26,7 @@ from langslice.doors.plugins import (
     ToolSpec,
     TransformProposal,
     WriteResult,
+    flag_words,
 )
 
 __all__ = [
@@ -34,5 +35,5 @@ __all__ = [
     "LayerRef",
     "PluginError", "SectionRaster", "SectionView", "ToolContext", "ToolError", "ToolResult",
     "ToolSpec",
-    "TransformProposal", "WriteResult",
+    "TransformProposal", "WriteResult", "flag_words",
 ]

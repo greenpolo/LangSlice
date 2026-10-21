@@ -32,7 +32,12 @@ the method returns. `look(resolution=N)` is bounded by source pixels, with
 no model-viewer cap.
 
 Each write checkpoints the job and is undoable with `undo()` and `redo()`.
-The handle reloads other processes' saved changes before each call.
+`restore_registration(section=..., registration=n)` puts one section back to
+a registration it held earlier (its status row's `registration`), whatever
+was written since; without `registration` it lists them
+([writes](registration.md#writes-review-and-submission)).
+The handle reloads other processes' saved changes before each call; a read
+never waits for another process's write lock.
 Registration requirements still apply. See [registration tools](registration.md).
 
 `trace_borders`, `fireants_syn` and a plugin's long tools (`stalign_lddmm`) start

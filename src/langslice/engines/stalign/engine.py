@@ -98,8 +98,8 @@ def borrowed_nissl(a) -> np.ndarray:
     step = np.asarray(a.resolution, float) / 25.0
     offset = 0.5 * step - 0.5 + np.array([350.0 / 25.0, 0.0, 0.0])
     annotation = np.asarray(a.annotation)
-    data = affine_transform(source, step, offset=offset, output_shape=annotation.shape, order=1,
-                            output=np.float32)
+    data = affine_transform(source, np.diag(step), offset=offset, output_shape=annotation.shape,
+                            order=1, output=np.float32)
     data[annotation == 0] = 0
     return data
 

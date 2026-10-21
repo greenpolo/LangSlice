@@ -241,12 +241,11 @@ def land_trace(
                       f"({row.get('error')}: {row.get('message', '')}); nothing was applied.",
                       result={"error": row.get("error"), "row": row, "trace": trace})
     numbers = row.get("displacement_mm") or {}
-    flags = [flag.get("code") for flag in row.get("flags") or []]
     built_on = ("its previous deformation" if row.get("steps", 0) > 1
                 else "its linear placement")
     facts = (f"Displacement median {numbers.get('median')} mm, max {numbers.get('max')} mm; "
              f"fold fraction {row.get('fold_fraction')}"
-             + (f"; flags {', '.join(str(code) for code in flags)}" if flags else "") + ".")
+             + (f"; flags {deformation.flag_words(row)}" if row.get("flags") else "") + ".")
     if not row.get("written"):
         text = ("the trace landed; its fit equals the deformation the section already holds, "
                 "so nothing changed. " + facts)

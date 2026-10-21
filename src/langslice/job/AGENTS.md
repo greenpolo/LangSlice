@@ -71,6 +71,8 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                      filename when two images share a stem)
   deformable/<key>/          deformation records (RecordStore): record.json +
                              warp.ome.zarr, the parent a sibling it names
+  registrations.jsonl        every registration the section has held, numbered
+                             (registrations.py); read back by restore_registration
   image_correction/<key>/    trace_borders calls, attempt-NN inside
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
   coords.tif, labels.tif,    the section's maps (formats.py), written only by
@@ -158,6 +160,16 @@ is `Job.open`'s read and first checkpoint. A missing or unwritable folder
 is used without the lock. After a sync the section records are new
 objects: resolve them by id inside the block.
 
+**A read never waits for another process's writer.** `Job.reading()` (the
+tool door's guard for a read verb) keeps this process's other threads out
+(`FolderLock.threads`) and takes the folder lock only when it is free
+(`held_if_free`): then it syncs as a write does. While another process holds
+it (a long fit applying, a plugin tool that holds it while it computes), it
+reads the state file as that process last saved it (`_peek`: no history
+read, no undo step), and keeps the state it held before (`_peeked`): the next
+locked `sync` puts that back first and then reloads as usual, so the other
+process's write enters this job's history as that job's step.
+
 **Paths are relative.** Every path a job file stores (a deformation's
 `record`, an image correction's `artifact_dir` / `artifact_paths`, the views
 index) is relative to the job folder (`JobLayout.relative` /
@@ -178,7 +190,8 @@ longer exist be taken over by the images it is opened with.
 ## Files
 
 - `lock.py` — `FolderLock(folder)` (`held(abort=)`, `held_here()`,
-  `LOCK_FILE` `job.lock`, `LOCK_TIMEOUT_S`, `JobBusy`): above. A thread
+  `threads()`, `held_if_free()` (yields whether it got the folder lock without
+  waiting), `LOCK_FILE` `job.lock`, `LOCK_TIMEOUT_S`, `JobBusy`): above. A thread
   lock is taken before the file lock, so threads of one process exclude
   each other even where the file lock cannot be used; a waiter given
   `abort` asks it every `ABORT_POLL_S` and raises `LockYielded` when it says
@@ -190,15 +203,19 @@ longer exist be taken over by the images it is opened with.
   sections, land, wait_for_images=)` returns a `Work` at once (`id` `w1`,
   `w2`, ...; `kind`, `sections`, `status` `running`/`done`/`failed`,
   `started`/`finished` wall-clock seconds, `notice`, `pictures`, `images`,
-  `captions` (each picture's index caption, from its note), `result`); on a work thread it waits for the sections' running image calls
+  `captions` (each picture's index caption, from its note), `result`,
+  `registrations` (the registration each section holds after the landing,
+  `Job.registered_since`)); on a work thread it waits for the sections' running image calls
   (`Job.wait_image_job`, which records each reply), then runs *land*, the
   caller's callable (an operation's fit; this module imports no operation
   and no provider), which writes its own undo step and returns a `Landed`
   (`status`, `text`, `pictures`, `result`); an exception is a `failed`
   work. The pictures *land* draws are saved among the job's pictures with
-  their notes (`Job.views.save`), their numbers on the work. The notice is
+  their notes (`Job.views.save`), their numbers on the work; *land* runs as
+  the work's kind (`Job.acting`), so its registrations are listed as made by
+  it. The notice is
   `notice_text`: `"<id> <kind> of <sections> finished|failed: <text>
-  Pictures #n, #m."`. `notices()` pops the work finished since the last call
+  Now registration <n> of <section>. Pictures #n, #m."`. `notices()` pops the work finished since the last call
   (each handed out once), `running()` / `running_for(section, kind)` list
   what still runs, `get(id)`, `all()`, `wait_all(timeout=)` waits for every
   piece, `wait_any(timeout=)` until one running piece finishes (for a caller
@@ -215,6 +232,17 @@ longer exist be taken over by the images it is opened with.
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
+- `registrations.py` — every registration a section has held
+  (`docs/file_formats.md`, "Registrations"): `value(state, record)` (its
+  orientation, transform and deformation, copied; a deformation whose
+  `linear_key` changed is no part of it; None with neither a transform nor a
+  deformation), `digest` (orientation, transform, the deformation's record
+  key), `made_by` (what a registration held before its list began says made
+  it), `Registrations(layout)` (`sections/<stem>/registrations.jsonl`:
+  `entries` (cached by the file's stamp; a line cut short skipped), `get`,
+  `find` (by digest), `number_of(state, record)`, `add` (under the job's
+  lock: the next number, or the entry the registration already has)), `now`,
+  `SCRIPT`. Read back, never derived from the state; undo leaves it.
 - `plugin_store.py` — what tool plugins keep in the job folder
   (`docs/plugins.md`): `register_layer(layout, record, tool, call, layer,
   persist=)` writes a layer's file under `plugins/<tool>/layers/`, lists it in
@@ -253,8 +281,11 @@ longer exist be taken over by the images it is opened with.
   the job folder).
 - `job.py` — `Job`: `open` (resume or ingest, then the first checkpoint;
   the open event records `resumed`), `load` (as it stands, writing
-  nothing), `writing` / `sync` (above), `snapshot` / `commit`, `undo` /
-  `redo`, `checkpoint` (state, then `registration.json`, then the
+  nothing), `writing` / `reading` / `sync` (above), `snapshot` / `commit`, `undo` /
+  `redo` (each lists the registrations it leaves: `list_registrations(before)`,
+  the store `registrations`, made by the tool `acting(tool)` names for the
+  thread, else `script`; `registered`, the journal of (thread, section,
+  number), and `registered_since(mark)` for a door's reply), `checkpoint` (state, then `registration.json`, then the
   observers: `observe(fn)` calls *fn* with the state after every
   checkpoint and reload, the hosts' live views; one that raises is logged),
   the image-correction jobs (`start_image_job`, `settle_image_corrections`,

@@ -201,10 +201,24 @@ def _parent_sites() -> list[str]:
 PYTHON_USAGE = "langslice-job FOLDER python SCRIPT [ARGS ...]"
 
 
+def script_path(layout: JobLayout, script: str) -> str:
+    """The script ``python SCRIPT`` runs: *script* as given when it names a
+    file from the working folder, else a relative one in the job folder when
+    it is there (the card keeps an agent's scripts in ``<job>/scripts/``, and
+    an agent's working folder is often another), as an absolute path."""
+    path = Path(script)
+    if path.is_absolute() or path.is_file():
+        return script
+    held = layout.folder / path
+    return str(held) if held.is_file() else script
+
+
 def python(folder: str, rest: list[str]) -> int:
     """``langslice-job FOLDER python SCRIPT [ARGS ...]``: *rest* (the script
     and its arguments, verbatim) run by the job's environment's python, the
-    environment made first when missing (:func:`ensure`). Its stdout, stderr
+    environment made first when missing (:func:`ensure`). A relative SCRIPT
+    the working folder does not hold is read from the job folder
+    (:func:`script_path`). Its stdout, stderr
     and exit code are the script's, as ``env/bin/python SCRIPT ARGS`` gives
     them; in the job's warm process (:func:`langslice.doors.cli.warm.run_script`)
     the script runs in this process with that python's import path, else this
@@ -228,6 +242,7 @@ def python(folder: str, rest: list[str]) -> int:
         ensure(layout)
     except (OSError, subprocess.SubprocessError) as exc:
         return emit(Envelope.failure("ENV_FAILED", str(exc), verb="python"))
+    rest = [script_path(layout, rest[0]), *rest[1:]]
     log_call(layout.logs_dir, {"verb": "python", "arguments": list(rest),
                                "warm": warm.in_child()})
     interpreter = python_of(env_dir(layout))

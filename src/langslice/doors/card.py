@@ -138,25 +138,24 @@ written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
 Maps and pictures are derived, never read back: editing one changes no registration.
 
 ## Pictures and coordinates
-Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame)
-and, for a section on its atlas, `labels.tif` (uint32 atlas ids per pixel) and
-`borders.png` (the drawn borders); a deformable fit's adds `residual.tif`.
-`langslice.coordinate_map("<picture>/view.json")`: every pixel's atlas position,
-(rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in the atlas's own
-axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
-posterior, 1 superior to inferior, 2 right to left), voxel i's centre at
-i * resolution. Pixels are (row, col), centres at integers. Section positions
-in `state.json` and the verbs are millimetres along the slicing axis.
+Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame) and, for a section
+on its atlas, `labels.tif` (uint32 atlas ids per pixel) and `borders.png` (the drawn borders); a
+deformable fit's adds `residual.tif`. `langslice.coordinate_map("<picture>/view.json")`: every
+pixel's atlas position, (rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in
+the atlas's own axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
+posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * resolution. Pixels
+are (row, col), centres at integers. Section positions in `state.json` and the verbs are
+millimetres along the slicing axis.
 
 ## CLI (JSON on stdout: ok, result, artifacts, warnings, next)
 `langslice-job {layout.folder} VERB --args '{{...}}'` (or `--key value`); `--dry-run`
-(writes nothing), `--background` then `wait [id]` (`runs` lists background runs), `--verbose`.
-Pictures come back as file paths under `artifacts`, each with its `index` in the
-reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad arguments, 3 refused by the job
-(`error.code`, `error.fix`), 4 internal. Calls may run in parallel (each write holds the
-folder's lock; a long verb re-checks each section first: `STALE_INPUT`, run it again for
-that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` (or
-`VERB --help`) gives the arguments, `langslice-job schema init` the job flags.
+(writes nothing), `--background` then `wait [id]` (within 30 s: the answer, or `STILL_RUNNING`:
+wait again; `runs` lists runs), `--verbose`. Pictures come back as file paths under `artifacts`,
+each with its `index` in the reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad
+arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal. Calls may run in
+parallel (each write holds the folder's lock; a long verb re-checks each section first:
+`STALE_INPUT`, run it again for that section). `langslice-job ops` lists the verbs;
+`langslice-job schema VERB` (or `VERB --help`) gives the arguments, `schema init` the job flags.
 {verbs}
 
 ## Python

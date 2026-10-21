@@ -632,6 +632,29 @@ Returns:
     those sections.
 
 
+## restore_registration
+
+Put back a registration a section held before: its orientation, transform and deformation.
+
+Each registration a section holds gets a number, kept whatever is
+written after it: the `registration` of its status row and of the reply
+to the write that left it. Undo takes back the job's last write; this
+returns one section to any earlier registration, such as a fit made
+before another method's, and leaves the other sections as they are. One
+undoable write. A deformation fitted with the section at another position
+or other cutting angles is refused until the section is back there.
+
+Args:
+    section: Filename (the extension may be left off).
+    registration: The number to put back; 0 lists the section's
+        registrations (number, the tool that made it, when) and writes
+        nothing.
+
+Returns:
+    The registration the section holds now and the one it replaced, its
+    row, and the picture; or the list.
+
+
 ## submit
 
 End the run. Call this exactly once, last.

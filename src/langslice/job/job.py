@@ -46,6 +46,7 @@ import copy
 import json
 import logging
 import os
+import threading
 from collections.abc import Callable, Collection, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -58,6 +59,7 @@ from langslice.core.frozen import FROZEN
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
 from langslice.job import formats
+from langslice.job import registrations as regs
 from langslice.job.background import SECTION_BUSY, BackgroundWork, in_worker
 from langslice.job.checkpoint import (
     read_checkpoint,
@@ -75,6 +77,7 @@ from langslice.job.layout import (
     write_job_file,
 )
 from langslice.job.lock import FolderLock
+from langslice.job.registrations import Registrations
 from langslice.job.views import DiscardedViews, ViewStore
 
 if TYPE_CHECKING:
@@ -659,6 +662,17 @@ class Job:
         self.workspace: Workspace | None = None
         self._state_stamp = _stamp(self.checkpoint_path)
         self._undo_stamp = _stamp(self.undo_path)
+        #: A read's view of a state another process saved while it held the
+        #: lock (:meth:`reading`): the state this job held before it, put
+        #: back by the next locked :meth:`sync`, and the file's stamp then.
+        self._peeked: dict[str, Any] | None = None
+        self._peek_stamp: Stamp = None
+        self._registrations: Registrations | None = None
+        #: The tool whose call this thread runs (:meth:`acting`).
+        self._acting = threading.local()
+        #: Each registration a write left, in order: (thread, section, number),
+        #: for the doors to name in that call's reply (:meth:`registered_since`).
+        self.registered: list[tuple[int, str, int]] = []
         self.wire_views()
 
     @property
@@ -856,6 +870,104 @@ class Job:
         with self.lock.held(self.background.gives_way if in_worker() else None):
             yield self.sync()
 
+    @contextlib.contextmanager
+    def reading(self) -> Iterator[None]:
+        """For a read: the state brought up to date without waiting for
+        another process's writer. This process's other threads are kept out
+        (their writes are short); when another process holds the job folder's
+        lock (a long fit applying, a plugin tool that holds it while it
+        computes), the state is read as that process last saved it, and the
+        next locked :meth:`sync` puts the job's own back first."""
+        with self.lock.threads():
+            with self.lock.held_if_free() as free:
+                if free:
+                    self.sync()
+            if not free:
+                self._peek()
+            yield
+
+    def _peek(self) -> None:
+        """Read the state file as it stands, without the lock (:meth:`reading`)."""
+        stamp = _stamp(self.checkpoint_path)
+        if stamp in (self._state_stamp, self._peek_stamp):
+            return
+        try:
+            data = read_checkpoint(self.checkpoint_path)
+        except (OSError, ValueError):
+            return
+        if data is None:
+            return
+        held = self.state.to_dict()
+        loaded = _state_from(data, self.checkpoint_path).to_dict()
+        self._peek_stamp = stamp
+        if loaded == held:
+            return
+        if self._peeked is None:
+            self._peeked = held
+        self.state.restore(loaded)
+        self._notify()
+
+    # --- the registrations each section has held -------------------------------------
+
+    @property
+    def registrations(self) -> Registrations:
+        """Every registration each section has held (:mod:`langslice.job.registrations`)."""
+        if self._registrations is None:
+            self._registrations = Registrations(self.layout)
+        return self._registrations
+
+    @contextlib.contextmanager
+    def acting(self, tool: str) -> Iterator[None]:
+        """This thread runs *tool*'s call for the block: the registrations its
+        writes leave are listed as made by it."""
+        outer = getattr(self._acting, "tool", None)
+        self._acting.tool = tool
+        try:
+            yield
+        finally:
+            self._acting.tool = outer
+
+    def registered_since(self, mark: int) -> dict[str, int]:
+        """The registration each section holds after this thread's writes
+        since ``len(job.registered)`` was *mark*, by section."""
+        me = threading.get_ident()
+        return {section: number for thread, section, number in self.registered[mark:]
+                if thread == me}
+
+    def list_registrations(self, before: dict[str, Any]) -> None:
+        """List each registration a step left (*before*: the state before it,
+        as :meth:`snapshot` gives it), as made by the tool this thread runs
+        (:meth:`acting`; ``script`` for none), and the one it replaced when
+        that was never listed (a job older than the list). A deformation the
+        step made stale is no part of a registration
+        (:func:`langslice.job.registrations.value`). A failure is logged; the
+        step stands."""
+        if not self.persist:
+            return
+        store = self.registrations
+        by = getattr(self._acting, "tool", None) or regs.SCRIPT
+        try:
+            old = StackState.from_dict(before)
+            for record in self.state.slices:
+                now = regs.value(self.state, record)
+                prior = old.by_id(record.id)
+                then = regs.value(old, prior) if prior is not None else None
+                key = regs.digest(now) if now is not None else None
+                if key == (regs.digest(then) if then is not None else None):
+                    continue
+                if then is not None and prior is not None and store.find(
+                        record.id, regs.digest(then)) is None:
+                    store.add(record.id, then, position_mm=prior.position_mm,
+                              angles=dict(prior.cutting_angles_deg), by=regs.made_by(then),
+                              at=None)
+                if now is not None:
+                    entry = store.add(record.id, now, position_mm=record.position_mm,
+                                      angles=dict(record.cutting_angles_deg), by=by,
+                                      at=regs.now())
+                    self.registered.append((threading.get_ident(), record.id, int(entry["id"])))
+        except Exception:  # noqa: BLE001 - the step is written: a listing failure never undoes it
+            logger.warning("Could not list the registrations a step left", exc_info=True)
+
     def _notify(self) -> None:
         for observer in list(self.observers):
             try:
@@ -879,12 +991,14 @@ class Job:
         return self.state.to_dict()
 
     def commit(self, before: dict[str, Any]) -> None:
-        """Record one undo step (*before*), clear the redo side, checkpoint.
+        """Record one undo step (*before*), clear the redo side, checkpoint,
+        and list the registrations the step left (:meth:`list_registrations`).
         Call it inside :meth:`writing` (with *before* taken there)."""
         with self.lock.held():
             self._push(before)
             self._save_history()
             self.checkpoint()
+            self.list_registrations(before)
 
     def _push(self, before: dict[str, Any]) -> None:
         self.undo_stack.append(before)
@@ -911,10 +1025,12 @@ class Job:
         with self.writing():
             if not self.undo_stack:
                 return False
-            self.redo_stack.append(self.state.to_dict())
+            before = self.state.to_dict()
+            self.redo_stack.append(before)
             self.state.restore(self.undo_stack.pop())
             self._save_history()
             self.checkpoint()
+            self.list_registrations(before)
             return True
 
     def redo(self) -> bool:
@@ -922,11 +1038,13 @@ class Job:
         with self.writing():
             if not self.redo_stack:
                 return False
-            self.undo_stack.append(self.state.to_dict())
+            before = self.state.to_dict()
+            self.undo_stack.append(before)
             del self.undo_stack[:-UNDO_DEPTH]
             self.state.restore(self.redo_stack.pop())
             self._save_history()
             self.checkpoint()
+            self.list_registrations(before)
             return True
 
     def _save_history(self) -> None:
@@ -949,6 +1067,9 @@ class Job:
         that does not parse (a script mid-write) is left alone and read at
         the next call; the job's own next write replaces it.
         """
+        if self._peeked is not None:  # a read's view first gives way to the job's own state
+            self.state.restore(self._peeked)
+            self._peeked, self._peek_stamp = None, None
         state_stamp = _stamp(self.checkpoint_path)
         undo_stamp = _stamp(self.undo_path)
         history_changed = undo_stamp != self._undo_stamp

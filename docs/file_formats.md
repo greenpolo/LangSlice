@@ -16,6 +16,7 @@ A registration file can also be explicitly imported when creating a job.
   sections/<name>/      per section (<name>: the filename's stem): its maps
                         (written by export_maps), landmarks.json (readable
                         corresponding pairs), deformation records (deformable/),
+                        every registration it has held (registrations.jsonl),
                         image-model traces (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
@@ -194,6 +195,27 @@ pixels: the inverse of `atlas_to_section`), an `affine` from the 2-D plane
 into the 3-D volume (`native_to_volume_index`) and a `scale` by the
 resolution; and an `identity` from each image group's `section` system to
 the scene's. The metadata is written from `record.json` and never read back.
+
+## Registrations (`sections/<name>/registrations.jsonl`)
+
+Every registration a section has held, one JSON line each, numbered from 1
+per section; `restore_registration` puts one back. A section's registration
+is its orientation, transform and deformation (a deformation whose linear
+placement has changed is no part of it). A line is appended when an undo
+step, an undo or a redo leaves the section a registration it never held, and
+never rewritten; undo leaves the file as it is. Fields: `format` (1), `id`
+(the number), `by` (the tool whose write left it, `script` for a script's
+own write; for one held before the section's list began, which a later write
+lists, what its content says made it), `at` (local time, `YYYY-MM-DD
+HH:MM:SS`; null for one held before the list began), `digest` (of the
+orientation, the transform and the deformation's record key: two writes that
+leave the same registration share its number), `position_mm` and
+`cutting_angles_deg` (where the section was), then the registration: `flip`,
+`rotation_deg`, `transform` (as `state.json` holds it) and `deformation` (the
+section's `deformation` entry, naming its record under `deformable/`, or
+null). A status row's `registration` is the number of the one the section
+holds. The file is read back, as the deformation records are; a line cut
+short is skipped.
 
 ## Pictures
 

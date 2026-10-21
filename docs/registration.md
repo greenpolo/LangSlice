@@ -34,7 +34,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | Name | Removes |
 |---|---|
 | `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
-| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `set_mask` | the tool, as its task or host switch would (`set_mask` exists where the Linear or Nonlinear task is on; with it off, the `mask` argument of the fits and `look`'s `masks` go too) |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `set_mask`, `restore_registration` | the tool, as its task or host switch would (`set_mask` and `restore_registration` exist where the Linear or Nonlinear task is on; with `set_mask` off, the `mask` argument of the fits and `look`'s `masks` go too) |
 | `fireants_syn:metric`, `fireants_syn:edges`, `fireants_syn:detail` | that argument of `fireants_syn`, which then keeps its default |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
 | `export_maps` | the scripting verb |
@@ -648,7 +648,29 @@ Custom models and prompts are described in the [library guide](library.md#image-
 Writes checkpoint the job and form undo steps; `undo` and `redo` persist
 across sessions. Their reply says which step it took back or forward: `undone`
 (or `redone`) holds the `sections` it touched and the `fields` it changed,
-then the status rows of those sections and the remaining depth. Change tools return review pictures unless `view=False`;
+then the status rows of those sections and the remaining depth.
+
+Undo is one history for the whole job, so it returns a section to an earlier
+fit only while nothing else was written since. Each registration a section
+holds (its orientation, transform and deformation) is numbered instead, per
+section, and kept whatever comes after
+([`registrations.jsonl`](file_formats.md#registrations-sectionsnameregistrationsjsonl)):
+the section's status row says which it holds (`registration`), and so does the
+reply to the write that left it (the row it changed, or `registration`
+`{section: number}` beside a plugin tool's own rows, or "Now registration n of
+section" in a background notice). `restore_registration(section)` lists a
+section's registrations (number, the tool that made it, when, the one held,
+and `not_here` for one fitted at another position or cutting angles) and
+writes nothing; `restore_registration(section, registration=n)` puts number
+`n` back, orientation, transform and deformation together, as one undo step
+that touches no other section, and shows the section's overlay. It is refused
+with `UNKNOWN_REGISTRATION` for a number the section never held (the reply
+lists its numbers), `REGISTRATION_ELSEWHERE` for a deformation fitted with the
+section at another position or other cutting angles (put the section back
+there first), `FROZEN` for a property the job froze that it would change, and
+`SECTION_BUSY` while background work runs on the section. A registration held
+before its section's list began (a job made by an older LangSlice) is listed
+when a write replaces it, or when the tool lists the section. Change tools return review pictures unless `view=False`;
 a host's `force_view=True` (`linear run --force-view`) forces `view=True`, and the argument is not offered. It defaults to false, so
 the agent may suppress a picture. Work running in the background
 (`trace_borders`, a plugin's) holds its sections: any write to them is refused

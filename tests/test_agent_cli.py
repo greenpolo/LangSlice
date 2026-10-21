@@ -615,6 +615,35 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert code == 2 and status["error"]["code"] == "BAD_ARGUMENTS"
 
 
+def test_wait_answers_still_running_within_its_default_wait(capsys, images, monkeypatch):
+    """A harness ends a command it finds too long, so `wait` answers by itself
+    (``background.WAIT_S``, 30 s) with the run still running and how to wait again."""
+    import time
+
+    from langslice.doors.cli import background
+    from langslice.job.layout import JobLayout
+
+    job = init(capsys, images)
+    layout = JobLayout(job)
+    run_id = "20261021-000000-abcdef"
+    background._write(layout, {"id": run_id, "verb": "fireants_syn", "arguments": {},
+                               "state": "running", "started_at": "2026-10-21T00:00:00+00:00",
+                               "started": time.time(), "pid": os.getpid()})  # alive: this one
+    monkeypatch.setattr(background, "WAIT_S", 0.5)
+    started = time.monotonic()
+    code, envelope = cli(capsys, str(images), "wait", run_id)
+    assert time.monotonic() - started < 10
+    assert code == 3 and envelope["error"]["code"] == "STILL_RUNNING"
+    assert "waited 0.5 s" in envelope["error"]["message"]
+    assert envelope["result"]["state"] == "running" and envelope["result"]["id"] == run_id
+    assert envelope["next"] == [f"langslice-job {job} wait {run_id}"]
+    # --timeout still sets it.
+    started = time.monotonic()
+    code, envelope = cli(capsys, str(images), "wait", run_id, "--timeout", "1.5")
+    assert code == 3 and time.monotonic() - started >= 1.5
+    assert "waited 1.5 s" in envelope["error"]["message"]
+
+
 # --- live shared editing --------------------------------------------------------------
 
 

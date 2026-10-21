@@ -159,6 +159,11 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("note", "write", "Common"),
     ToolDef("undo", "write", "Common", essential=True),
     ToolDef("redo", "write", "Common"),
+    # One section back to a registration it held before (orientation, transform
+    # and deformation together); it shows the section's overlay.
+    ToolDef("restore_registration", "write", "Common",
+            when=lambda spec: spec.has("transform") or spec.has("nonlinear"),
+            needs=_OVERLAY, writes=("orientation", "affine", "deformation")),
     ToolDef("submit", "write", "Common", essential=True),
     # The job folder's derived files on demand (submit writes them too):
     # changes no state, so a read; for scripts, not for a model.

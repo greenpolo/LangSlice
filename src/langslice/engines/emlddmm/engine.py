@@ -134,7 +134,7 @@ def _borrowed_nissl(root: str, folder: Path, res: np.ndarray, f: list[int]) -> n
     slabs = []
     for i in range(annotation.shape[0] // f[0]):
         rows = slice(i * f[0], (i + 1) * f[0])
-        slab = affine_transform(source, step, offset=offset + [step[0] * i * f[0], 0, 0],
+        slab = affine_transform(source, np.diag(step), offset=offset + [step[0] * i * f[0], 0, 0],
                                 output_shape=(f[0], *annotation.shape[1:]), order=1)
         slab[annotation[rows] == 0] = 0
         slabs.append(_block(slab, [f[0], f[1], f[2]]))

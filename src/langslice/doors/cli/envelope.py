@@ -72,6 +72,10 @@ FIXES: dict[str, str] = {
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
     "NOTHING_TO_REDO": "Redo follows an undo only.",
+    "UNKNOWN_REGISTRATION": "List the section's registrations[[?restore_registration : "
+                            "`langslice-job {job} restore_registration --section NAME`]].",
+    "REGISTRATION_ELSEWHERE": "Put the section back at the position and cutting angles the "
+                              "message names, then call it again.",
     "NO_POSITION": "Write the section's position first[[?position_sections  "
                    "(position_sections)]].",
     "MISSING_POSITIONS": "Write every section's own position first[[?position_sections  "
@@ -90,7 +94,8 @@ FIXES: dict[str, str] = {
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
     "NOTHING_WRITTEN": "Each section's row under result.results names its problem.",
     "UNKNOWN_RUN": "List the background runs with `langslice-job {job} runs`.",
-    "STILL_RUNNING": "Wait again: `langslice-job {job} wait <id>`.",
+    "STILL_RUNNING": "The run goes on; wait again: `langslice-job {job} wait <id>` (each wait "
+                     "answers within 30 s; `--timeout SECONDS` sets how long).",
     "RUN_LOST": "The background process ended without an answer; see its log under "
                 "logs/runs/ and run the verb again. If every background run is lost, "
                 "your shell ends the processes a command leaves running when it returns "

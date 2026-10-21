@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -23,6 +24,22 @@ BORROWED_NISSL = "ccfv3augmented_nissl"
 #: The engines that take a section mask, for the refusal of the one that does not.
 MASK_ENGINES = "fireants_syn, elastix_affine, emlddmm_stack and spomialign"
 SORTING_SAVED = "saved with the deformation; set_mask source fit"
+
+
+def call_folder(ctx: ToolContext, name: str) -> Path:
+    """A new folder for one call's files, ``<tool's folder>/calls/NNNN_<name>``, made here so
+    two calls running at once never share one."""
+    calls = ctx.work_dir() / "calls"
+    calls.mkdir(parents=True, exist_ok=True)
+    n = len([path for path in calls.iterdir() if path.is_dir()])
+    while True:
+        folder = calls / f"{n:04d}_{name}"
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            n += 1
+            continue
+        return folder
 
 
 def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) -> Any:

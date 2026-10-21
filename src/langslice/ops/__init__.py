@@ -24,7 +24,8 @@ Modules: :mod:`.registry` (every verb and the operation it calls),
 :mod:`.order` (corrected order), :mod:`.orientation` (flip and quarter
 turns), :mod:`.damage` (damage flags), :mod:`.appearance` (how sections look
 for viewing and for fits), :mod:`.notes` (run notes), :mod:`.history` (undo
-and redo), :mod:`.transforms` (the in-plane transform: knobs to stored
+and redo), :mod:`.registrations` (one section back to a registration it held),
+:mod:`.transforms` (the in-plane transform: knobs to stored
 numbers, fits, the write), :mod:`.deformable` (the deformation on top of
 the linear placement: fit, apply, or keep the linear placement),
 :mod:`.traces` (the image model's border traces), :mod:`.submit` (the
