@@ -7,15 +7,20 @@ it is imported from this package (no ``PYTHONPATH``). Options (``plugin_config``
 the CPU at float64), ``threads``, ``timeout_s``. STalign (GPL-3.0) runs in ``engine.py`` under
 that interpreter; this module imports only ``langslice.plugin_api``.
 
-Three tools (design: SliceBench/_local/notes/2026-10-18_stalign_plugin_design/fable_proposal.md):
+Two tools (design: SliceBench/_local/notes/2026-10-18_stalign_plugin_design/fable_proposal.md):
 
 - ``stalign_lddmm``: STalign's 2-D fit, one piece of background work per section, building on
   the section's current registration (a landmark warp included);
-- ``stalign_sorting``: STalign's pixel sorting at the current alignment, shown, nothing written;
 - ``stalign_plane_search``: STalign 2.0's 3-D plane search, proposing cutting angles and
   positions, nothing written.
 
-Frames. The target is the section's preprocessed channel on the fit grid, grey, scaled so
+Inputs, as every engine takes them: ``section_image`` (a channel by name, default
+``preprocessed``), ``atlas_image`` (default ``nissl``, resolved by the job's atlas; the reply
+names the image used) and ``mask`` (STalign takes none: it sorts the section itself, and its final
+sorting is saved with the deformation). The reply carries ``settings`` and, per section,
+``inputs`` and ``estimated``.
+
+Frames. The target is the section's image (a channel by name) on the fit grid, grey, scaled so
 the slide (median of the image border) is 0 and the tissue (median inside the placed atlas
 outline) is 1, whatever the stain's polarity, area-averaged to 10 um. Target micrometres are
 atlas micrometres at the section's linear scale. The source is the atlas image on its native
@@ -38,6 +43,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
+from langslice.engines import _blocks
 from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec
 
 HERE = Path(__file__).resolve().parent
@@ -62,9 +68,11 @@ SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # (x, y) <
 
 def stalign_lddmm(
     sections: list[str],
-    atlas_image: str = "template",
-    affine: bool = False,
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
+    mask: str = "none",
     smoothness_um: float = 500.0,
+    affine: bool = False,
     displacement_um: float = 94.0,
     sorting: dict[str, Any] = {},  # noqa: B006 (a declaration's default, as the native stubs)
     iterations: int = 2000,
@@ -72,13 +80,13 @@ def stalign_lddmm(
 ) -> dict[str, Any]:
     """Fit the atlas onto sections with STalign, on their current registration.
 
-    STalign bends the atlas image onto each section's preprocessed channel by
-    gradient descent on their brightness mismatch, with a linear contrast fit
-    between the two, a smoothness scale (smoothness_um: tissue closer than
-    that bends together) and a displacement scale (displacement_um: how far a
-    point may be carried before the penalty grows). It starts from the
-    section's current registration (its linear placement, and its deformation
-    when it has one) and refines it; it does not search from scratch~
+    STalign bends the atlas image onto each section's image by gradient
+    descent on their brightness mismatch, with a linear contrast fit between
+    the two, a smoothness scale (smoothness_um: tissue closer than that bends
+    together) and a displacement scale (displacement_um: how far a point may
+    be carried before the penalty grows). It starts from the section's
+    current registration (its linear placement, and its deformation when it
+    has one) and refines it; it does not search from scratch~
     [[?interactive_transform : set the orientation and a rough transform with ~
     interactive_transform first]]. With affine false the transform stays and
     only the bend is fitted, on top of the deformation the section holds[[?set_landmarks ~
@@ -88,91 +96,74 @@ def stalign_lddmm(
     section's marked damage regions are left out automatically[[?mark_damage ; ~
     mark them with mark_damage first]].
 
-    sorting is STalign's pixel sorting: before each comparison every section
-    pixel is weighted between matching (compared), background (slide, ignored)
-    and artifact (debris, ignored), from the mismatch and from the background
-    and artifact means. "classic" is STalign's published sorting with fixed
-    spreads; "em" measures the matching spread itself and takes the background
-    mean from the slide at the image border, for sections with missing tissue;
-    "none" compares every pixel. Preview what a setting does with
-    stalign_sorting before fitting. STalign fits the whole section: it takes
-    no regions[[?fireants_syn ; refine single regions afterwards with ~
-    fireants_syn, which builds on this fit]].
+    STalign takes no section mask: it sorts the section's pixels itself. Before
+    each comparison every pixel is weighted between matching (compared),
+    background (slide, ignored) and artifact (debris, ignored), from the
+    mismatch and from the background and artifact means (sorting, below). The
+    final sorting is saved with the deformation[[?set_mask , and set_mask can ~
+    take it as a mask for another fit (source fit)]]. A named mask is refused
+    (MASK_UNSUPPORTED); the engines that take one are fireants_syn,
+    elastix_affine, emlddmm_stack and spomialign. STalign fits the whole
+    section: it takes no regions[[?fireants_syn ; refine single regions afterwards ~
+    with fireants_syn, which builds on this fit]]. It keeps its own brightness
+    scaling: slide 0, typical tissue 1.
 
     Starts one piece of background work per section and returns at once with
     their ids, so you can carry on with other sections. A write to a section
     whose fit still runs is refused until it lands. When a section's fit
     lands, the next tool reply starts with its notice: what was fitted, the
-    displacement, fold fraction and flags, how much of the tissue the sorting
-    set aside, and the file in the job folder that holds STalign's own
-    mismatch record for the fit[[?read_file , which read_file opens]]; then its
-    pictures. Each landing is its own undo step. status lists the work still
-    running; submit waits for it. Judge the overlay against the internal anatomy.
+    displacement, fold fraction and flags, what STalign used and estimated,
+    and the file in the job folder that holds STalign's own mismatch record
+    for the fit[[?read_file , which read_file opens]]; then its pictures. Each
+    landing is its own undo step. status lists the work still running; submit
+    waits for it. Judge the overlay against the internal anatomy.
 
     Args:
         sections: One to four filenames (the extension may be left off).
+        section_image: The section channel to fit, by name: "preprocessed"
+            or another channel of the stack[[?set_channel  (set_channel makes ~
+            and changes them)]]. STalign reads it as grey.
         atlas_image: One of the atlas's images (the job statement lists
             them: "template" and any other reference images the atlas ships,
-            by their names); pick the one that looks most like the sections.
+            by their names), or "nissl", the atlas's Nissl (its template when
+            it ships none). Default "nissl"; the reply names the image used.
+        mask: "none". STalign takes no section mask (see above).
+        smoothness_um: The bend's smoothness scale in micrometres (STalign's
+            a); larger bends broader patches as one. Default 500.
         affine: True also refits the in-plane transform (turn, stretch, shift)
             and writes it; false keeps the current transform. Default false.
-        smoothness_um: The bend's smoothness scale in micrometres; larger
-            bends broader patches as one. Default 500.
         displacement_um: The displacement scale in micrometres; larger allows
             a bigger bend. Default 94.
         sorting: {"method": "classic" | "em" | "none"} and any of "match_sd",
             "background_sd", "artifact_sd" (spreads), "background_mean",
             "artifact_mean" (left out: estimated) and "artifact" (true adds the
             artifact bin to "em"). Brightness units: slide 0, typical tissue 1.
-            Default {"method": "classic"} with STalign's own spreads.
+            "classic" is STalign's published sorting with fixed spreads; "em"
+            measures the matching spread itself and takes the background mean
+            from the slide at the image border, for sections with missing
+            tissue; "none" compares every pixel. Default {"method": "classic"}
+            with STalign's own spreads.
         iterations: Gradient-descent steps. Default 2000.
         view: True sends the pictures described below with each notice; false
             sends none.
 
     Returns:
-        Per section its work id and the settings in force, or why it was not
-        started. Each notice brings, per section, the numbers above and two
-        pictures: the section under its new registration with the atlas
-        borders on it, and the final sorting (white compared, black ignored).
-    """
-    ...
-
-
-def stalign_sorting(
-    sections: list[str],
-    atlas_image: str = "template",
-    sorting: dict[str, Any] = {},  # noqa: B006 (a declaration's default, as the native stubs)
-    view: bool = True,
-) -> dict[str, Any]:
-    """Show which pixels STalign's sorting would ignore, before a fit. Writes nothing.
-
-    Runs STalign's contrast fit and its sorting at each section's current
-    registration with the sorting given, holding the atlas still, and shows
-    the result: every patch the fit would set aside as background or artifact
-    is outlined on the preprocessed section, and the weight map is drawn
-    beside it (white compared, black ignored). Use it to choose sorting for
-    stalign_lddmm: on a section with missing tissue the empty slide under the
-    atlas outline should be set aside and the intact tissue kept. During a fit
-    the sorting is recomputed every 5 iterations as the atlas moves; this
-    picture is the sorting as the alignment stands now.
-
-    Args:
-        sections: One to four filenames (the extension may be left off).
-        atlas_image: The atlas image the fit would use.
-        sorting: As stalign_lddmm takes it.
-        view: True returns the pictures; false returns the numbers alone.
-
-    Returns:
-        Per section the share of the tissue inside the placed atlas outline
-        set aside as background and as artifact, and the picture described
-        above.
+        Per section its work id and what the fit uses (inputs: the channel,
+        the atlas image as asked and as used, the mask, the damage, the
+        brightness scaling), or why it was not started. Each notice brings,
+        per section, the numbers above, what STalign estimated (its sorting,
+        saved with the deformation, and the share of the tissue it left out)
+        and two pictures: the section under its new registration with the
+        atlas borders on it, and the final sorting (white compared, black
+        ignored).
     """
     ...
 
 
 def stalign_plane_search(
     sections: list[str],
-    atlas_image: str = "template",
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
     view: bool = True,
 ) -> dict[str, Any]:
     """Estimate the cutting angles with STalign's plane search. Writes nothing.
@@ -180,7 +171,7 @@ def stalign_plane_search(
     For each section, STalign tilts the atlas plane the section sits on by -6,
     0 and 6 degrees about each in-plane axis and shifts it by -300, 0 and 300
     um along the slicing axis (27 trial planes), fits each roughly to the
-    section's preprocessed channel at low resolution, refines the best, and
+    section's image at low resolution, refines the best, and
     reports where that plane lies: its pitch and yaw in this stack's
     convention, and the position it implies. It starts from the section's
     current position, the stack's cutting angles and its transform, so place
@@ -204,7 +195,8 @@ def stalign_plane_search(
 
     Args:
         sections: One to eight filenames (the extension may be left off).
-        atlas_image: One of the atlas's images, as for the fits.
+        section_image: The section channel to search with, as for the fits.
+        atlas_image: One of the atlas's images, or "nissl", as for the fits.
         view: True returns the pictures described below; false returns none.
 
     Returns:
@@ -251,8 +243,8 @@ def _scale_um(frame: Any) -> float:
 
 
 def _target(frame: Any) -> tuple[np.ndarray, dict[str, Any]]:
-    """The section's preprocessed channel, slide 0 and tissue 1, at ~10 um; its frame."""
-    grey = np.asarray(frame.stain, np.float64).mean(axis=2)
+    """The section's image, slide 0 and tissue 1, at ~10 um; its frame."""
+    grey = _blocks.channel_image(frame).astype(np.float64).mean(axis=2)
     gh, gw = grey.shape
     border = np.concatenate([grey[0], grey[-1], grey[:, 0], grey[:, -1]])
     slide = float(np.median(border))
@@ -276,10 +268,10 @@ def _source_image(image: np.ndarray) -> np.ndarray:
     return np.concatenate((image, (image - image.mean()) ** 2))
 
 
-def _source(frame: Any, atlas_image: str, s_um: float) -> tuple[np.ndarray, dict[str, Any]]:
+def _source(frame: Any, plane_image: np.ndarray, s_um: float) -> tuple[np.ndarray, dict[str, Any]]:
     """The atlas image (damage painted as background) at ~50 um, its axes, the start affine
     (source um -> target um, row/col) and how its points become native pixels."""
-    atlas = np.asarray(frame.atlas[atlas_image], np.float32).copy()
+    atlas = np.asarray(plane_image, np.float32).copy()
     if frame.damage_zone is not None:
         atlas[frame.damage_zone] = 0.0
     if frame.applied_map is not None:  # on the grid, through the section's deformation
@@ -380,21 +372,21 @@ def _call_folder(ctx: ToolContext, tool: str) -> Path:
     return calls / f"{n:04d}_{tool}"
 
 
-def _frame(ctx: ToolContext, name: str, atlas_image: str) -> Any:
-    frame = ctx.fit_frame(name, atlas=(atlas_image, "annotation"), stain=True)
-    if atlas_image not in frame.atlas:
-        raise ToolError("BAD_ARGS", f"the atlas has no image {atlas_image!r}; the job "
-                        "statement lists its images")
-    return frame
+def _frame(ctx: ToolContext, name: str, atlas_image: str, section_image: str,
+           ) -> tuple[Any, np.ndarray, str]:
+    """The section's fit frame, the atlas image asked for on it and the name that resolved to."""
+    frame = _blocks.frame_for(ctx, name, atlas_image, section_image)
+    plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
+    return frame, plane_image, resolved
 
 
 # --- pictures ---------------------------------------------------------------------------------
 
 
 def _sorting_picture(frame: Any, weights: np.ndarray, title: str) -> Image.Image:
-    """The preprocessed section with every set-aside patch outlined, beside the weight map
+    """The section's image with every set-aside patch outlined, beside the weight map
     (white compared, black ignored)."""
-    stain = np.asarray(frame.stain, np.uint8)
+    stain = _blocks.channel_image(frame)
     gh, gw = stain.shape[:2]
     w = cv2.resize(np.asarray(weights, np.float32), (gw, gh), interpolation=cv2.INTER_LINEAR)
     ignored = (w < 0.5).astype(np.uint8)
@@ -431,15 +423,23 @@ def _loss_picture(energy: np.ndarray, path: Path) -> None:
 # --- stalign_lddmm ----------------------------------------------------------------------------
 
 
-def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_image: str,
-           affine: bool, smoothness_um: float, displacement_um: float,
-           sorting: dict[str, Any], iterations: int, view: bool) -> ToolResult:
+def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], section_image: str,
+           atlas_image: str, mask: str, smoothness_um: float, affine: bool,
+           displacement_um: float, sorting: dict[str, Any], iterations: int,
+           view: bool) -> ToolResult:
     if not sections:
         raise ToolError("BAD_ARGS", "name one to four sections")
-    params = {**_sorting_params(sorting), "a": float(smoothness_um),
+    sorted_params = _sorting_params(sorting)
+    params = {**sorted_params, "a": float(smoothness_um),
               "sigma_disp": float(displacement_um), "niter": int(iterations), "nt": 4}
     if not affine:
         params.update(epL=0.0, epT=0.0)
+    estimates = (sorting or {}).get("method", "classic") != "none"
+    settings = {"section_image": section_image, "atlas_image": atlas_image, "mask": mask,
+                "smoothness_um": smoothness_um, "affine": affine,
+                "displacement_um": displacement_um,
+                "sorting": sorting or {"method": "classic"}, "iterations": iterations,
+                "device": config["device"]}
     folder = _call_folder(ctx, "lddmm")
     rows = []
     for name in sections:
@@ -450,14 +450,17 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_
                          "message": "affine true would refit the transform, which clears the "
                          "section's deformation; fit with affine false to bend on top of it"})
             continue
-        frame = _frame(ctx, sid, atlas_image)
+        frame, plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
         if frame.placed_atlas_to_section is None:
             rows.append({"id": sid, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
                          "message": "the section needs a transform first"})
             continue
         digest = ctx.section_inputs(sid, deformation=True)
+        inputs = _blocks.inputs_block(ctx, frame, section_image=section_image,
+                                      atlas_image=atlas_image, resolved=resolved, mask=None,
+                                      brightness="slide 0, tissue 1")
         J, tgt = _target(frame)
-        I, src = _source(frame, atlas_image, tgt["s_um"])  # noqa: E741
+        I, src = _source(frame, plane_image, tgt["s_um"])  # noqa: E741
         gw, gh = tgt["grid"]
         arrays = {"mode": np.array("lddmm"), "I": I, "xI0": src["x0"], "xI1": src["x1"],
                   "J": J, "xJ0": tgt["x0"], "xJ1": tgt["x1"], "A0": src["A0"],
@@ -467,11 +470,18 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_
 
         def land(lctx: ToolContext, sid: str = sid, frame: Any = frame, tgt: dict = tgt,
                  src: dict = src, arrays: dict = arrays, here: Path = here, start: str = start,
-                 digest: str = digest, gw: int = gw, gh: int = gh) -> ToolResult:
+                 digest: str = digest, gw: int = gw, gh: int = gh, resolved: str = resolved,
+                 inputs: dict = inputs) -> ToolResult:
             out = _engine(config, here, arrays, params)
             native = _native_map(out["source_um"], src, gw, gh, tgt["s_um"])
             what = ("affine and bend" if affine else "bend") + f" on {start}"
-            note = f"STalign {what}, atlas {atlas_image}"
+            note = f"STalign {what}, atlas {resolved}"
+            weights = _blocks.on_fit_grid(out["WM"], (gw, gh)) if estimates else None
+            inside_grid = np.asarray(frame.atlas["annotation"] > 0, np.uint8)
+            outline = cv2.warpAffine(inside_grid, _placed(frame)[:2], (gw, gh),
+                                     flags=cv2.INTER_NEAREST) > 0
+            estimated = _blocks.estimated_block(weights, outline)
+            blocks = {"inputs": inputs, "estimated": estimated, "settings": settings}
             energy = np.asarray(out.get("energy", np.zeros((0, 3))))
             with open(here / "energy.csv", "w", newline="") as fh:
                 writer = csv.writer(fh)
@@ -481,13 +491,14 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_
                     writer.writerow([i, *[f"{v:.6g}" for v in row]])
             _loss_picture(energy, here / "mismatch.png")
             (here / "settings.json").write_text(json.dumps(
-                {"asked": {"atlas_image": atlas_image, "affine": affine, **params},
+                {"asked": {**settings, **params}, **blocks,
                  "chosen": json.loads(str(out["settings"])), "device": str(out["device"]),
                  "seconds": float(out["seconds"])}, indent=1, default=str))
             np.savez_compressed(here / "weights.npz", WM=out["WM"], WB=out["WB"], WA=out["WA"])
             # bend only: the map converts before the lock (with affine the conversion reads the
             # new transform, so it waits for it)
-            warp = None if affine else lctx.deformation_from_map(sid, native, note=note)
+            warp = None if affine else lctx.deformation_from_map(
+                sid, native, note=note, meta=blocks, weights=weights)
             with lctx.writing():
                 if affine:
                     a_xy = SWAP @ np.asarray(out["A"]) @ SWAP  # source um -> target um (x, y)
@@ -501,33 +512,31 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_
                         raise ToolError(done.rows[0].get("error", "NOT_WRITTEN"),
                                         done.rows[0].get("message", ""))
                 if warp is None:
-                    warp = lctx.deformation_from_map(sid, native, note=note)
+                    warp = lctx.deformation_from_map(sid, native, note=note, meta=blocks,
+                                                     weights=weights)
                 done = lctx.set_deformations([warp.row()],
                                              expect=None if affine else {sid: digest})
                 if sid not in done.written:
                     raise ToolError(done.rows[0].get("error", "NOT_WRITTEN"),
                                     done.rows[0].get("message", ""))
-            inside = tgt["outline"]
-            aside = {key: round(float((np.asarray(out[key]) > 0.5)[inside].mean()), 3)
-                     for key in ("WB", "WA")} if inside.any() else {"WB": 0.0, "WA": 0.0}
             summary = warp.summary
             relative = here.relative_to(lctx.job_dir) if here.is_relative_to(lctx.job_dir) else here
             flags = ", ".join(str(flag.get("code"))
                               for flag in summary.get("flags") or []) or "none"
+            left = (f"; its sorting left out {estimated['left_out_fraction']:.0%} of the tissue "
+                    "and is saved with the deformation") if estimated and (
+                        estimated["left_out_fraction"] is not None) else ""
             text = (f"{note}; displacement median {summary['displacement_mm']['median']} mm, "
                     f"max {summary['displacement_mm']['max']} mm; fold fraction "
-                    f"{summary.get('fold_fraction', 0)}; flags {flags}; "
-                    f"the sorting set aside {aside['WB']:.0%} of the tissue as background and "
-                    f"{aside['WA']:.0%} as artifact. STalign's mismatch record: "
+                    f"{summary.get('fold_fraction', 0)}; flags {flags}{left}. "
+                    f"STalign's mismatch record: "
                     f"{relative / 'energy.csv'} (plot: {relative / 'mismatch.png'}).")
             pictures = []
             if view:
                 pictures = [lctx.caption(lctx.overlay_picture(sid), f"{sid}: {note}"),
                             _sorting_picture(frame, out["WM"], f"{sid}: STalign's final sorting "
                                              "(outlined: set aside; right: white compared)")]
-            return ToolResult({"notice": text, "id": sid, **summary,
-                               "set_aside": {"background": aside["WB"], "artifact": aside["WA"]}},
-                              pictures)
+            return ToolResult({"notice": text, "id": sid, **summary, **blocks}, pictures)
 
         try:
             work = ctx.start_work([sid], land)
@@ -539,43 +548,9 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_
                                                           if k != "status"}})
             continue
         rows.append({"id": sid, "status": "started", "work": work,
-                     "start": "deformation" if src["on_grid"] else "linear placement"})
-    return ToolResult({"rows": rows, "settings": {"atlas_image": atlas_image, "affine": affine,
-                                                  "smoothness_um": smoothness_um,
-                                                  "displacement_um": displacement_um,
-                                                  "sorting": sorting or {"method": "classic"},
-                                                  "iterations": iterations,
-                                                  "device": config["device"]}})
-
-
-# --- stalign_sorting --------------------------------------------------------------------------
-
-
-def _sorting(ctx: ToolContext, config: dict[str, Any], sections: list[str], atlas_image: str,
-             sorting: dict[str, Any], view: bool) -> ToolResult:
-    if not sections:
-        raise ToolError("BAD_ARGS", "name one to four sections")
-    params = {**_sorting_params(sorting), "nt": 4}
-    folder = _call_folder(ctx, "sorting")
-    rows, pictures = [], []
-    for name in sections:
-        sid = ctx.section(name).id
-        frame = _frame(ctx, sid, atlas_image)
-        J, tgt = _target(frame)
-        I, src = _source(frame, atlas_image, tgt["s_um"])  # noqa: E741
-        arrays = {"mode": np.array("sorting"), "I": I, "xI0": src["x0"], "xI1": src["x1"],
-                  "J": J, "xJ0": tgt["x0"], "xJ1": tgt["x1"], "A0": src["A0"],
-                  "query": np.zeros((0, 2))}
-        out = _engine(config, folder / sid, arrays, params)
-        inside = tgt["outline"]
-        share = {key: round(float((np.asarray(out[key]) > 0.5)[inside].mean()), 3)
-                 if inside.any() else 0.0 for key in ("WB", "WA")}
-        rows.append({"id": sid, "status": "ok", "set_aside_background": share["WB"],
-                     "set_aside_artifact": share["WA"]})
-        if view:
-            pictures.append(_sorting_picture(frame, out["WM"],
-                                             f"{sid}: STalign sorting at the current alignment"))
-    return ToolResult({"rows": rows, "sorting": sorting or {"method": "classic"}}, pictures)
+                     "start": "deformation" if src["on_grid"] else "linear placement",
+                     "inputs": inputs, "estimated": None})
+    return ToolResult({"rows": rows, "settings": settings})
 
 
 # --- stalign_plane_search ---------------------------------------------------------------------
@@ -596,7 +571,7 @@ def _target_to_atlas(frame: Any, s_um: float) -> np.ndarray:
 
 
 def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
-                  atlas_image: str, view: bool) -> ToolResult:
+                  section_image: str, atlas_image: str, view: bool) -> ToolResult:
     if not sections:
         raise ToolError("BAD_ARGS", "name one to eight sections")
     atlas = ctx.atlas()
@@ -606,12 +581,15 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
     for name in sections:
         view_of = ctx.section(name)
         sid = view_of.id
-        frame = _frame(ctx, sid, atlas_image)
+        frame, _plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
+        inputs = _blocks.inputs_block(ctx, frame, section_image=section_image,
+                                      atlas_image=atlas_image, resolved=resolved, mask=None,
+                                      brightness="slide 0, tissue 1")
         J, tgt = _target(frame)
         gw, gh = tgt["grid"]
         B0 = _target_to_atlas(frame, tgt["s_um"])
         arrays = {"mode": np.array("plane"), "atlas": np.array(atlas.name),
-                  "image": np.array(atlas_image), "J": J, "xJ0": tgt["x0"], "xJ1": tgt["x1"],
+                  "image": np.array(resolved), "J": J, "xJ0": tgt["x0"], "xJ1": tgt["x1"],
                   "A0": np.linalg.inv(B0)}
         out = _engine(config, folder / sid, arrays, params)
         B = np.linalg.inv(np.asarray(out["A"], np.float64))
@@ -629,7 +607,8 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
             {"found": found, "prefit": prefit, "device": str(out["device"])}, indent=1,
             default=float))
         pitch0, yaw0 = (float(v) for v in view_of.angles)
-        row = {"id": sid, "status": "ok", "pitch_deg": round(found["pitch_deg"], 2),
+        row = {"id": sid, "status": "ok", "inputs": inputs, "estimated": None,
+               "pitch_deg": round(found["pitch_deg"], 2),
                "yaw_deg": round(found["yaw_deg"], 2),
                "position_mm": round(found["position_mm"], 3),
                "change": {"pitch_deg": round(found["pitch_deg"] - pitch0, 2),
@@ -653,7 +632,9 @@ def _plane_search(ctx: ToolContext, config: dict[str, Any], sections: list[str],
                if ok else None,
                "middle_yaw_magnitude_deg": round(float(np.median([abs(r["yaw_deg"])
                                                                  for r in ok])), 2) if ok else None}
-    return ToolResult({"rows": rows, "stack": summary}, pictures)
+    return ToolResult({"rows": rows, "stack": summary,
+                       "settings": {"section_image": section_image, "atlas_image": atlas_image}},
+                      pictures)
 
 
 # --- the factory ------------------------------------------------------------------------------
@@ -664,31 +645,26 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
     meta = {"method": "STalign 2.0.0", "paper": "Clifton et al. 2023, Nat Commun",
             "commit": "8a84bf1f", "engine": "langslice.engines.stalign"}
 
-    def lddmm(ctx: ToolContext, sections: list[str], atlas_image: str = "template",
-              affine: bool = False, smoothness_um: float = 500.0,
-              displacement_um: float = 94.0, sorting: dict[str, Any] | None = None,
-              iterations: int = 2000, view: bool = True) -> ToolResult:
-        _require(options, "python")
-        return _lddmm(ctx, options, sections, atlas_image, affine, smoothness_um,
-                      displacement_um, dict(sorting or {}), iterations, view)
-
-    def sorting_tool(ctx: ToolContext, sections: list[str], atlas_image: str = "template",
-                     sorting: dict[str, Any] | None = None, view: bool = True) -> ToolResult:
-        _require(options, "python")
-        return _sorting(ctx, options, sections, atlas_image, dict(sorting or {}), view)
-
-    def plane(ctx: ToolContext, sections: list[str], atlas_image: str = "template",
+    def lddmm(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
+              atlas_image: str = "nissl", mask: str = "none", smoothness_um: float = 500.0,
+              affine: bool = False, displacement_um: float = 94.0,
+              sorting: dict[str, Any] | None = None, iterations: int = 2000,
               view: bool = True) -> ToolResult:
+        _blocks.refuse_mask("stalign_lddmm", mask, "sorts the section's pixels itself")
         _require(options, "python")
-        return _plane_search(ctx, options, sections, atlas_image, view)
+        return _lddmm(ctx, options, sections, section_image, atlas_image, mask,
+                      smoothness_um, affine, displacement_um, dict(sorting or {}),
+                      iterations, view)
+
+    def plane(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
+              atlas_image: str = "nissl", view: bool = True) -> ToolResult:
+        _require(options, "python")
+        return _plane_search(ctx, options, sections, section_image, atlas_image, view)
 
     return [
         ToolSpec("stalign_lddmm", stalign_lddmm, lddmm, kind="write", group="Nonlinear",
                  task="nonlinear", writes=("affine", "deformation"), long=True,
                  limits={"sections": 4}, version="1", meta=meta),
-        ToolSpec("stalign_sorting", stalign_sorting, sorting_tool, kind="read",
-                 group="Nonlinear", task="nonlinear", limits={"sections": 4}, version="1",
-                 meta=meta),
         ToolSpec("stalign_plane_search", stalign_plane_search, plane, kind="read",
                  group="Positioning", task="angles", limits={"sections": 8}, version="1",
                  meta=meta),

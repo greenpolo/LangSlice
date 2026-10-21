@@ -91,26 +91,36 @@ def matches(model, device, target: np.ndarray, source: np.ndarray):
 
 
 def run(model, device, target: np.ndarray, source: np.ndarray, keep: np.ndarray,
-        mode: str, top_k: int, smoothing_px: float) -> dict[str, np.ndarray]:
+        mode: str, top_k: int, smoothing_px: float,
+        section_keep: np.ndarray | None = None) -> dict[str, np.ndarray]:
     h, w = target.shape[:2]
     to_grid = CORNER @ resize_map(w, h, W, H)  # canvas px -> RoMa grid
     from_grid = np.linalg.inv(resize_map(w, h, W, H)) @ np.linalg.inv(CORNER)
     k1, k2, cert = matches(model, device, target, source)
-    # the plugin's step: drop matches whose atlas end is in the damage zone, then take the
-    # top_k most confident of the rest
+    # the plugin's step: drop matches whose atlas end is in the damage zone and, with a
+    # section mask, those whose section end is where the mask is under one half; then take
+    # the top_k most confident of the rest
     at = k1 @ from_grid[:2, :2].T + from_grid[:2, 2]
     col = np.clip(np.rint(at[:, 0]).astype(int), 0, w - 1)
     row = np.clip(np.rint(at[:, 1]).astype(int), 0, h - 1)
-    kept = keep[row, col]
+    section_at = k2 @ from_grid[:2, :2].T + from_grid[:2, 2]
+    outside_damage = keep[row, col]
+    if section_keep is None:
+        inside_mask = np.ones_like(outside_damage)
+    else:
+        scol = np.clip(np.rint(section_at[:, 0]).astype(int), 0, w - 1)
+        srow = np.clip(np.rint(section_at[:, 1]).astype(int), 0, h - 1)
+        inside_mask = section_keep[srow, scol]
+    kept = outside_damage & inside_mask
     reach = int(np.searchsorted(np.cumsum(kept), top_k)) + 1  # ranks scanned to fill top_k
     passed = ~kept[:reach]
-    section_at = k2 @ from_grid[:2, :2].T + from_grid[:2, 2]
 
     def rows(sel: np.ndarray) -> np.ndarray:
         return np.c_[at[sel], section_at[sel], cert[sel]].astype(np.float32)
 
     out: dict[str, np.ndarray] = {
         "dropped": np.array(int(passed.sum())),
+        "dropped_by_mask": np.array(int((outside_damage[:reach] & ~inside_mask[:reach]).sum())),
         "dropped_pairs": rows(np.flatnonzero(passed)),
         "used": rows(np.flatnonzero(kept)[:top_k])}
     k1, k2 = k1[kept][:top_k], k2[kept][:top_k]
@@ -170,9 +180,11 @@ def main() -> int:
     result: dict[str, np.ndarray] = {}
     for i in range(int(data["n"])):
         try:
+            held = f"section_keep_{i}"
             got = run(model, device, data[f"target_{i}"], data[f"source_{i}"],
                       data[f"keep_{i}"].astype(bool), mode, int(data["matches"]),
-                      float(data["smoothing_px"]))
+                      float(data[f"smoothing_px_{i}"]),
+                      data[held].astype(bool) if held in data.files else None)
         except Exception as exc:  # one section failing leaves the others
             got = {"error": np.array(f"{type(exc).__name__}: {exc}")}
         result.update({f"{key}_{i}": value for key, value in got.items()})

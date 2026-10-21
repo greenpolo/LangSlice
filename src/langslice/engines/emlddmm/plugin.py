@@ -24,7 +24,7 @@ Frames. The stack frame has z along the planes' normal and (row, column) along t
 atlas rows and columns, origin at the most anterior section's plane centre. Section k sits at its
 distance from that plane, snapped to a slot grid ``slot_um`` apart along the slicing axis (the
 agent's choice, no default; emlddmm needs evenly spaced slices, an empty slot carries no data,
-``W0`` 0). Each section enters already placed: its preprocessed channel, grey, read as it is in
+``W0`` 0). Each section enters already placed: its image (a channel by name), grey, read as it is in
 [0, 1] (as the Fig 3 benchmark runner), area-averaged to ``section_um``, resampled through the
 section's current registration (its
 deformation included, ``FitFrame.applied_map``) onto the stack's in-plane grid, which is the union
@@ -56,6 +56,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from langslice.engines import _blocks
 from langslice.plugin_api import ToolContext, ToolError, ToolResult, ToolSpec
 
 HERE = Path(__file__).resolve().parent
@@ -97,10 +98,12 @@ OVERLAYS = 4  # the pictures a landing or a plane proposal sends
 def emlddmm_stack(
     sections: list[str],
     slot_um: float,
-    atlas_image: str = "template",
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
+    mask: str = "none",
+    smoothness_um: float = 500.0,
     rigid: bool = True,
     warp: bool = True,
-    smoothness_um: float = 500.0,
     warp_freedom: float = 10000.0,
     iterations: list[int] = [100, 50, 25],  # noqa: B006 (a declaration's default, as the stubs)
     sorting: dict[str, Any] = {},  # noqa: B006
@@ -118,10 +121,10 @@ def emlddmm_stack(
     emlddmm explains every placed section as a picture of the same 3-D atlas:
     one smooth 3-D warp of the atlas, one shared scale and shear for the stack,
     and for each section its own in-plane turn and shift (its mounting). It
-    fits all of them together against the sections' preprocessed channels,
-    with a contrast fit in small blocks and an EM sorting of every pixel into
-    matching tissue, background and artifact, so holes, debris and empty
-    slide are set aside. Neighbouring sections constrain each other: a
+    fits all of them together against the sections' images (one channel, by
+    name), with a contrast fit in small blocks and an EM sorting of every
+    pixel into matching tissue, background and artifact, so holes, debris and
+    empty slide are set aside. Neighbouring sections constrain each other: a
     section with little anatomy is bent and shifted the way the stack is. The
     cutting angles and positions stay as they are: put the sections in order
     and within about one interval of their place first. emlddmm has no
@@ -131,6 +134,14 @@ def emlddmm_stack(
     refined from its current registration, its deformation included[[?set_landmarks ~
     , so a landmark move is kept]]. The section's marked damage regions are
     left out automatically[[?mark_damage ; mark them with mark_damage first]].
+
+    emlddmm takes a section mask as soft weights: the mask multiplies each
+    pixel's weight in the fit, so a pixel at 0.3 counts at 0.3. Besides the
+    mask, emlddmm estimates its own sorting during the fit; the final sorting
+    of each section it writes a deformation for is saved with that
+    deformation[[?set_mask , and set_mask can take it as a mask for another fit ~
+    (source fit)]]. It keeps its own brightness scaling: the channel as it is,
+    0 to 1.
 
     Writes, per section: with rigid true its transform (turn, shift, and the
     stack's scale and shear) and with warp true its deformation, the
@@ -167,15 +178,23 @@ def emlddmm_stack(
             moves sections further from where you placed them and limits what
             the fit can resolve along the slicing axis. Two sections may not
             share a slot.
+        section_image: The section channel to fit, by name: "preprocessed"
+            or another channel of the stack[[?set_channel  (set_channel makes ~
+            and changes them)]]. Read as grey, as it is, 0 to 1. Default
+            "preprocessed".
         atlas_image: One of the atlas's images (the job statement lists
-            them); pick the one that looks most like the sections.
+            them), or "nissl", the atlas's Nissl (its template when it ships
+            none). Default "nissl"; the reply names the image used.
+        mask: "none", or the name of a mask that every section in the stack
+            has[[?set_mask  (made with set_mask)]]; its weights multiply the
+            fit's weight on that section. Default "none".
+        smoothness_um: The warp's smoothness scale in micrometres, across
+            sections too; tissue closer than this bends together. Default 500.
         rigid: True refits each section's in-plane turn and shift and the
             stack's scale and shear and writes them; false keeps every
             transform and fits the warp alone. Default true.
         warp: True fits the 3-D warp; false fits the linear part only.
             Default true.
-        smoothness_um: The warp's smoothness scale, across sections too;
-            tissue closer than this bends together. Default 500.
         warp_freedom: How freely the warp may bend; larger bends more. Start
             large and reduce if the warps look unrealistic. Default 10000.
         iterations: Steps at the 200, 100 and 50 um scales. Default
@@ -188,8 +207,11 @@ def emlddmm_stack(
     Returns:
         The work id, the number of sections in the stack, those left out with
         why, the sections that will not get a transform and what they get, the
-        furthest a section moves to its slot, and the device; or why it was
-        not started.
+        furthest a section moves to its slot, the device, and per section what
+        the fit uses (inputs: the channel, the atlas image as asked and as
+        used, the mask, the damage, the brightness scaling); or why it was not
+        started. The notice that follows brings, per section, what emlddmm
+        estimated (its sorting and the share of the tissue it left out).
     """
     ...
 
@@ -197,7 +219,8 @@ def emlddmm_stack(
 def emlddmm_plane(
     sections: list[str],
     slot_um: float,
-    atlas_image: str = "template",
+    section_image: str = "preprocessed",
+    atlas_image: str = "nissl",
     iterations: list[int] = [100, 50, 25],  # noqa: B006 (a declaration's default, as the stubs)
     view: bool = True,
 ) -> dict[str, Any]:
@@ -227,13 +250,15 @@ def emlddmm_plane(
             within about one interval of its place, set it to the section
             thickness, or to about half the interval between neighbouring
             sections.
-        atlas_image: One of the atlas's images, as for the fit.
+        section_image: The section channel to fit, as for emlddmm_stack.
+        atlas_image: One of the atlas's images or "nissl", as for the fit.
         iterations: Steps at the three scales. Default [100, 50, 25].
         view: True returns the pictures described below; false returns none.
 
     Returns:
         pitch_deg, yaw_deg and their change from the stack's angles; the
-        spacing scale and shift_mm; per section its proposed position_mm, the
+        spacing scale and shift_mm; per section what the fit used (inputs), its
+        proposed position_mm, the
         change, and the residual turn (deg) and shift (mm) it needed at the
         found plane beyond what the stack as a whole needed; and the overlays
         of up to four sections drawn at the found plane, not written.
@@ -277,23 +302,19 @@ def _sample(array: np.ndarray, pts: np.ndarray, mode: int = cv2.INTER_LINEAR) ->
     return np.stack(got, -1).reshape(*shape, len(got)) if array.ndim == 3 else got[0].reshape(shape)
 
 
-def _frame(ctx: ToolContext, name: str, atlas_image: str) -> Any:
-    frame = ctx.fit_frame(name, atlas=(atlas_image, "annotation"), stain=True)
-    if atlas_image not in frame.atlas:
-        raise ToolError("BAD_ARGS", f"the atlas has no image {atlas_image!r}; the job "
-                        "statement lists its images")
-    return frame
 
 
-def _section(ctx: ToolContext, sid: str, atlas_image: str,
+def _section(ctx: ToolContext, sid: str, section_image: str, atlas_image: str, mask: str,
              config: dict[str, Any]) -> dict[str, Any]:
     """Everything one section contributes, taken from its fit frame (which is then dropped):
-    the registration (placement and applied map), its plane, the preprocessed channel in [0, 1]
+    the registration (placement and applied map), its plane, the section's image in [0, 1]
     area-averaged to the section pixel, the tissue outline and the damage."""
     section_um = config["section_um"]
-    frame = _frame(ctx, sid, atlas_image)
+    frame = _blocks.frame_for(ctx, sid, atlas_image, section_image)
+    _plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
+    held = _blocks.section_mask(ctx, sid, mask)
     placed = _placed(frame)
-    grey = np.asarray(frame.stain, np.float64).mean(axis=2)
+    grey = _blocks.channel_image(frame).astype(np.float64).mean(axis=2)
     gh, gw = grey.shape
     border = np.concatenate([grey[0], grey[-1], grey[:, 0], grey[:, -1]])
     slide = float(np.median(border))
@@ -305,6 +326,8 @@ def _section(ctx: ToolContext, sid: str, atlas_image: str,
     # micrometres per fit-grid pixel at the section's linear scale (atlas micrometres)
     px_um = float(np.mean(plane["px_um"])) / float(np.sqrt(abs(np.linalg.det(placed[:2, :2]))))
     down, (sx, sy) = _down(scaled.astype(np.float32), section_um / px_um)
+    soft = None if held is None else _down(np.asarray(held.weights, np.float32),
+                                           section_um / px_um)[0]
     m = np.asarray(plane["native_to_um"], np.float64)
     c, dx, dy = (np.asarray(plane[k], np.float64) for k in ("center_um", "dx", "dy"))
     Q = np.array([[dx @ m[:, 0], dx @ m[:, 1]], [dy @ m[:, 0], dy @ m[:, 1]]])
@@ -312,7 +335,11 @@ def _section(ctx: ToolContext, sid: str, atlas_image: str,
         "id": sid, "placed": placed, "has_transform": frame.placed_atlas_to_section is not None,
         "applied": None if frame.applied_map is None else np.asarray(frame.applied_map,
                                                                       np.float32),
-        "grid": (gw, gh), "back": back, "px_um": px_um, "down": down, "down_s": (sx, sy),
+        "grid": (gw, gh), "back": back, "soft": soft, "resolved": resolved,
+        "inputs": _blocks.inputs_block(ctx, frame, section_image=section_image,
+                                       atlas_image=atlas_image, resolved=resolved, mask=held,
+                                       brightness="as it is, 0-1"),
+        "px_um": px_um, "down": down, "down_s": (sx, sy),
         "centre": c, "dx": dx, "dy": dy, "Q": Q, "Qi": np.linalg.inv(Q),
         "q": np.array([dx @ (m[:, 2] - c), dy @ (m[:, 2] - c)]),
         "native_mm": float(np.mean(plane["px_um"])) / 1000.0,
@@ -359,7 +386,8 @@ def _memory_gb(n_slots: int, ny: int, nx: int, dtype: str) -> float:
 
 
 def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
-           atlas_image: str, need_transform: bool) -> dict[str, Any]:
+           section_image: str, atlas_image: str, mask: str,
+           need_transform: bool) -> dict[str, Any]:
     """The stack of the placed sections: geometry, slots, memory check, images on the stack grid.
     A section that cannot enter (no placement) is left out with its reason."""
     if not slot_um > 0:
@@ -371,7 +399,7 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
         try:
             if view.position_mm is None or (need_transform and view.affine is None):
                 raise ToolError("INVALID_LINEAR_PLACEMENT", f"needs {what} first")
-            sec = _section(ctx, view.id, atlas_image, config)
+            sec = _section(ctx, view.id, section_image, atlas_image, mask, config)
             if need_transform and not sec["has_transform"]:
                 raise ToolError("INVALID_LINEAR_PLACEMENT", f"needs {what} first")
         except ToolError as exc:
@@ -463,6 +491,8 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
         if sec["damage"] is not None:
             keep &= ~(_sample(sec["damage"].astype(np.uint8), p, cv2.INTER_NEAREST) > 0)
         W0[k] = keep
+        if sec["soft"] is not None:  # the section mask: emlddmm takes soft weights, W0 *= weights
+            W0[k] *= np.clip(_sample(sec["soft"], at), 0.0, 1.0)
         tissue = _sample(sec["tissue_native"].astype(np.uint8), p, cv2.INTER_NEAREST) > 0
         sec["tissue_stack"] = tissue & keep
         sec["slot"] = int(k)
@@ -472,7 +502,7 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
             "gx": gx, "gy": gy, "off_xy": off_xy, "J": J, "W0": W0, "memory_gb": memory,
             "weight_um": thick, "back": secs[0]["back"], "R": np.stack([n, dy, dx]),
             "zs": np.arange(n_slots) * dz,
-            "section_um": section_um}
+            "section_um": section_um, "resolved": secs[0]["resolved"]}
 
 
 def _cfg(st: dict[str, Any], iterations: list[int], smoothness_um: float, warp_freedom: float,
@@ -720,6 +750,12 @@ def _device(config: dict[str, Any]) -> str:
 # --- emlddmm_stack ----------------------------------------------------------------------------
 
 
+def _meta(rec: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+    """What the deformation record keeps of the call: its inputs, estimates and settings."""
+    return {"inputs": rec["sec"]["inputs"], "estimated": rec["estimated"],
+            "settings": settings}
+
+
 def _route(view: Any, rigid: bool, warp: bool) -> str:
     """How one section's result is written: ``transform`` (its transform, then the warp on top),
     ``deformation`` (the rigid change folded into its deformation) or ``none``."""
@@ -733,31 +769,47 @@ GETS = {"deformation": "its transform kept, the rigid change folded into its def
         "none": "nothing (its transform or deformation is frozen)"}
 
 
+def _weights_on_grid(st: dict[str, Any], sec: dict[str, Any], off: np.ndarray,
+                     stack_weights: np.ndarray) -> np.ndarray:
+    """emlddmm's final sorting of one section (its slot of ``WM``, on the stack grid) as a
+    float16 weight map on the section's fit grid, read through its current registration."""
+    w, h = sec["grid"]
+    gxy = np.stack(np.meshgrid(np.arange(w), np.arange(h)), -1).astype(np.float64)
+    uv = _plane_um(sec, _reg(sec, gxy)) + off  # (column, row) um in the stack frame
+    ix = ((uv[..., 0] - st["gx"][0]) / st["section_um"]).astype(np.float32)
+    iy = ((uv[..., 1] - st["gy"][0]) / st["section_um"]).astype(np.float32)
+    got = cv2.remap(np.ascontiguousarray(stack_weights, np.float32), ix, iy, cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_REPLICATE)
+    return np.clip(got, 0.0, 1.0).astype(np.float16)
+
+
 def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
-                atlas_image: str, rigid: bool, warp: bool, smoothness_um: float,
-                warp_freedom: float, iterations: list[int], sorting: dict[str, Any],
-                view: bool) -> ToolResult:
+                section_image: str, atlas_image: str, mask: str, smoothness_um: float,
+                rigid: bool, warp: bool, warp_freedom: float, iterations: list[int],
+                sorting: dict[str, Any], view: bool) -> ToolResult:
     if not rigid and not warp:
         raise ToolError("BAD_ARGS", "rigid and warp are both false: there is nothing to fit")
     iterations = _check_iterations(iterations)
     sort = _check_sorting(sorting)
     config = {**config, "device": _device(config)}
-    st = _stack(ctx, config, names, slot_um, atlas_image, need_transform=True)
+    st = _stack(ctx, config, names, slot_um, section_image, atlas_image, mask,
+                need_transform=True)
     cfg = _cfg(st, iterations, smoothness_um, warp_freedom, rigid, warp)
     atlas = ctx.atlas()
     secs = st["secs"]
     lattices = [_lattice(sec, off) for sec, off in zip(secs, st["off_xy"], strict=True)]
-    params = {"mode": "stack", "atlas": atlas.name, "image": atlas_image, "cfg": cfg,
+    params = {"mode": "stack", "atlas": atlas.name, "image": st["resolved"], "cfg": cfg,
               "sorting": sort, "warp": warp, "mu": _mu(st)}
     folder = _call_folder(ctx, "stack")
     arrays = _arrays(st, [lat["q"] for lat in lattices])
     digests = {sec["id"]: ctx.section_inputs(sec["id"], deformation=True) for sec in secs}
-    asked = {"sections": names, "slot_um": slot_um, "atlas_image": atlas_image, "rigid": rigid,
-             "warp": warp, "smoothness_um": smoothness_um, "warp_freedom": warp_freedom,
-             "iterations": iterations, "sorting": sort, "view": view}
+    settings = {"section_image": section_image, "atlas_image": atlas_image, "mask": mask,
+                "smoothness_um": smoothness_um, "rigid": rigid, "warp": warp,
+                "warp_freedom": warp_freedom, "iterations": iterations, "sorting": sort}
+    asked = {"sections": names, "slot_um": slot_um, **settings, "view": view}
     chosen = _chosen(st, config, cfg)
     routes = {sec["id"]: _route(sec["view"], rigid, warp) for sec in secs}
-    note = f"emlddmm stack fit, atlas {atlas_image}, {len(secs)} sections"
+    note = f"emlddmm stack fit, atlas {st['resolved']}, {len(secs)} sections"
 
     def land(lctx: ToolContext) -> ToolResult:
         out = _engine(config, folder, arrays, params)
@@ -778,7 +830,10 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
             used = nat_full if warp else nat_lin
             moved = np.hypot(*(used - lat["p_old"]).transpose(2, 0, 1)) * sec["native_mm"]
             moved = moved[inside] if inside.any() else moved.ravel()
-            records.append({"sec": sec, "native": used, "matrix": matrix,
+            weights = (_weights_on_grid(st, sec, st["off_xy"][len(records)], out["WM"][sec["slot"]])
+                       if warp else None)
+            records.append({"sec": sec, "native": used, "matrix": matrix, "weights": weights,
+                            "estimated": _blocks.estimated_block(weights, sec["outline_grid"]),
                             "off_plane_um": float(np.abs(off_plane).max()),
                             "moved_mm": (float(np.median(moved)), float(moved.max())),
                             "set_aside": _set_aside(out, sec["slot"], sec)})
@@ -793,7 +848,8 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
             sec = rec["sec"]
             if routes[sec["id"]] == "deformation":
                 proposals[sec["id"]] = lctx.deformation_from_map(
-                    sec["id"], _expand(rec["native"], *sec["grid"]), note=note)
+                    sec["id"], _expand(rec["native"], *sec["grid"]), note=note,
+                    meta=_meta(rec, settings), weights=rec["weights"])
         written: dict[str, str] = {}
         failed: dict[str, dict[str, Any]] = {}
         summaries: dict[str, dict[str, Any]] = {}
@@ -810,7 +866,8 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                 sec = rec["sec"]
                 if routes[sec["id"]] == "transform" and warp and sec["id"] not in failed:
                     proposals[sec["id"]] = lctx.deformation_from_map(
-                        sec["id"], _expand(rec["native"], *sec["grid"]), note=note)
+                        sec["id"], _expand(rec["native"], *sec["grid"]), note=note,
+                        meta=_meta(rec, settings), weights=rec["weights"])
             if proposals:
                 done = lctx.set_deformations(
                     [p.row() for p in proposals.values()],
@@ -837,6 +894,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
             rows.append({"id": sid, "slot": rec["sec"]["slot"], "snap_um": rec["sec"]["snap_um"],
                          "moved": rec["moved_mm"], "off_plane_um": rec["off_plane_um"],
                          "summary": summaries.get(sid, {}), "set_aside": rec["set_aside"],
+                         "inputs": rec["sec"]["inputs"], "estimated": rec["estimated"],
                          "written": wrote, "problem": problem})
         with open(folder / "sections.csv", "w", newline="") as fh:
             writer = csv.writer(fh)
@@ -861,18 +919,24 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                        key=lambda r: (not _flags(r["summary"]), -r["moved"][0]))[:OVERLAYS]
         drawn = ", ".join(f"{r['id']} ({r['moved'][0]:.2f})" for r in shown)
         relative = _relative(folder, lctx)
+        left = [f"{r['id']} ({r['estimated']['left_out_fraction']:.0%})" for r in rows
+                if r["estimated"] and r["estimated"]["left_out_fraction"] is not None]
         energy = (f"emlddmm's energy record: {relative}/energy.csv (plot: {relative}/energy.png)"
                   if _captured(out) else "emlddmm's energy record was not captured")
         text = (f"{note}: written for {len(written)} of {len(secs)} sections"
                 + (f"; not (fully) written: {', '.join(problems)}" if problems else "")
                 + (f"; warp flags: {', '.join(flagged)}" if flagged else "")
+                + (f"; the sorting emlddmm estimated left out, of the tissue, {', '.join(left)}, "
+                   "saved with each deformation" if left else "")
                 + (f". Overlays, with how far each moved (median, mm): {drawn}"
                    if view and shown else "")
                 + f". {energy}; per-section results: {relative}/sections.csv; "
                 f"the images it saw: {relative}/images/.")
         pictures = [lctx.caption(lctx.overlay_picture(r["id"]), f"{r['id']}: after emlddmm")
                     for r in shown] if view else []
-        return ToolResult({"notice": text, "files": relative}, pictures)
+        return ToolResult({"notice": text, "files": relative, "settings": settings,
+                           "rows": [{"id": r["id"], "inputs": r["inputs"],
+                                     "estimated": r["estimated"]} for r in rows]}, pictures)
 
     try:
         work = ctx.start_work([sec["id"] for sec in secs], land)
@@ -886,6 +950,9 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     other = [{"id": sid, "gets": GETS[route]} for sid, route in routes.items()
              if route != "transform"]
     return ToolResult({"work": work, "stack": len(secs), "left_out": st["left_out"],
+                       "settings": settings,
+                       "rows": [{"id": sec["id"], "inputs": sec["inputs"], "estimated": None}
+                                for sec in secs],
                        **({"other_routes": other} if other else {}),
                        "largest_snap_um": round(max(abs(s["snap_um"]) for s in secs), 1),
                        "device": config["device"]
@@ -897,15 +964,17 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
 
 
 def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
-                atlas_image: str, iterations: list[int], view: bool) -> ToolResult:
+                section_image: str, atlas_image: str, iterations: list[int],
+                view: bool) -> ToolResult:
     iterations = _check_iterations(iterations)
     config = {**config, "device": _device(config)}
-    st = _stack(ctx, config, names, slot_um, atlas_image, need_transform=False)
+    st = _stack(ctx, config, names, slot_um, section_image, atlas_image, "none",
+                need_transform=False)
     cfg = _cfg(st, iterations, PUBLISHED["smoothness_um"], PUBLISHED["warp_freedom"],
                rigid=True, warp=False)
     atlas = ctx.atlas()
     secs = st["secs"]
-    params = {"mode": "plane", "atlas": atlas.name, "image": atlas_image, "cfg": cfg,
+    params = {"mode": "plane", "atlas": atlas.name, "image": st["resolved"], "cfg": cfg,
               "sorting": {}, "warp": False, "mu": _mu(st), "up_vector": (-st["dy"]).tolist()}
     folder = _call_folder(ctx, "plane")
     out = _engine(config, folder, _arrays(st, [np.zeros((0, 2)) for _ in secs]), params)
@@ -931,13 +1000,14 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     turns = np.degrees(np.arctan2(a2d[:, 1, 0], a2d[:, 0, 0]))
     shifts = a2d[:, :2, 2] / 1000.0
     turns, shifts = turns - np.median(turns), shifts - np.median(shifts, axis=0)
-    rows = [{"id": sec["id"], "position_mm": round(f["position_mm"], 3),
+    rows = [{"id": sec["id"], "inputs": sec["inputs"], "estimated": None,
+             "position_mm": round(f["position_mm"], 3),
              "change_mm": round(f["position_mm"] - float(was), 3),
              "residual": {"turn_deg": round(float(t), 2),
                           "shift_mm": round(float(np.hypot(*s)), 3)}}
             for sec, f, was, t, s in zip(secs, found, old, turns, shifts, strict=True)]
-    asked = {"sections": names, "slot_um": slot_um, "atlas_image": atlas_image,
-             "iterations": iterations, "view": view}
+    asked = {"sections": names, "slot_um": slot_um, "section_image": section_image,
+             "atlas_image": atlas_image, "iterations": iterations, "view": view}
     proposal = {"pitch_deg": pitch, "yaw_deg": yaw, "spacing_scale": float(scale),
                 "spacing_shift_mm": float(shift_mm)}
     _write_files(st, out, folder, secs, A, A0, A2d, {"proposed_plane": proposal, "sections": rows},
@@ -970,21 +1040,24 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
             "commit": "9c4dc80 + e426ece + 6ff62b0", "engine": "langslice.engines.emlddmm"}
 
     def stack(ctx: ToolContext, sections: list[str], slot_um: float,
-              atlas_image: str = "template", rigid: bool = True, warp: bool = True,
-              smoothness_um: float = 500.0, warp_freedom: float = 10000.0,
+              section_image: str = "preprocessed", atlas_image: str = "nissl",
+              mask: str = "none", smoothness_um: float = 500.0, rigid: bool = True,
+              warp: bool = True, warp_freedom: float = 10000.0,
               iterations: list[int] | None = None, sorting: dict[str, Any] | None = None,
               view: bool = True) -> ToolResult:
         _require(options, "python", "emlddmm_src", "brainglobe_dir")
         return _stack_tool(ctx, options, list(dict.fromkeys(sections)), float(slot_um),
-                           atlas_image, rigid, warp, float(smoothness_um), float(warp_freedom),
-                           list(iterations or PUBLISHED["iterations"]), dict(sorting or {}), view)
+                           section_image, atlas_image, mask, float(smoothness_um), rigid, warp,
+                           float(warp_freedom), list(iterations or PUBLISHED["iterations"]),
+                           dict(sorting or {}), view)
 
     def plane(ctx: ToolContext, sections: list[str], slot_um: float,
-              atlas_image: str = "template", iterations: list[int] | None = None,
-              view: bool = True) -> ToolResult:
+              section_image: str = "preprocessed", atlas_image: str = "nissl",
+              iterations: list[int] | None = None, view: bool = True) -> ToolResult:
         _require(options, "python", "emlddmm_src", "brainglobe_dir")
         return _plane_tool(ctx, options, list(dict.fromkeys(sections)), float(slot_um),
-                           atlas_image, list(iterations or PUBLISHED["iterations"]), view)
+                           section_image, atlas_image,
+                           list(iterations or PUBLISHED["iterations"]), view)
 
     return [
         ToolSpec("emlddmm_stack", emlddmm_stack, stack, kind="write", group="Nonlinear",
