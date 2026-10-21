@@ -45,9 +45,11 @@ Draw pictures of sections and the atlas. Writes nothing.
                 the planes "atlas" draws (at least one), and the atlas pictures
                 above the ruler in "positioning" (none when empty).
             channels: The raw channels of each section to draw, by name (several
-                are blended in distinct colours, at most 6), or ["preprocessed"]
-                for the channel the fits and the image model read. Empty is every
-                raw channel, each with its display settings.
+                are blended in distinct colours, at most 6), or one derived
+                channel alone: ["preprocessed"] for the channel the fits and the
+                image model read, or the name of another channel
+                made with set_channel. Empty is every raw channel, each with its
+                display settings.
             atlas_layers: Any of the atlas's images (the job statement lists
                 them: "template" and any other reference images the atlas ships,
                 by their names) and "borders". Empty is the mode's default: borders in "overlay",
@@ -61,6 +63,8 @@ Draw pictures of sections and the atlas. Writes nothing.
                 were drawn. Empty draws none.
             depth: Atlas ontology depth whose region boundaries "borders"
                 draws (0 = root, as in BrainGlobe; larger is finer).
+            masks: Names of masks made with set_mask, outlined where
+                their weight is 0.5 on the sections drawn, on the "section" and "overlay" pictures. Empty draws none.
 
         Returns:
             Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -77,6 +81,7 @@ Draw pictures of sections and the atlas. Writes nothing.
 - `warp` (string, one of ['applied', 'none']):
 - `layers` (array of string):
 - `depth` (integer):
+- `masks` (array of string):
 
 ## zoom
 
@@ -132,50 +137,22 @@ Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 - `picture` (integer):
 - `region` (string):
 
-## set_channel_properties
+## set_channel
 
-Set how a raw channel is displayed, in every section that has it.
+Set how a channel is displayed, or the recipe of a channel made from the raw ones.
 
-        Display only: it changes how look draws the channel and nothing a fit
-        or the image model reads; the image files are never edited. The setting
-        stays until it is changed, and every caption states it. Undoable.
-
-        Args:
-            channel: The raw channel's name.
-            contrast_limits: [low, high] in the file's own intensities: low is
-                drawn black, high at full brightness. Empty keeps the current
-                limits. Without limits a channel is drawn with automatic ones,
-                per section: black at the background, full brightness at the
-                tissue's 95th percentile.
-            gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma.
-            colormap: "gray", "red", "green", "blue", "magenta", "cyan" or
-                "yellow"; empty keeps the current one.
-            reset: True returns the channel to its default display; the other
-                arguments are then ignored.
-
-        Returns:
-            The settings now in force, the sections that have the channel, and
-            its file intensities over them: the sample type and its range, and
-            the 1st and 99.5th percentiles.
-        
-
-- `channel` (string, required):
-- `contrast_limits` (array of number):
-- `gamma` (number):
-- `colormap` (string):
-- `reset` (boolean):
-
-## set_preprocessed_channel_properties
-
-Set the recipe of the preprocessed channel that the fits and the image model read.
-
-        Every section has one preprocessed channel, made from its raw channels
-        by a recipe, LangSlice's default until this is called: each raw channel
-        with a weight above zero is optionally N4-corrected and denoised
-        and contrast-enhanced by CLAHE, then the channels are blended by their
-        weights. The fits match it against an atlas image. The raw channels are
-        never changed; look draws this channel with channels ["preprocessed"].
-        Undoable; another call replaces the recipe.
+        A raw channel is a channel of the image files, named as the reply's
+        `channels` lists them; it is never edited, and setting it changes only how
+        look draws it (contrast_limits, gamma, colormap): nothing a fit or the
+        image model reads. Every other name is a derived channel, made from the
+        raw ones by a recipe (weights, clahe_clip, clahe_tiles, n4, denoise,
+        contrast_limits, gamma, invert) for the whole stack, or for the
+        sections named as their own recipe. "preprocessed" is the derived channel
+        the fits and the image model read by default: LangSlice's default recipe
+        until this is called; a new name makes another channel that the
+        fits and look can read as well. The setting stays until it is
+        changed, and every caption states it. Undoable; another call replaces the
+        recipe.
 
         Register on the counterstain. A counterstain (DAPI, Hoechst, Nissl,
         NeuroTrace) labels every cell, so it shows the anatomy the atlas draws; a
@@ -189,38 +166,63 @@ Set the recipe of the preprocessed channel that the fits and the image model rea
         preprocessed channel serves both you and the fitting algorithms: look at
         it (`look` with channels ["preprocessed"]) to judge alignment, and the
         fits match it against the atlas. Pale or low-contrast sections
-        especially need this before you place or fit them. Inspect the before-and-after pictures
-        and compare with the raw channels before fitting. Raw-channel display
-        adjustments alone do not change what the fitting algorithms receive.
+        especially need this before you place or fit them. Inspect the
+        before-and-after pictures and compare with the raw channels before
+        fitting. A raw channel's display adjustments alone do not change what the
+        fitting algorithms receive.
 
         Args:
+            name: A raw channel's name, "preprocessed", or the name of a derived
+                channel to make or change.
             sections: Filenames (the extension may be left off) of the sections
                 that get a recipe of their own; empty sets the whole stack's
-                recipe.
-            channel_weights: One weight per raw channel, in the order the reply's
-                `channels` lists them; 0 leaves a channel out. Empty: automatic
-                weights by tissue coverage.
+                recipe. A raw channel is set for every section that has it.
+            weights: A derived channel's raw channels and their weights, by name
+                (for example {"dapi": 1, "gfp": 0}); a channel left out or at 0
+                is not used. Empty: automatic weights by tissue coverage.
             clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
             clahe_tiles: CLAHE tiles per side, 1 to 32.
             n4: N4 correction of uneven illumination.
             denoise: Denoising.
-            reset: True returns the stack to the default recipe, or the named
-                sections to the stack's recipe; the other arguments are then
-                ignored.
+            contrast_limits: [low, high]. For a raw channel, in the file's own
+                intensities: low is drawn black, high at full brightness; empty
+                keeps the current limits, and without limits a channel is drawn
+                with automatic ones, per section: black at the background, full
+                brightness at the tissue's 95th percentile. For a derived channel,
+                [low, high] between 0 and 1 of the recipe's result, stretched to
+                the full range; empty leaves it as it is.
+            gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma (a derived
+                channel's: none).
+            colormap: A raw channel's: "gray", "red", "green", "blue", "magenta",
+                "cyan" or "yellow"; empty keeps the current one.
+            invert: A derived channel's: True draws bright as dark.
+            reset: True returns a raw channel to its default display, "preprocessed"
+                to the default recipe (the stack's, or the named sections' back to
+                the stack's), and deletes another derived channel (with sections,
+                only those sections' recipes of its own); the other arguments are
+                then ignored.
+            view: True returns the pictures described below; false returns none.
 
         Returns:
-            The recipe in force, the raw channels, and for up to 4 of the
-            sections (spread over the stack when none are named) two pictures
-            each: the preprocessed channel before this call, then after it.
+            The settings or recipe now in force, the channels there are, and for
+            a derived channel, up to 4 of the sections (spread over the stack when
+            none are named) two pictures each: the channel before this call, then
+            after it.
         
 
+- `name` (string, required):
 - `sections` (array of string):
-- `channel_weights` (array of number):
+- `weights` (object):
 - `clahe_clip` (number):
 - `clahe_tiles` (integer):
 - `n4` (boolean):
 - `denoise` (boolean):
+- `contrast_limits` (array of number):
+- `gamma` (number):
+- `colormap` (string):
+- `invert` (boolean):
 - `reset` (boolean):
+- `view` (boolean):
 
 ## grep_atlas
 
@@ -290,11 +292,12 @@ The stack as it stands, and what this run lets you change. Writes nothing.
         Returns:
             One row per section in stack order: filename, position, distance
             to the next placed section, flip and quarter turn, transform,
-            damaged regions and damage note, deformation steps. Also the
+            damaged regions and damage note, deformation steps, masks
+            (name, source, stale). Also the
             cutting angles, the interval breaks, the raw channels' display
-            settings ("auto": automatic contrast limits), the preprocessed
-            channel's recipe, the background work still running, and what this
-            run lets you change.
+            settings ("auto": automatic contrast limits), the derived channels'
+            recipes (the preprocessed channel's, and any other you made), the
+            background work still running, and what this run lets you change.
         
 
 
@@ -436,17 +439,68 @@ Mark the atlas regions a section has lost, so that every fit leaves them out.
 - `regions` (array of string, required):
 - `note` (string):
 
+## set_mask
+
+Make, replace or delete a named mask of one section: which tissue a fit compares.
+
+        A mask holds a weight from 0 to 1 for each pixel of the section; a fit
+        that takes it by name ignores the pixels under 0.5. It sorts the
+        section's pixels into tissue, artifact and background by their brightness
+        in a channel and by where the atlas puts tissue, as the fits' own estimate
+        does, and it is the only way a fit leaves out a hole, a tear or a stain.
+        The mask belongs to the section as it stands: a change to its position,
+        orientation, cutting angles, transform or deformation makes it stale, and
+        a fit refuses it until it is made again. The marked damage regions are not part of a mask; every
+        fit leaves them out of the atlas on its own. Undoable.
+
+        Args:
+            section: A filename (the extension may be left off).
+            name: The mask's name; an existing name is replaced.
+            source: "em": sort the section's pixels now, at its current
+                registration, against atlas_image. "fit": the sorting the
+                section's applied deformation saved with it, copied as it was
+                (NO_DEFORMATION or NO_SORTING when it has none).
+            channel: The section channel to sort (a raw channel, "preprocessed" or one you made with set_channel); "em" only.
+            atlas_image: The atlas image the sorting compares with ("nissl" is the
+                atlas's Nissl image where it has one, else its template); "em"
+                only.
+            sorting: Starting points of the sort, each between 0 and 1 of the
+                channel's brightness or a spread in the same units: match_sd,
+                background_sd, artifact_sd, background_mean, artifact_mean. Empty
+                uses the defaults; "em" only.
+            delete: True removes the mask; the other arguments except section and
+                name are then ignored.
+            view: True returns the picture described below; false returns none.
+
+        Returns:
+            The mask's source, channel, atlas image and starting points, and the
+            fraction of the section's tissue it leaves out. With view, the
+            section drawn as look's "section" mode draws it, with the mask's
+            0.5 outline on it.
+        
+
+- `section` (string, required):
+- `name` (string, required):
+- `source` (string, one of ['em', 'fit']):
+- `channel` (string):
+- `atlas_image` (string):
+- `sorting` (object):
+- `delete` (boolean):
+- `view` (boolean):
+
 ## elastix_affine
 
 Fit sections' in-plane affine transforms automatically with elastix.
 
         For a few sections at a time. Elastix refines each section's current
-        placement (from the identity when it has no transform) by matching its
-        preprocessed channel against an atlas image, inner anatomy included. It
+        placement (from the identity when it has no transform) by matching a
+        channel of the section against an atlas image, inner anatomy included. It
         adjusts from where the
         section is and does not search from scratch: it moves a section by
         small amounts and does not turn it over. The section's marked damage
-        regions are left out automatically. Each fit is written as the
+        regions are left out of the atlas automatically. A section that holds a
+        deformation is refused with HAS_DEFORMATION: undo the deformation
+        first, or fit a warp on it. Each fit is written as the
         section's transform, one undoable write for the call.
 
         Use restrict_to when a few clearly recognizable, surviving regions
@@ -457,21 +511,36 @@ Fit sections' in-plane affine transforms automatically with elastix.
         A region too small for elastix is skipped with REGION_TOO_SMALL; use
         a larger region or interactive_transform. No fit is written for it.
 
+        Both images are scaled from their 1st to 99th percentile inside the
+        atlas outline to 0-1. The reply names the channel, atlas image and mask each
+        fit used.
+
         Args:
             sections: One to four filenames (the extension may be left off).
             restrict_to: Regions to fit by (acronyms, names or ids, descendants
                 included; "CTX:left" or "CTX:right" for one side): only the
                 atlas within 300 um of them, against the tissue the fit lays
-                there. Empty fits by every region.
+                there. Only the ANTs and Elastix fits take it. Empty fits by
+                every region.
+            section_image: The section channel to match: "preprocessed" (the channel
+                the fits and the image model read by default), a raw channel's name or a channel you made with set_channel.
             atlas_image: One of the atlas's images (the job statement lists
                 them: "template" and any other reference images the atlas ships,
-                by their names); pick the one that looks most like the sections.
+                by their names) or "nissl", the atlas's Nissl image where it has
+                one, else its template.
+            mask: "none" compares every pixel of the section, or the
+                name of a mask of that section made with set_mask: pixels with
+                a weight under 0.5 are left out.
+            edges: True also matches the edges (the gradient magnitude) of both
+                images, as a second term of equal weight.
             view: True returns the picture described below; false returns none.
 
         Returns:
             Per section the transform (rotation_deg, scale_x,
             scale_y, shear, translate_x_mm, translate_y_mm about the canvas
-            centre); and a picture of each fitted section
+            centre); the `inputs` it used (section image, atlas image as
+            resolved, mask, damage regions left out, intensity scaling); and a
+            picture of each fitted section
             under its new transform with the atlas borders on it. With
             restrict_to, those regions' borders are drawn thick and the others
             faint, and the picture is zoomed to them when they cover a small
@@ -480,7 +549,10 @@ Fit sections' in-plane affine transforms automatically with elastix.
 
 - `sections` (array of string, required):
 - `restrict_to` (array of string):
+- `section_image` (string):
 - `atlas_image` (string):
+- `mask` (string):
+- `edges` (boolean):
 - `view` (boolean):
 
 ## note

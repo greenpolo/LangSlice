@@ -15,9 +15,9 @@ Run facts:
 - Alignment canvas: each section is drawn at its TRUE physical size from its pixel size (read from the file, or given by the host; without one the section image's width is mapped onto the atlas plane's width and the tool payload says uncalibrated), and the atlas at its voxel size; scale 1.0 is the section's calibrated size.
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
-- Atlas layers on this host: template, borders.
+- Atlas layers on this host: template, nissl, borders.
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `trace_borders`, `note`, `undo`, `redo`, `submit`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `interactive_transform`, `mark_damage`, `set_mask`, `elastix_affine`, `fireants_syn`, `set_landmarks`, `landmark_triangulation`, `trace_borders`, `note`, `undo`, `redo`, `submit`.
 
 Constraints:
 - `submit` is refused unless every section has a position of its own, damaged sections included.
@@ -29,7 +29,7 @@ Constraints:
 - LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute priority: this run may be evaluated on the quality of its registration alone, without regard to the time or tokens it spends.
 
 Method:
-- Before placing or fitting a section, make its counterstain the channel you register on: set the preprocessed channel (`set_preprocessed_channel_properties`) to the counterstain alone, enhanced, and judge alignment and run fits on it.
+- Before placing or fitting a section, make its counterstain the channel you register on: set the preprocessed channel (`set_channel`, name "preprocessed") to the counterstain alone, enhanced, and judge alignment and run fits on it.
 - Place each section on its own evidence: compare it against candidate atlas positions before writing, and do not let the nominal interval stand in for a look.
 - After writing, review the whole stack against the atlas, watch for spacings that differ from their neighbours, and re-check the sections on either side of any gap before reporting an interval break.
 - Submit when the work is complete; address any missing requirements it returns.
@@ -37,7 +37,8 @@ Method:
 - Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
 - Before fitting a damaged section, mark the regions it has lost with `mark_damage`, so that every region it still has drives its fits.
-- Run each fit on the whole section first, then refine regions. Inspect each fit's borders against the section's internal anatomy and, where traced, its traced borders; undo a fit that does not improve the alignment and fit that section again with different `fireants_syn` settings, such as another stiffness or another atlas image.
+- Run each fit on the whole section first, then refine regions. Inspect each fit's borders against the section's internal anatomy and, where traced, its traced borders; undo a fit that does not improve the alignment and fit that section again with different `fireants_syn` settings, such as another smoothness_um or another atlas image.
+- A fit's reply names the channel, atlas image and mask it used.
 
 Work with the tools, then call `submit`.
 
