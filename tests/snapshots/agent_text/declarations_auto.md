@@ -526,6 +526,11 @@ Returns:
 
 Fit the atlas onto sections with FireANTs SyN, on their current registration.
 
+This is ANTs SyN (symmetric normalization; Avants et al. 2008, Medical Image
+Analysis), the most widely used diffeomorphic registration in neuroimaging,
+run by FireANTs (Jena et al. 2026, Nature Communications), which keeps SyN's
+model and runs its optimisation on the GPU.
+
 SyN bends the atlas onto a channel of each section, starting
 from the section's current registration (its linear placement, and its
 deformation when it has one), so each fit builds on the one before;

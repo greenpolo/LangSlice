@@ -43,8 +43,8 @@ EXIT_INTERNAL = 4
 #: than the job refusing it (exit 3), besides every ``BAD_*``, ``UNKNOWN_*``
 #: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
-    "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "EMPTY_BOX", "NO_JOB",
-    "NO_IMAGES",
+    "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "WRONG_SIDE_PAIR", "EMPTY_BOX",
+    "NO_JOB", "NO_IMAGES",
 })
 
 #: The disabled list of the job the call is about, once it is open (set by
@@ -92,7 +92,10 @@ FIXES: dict[str, str] = {
     "UNKNOWN_RUN": "List the background runs with `langslice-job {job} runs`.",
     "STILL_RUNNING": "Wait again: `langslice-job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "
-                "logs/runs/ and run the verb again.",
+                "logs/runs/ and run the verb again. If every background run is lost, "
+                "your shell ends the processes a command leaves running when it returns "
+                "(sandboxes do this): run the verb without --background, in your "
+                "harness's own background mode if it has one.",
     "BAD_REGISTRATION": "Give --registration a QuickNII/VisuAlign JSON or XML, a DeepSlice "
                         "CSV/JSON/XML or a LangSlice registration.json whose entries name "
                         "this folder's section images (by file name, stem or _sNNN number) "

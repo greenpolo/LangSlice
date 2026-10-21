@@ -111,6 +111,11 @@ def emlddmm_stack(
 ) -> dict[str, Any]:
     """Fit the whole stack to the atlas at once with emlddmm, on its current plane.
 
+    emlddmm (Tward et al. 2025, Nature Communications) maps whole-brain datasets
+    of any modality into the Allen CCF. It models every section as an image of one
+    deformed 3-D atlas, with an EM sorting of missing tissue and artifacts and a
+    contrast fit in small blocks.
+
     Use this when you have most of a brain's series, closely and evenly
     spaced, and want placements that agree across the stack and fit the
     brain's overall shape. It bends the brain as a whole, never one section

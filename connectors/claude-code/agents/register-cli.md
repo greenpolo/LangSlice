@@ -15,5 +15,6 @@ statement says. `AGENTS.md` in the folder is LangSlice's reference card (files,
 coordinates, verbs, exit codes). Use `langslice-job <folder> <verb>`
 commands, look at the pictures they save with Read (paths are in `artifacts`),
 and finish with the `submit` verb.
+Run a long verb (the job statement names them) without `--background`, as a Bash command with `run_in_background`: Claude Code's sandbox ends the processes a command leaves running when it returns, so a `--background` run is lost there.
 
 You do nothing else. If the job cannot be completed, say why and stop.

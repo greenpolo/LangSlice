@@ -87,7 +87,9 @@ wording; `registry.py` lists which.
   positions, positions under frozen angles.
 - `damage.py` — `mark_damage(job, workspace, section, regions, note="",
   options=)`: the section's marked regions (checked against the atlas,
-  normalized; `UNKNOWN_REGIONS`, `BAD_ARGS`, `NO_SIDES`, `UNKNOWN_SLICE_IDS`)
+  normalized; `UNKNOWN_REGIONS`, `BAD_ARGS`, `NO_SIDES`, `UNKNOWN_SLICE_IDS`;
+  `WRONG_SIDE_PAIR` and the other side refusals for a side the section's
+  current placement does not have, checked before the write)
   and note, one undo step (the same mark again writes nothing); empty
   regions clear them and the agent's note. A section is damaged exactly
   when it has marked regions. A host's note (`inputs.damaged`, a note and

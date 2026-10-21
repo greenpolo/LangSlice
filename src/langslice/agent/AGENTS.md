@@ -114,7 +114,7 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   `channel_facts`: the raw channels, the atlas layers here, and where the
   caller sizes pictures, `look`'s `resolution` range), the tools BY NAME
   ONLY (each tool's own description, `doors/declarations.py`, is its only
-  description), the hard constraints (with the damaged-section guidance:
+  description; the one exception, `DEFORMABLE_METHODS`, below), the hard constraints (with the damaged-section guidance:
   a section with marked regions still needs a transform made for its
   surviving anatomy, by hand or by `elastix_affine`, which leaves the
   marked regions out; `engine_fact` when FireANTs is missing), the per-task user
@@ -333,10 +333,18 @@ its own evidence and compare before writing; review the whole stack and
 re-check both sides of a gap before reporting a break; inspect each fit or
 adjustment against surviving internal anatomy and keep only changes that
 improve it; mark a damaged section's lost regions before fitting it; fit
-the whole section first, then regions. Grouping work is the model's choice.
+the whole section first, then regions. With more than one deformable method
+in the job (`fireants_syn` and the in-tree engine plugins `stalign_lddmm`,
+`spomialign`, `emlddmm_stack`), the Method says none is the default, asks the
+agent to try more than one per section and keep the best by looking, and
+says in one line each what the present methods are (`prompt.DEFORMABLE_METHODS`,
+the methods' own papers' claims; Nash approved the wording 2026-10-21). The
+counterstain line comes first in every Method, positioning off included.
+Grouping work is the model's choice.
 Still out: rules of thumb, failure-mode warnings and region names in the
 statement (the same text runs against every BrainGlobe atlas, species and
-plane). Each tool's description is the only place it is described.
+plane). Each tool's description is the only place it is described, apart from
+the one-line summaries of the deformable methods above.
 
 `--playbook` (`PositionSpec.playbook`) puts a step-by-step positioning
 method in the statement: compare candidate planes and distinguishing regions,

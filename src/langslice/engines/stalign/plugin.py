@@ -80,6 +80,14 @@ def stalign_lddmm(
 ) -> dict[str, Any]:
     """Fit the atlas onto sections with STalign, on their current registration.
 
+    STalign (Clifton et al. 2023, Nature Communications) is LDDMM registration
+    (large deformation diffeomorphic metric mapping) built to align single-cell
+    spatial transcriptomics, as rasterised cell images or histology, to each other
+    and to the Allen CCF. Its distinctive parts are an estimated contrast map, so
+    the two images need not share brightness, and its own per-pixel sorting into
+    matching tissue, background and artifact. It is a gradient descent that finds
+    the nearest fit, so it needs a close start.
+
     STalign bends the atlas image onto each section's image by gradient
     descent on their brightness mismatch, with a linear contrast fit between
     the two, a smoothness scale (smoothness_um: tissue closer than that bends

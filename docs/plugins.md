@@ -331,6 +331,12 @@ around marked damage, no `restrict_to` where the engine takes none). `ctx.captio
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
 `damage_margin_mm` and `atlas_image_note`.
 
+Each engine's description opens with what the method is and where it comes from (its paper),
+as `fireants_syn`'s does. A job with more than one deformable method (`fireants_syn` and any of
+these) has a Method in its job statement that says none is the default, asks the agent to try
+more than one on each section and keep the one whose borders best follow the anatomy, and
+says in one line what each method present is.
+
 ## Layers
 
 Anything the agent or the user should see that is not a section property is a
