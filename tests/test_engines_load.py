@@ -27,14 +27,13 @@ REFS = [
     "langslice.engines.emlddmm.plugin:tools",
 ]
 TOOLS = {
-    "stalign": ["stalign_lddmm", "stalign_sorting", "stalign_plane_search"],
+    "stalign": ["stalign_lddmm", "stalign_plane_search"],
     "spomialign": ["spomialign"],
     "emlddmm": ["emlddmm_stack", "emlddmm_plane"],
 }
 #: The first argument set that gets each tool past its argument checks.
 CALLS = {
     "stalign_lddmm": {"sections": ["s0"]},
-    "stalign_sorting": {"sections": ["s0"]},
     "stalign_plane_search": {"sections": ["s0"]},
     "spomialign": {"sections": ["s0"], "transform": "affine"},
     "emlddmm_stack": {"sections": ["s0", "s1"], "slot_um": 100.0},
@@ -95,3 +94,93 @@ def test_nothing_of_the_engine_environments_is_imported():
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                           check=False)
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+# --- the contract: argument order, the mask rules, the blocks ----------------------------------
+
+ARGUMENTS = {
+    "stalign_lddmm": ["sections", "section_image", "atlas_image", "mask", "smoothness_um",
+                      "affine", "displacement_um", "sorting", "iterations", "view"],
+    "stalign_plane_search": ["sections", "section_image", "atlas_image", "view"],
+    "spomialign": ["sections", "transform", "section_image", "atlas_image", "mask",
+                   "smoothness_um", "matches", "view"],
+    "emlddmm_stack": ["sections", "slot_um", "section_image", "atlas_image", "mask",
+                      "smoothness_um", "rigid", "warp", "warp_freedom", "iterations", "sorting",
+                      "view"],
+    "emlddmm_plane": ["sections", "slot_um", "section_image", "atlas_image", "iterations",
+                      "view"],
+}
+
+
+def test_the_declared_arguments_follow_the_interface_note(tmp_path: Path):
+    from langslice.core import plugins
+
+    specs = plugins.tool_specs(JobSpec(image_folder=str(tmp_path), plugins=REFS))
+    for name, wanted in ARGUMENTS.items():
+        _plugin, tool = specs[name]
+        assert list(inspect.signature(tool.handler).parameters)[1:] == wanted, name
+        assert list(inspect.signature(tool.stub).parameters) == wanted, name
+    assert "stalign_sorting" not in specs
+
+
+def test_stalign_refuses_a_section_mask_by_name_before_anything_else(tmp_path: Path):
+    images = tmp_path / "images"
+    images.mkdir()
+    gone = str(tmp_path / "no" / "python")
+    config = {REFS[0]: {"python": gone}}
+    state, ctx, spec = stack(images, 2, placed=True, plugins=[REFS[0]], plugin_config=config,
+                             tasks=["position", "transform", "nonlinear"])
+    reply = tool_named(build_tools(state, ctx, spec), "stalign_lddmm")(sections=["s0"], mask="m")
+    assert reply.get("error") == "MASK_UNSUPPORTED" or "MASK_UNSUPPORTED" in str(reply)
+    for engine in ("fireants_syn", "elastix_affine", "emlddmm_stack", "spomialign"):
+        assert engine in str(reply)
+
+
+def _fake_frame(h: int = 40, w: int = 60):
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    annotation = np.zeros((h, w), np.int32)
+    annotation[5:35, 8:52] = 1
+    return SimpleNamespace(
+        id="s0.png", atlas={"annotation": annotation, "template": np.full((h, w), 100.0)},
+        channel=np.full((h, w, 3), 200, np.uint8), plane={"px_um": (25.0, 25.0)},
+        placed_atlas_to_section=np.eye(3), excluded=None, damage_zone=None, applied_map=None)
+
+
+def test_the_atlas_image_resolves_and_the_reply_blocks_name_what_was_used():
+    import numpy as np
+
+    from langslice.engines import _blocks
+
+    frame = _fake_frame()
+    plane, resolved = _blocks.atlas_plane(frame, "nissl")
+    assert resolved == "template" and plane is frame.atlas["template"]
+    frame.atlas["ccfv3augmented_nissl"] = np.zeros((40, 60))
+    assert _blocks.atlas_plane(frame, "nissl")[1] == "ccfv3augmented_nissl"
+    with pytest.raises(Exception, match="no image"):
+        _blocks.atlas_plane(frame, "nothing")
+    weights = np.ones((40, 60), np.float32)
+    weights[:, :30] = 0.0
+    inside = frame.atlas["annotation"] > 0
+    assert _blocks.estimated_block(None, inside) is None
+    estimated = _blocks.estimated_block(weights, inside)
+    assert estimated is not None and 0.4 < estimated["left_out_fraction"] < 0.6
+    assert "set_mask source fit" in estimated["sorting"]
+
+
+def test_spomialign_drops_matches_by_the_section_mask_on_its_canvas():
+    import numpy as np
+
+    from langslice.engines.spomialign import plugin
+
+    frame = _fake_frame()
+    weights = np.ones((40, 60), np.float32)
+    weights[:, :20] = 0.0
+    pair = plugin._inputs(frame, frame.atlas["template"], False, weights)
+    keep = pair["section_keep"]
+    assert keep.shape == pair["target"].shape[:2]
+    assert not keep[:, : keep.shape[1] // 6].any() and keep[:, keep.shape[1] // 2 :].all()
+    assert plugin._inputs(frame, frame.atlas["template"], False)["section_keep"] is None
+    assert pair["work_um"] > 0
