@@ -49,6 +49,8 @@ def stale(state: StackState, record: SliceState, pair: dict[str, Any]) -> bool:
 
 #: A fold names an automatic hold vertex ``~K``: the K-th hold.
 HOLD_PREFIX = "~"
+#: The ids of the holds an agent places are ``H1``, ``H2``, ... (pairs are ``L1``, ...).
+PLACED_HOLD_PREFIX = "H"
 
 
 def pair_key(pair: dict[str, Any]) -> str:
@@ -66,6 +68,26 @@ def applied_pairs(record: SliceState) -> dict[str, str] | None:
     if not held.get("landmark_revision"):
         return None
     return dict(held["landmark_pairs"])
+
+
+def applied_holds(record: SliceState) -> dict[str, list[float]] | None:
+    """The placed holds the landmark warp that is the section's current
+    deformation was built from (hold id -> its section edge fractions); None
+    when the current deformation is not a landmark warp."""
+    held = record.deformation or {}
+    if not held.get("landmark_revision"):
+        return None
+    return dict(held.get("landmark_placed_holds") or {})
+
+
+def hold_states(record: SliceState) -> dict[str, str]:
+    """Each placed hold's state: ``applied`` (in the landmark warp that is the
+    section's current deformation) or ``pending`` (not in it). A hold has no
+    atlas endpoint, so it is never stale, and it is only added and deleted,
+    never edited."""
+    built = applied_holds(record) or {}
+    return {hold["id"]: "applied" if built.get(hold["id"]) == hold["section_fraction_xy"]
+            else "pending" for hold in record.landmarks.get("holds", [])}
 
 
 def pair_states(state: StackState, record: SliceState) -> dict[str, str]:
@@ -92,27 +114,32 @@ def warp_report(state: StackState, record: SliceState) -> dict[str, Any]:
     (``deleted_still_in_warp``), in a ``note``; empty when the section has no
     pairs and no landmark warp."""
     pairs = [pair["id"] for pair in record.landmarks.get("pairs", [])]
+    holds = [hold["id"] for hold in record.landmarks.get("holds", [])]
     built = applied_pairs(record)
     if built is None:
-        if not pairs:
+        if not pairs and not holds:
             return {}
-        return {"built_from": [], "not_applied": pairs,
+        return {"built_from": [], "not_applied": [*pairs, *holds],
                 "note": "No landmark warp is applied to this section yet; "
                         "landmark_triangulation applies the pairs."}
-    states = pair_states(state, record)
-    new = [i for i in pairs if states[i] == "pending"]
+    states = {**pair_states(state, record), **hold_states(record)}
+    held_in = sorted(applied_holds(record) or {}, key=_order)
+    new = [i for i in [*pairs, *holds] if states[i] == "pending"]
     moved = [i for i in pairs if states[i] == "moved"]
     stale_ids = [i for i in pairs if states[i] == "stale"]
-    gone = [i for i in built if i not in pairs]
+    gone = [i for i in [*sorted(built, key=_order), *held_in] if i not in {*pairs, *holds}]
     made_of = sorted(built, key=_order)
-    report: dict[str, Any] = {"built_from": made_of}
+    report: dict[str, Any] = {"built_from": made_of,
+                              **({"holds_in_warp": held_in} if held_in else {})}
+    with_holds = f" and the holds {', '.join(held_in)}" if held_in else ""
     if not (new or moved or stale_ids or gone):
-        report["note"] = "The current warp was built from exactly these pairs."
+        report["note"] = ("The current warp was built from exactly these pairs"
+                          + (" and holds." if held_in else "."))
         return report
     report["not_applied"] = [*new, *moved, *stale_ids]
     if gone:
         report["deleted_still_in_warp"] = gone
-    parts = [f"The current warp was built from {', '.join(made_of) or 'no pair'}."]
+    parts = [f"The current warp was built from {', '.join(made_of) or 'no pair'}{with_holds}."]
     if new:
         parts.append(f"Added, not in it yet: {', '.join(new)}.")
     if moved:
@@ -136,13 +163,15 @@ def landmark_counts(state: StackState, record: SliceState) -> dict[str, Any]:
     (``pending``: not in the applied landmark warp as they are now; ``warp``
     in words: whether that warp matches the pairs); empty when it has none."""
     states = list(pair_states(state, record).values())
-    if not states and applied_pairs(record) is None:
+    holds = list(hold_states(record).values())
+    if not states and not holds and applied_pairs(record) is None:
         return {}
     report = warp_report(state, record)
     matches = bool(report) and "not_applied" not in report
     return {"total": len(states),
-            "pending": states.count("pending") + states.count("moved"),
+            "pending": states.count("pending") + states.count("moved") + holds.count("pending"),
             "stale": states.count("stale"),
+            **({"holds": len(holds)} if holds else {}),
             "warp": "matches the pairs" if matches else
             "none applied" if applied_pairs(record) is None
             else "differs from the pairs; run landmark_triangulation again"}
@@ -206,7 +235,8 @@ def section_picture_point(panel: dict[str, Any], fractions: Any, warp: Any = Non
 
 def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = False,
           taken: list[tuple[float, float, float, float]] | None = None) -> None:
-    """Open-centre circle (section) / diamond (atlas), dual contrast outlines.
+    """Open-centre circle (section) / diamond (atlas) / square (a placed hold,
+    on the section), dual contrast outlines.
 
     *taken* lists the label boxes already drawn on the picture: a label that
     would cover one is moved down until it is free, and its box is added."""
@@ -226,6 +256,9 @@ def glyph(image: Image.Image, xy: Any, label: str, role: str, *, old: bool = Fal
                 fill=colour,
                 width=width,
             )
+        elif role == "hold":
+            side = radius - 1
+            draw.rectangle((x - side, y - side, x + side, y + side), outline=colour, width=width)
         else:
             draw.ellipse(
                 (x - radius, y - radius, x + radius, y + radius), outline=colour, width=width
@@ -267,9 +300,11 @@ def draw_folds(
     folds = (record.deformation or {}).get("landmark_folds") or {}
     by_id = {pair["id"]: pair["section_fraction_xy"]
              for pair in record.landmarks.get("pairs", [])}
-    # A hold vertex of a fold is named ``~K``: the K-th automatic hold.
+    # A hold vertex of a fold is named ``~K``: the K-th automatic hold; a
+    # placed hold by its id, at the spot the warp was built with.
     for k, fraction in enumerate((record.deformation or {}).get("landmark_holds") or []):
         by_id[f"{HOLD_PREFIX}{k}"] = fraction
+    by_id.update((record.deformation or {}).get("landmark_placed_holds") or {})
     draw = ImageDraw.Draw(image)
     for ids in folds.get("triangles", []):
         points = [
@@ -310,6 +345,15 @@ def draw_landmarks(
             draw_folds(image, panel, record, warp=warp)
             draw_holds(image, panel, record, warp=warp)
     placed: list[tuple[str, np.ndarray, str, bool]] = []
+    for hold in record.landmarks.get("holds", []):
+        for panel in panels:
+            if panel["role"] != "section":
+                continue
+            xy = section_picture_point(
+                panel, hold["section_fraction_xy"], warp if panel.get("warp_key") else None)
+            x0, y0, x1, y1 = panel["bounds"]
+            if x0 <= xy[0] < x1 and y0 <= xy[1] < y1:
+                placed.append(("hold", np.asarray(xy, dtype=float), hold["id"], False))
     for pair in record.landmarks.get("pairs", []):
         for panel in panels:
             role = panel["role"]

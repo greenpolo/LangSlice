@@ -64,7 +64,7 @@ that section). `langslice-job ops` lists the verbs; `langslice-job schema VERB` 
 - `set_mask` (write, Common): Make, replace or delete a named mask of one section: which tissue a fit compares.
 - `elastix_affine` (write, Linear, long): Fit sections' in-plane affine transforms automatically with elastix.
 - `fireants_syn` (write, Nonlinear, long; at most 4 sections per call): Fit the atlas onto sections with FireANTs SyN, on their current registration.
-- `set_landmarks` (write, Nonlinear): Add, update or delete persistent corresponding landmarks. Does not apply a warp.
+- `set_landmarks` (write, Nonlinear): Add, update or delete persistent corresponding landmarks and holds. Does not apply a warp.
 - `landmark_triangulation` (write, Nonlinear): Apply this section's saved landmark set as a piecewise affine warp.
 - `note` (write, Common): Append one line to the run notes, which are saved with the results.
 - `undo` (write, Common): Undo the last write. A tool call, or a finished piece of background work, is one step.

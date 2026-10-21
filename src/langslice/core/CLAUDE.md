@@ -622,7 +622,11 @@ not in it, or deleted but still shaping it; `draw_folds` outlines the applied wa
 triangles (`landmark_folds` in the deformation reference) on a warped
 overlay, and `draw_holds` draws the applied warp's automatic holds
 (`landmark_holds`: edge fractions) as small unlabeled dots there (a fold's
-hold vertex is `~K` in `landmark_folds`). An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
+automatic hold vertex is `~K` in `landmark_folds`, an agent's hold its id,
+placed from `landmark_placed_holds`). `draw_landmarks` draws the section's
+own holds (`landmarks.holds`) as labelled squares on section panels;
+`hold_states` / `applied_holds` give a hold's `applied` / `pending` state,
+which `warp_report` (`holds_in_warp`) and `landmark_counts` (`holds`) read. An atlas `look` given a `resolution` is drawn up to `ATLAS_UPSAMPLE`
 times past its voxels. Positioning index
 captions include per-section landmark counts without cluttering thumbnails.
 

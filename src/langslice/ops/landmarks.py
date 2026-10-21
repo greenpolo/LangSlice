@@ -242,6 +242,20 @@ def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
     return rows
 
 
+def _hold_listing(record: SliceState) -> list[dict[str, Any]]:
+    """One compact record per placed hold: id, its point as the call gave it
+    (picture, x, y) and the state (``applied`` or ``pending``)."""
+    states = geometry.hold_states(record)
+    rows = []
+    for hold in record.landmarks.get("holds", []):
+        x, y = hold["section"]["pixel_xy"]
+        rows.append({"id": hold["id"],
+                     "section": {"picture": hold["section"]["picture"],
+                                 "x": round(x, 1), "y": round(y, 1)},
+                     "state": states[hold["id"]]})
+    return rows
+
+
 def _counts(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
     states = [row["state"] for row in rows]
     kinds = ("applied", "moved", "pending", "stale")
@@ -254,48 +268,62 @@ def set_landmarks(
     section: str,
     pairs: Sequence[dict[str, Any]] = (),
     delete: Sequence[str] = (),
+    holds: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
-    """Atomically add/edit/delete pairs without applying any deformation.
+    """Atomically add/edit/delete pairs and add/delete holds without applying
+    any deformation.
 
-    ``delete=["all"]`` clears the section's pairs (pair IDs are never reused).
-    With no pairs and no delete nothing is written and the reply is the
-    listing: one record per pair with its state (``applied``: in the landmark
-    warp applied now; ``moved``: in it at other endpoints; ``pending``: saved
-    but not in it; ``stale``: placed against an atlas plane the section has
-    left), and ``warp``: the pairs the current warp was built from, those not
-    in it, those deleted but still shaping it.
+    A hold is one section point (picture, x, y) that ``landmark_triangulation``
+    keeps where it is (id ``H1``, ``H2``, ...); it is added and deleted, never
+    edited. *delete* names pair and hold IDs alike; ``delete=["all"]`` clears
+    the section's pairs and holds (IDs are never reused). With no pairs, no
+    holds and no delete nothing is written and the reply is the listing: one
+    record per pair with its state (``applied``: in the landmark warp applied
+    now; ``moved``: in it at other endpoints; ``pending``: saved but not in it;
+    ``stale``: placed against an atlas plane the section has left), one per
+    hold (``applied`` or ``pending``), and ``warp``: the pairs the current warp
+    was built from, those not in it, those deleted but still shaping it.
     """
     if (
         isinstance(pairs, (str, bytes))
         or not isinstance(pairs, Sequence)
         or any(not isinstance(pair, dict) for pair in pairs)
+        or isinstance(holds, (str, bytes))
+        or not isinstance(holds, Sequence)
+        or any(not isinstance(hold, dict) for hold in holds)
         or isinstance(delete, (str, bytes))
         or not isinstance(delete, Sequence)
         or any(not isinstance(pair_id, str) for pair_id in delete)
     ):
         raise Refused(
-            "BAD_ARGS", message="pairs is a list of objects; delete is a list of pair IDs."
+            "BAD_ARGS", message="pairs and holds are lists of objects; delete is a list of "
+            "pair and hold IDs."
         )
     record = _section(job, section)
     current = copy.deepcopy(record.landmarks or {"next_id": 1, "pairs": []})
     by_id = {pair["id"]: pair for pair in current["pairs"]}
+    held = {hold["id"]: hold for hold in current.get("holds", [])}
     if len(set(delete)) != len(delete) or len({p.get("id") for p in pairs if p.get("id")}) != sum(
         bool(p.get("id")) for p in pairs
     ):
         raise Refused("BAD_ARGS", message="A pair ID may be edited or deleted only once per batch.")
     changed: list[str] = []
     placed: list[dict[str, Any]] = []
-    deleted = list(by_id) if DELETE_ALL in delete else list(delete)
+    deleted = [*by_id, *held] if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
         raise Refused("BAD_ARGS", message=f'delete ["{DELETE_ALL}"] stands alone.')
     for pair_id in deleted:
+        if pair_id in held:
+            del held[pair_id]
+            continue
         if pair_id not in by_id:
             raise Refused(
                 "UNKNOWN_LANDMARK",
                 id=pair_id,
                 message=(
                     f"{record.id} has no pair {pair_id}; its pairs are "
-                    f"{', '.join(by_id) or 'none'}."
+                    f"{', '.join(by_id) or 'none'}"
+                    + (f" and its holds {', '.join(held)}." if held else ".")
                 ),
             )
         del by_id[pair_id]
@@ -341,27 +369,41 @@ def set_landmarks(
         item["stale"] = geometry.stale(job.state, record, item)
         by_id[pair_id] = item
         changed.append(pair_id)
+    added: list[str] = []
+    for index, point in enumerate(holds):
+        endpoint = _endpoint(job, record, point, "section", f"holds[{index}] (new hold)")
+        hold_id = f"{geometry.PLACED_HOLD_PREFIX}{current.get('next_hold_id', 1)}"
+        current["next_hold_id"] = current.get("next_hold_id", 1) + 1
+        held[hold_id] = {"id": hold_id, "section": endpoint,
+                         "section_fraction_xy": endpoint["canonical_xy"]}
+        added.append(hold_id)
     current["pairs"] = list(by_id.values())
+    if held or "holds" in current:
+        current["holds"] = list(held.values())
     before = job.snapshot()
-    written = bool(pairs or delete) and record.landmarks != current
+    asked = bool(pairs or holds or delete)
+    written = asked and record.landmarks != current
     if written:
         record.landmarks = current
         job.commit(before)
     rows = _listing(job, record)
+    hold_rows = _hold_listing(record)
     regions, outside = _atlas_regions(workspace, geometry.plane_context(job.state, record),
                                       placed)
     return {
         "status": "ok",
         "section": record.id,
         "written": written,
-        **({} if pairs or delete else {"note": "No pairs or delete given: this is the listing; "
-                                                "nothing was written."}),
+        **({} if asked else {"note": "No pairs, holds or delete given: this is the listing; "
+                                     "nothing was written."}),
         "changed": changed,
+        **({"added_holds": added} if added else {}),
         **({"atlas_endpoint_regions": regions} if regions else {}),
         **({"outside_atlas": outside, "warning": _outside_words(outside)} if outside else {}),
         "deleted": deleted,
         "counts": _counts(rows),
         "landmarks": rows,
+        **({"holds": hold_rows} if hold_rows else {}),
         **({"warp": report} if (report := geometry.warp_report(job.state, record)) else {}),
     }
 
@@ -432,11 +474,25 @@ def automatic_holds(
     return lattice[gap.min(axis=1) > HOLD_CLEARANCE * spacing]
 
 
+#: The choices of ``landmark_triangulation``'s ``holds``.
+HOLD_MODES = ("automatic", "none")
+
+
 def _vertex_name(index: int, names: Sequence[str]) -> str:
     """The name of mesh vertex *index* (the four fixed corners come first,
-    then the pairs, then the holds): a pair id, or a hold marked by its number."""
+    then the pairs and the placed holds, *names*, then the automatic holds): a
+    pair or placed hold id, or an automatic hold marked by its number."""
     k = index - 4
     return names[k] if k < len(names) else f"{geometry.HOLD_PREFIX}{k - len(names)}"
+
+
+def _is_placed_hold(name: str) -> bool:
+    return name.startswith(geometry.PLACED_HOLD_PREFIX)
+
+
+def _id_order(name: str) -> tuple[int, str]:
+    """L2 before L10."""
+    return (len(name), name)
 
 
 def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
@@ -447,11 +503,15 @@ def _degenerate_words(exc: DegenerateMesh, names: Sequence[str]) -> str:
             for i in group)
 
     groups = "; ".join(ids(group) for group in exc.vertices[:6])
+    shown = [names[i - 4] for group in exc.vertices[:6] for i in group if 4 <= i < 4 + len(names)]
+    with_holds = any(_is_placed_hold(name) for name in shown)
     if "Repeated" in str(exc):
-        return (f"Pairs with the same section point cannot be triangulated ({groups}). "
-                "Move one section endpoint of each group, or delete one pair.")
+        return (f"{'Pairs and holds' if with_holds else 'Pairs'} with the same section point "
+                f"cannot be triangulated ({groups}). Move one section endpoint of each group, "
+                f"or delete one {'of them' if with_holds else 'pair'}.")
     return (f"The section points of {groups} lie on one line, a zero-area triangle. "
-            "Move one of those section endpoints off the line, or delete one pair.")
+            "Move one of those section endpoints off the line, or delete one "
+            f"{'of them' if with_holds else 'pair'}.")
 
 
 def _folds(mesh: Any, points: np.ndarray, names: Sequence[str]) -> dict[str, Any]:
@@ -471,22 +531,25 @@ def _folds_reply(folds: dict[str, Any] | None) -> dict[str, Any]:
     if not folds:
         return {}
     triangles = folds["triangles"]
-    ids = sorted({i for tri in triangles for i in tri if not i.startswith(geometry.HOLD_PREFIX)},
-                 key=lambda s: (len(s), s))
+    named = {i for tri in triangles for i in tri if not i.startswith(geometry.HOLD_PREFIX)}
+    ids = sorted((i for i in named if not _is_placed_hold(i)), key=_id_order)
+    placed = sorted((i for i in named if _is_placed_hold(i)), key=_id_order)
     shown = [[HOLD_WORDS if i.startswith(geometry.HOLD_PREFIX) else i for i in tri]
              for tri in triangles[:MAX_FOLDS_LISTED]]
-    with_holds = any(i.startswith(geometry.HOLD_PREFIX) for tri in triangles for i in tri)
+    with_holds = bool(placed) or any(
+        i.startswith(geometry.HOLD_PREFIX) for tri in triangles for i in tri)
     return {
         "folds": {
             "area_fraction": folds["area_fraction"],
             "pairs": ids,
+            **({"holds": placed} if placed else {}),
             "triangles": shown,
             "triangle_count": len(triangles),
             "note": (
                 "Folded triangles are applied as VisuAlign does (outlined in magenta on the "
                 "picture). A fold means the section points of these pairs are ordered "
                 "differently from their atlas points; fix those pairs' endpoints if it is wrong."
-                + (" An automatic hold in a triangle is a spot kept where it was: the "
+                + (" A hold in a triangle is a spot kept where it was: the "
                    "fold comes from the pairs beside it, and a pair placed far from its "
                    "neighbours' atlas points drags that spot." if with_holds else "")
             ),
@@ -494,11 +557,18 @@ def _folds_reply(folds: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _holds_reply(count: int) -> dict[str, Any]:
-    """The reply's words on the automatic holds."""
-    return {
-        "automatic_holds": count,
-        "holds_note": (
+def _holds_reply(mode: str, count: int, placed: Sequence[str]) -> dict[str, Any]:
+    """The reply's words on the holds: the *mode* asked, the *count* of
+    automatic holds added and the *placed* holds' ids."""
+    yours = ", ".join(placed)
+    if mode == "none":
+        note = ('No automatic holds were added (holds "none"): only the pairs'
+                + (f", your holds {yours} (each kept where it is)" if placed else "")
+                + " and the four fixed corners outside the section shape the warp, so a pair "
+                "moves the tissue around it up to the neighbouring "
+                + ("pairs and holds." if placed else "pairs."))
+    else:
+        note = (
             f"{count} automatic hold{'s were' if count != 1 else ' was'} added between the "
             "pairs, over the placed atlas: spots that keep "
             "their current place, so a pair moves its neighbourhood up to the holds "
@@ -507,7 +577,12 @@ def _holds_reply(count: int) -> dict[str, Any]:
             if count else
             "No automatic holds were added: every spot of the hold lattice over the placed atlas "
             "is near a pair."
-        ),
+        ) + (f" Your holds {yours} were kept where they are too." if placed else "")
+    return {
+        "holds": mode,
+        "automatic_holds": count,
+        **({"placed_holds": list(placed)} if placed else {}),
+        "holds_note": note,
     }
 
 
@@ -536,28 +611,33 @@ def _require_applicable(job: Job, record: SliceState) -> list[dict[str, Any]]:
 
 def _mesh_with_holds(
     names: Sequence[str], source: np.ndarray, target: np.ndarray, size: tuple[int, int],
-    footprint: np.ndarray,
+    footprint: np.ndarray, pair_count: int, automatic: bool,
 ) -> tuple[Any, np.ndarray]:
-    """The VisuAlign mesh of the pairs plus automatic holds, each hold
-    corresponding to itself against the baseline (the pair targets are already
-    in the baseline's section coordinates, so a hold's target is its own spot).
-    Only this verb adds holds: the mesh is exact for any point set."""
-    for shift in HOLD_SHIFTS:
-        holds = automatic_holds(source, size, shift, footprint)
+    """The VisuAlign mesh of the pairs and placed holds (*names*, *source*,
+    *target*; the first *pair_count* are the pairs) plus, when *automatic*,
+    the automatic holds around the pairs, each hold corresponding to itself
+    against the baseline (the pair targets are already in the baseline's
+    section coordinates, so a hold's target is its own spot). Only this verb
+    adds holds: the mesh is exact for any point set."""
+    for shift in HOLD_SHIFTS if automatic else (None,):
+        holds = (automatic_holds(source[:pair_count], size, shift, footprint)
+                 if shift is not None else np.empty((0, 2)))
         try:
             mesh = visualign_mesh(
                 np.vstack([source, holds]), np.vstack([target, holds]), size=size)
             return mesh, holds
         except DegenerateMesh as exc:
             bare = {i for group in exc.vertices for i in group if i >= 4 + len(names)}
-            if not bare or shift == HOLD_SHIFTS[-1]:
+            if not bare or shift is None or shift == HOLD_SHIFTS[-1]:
                 # The mesh's first four vertices are the fixed corners.
-                raise Refused(
-                    "LANDMARK_TRIANGULATION_FAILED",
-                    pairs=sorted({names[i - 4] for group in exc.vertices
-                                  for i in group if 4 <= i < 4 + len(names)}),
-                    message=_degenerate_words(exc, names),
-                ) from exc
+                named = {names[i - 4] for group in exc.vertices
+                         for i in group if 4 <= i < 4 + len(names)}
+                placed = sorted((n for n in named if _is_placed_hold(n)), key=_id_order)
+                facts: dict[str, Any] = {"pairs": sorted(named - set(placed))}
+                if placed:
+                    facts["holds"] = placed
+                raise Refused("LANDMARK_TRIANGULATION_FAILED",
+                              message=_degenerate_words(exc, names), **facts) from exc
     raise AssertionError("HOLD_SHIFTS is not empty")
 
 
@@ -565,7 +645,7 @@ def _landmark_reference(
     job: Job, record: SliceState, folder: Any, key: str, result: Any, numbers: dict[str, Any],
     revision: str, pairs: list[dict[str, Any]], folds: dict[str, Any],
     hold_fractions: list[Any], baseline_key: str | None, baseline_steps: list[Any],
-    composed: bool,
+    composed: bool, mode: str, placed: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """The deformation reference the section holds for a landmark application."""
     return {
@@ -577,7 +657,9 @@ def _landmark_reference(
         "landmark_revision": revision,
         "landmark_pairs": {p["id"]: geometry.pair_key(p) for p in pairs},
         "landmark_folds": folds,
+        "landmark_hold_mode": mode,
         "landmark_holds": hold_fractions,
+        "landmark_placed_holds": {h["id"]: h["section_fraction_xy"] for h in placed},
         "landmark_baseline_key": baseline_key,
         "landmark_baseline_steps": baseline_steps,
         "steps": [
@@ -587,6 +669,9 @@ def _landmark_reference(
                 "start": "current" if composed else "linear",
                 "landmark_revision": revision,
                 "landmark_count": len(pairs),
+                "holds": mode,
+                "automatic_hold_count": len(hold_fractions),
+                "placed_holds": [h["id"] for h in placed],
             },
         ],
     }
@@ -601,18 +686,29 @@ def _unchanged_reply(record: SliceState, pairs: list[dict[str, Any]]) -> dict[st
         "written": False,
         "landmark_count": len(pairs),
         "built_from": [p["id"] for p in pairs],
-        **_holds_reply(len(held.get("landmark_holds", []))),
+        **_holds_reply(held.get("landmark_hold_mode", "automatic"),
+                       len(held.get("landmark_holds", [])),
+                       list(held.get("landmark_placed_holds") or {})),
         **held.get("summary", {}),
         DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
         **_folds_reply(held.get("landmark_folds")),
     }
 
 
-def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict[str, Any]:
-    """Apply the complete set, replacing the preceding landmark application."""
+def landmark_triangulation(
+    job: Job, workspace: Workspace, section: str, holds: str = "automatic"
+) -> dict[str, Any]:
+    """Apply the complete set, replacing the preceding landmark application.
+
+    *holds* ``"automatic"`` adds the automatic holds around the pairs
+    (:func:`automatic_holds`), ``"none"`` adds none; the section's placed
+    holds are kept in either case."""
+    if holds not in HOLD_MODES:
+        raise Refused("BAD_ARGS", message=f'holds is "automatic" or "none", not {holds!r}.')
     record = _section(job, section)
     pairs = _require_applicable(job, record)
-    revision = digest(pairs)
+    placed = list(record.landmarks.get("holds", []))
+    revision = digest({"pairs": pairs, "holds": placed, "mode": holds})
     held = record.deformation or {}
     if held.get("landmark_revision") == revision:
         return _unchanged_reply(record, pairs)
@@ -636,10 +732,11 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             held["landmark_baseline_steps"] if replacing else held.get("steps", [])
         )
         size = grid.image.size
+        # The pairs' section points, then the placed holds'.
         source = (
             geometry.transform(
                 np.linalg.inv(geometry.orientation(record)),
-                [p["section_fraction_xy"] for p in pairs],
+                [p["section_fraction_xy"] for p in [*pairs, *placed]],
             )
             * np.asarray(size)
             - 0.5
@@ -650,10 +747,14 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         if previous is not None:
             assert previous.inverse_field_mm is not None
             target += _sample(previous.inverse_field_mm, target) / previous.mm_per_px
-        names = [p["id"] for p in pairs]
+        # A placed hold keeps its spot where the baseline puts it, as an
+        # automatic hold does: its target is its own section point.
+        target = np.vstack([target, source[len(pairs):]])
+        names = [p["id"] for p in [*pairs, *placed]]
         prepared = prepare_warp(workspace.atlas, grid.placement, size, deformation.DETAIL_LEVEL,
                                 previous=previous)
-        mesh, holds = _mesh_with_holds(names, source, target, size, prepared.footprint)
+        mesh, auto = _mesh_with_holds(names, source, target, size, prepared.footprint,
+                                      len(pairs), holds == "automatic")
         yy, xx = np.indices((size[1], size[0]), dtype=float)
         points = np.stack([xx, yy], -1)
         mm = grid.placement.section_mm_per_px
@@ -673,9 +774,11 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
                     "target_xy": mesh.target.tolist(),
                     "simplices": mesh.simplices.tolist(),
                     "margin": 0.1,
-                    # vertices: 4 fixed corners, then the pairs, then the holds
-                    "pair_count": len(names),
-                    "hold_count": len(holds),
+                    # vertices: 4 fixed corners, then the pairs, then the
+                    # placed holds, then the automatic holds
+                    "pair_count": len(pairs),
+                    "placed_hold_count": len(placed),
+                    "hold_count": len(auto),
                 },
                 runtime_s=time.monotonic() - started,
                 engine_version=scipy.__version__,
@@ -700,7 +803,9 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "landmark_revision": revision,
         "landmark_baseline_key": baseline_key,
         "pairs": copy.deepcopy(pairs),
-        "automatic_holds_xy": holds.tolist(),
+        "holds": holds,
+        "placed_holds": copy.deepcopy(placed),
+        "automatic_holds_xy": auto.tolist(),
         "hold_spacing_px": max(size) * HOLD_SPACING,
         "hold_clearance_spacings": HOLD_CLEARANCE,
     }
@@ -708,13 +813,13 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
     folder = job.deformations.save(record.id, key, result)
     numbers = deformation.summary(result, current)
     before = job.snapshot()
-    # The holds in the section file's edge fractions, as the pairs' section
-    # points are, so a picture of any orientation can place them.
+    # The automatic holds in the section file's edge fractions, as the pairs'
+    # section points are, so a picture of any orientation can place them.
     hold_fractions = geometry.transform(
-        geometry.orientation(record), (holds + 0.5) / np.asarray(size)).tolist()
+        geometry.orientation(record), (auto + 0.5) / np.asarray(size)).tolist()
     record.deformation = _landmark_reference(
         job, record, folder, key, result, numbers, revision, pairs, folds, hold_fractions,
-        baseline_key, baseline_steps, previous is not None)
+        baseline_key, baseline_steps, previous is not None, holds, placed)
     job.commit(before)
     return {
         "status": "ok",
@@ -724,7 +829,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
         "built_from": [p["id"] for p in pairs],
         "composed": previous is not None,
         "replaced": replacing,
-        **_holds_reply(len(holds)),
+        **_holds_reply(holds, len(auto), [h["id"] for h in placed]),
         **numbers,
         DISPLACEMENT_NOTE_KEY: DISPLACEMENT_NOTE,
         **_folds_reply(folds),

@@ -327,24 +327,35 @@ plane). `plane` records atlas, plane, position and cutting angles; `stale`
 compares it with the section's current plane. The endpoint records `section`
 and `atlas` include `canonical_xy`, input `picture` number, input `pixel_xy`,
 its `registration_context` and the exact saved `geometry` used to resolve it.
-Appearance does not enter the correspondence's staleness test.
+Appearance does not enter the correspondence's staleness test. A section
+with holds of the agent's own also has `holds` (each `id` `H1`, `H2`, ...,
+`section`: the endpoint record as above, and `section_fraction_xy`) and
+`next_hold_id`.
 
 `sections/<stem>/landmarks.json` is a readable derived copy, regenerated on
 every checkpoint, including undo and redo. It has `format_version: 1`,
-`section`, `next_id`, and `pairs`. Editing this file does not change the job.
-A landmark application records its revision in the section's deformation
+`section`, `next_id`, and `pairs` (and `holds`, `next_hold_id` when the
+section has them). Editing this file does not change the job.
+A landmark application records its revision (a digest of the pairs, the
+agent's holds and the holds choice) in the section's deformation
 reference, with `landmark_pairs` (each applied pair id with a digest of its two
-endpoints, what `applied` / `pending` is read from) and `landmark_folds`
-(`area_fraction` and the pair ids of each folded triangle, empty when none); the saved `DeformableRecord` includes its source/target vertices
+endpoints, what `applied` / `pending` is read from), `landmark_placed_holds`
+(each applied hold id with its `section_fraction_xy`, what a hold's state is
+read from), `landmark_hold_mode` (`automatic` or `none`) and `landmark_folds`
+(`area_fraction` and the pair and hold ids of each folded triangle, empty when none); the saved `DeformableRecord` includes its source/target vertices
 and mesh connectivity in `engine.native_parameters`, and its full pair set
-in `provenance`, with `automatic_holds_xy` (the automatic holds' section pixels
+in `provenance`, with `holds` (the choice), `placed_holds` (the agent's holds),
+`automatic_holds_xy` (the automatic holds' section pixels
 on the working grid), `hold_spacing_px` and `hold_clearance_spacings`; the
 mesh vertices of `native_parameters` are the four fixed corners, then the
-pairs, then the holds (`pair_count`, `hold_count`), each hold's target equal to its
-source. The section's deformation reference lists the holds as `landmark_holds`
+pairs, then the agent's holds, then the automatic holds (`pair_count`,
+`placed_hold_count`, `hold_count`), each hold's target equal to its
+source. The application's step in `steps` carries `holds`,
+`automatic_hold_count` and `placed_holds`. The section's deformation reference
+lists the automatic holds as `landmark_holds`
 (edge fractions of the original image, like a pair's `section_fraction_xy`), which
-the result picture draws; `landmark_folds` names a hold vertex of a fold `~K`
-(the K-th hold). `landmark_baseline_key` and `landmark_baseline_steps` in the
+the result picture draws; `landmark_folds` names an automatic hold vertex of a
+fold `~K` (the K-th automatic hold) and an agent's hold by its id. `landmark_baseline_key` and `landmark_baseline_steps` in the
 section's deformation reference identify the registration before the current
 landmark method; its record's `parent` holds that baseline. Consecutive landmark
 applications replace the landmark method on that baseline. Undo history
