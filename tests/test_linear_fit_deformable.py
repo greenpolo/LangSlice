@@ -36,10 +36,11 @@ needs_engine = pytest.mark.skipif(not ops_deformable.engine_ready(),
                                 reason="fireants_syn needs FireANTs")
 
 
-def _choice(fit_section: str = deformation.FIT_LOOK, fit_atlas: str = "template",
-            stiffness: str = "medium") -> deformation.Choice:
+def _choice(fit_section: str = "preprocessed", fit_atlas: str = "nissl",
+            smoothness_um: float = 80.0) -> deformation.Choice:
     """One fit setting for ``ops.deformable.fit_deformable`` (SyN)."""
-    return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas, stiffness=stiffness)
+    return deformation.Choice(fit_section=fit_section, fit_atlas=fit_atlas,
+                              smoothness_um=smoothness_um)
 
 
 TRACED = _choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders")
@@ -103,21 +104,26 @@ def test_built_with_the_nonlinear_task_only(tmp_path: Path, atlas):
 @needs_engine
 def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     state, ctx, _, box = _setup(tmp_path, atlas)
-    result = _syn(box, stiffness="soft", view=False)
+    result = _syn(box, smoothness_um=50.0, atlas_image="template", view=False)
     row = result["results"][0]
     assert row["written"] is True and row["steps"] == 1
-    assert row["settings"] == {"stiffness": "soft", "fit_section": "fit",
-                               "fit_atlas": "template"}
+    assert row["settings"] == {"smoothness_um": 50.0, "mask": "none",
+                               "fit_section": "preprocessed", "fit_atlas": "template"}
+    assert result["settings"]["smoothness_um"] == 50.0 and result["settings"]["mask"] == "none"
+    assert row["inputs"]["atlas_image_resolved"] == "template" and row["estimated"] is None
     assert row["displacement_mm"]["max"] > 0 and "fold_fraction" in row
     assert [changed["id"] for changed in result["changed"]] == [ID]
     assert TOOL_MEDIA_PARTS_KEY not in result and "pictures" not in result
     held = state.slices[0].deformation
-    assert held is not None and held["steps"][0]["stiffness"] == "soft"
+    assert held is not None and held["steps"][0]["smoothness_um"] == 50.0
     assert not Path(held["record"]).is_absolute()  # relative to the job folder
     record_dir = Path(ctx.job_folder) / held["record"]
     assert record_dir.parent == Path(ctx.job_folder) / "sections" / Path(ID).stem / "deformable"
     saved = json.loads((record_dir / "record.json").read_text())
     assert saved["provenance"]["section_id"] == ID
+    # The record names what the fit read and estimated, as the reply does.
+    assert saved["provenance"]["inputs"] == row["inputs"]
+    assert saved["provenance"]["estimated"] is None
     assert saved["provenance"]["linear_handoff"]["section_um_per_px"] > 0
     assert saved["placement"]["position_mm"] == pytest.approx(0.1)
     assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
@@ -242,7 +248,7 @@ def test_look_overlay_draws_the_applied_warp_unless_warp_none(tmp_path: Path, at
 
     linear = drawn("none")
     assert np.array_equal(drawn("applied"), linear)  # nothing applied yet
-    _syn(box, stiffness="soft", view=False)
+    _syn(box, smoothness_um=50.0, view=False)
     assert not np.array_equal(drawn("applied"), linear)
     assert np.array_equal(drawn("none"), linear)
     assert state.slices[0].deformation is not None

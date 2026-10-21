@@ -136,69 +136,12 @@ def preprocess(
     return Preprocessed(written=written, pictures=pairs)
 
 
-# --- the preprocessed channel (older call, kept until the doors call set_channel) ---
-
-
-def set_preprocessed(
-    job: Job,
-    workspace: Workspace,
-    section_ids: Sequence[str] | None,
-    *,
-    channel_weights: Sequence[float] | None = None,
-    clahe_clip: float = looks.DEFAULT_CLAHE_CLIP,
-    clahe_tiles: int = looks.DEFAULT_CLAHE_TILES,
-    n4: bool = False,
-    denoise: bool = False,
-    reset: bool = False,
-    shown: Sequence[SliceState] = (),
-    options: DisplayOptions | None = None,
-) -> Preprocessed:
-    """Set the preprocessed channel's recipe, stack-wide (*section_ids* None)
-    or as an override for those sections; *reset* returns them to the
-    default (a section reset removes its override, so it follows the stack).
-    One undo step.
-
-    The recipe is checked first (:func:`langslice.core.appearance.validate_settings`,
-    ``BAD_ARGS``): *channel_weights* is one weight per raw channel, empty for
-    automatic weights (``CHANNEL_COUNT_MISMATCH`` for a section with another
-    channel count), and every
-    id must be a section (``UNKNOWN_SLICE_IDS``). With *options*, each section
-    in *shown* is pictured BEFORE and AFTER (:func:`preprocess`).
-    """
-    state = job.state
-    ids = None if section_ids is None else [str(name) for name in section_ids]
-    if ids is not None:
-        unknown = [name for name in ids if state.by_id(name) is None]
-        if unknown or not ids:
-            raise unknown_sections(state, unknown)
-    scope = state.in_order() if ids is None else [state.by_id(name) for name in ids]
-    settings: dict[str, Any] | None = None
-    if not reset:
-        try:
-            settings = looks.validate_settings(
-                channel_weights=list(channel_weights or []) or None,
-                clahe_clip=clahe_clip, clahe_tiles=clahe_tiles, n4=n4, denoise=denoise,
-            )
-        except ValueError as exc:
-            raise Refused("BAD_ARGS", message=str(exc)) from exc
-        weights = settings["channel_weights"]
-        if weights is not None:
-            mismatched = {
-                record.id: list(names) for record in scope if record is not None
-                and len(names := workspace.section_channels(record.id)[0]) != len(weights)
-            }
-            if mismatched:
-                raise Refused("CHANNEL_COUNT_MISMATCH", weights=len(weights),
-                              channels=mismatched)
-    return preprocess(job, workspace, ids, settings, shown=shown, options=options)
-
-
 # --- the raw channels' display properties ------------------------------------
 
 
 @dataclass(frozen=True)
 class ChannelPropertiesSet:
-    """What :func:`set_channel_properties` wrote and what is now in force."""
+    """What :func:`set_raw_channel` wrote and what is now in force."""
 
     channel: str
     #: The properties now in force (None: none, the default display).
@@ -213,7 +156,7 @@ class ChannelPropertiesSet:
     changed: bool
 
 
-def set_channel_properties(
+def set_raw_channel(
     job: Job,
     workspace: Workspace,
     channel: str,
@@ -360,7 +303,7 @@ def set_channel(
             raise Refused("BAD_ARGS", message=f"{channel} is a raw channel: it takes "
                           "contrast_limits, gamma, colormap and reset only (a recipe is for "
                           f"preprocessed or a new name); not {', '.join(extras)}.")
-        done = set_channel_properties(
+        done = set_raw_channel(
             job, workspace, channel, contrast_limits=list(contrast_limits or []) or None,
             gamma=gamma or None, colormap=colormap or None, reset=reset)
         return ChannelSet(

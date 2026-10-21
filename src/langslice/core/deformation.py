@@ -97,10 +97,7 @@ CACHE_SIZE = 8
 #: other ``fit_atlas`` is one of the atlas's images, by its own name
 #: (:func:`langslice.core.atlas.images.atlas_images`).
 FIT_BORDERS = "borders"
-#: What of the section a fit can read (``fit_section``).
-FIT_LOOK = "fit"
 TRACED_BORDERS = "traced_borders"
-FIT_SECTIONS = (FIT_LOOK, TRACED_BORDERS)
 #: Flags listed per fit before the rest are only counted.
 MAX_FLAGS = 12
 #: Flags about the whole section, listed before any per-region flag.
@@ -208,17 +205,20 @@ def stain_image(
 
     Traced fit sections draw their pictures on the preprocessed channel too.
     """
-    if channel in FIT_SECTIONS:  # COMPAT (integrator removes): callers still pass a fit section
-        channel = "preprocessed"
-    if channel != "preprocessed":  # INTEGRATOR: replace with appearance.channel_image (chunk B)
-        raise ValueError(f"Unknown channel {channel!r}")
     record = grid.record
-    look = looks.preprocessed_settings(state, record.id)
-    image = looks.preprocessed_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
-    identity: dict[str, Any] = {"fit_look": look}
-    if look is None:  # the default appearance: what it is drawn from, so a
-        # saved fit is not reused after the run's preprocessing changes
-        identity["default"] = [looks.look_token(ctx, None), ctx.spec.host_preprocessing]
+    if channel == looks.PREPROCESSED:
+        look = looks.preprocessed_settings(state, record.id)
+        image = looks.preprocessed_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
+        identity: dict[str, Any] = {"fit_look": look}
+        if look is None:  # the default appearance: what it is drawn from, so a
+            # saved fit is not reused after the run's preprocessing changes
+            identity["default"] = [looks.look_token(ctx, None), ctx.spec.host_preprocessing]
+    else:
+        image = looks.channel_image(ctx, state, record, channel, long_edge=FIT_LONG_EDGE)
+        recipe = (looks.derived_settings(state, channel, record.id)
+                  if channel in looks.derived_names(state) else None)
+        identity = {"channel": channel, "recipe": recipe,
+                    "token": looks.look_token(ctx, recipe)}
     return _on_grid(image, grid), identity
 
 
@@ -292,15 +292,6 @@ class Choice:
     #: :mod:`langslice.core.section_masks`); its weights reach the fit through
     #: :attr:`Job.section_weights`.
     mask: str = "none"
-    #: COMPAT (integrator removes): the former stiffness level, read as
-    #: ``smoothness_um`` (soft 50, medium 80, firm 120).
-    stiffness: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.stiffness is not None:
-            object.__setattr__(self, "smoothness_um", {
-                "soft": 50.0, "medium": 80.0, "firm": 120.0}[self.stiffness])
-            object.__setattr__(self, "stiffness", None)
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...], *,
                  brain_scale: float = 1.0) -> FitSettings:

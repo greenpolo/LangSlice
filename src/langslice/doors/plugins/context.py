@@ -118,9 +118,11 @@ class FitFrame:
     while the section has none marked. ``damage_zone`` is ``excluded`` widened
     by the margin the native fits also leave out of their comparison
     (:data:`langslice.core.deformable.masks.EXCLUSION_MARGIN_MM`, scaled to the
-    atlas's brain size); None with ``excluded``. ``stain`` is the section's
-    preprocessed channel on the same grid as ``image`` (RGB ``uint8``), the
-    picture the native fits read; None unless asked for.
+    atlas's brain size); None with ``excluded``. ``channel`` is the channel
+    ``fit_frame(channel=)`` asked for, on the same grid as ``image`` (RGB
+    ``uint8``) and ``channel_name`` its name; ``stain`` is the section's
+    preprocessed channel the same way (``stain=True`` is ``channel="preprocessed"``),
+    the picture the native fits read; each None unless asked for.
     """
 
     id: str
@@ -135,6 +137,8 @@ class FitFrame:
     excluded: np.ndarray | None = None
     damage_zone: np.ndarray | None = None
     stain: np.ndarray | None = None
+    channel: np.ndarray | None = None
+    channel_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -498,6 +502,34 @@ class ToolContext:
         names, _planes = self._door.ctx.section_channels(self._record(section).id)
         return tuple(str(name) for name in names)
 
+    def channel_names(self, section: object) -> tuple[str, ...]:
+        """Every channel a fit or a picture can read on the section, by name:
+        its raw channels (:meth:`channels`), then the derived ones
+        (``preprocessed`` and any ``set_channel`` made)."""
+        from langslice.core import appearance
+
+        record = self._record(section)
+        return tuple(appearance.channel_names(self._door.state, self._door.ctx, record))
+
+    def mask(self, section: object, name: str) -> Any:
+        """The section's mask *name* (``set_mask`` made it) as a
+        :class:`langslice.core.section_masks.MaskView`: ``weights`` (float
+        ``(H, W)`` on the fit grid, 0 to 1), ``kind`` (``em`` / ``fit``),
+        ``params`` and ``left_out``. ``ToolError`` ``UNKNOWN_MASK`` for a name the
+        section does not hold, ``STALE_MASK`` when the section changed since
+        the mask was made."""
+        from langslice.ops import masks as ops_masks
+
+        record = self._record(section)
+        try:
+            view = ops_masks.read(self._door.job, record, str(name))
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
+        if view.stale:
+            raise ToolError("STALE_MASK", f"{record.id}'s mask {name!r} was made before the "
+                            "section changed; make it again with set_mask.")
+        return view
+
     def section_inputs(self, section: object, *, deformation: bool = False) -> str:
         """A digest of what a computation on the section reads (its placement,
         appearance and damage marks; with *deformation* its deformation too).
@@ -590,15 +622,21 @@ class ToolContext:
         return self._grids[key]
 
     def fit_frame(self, section: object, *, atlas: Sequence[str] = (
-            "template", "annotation"), stain: bool = False) -> FitFrame:
+            "template", "annotation"), channel: str | None = None,
+            stain: bool = False) -> FitFrame:
         """The section and its atlas plane on the fit grid (:class:`FitFrame`).
         Needs a position. *atlas* picks the atlas planes to sample:
         ``annotation`` and any of the atlas's images
-        (:func:`langslice.core.atlas.images.atlas_images`); a name the atlas
-        does not have is skipped. *stain* adds the section's preprocessed
-        channel on the grid."""
+        (:func:`langslice.core.atlas.images.atlas_images`), and ``"nissl"``,
+        the atlas's Nissl image where it has one, else its template
+        (:func:`langslice.core.atlas.images.default_image`), under the name
+        asked for and under the image's own; a name the atlas does not have is
+        skipped. *channel* adds that channel of the section on the grid:
+        a raw channel, ``"preprocessed"`` or a derived channel
+        (``channel_names``); ``ToolError`` ``UNKNOWN_CHANNEL`` for another.
+        *stain* True is ``channel="preprocessed"`` and also fills ``stain``."""
         from langslice.core import deformation
-        from langslice.core.atlas.images import atlas_images
+        from langslice.core.atlas.images import atlas_images, resolve_image
         from langslice.core.atlas.size import brain_scale
         from langslice.core.damage import exclusions
         from langslice.core.deformable.masks import EXCLUSION_MARGIN_MM, dilate
@@ -617,10 +655,20 @@ class ToolContext:
         planes: dict[str, np.ndarray] = {}
         if "annotation" in atlas:
             planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
-        for kind in atlas_images(workspace.atlas):
-            if kind in atlas:
+        offered = set(atlas_images(workspace.atlas))
+        for asked in atlas:
+            if asked == "annotation" or asked in planes:
+                continue
+            try:
+                kind = resolve_image(workspace.atlas, asked)
+            except ValueError:  # an image the atlas does not have is skipped
+                continue
+            if kind not in offered and asked not in offered:
+                continue
+            if kind not in planes:
                 planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
                                           dtype=np.float32)
+            planes[asked] = planes[kind]
         placed = None
         if record.transform:
             try:
@@ -647,6 +695,19 @@ class ToolContext:
             spacing_mm = float(np.mean(_plane_frame(workspace.atlas, placement)["px_um"])) / 1000.0
             zone = dilate(excluded, EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)
                           / spacing_mm)
+        wanted = "preprocessed" if stain and channel is None else channel
+        picture: np.ndarray | None = None
+        if wanted is not None:
+            known = self.channel_names(record.id)
+            if wanted not in known:
+                raise ToolError("UNKNOWN_CHANNEL", f"{record.id} has no channel {wanted!r}; "
+                                f"its channels: {', '.join(known)}", channels=list(known))
+            picture = np.asarray(deformation.stain_image(
+                workspace, self._door.state, grid, wanted)[0].convert("RGB"))
+        preprocessed = picture if wanted == "preprocessed" else (
+            np.asarray(deformation.stain_image(
+                workspace, self._door.state, grid, "preprocessed")[0].convert("RGB"))
+            if stain else None)
         return FitFrame(
             id=record.id, image=np.asarray(image), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
@@ -654,10 +715,7 @@ class ToolContext:
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
             placed_atlas_to_section=placed, applied_map=applied, excluded=excluded,
-            damage_zone=zone,
-            stain=(np.asarray(deformation.stain_image(
-                workspace, self._door.state, grid, deformation.FIT_LOOK)[0].convert("RGB"))
-                if stain else None))
+            damage_zone=zone, stain=preprocessed, channel=picture, channel_name=wanted)
 
     def angles_from_plane(self, normal_um: Sequence[float], point_um: Sequence[float],
                           ) -> dict[str, float]:
@@ -769,7 +827,9 @@ class ToolContext:
                                  record=stored)
 
     def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
-                             meta: Mapping[str, Any] | None = None) -> DeformationProposal:
+                             meta: Mapping[str, Any] | None = None,
+                             weights: Any = None,
+                             provenance: Mapping[str, Any] | None = None) -> DeformationProposal:
         """A method's deformable result as the deformation LangSlice stores:
         *native_xy* is a float ``(H, W, 2)`` array giving, for each pixel
         centre ``(x, y)`` of the fit grid (:attr:`FitFrame.image`, ``H`` by
@@ -779,7 +839,13 @@ class ToolContext:
         stored as every deformation is, the residual over the section's
         current linear placement, with an inverse LangSlice computes; it
         replaces whatever deformation the section holds. *note* and *meta*
-        (JSON values) are kept with it. ``ToolError`` ``BAD_FIELD`` for an
+        (JSON values) are kept with it. *weights*: the weighting the engine
+        estimated for itself, a float ``(H, W)`` array on the fit grid in
+        [0, 1] (its tissue sorting; stored as float16 with the record, and
+        what ``set_mask(source="fit")`` copies); None when it estimated none.
+        *provenance*: JSON values added to the record's provenance (the
+        ``inputs`` and ``estimated`` blocks of a fit,
+        :mod:`langslice.core.engine_inputs`). ``ToolError`` ``BAD_FIELD`` for an
         array of another shape, not float or not finite;
         ``INVALID_LINEAR_PLACEMENT`` for a section without a position or a
         transform."""
@@ -800,7 +866,8 @@ class ToolContext:
                 method=self._caller.label, step={"note": text} if text else {},
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
-                                     "pixels"})
+                                     "pixels", **_plain(dict(provenance or {}))},
+                weights=weights)
         except Refused as refusal:
             raise ToolError(refusal.code, str(refusal), **{
                 key: value for key, value in refusal.details.items()
@@ -1153,38 +1220,39 @@ class ToolContext:
 
     # --- the native engines, with settings of your own --------------------------------------
 
-    def fit_fireants(self, section: object, *, settings: Any = None, mask: Any = None,
-                     start: str = "linear", em: bool = True, marked: bool = True,
+    def fit_fireants(self, section: object, *, settings: Any = None, mask: str = "none",
+                     start: str = "linear", marked: bool = True,
                      note: str = "") -> DeformationProposal:
         """Run FireANTs SyN (the engine ``fireants_syn`` runs) on the section
         with settings of your own and return the result as a
         :class:`DeformationProposal`, NOT written (:meth:`set_deformations`
-        writes it, recorded as this caller's, with the settings in its
-        provenance ``meta``).
+        writes it, recorded as this caller's, with the settings and the
+        ``inputs`` / ``estimated`` blocks in its provenance).
 
         *settings*: a :class:`langslice.core.deformable.FitSettings` or a
-        mapping of its fields over ``fireants_syn``'s ``medium`` defaults
-        (``stiffness`` ``soft`` / ``medium`` / ``firm``, ``detail``
-        ``coarse`` / ``standard``, ``atlas_image``, ``stain_metric``,
-        ``stain_edges``, ``structures`` and ``neighbourhood_um`` to fit
-        some regions only, ``exclude``). *mask*: bool, the fit grid's
-        ``(H, W)`` (:attr:`FitFrame.image`), True where the section is
-        compared (left out: a tear, a bubble). *start* ``linear`` fits from
-        the linear placement, ``current`` on top of the applied deformation.
-        *em* False skips the EM section mask's second run; *marked* False
-        leaves the section's marked damage regions in the fit."""
+        mapping of its fields over ``fireants_syn``'s defaults
+        (``smoothness_um``, ``detail`` ``coarse`` / ``standard`` / ``fine``,
+        ``atlas_image`` (``"nissl"`` is the atlas's Nissl image where it has
+        one, else its template), ``stain_metric``, ``stain_edges``,
+        ``structures`` and ``neighbourhood_um`` to fit some regions only,
+        ``exclude``). *mask*: ``"none"`` or the NAME of a mask of the section
+        (``set_mask`` made it; :meth:`mask` reads one): its weights at or above
+        0.5 are compared, the others left out. An array is refused
+        (``BAD_ARGS``): make the mask with ``set_mask`` so the job holds it.
+        *start* ``linear`` fits from the linear placement, ``current`` on
+        top of the applied deformation; *marked* False leaves the section's
+        marked damage regions in the fit."""
         from dataclasses import fields as dataclass_fields
 
-        from langslice.core import deformation
+        from langslice.core.atlas.images import resolve_image
         from langslice.core.deformable import FitSettings
         from langslice.core.deformable.render import composed_native_grid
-        from langslice.ops.deformable import fit_record
+        from langslice.ops.deformable import default_settings, fit_record
 
         record = self._record(section)
         workspace = self._door.ctx
-        base = deformation.Choice(fit_section=deformation.FIT_LOOK, fit_atlas="template",
-                                  stiffness="medium").settings(
-            (), (), brain_scale=workspace.brain_scale)
+        label = _mask_name(mask)
+        base = default_settings(workspace)
         if settings is None:
             chosen = base
         elif isinstance(settings, FitSettings):
@@ -1201,44 +1269,47 @@ class ToolContext:
                 raise ToolError("BAD_ARGS", str(exc)) from exc
         else:
             raise ToolError("BAD_ARGS", "settings is a FitSettings or a mapping of its fields")
-        keep = None
-        if mask is not None:
-            keep = np.asarray(mask).astype(bool)
+        try:
+            resolve_image(workspace.atlas, str(chosen.atlas_image))
+        except ValueError as exc:
+            raise ToolError("BAD_ARGS", str(exc)) from exc
         try:
             fitted = fit_record(self._door.job, workspace, record.id, chosen, start=start,
-                                mask=keep, em=bool(em), marked=bool(marked))
+                                mask=label, marked=bool(marked))
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         native_xy = np.stack(composed_native_grid(fitted, 1), axis=-1).astype(np.float64)
         meta = {"engine": "fireants", "settings": fitted.settings.to_dict()
                 if fitted.settings is not None else chosen.to_dict(),
-                "start": start, "em": bool(em), "marked": bool(marked),
-                "mask_pixels": None if keep is None else int(keep.sum()),
+                "start": start, "marked": bool(marked), "mask": label,
                 "runtime_s": round(float(fitted.engine.get("runtime_s", 0.0)), 1)}
-        return self.deformation_from_map(record.id, native_xy,
-                                         note=note or "FireANTs SyN, settings of the caller's",
-                                         meta=meta)
+        held = fitted.provenance
+        return self.deformation_from_map(
+            record.id, native_xy, note=note or "FireANTs SyN, settings of the caller's",
+            meta=meta, weights=fitted.weights,
+            provenance={key: held.get(key) for key in ("inputs", "estimated")})
 
     def fit_elastix(self, section: object, *, restrict_to: Sequence[str] = (),
-                    exclude: Sequence[str] = (), atlas_image: str = "template",
-                    mask: Any = None, marked: bool = True,
+                    exclude: Sequence[str] = (), atlas_image: str = "nissl",
+                    mask: str = "none", marked: bool = True,
                     note: str = "") -> TransformProposal:
         """Run the Elastix affine (the engine ``elastix_affine`` runs) on the
         section from its current placement and return the result as a
         :class:`TransformProposal`, NOT written (:meth:`set_transforms`
         writes it; its record keeps the call's settings under ``fit``).
         *restrict_to* / *exclude*: region entries (``"CTX:left"`` for one
-        side); *mask* (bool, the fit grid's ``(H, W)``) True where the
-        section is compared; *marked* False keeps the section's marked
-        damage regions in the fit."""
+        side); *atlas_image* as for :meth:`fit_fireants`; *mask*: ``"none"``
+        or the NAME of a mask of the section (as :meth:`fit_fireants`; an
+        array is refused ``BAD_ARGS``); *marked* False keeps the section's
+        marked damage regions in the fit."""
         from langslice.ops.transforms import elastix_fit
 
         record = self._record(section)
-        keep = None if mask is None else np.asarray(mask).astype(bool)
+        label = _mask_name(mask)
         try:
             fitted = elastix_fit(self._door.job, self._door.ctx, record.id,
                                  restrict_to=list(restrict_to), exclude=list(exclude),
-                                 atlas_image=str(atlas_image), mask=keep, marked=bool(marked))
+                                 atlas_image=str(atlas_image), mask=label, marked=bool(marked))
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         proposal = self.transform_from_params(record.id, fitted.params,
@@ -1246,8 +1317,9 @@ class ToolContext:
                                               "caller's")
         stored = {**proposal.record, "fit": {
             "engine": "elastix", "restrict_to": list(fitted.report.get("include") or ()),
-            "exclude": list(fitted.report.get("exclude") or ()), "atlas_image": atlas_image,
-            "marked": bool(marked), "mask_pixels": None if keep is None else int(keep.sum())}}
+            "exclude": list(fitted.report.get("exclude") or ()),
+            "atlas_image": (fitted.inputs or {}).get("atlas_image_resolved", atlas_image),
+            "marked": bool(marked), "mask": label, "inputs": fitted.inputs}}
         return replace(proposal, record=stored)
 
     # --- output for the agent ---------------------------------------------------------------
@@ -1718,6 +1790,16 @@ class ToolContext:
         record = self._record(section)
         return [LayerRef(id=ref["id"], section=record.id, name=ref["name"], kind=ref["kind"],
                          frame=ref["frame"], file=ref["file"]) for ref in record.layers]
+
+
+def _mask_name(mask: Any) -> str:
+    """*mask* as a fit takes it: ``"none"`` or a mask's name. An array (a
+    script's own weights) is refused: a mask a fit reads is one the job holds
+    (``set_mask``), so every door leaves the same trace."""
+    if isinstance(mask, str):
+        return mask.strip() or "none"
+    raise ToolError("BAD_ARGS", "mask is 'none' or the NAME of a mask of the section made "
+                    "with set_mask; an array is not taken (make the mask with set_mask first)")
 
 
 def _as_tool_error(refusal: Refused) -> ToolError:

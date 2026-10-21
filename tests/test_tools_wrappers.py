@@ -122,7 +122,7 @@ def test_unknown_and_misplaced_arguments_are_refused_before_the_tool_runs(tmp_pa
     assert top["problems"] == [{"argument": "(top level)", "unknown": ["zoom"],
                                 "accepted": ["mode", "sections", "positions_mm", "channels",
                                              "atlas_layers", "atlas_opacity", "warp",
-                                             "layers", "depth"]}]
+                                             "layers", "depth", "masks"]}]
     assert top["message"].endswith("Nothing was done.")
 
     write = _tool(box, "position_sections")
@@ -241,11 +241,12 @@ def test_host_display_targets_follow_each_tools_scope():
     assert _tool_target_ids(state, "position_sections", {
         "sections": [{"id": "c", "position_mm": 1.0}, {"id": "a", "position_mm": 4.0}],
     }) == ["c", "a"]
-    assert _tool_target_ids(state, "set_preprocessed_channel_properties",
+    assert _tool_target_ids(state, "set_channel",
                             {"sections": []}) == every
     assert _tool_target_ids(state, "elastix_affine", {"sections": ["b", "a"]}) == ["b", "a"]
     assert _tool_target_ids(state, "interactive_transform", {
         "sections": [{"id": "b"}, {"id": "a"}, {"id": "1"}, {"id": "a"}],
     }) == ["b", "a"]
     assert _tool_target_ids(state, "mark_damage", {"section": "b", "regions": []}) == ["b"]
+    assert _tool_target_ids(state, "set_mask", {"section": "c", "name": "m"}) == ["c"]
     assert _tool_target_ids(state, "export_maps", {"slices": ["c", "nope"]}) == ["c"]

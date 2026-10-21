@@ -128,7 +128,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     seen: list[dict[str, Any]] = []
 
     def fake(_state: Any, _ws: Any, record: Any, *, include: Any = (), exclude: Any = (),
-             atlas_image: str = "template") -> dict[str, Any]:
+             atlas_image: str = "template", **_inputs: Any) -> dict[str, Any]:
         seen.append({"id": record.id, "include": tuple(include), "exclude": tuple(exclude),
                      "atlas_image": atlas_image})
         return {"status": "ok", "id": record.id, "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],

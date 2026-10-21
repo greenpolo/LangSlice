@@ -34,7 +34,7 @@ wording; `registry.py` lists which.
   and returns the plain PIL pictures `src/langslice/core/` draws (captions
   burned in, each noted for the job's saved views). Without options a write
   draws nothing (a script). Where a picture must exist before the write
-  (`set_preprocessed`: the BEFORE picture), it is drawn first. The change
+  (`set_channel` on a derived channel: the BEFORE picture), it is drawn first. The change
   tools' pictures of what they wrote are `look.show_result`'s, drawn by the
   tool door after the write.
 - It never words anything for a model. Job rules (frozen
@@ -95,24 +95,32 @@ wording; `registry.py` lists which.
   agent's note after it. With *options*, `core.damage.damage_picture` (a
   picture that fails is `render_failed`, the write standing). Returns
   `DamageRegions`.
-- `appearance.py` — `set_appearance(job, ids, settings)`,
+- `appearance.py` — `set_appearance(job, ids, settings, name)`,
   `planned_settings` (what a write would leave, written nowhere) and
-  `preprocess(job, workspace, ids, settings, shown=, options=)`:
-  per shown section its preprocessed channel's BEFORE and AFTER pictures (uncaptioned,
+  `preprocess(job, workspace, ids, settings, shown=, options=, name=)`:
+  per shown section the derived channel's BEFORE and AFTER pictures (uncaptioned,
   `BeforeAfter`), drawn before the write; a failure refuses the call
-  (`RENDER_FAILED`), nothing written. The preprocessed channel is the one
-  every fit and the image model read, `core/appearance.py`. `set_preprocessed(job, workspace, ids,
-  channel_weights=, clahe_clip=, clahe_tiles=, n4=, denoise=, reset=,
-  shown=, options=)`: the preprocessed channel's recipe, checked first
-  (`UNKNOWN_SLICE_IDS`, `BAD_ARGS`, `CHANNEL_COUNT_MISMATCH`), then `preprocess`'s before and after
-  pictures and write. `set_channel_properties(job, workspace, channel,
-  contrast_limits=, gamma=, colormap=, reset=)`: a raw channel's display
-  properties, stack-wide (`core/channels.py`; contrast limits in file
-  intensities; an argument left None keeps its value; `UNKNOWN_CHANNEL`,
-  `BAD_ARGS`; no undo step when nothing changed); returns
-  `ChannelPropertiesSet` (the properties in force, the sections with the
-  channel, its sample type, range and 1st/99.5th percentiles). The verbs
-  `set_channel_properties` and `set_preprocessed_channel_properties`.
+  (`RENDER_FAILED`), nothing written. `set_channel(job, workspace, name, sections,
+  weights=, clahe_clip=, clahe_tiles=, n4=, denoise=, contrast_limits=, gamma=,
+  colormap=, invert=, reset=, shown=, options=)`: one write for a raw channel
+  (display properties, stack-wide, `core/channels.py`; a recipe argument is
+  `BAD_ARGS`; no undo step when nothing changed) or a derived channel (a recipe,
+  stack-wide or as the override of `sections`; `preprocessed` is the one every
+  fit and the image model read by default, `core/appearance.py`; `reset`
+  returns it to the default or deletes another); returns `ChannelSet`. The verb
+  `set_channel`.
+- `masks.py` — `set_mask(job, workspace, section, name, source=, channel=,
+  atlas_image=, sorting=, delete=)`: a section-side mask by name
+  (`core/section_masks.py`), ONE undo step. `em`: the EM sorting of the
+  channel against the atlas image at the section's CURRENT registration;
+  `fit`: the sorting the applied deformation saved (`NO_DEFORMATION`,
+  `NO_SORTING`). `UNKNOWN_CHANNEL`, `UNKNOWN_MASK` (delete), `BAD_ARGS`,
+  `NO_POSITION`, `FIT_FAILED`. `read` / `section_weights(job, record, name)`
+  are what a fit reads: `"none"` gives None, a name gives the weights
+  (`UNKNOWN_MASK`, `STALE_MASK` when the section's registration digest,
+  `core.section_masks.registration_digest`, which `ops.inputs.section_inputs(...,
+  deformation=True)` returns too, differs from the one it was made at). The
+  verb `set_mask`.
 - `notes.py` — `add_note(job, text)`.
 - `files.py` — read-only file access over the job folder for the native agent
   (`job.browse` keeps every path inside it; `BAD_PATH` otherwise):
@@ -253,18 +261,20 @@ wording; `registry.py` lists which.
   trace it read (`trace`: the trace's artifact directory); a traced fit
   section reads the trace's artifacts under the job folder
   (`traced_lines(root=...)`).
-  `fireants_syn(job, workspace, sections, restrict_to=, atlas_image=,
-  stiffness=)`: the FireANTs SyN fit, applied as ONE undo step:
-  on the preprocessed channel (`fit`) against one of the atlas's
-  images (`core.atlas.images`), `soft`/`medium`/`firm`, on top of the applied deformation
+  `fireants_syn(job, workspace, sections, restrict_to=, section_image=,
+  atlas_image=, mask=, smoothness_um=, metric=, edges=, detail=)`: the FireANTs
+  SyN fit, applied as ONE undo step: on a channel of the section
+  (`section_image`, default `preprocessed`) against one of the atlas's
+  images (`core.atlas.images`; `nissl` resolves per atlas) with a named section
+  mask, on top of the applied deformation
   (undo is how to start over); *restrict_to*
   checked against the atlas (`region_entries`); refused, nothing done:
   `ENGINE_MISSING` (`refuse_without_engine`: FireANTs and torch must import, `engine_ready`),
   `BAD_ARGS` (no sections, more than `MAX_FIREANTS_SYN_SECTIONS` (4), an unknown
-  atlas image or stiffness, a malformed region list), `FIT_ATLAS_UNAVAILABLE`,
-  `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
+  atlas image, metric, detail or smoothness, a malformed region list),
+  `UNKNOWN_CHANNEL`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
   `warp_from_map(job, workspace, section, native_xy, method=, step=,
-  provenance=)`: a deformation made elsewhere (a tool plugin's), given as the
+  provenance=, weights=)`: a deformation made elsewhere (a tool plugin's), given as the
   full map from the fit grid's pixel centres to native atlas pixels, built as
   a record (`core.deformation.record_from_map`: the residual over the current
   linear placement, a fixed-point inverse, the usual diagnostics), not
@@ -471,3 +481,9 @@ the whole call; `core/toolset.py` offers neither tool when it is frozen on every
 section, and they need each other). Pair edits leave the current registration applied until another
 explicit application or undo. An unchanged application is a no-op.
 
+
+Every ok row of `fireants_syn` and `elastix_affine` carries `inputs`
+(`core.engine_inputs.InputsBlock`: channel and recipe digest, atlas image asked
+and resolved, mask, atlas-side damage, `restrict_to`, brightness) and
+`estimated`; the result's `settings` is the call; `elastix_affine` refuses a
+section that holds a deformation (`HAS_DEFORMATION`, that section's row).
