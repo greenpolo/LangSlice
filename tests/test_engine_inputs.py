@@ -8,6 +8,7 @@ from langslice.core.engine_inputs import (
     EstimatedBlock,
     InputsBlock,
     damage_block,
+    mask_block,
     recipe_digest,
 )
 
@@ -15,16 +16,18 @@ from langslice.core.engine_inputs import (
 def test_the_inputs_block_names_what_was_used():
     block = InputsBlock(
         section_image="preprocessed", section_recipe=recipe_digest(None), atlas_image="nissl",
-        atlas_image_resolved="ccfv3augmented_nissl", mask="none",
+        atlas_image_resolved="ccfv3augmented_nissl", mask=mask_block(),
         damage=damage_block(["TH"], 0.1), restrict_to=["STR"])
     assert block.payload() == {
         "section_image": "preprocessed", "section_recipe": "default", "atlas_image": "nissl",
-        "atlas_image_resolved": "ccfv3augmented_nissl", "mask": "none",
+        "atlas_image_resolved": "ccfv3augmented_nissl",
+        "mask": {"name": "none", "kind": None, "stale": False, "earlier_registration": False},
         "damage": {"regions": ["TH"], "margin_mm": 0.1, "side": "atlas"},
         "restrict_to": ["STR"], "brightness": NATIVE_BRIGHTNESS}
     named = InputsBlock("dapi", "ab12cd34", "template", "template",
-                        {"name": "hole", "kind": "em", "stale": False}, damage_block([], 0.1))
-    assert named.payload()["mask"] == {"name": "hole", "kind": "em", "stale": False}
+                        mask_block("hole", "em"), damage_block([], 0.1))
+    assert named.payload()["mask"] == {"name": "hole", "kind": "em", "stale": False,
+                                       "earlier_registration": False}
     assert named.payload()["restrict_to"] == []
 
 

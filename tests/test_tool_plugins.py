@@ -1389,6 +1389,46 @@ def test_the_agent_cli_waits_for_work_a_plugin_verb_started_and_brings_its_notic
     again.close()
 
 
+def test_the_library_waits_for_work_a_plugin_verb_started_and_returns_its_landing(
+        make, images: Path):
+    ref = make("mark_later_plugin", MARK_LATER)
+    job = _library_job(images, plugins=[ref])
+    started = job.mark_later(section="s0.png")
+    assert started["work"] == "w1"
+    landed = job.wait()
+    assert landed["status"] == "ok" and landed["running"] == []
+    assert landed["background"][0].endswith("mark_later of s0.png finished: moved.")
+    assert landed["work"][0]["id"] == "w1" and landed["work"][0]["status"] == "done"
+    assert job.state.by_id("s0.png").position_mm == pytest.approx(3.3)
+    assert job.wait()["background"] == []  # a notice is handed out once
+    job.close()
+
+
+def test_the_agent_cli_dry_run_of_a_plugin_tool_checks_and_runs_nothing(
+        make, images: Path, capsys, monkeypatch):
+    import json
+
+    from langslice.doors.cli.jobcli import main
+    from tests.cli_child import install
+
+    ref = make("mark_later_plugin", MARK_LATER)
+    job = _library_job(images, plugins=[ref])
+    folder = str(job.folder)
+    job.close()
+    monkeypatch.setattr("langslice.core.atlas.core.load_atlas", lambda _n: _slab())
+    install(lambda _n: _slab(), monkeypatch.setattr)
+    main([folder, "mark_later", "--dry-run", "--args", json.dumps({"section": "s0.png"})])
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert out["ok"] is True and out["result"]["simulated"] is False, out
+    assert "background" not in out["result"]
+    import langslice
+
+    again = langslice.open_job(folder, atlas_loader=lambda _n: _slab())
+    assert again.state.by_id("s0.png").position_mm == pytest.approx(2.0)
+    assert again.job.background.all() == []
+    again.close()
+
+
 # --- offered by atlas and plane -----------------------------------------------------------------
 
 BY_ATLAS = '''

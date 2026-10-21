@@ -80,7 +80,8 @@ langslice-job sections/ wait --timeout 600
 ```
 
 `runs ID` and `wait ID` address a particular run. `--dry-run` previews a
-write without saving; expensive fits are validated without running them.
+write without saving; expensive fits (`elastix_affine`, `fireants_syn`, `trace_borders`
+and every plugin tool, engines included) are validated without running them.
 `export_maps` is available through this CLI and Python to write the job's
 maps from its present state, submitted or not (`submit` writes no maps);
 with the maps it writes each traced

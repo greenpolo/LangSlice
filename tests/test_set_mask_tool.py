@@ -106,6 +106,18 @@ def test_the_mask_is_drawn_on_the_section_and_look_outlines_it(tmp_path: Path, a
     assert _tool(box, "look")("section", sections=[ID], masks=["nope"])["error"] == "UNKNOWN_MASK"
 
 
+def test_the_picture_caption_says_what_the_outline_means(tmp_path: Path, atlas):
+    _, _, box = _setup(tmp_path, atlas)
+    made = _tool(box, "set_mask")(ID, "tissue")
+    (picture,) = made["pictures"]
+    caption = picture["caption"]
+    assert "leaves out" in caption and "'tissue'" in caption
+    assert "sorted from channel preprocessed against atlas image" in caption
+    # A plain look of the section, with no mask asked for, says nothing of masks.
+    plain = _tool(box, "look")("section", sections=[ID])["pictures"][0]["caption"]
+    assert "mask" not in plain
+
+
 def test_the_fit_source_needs_a_deformation_that_saved_a_sorting(tmp_path: Path, atlas):
     state, _, box = _setup(tmp_path, atlas)
     tool = _tool(box, "set_mask")

@@ -254,6 +254,28 @@ def with_notices(job: Job, result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def work_pictures(job: Any, reply: Any, *, start: int) -> list[dict[str, Any]]:
+    """The saved pictures of background work the reply announces (its
+    ``pictures`` entries with a ``work``), as artifacts after the call's own."""
+    from pathlib import Path
+
+    from langslice.job.views import PICTURE_FILE
+
+    out: list[dict[str, Any]] = []
+    entries = reply.get("pictures") if isinstance(reply, dict) else None
+    for entry in entries or []:
+        if not isinstance(entry, dict) or not entry.get("work"):
+            continue
+        record = job.views.lookup(int(entry["id"]))
+        if record is None or not record.path:
+            continue
+        path = Path(job.layout.resolve(record.path)) / PICTURE_FILE
+        if path.exists():
+            out.append({"path": str(path), "kind": "view", "index": start + len(out),
+                        "label": f"{entry['work']} ({record.mode or record.tool})"})
+    return out
+
+
 def _opening_gate(tool: Any, box: ToolBox) -> Any:
     """Refuse a write while the door's opening-read gate is armed and some
     opening page is unread (:meth:`ToolBox.opening_refusal`)."""

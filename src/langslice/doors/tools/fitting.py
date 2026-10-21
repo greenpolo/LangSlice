@@ -32,6 +32,20 @@ from langslice.ops.refusal import Refused
 from langslice.ops.registry import check_section_count
 
 
+def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The top-level error of a fit that fitted nothing. When every section was
+    refused for the same reason, that reason's code and sentence lead (the
+    section rows keep theirs); otherwise ``NOTHING_FITTED``, each row naming its own."""
+    codes = {str(row.get("error")) for row in rows if row.get("error")}
+    if rows and len(codes) == 1 and all(row.get("error") for row in rows):
+        code = codes.pop()
+        message = str(rows[0].get("message") or "")
+        if message and len(rows) > 1:
+            message = f"Every section was refused for this reason. {message}"
+        return {"error": code, **({"message": message} if message else {})}
+    return {"error": "NOTHING_FITTED"}
+
+
 def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     """The fit tools' bodies over *door*."""
     job, ctx, spec = door.job, door.ctx, door.spec
@@ -82,7 +96,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                     "transform.")
         result: dict[str, Any] = {
             "status": "ok" if fits else "error",
-            **({} if fits else {"error": "NOTHING_FITTED"}),
+            **({} if fits else nothing_fitted(done.rows)),
             "settings": {
                 "section_image": str(section_image or "preprocessed"),
                 "atlas_image": str(atlas_image or "nissl"), "mask": str(mask or "none"),
@@ -119,7 +133,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         ok = [row for row in rows if row.get("status") == "ok"]
         result: dict[str, Any] = {
             "status": "ok" if ok else "error",
-            **({} if ok else {"error": "NOTHING_FITTED"}),
+            **({} if ok else nothing_fitted(rows)),
             "settings": done.settings,
             "results": rows,
             **({"changed": door.changed(done.written)["changed"]} if done.written else {}),

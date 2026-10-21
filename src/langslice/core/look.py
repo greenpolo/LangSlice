@@ -538,6 +538,7 @@ def _section_picture(
     draw_landmarks(picture, panels, state, record)
     drawn_layers = _draw_layers(picture, panels, state, record, request, ws)
     drawn_masks = _draw_masks(picture, panels, state, record, request, ws)
+    text += _mask_words(drawn_masks, record)
     image = caption(picture, label, min_width=long_edge if request.zoom else 0)
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
@@ -626,6 +627,7 @@ def _overlay_picture(
                                 warp=placed.canvas.frame.warp if placed.canvas else None)
     drawn_masks = _draw_masks(image, panels, state, record, request, ws,
                               warp=placed.canvas.frame.warp if placed.canvas else None)
+    text += _mask_words(drawn_masks, record)
     recipe["endpoint_panels"] = panels
     recipe["registration_context"] = _landmark_context(state, record)
     annotate(image, recipe=recipe, caption=text)
@@ -740,6 +742,28 @@ def _draw_masks(
             logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
             entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
     return notes
+
+
+def _mask_words(notes: list[dict[str, Any]], record: SliceState) -> str:
+    """The caption sentence saying what a mask outline means (the ringed patches are the
+    section pixels the mask leaves out of a fit) and the mask's name and source."""
+    held: dict[str, Any] = getattr(record, "masks", None) or {}
+    parts = []
+    for note_ in notes:
+        if not note_.get("drawn"):
+            continue
+        entry = held.get(note_["name"]) or {}
+        if note_.get("kind") == "fit":
+            source = "copied from the sorting the section's deformation saved"
+        else:
+            source = (f"sorted from channel {entry.get('channel', '?')} against atlas image "
+                      f"{entry.get('atlas_image', '?')}")
+        parts.append(f"{note_['name']!r} ({source})")
+    if not parts:
+        return ""
+    return ("; coloured outlines trace the edge of the mask (its weight crossing 0.5): the "
+            "section pixels in the ringed patches are the ones it leaves out of a fit that "
+            "uses it, the rest is compared; mask " + ", ".join(parts))
 
 
 def _landmark_context(state: StackState, record: SliceState) -> dict[str, Any]:

@@ -235,7 +235,7 @@ def test_sections_with_a_frozen_deformation_are_refused(tmp_path: Path):
                                "s1.png": {"kind": "imported", "params": [1, 0, 0, 0, 1, 0]}}},
     )
     fitted = tools["fireants_syn"](["s0.png"])
-    assert fitted["status"] == "error" and fitted["error"] == "NOTHING_FITTED"
+    assert fitted["status"] == "error" and fitted["error"] == "FROZEN"
     assert fitted["results"][0]["id"] == "s0.png"
     assert fitted["results"][0]["error"] == code
     traced = tools["trace_borders"]("s0.png")

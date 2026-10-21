@@ -153,9 +153,10 @@ def stalign_lddmm(
         brightness scaling), or why it was not started. Each notice brings,
         per section, the numbers above, what STalign estimated (its sorting,
         saved with the deformation, and the share of the tissue it left out)
-        and two pictures: the section under its new registration with the
-        atlas borders on it, and the final sorting (white compared, black
-        ignored).
+        and the section under its new registration with the atlas borders on
+        it; when the sorting set some tissue aside, also the final sorting
+        picture (set-aside patches outlined; white compared, black ignored),
+        and when it set nothing aside the notice says so and sends no picture.
     """
     ...
 
@@ -383,24 +384,25 @@ def _frame(ctx: ToolContext, name: str, atlas_image: str, section_image: str,
 # --- pictures ---------------------------------------------------------------------------------
 
 
-def _sorting_picture(frame: Any, weights: np.ndarray, title: str) -> Image.Image:
+def _sorting_picture(ctx: ToolContext, frame: Any, weights: np.ndarray,
+                     title: str) -> Image.Image | None:
     """The section's image with every set-aside patch outlined, beside the weight map
-    (white compared, black ignored)."""
+    (white compared, black ignored); None when the sorting set nothing aside (a map of
+    all white says nothing, so no panel is drawn)."""
     stain = _blocks.channel_image(frame)
     gh, gw = stain.shape[:2]
     w = cv2.resize(np.asarray(weights, np.float32), (gw, gh), interpolation=cv2.INTER_LINEAR)
     ignored = (w < 0.5).astype(np.uint8)
+    if not ignored.any():
+        return None
     left = stain.copy()
     contours, _ = cv2.findContours(ignored, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(left, contours, -1, (230, 30, 160), max(1, gw // 600))
     right = np.repeat((np.clip(w, 0, 1) * 255).astype(np.uint8)[..., None], 3, axis=2)
     gap = np.full((gh, 8, 3), 255, np.uint8)
     image = Image.fromarray(np.concatenate([left, gap, right], axis=1))
-    band = Image.new("RGB", (image.width, image.height + 28), "white")
-    band.paste(image, (0, 28))
-    ImageDraw.Draw(band).text((6, 6), title, fill="black")
-    band.thumbnail((1600, 1600))
-    return band
+    image.thumbnail((1600, 1600))
+    return ctx.caption(image, title)
 
 
 def _loss_picture(energy: np.ndarray, path: Path) -> None:
@@ -533,9 +535,15 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                     f"{relative / 'energy.csv'} (plot: {relative / 'mismatch.png'}).")
             pictures = []
             if view:
-                pictures = [lctx.caption(lctx.overlay_picture(sid), f"{sid}: {note}"),
-                            _sorting_picture(frame, out["WM"], f"{sid}: STalign's final sorting "
-                                             "(outlined: set aside; right: white compared)")]
+                pictures = [lctx.caption(lctx.overlay_picture(sid), f"{sid}: {note}")]
+                sorting = _sorting_picture(lctx, frame, out["WM"],
+                                           f"{sid}: STalign's final sorting (outlined: set aside; "
+                                           "right: white compared)")
+                if sorting is None:
+                    text += (" Its final sorting set nothing aside, so every pixel was compared "
+                             "and no sorting picture is sent.")
+                else:
+                    pictures.append(sorting)
             return ToolResult({"notice": text, "id": sid, **summary, **blocks}, pictures)
 
         try:

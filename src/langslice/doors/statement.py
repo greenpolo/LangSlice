@@ -133,7 +133,9 @@ def opening_for_cli(folder: str, pictures: int | None,
         render("- `--dry-run` runs a write without writing and reports what would change"
                "[[?elastix_affine|fireants_syn|trace_borders ; the "
                "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders]] "
-               "are only checked, not run]].", disabled),
+               "are only checked, not run]]" + (
+                   "; a plugin's engine tools are only checked too" if getattr(
+                       spec, "plugins", None) else "") + ".", disabled),
         f"- Long tools ({', '.join(long_verbs(disabled, spec))}) can run with `--background`, "
         "which "
         "answers at once with a run id; `wait ID` collects the answer.",

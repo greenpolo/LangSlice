@@ -182,7 +182,8 @@ process forks for it, `cli/warm.py`).
   `JobHandle`: every verb the job has as a method (the tool, same
   arguments, run inside `job.views.captured()`, then the pictures flushed,
   so a method returns once its pictures are on disk), `verbs`, `folder`, `image_model`, `job`, `state`, `workspace`,
-  `imported`, `context` (one `ScriptContext` per handle, on the toolbox's
+  `imported`, `wait(timeout=None)` (waits for background work and returns its landing as the CLI does:
+  `background` notices, `work`, `running`, pictures; uses `toolbox.work_pictures`), `context` (one `ScriptContext` per handle, on the toolbox's
   `door`: the plugin `ToolContext` with `Caller.script()`; each outermost
   write gets a call id `script-<pid>-<n>`, a conversion before it shares the
   write's, and a landed write a `script_write` line in `logs/events.jsonl`;
@@ -263,7 +264,7 @@ process forks for it, `cli/warm.py`).
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past
   `ops.transforms.MIN_ZOOM_GAIN`; `with_notices` lists each background
-  picture with its caption), `arguments.py` (the argument shapes, typed dicts with
+  picture with its caption; `work_pictures` is the saved files of those pictures, for the CLI and `JobHandle.wait`), `arguments.py` (the argument shapes, typed dicts with
   `extra="forbid"`: `SectionPosition`, `CuttingAngles`, `SectionTransform`;
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
@@ -422,7 +423,7 @@ process forks for it, `cli/warm.py`).
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`), and `env` (`jobenv.command`). `CHECKED_ONLY`:
     `trace_borders`, `elastix_affine` and `fireants_syn`
-    are checked, not run, by `--dry-run`.
+    are checked, not run, by `--dry-run`, and so is every plugin tool (a verb not in `VERBS`).
   - `jobenv.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
     the job's own Python environment `env/` (uv's or `venv`'s), a `.pth`
     (`PARENT_PTH`) adding the site-packages of the environment LangSlice runs

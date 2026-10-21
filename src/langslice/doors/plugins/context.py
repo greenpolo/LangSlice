@@ -136,6 +136,9 @@ class FitFrame:
     applied_map: np.ndarray | None = None
     excluded: np.ndarray | None = None
     damage_zone: np.ndarray | None = None
+    #: The margin ``damage_zone`` adds around ``excluded``, in millimetres (always
+    #: set: the margin the native fits report, whether or not damage is marked).
+    damage_margin_mm: float | None = None
     stain: np.ndarray | None = None
     channel: np.ndarray | None = None
     channel_name: str | None = None
@@ -145,6 +148,10 @@ class FitFrame:
     #: Eight hex digits of ``channel``'s recipe (``core.engine_inputs.recipe_digest``),
     #: ``"default"`` for a channel without a recipe of its own; None without ``channel``.
     channel_recipe: str | None = None
+    #: What the answer to the default ``"nissl"`` request was when it resolved to the
+    #: ``template`` (a Nissl template honours it; an atlas without a Nissl falls back); None
+    #: when ``"nissl"`` was not asked for or has an image of its own.
+    atlas_image_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -642,7 +649,7 @@ class ToolContext:
         (``channel_names``); ``ToolError`` ``UNKNOWN_CHANNEL`` for another.
         *stain* True is ``channel="preprocessed"`` and also fills ``stain``."""
         from langslice.core import deformation
-        from langslice.core.atlas.images import atlas_images, resolve_image
+        from langslice.core.atlas.images import atlas_images, nissl_note, resolve_image
         from langslice.core.atlas.size import brain_scale
         from langslice.core.damage import exclusions
         from langslice.core.deformable.masks import EXCLUSION_MARGIN_MM, dilate
@@ -731,8 +738,12 @@ class ToolContext:
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
             placed_atlas_to_section=placed, applied_map=applied, excluded=excluded,
-            damage_zone=zone, stain=preprocessed, channel=picture, channel_name=wanted,
-            atlas_resolved=resolved_names, channel_recipe=recipe_text)
+            damage_zone=zone, damage_margin_mm=round(
+                float(EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)), 4),
+            stain=preprocessed, channel=picture, channel_name=wanted,
+            atlas_resolved=resolved_names, channel_recipe=recipe_text,
+            atlas_image_note=nissl_note(workspace.atlas, "nissl") if "nissl" in resolved_names
+            else None)
 
     def angles_from_plane(self, normal_um: Sequence[float], point_um: Sequence[float],
                           ) -> dict[str, float]:
@@ -1469,10 +1480,13 @@ class ToolContext:
     @staticmethod
     def caption(image: Image.Image, text: str) -> Image.Image:
         """*image* with *text* in a caption band below it (pictures reach a
-        model as bare attachments: what they show is said in the picture)."""
+        model as bare attachments: what they show is said in the picture, and in the
+        caption its entry in the reply's ``pictures`` carries)."""
         from langslice.core.captions import caption
+        from langslice.core.layers import annotate
 
-        return caption(image, text)
+        # the text is also the picture's caption in the reply's ``pictures`` list
+        return annotate(caption(image, text), caption=text)
 
     # --- background work --------------------------------------------------------------------
 

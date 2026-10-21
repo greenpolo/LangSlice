@@ -61,7 +61,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
         "detail": "standard"}
     assert row["inputs"]["section_image"] == "preprocessed"
     assert row["inputs"]["atlas_image_resolved"] == "template"
-    assert row["inputs"]["mask"] == "none" and row["inputs"]["damage"]["side"] == "atlas"
+    assert row["inputs"]["mask"]["name"] == "none" and row["inputs"]["damage"]["side"] == "atlas"
     assert row["estimated"] is None
     assert len(job.undo_stack) == depth + 1
     held = job.state.slices[0].deformation

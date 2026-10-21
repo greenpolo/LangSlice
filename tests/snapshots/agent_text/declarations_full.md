@@ -179,7 +179,7 @@ Returns:
     The settings or recipe now in force, the channels there are, and for
     a derived channel, up to 4 of the sections (spread over the stack when
     none are named) two pictures each: the channel before this call, then
-    after it.
+    after it; a channel this call creates has no before, so one picture each.
 
 
 ## grep_atlas
@@ -455,7 +455,9 @@ Returns:
     The mask's source, channel, atlas image and starting points, and the
     fraction of the section's tissue it leaves out. With view, the
     section drawn as look's "section" mode draws it, with the mask's
-    0.5 outline on it.
+    0.5 outline on it, and a caption saying the outlines trace the mask's
+    edge, that the ringed patches are what the mask leaves out of a fit,
+    and the mask's name and source.
 
 
 ## elastix_affine

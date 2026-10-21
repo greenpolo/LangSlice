@@ -3,10 +3,10 @@ tool's reply and every deformation record's provenance carry.
 
 ``inputs`` names what the engine read: the section image (a channel, with the
 digest of its recipe), the atlas image as asked and as resolved, the section
-mask (``"none"`` or a mask's name, kind and staleness), the atlas-side damage
-marks, the regions the fit was restricted to and the engine's own brightness
-scaling in words. ``estimated`` names what the engine worked out by itself
-(its own sorting of the section and the fraction it left out), or is null.
+mask (always an object: the name, ``"none"`` for no mask, its kind and
+staleness), the atlas-side damage marks, the regions the fit was restricted to and
+the engine's own brightness scaling in words. ``estimated`` names what the engine
+worked out by itself (its own sorting of the section and the fraction it left out), or is null.
 Both name what was used and nothing about quality.
 """
 
@@ -30,6 +30,15 @@ def recipe_digest(recipe: dict[str, Any] | None) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:8]
 
 
+def mask_block(name: str = "none", kind: str | None = None, stale: bool = False,
+               earlier_registration: bool = False) -> dict[str, Any]:
+    """The mask entry of ``inputs``, one shape whether a mask was used or not: ``name``
+    (``"none"`` when the fit read no section mask), ``kind`` (``em`` / ``fit``, null for
+    none), ``stale`` and ``earlier_registration``."""
+    return {"name": name, "kind": kind, "stale": bool(stale),
+            "earlier_registration": bool(earlier_registration)}
+
+
 def damage_block(regions: list[str] | tuple[str, ...], margin_mm: float) -> dict[str, Any]:
     """The damage entry of ``inputs``: the atlas-side regions left out of the
     fit and the margin around them, always applied, never on the section side."""
@@ -47,19 +56,23 @@ class InputsBlock:
     #: (``ccfv3augmented_nissl``).
     atlas_image: str
     atlas_image_resolved: str
-    #: ``"none"`` or ``{"name", "kind", "stale"}``.
-    mask: str | dict[str, Any]
+    #: :func:`mask_block`: ``{"name", "kind", "stale", "earlier_registration"}``, the
+    #: name ``"none"`` when no mask was read.
+    mask: dict[str, Any]
     #: ``{"regions", "margin_mm", "side": "atlas"}`` (:func:`damage_block`).
     damage: dict[str, Any]
     restrict_to: list[str] = field(default_factory=list)
     #: The engine's own scaling of the images, in words.
     brightness: str = NATIVE_BRIGHTNESS
+    #: Said when the default ``nissl`` resolved to the template (``images.nissl_note``).
+    atlas_image_note: str | None = None
 
     def payload(self) -> dict[str, Any]:
         return {
             "section_image": self.section_image, "section_recipe": self.section_recipe,
             "atlas_image": self.atlas_image, "atlas_image_resolved": self.atlas_image_resolved,
-            "mask": self.mask if isinstance(self.mask, str) else dict(self.mask),
+            **({"atlas_image_note": self.atlas_image_note} if self.atlas_image_note else {}),
+            "mask": dict(self.mask),
             "damage": dict(self.damage), "restrict_to": list(self.restrict_to),
             "brightness": self.brightness,
         }

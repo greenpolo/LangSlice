@@ -120,7 +120,7 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     # The reply names what the fit read; Elastix estimates nothing itself.
     assert row["inputs"]["atlas_image"] == "nissl"
     assert row["inputs"]["atlas_image_resolved"] == "template"
-    assert row["inputs"]["mask"] == "none" and row["estimated"] is None
+    assert row["inputs"]["mask"]["name"] == "none" and row["estimated"] is None
     assert result["settings"]["section_image"] == "preprocessed"
     box_fractions = row["restrict_box"]
     assert len(box_fractions) == 4 and 0 <= box_fractions[0] < box_fractions[2] <= 1

@@ -14,7 +14,8 @@ argument, ``--name value`` (kebab or snake case; a JSON value, or plain text
 for a text argument; a list argument takes the flag again for each item).
 Options: ``--dry-run`` (a write verb runs on the job without writing
 anything and reports what would change; ``elastix_affine``, ``fireants_syn``
-and ``trace_borders`` are only checked, not run; not with ``--background``),
+and ``trace_borders``, and every tool of a plugin, are only checked, not run; not with
+``--background``),
 ``--background`` (answer at
 once with a run id), ``--verbose`` (the whole reply: whole-stack rows, the
 descriptions written for a model), ``--timeout SECONDS`` (``wait``).
@@ -387,7 +388,7 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.ops.registry import verbs_for
+    from langslice.ops.registry import VERBS, verbs_for
 
     if verb not in verbs_for(_spec_of(folder)):
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
@@ -426,7 +427,8 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
                                       verbose=bool(options.get("verbose")))
             envelope = Envelope(result={"run": run_id, "verb": verb, "state": "running"},
                                 next=[f"langslice-job {job_folder} wait {run_id}"])
-        elif dry_run and verb in CHECKED_ONLY:
+        elif dry_run and (verb in CHECKED_ONLY or verb not in VERBS):
+            # a plugin tool runs an engine of its own: checked, never run
             envelope = _checked(opened, verb, arguments)
         else:
             envelope = _run(opened, verb, tool, arguments, dry_run=dry_run,
@@ -471,6 +473,7 @@ def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
 
 def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
          dry_run: bool, verbose: bool) -> Envelope:
+    from langslice.doors.tools.toolbox import work_pictures
     from langslice.job.views import artifacts as picture_artifacts
     from langslice.job.views import captured
     from langslice.ops.registry import verbs_for
@@ -506,7 +509,7 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     pictures, unsaved = picture_artifacts(saved, verb)
     artifacts += pictures
     warnings += unsaved
-    artifacts += _work_pictures(job, reply, start=len(pictures))
+    artifacts += work_pictures(job, reply, start=len(pictures))
     result = shape(verb, reply, verbose=verbose)
     if verb == "trace_borders" and isinstance(result, dict):
         result["image_correction"] = _landed(job, result.get("id"))
@@ -552,26 +555,6 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     nexts = ([_command(job_folder, verb, arguments)] if dry_run
              and verbs[verb].kind == "write" else [])
     return Envelope(result=result, artifacts=artifacts, warnings=warnings, next=nexts)
-
-
-def _work_pictures(job: Any, reply: Any, *, start: int) -> list[dict[str, Any]]:
-    """The saved pictures of background work the reply announces (its
-    ``pictures`` entries with a ``work``), as artifacts after the call's own."""
-    from langslice.job.views import PICTURE_FILE
-
-    out: list[dict[str, Any]] = []
-    entries = reply.get("pictures") if isinstance(reply, dict) else None
-    for entry in entries or []:
-        if not isinstance(entry, dict) or not entry.get("work"):
-            continue
-        record = job.views.lookup(int(entry["id"]))
-        if record is None or not record.path:
-            continue
-        path = Path(job.layout.resolve(record.path)) / PICTURE_FILE
-        if path.exists():
-            out.append({"path": str(path), "kind": "view", "index": start + len(out),
-                        "label": f"{entry['work']} ({record.mode or record.tool})"})
-    return out
 
 
 def _landed(job: Any, section: Any) -> dict[str, Any]:

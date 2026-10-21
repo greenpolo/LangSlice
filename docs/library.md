@@ -35,8 +35,11 @@ Each write checkpoints the job and is undoable with `undo()` and `redo()`.
 The handle reloads other processes' saved changes before each call.
 Registration requirements still apply. See [registration tools](registration.md).
 
-`trace_borders` starts background work. Subsequent replies deliver its
-completion notice; leaving the `with` block or calling `close()` waits for
+`trace_borders`, `fireants_syn` and a plugin's long tools (`stalign_lddmm`) start
+background work. Subsequent replies deliver its completion notice; `job.wait(timeout=None)`
+waits for it and returns what the agent CLI's call returns: `background` (each finished
+work's notice), `work` (id, kind, sections, status), `running`, and the pictures under
+`artifacts` and `images`; leaving the `with` block or calling `close()` waits for
 pending traces and picture writes. `submit(...)` checks the job and writes
 the QuickNII and VisuAlign exports, not the per-section maps.
 `export_maps(full_resolution=False)` writes the maps of placed sections at

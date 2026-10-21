@@ -250,11 +250,14 @@ default (LangSlice's own recipe until it is set); any other name makes another
 derived channel a fit can read as its `section_image`. A recipe applies
 stack-wide, or as the override of the `sections` named; `reset` returns
 `preprocessed` to the default recipe and deletes another derived channel. It
-returns the before/after pictures of up to four sections. Its description and
+returns the before/after pictures of up to four sections (a channel the call
+creates has no before, so one picture each). Its description and
 the job statement's Method tell the agent to register on the counterstain
 (DAPI, Hoechst, Nissl, NeuroTrace) alone, enhanced, with every labelling
 channel at weight 0. Inspect a derived channel with `look(channels=[name])`.
-`status` lists each derived channel's recipe. The tool is available in every
+`status` lists each derived channel's recipe (a channel made for some
+sections only shows `none: this channel exists only on the sections listed`
+as its stack recipe). The tool is available in every
 job; ABBA's agent-preprocessing switch controls which raw channels it exports.
 
 ## Masks
@@ -284,7 +287,9 @@ invalidate it: after fits, moves or a changed deformation it stays usable, and
 registration; information only). It is stale only once the section is turned or
 flipped (`STALE_MASK`: a fit refuses it; make it again). `status` lists each
 section's masks (name, kind, stale, earlier_registration). `look(masks=[name])`
-outlines a mask where its weight is 0.5 on `section` and `overlay` pictures.
+outlines a mask where its weight is 0.5 on `section` and `overlay` pictures;
+the picture's caption says so (the ringed patches are what the mask leaves out of
+a fit) and names each mask and its source. `set_mask` returns that `section` picture.
 
 `mark_damage` records atlas regions whose tissue is missing from the section
 or lies folded over other anatomy, including one hemisphere when needed.
@@ -311,7 +316,7 @@ and MCP; any number through the CLI and the library, within the job's
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a channel of the section (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a channel of the section (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. A call that fits nothing answers with the code and sentence every section was refused for, when they share one (`HAS_DEFORMATION`, `FROZEN`), else `NOTHING_FITTED` with each section's row naming its own; `fireants_syn` answers the same way. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -334,8 +339,10 @@ on), `detail` (`coarse`, `standard`, `fine`) and optional `restrict_to`
 regions. The step size, the iterations per level and the pyramid are fixed.
 Its reply carries `settings` (the call) and, per section, `inputs` (the
 channel and a digest of its recipe, the atlas image as asked and as resolved,
-the mask, the atlas-side damage regions and margin, the regions restricted
-to, and the brightness scaling in words) and `estimated` (null for FireANTs,
+the mask (always an object: `name`, `"none"` for no mask, `kind`, `stale`,
+`earlier_registration`), the atlas-side damage regions and the margin every engine
+leaves around them, the regions restricted to (`fireants_syn` and `elastix_affine`
+only), and the brightness scaling in words) and `estimated` (null for FireANTs,
 which sorts nothing itself); the deformation record's provenance holds the same
 blocks. The reply names what was used and nothing about how well it worked.
 `restrict_to` belongs to `fireants_syn` and `elastix_affine` only.
@@ -363,7 +370,9 @@ Both registration engines accept any of the atlas's own images as
 where it has or borrows one (the borrowed `ccfv3augmented_nissl` on an Allen
 CCFv3 atlas; the template of `ccfv3augmented_mouse_25um`, which is a Nissl; an
 additional reference whose name contains "nissl"), else its template. The reply
-names the image it resolved to. The images are BrainGlobe's `"template"` and every additional
+names the image it resolved to, and where that is the template of
+`ccfv3augmented_mouse_25um` it adds `atlas_image_note` saying the default
+`"nissl"` request was honoured by the atlas's Nissl template. The images are BrainGlobe's `"template"` and every additional
 reference the atlas ships, under BrainGlobe's names (for example
 `ccfv3augmented_mouse_25um`, whose template is the Blue Brain averaged Nissl,
 also ships a single-animal Nissl). The job statement lists them, and `look`

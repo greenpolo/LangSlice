@@ -163,7 +163,7 @@ def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
     state, _, _, box = _setup(tmp_path, atlas)
     state.slices[0].transform = None
     result = _tool(box, "fireants_syn")([ID])
-    assert result["status"] == "error" and result["error"] == "NOTHING_FITTED"
+    assert result["status"] == "error" and result["error"] == "INVALID_LINEAR_PLACEMENT"
     assert result["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT"
     assert TOOL_MEDIA_PARTS_KEY not in result
     assert state.slices[0].deformation is None
