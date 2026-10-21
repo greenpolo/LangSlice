@@ -115,9 +115,9 @@ def _start_trace(
 #: The background work's kind (:mod:`langslice.job.background`).
 TRACE_WORK = "trace_borders"
 #: The fit a landed trace gets: the traced lines as named regions against the
-#: atlas borders, FireANTs at medium stiffness.
+#: atlas borders, FireANTs at 80 um smoothness.
 TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
-                               stiffness="medium")
+                               smoothness_um=80.0)
 #: Fit rows that mean the section or its trace changed before the fit applied.
 _STALE_CODES = (STALE_INPUT, "TRACE_STALE", "TRACE_RUNNING", "NO_TRACE")
 
