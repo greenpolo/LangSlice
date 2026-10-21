@@ -624,8 +624,7 @@ def fit_record(
                                previous=previous)
         if mask is not None:
             with_section_mask(prepared, mask)
-        if not em:
-            prepared.em = None
+        # COMPAT (chunk C rewrites this): no fit sorts the section itself now; ``em`` is inert.
         with deformation.engine_lock():
             return run_prepared(prepared)
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal

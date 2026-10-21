@@ -15,6 +15,13 @@ from langslice.core.state import SliceState, StackState
 PER_SECTION = "per section"
 
 
+def mask_rows(state: StackState, record: SliceState) -> list[dict[str, Any]]:
+    """``[{name, kind, stale}]`` of *record*'s masks."""
+    from langslice.core.section_masks import mask_rows as rows
+
+    return rows(state, record)
+
+
 def angles_dict(record: SliceState) -> dict[str, float]:
     """The section's ``{"pitch", "yaw"}`` in degrees, as floats."""
     pitch, yaw = record.angles
@@ -85,6 +92,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 **({"layers": [{"name": ref["name"], "kind": ref["kind"],
                                 "frame": ref["frame"], "tool": ref["tool"]}
                                for ref in record.layers]} if record.layers else {}),
+                **({"masks": mask_rows(state, record)} if record.masks else {}),
                 "caveats": list(record.caveats),
             }
         )
@@ -142,7 +150,8 @@ def _status_rows(value: Any) -> bool:
     """*value* is a list of status rows: dicts with no field outside
     :data:`ROW_FIELDS` (``grep_atlas``'s region rows, under the same key, are
     not)."""
-    fields = {*ROW_FIELDS, "layers"}  # ``layers``: only a section with plugin layers has it
+    # ``layers``, ``masks``: only a section with plugin layers / masks has them
+    fields = {*ROW_FIELDS, "layers", "masks"}
     return isinstance(value, list) and all(
         isinstance(row, dict) and set(row) <= fields for row in value)
 
