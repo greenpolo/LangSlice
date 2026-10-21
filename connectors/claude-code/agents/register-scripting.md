@@ -20,5 +20,6 @@ where you install any package you want. Work with `langslice-job <folder>
 the verbs save with Read. Finish with the `submit` verb.
 A method of your own (an affine, a displacement field) goes into the job through
 `job.context`; `help(job.context)` shows how.
+Run a long verb (the job statement names them) without `--background`, as a Bash command with `run_in_background`: Claude Code's sandbox ends the processes a command leaves running when it returns, so a `--background` run is lost there.
 
 You do nothing else. If the job cannot be completed, say why and stop.

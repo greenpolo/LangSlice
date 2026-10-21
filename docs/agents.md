@@ -79,7 +79,11 @@ langslice-job sections/ runs
 langslice-job sections/ wait --timeout 600
 ```
 
-`runs ID` and `wait ID` address a particular run. `--dry-run` previews a
+`runs ID` and `wait ID` address a particular run. A detached run needs a
+shell that lets a process outlive the command that started it; a sandbox that
+ends them when the command returns (Claude Code's) loses every run
+(`RUN_LOST`), so there a long verb runs without `--background`, in the
+harness's own background mode (the Claude Code agents say so). `--dry-run` previews a
 write without saving; expensive fits (`elastix_affine`, `fireants_syn`, `trace_borders`
 and every plugin tool, engines included) are validated without running them.
 `export_maps` is available through this CLI and Python to write the job's

@@ -79,6 +79,12 @@ def spomialign(
 ) -> dict[str, Any]:
     """Register sections to the atlas with SPOmiAlign, on their current registration.
 
+    SPOmiAlign (Wang et al. 2026, Briefings in Bioinformatics) was built to align
+    spatial-omics sections (transcriptomics, proteomics, H&E) to each other and to
+    the Allen Nissl plates. Instead of comparing brightness it matches points with
+    RoMa (Edstedt et al. 2024), a dense feature matcher pretrained on DINOv2
+    features, so only the tissue's shape and structure need agree, not its stain.
+
     SPOmiAlign matches distinctive points between the section's image (one
     channel, by name) and an atlas image with a pretrained dense matcher (RoMa), weights
     the matches toward tissue edges, keeps the most confident (matches), and

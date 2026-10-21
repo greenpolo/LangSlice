@@ -26,6 +26,7 @@ Constraints:
 - LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute priority: this run may be evaluated on the quality of its registration alone, without regard to the time or tokens it spends.
 
 Method:
+- Before placing or fitting a section, make its counterstain the channel you register on: set the preprocessed channel (`set_channel`, name "preprocessed") to the counterstain alone, enhanced, and judge alignment and run fits on it.
 - Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
 - A fit's reply names the channel, atlas image and mask it used.

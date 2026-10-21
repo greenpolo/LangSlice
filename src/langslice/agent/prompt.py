@@ -2,7 +2,9 @@
 
 The statement reports; the model reasons. Each tool is described once, by
 its own description (:mod:`langslice.doors.declarations`); the statement
-names the tools and describes none. It gives no rules of thumb and no
+names the tools and describes none, except the deformable methods when a job
+has more than one (:data:`DEFORMABLE_METHODS`: what each published method is,
+so that none reads as the default). It gives no rules of thumb and no
 warnings about failure modes. The one place for strategy is the short
 "Method:" section per task that is on (look before writing, review the
 stack, inspect each fit against internal anatomy); ``position.playbook``
@@ -31,6 +33,35 @@ from langslice.job.job import INTERVAL_BREAK_MIN_RATIO, STRICT_INTERVAL_TOLERANC
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
+
+#: The deformable methods a job can hold (the native fit and the in-tree engine
+#: plugins), in the order the Method lists them, each with what it is: the
+#: claims are the methods' own papers' (Nash approved the wording 2026-10-21).
+DEFORMABLE_METHODS: dict[str, str] = {
+    "fireants_syn": (
+        "ANTs SyN (Avants et al. 2008), the standard symmetric diffeomorphic registration "
+        "in neuroimaging, run on the GPU by FireANTs. It matches brightness (mutual "
+        "information or local correlation) and optionally edges, takes masks, and "
+        "`restrict_to` refines single regions."),
+    "stalign_lddmm": (
+        "STalign (Clifton et al. 2023), LDDMM built to align single-cell spatial "
+        "transcriptomics and histology to the Allen CCF. It fits a contrast map between "
+        "the two images and sorts every pixel into tissue, background or artifact "
+        "itself, so partial sections and debris count less."),
+    "spomialign": (
+        "SPOmiAlign (Wang et al. 2026), built to align spatial-omics sections across "
+        "modalities. It matches points with RoMa, a pretrained dense feature matcher, "
+        "instead of comparing brightness, so it needs only shared tissue shape and "
+        "structure, not similar staining; seconds per call. Its authors report it "
+        "degrades when the two images share little tissue and in repetitive or "
+        "ambiguous tissue."),
+    "emlddmm_stack": (
+        "emlddmm (Tward et al. 2025), built to bring whole-brain series of any modality "
+        "into the Allen CCF. It fits one smooth 3-D warp of the atlas to the whole stack, "
+        "with each section's own mounting, and sorts out missing tissue and artifacts "
+        "itself. It suits dense, evenly spaced series and gives placements that agree "
+        "across the stack; it makes no single-section bends."),
+}
 
 _PLANE_AXIS_LABEL: dict[str, str] = {
     "coronal": "AP",
@@ -311,16 +342,6 @@ def build_job_statement(
             "alignment.", off
         ))
 
-    if method and not spec.off("set_channel"):
-        # First in the Method: the channel every later step looks at and fits.
-        method.insert(
-            2,
-            "- Before placing or fitting a section, make its counterstain the channel "
-            "you register on: set the preprocessed channel "
-            "(`set_channel`, name \"preprocessed\") to the counterstain alone, "
-            "enhanced, and judge alignment and run fits on it."
-        )
-
     if spec.has("transform") and not spec.off("interactive_transform"):
         if not method:
             method = ["", "Method:"]
@@ -348,21 +369,44 @@ def build_job_statement(
                 "- Before fitting a damaged section, mark the regions it has lost with "
                 "`mark_damage`, so that every region it still has drives its fits."
             )
+        engines = [name for name in DEFORMABLE_METHODS if name in tool_names]
         method.append(
             "- Run each fit on the whole section first, then refine regions. Inspect each fit's "
             "borders against the section's internal anatomy"
             + (" and, where traced, its traced borders"
                if "trace_borders" in tool_names else "")
             + "; undo a fit that does not improve the alignment"
-            + render("[[?fireants_syn  and fit that section again with different `fireants_syn` "
-                     "settings, such as another smoothness_um or another atlas image]]", off)
+            + (" and fit that section again with another method or other settings"
+               if len(engines) > 1 else
+               render("[[?fireants_syn  and fit that section again with different `fireants_syn` "
+                      "settings, such as another smoothness_um or another atlas image]]", off))
             + "."
         )
+        if len(engines) > 1:
+            method.append(
+                "- Several published deformable methods are available; none is the default, "
+                "and each suits different sections. Try more than one on each section, compare "
+                "their overlays, and keep the one whose borders best follow the section's "
+                "internal anatomy (undo returns to the earlier fit). Each fit builds on the "
+                "section's current registration, so methods can be chained, for example a "
+                "stack-wide fit refined per section."
+            )
+            method.extend(f"  - `{name}`: {DEFORMABLE_METHODS[name]}" for name in engines)
 
     if any(name in tool_names for name in ("elastix_affine", "fireants_syn")):
         if not method:
             method = ["", "Method:"]
         method.append("- A fit's reply names the channel, atlas image and mask it used.")
+
+    if method and not spec.off("set_channel"):
+        # First in the Method: the channel every later step looks at and fits.
+        method.insert(
+            2,
+            "- Before placing or fitting a section, make its counterstain the channel "
+            "you register on: set the preprocessed channel "
+            "(`set_channel`, name \"preprocessed\") to the counterstain alone, "
+            "enhanced, and judge alignment and run fits on it."
+        )
 
     return "\n".join(
         [

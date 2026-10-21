@@ -69,6 +69,33 @@ def _joined_note(user: str, agent: str) -> str:
     return "; ".join(dict.fromkeys(parts))
 
 
+def _check_sides(job: Job, workspace: Workspace, record: SliceState, names: Sequence[str]) -> None:
+    """Refuse a one-sided entry whose side the section's current placement does
+    not have (the picture's check, made before the write); a section without a
+    usable placement is not checked."""
+    from langslice.core.atlas.sides import SideError, split_side
+    from langslice.core.deformable.plane_images import placement_left
+    from langslice.core.deformation import fit_grid
+
+    try:
+        placement = fit_grid(job.state, workspace, record).placement
+    except ValueError:
+        return
+    try:
+        left = placement_left(workspace.atlas, placement, names)
+    except SideError as exc:
+        raise Refused(exc.code, message=str(exc)) from exc
+    pair = getattr(left, "names", None)
+    for name in names:
+        side = split_side(name)[1]
+        if side is not None and pair is not None and side not in pair:
+            runs = "vertically" if side in ("top", "bottom") else "horizontally"
+            raise Refused("WRONG_SIDE_PAIR", message=(
+                f"On this section the midline runs {runs}, so its halves are "
+                f"{pair[0]!r} and {pair[1]!r}, not {side!r}: name one of those "
+                f"(e.g. \"{split_side(name)[0]}:{pair[0]}\")."))
+
+
 def mark_damage(
     job: Job,
     workspace: Workspace,
@@ -94,7 +121,10 @@ def mark_damage(
 
     Refused (nothing written): ``UNKNOWN_SLICE_IDS``; ``SECTION_BUSY``; ``BAD_ARGS`` (regions
     not a list, or a side that does not exist); ``UNKNOWN_REGIONS``;
-    ``NO_SIDES`` (a side on a sagittal stack).
+    ``NO_SIDES`` (a side on a sagittal stack); ``WRONG_SIDE_PAIR`` (a side the
+    section's placement does not have: ``left``/``right`` where its midline runs
+    horizontally, ``top``/``bottom`` where it runs vertically), and the other
+    side refusals of :func:`langslice.core.atlas.sides.native_left`.
     """
     from langslice.core.atlas.sides import has_sides
     from langslice.core.deformable.plane_images import resolve_entries
@@ -119,6 +149,8 @@ def mark_damage(
         if record is None:
             raise unknown_sections(state, [str(section)])
         check_frozen(job, [record.id])  # no frozen property: refused only while work runs on it
+        if has_sides(names):
+            _check_sides(job, workspace, record, names)
         by_user = record.id in job.host_damaged
         user = _user_note(job, record)
         agent = str(note or "").strip() if names else ""

@@ -17,7 +17,7 @@ from langslice.core.state import SliceState
 from langslice.core.status import status_rows, status_text, uniform_rows
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
-from langslice.ops import damage, deformable, traces
+from langslice.ops import damage, deformable, traces, transforms
 from langslice.ops.refusal import Refused
 from tests.test_linear_fit_affine_regions import HalvesAtlas, _left_half_section
 
@@ -110,6 +110,20 @@ def test_mark_damage_refuses_bad_regions(tmp_path: Path):
         damage.mark_damage(box.job, ctx, "x.png", ["R"])
     assert unknown.value.code == "UNKNOWN_SLICE_IDS"
     assert box.job.undo_stack == []
+
+
+def test_mark_damage_refuses_a_side_the_placement_does_not_have(tmp_path: Path):
+    # The midline runs vertically on this placement, so its halves are left
+    # and right: "top" is refused before anything is written.
+    state, ctx, box = _box(tmp_path)
+    transforms.interactive_transform(box.job, ctx, [{"id": ID, "rotation_deg": 0.0}])
+    steps = len(box.job.undo_stack)
+    with pytest.raises(Refused) as refused:
+        damage.mark_damage(box.job, ctx, ID, ["R:top"])
+    assert refused.value.code == "WRONG_SIDE_PAIR"
+    assert "'left' and 'right'" in refused.value.details["message"]
+    assert state.by_id(ID).damaged_regions == [] and len(box.job.undo_stack) == steps
+    assert damage.mark_damage(box.job, ctx, ID, ["R:left"]).written
 
 
 def test_a_users_damage_note_is_a_note_alone_and_stays_first(tmp_path: Path):
