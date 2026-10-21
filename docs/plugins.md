@@ -323,6 +323,10 @@ plugin, is refused `SECTION_BUSY` naming the work (a call over several
 sections gives that section's row); so is starting work on a section that
 already has some. The work's own landing is not refused.
 
+## In-tree engines
+
+STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `langslice.engines.stalign.plugin:tools`, `langslice.engines.spomialign.plugin:tools`, `langslice.engines.emlddmm.plugin:tools`. Name them in `JobSpec.plugins` (or `linear run --tool-plugin REF`); the three load together and need no `PYTHONPATH`. Each runs its method as a subprocess in its own conda environment (`stalign2`, `rigid_spomialign`, `rigid_emlddmm` under `~/.claude-science/conda/envs`; the SPOmiAlign and emlddmm sources from SliceBench's `comparators/src`). Override with `plugin_config` (`python`, `src`, `emlddmm_src`, `brainglobe_dir`). A missing interpreter or source is refused at call time with `ENGINE_UNAVAILABLE` naming the path, never at load time. Each takes `section_image`, `atlas_image` (`"nissl"`), a section `mask` by name where it can use one (STalign refuses one with `MASK_UNSUPPORTED`, naming the engines that take one), and answers with the `settings`, `inputs` and `estimated` blocks of the native fits.
+
 ## Layers
 
 Anything the agent or the user should see that is not a section property is a

@@ -15,9 +15,9 @@ Run facts:
 - Alignment canvas: each section is drawn at its TRUE physical size from its pixel size (read from the file, or given by the host; without one the section image's width is mapped onto the atlas plane's width and the tool payload says uncalibrated), and the atlas at its voxel size; scale 1.0 is the section's calibrated size.
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
-- Atlas layers on this host: template, borders.
+- Atlas layers on this host: template, nissl, borders.
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `interactive_transform`, `mark_damage`, `elastix_affine`, `note`, `undo`, `redo`, `submit`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `interactive_transform`, `mark_damage`, `set_mask`, `elastix_affine`, `note`, `undo`, `redo`, `submit`.
 
 Constraints:
 - `submit` is refused unless every section carries a transform, damaged sections included.
@@ -28,5 +28,6 @@ Constraints:
 Method:
 - Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
+- A fit's reply names the channel, atlas image and mask it used.
 
 Work with the tools, then call `submit`.

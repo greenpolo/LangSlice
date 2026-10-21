@@ -14,9 +14,9 @@ Run facts:
 - The stack's order follows the positions: writing positions renumbers the sections, so use filenames to name them.
 - The orientation shown is fixed; transforms are not part of this run.
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
-- Atlas layers on this host: template, borders.
+- Atlas layers on this host: template, nissl, borders.
 
-Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel_properties`, `set_preprocessed_channel_properties`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `mark_damage`, `note`, `undo`, `redo`, `submit`.
+Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `position_sections`, `mark_damage`, `note`, `undo`, `redo`, `submit`.
 
 Constraints:
 - `submit` is refused unless every section has a position of its own, damaged sections included.
@@ -25,7 +25,7 @@ Constraints:
 - LangSlice sets no limit on tokens, time or tool calls. Quality is the absolute priority: this run may be evaluated on the quality of its registration alone, without regard to the time or tokens it spends.
 
 Method:
-- Before placing or fitting a section, make its counterstain the channel you register on: set the preprocessed channel (`set_preprocessed_channel_properties`) to the counterstain alone, enhanced, and judge alignment and run fits on it.
+- Before placing or fitting a section, make its counterstain the channel you register on: set the preprocessed channel (`set_channel`, name "preprocessed") to the counterstain alone, enhanced, and judge alignment and run fits on it.
 - Place each section on its own evidence: compare it against candidate atlas positions before writing, and do not let the nominal interval stand in for a look.
 - After writing, review the whole stack against the atlas, watch for spacings that differ from their neighbours, and re-check the sections on either side of any gap before reporting an interval break.
 - Submit when the work is complete; address any missing requirements it returns.

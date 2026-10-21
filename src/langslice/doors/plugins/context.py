@@ -139,6 +139,12 @@ class FitFrame:
     stain: np.ndarray | None = None
     channel: np.ndarray | None = None
     channel_name: str | None = None
+    #: ``{asked name: the atlas image it resolved to}`` for each image in
+    #: ``atlas`` (``"nissl"`` is the atlas's Nissl image, else its template).
+    atlas_resolved: dict[str, str] = field(default_factory=dict)
+    #: Eight hex digits of ``channel``'s recipe (``core.engine_inputs.recipe_digest``),
+    #: ``"default"`` for a channel without a recipe of its own; None without ``channel``.
+    channel_recipe: str | None = None
 
 
 @dataclass(frozen=True)
@@ -656,6 +662,7 @@ class ToolContext:
         if "annotation" in atlas:
             planes["annotation"] = np.asarray(native_labels(workspace.atlas, placement))
         offered = set(atlas_images(workspace.atlas))
+        resolved_names: dict[str, str] = {}
         for asked in atlas:
             if asked == "annotation" or asked in planes:
                 continue
@@ -669,6 +676,7 @@ class ToolContext:
                 planes[kind] = np.asarray(native_intensity(workspace.atlas, placement, kind),
                                           dtype=np.float32)
             planes[asked] = planes[kind]
+            resolved_names[asked] = kind
         placed = None
         if record.transform:
             try:
@@ -704,6 +712,14 @@ class ToolContext:
                                 f"its channels: {', '.join(known)}", channels=list(known))
             picture = np.asarray(deformation.stain_image(
                 workspace, self._door.state, grid, wanted)[0].convert("RGB"))
+        recipe_text: str | None = None
+        if wanted is not None:
+            from langslice.core import appearance
+            from langslice.core.engine_inputs import recipe_digest
+
+            recipe_text = recipe_digest(
+                appearance.derived_settings(self._door.state, wanted, record.id)
+                if wanted in appearance.derived_names(self._door.state) else None)
         preprocessed = picture if wanted == "preprocessed" else (
             np.asarray(deformation.stain_image(
                 workspace, self._door.state, grid, "preprocessed")[0].convert("RGB"))
@@ -715,7 +731,8 @@ class ToolContext:
             position_mm=float(placement.position_mm),
             angles=(float(placement.pitch_deg), float(placement.yaw_deg)),
             placed_atlas_to_section=placed, applied_map=applied, excluded=excluded,
-            damage_zone=zone, stain=preprocessed, channel=picture, channel_name=wanted)
+            damage_zone=zone, stain=preprocessed, channel=picture, channel_name=wanted,
+            atlas_resolved=resolved_names, channel_recipe=recipe_text)
 
     def angles_from_plane(self, normal_um: Sequence[float], point_um: Sequence[float],
                           ) -> dict[str, float]:
