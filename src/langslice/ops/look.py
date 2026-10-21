@@ -64,6 +64,10 @@ class Looked:
     #: "section", "name", "tool", "kind", "drawn"}`` (and ``reason`` for a layer
     #: not drawn).
     layers: list[dict[str, Any]] = field(default_factory=list)
+    #: ``look`` with ``masks``: per picture and mask asked for, ``{"picture",
+    #: "section", "name", "drawn"}`` (and ``kind``, ``stale`` for a mask drawn, ``reason``
+    #: for one not).
+    masks: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -171,6 +175,7 @@ def look(
     resolution: int | None = None,
     plugin_layers: Sequence[str] = (),
     depth: int = OVERLAY_DEPTH,
+    masks: Sequence[str] = (),
 ) -> Looked:
     """Draw *mode* (``section``, ``atlas``, ``overlay`` or ``positioning``;
     :func:`langslice.core.look.look`) and save every picture with its recipe
@@ -195,6 +200,12 @@ def look(
     (:mod:`langslice.core.plugin_layers`); the reply's ``layers`` says which
     were drawn. Refused: ``BAD_ARGS`` in another mode, ``UNKNOWN_PLUGIN_LAYER``
     for a name no drawn section has.
+
+    *masks* names masks (:func:`langslice.ops.masks.set_mask`) of the drawn
+    sections, outlined where their weight is 0.5 on pictures of mode ``section`` or
+    ``overlay`` (:mod:`langslice.core.plugin_layers`, as a scalar layer); the reply's
+    ``masks`` says which were drawn. Refused: ``BAD_ARGS`` in another mode,
+    ``UNKNOWN_MASK`` for a name no drawn section holds.
     """
     state = job.state
     if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
@@ -225,13 +236,16 @@ def look(
     named = tuple(str(v) for v in _strings(plugin_layers, "layers"))
     if named:
         _check_plugin_layers(job, str(mode), ids, named)
+    mask_names = tuple(str(v) for v in _strings(masks, "masks"))
+    if mask_names:
+        _check_masks(job, str(mode), ids, mask_names)
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
         raise Refused("BAD_ARGS", message="depth is a whole number, 0 or more.")
     request = looks.LookRequest(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
         channels=tuple(str(c) for c in _strings(channels, "channels")), atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
-        warp=str(warp or "applied"), long_edge=edge, layers=named, depth=depth)
+        warp=str(warp or "applied"), long_edge=edge, layers=named, masks=mask_names, depth=depth)
     try:
         with collecting() as notes:
             drawn = looks.look(workspace, state, request, store=job.deformations)
@@ -254,12 +268,38 @@ def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequenc
                       f"the layers: {', '.join(held) or 'none'}.")
 
 
+def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) -> None:
+    if mode not in ("section", "overlay"):
+        raise Refused("BAD_ARGS", message="masks are outlined on pictures of mode section or "
+                      "overlay.")
+    state = job.state
+    records = [r for r in (state.by_id(i) for i in ids) if r is not None] if ids \
+        else list(state.slices)
+    held = sorted({name for record in records for name in (getattr(record, "masks", None) or {})})
+    unknown = [name for name in names if name not in held]
+    if unknown:
+        raise Refused("UNKNOWN_MASK", unknown=unknown, masks=held,
+                      message=f"No drawn section has a mask named {', '.join(unknown)}; the "
+                      f"masks: {', '.join(held) or 'none'}. Make one with set_mask.")
+
+
 def _layer_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],
                  ) -> list[dict[str, Any]]:
     """The layers each shown picture drew or could not draw, with its number."""
     out: list[dict[str, Any]] = []
     for picture, entry in zip(shown, entries, strict=False):
         for item in picture.extra.get("layers") or []:
+            out.append({"picture": entry["id"],
+                        "section": picture.sections[0] if picture.sections else "", **item})
+    return out
+
+
+def _mask_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],
+                ) -> list[dict[str, Any]]:
+    """The masks each shown picture outlined or could not, with its number."""
+    out: list[dict[str, Any]] = []
+    for picture, entry in zip(shown, entries, strict=False):
+        for item in picture.extra.get("masks") or []:
             out.append({"picture": entry["id"],
                         "section": picture.sections[0] if picture.sections else "", **item})
     return out
@@ -272,7 +312,8 @@ def _reply(
     shown, rest = split_shown(job, drawn)
     entries = save_pictures(job, workspace, tool, shown, notes, arguments)
     return Looked(pictures=[picture.image for picture in shown], entries=entries,
-                  not_shown=not_shown(rest, mode), layers=_layer_notes(shown, entries))
+                  not_shown=not_shown(rest, mode), layers=_layer_notes(shown, entries),
+                  masks=_mask_notes(shown, entries))
 
 
 # --- a change tool's picture --------------------------------------------------------------

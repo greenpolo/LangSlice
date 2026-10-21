@@ -15,7 +15,14 @@ import numpy as np
 from PIL import Image
 
 from langslice.core import channels
-from langslice.core.appearance import DEFAULT_CLAHE_CLIP, DEFAULT_CLAHE_TILES, Look, look_token
+from langslice.core.appearance import (
+    DEFAULT_CLAHE_CLIP,
+    DEFAULT_CLAHE_TILES,
+    Look,
+    look_token,
+    tone,
+    weights_for,
+)
 from langslice.core.image_prep import (
     adaptive_preprocess,
     custom_appearance,
@@ -64,7 +71,8 @@ def render_slice(
     instead of like a black field; a host's multi-channel snapshot arrives
     already blended (``spec.host_preprocessing``). Any other look
     (:mod:`langslice.core.appearance`) is drawn from the section's raw
-    channels at the SAME size, so geometry never depends on appearance.
+    channels at the SAME size, so geometry never depends on appearance; a
+    derived channel's look is its recipe (:func:`langslice.core.appearance.validate_recipe`).
     Display only: the user's file is never touched. The whole image frame is
     always drawn.
 
@@ -157,14 +165,15 @@ def _look_image(
                  for name in look["overlay"]]
         return channels.composite(shown, framed=framed, size=size,
                                   properties=properties, ranges=ranges)
-    return custom_appearance(
+    blended = custom_appearance(
         [placed(plane) for plane in planes],
-        channel_weights=look.get("channel_weights"),
+        channel_weights=weights_for(look, list(names)),
         clahe_clip=float(look.get("clahe_clip", DEFAULT_CLAHE_CLIP)),
         clahe_tiles=int(look.get("clahe_tiles", DEFAULT_CLAHE_TILES)),
         n4=bool(look.get("n4")),
         denoise=bool(look.get("denoise")),
     )
+    return tone(blended, look)
 
 
 def canvas_um_per_px(

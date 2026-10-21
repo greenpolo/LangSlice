@@ -41,6 +41,7 @@ into the pixels; the doors send them beside each picture.
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 import logging
 from collections.abc import Sequence
@@ -50,7 +51,13 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from langslice.core.appearance import PREPROCESSED, channel_colors, preprocessed_settings
+from langslice.core.appearance import (
+    DERIVED,
+    PREPROCESSED,
+    channel_colors,
+    derived_names,
+    derived_settings,
+)
 from langslice.core.appearance import describe as describe_look
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import atlas_um_per_px
@@ -88,7 +95,8 @@ from langslice.core.workspace import Workspace
 MODES: tuple[str, ...] = LOOK_MODES
 #: The recipe's renderer name (:mod:`langslice.core.zoom` dispatches on it).
 RENDERER = "look"
-#: The ``channels`` entry that picks the section's preprocessed channel.
+#: The ``channels`` entry that picks the section's preprocessed channel (any
+#: derived channel's name picks that one).
 PREPROCESSED_CHANNEL = PREPROCESSED
 #: ``atlas_layers`` when the request gives none, per mode.
 ATLAS_LAYER_DEFAULTS: dict[str, tuple[str, ...]] = {
@@ -111,8 +119,8 @@ SECTION_FIELDS: tuple[str, ...] = (
     "rotation_deg", "transform", "deformation", "damaged_regions", "landmarks",
 )
 #: The appearance entries a picture depends on (display properties and the
-#: preprocessed channel's recipe).
-APPEARANCE_KEYS: tuple[str, ...] = (CHANNELS_KEY, PREPROCESSED)
+#: derived channels' recipes; ``preprocessed`` is the older home of one).
+APPEARANCE_KEYS: tuple[str, ...] = (CHANNELS_KEY, DERIVED, PREPROCESSED)
 #: Default: let `canvas.resolve_border_color` pick the per-picture cased
 #: arrangement (Nash, 2026-10-14: "Just have black with white outlines or
 #: white with black outlines (the outlines having outlines themselves)").
@@ -173,6 +181,9 @@ class LookRequest:
     #: Section and overlay: names of the plugin layers drawn on the picture
     #: (``"all"``: every layer the section has); empty: none.
     layers: tuple[str, ...] = ()
+    #: Section and overlay: names of the masks (:mod:`langslice.core.section_masks`)
+    #: outlined where their weight is 0.5 on the picture; empty: none.
+    masks: tuple[str, ...] = ()
     #: Ontology depth of the regions whose boundaries are drawn
     #: (:func:`langslice.core.atlas.levels.labels_at`).
     depth: int = OVERLAY_DEPTH
@@ -189,6 +200,7 @@ class LookRequest:
             "part": self.part, "highlight": list(self.highlight), "depth": self.depth,
             **({"region_only": True} if self.region_only else {}),
             **({"layers": list(self.layers)} if self.layers else {}),
+            **({"masks": list(self.masks)} if self.masks else {}),
         }
 
     @classmethod
@@ -209,6 +221,7 @@ class LookRequest:
             highlight=tuple(str(v) for v in args["highlight"]),
             region_only=bool(args.get("region_only", False)),
             layers=tuple(str(v) for v in args.get("layers") or ()),
+            masks=tuple(str(v) for v in args.get("masks") or ()),
             depth=int(args["depth"]),
         )
 
@@ -328,24 +341,30 @@ def restored(state: StackState, held: dict[str, Any]) -> StackState:
 # --- options and words ----------------------------------------------------------------
 
 
-def _channels_for(ws: Workspace, record: SliceState, channels: Sequence[str]
-                  ) -> tuple[tuple[str, ...], str]:
+def _channels_for(ws: Workspace, state: StackState, record: SliceState,
+                  channels: Sequence[str]) -> tuple[tuple[str, ...], str]:
     """``(raw names, version)`` *record* is drawn in: every raw channel by
-    default, or the named ones, or (version) its preprocessed channel."""
+    default, or the named ones, or (version) a derived channel, alone."""
     wanted = tuple(str(name) for name in channels)
-    if PREPROCESSED_CHANNEL in wanted:
-        if len(wanted) > 1:
-            raise LookError("MIXED_CHANNELS", "'preprocessed' is shown alone, not with raw "
-                            "channels")
-        return (), PREPROCESSED
     names = tuple(ws.section_channels(record.id)[0])
+    derived = [name for name in derived_names(state) if name not in names]
+    picked = [name for name in wanted if name in derived]
+    if picked:
+        if len(wanted) > 1:
+            raise LookError("MIXED_CHANNELS", f"{picked[0]!r} is a derived channel and is shown "
+                            "alone, not with other channels")
+        if picked[0] != PREPROCESSED_CHANNEL and derived_settings(
+                state, picked[0], record.id) is None:
+            raise LookError("UNKNOWN_CHANNEL", f"derived channel {picked[0]!r} has no recipe "
+                            f"for {record.id}")
+        return (), picked[0]
     if not wanted:
         return names[:MAX_OVERLAY_CHANNELS], ""
     unknown = [name for name in wanted if name not in names]
     if unknown:
         raise LookError("UNKNOWN_CHANNEL", f"{record.id} has no channel "
                         f"{', '.join(map(repr, unknown))}; its channels: {', '.join(names)}, "
-                        "or 'preprocessed'")
+                        f"or {', '.join(repr(name) for name in derived)}")
     if len(wanted) > MAX_OVERLAY_CHANNELS:
         raise LookError("TOO_MANY_CHANNELS",
                         f"at most {MAX_OVERLAY_CHANNELS} raw channels are drawn together")
@@ -403,9 +422,9 @@ def channel_words(state: StackState, record: SliceState, names: Sequence[str], v
     index caption, each channel with its own display setting
     (:func:`langslice.core.channels.display_words`: ``raw red, green auto;
     blue 0-70 gamma 0.8``)."""
-    if version == PREPROCESSED:
-        return ("preprocessed",
-                f"preprocessed channel ({describe_look(preprocessed_settings(state, record.id))})")
+    if version:
+        return (version,
+                f"{version} channel ({describe_look(derived_settings(state, version, record.id))})")
     # One channel is drawn in gray; among several, each in its overlay colour.
     colours = ({name: word for name, word, _rgb in channel_colors(names)} if len(names) > 1
                else {name: "gray" for name in names})
@@ -467,7 +486,7 @@ def _section_picture(
     ws: Workspace, state: StackState, record: SliceState, request: LookRequest, long_edge: int,
     base: tuple[int, int] | None,
 ) -> LookPicture:
-    names, version = _channels_for(ws, record, request.channels)
+    names, version = _channels_for(ws, state, record, request.channels)
     options = _options(request, names=names, version=version, layers=(), long_edge=long_edge)
     look_ = options.look(state, record)
     whole = render_slice(ws, record, long_edge=long_edge, look=look_)
@@ -518,6 +537,7 @@ def _section_picture(
     picture = picture.copy()
     draw_landmarks(picture, panels, state, record)
     drawn_layers = _draw_layers(picture, panels, state, record, request, ws)
+    drawn_masks = _draw_masks(picture, panels, state, record, request, ws)
     image = caption(picture, label, min_width=long_edge if request.zoom else 0)
     held = snapshot(state, [record.id])
     one = replace(request, sections=(record.id,))
@@ -527,7 +547,8 @@ def _section_picture(
     note(image, sections=(record.id,), mode="section", recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
                        mode="section", um_per_px=um,
-                       extra={"layers": drawn_layers} if drawn_layers else {})
+                       extra={**({"layers": drawn_layers} if drawn_layers else {}),
+                              **({"masks": drawn_masks} if drawn_masks else {})})
 
 
 def _overlay_picture(
@@ -536,7 +557,7 @@ def _overlay_picture(
 ) -> LookPicture:
     if record.position_mm is None:
         raise LookError("NO_POSITION", f"{record.id} has no position to draw the atlas at")
-    names, version = _channels_for(ws, record, request.channels)
+    names, version = _channels_for(ws, state, record, request.channels)
     layers = _atlas_layers(ws, request)
     options = _options(request, names=names, version=version, layers=layers,
                        long_edge=long_edge, regions=_highlighted(ws, request))
@@ -603,12 +624,15 @@ def _overlay_picture(
         draw_landmarks(image, panels, state, record, warp=placed.canvas.frame.warp)
     drawn_layers = _draw_layers(image, panels, state, record, request, ws,
                                 warp=placed.canvas.frame.warp if placed.canvas else None)
+    drawn_masks = _draw_masks(image, panels, state, record, request, ws,
+                              warp=placed.canvas.frame.warp if placed.canvas else None)
     recipe["endpoint_panels"] = panels
     recipe["registration_context"] = _landmark_context(state, record)
     annotate(image, recipe=recipe, caption=text)
     return LookPicture(image=image, caption=text, recipe=recipe, sections=(record.id,),
                        mode="overlay", um_per_px=um,
-                       extra={**placed.row, **({"layers": drawn_layers} if drawn_layers else {})})
+                       extra={**placed.row, **({"layers": drawn_layers} if drawn_layers else {}),
+                              **({"masks": drawn_masks} if drawn_masks else {})})
 
 
 def overlay_region_window(
@@ -628,7 +652,7 @@ def overlay_region_window(
     if len(records) != 1:
         raise LookError("BAD_REGION_PICTURE", "Region zoom needs a single-section overlay.")
     record = records[0]
-    names, version = _channels_for(ws, record, request.channels)
+    names, version = _channels_for(ws, state, record, request.channels)
     options = _options(request, names=names, version=version,
                        layers=_atlas_layers(ws, request),
                        long_edge=int(request.long_edge or picture_edge(ws)),
@@ -667,6 +691,54 @@ def _draw_layers(
     from langslice.core.plugin_layers import draw_layers
 
     return draw_layers(picture, panels, state, record, request.layers, ws=ws, warp=warp)
+
+
+def _draw_masks(
+    picture: Image.Image, panels: list[dict[str, Any]], state: StackState, record: SliceState,
+    request: LookRequest, ws: Workspace, *, warp: Any = None,
+) -> list[dict[str, Any]]:
+    """The masks *request* names, outlined on *picture* over its *panels* where their
+    weight reaches 0.5, drawn as a scalar layer by
+    :mod:`langslice.core.plugin_layers` (never a fill). One note per mask:
+    ``{"name", "kind", "stale", "drawn"}`` and, for one that is not drawn,
+    ``"reason"``. A mask this section does not hold is a note, not a refusal."""
+    if not request.masks or not panels:
+        return []
+    from langslice.core.native import unorient
+    from langslice.core.plugin_layers import _colour, _draw_scalar, _Mapper
+    from langslice.core.plugins import Layer
+
+    try:  # chunk A's module; until it lands, no mask can be read
+        section_masks = importlib.import_module("langslice.core.section_masks")
+    except ImportError:
+        raise LookError("UNKNOWN_MASK", "this build has no section masks; make one with "
+                        "set_mask") from None
+    held: dict[str, Any] = getattr(record, "masks", None) or {}
+    layout = getattr(ws, "layout", None)
+    mapper = _Mapper(state, record, panels, ws, warp)
+    notes: list[dict[str, Any]] = []
+    for index, name in enumerate(request.masks):
+        entry: dict[str, Any] = {"name": name}
+        notes.append(entry)
+        if name not in held:
+            entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
+                         "set_mask")
+            continue
+        try:
+            view = section_masks.read_mask(layout, state, record, name)
+            raster = np.asarray(unorient(
+                Image.fromarray(np.asarray(view.weights, dtype=np.float32), mode="F"),
+                record.rotation_deg, record.flip), dtype=np.float32)
+            shown = _draw_scalar(picture, mapper, Layer.scalar(
+                raster, frame="section_px", level=0.5, name=name), _colour(index))
+            entry.update(kind=view.kind, stale=bool(view.stale), drawn=True, shown=shown)
+        except KeyError:
+            entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
+                         "set_mask")
+        except Exception as exc:  # noqa: BLE001 - a picture without its outline beats none
+            logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
+            entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
+    return notes
 
 
 def _landmark_context(state: StackState, record: SliceState) -> dict[str, Any]:
@@ -758,7 +830,7 @@ def _positioning(
     shown_words: dict[str, str] = {}
 
     def look_of(record: SliceState) -> Any:
-        names, version = _channels_for(ws, record, request.channels)
+        names, version = _channels_for(ws, state, record, request.channels)
         shown_words.setdefault(record.id, channel_words(state, record, names, version)[0])
         return _options(request, names=names, version=version, layers=(),
                         long_edge=long_edge).look(state, record)
