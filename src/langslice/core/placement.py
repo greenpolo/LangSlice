@@ -335,6 +335,7 @@ def placement_pictures(
     working: Working,
     *,
     store: Any = None,
+    label_note: str = "",
 ) -> Placed:
     """One section-position pair's pictures: the physical canvas in the
     options' mode (:data:`langslice.core.canvas.VIEW_MODES`), the section
@@ -342,6 +343,8 @@ def placement_pictures(
     (identity when it has none) and, at the position it was fitted at, the
     applied deformation from *store* (unless the options' ``deformation`` is
     ``none``). *working* caches each section's working frame for the call.
+    *label_note* follows the section's name in the burned label (``look``'s
+    ``, registration 3 (not held)``).
     """
     if record.id not in working:
         section = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
@@ -357,7 +360,7 @@ def placement_pictures(
             else None)
     canvas = draw_canvas(
         ws, state, record, section, um_per_px, position, params, options,
-        label=f"{record.id}{orientation_words(record)} vs atlas {position:.2f} mm",
+        label=f"{record.id}{orientation_words(record)}{label_note} vs atlas {position:.2f} mm",
         matrix_label=transform_words(record, kind, warp=warp is not None),
         warp=warp,
     )

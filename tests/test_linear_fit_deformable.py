@@ -108,7 +108,7 @@ def test_one_fit_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     row = result["results"][0]
     assert row["written"] is True and row["steps"] == 1
     assert row["settings"] == {"smoothness_um": 50.0, "mask": "none",
-                               "fit_section": "preprocessed", "fit_atlas": "template"}
+                               "section_image": "preprocessed", "atlas_image": "template"}
     assert result["settings"]["smoothness_um"] == 50.0 and result["settings"]["mask"] == "none"
     assert row["inputs"]["atlas_image_resolved"] == "template" and row["estimated"] is None
     assert row["displacement_mm"]["max"] > 0 and "fold_fraction" in row
@@ -297,7 +297,7 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     state.slices[0].image_correction["geometry_fingerprint"] = "now"
     row = _fit(box, ctx, TRACED).rows[0]
     assert row["status"] == "ok", row
-    assert row["settings"]["fit_atlas"] == "borders"  # traced lines fit against borders
+    assert row["settings"]["atlas_image"] == "borders"  # traced lines fit against borders
     assert row["engine_settings"]["metric"] == "mean_squares"
     # The step records the trace it fitted (a packaged trace asked again reuses it).
     assert state.slices[0].deformation["steps"][-1]["trace"] == str(tmp_path / "trace")

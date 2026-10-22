@@ -51,7 +51,7 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
     (row,) = first.rows
     assert row["status"] == "ok" and row["written"]
     assert row["settings"] == {"smoothness_um": 80.0, "mask": "none",
-                               "fit_section": "preprocessed", "fit_atlas": "nissl"}
+                               "section_image": "preprocessed", "atlas_image": "nissl"}
     # The reply names what the fit read; the synthetic atlas has no Nissl, so
     # "nissl" is its template. FireANTs sorts nothing by itself any more.
     assert first.settings == {

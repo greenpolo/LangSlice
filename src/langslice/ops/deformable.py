@@ -293,7 +293,7 @@ def fit_deformable(
         previous = current
         previous_key = None if current is None else str((record.deformation or {}).get("key"))
         own = exclusions(record, tuple(restrict_to))
-        failure = {"id": record.id, "status": "error", "settings": choice.echo()}
+        failure = {"id": record.id, "status": "error", "settings": choice.tool_settings()}
         regions = traced_regions(record, *own) if traced_choice else own
         try:
             weights = ops_masks.section_weights(job, record, choice.mask)
@@ -377,7 +377,7 @@ def _apply(
         fit = jobs[index]
         outcome = fit.result
         block = blocks.get(index)
-        row["settings"] = fit.choice.echo()
+        row["settings"] = fit.choice.tool_settings()
         if not isinstance(outcome, deformation.DeformableRecord):
             row.update(status="error", error="FIT_FAILED", message=failure_message(
                 str(getattr(outcome, "error", "no result")), job.engine_log,
