@@ -116,7 +116,7 @@ def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
     _, _, box = _synthetic(tmp_path, atlas)
     look = _tool(box, "look")
     assert look("atlas") == {"status": "error", "error": "NO_POSITIONS",
-                             "message": "atlas mode needs positions_mm or one section"}
+                             "message": "atlas mode needs positions_mm or sections"}
     assert look("sideways")["error"] == "UNKNOWN_MODE"
     nope = look("section", sections=["nope.png", "0"])
     assert nope["error"] == "UNKNOWN_SLICE_IDS" and nope["unknown"] == ["nope.png", "0"]
@@ -127,6 +127,55 @@ def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
     assert look("section", images=["DAPI"])["error"] == "UNKNOWN_IMAGE"
     assert look("overlay", warp="bent")["error"] == "BAD_WARP"
     assert box.job.views.records() == []
+
+
+def test_atlas_mode_draws_each_section_at_its_own_plane(tmp_path: Path, atlas):
+    state, _, box = _synthetic(tmp_path, atlas)
+    state.by_id("s1.png").cutting_angles_deg = {"pitch": 2.0, "yaw": 0.0}
+    look = _tool(box, "look")
+    pictures = look("atlas", sections=["s0.png", "s1.png"])["pictures"]
+    assert [entry["caption"].split(";")[0] for entry in pictures] == [
+        "atlas at 0.05 mm (s0.png's cutting angles)",
+        "atlas at 0.15 mm pitch 2.0 yaw 0.0 (s1.png's cutting angles)"]
+    both = look("atlas", sections=["s0.png"], positions_mm=[0.3])
+    assert both["error"] == "BAD_ARGS"
+    assert both["message"] == ("Name sections or give positions_mm, not both: a section's "
+                               "atlas picture is at its own plane.")
+
+
+def test_a_sheet_tiles_the_pictures_and_zoom_reads_a_tile(tmp_path: Path, atlas):
+    """With sheet, every picture is saved and numbered as without it, and the
+    reply attaches one picture: the sheet, its tiles' numbers and boxes in its
+    recipe; a box on the sheet is a zoom of the tile's own picture."""
+    state, ctx, _box = _synthetic(tmp_path, atlas, n=4)
+    box = build_tools(state, ctx, ctx.spec, scripting=True, level="auto")
+    look = _tool(box, "look")
+    assert "sheet" not in _tool(_box, "look").__signature__.parameters  # type: ignore[attr-defined]
+    result = look("overlay", sheet=True)
+    assert result["status"] == "ok"
+    (sheet,) = result["pictures"]
+    tiled = result["tiled"]
+    assert len(tiled) == 4 and all(entry["sheet"] == sheet["id"] for entry in tiled)
+    assert [tile["picture"] for tile in sheet["tiles"]] == [entry["id"] for entry in tiled]
+    assert sheet["caption"].startswith("sheet of 4 overlay pictures")
+    assert f"picture {tiled[0]['id']}: s0.png overlay" in sheet["caption"]
+    (image,) = result[TOOL_MEDIA_PARTS_KEY]
+    assert max(image.size) <= box.max_view_edge + 40  # its caption band below it
+    saved = box.job.views.lookup(sheet["id"])
+    assert saved is not None and saved.mode == "sheet" and saved.recipe["renderer"] == "sheet"
+    for entry in tiled:  # each tile is a picture of its own
+        held = box.job.views.lookup(entry["id"])
+        assert held is not None and held.mode == "overlay"
+    x0, y0, x1, y1 = sheet["tiles"][1]["box"]
+    zoomed = _tool(box, "zoom")([x0 + 2, y0 + 2, (x0 + x1) / 2, (y0 + y1) / 2],
+                                sheet["id"])
+    assert zoomed["status"] == "ok" and zoomed["sheet"] == sheet["id"]
+    assert zoomed["picture"] == tiled[1]["id"] and zoomed["redrawn"] is True
+    assert zoomed["box"][0] >= 0 and zoomed["box"][2] > zoomed["box"][0]
+    outside = _tool(box, "zoom")([0, 0, 2, 2], sheet["id"])
+    assert outside["error"] == "EMPTY_BOX"
+    region = _tool(box, "zoom")([], sheet["id"], region="CTX")
+    assert region["error"] == "BAD_REGION_PICTURE"
 
 
 # --- zoom -------------------------------------------------------------------------

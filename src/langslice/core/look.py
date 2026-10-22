@@ -43,7 +43,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -175,6 +175,19 @@ class LookRequest:
     #: Ontology depth of the regions whose boundaries are drawn
     #: (:func:`langslice.core.atlas.levels.labels_at`).
     depth: int = OVERLAY_DEPTH
+    #: Section and overlay: the registrations the sections are drawn under,
+    #: ``(section, number, held)`` each (the state given carries them; the
+    #: caption says which, and whether the section holds it); empty: the
+    #: registration each section holds.
+    registrations: tuple[tuple[str, int, bool], ...] = ()
+
+    def registration_of(self, section: str) -> tuple[int, bool] | None:
+        """``(number, held)`` of the registration *section* is drawn under,
+        when the request names one."""
+        for name, number, held in self.registrations:
+            if name == section:
+                return number, held
+        return None
 
     def args(self) -> dict[str, Any]:
         """The request as a recipe's ``args`` (JSON)."""
@@ -189,6 +202,8 @@ class LookRequest:
             **({"region_only": True} if self.region_only else {}),
             **({"layers": list(self.layers)} if self.layers else {}),
             **({"masks": list(self.masks)} if self.masks else {}),
+            **({"registrations": [[name, number, held] for name, number, held
+                                  in self.registrations]} if self.registrations else {}),
         }
 
     @classmethod
@@ -212,6 +227,8 @@ class LookRequest:
             layers=tuple(str(v) for v in args.get("layers") or ()),
             masks=tuple(str(v) for v in args.get("masks") or ()),
             depth=int(args["depth"]),
+            registrations=tuple((str(name), int(number), bool(held)) for name, number, held
+                                in args.get("registrations") or ()),
         )
 
 
@@ -288,14 +305,30 @@ def differs_since(state: StackState, held: dict[str, Any]) -> bool:
     return snapshot(state, ids, view_angles="view_angles" in held) != _plain(held)
 
 
-def changed_since(state: StackState, held: dict[str, Any]) -> bool:
+#: The section fields a registration is (:mod:`langslice.job.registrations`):
+#: a picture of a registration the section did not hold differs in them by
+#: design (:func:`changed_since`'s *besides*).
+REGISTRATION_FIELDS: tuple[str, ...] = ("flip", "rotation_deg", "transform", "deformation")
+
+
+def changed_since(state: StackState, held: dict[str, Any], *,
+                  besides: Collection[str] = ()) -> bool:
     """Whether *state* differs from the snapshot *held* in anything the
     picture depends on (a section gone included). Landmark markers and
     damage marks are not part of it (:data:`ANNOTATION_FIELDS`): editing pairs
-    or marking damage changes nothing a picture shows of the stack."""
+    or marking damage changes nothing a picture shows of the stack. The
+    sections of *besides* were drawn under a registration they did not hold:
+    their :data:`REGISTRATION_FIELDS` are not compared."""
     ids = list((held.get("sections") or {}).keys())
-    now = snapshot(state, ids, view_angles="view_angles" in held)
-    return _without_annotations(now) != _without_annotations(_plain(held))
+    now = _without_annotations(snapshot(state, ids, view_angles="view_angles" in held))
+    then = _without_annotations(_plain(held))
+    for section_id in besides:
+        for data in (now, then):
+            fields = (data.get("sections") or {}).get(section_id)
+            if isinstance(fields, dict):
+                for name in REGISTRATION_FIELDS:
+                    fields.pop(name, None)
+    return now != then
 
 
 def restored(state: StackState, held: dict[str, Any]) -> StackState:
@@ -423,6 +456,16 @@ def _orientation(record: SliceState) -> str:
     return f" ({', '.join(turns)})" if turns else ""
 
 
+def _registration_words(request: LookRequest, record: SliceState) -> str:
+    """``, registration 3 (not held)``: the registration a picture draws the
+    section under, when the request names one; empty otherwise."""
+    named = request.registration_of(record.id)
+    if named is None:
+        return ""
+    number, held = named
+    return f", registration {number} ({'held' if held else 'not held'})"
+
+
 def _where(record: SliceState) -> str:
     if record.position_mm is None:
         return "no position"
@@ -506,9 +549,10 @@ def _section_picture(
                         (request.zoom[3] - request.zoom[1]) * base[1]) / max(picture.size)
                     if request.zoom else 1.0)
     short, full = image_words(ws, record, names, image)
+    registration = _registration_words(request, record)
     label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
-             f"{_orientation(record)}  [{short}]{enlarged}")
-    text = (f"{record.id} section{_orientation(record)}, "
+             f"{_orientation(record)}{registration}  [{short}]{enlarged}")
+    text = (f"{record.id} section{_orientation(record)}{registration}, "
             f"{_where(record)}; {um:.1f} um/px{UNCALIBRATED if source == 'uncalibrated' else ''}; "
             f"{full}" + (f";{FROM_FILE}" if enlarged.startswith(FROM_FILE) else ""))
     from langslice.core.landmarks import draw_landmarks
@@ -581,7 +625,7 @@ def _overlay_picture(
             if placed.canvas is not None and placed.canvas.panels else None)
     calibration = placed.row.get("calibration") or {}
     uncalibrated = UNCALIBRATED if calibration.get("source") == "uncalibrated" else ""
-    text = (f"{record.id} overlay{_orientation(record)}, "
+    text = (f"{record.id} overlay{_orientation(record)}{_registration_words(request, record)}, "
             f"{_where(record)}; "
             f"{placed.row.get('transform_words') or 'identity transform'}, "
             f"{warp_words}; {um:.1f} um/px{uncalibrated}; {full}; atlas {atlas_words}"
@@ -905,17 +949,21 @@ def look(
     if request.mode == "atlas":
         if request.sections:
             records = _records(state, request.sections)
-            if len(records) != 1:
-                raise LookError("BAD_ARGS", "Atlas landmark context needs exactly one section")
-            record = records[0]
-            if record.position_mm is None:
-                raise LookError("NO_POSITION", f"{record.id} has no atlas plane")
-            if request.positions_mm and request.positions_mm != (record.position_mm,):
-                raise LookError("BAD_ARGS", "Atlas section context uses that section's own plane")
-            request = replace(request, positions_mm=(float(record.position_mm),))
-            plane = record.angles
+            for record in records:
+                if record.position_mm is None:
+                    raise LookError("NO_POSITION", f"{record.id} has no position to draw its "
+                                    "atlas plane at")
+            own = tuple(float(record.position_mm or 0.0) for record in records)
+            if request.positions_mm and tuple(request.positions_mm) != own:
+                raise LookError("BAD_ARGS", "Name sections or give positions_mm, not both: a "
+                                "section's atlas picture is at its own plane.")
+            return [_atlas_picture(ws, state, float(record.position_mm or 0.0),
+                                   replace(request, sections=(record.id,),
+                                           positions_mm=(float(record.position_mm or 0.0),)),
+                                   long_edge, base, base_um, record.angles)
+                    for record in records]
         if not request.positions_mm:
-            raise LookError("NO_POSITIONS", "atlas mode needs positions_mm or one section")
+            raise LookError("NO_POSITIONS", "atlas mode needs positions_mm or sections")
         return [_atlas_picture(ws, state, float(mm), request, long_edge, base, base_um, plane)
                 for mm in request.positions_mm]
     records = _records(state, request.sections)
@@ -938,7 +986,8 @@ def redraw(
     request = replace(LookRequest.from_args(recipe["args"]),
                       zoom=tuple(float(v) for v in window))
     held = recipe.get("state") or {}
-    stale = bool(held) and changed_since(state, held)
+    named = {name for name, _number, was_held in request.registrations if not was_held}
+    stale = bool(held) and changed_since(state, held, besides=named)
     # Landmark markers come back as they were even when nothing else changed.
     drawn = restored(state, held) if bool(held) and differs_since(state, held) else state
     angles = held.get("view_angles")

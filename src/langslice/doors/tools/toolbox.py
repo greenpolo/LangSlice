@@ -372,6 +372,10 @@ class ToolBox:
     #: What every tool body of the box shares (the job, the workspace, the
     #: picture level, the image model): a script's ``job.context`` sits on it.
     door: Door | None = None
+    #: The declarations' variant the tools were declared in
+    #: (:class:`langslice.doors.declarations.Variant`; None before
+    #: :func:`build_tools` sets it): what ``TOOLS.md`` is written from.
+    variant: Any = None
 
     @property
     def names(self) -> list[str]:
@@ -524,6 +528,7 @@ def build_tools(
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on,
                          door=door, prompt=prompt, uncapped=scripting,
                          brain_scale=ctx.brain_scale)
+    box.variant = variant
     if spec.plugins:
         from langslice.doors.plugins import provenance, runtime
 

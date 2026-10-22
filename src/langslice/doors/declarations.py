@@ -58,6 +58,7 @@ from langslice.doors.tools.arguments import (
     LandmarkPair,
     PicturePoint,
     SectionPosition,
+    SectionRegistration,
     SectionTransform,
     SectionTransformNoFlip,
     SectionTransformNoOrientation,
@@ -94,6 +95,8 @@ def look(
     layers: list[str] = [],
     depth: int = OVERLAY_DEPTH,
     masks: list[str] = [],
+    registrations: dict[str, int] = {},
+    sheet: bool = False,
 ) -> dict[str, Any]:
     """Draw pictures of sections and the atlas. Writes nothing.
 
@@ -109,8 +112,9 @@ def look(
     Args:
         mode: [[?look:section "section": each section alone, as oriented, the whole
             image. ]][[?look:atlas "atlas": the atlas plane alone at each of positions_mm,
-            at the stack's cutting angles, or with one section at that
-            section's own plane (positions_mm may be empty). ]]~
+            at the stack's cutting angles; or, for each section named, at that
+            section's own position and cutting angles (positions_mm then
+            empty). ]]~
             [[?look:overlay "overlay": each section under its
             current registration, with the atlas borders and any other
             atlas_layers on it. ]][[?look:positioning "positioning": the sections and the atlas
@@ -156,6 +160,20 @@ def look(
         masks: [[?make_mask Names of masks made with make_mask, outlined where
             their weight is 0.5 on the sections drawn, on the [[#look:section=\"section\"||~
             look:overlay=\"overlay\"]] pictures. Empty draws none.]]
+        registrations: {filename: number}: on the [[#look:section=\"section\"||~
+            look:overlay=\"overlay\"]] pictures, each section named is drawn
+            under that earlier registration of its own, by the number its status
+            row gives[[?restore_registration  (restore_registration lists them)]].
+            Nothing is written; the caption says which registration it is and
+            whether the section holds it. With sections empty, only these
+            sections are drawn. Empty draws the registration each section
+            holds.
+        sheet: True also tiles the pictures into sheets of up to 16, each
+            tile one picture under its number, a sheet at most as large as
+            the largest picture you take. The sheets are what this call
+            returns; every picture is saved and numbered as without it[[?zoom ,
+            and zoom takes a box on a sheet and draws that box of the tile's
+            own picture]].
 
     Returns:
         Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -336,8 +354,11 @@ def status() -> dict[str, Any]:
 
     Returns:
         One row per section in stack order: filename, position, distance
-        to the next placed section, flip and quarter turn, transform,
-        damaged regions and damage note, deformation steps[[?make_mask , masks
+        to the next placed section, flip and quarter turn, transform (kind,
+        rotation_deg, scale_x, scale_y, shear, translate_x_mm, translate_y_mm,
+        mirrored), damaged regions and damage note, deformation (the method
+        that made it, every step's method, and the settings it was made
+        with), the number of the registration it holds[[?make_mask , masks
         (name, source, and whether it was made at an earlier registration)]]. Also the
         cutting angles, the interval breaks, the raw channels and the section
         images made (each with its recipe, or a script's note, and the
@@ -347,7 +368,7 @@ def status() -> dict[str, Any]:
     ...
 
 
-def list_files(path: str = ".", pattern: str = "") -> dict[str, Any]:
+def list_files(path: str = ".", glob: str = "") -> dict[str, Any]:
     """List the files and folders of the job folder. Writes nothing.
 
     The job folder keeps every picture you were shown, indexed in
@@ -357,8 +378,9 @@ def list_files(path: str = ".", pattern: str = "") -> dict[str, Any]:
     Args:
         path: A folder inside the job folder, relative to it; "." is the job
             folder itself.
-        pattern: A glob (e.g. "*.json", "views/*"): every file below path
-            whose name or path matches. Empty lists path itself.
+        glob: Every file below path whose name or path matches this glob
+            ("*.json", "views/*"; "*" is every file below path). Empty lists
+            path itself.
 
     Returns:
         The entries, folders first, each with its kind and size, at most 200,
@@ -840,29 +862,37 @@ def redo(steps: int = 1) -> dict[str, Any]:
     ...
 
 
-def restore_registration(section: str, registration: int = 0,
+def restore_registration(section: str = "", sections: list[SectionRegistration] = [],
                          view: bool = True) -> dict[str, Any]:
-    """Put back a registration a section held before: its orientation, transform and deformation.
+    """Put back registrations sections held before: their orientation, transform and deformation.
 
     Each registration a section holds gets a number, kept whatever is
     written after it: the `registration` of its status row and of the reply
     to the write that left it. Undo takes back the job's last write; this
-    returns one section to any earlier registration, such as a fit made
-    before another method's, and leaves the other sections as they are. One
-    undoable write. A deformation fitted with the section at another position
-    or other cutting angles is refused until the section is back there.
+    returns sections to any earlier registrations, such as fits made before
+    another method's, and leaves the other sections as they are. One
+    undoable write for the call. A deformation fitted with the section at
+    another position or other cutting angles is refused until the section is
+    back there.[[?look:section|look:overlay  look draws an earlier registration
+    without writing it.]]
 
     Args:
-        section: Filename (the extension may be left off).
-        registration: The number to put back; 0 lists the section's
-            registrations (number, the tool that made it, when) and writes
-            nothing.
-        view: Return a picture of the section under the registration put
-            back.
+        section: Filename (the extension may be left off) of a section whose
+            registrations to list; writes nothing. Give section or sections.
+        sections: The registrations to put back: {id, registration} per
+            section, id a filename and registration a number from the list.
+        view: Return a picture of each section put back, under the
+            registration put back.
 
     Returns:
-        The registration the section holds now and the one it replaced, its
-        row, and the picture; or the list.
+        With section, its registrations: per number the tool that made it and
+        when, its transform (kind, rotation_deg, scale_x, scale_y, shear,
+        translate_x_mm, translate_y_mm), its deformation (the method that made
+        it, every step's method, and the settings it was made with), the
+        numbers of the pictures saved with the write that left it, and which
+        one the section holds. With sections, per section the registration
+        it holds now and the one it replaced, or why it was not put back;
+        the rows of the sections written, and the pictures.
     """
     ...
 
@@ -890,7 +920,7 @@ def submit(
 # --- for scripts only -----------------------------------------------------------------
 
 
-def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[str, Any]:
+def export_maps(sections: list[str] = [], full_resolution: bool = False) -> dict[str, Any]:
     """Write each placed section's maps and the stack's exports, from the job as it stands.
 
     Per section (sections/<name>/): coords.tif (atlas micrometres per
@@ -903,7 +933,7 @@ def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[s
     state changes.
 
     Args:
-        slices: Filenames (the extension may be left off); empty is every
+        sections: Filenames (the extension may be left off); empty is every
             section.
         full_resolution: Write the maps on the image file's own pixels
             instead of its working copy (what every picture[[?zoom  but a zoom]] is
@@ -1154,7 +1184,15 @@ _UNCAPPED_DOCS: dict[str, tuple[tuple[str, str], ...]] = {
         "with its number and caption. Pictures past 4 are listed under\n"
         "`not_shown` with the call that draws them.",
         "Every picture drawn, in the order `pictures` lists them, each with its\n"
-        "number and caption."),),
+        "number and caption. With sheet, `pictures` lists the sheets (each\n"
+        "with its number, caption and its tiles' pictures and boxes) and\n"
+        "`tiled` the pictures they tile."),),
+    "zoom": ((
+        "picture: The picture's number; 0 is the newest picture that is not\n"
+        "    itself a zoom.",
+        "picture: The picture's number; 0 is the newest picture that is not\n"
+        "    itself a zoom. A box on a sheet (look's sheet) falls on one of its\n"
+        "    tiles, and that tile's own picture is zoomed."),),
     "make_image": ((
         "up to 4 of the sections (spread over the stack when none are named)",
         "each of the sections (the whole stack when none are named)"),),
@@ -1320,7 +1358,9 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
         if not modes & {"overlay", "atlas", "positioning"}:  # an atlas to layer
             dropped.append("atlas_layers")
     if name == "look" and not set(options_on(variant.off, "look")) & {"section", "overlay"}:
-        dropped.append("layers")  # they are drawn on those two modes only
+        dropped += ["layers", "registrations"]  # drawn on those two modes only
+    if name == "look" and not variant.uncapped:
+        dropped.append("sheet")  # a door that caps a call's pictures sends them as they are
     if name == "grep_atlas" and is_off(variant.off, "grep_atlas:points"):
         dropped.append("points")
     if name == "make_image" and is_off(variant.off, "look:section"):

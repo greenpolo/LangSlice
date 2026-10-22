@@ -1,11 +1,13 @@
-"""Every registration a section holds is numbered, and one section goes back to one.
+"""Every registration a section holds is numbered, and sections go back to one.
 
 A section's registration is its orientation, transform and deformation
 (``langslice.job.registrations``). Each write that leaves a new one lists it
-under the next number (replies and status rows name it); ``restore_registration``
-puts an earlier one back on that section alone, as one undo step, refusing a
-frozen property, an unknown number and a deformation fitted at another
-position.
+under the next number (replies and status rows name it); the list names each
+one's transform, deformation method and settings and the pictures its write
+saved; ``look`` draws an earlier one without writing it; ``restore_registration``
+puts earlier ones back on the sections named, as one undo step, refusing (per
+section) a frozen property, an unknown number and a deformation fitted at
+another position.
 """
 
 from __future__ import annotations
@@ -98,20 +100,30 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
     assert listed["held"] == 3
     assert [(entry["registration"], entry["by"]) for entry in listed["registrations"]] == [
         (1, "interactive_transform"), (2, "fireants_syn"), (3, "fireants_syn")]
-    assert listed["registrations"][1]["deformation_steps"] == 1
-    assert listed["registrations"][2]["held"] is True
+    second, third = listed["registrations"][1], listed["registrations"][2]
+    assert second["deformation"]["method"] == "fireants_syn"
+    assert second["deformation"]["steps"] == ["fireants_syn"]
+    assert second["deformation"]["settings"]["smoothness_um"] == 80.0
+    assert third["deformation"]["settings"]["smoothness_um"] == 40.0
+    assert third["deformation"]["settings"]["metric"] == "mutual_information"
+    assert second["transform"]["kind"] == "interactive"
+    assert second["transform"]["scale_x"] == pytest.approx(1.0)
+    assert third["held"] is True
+    assert "pictures" not in second  # its write drew none (view false)
 
     depth = len(job.job.undo_stack)
-    restored = job.restore_registration(section=ID0, registration=2)
-    assert restored["status"] == "ok" and restored["written"] is True
-    assert restored["registration"] == 2 and restored["replaced"] == 3
+    restored = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
+    assert restored["status"] == "ok"
+    row = restored["results"][0]
+    assert row["written"] is True and row["registration"] == 2 and row["replaced"] == 3
     assert restored["changed"][0]["registration"] == 2
     assert job.state.resolve(ID0).deformation["key"] == fitted
     assert job.state.resolve(ID1).transform["physical"]["rotation_deg"] == pytest.approx(3.0)
     assert len(job.job.undo_stack) == depth + 1
     assert rows(job)[ID0]["registration"] == 2
     # The same one again writes nothing; undo takes the restore back.
-    assert job.restore_registration(section=ID0, registration=2)["written"] is False
+    again = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
+    assert again["results"][0]["written"] is False
     job.undo()
     assert rows(job)[ID0]["registration"] == 3
     # The list on disk is the job's, one line per registration.
@@ -123,16 +135,75 @@ def test_writes_number_registrations_and_one_section_goes_back(capsys, images):
 def test_a_transform_alone_goes_back_and_the_numbers_are_refused_with_a_fix(capsys, images):
     job = langslice.open_job(images)
     job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1}], view=False)
-    unknown = job.restore_registration(section=ID0, registration=9)
-    assert unknown["error"] == "UNKNOWN_REGISTRATION" and unknown["registrations"] == [1, 2]
+    unknown = job.restore_registration(sections=[{"id": ID0, "registration": 9}])
+    assert unknown["error"] == "UNKNOWN_REGISTRATION"
+    assert unknown["results"][0]["registrations"] == [1, 2]
     assert "list" in unknown["message"]
-    back = job.restore_registration(section=ID0, registration=1)
-    assert back["written"] is True
+    back = job.restore_registration(sections=[{"id": ID0, "registration": 1}])
+    assert back["results"][0]["written"] is True
     assert job.state.resolve(ID0).transform["physical"]["scale_x"] == pytest.approx(1.0)
-    code, envelope = cli(capsys, str(images), "restore_registration", "--section", ID0,
-                         "--registration", "9")
+    code, envelope = cli(capsys, str(images), "restore_registration", "--sections",
+                         json.dumps([{"id": ID0, "registration": 9}]))
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_REGISTRATION"
     assert "restore_registration" in envelope["error"]["fix"]
+    both = job.restore_registration(section=ID0, sections=[{"id": ID0, "registration": 1}])
+    assert both["error"] == "BAD_ARGS"
+    job.close()
+
+
+def test_several_sections_go_back_in_one_step_and_a_refused_one_is_its_row(capsys, images):
+    job = langslice.open_job(images)
+    job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1},
+                                        {"id": ID1, **IDENTITY, "scale_x": 1.2}], view=False)
+    depth = len(job.job.undo_stack)
+    done = job.restore_registration(sections=[{"id": ID0, "registration": 1},
+                                              {"id": ID1, "registration": 7}], view=False)
+    assert done["status"] == "ok"
+    assert [row["status"] for row in done["results"]] == ["ok", "error"]
+    assert done["results"][1]["error"] == "UNKNOWN_REGISTRATION"
+    assert len(job.job.undo_stack) == depth + 1
+    assert job.state.resolve(ID0).transform["physical"]["scale_x"] == pytest.approx(1.0)
+    assert job.state.resolve(ID1).transform["physical"]["scale_x"] == pytest.approx(1.2)
+    both = job.restore_registration(sections=[{"id": ID0, "registration": 2},
+                                              {"id": ID1, "registration": 1}], view=False)
+    assert all(row["written"] for row in both["results"])
+    assert len(job.job.undo_stack) == depth + 2
+    job.undo()
+    assert job.state.resolve(ID0).transform["physical"]["scale_x"] == pytest.approx(1.0)
+    assert job.state.resolve(ID1).transform["physical"]["scale_x"] == pytest.approx(1.2)
+    job.close()
+
+
+def test_look_draws_an_earlier_registration_and_writes_nothing(capsys, images):
+    job = langslice.open_job(images)
+    turned = job.interactive_transform(
+        sections=[{"id": ID0, **IDENTITY, "rotation_deg": 20.0}])          # registration 2
+    drawn = turned["pictures"][0]["id"]
+    depth = len(job.job.undo_stack)
+    state = json.dumps(job.job.state.to_dict(), sort_keys=True, default=str)
+    looked = job.look(mode="overlay", registrations={ID0: 1})
+    assert looked["status"] == "ok" and len(looked["pictures"]) == 1
+    caption = looked["pictures"][0]["caption"]
+    assert "registration 1 (not held)" in caption
+    assert len(job.job.undo_stack) == depth
+    assert json.dumps(job.job.state.to_dict(), sort_keys=True, default=str) == state
+    held = job.look(mode="overlay", sections=[ID0], registrations={ID0: 2})
+    assert "registration 2 (held)" in held["pictures"][0]["caption"]
+    # The picture index records which registration each picture shows, and the
+    # list names the pictures the write that left a registration saved.
+    record = job.job.views.lookup(looked["pictures"][0]["id"])
+    assert record is not None and record.registrations == {ID0: 1}
+    listed = job.restore_registration(section=ID0)["registrations"]
+    assert listed[1]["pictures"] == [drawn] and "pictures" not in listed[0]
+    # A zoom of it draws registration 1 again and is not stale for it.
+    zoomed = job.zoom(box=[10, 10, 200, 200], picture=looked["pictures"][0]["id"])
+    assert "stale" not in zoomed
+    refused = job.look(mode="overlay", registrations={ID0: 9})
+    assert refused["error"] == "UNKNOWN_REGISTRATION"
+    atlas = job.look(mode="atlas", registrations={ID0: 1})
+    assert atlas["error"] == "BAD_ARGS"
+    outside = job.look(mode="overlay", sections=[ID1], registrations={ID0: 1})
+    assert outside["error"] == "BAD_ARGS"
     job.close()
 
 
@@ -142,15 +213,18 @@ def test_a_frozen_property_and_a_deformation_fitted_elsewhere_are_refused(capsys
     job.fireants_syn(sections=[ID0], view=False)                      # registration 2
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.12}], view=False)
     assert job.state.resolve(ID0).deformation is None                # made stale
-    elsewhere = job.restore_registration(section=ID0, registration=2)
+    elsewhere = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
     assert elsewhere["error"] == "REGISTRATION_ELSEWHERE"
     assert "0.1 mm" in elsewhere["message"] and "0.12 mm" in elsewhere["message"]
+    drawn = job.look(mode="overlay", registrations={ID0: 2})
+    assert drawn["error"] == "REGISTRATION_ELSEWHERE"
     listed = job.restore_registration(section=ID0)["registrations"]
     assert "not_here" in listed[1] and "not_here" not in listed[0]
     job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
     job.job.spec = dataclasses.replace(job.job.spec, frozen={ID0: ["deformation"]})
-    frozen = job.restore_registration(section=ID0, registration=2)
-    assert frozen["error"] == "FROZEN" and frozen["properties"] == ["deformation"]
+    frozen = job.restore_registration(sections=[{"id": ID0, "registration": 2}])
+    assert frozen["error"] == "FROZEN"
+    assert frozen["results"][0]["properties"] == ["deformation"]
     assert job.state.resolve(ID0).deformation is None
     job.close()
 
@@ -170,7 +244,8 @@ def test_a_registration_held_before_the_list_is_listed_when_it_is_replaced(capsy
     entries = [json.loads(line) for line in store.read_text().splitlines()]
     assert [(entry["id"], entry["by"], entry["at"] is None) for entry in entries] == [
         (1, "fireants_syn", True), (2, "fireants_syn", False)]
-    assert job.restore_registration(section=ID0, registration=1)["written"] is True
+    back = job.restore_registration(sections=[{"id": ID0, "registration": 1}])
+    assert back["results"][0]["written"] is True
     job.close()
 
 

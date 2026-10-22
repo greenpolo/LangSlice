@@ -22,6 +22,60 @@ def mask_rows(state: StackState, record: SliceState) -> list[dict[str, Any]]:
     return rows(state, record)
 
 
+#: Step fields that say how a step was made, not with which settings.
+_STEP_FACTS = ("method", "start", "note", "trace", "settings", "include", "exclude")
+#: A native step's stored setting names as the tools name them.
+_STEP_NAMES = {"fit_section": "section_image", "fit_atlas": "atlas_image"}
+
+
+def step_method(step: dict[str, Any]) -> str:
+    """The method a deformation step names (a step saved before steps named
+    one: ``trace_borders`` for a traced fit, else ``fireants_syn``)."""
+    if step.get("method"):
+        return str(step["method"])
+    return "trace_borders" if step.get("trace") else "fireants_syn"
+
+
+def step_settings(step: dict[str, Any]) -> dict[str, Any]:
+    """The settings a deformation step was made with, by the tools' names: a
+    plugin's or a script's ``settings`` as it gave them, a native fit's own
+    (``section_image``, ``atlas_image``, ``mask``, ``smoothness_um``, ...,
+    and ``restrict_to`` when it fitted by regions)."""
+    if isinstance(step.get("settings"), dict):
+        return dict(step["settings"])
+    out = {_STEP_NAMES.get(key, key): value for key, value in step.items()
+           if key not in _STEP_FACTS}
+    if step.get("include"):
+        out["restrict_to"] = list(step["include"])
+    return out
+
+
+def deformation_entry(deformation: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What a status row and a registration listing say of a deformation:
+    ``method`` (its last step's), ``steps`` (every step's method, first
+    first) and ``settings`` (the last step's, :func:`step_settings`); None
+    without one."""
+    if not deformation:
+        return None
+    steps = [step for step in deformation.get("steps") or [] if isinstance(step, dict)]
+    if not steps:
+        return {"method": "unknown", "steps": [], "settings": {}}
+    return {"method": step_method(steps[-1]), "steps": [step_method(s) for s in steps],
+            "settings": step_settings(steps[-1])}
+
+
+def transform_entry(transform: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What a status row and a registration listing say of a transform: its
+    ``kind``, the knobs ``interactive_transform`` takes (``rotation_deg``,
+    ``scale_x``, ``scale_y``, ``shear``, ``translate_x_mm``, ``translate_y_mm``
+    and their ``pivot``) and ``mirrored``; None without one."""
+    if not transform:
+        return None
+    knobs = transform.get("physical") or {}
+    return {"kind": transform.get("kind"), **knobs,
+            **({"mirrored": transform["mirrored"]} if "mirrored" in transform else {})}
+
+
 def angles_dict(record: SliceState) -> dict[str, float]:
     """The section's ``{"pitch", "yaw"}`` in degrees, as floats."""
     pitch, yaw = record.angles
@@ -40,9 +94,12 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
 
     ``delta_to_next_mm`` is the SIGNED distance to the next section in
     corrected order that carries a position, and null when this section has
-    none or no placed section follows it. ``transform_mirrored`` comes off
+    none or no placed section follows it. ``mirrored`` (in ``transform``) comes off
     the recorded transform. Data only: no comparison against the nominal
-    interval, no verdict. ``damaged_regions``
+    interval, no verdict. ``transform`` is the section's transform
+    (:func:`transform_entry`: its kind and knobs) and ``deformation`` the
+    deformation it holds (:func:`deformation_entry`: its method, its steps'
+    methods and its settings). ``damaged_regions``
     are the section's marked regions (``damaged``: it has some); a
     ``damage_note`` may stand alone (a host's note). When the sections'
     cutting angles differ (a registration supplied per section), each row
@@ -72,7 +129,6 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
             )
             if following is not None:
                 delta = round(following - here, 3)
-        transform = record.transform or {}
         rows.append(
             {
                 "id": record.id,
@@ -84,9 +140,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "damaged": record.damaged,
                 "damaged_regions": list(record.damaged_regions),
                 "damage_note": record.damage_note,
-                "transform": transform.get("kind"),
-                "transform_mirrored": transform.get("mirrored"),
-                **({"deformation_steps": len(record.deformation.get("steps") or [])}
+                "transform": transform_entry(record.transform),
+                **({"deformation": deformation_entry(record.deformation)}
                    if record.deformation else {}),
                 **({"landmarks": counts} if (counts := landmark_counts(state, record)) else {}),
                 **({"layers": [{"name": ref["name"], "kind": ref["kind"],
@@ -106,7 +161,7 @@ ROW_FIELDS: tuple[str, ...] = (
     "id", "position_mm", "delta_to_next_mm", "flip",
     "rotation_deg",
     "cutting_angles_deg", "damaged", "damaged_regions", "damage_note", "transform",
-    "transform_mirrored", "deformation_steps", "landmarks", "caveats",
+    "deformation", "landmarks", "caveats",
     "frozen", "damage_by_user", "registration",
 )
 #: What :func:`uniform_rows` fills in where a row has no value (else null):
@@ -173,7 +228,7 @@ def status_text(state: StackState) -> str:
     """The status rows as one line per section, for a text message."""
     lines = [
         "filename  position_mm  delta_to_next_mm  flags  "
-        "transform(kind, mirrored)"
+        "transform(kind, mirrored)  deformation(methods)"
     ]
     for row in status_rows(state):
         flags: list[str] = []
@@ -193,12 +248,13 @@ def status_text(state: StackState) -> str:
             "-" if row["delta_to_next_mm"] is None else f"{row['delta_to_next_mm']:.3f}"
         )
         transform = ""
-        if row["transform"]:
-            transform = f"  transform={row['transform']}"
-            if row["transform_mirrored"] is not None:
-                transform += f" mirrored={bool(row['transform_mirrored'])}"
-        if row.get("deformation_steps"):
-            transform += f"  deformation={row['deformation_steps']} step(s)"
+        held = row["transform"]
+        if held:
+            transform = f"  transform={held.get('kind')}"
+            if held.get("mirrored") is not None:
+                transform += f" mirrored={bool(held['mirrored'])}"
+        if row.get("deformation"):
+            transform += f"  deformation={' + '.join(row['deformation']['steps'])}"
         if "cutting_angles_deg" in row:
             angles = row["cutting_angles_deg"]
             transform += f"  angles=pitch {angles['pitch']:.2f} yaw {angles['yaw']:.2f}"

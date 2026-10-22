@@ -155,7 +155,9 @@ def test_one_section_is_written_shown_and_undone(tmp_path: Path):
     assert "s0.png overlay" in picture["caption"]
     assert "interactive transform" in picture["caption"]
     assert len(row[TOOL_MEDIA_PARTS_KEY]) == 1
-    assert row["changed"][0]["transform"] == "interactive"
+    assert row["changed"][0]["transform"]["kind"] == "interactive"
+    # The status row carries the transform's numbers, as the write's reply gives them.
+    assert row["changed"][0]["transform"]["rotation_deg"] == 5.0
     stored = state.by_id("s0.png").transform
     assert stored["kind"] == "interactive" and len(stored["params"]) == 6
     assert stored["physical"]["rotation_deg"] == 5.0

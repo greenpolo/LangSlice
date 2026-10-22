@@ -47,7 +47,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Callable, Collection, Iterator
+from collections.abc import Callable, Collection, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -707,6 +707,7 @@ class Job:
         """Number each saved picture's ``step`` with the undo history's depth
         (call again after replacing :attr:`views`)."""
         self.views.step_source = lambda: len(self.undo_stack)
+        self.views.registration_source = self.registration_numbers
 
     # --- opening ---------------------------------------------------------------
 
@@ -995,6 +996,18 @@ class Job:
             yield
         finally:
             self._acting.tool = outer
+
+    def registration_numbers(self, ids: Sequence[str]) -> dict[str, int]:
+        """The number of the registration each section of *ids* holds now,
+        for the sections that hold a listed one (a picture records them)."""
+        out: dict[str, int] = {}
+        for section_id in ids:
+            record = self.state.by_id(section_id)
+            number = (self.registrations.number_of(self.state, record)
+                      if record is not None else None)
+            if number is not None:
+                out[section_id] = number
+        return out
 
     def registered_since(self, mark: int) -> dict[str, int]:
         """The registration each section holds after this thread's writes

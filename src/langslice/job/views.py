@@ -53,7 +53,7 @@ import queue
 import re
 import threading
 import weakref
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -114,13 +114,17 @@ class Saved:
     index: int = 0
     #: The picture's number (``view.json``'s ``seq``): what :meth:`ViewStore.lookup` takes.
     seq: int = 0
+    #: The kind its JPEG is listed as: ``view``, or ``tile`` for a picture a
+    #: sheet shows in its place (saved and numbered, not sent on its own).
+    view_kind: str = "view"
 
     def files(self) -> list[tuple[Path, str]]:
         """``(path, kind)`` of every file the picture's folder will hold:
-        ``view`` (the JPEG), ``view_json``, for a placement or deformable-fit
-        picture ``labels`` and ``borders``, and ``residual`` for a
-        deformable-fit picture showing its residual."""
-        listed = [(self.folder / PICTURE_FILE, "view"), (self.folder / VIEW_FILE, "view_json")]
+        ``view`` (the JPEG; ``tile`` for a sheet's tile), ``view_json``, for a
+        placement or deformable-fit picture ``labels`` and ``borders``, and
+        ``residual`` for a deformable-fit picture showing its residual."""
+        listed = [(self.folder / PICTURE_FILE, self.view_kind),
+                  (self.folder / VIEW_FILE, "view_json")]
         if self.layers:
             listed += [(self.folder / LABELS_FILE, "labels"), (self.folder / BORDERS_FILE,
                                                                "borders")]
@@ -145,6 +149,8 @@ class PictureRecord:
     caption: str | None = None
     step: int | None = None
     recipe: dict[str, Any] | None = None
+    #: The registration each of its sections was drawn under, by number.
+    registrations: dict[str, int] = field(default_factory=dict)
     #: The picture itself, kept only by :class:`DiscardedViews`.
     image: Image.Image | bytes | None = field(default=None, compare=False, repr=False)
 
@@ -157,7 +163,9 @@ class PictureRecord:
                    sections=tuple(entry.get("sections") or ()), mode=entry.get("mode"),
                    layers=bool(entry.get("layers")), caption=entry.get("caption"),
                    step=int(step) if step is not None else None,
-                   recipe=entry.get("recipe"))
+                   recipe=entry.get("recipe"),
+                   registrations={str(k): int(v) for k, v in
+                                  (entry.get("registrations") or {}).items()})
 
 
 def _newest(records: Iterable[PictureRecord], exclude_tool: str | None) -> PictureRecord | None:
@@ -183,7 +191,8 @@ def artifacts(saved: Iterable[Saved], tool: str) -> tuple[list[dict[str, Any]], 
         for path, kind in picture.files():
             if path.exists():
                 listed.append({"path": str(path), "kind": kind, "index": picture.index,
-                               **({"label": label or tool} if kind == "view" else {})})
+                               **({"label": label or tool} if kind in ("view", "tile")
+                                  else {})})
             elif kind == "view":
                 warnings.append(f"picture not saved: {path}")
     return listed, warnings
@@ -281,6 +290,9 @@ class _Picture:
     step: int | None = None
     recipe: dict[str, Any] | None = None
     caption: str | None = None
+    #: The registration each of its sections is drawn under, by number
+    #: (:meth:`ViewStore.save`); None when none is known.
+    registrations: dict[str, int] | None = None
 
 
 @dataclass
@@ -329,6 +341,10 @@ class ViewStore:
         #: Asked for the history depth when a picture is saved (the job sets
         #: it); None: ``step`` stays unrecorded unless :meth:`save` is given one.
         self.step_source: Callable[[], int] | None = None
+        #: Asked, when a picture is saved, for the registration number each of
+        #: its sections holds (the job sets it, :meth:`Job.wire_views`); None:
+        #: no picture records one.
+        self.registration_source: Callable[[Sequence[str]], dict[str, int]] | None = None
         #: Bytes of the views index already read for the numbering.
         self._index_read = 0
 
@@ -398,7 +414,7 @@ class ViewStore:
         self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
         arguments: Any = None, call_id: str | None = None, atlas: Any = None,
         step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
-        captions: list[str | None] | None = None,
+        captions: list[str | None] | None = None, tiles: bool = False,
     ) -> list[str]:
         """Queue one call's pictures (in the order the model received them).
 
@@ -409,7 +425,9 @@ class ViewStore:
 
         A picture's ``recipe`` and ``caption`` come from its note, else from
         *recipes* / *captions* (one per picture); *step* is the history depth
-        (default: ``step_source()``).
+        (default: ``step_source()``). *tiles*: the pictures are a sheet's tiles,
+        shown in it rather than on their own (their JPEGs are artifacts of kind
+        ``tile``).
         """
         if not pictures:
             return []
@@ -417,6 +435,8 @@ class ViewStore:
         with self._lock, self._numbering() as (seq, call):
             call += 1
             items = _items(seq, tool, pictures, step, recipes, captions)
+            for item in items:
+                item.registrations = self._registrations(item.note)
             seq += len(items)
             for capture in _CAPTURES.get():
                 capture.extend(
@@ -426,7 +446,7 @@ class ViewStore:
                           and item.note.warp.warped and atlas is not None,
                           sections=tuple(item.note.sections) if item.note else (),
                           mode=item.note.mode if item.note else None, index=item.index,
-                          seq=item.seq)
+                          seq=item.seq, view_kind="tile" if tiles else "view")
                     for item in items)
             self._seq, self._call = seq, call
             self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))
@@ -436,6 +456,24 @@ class ViewStore:
                 threading.Thread(target=self._work, name="langslice-views",
                                  daemon=True).start()
         return [item.name for item in items]
+
+    def _registrations(self, note: PictureNote | None) -> dict[str, int] | None:
+        """The registration each section of a picture is drawn under: the
+        note's ``extra["registrations"]`` (a picture of a registration the
+        section does not hold), else the ones its sections hold now."""
+        if note is None or not note.sections:
+            return None
+        named = note.extra.get("registrations") if note.extra else None
+        if isinstance(named, dict) and named:
+            return {str(key): int(value) for key, value in named.items()}
+        if self.registration_source is None:
+            return None
+        try:
+            found = self.registration_source(tuple(note.sections))
+        except Exception:  # noqa: BLE001 - a picture is saved without the numbers
+            logger.warning("Could not number the registrations of a picture", exc_info=True)
+            return None
+        return dict(found) or None
 
     def _step(self, step: int | None) -> int | None:
         if step is None and self.step_source is not None:
@@ -565,6 +603,7 @@ class ViewStore:
             "index": picture.index, "of": len(call.pictures),
             "arguments": call.arguments,
             "caption": picture.caption, "step": picture.step, "recipe": picture.recipe,
+            "registrations": picture.registrations,
             "sections": list(note.sections) if note is not None else [],
             "mode": note.mode if note is not None else None,
             "picture": {"file": PICTURE_FILE, "size": size, "bytes": len(data)},
@@ -598,7 +637,7 @@ class ViewStore:
                  "sections": record["sections"], "mode": record["mode"],
                  "layers": bool(record["layers"])}
         # Left out of the index line when absent (view.json always has them).
-        entry.update({key: record[key] for key in ("caption", "step", "recipe")
+        entry.update({key: record[key] for key in ("caption", "step", "recipe", "registrations")
                       if record[key] is not None})
         return json.dumps(entry) + "\n"
 
@@ -623,8 +662,9 @@ class DiscardedViews(ViewStore):
         self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
         arguments: Any = None, call_id: str | None = None, atlas: Any = None,
         step: int | None = None, recipes: list[dict[str, Any] | None] | None = None,
-        captions: list[str | None] | None = None,
+        captions: list[str | None] | None = None, tiles: bool = False,
     ) -> list[str]:
+        del tiles  # nothing is listed: a dry run keeps no files
         if not pictures:
             return []
         step = self._step(step)
