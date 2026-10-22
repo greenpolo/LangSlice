@@ -50,7 +50,7 @@ import math
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -82,8 +82,21 @@ GB_PER_MVOX = 0.4
 #: The published example's slice thickness, um.
 EXAMPLE_SLICE_UM = 20.0
 #: examples/mouse_serial_section_example/atlas_to_target_config.json (supplement 7.2.4).
-PUBLISHED = {"iterations": [100, 50, 25], "smoothness_um": 500.0, "warp_freedom": 10000.0}
+PUBLISHED = {"iterations": [100, 50, 25], "kernel_um": 500.0, "warp_freedom": 10000.0}
 SORTING_KEYS = ("match_sd", "background_sd", "artifact_sd", "background_mean", "artifact_mean")
+#: What a fit fits (``fit``), as every engine tool names it: the transforms (each
+#: section's turn and shift and the stack's scale and shear), the 3-D warp, or both.
+FITS = ("transform", "warp", "both")
+#: emlddmm's sources as LangSlice runs them (the fork's commits).
+ENGINE_VERSION = "emlddmm 9c4dc80 + e426ece + 6ff62b0"
+
+
+def scale_iterations(iterations: int) -> list[int]:
+    """emlddmm's steps at its three scales (200, 100, 50 um) from the first
+    scale's: that, half of it and a quarter, as the published example's
+    [100, 50, 25] runs."""
+    first = int(iterations)
+    return [first, max(1, first // 2), max(1, first // 4)]
 #: Sections whose planes differ by less than this (an imported placement's rounding) are one stack.
 ANGLE_TOLERANCE_DEG = 1.0
 LATTICE_PX = 8  # the map is read every 8 fit-grid pixels and interpolated (the warp is smooth)
@@ -101,12 +114,11 @@ def emlddmm_stack(
     section_image: str = "preprocessed",
     atlas_image: str = "nissl",
     mask: str = "none",
-    smoothness_um: float = 500.0,
-    rigid: bool = True,
-    warp: bool = True,
+    kernel_um: float = 500.0,
+    fit: Literal["transform", "warp", "both"] = "both",
     warp_freedom: float = 10000.0,
-    iterations: list[int] = [100, 50, 25],  # noqa: B006 (a declaration's default, as the stubs)
-    sorting: dict[str, Any] = {},  # noqa: B006
+    iterations: int = 100,
+    sorting: dict[str, Any] = {},  # noqa: B006 (a declaration's default, as the native stubs)
     view: bool = True,
 ) -> dict[str, Any]:
     """Fit the whole stack to the atlas at once with emlddmm, on its current plane.
@@ -148,9 +160,9 @@ def emlddmm_stack(
     (source fit)]]. It keeps its own brightness scaling: the section image as it
     is, 0 to 1.
 
-    Writes, per section: with rigid true its transform (turn, shift, and the
-    stack's scale and shear) and with warp true its deformation, the
-    section's cut of the 3-D warp. A section that holds a deformation or a
+    Writes, per section: with fit "transform" or "both" its transform (turn,
+    shift, and the stack's scale and shear) and with fit "warp" or "both" its
+    deformation, the section's cut of the 3-D warp. A section that holds a deformation or a
     frozen transform keeps its transform and gets the rigid change folded
     into its deformation. A section whose result cannot be written still
     shapes the stack. The whole landing is one undo step.
@@ -192,20 +204,23 @@ def emlddmm_stack(
         mask: "none", or the name of a mask that every section in the stack
             has[[?make_mask  (made with make_mask)]]; its weights multiply the
             fit's weight on that section. Default "none".
-        smoothness_um: The warp's smoothness scale in micrometres, across
-            sections too; tissue closer than this bends together. Default 500.
-        rigid: True refits each section's in-plane turn and shift and the
-            stack's scale and shear and writes them; false keeps every
-            transform and fits the warp alone. Default true.
-        warp: True fits the 3-D warp; false fits the linear part only.
-            Default true.
+        kernel_um: The width of the kernel that smooths the 3-D warp's
+            velocity, in micrometres, across sections too (emlddmm's a; not a
+            Gaussian sigma on the displacement, as smoothness_um is
+            elsewhere): tissue closer than this bends together. Default 500.
+        fit: "transform" refits each section's in-plane turn and shift and
+            the stack's scale and shear and writes them; "warp" keeps every
+            transform and fits the 3-D warp alone; "both" fits both. Default
+            "both".
         warp_freedom: How freely the warp may bend; larger bends more. Start
             large and reduce if the warps look unrealistic. Default 10000.
-        iterations: Steps at the 200, 100 and 50 um scales. Default
-            [100, 50, 25].
+        iterations: Steps at the 200 um scale; the 100 and 50 um scales take
+            half and a quarter as many. Default 100.
         sorting: Any of "match_sd", "background_sd", "artifact_sd",
             "background_mean", "artifact_mean" (brightness from 0, black, to 1,
-            white); keys left out take emlddmm's values.
+            white); keys left out take emlddmm's values. emlddmm's sorting is
+            its own EM with an artifact class: it takes no "method" or
+            "artifact".
         view: True sends the overlays with the notice; false sends none.
 
     Returns:
@@ -225,7 +240,7 @@ def emlddmm_plane(
     slot_um: float,
     section_image: str = "preprocessed",
     atlas_image: str = "nissl",
-    iterations: list[int] = [100, 50, 25],  # noqa: B006 (a declaration's default, as the stubs)
+    iterations: int = 100,
     view: bool = True,
 ) -> dict[str, Any]:
     """Estimate the stack's cutting angles and spacing with emlddmm. Writes nothing.
@@ -256,7 +271,8 @@ def emlddmm_plane(
             sections.
         section_image: The section image to fit, as for emlddmm_stack.
         atlas_image: One of the atlas's images or "nissl", as for the fit.
-        iterations: Steps at the three scales. Default [100, 50, 25].
+        iterations: Steps at the coarsest scale, as for emlddmm_stack. Default
+            100.
         view: True returns the pictures described below; false returns none.
 
     Returns:
@@ -509,14 +525,14 @@ def _stack(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: 
             "section_um": section_um, "resolved": secs[0]["resolved"]}
 
 
-def _cfg(st: dict[str, Any], iterations: list[int], smoothness_um: float, warp_freedom: float,
+def _cfg(st: dict[str, Any], iterations: list[int], kernel_um: float, warp_freedom: float,
          rigid: bool, warp: bool) -> dict[str, Any]:
     """emlddmm's keyword arguments per scale: the published mouse serial-section example, with
     each section weighed as the gap it stands for (the Fig 3 runner's scaling: sigmaR x
     sqrt(k), ev and eA x k with k = thickness / slot spacing, eA2d x 20 / slot spacing)."""
     k = st["weight_um"] / st["dz"]
     return {"downI": [[4, 4, 4], [2, 2, 2], [1, 1, 1]], "downJ": [[1, 4, 4], [1, 2, 2], [1, 1, 1]],
-            "n_iter": [int(i) for i in iterations], "a": [float(smoothness_um)], "dv": [1000.0],
+            "n_iter": [int(i) for i in iterations], "a": [float(kernel_um)], "dv": [1000.0],
             "v_start": [0 if warp else NO_WARP], "ev": [1e-2 * k],
             "eA": [1e7 * k if rigid else 0.0],
             "eA2d": [1e5 * EXAMPLE_SLICE_UM / st["dz"] if rigid else 0.0],
@@ -530,14 +546,19 @@ def _mu(st: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_iterations(iterations: Any) -> list[int]:
-    if (not isinstance(iterations, (list, tuple)) or len(iterations) != 3
-            or any(int(i) < 1 for i in iterations)):
-        raise ToolError("BAD_ARGS", "iterations is three step counts, one per scale, "
-                        "e.g. [100, 50, 25]")
-    return [int(i) for i in iterations]
+    """The three scales' steps of *iterations*, the first scale's (:func:`scale_iterations`)."""
+    if isinstance(iterations, bool) or not isinstance(iterations, int) or iterations < 4:
+        raise ToolError("BAD_ARGS", "iterations is a whole number of steps at the coarsest "
+                        "scale, 4 or more (the finer scales take half and a quarter)")
+    return scale_iterations(iterations)
 
 
 def _check_sorting(sorting: dict[str, Any]) -> dict[str, float]:
+    held = [key for key in sorting if key in ("method", "artifact")]
+    if held:
+        raise ToolError("BAD_ARGS", f"emlddmm's sorting is its own EM with an artifact class: "
+                        f"it takes no {' or '.join(held)}; its keys are "
+                        f"{', '.join(SORTING_KEYS)}")
     unknown = [key for key in sorting if key not in SORTING_KEYS]
     if unknown:
         raise ToolError("BAD_ARGS", f"unknown sorting keys {unknown}; the keys are "
@@ -747,10 +768,10 @@ def _device(config: dict[str, Any]) -> str:
 # --- emlddmm_stack ----------------------------------------------------------------------------
 
 
-def _meta(rec: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
-    """What the deformation record keeps of the call: its inputs, estimates and settings."""
-    return {"inputs": rec["sec"]["inputs"], "estimated": rec["estimated"],
-            "settings": settings}
+def _meta(rec: dict[str, Any]) -> dict[str, Any]:
+    """What the deformation record keeps of the call besides its settings: its
+    inputs and estimates."""
+    return {"inputs": rec["sec"]["inputs"], "estimated": rec["estimated"]}
 
 
 def _route(view: Any, rigid: bool, warp: bool) -> str:
@@ -781,17 +802,18 @@ def _weights_on_grid(st: dict[str, Any], sec: dict[str, Any], off: np.ndarray,
 
 
 def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
-                section_image: str, atlas_image: str, mask: str, smoothness_um: float,
-                rigid: bool, warp: bool, warp_freedom: float, iterations: list[int],
+                section_image: str, atlas_image: str, mask: str, kernel_um: float,
+                fit: str, warp_freedom: float, iterations: int,
                 sorting: dict[str, Any], view: bool) -> ToolResult:
-    if not rigid and not warp:
-        raise ToolError("BAD_ARGS", "rigid and warp are both false: there is nothing to fit")
-    iterations = _check_iterations(iterations)
+    if fit not in FITS:
+        raise ToolError("BAD_ARGS", f"fit is one of {', '.join(FITS)}; got {fit!r}")
+    rigid, warp = fit in ("transform", "both"), fit in ("warp", "both")
+    steps = _check_iterations(iterations)
     sort = _check_sorting(sorting)
     config = {**config, "device": _device(config)}
     st = _stack(ctx, config, names, slot_um, section_image, atlas_image, mask,
                 need_transform=True)
-    cfg = _cfg(st, iterations, smoothness_um, warp_freedom, rigid, warp)
+    cfg = _cfg(st, steps, kernel_um, warp_freedom, rigid, warp)
     atlas = ctx.atlas()
     secs = st["secs"]
     lattices = [_lattice(sec, off) for sec, off in zip(secs, st["off_xy"], strict=True)]
@@ -801,9 +823,9 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
     arrays = _arrays(st, [lat["q"] for lat in lattices])
     digests = {sec["id"]: ctx.section_inputs(sec["id"], deformation=True) for sec in secs}
     settings = {"section_image": section_image, "atlas_image": atlas_image, "mask": mask,
-                "smoothness_um": smoothness_um, "rigid": rigid, "warp": warp,
-                "warp_freedom": warp_freedom, "iterations": iterations, "sorting": sort}
-    asked = {"sections": names, "slot_um": slot_um, **settings, "view": view}
+                "kernel_um": kernel_um, "fit": fit, "slot_um": slot_um,
+                "warp_freedom": warp_freedom, "iterations": int(iterations), "sorting": sort}
+    asked = {"sections": names, **settings, "view": view}
     chosen = _chosen(st, config, cfg)
     routes = {sec["id"]: _route(sec["view"], rigid, warp) for sec in secs}
     note = f"emlddmm stack fit, atlas {st['resolved']}, {len(secs)} sections"
@@ -846,7 +868,10 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
             if routes[sec["id"]] == "deformation":
                 proposals[sec["id"]] = lctx.deformation_from_map(
                     sec["id"], _expand(rec["native"], *sec["grid"]), note=note,
-                    meta=_meta(rec, settings), weights=rec["weights"])
+                    meta=_meta(rec), weights=rec["weights"], settings=settings,
+                    # read through its deformation: built on it
+                    start="current" if sec["applied"] is not None else "linear",
+                    engine_settings=chosen, engine_version=ENGINE_VERSION)
         written: dict[str, str] = {}
         failed: dict[str, dict[str, Any]] = {}
         summaries: dict[str, dict[str, Any]] = {}
@@ -864,7 +889,8 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                 if routes[sec["id"]] == "transform" and warp and sec["id"] not in failed:
                     proposals[sec["id"]] = lctx.deformation_from_map(
                         sec["id"], _expand(rec["native"], *sec["grid"]), note=note,
-                        meta=_meta(rec, settings), weights=rec["weights"])
+                        meta=_meta(rec), weights=rec["weights"], settings=settings,
+                        engine_settings=chosen, engine_version=ENGINE_VERSION)
             if proposals:
                 done = lctx.set_deformations(
                     [p.row() for p in proposals.values()],
@@ -965,13 +991,13 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
 
 
 def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot_um: float,
-                section_image: str, atlas_image: str, iterations: list[int],
+                section_image: str, atlas_image: str, iterations: int,
                 view: bool) -> ToolResult:
-    iterations = _check_iterations(iterations)
+    steps = _check_iterations(iterations)
     config = {**config, "device": _device(config)}
     st = _stack(ctx, config, names, slot_um, section_image, atlas_image, "none",
                 need_transform=False)
-    cfg = _cfg(st, iterations, PUBLISHED["smoothness_um"], PUBLISHED["warp_freedom"],
+    cfg = _cfg(st, steps, PUBLISHED["kernel_um"], PUBLISHED["warp_freedom"],
                rigid=True, warp=False)
     atlas = ctx.atlas()
     secs = st["secs"]
@@ -1008,7 +1034,7 @@ def _plane_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                           "shift_mm": round(float(np.hypot(*s)), 3)}}
             for sec, f, was, t, s in zip(secs, found, old, turns, shifts, strict=True)]
     asked = {"sections": names, "slot_um": slot_um, "section_image": section_image,
-             "atlas_image": atlas_image, "iterations": iterations, "view": view}
+             "atlas_image": atlas_image, "iterations": int(iterations), "view": view}
     proposal = {"pitch_deg": pitch, "yaw_deg": yaw, "spacing_scale": float(scale),
                 "spacing_shift_mm": float(shift_mm)}
     _write_files(st, out, folder, secs, A, A0, A2d, {"proposed_plane": proposal, "sections": rows},
@@ -1042,23 +1068,20 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
 
     def stack(ctx: ToolContext, sections: list[str], slot_um: float,
               section_image: str = "preprocessed", atlas_image: str = "nissl",
-              mask: str = "none", smoothness_um: float = 500.0, rigid: bool = True,
-              warp: bool = True, warp_freedom: float = 10000.0,
-              iterations: list[int] | None = None, sorting: dict[str, Any] | None = None,
-              view: bool = True) -> ToolResult:
+              mask: str = "none", kernel_um: float = 500.0, fit: str = "both",
+              warp_freedom: float = 10000.0, iterations: int = 100,
+              sorting: dict[str, Any] | None = None, view: bool = True) -> ToolResult:
         _require(options, "python", "emlddmm_src", "brainglobe_dir")
         return _stack_tool(ctx, options, list(dict.fromkeys(sections)), float(slot_um),
-                           section_image, atlas_image, mask, float(smoothness_um), rigid, warp,
-                           float(warp_freedom), list(iterations or PUBLISHED["iterations"]),
-                           dict(sorting or {}), view)
+                           section_image, atlas_image, mask, float(kernel_um), str(fit),
+                           float(warp_freedom), iterations, dict(sorting or {}), view)
 
     def plane(ctx: ToolContext, sections: list[str], slot_um: float,
               section_image: str = "preprocessed", atlas_image: str = "nissl",
-              iterations: list[int] | None = None, view: bool = True) -> ToolResult:
+              iterations: int = 100, view: bool = True) -> ToolResult:
         _require(options, "python", "emlddmm_src", "brainglobe_dir")
         return _plane_tool(ctx, options, list(dict.fromkeys(sections)), float(slot_um),
-                           section_image, atlas_image,
-                           list(iterations or PUBLISHED["iterations"]), view)
+                           section_image, atlas_image, iterations, view)
 
     return [
         ToolSpec("emlddmm_stack", emlddmm_stack, stack, kind="write", group="Nonlinear",

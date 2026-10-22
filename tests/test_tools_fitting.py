@@ -112,7 +112,7 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert result["status"] == "ok", result
     (row,) = result["results"]
     assert row["status"] == "ok" and "params" not in row  # raw numbers stay host-side
-    assert set(row["physical"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
+    assert set(row["transform"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
                                     "translate_x_mm", "translate_y_mm", "pivot"}
     assert row["calibration"] == {"section_um_per_px": 25.0, "source": "host"}
     assert row["regions"]["include"] == ["TH"]
@@ -171,7 +171,11 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
     (row,) = result["results"]
     assert row["status"] == "ok" and row["written"] is True and row["steps"] == 1
     assert set(row["displacement_mm"]) == {"max", "median"}
-    assert result["changed"][0]["deformation_steps"] == 1
+    held = result["changed"][0]["deformation"]
+    assert held["method"] == "fireants_syn" and held["steps"] == ["fireants_syn"]
+    from langslice.core.deformation import DETAIL_LEVEL  # the tests' patched level
+
+    assert held["settings"]["smoothness_um"] == 80.0 and held["settings"]["detail"] == DETAIL_LEVEL
     (picture,) = result["pictures"]
     assert "s1.png overlay" in picture["caption"] and "deformation drawn" in picture["caption"]
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1

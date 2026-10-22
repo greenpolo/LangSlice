@@ -911,7 +911,11 @@ class ToolContext:
     def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
                              meta: Mapping[str, Any] | None = None,
                              weights: Any = None,
-                             provenance: Mapping[str, Any] | None = None) -> DeformationProposal:
+                             provenance: Mapping[str, Any] | None = None,
+                             start: str = "linear",
+                             settings: Mapping[str, Any] | None = None,
+                             engine_settings: Mapping[str, Any] | None = None,
+                             engine_version: str = "") -> DeformationProposal:
         """A method's deformable result as the deformation LangSlice stores:
         *native_xy* is a float ``(H, W, 2)`` array giving, for each pixel
         centre ``(x, y)`` of the fit grid (:attr:`FitFrame.image`, ``H`` by
@@ -919,9 +923,19 @@ class ToolContext:
         corresponds to: the whole map, linear placement and deformation
         composed, in the frames :meth:`transform_from_matrix` takes. It is
         stored as every deformation is, the residual over the section's
-        current linear placement, with an inverse LangSlice computes; it
-        replaces whatever deformation the section holds. *note* and *meta*
-        (JSON values) are kept with it. *weights*: the weighting the engine
+        current linear placement, with an inverse LangSlice computes. *start*
+        ``linear`` (the map was made from the linear placement): it replaces
+        whatever deformation the section holds; ``current`` (the map was made
+        on top of the deformation the section holds, as read through
+        :attr:`FitFrame.applied_map`): that deformation is its record's
+        parent and its steps stay before this one, as a native fit chains, and
+        it is written only while the section still holds it (``STALE_INPUT``);
+        ``BAD_ARGS`` when it holds none. *settings* (the call's settings, by
+        the tool's names) are the step's, which ``status`` and the
+        registration list show; *engine_settings* (what the engine ran at, in
+        its own units) and *engine_version* go to the record's ``engine``, as
+        a FireANTs record holds its own. *note* and *meta* (JSON values) are
+        kept with it. *weights*: the weighting the engine
         estimated for itself, a float ``(H, W)`` array on the fit grid in
         [0, 1] (its tissue sorting; stored as float16 with the record, and
         what ``make_mask(source="fit")`` copies); None when it estimated none.
@@ -949,7 +963,10 @@ class ToolContext:
                 provenance={**self._caller.provenance(self.call, text, plain_meta),
                             "input": "full map: fit-grid pixel centres to native atlas "
                                      "pixels", **_plain(dict(provenance or {}))},
-                weights=weights)
+                weights=weights, start=str(start),
+                settings=_plain(dict(settings)) if settings else None,
+                engine_settings=_plain(dict(engine_settings or {})),
+                engine_version=str(engine_version or ""))
         except Refused as refusal:
             raise ToolError(refusal.code, str(refusal), **{
                 key: value for key, value in refusal.details.items()
@@ -1302,87 +1319,97 @@ class ToolContext:
 
     # --- the native engines, with settings of your own --------------------------------------
 
-    def fit_fireants(self, section: object, *, settings: Any = None, mask: str = "none",
-                     start: str = "linear", marked: bool = True,
-                     note: str = "") -> DeformationProposal:
+    def fit_fireants(self, section: object, *, restrict_to: Sequence[str] = (),
+                     exclude: Sequence[str] = (), section_image: str = "preprocessed",
+                     atlas_image: str = "nissl", mask: str = "none",
+                     smoothness_um: float = 80.0, metric: str = "mutual_information",
+                     edges: bool = True, detail: str = "standard", start: str = "linear",
+                     marked: bool = True, note: str = "") -> DeformationProposal:
         """Run FireANTs SyN (the engine ``fireants_syn`` runs) on the section
         with settings of your own and return the result as a
         :class:`DeformationProposal`, NOT written (:meth:`set_deformations`
         writes it, recorded as this caller's, with the settings and the
         ``inputs`` / ``estimated`` blocks in its provenance).
 
-        *settings*: a :class:`langslice.core.deformable.FitSettings` or a
-        mapping of its fields over ``fireants_syn``'s defaults
-        (``smoothness_um``, ``detail`` ``coarse`` / ``standard`` / ``fine``,
-        ``atlas_image`` (``"nissl"`` is the atlas's Nissl image where it has
-        one, else its template), ``stain_metric``, ``stain_edges``,
-        ``structures`` and ``neighbourhood_um`` to fit some regions only,
-        ``exclude``). *mask*: ``"none"`` or the NAME of a mask of the section
+        The settings are ``fireants_syn``'s, by its names and with its
+        defaults: *restrict_to* (region entries, ``"CTX:left"`` for one side:
+        fit these regions' neighbourhood only), *section_image*,
+        *atlas_image* (``"nissl"`` is the atlas's Nissl image where it has
+        one, else its template), *smoothness_um*, *metric*
+        (``mutual_information`` / ``local_correlation``), *edges*, *detail*
+        (``coarse`` / ``standard`` / ``fine``); *exclude* adds regions to
+        leave out. *mask*: ``"none"`` or the NAME of a mask of the section
         (``make_mask`` made it; :meth:`mask` reads one): its weights at or above
         0.5 are compared, the others left out. An array is refused
         (``BAD_ARGS``): make the mask with ``make_mask`` so the job holds it.
         *start* ``linear`` fits from the linear placement, ``current`` on
         top of the applied deformation; *marked* False leaves the section's
         marked damage regions in the fit."""
-        from dataclasses import fields as dataclass_fields
-
         from langslice.core.atlas.images import resolve_image
-        from langslice.core.deformable import FitSettings
         from langslice.core.deformable.render import composed_native_grid
-        from langslice.ops.deformable import default_settings, fit_record
+        from langslice.ops.deformable import (
+            DETAILS,
+            METRICS,
+            default_settings,
+            fit_record,
+            region_entries,
+        )
 
         record = self._record(section)
         workspace = self._door.ctx
         label = _mask_name(mask)
-        base = default_settings(workspace)
-        if settings is None:
-            chosen = base
-        elif isinstance(settings, FitSettings):
-            chosen = settings
-        elif isinstance(settings, Mapping):
-            known = {item.name for item in dataclass_fields(FitSettings)}
-            unknown = sorted(set(settings) - known)
-            if unknown:
-                raise ToolError("BAD_ARGS", f"unknown settings {unknown}; FitSettings has "
-                                f"{sorted(known)}")
-            try:
-                chosen = replace(base, **dict(settings))  # checked as it is made
-            except (TypeError, ValueError) as exc:
-                raise ToolError("BAD_ARGS", str(exc)) from exc
-        else:
-            raise ToolError("BAD_ARGS", "settings is a FitSettings or a mapping of its fields")
+        if str(metric) not in METRICS:
+            raise ToolError("BAD_ARGS", f"metric is one of {list(METRICS)}; got {metric!r}")
+        if str(detail) not in DETAILS:
+            raise ToolError("BAD_ARGS", f"detail is one of {list(DETAILS)}; got {detail!r}")
         try:
+            regions = region_entries(workspace, self._door.job.state, list(restrict_to))
+            left_out = region_entries(workspace, self._door.job.state, list(exclude))
+            chosen = replace(default_settings(workspace), smoothness_um=float(smoothness_um),
+                             atlas_image=str(atlas_image), stain_metric=str(metric),
+                             stain_edges=bool(edges), detail=str(detail),
+                             structures=regions, exclude=left_out)
             resolve_image(workspace.atlas, str(chosen.atlas_image))
-        except ValueError as exc:
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
+        except (TypeError, ValueError) as exc:  # checked as the settings are made
             raise ToolError("BAD_ARGS", str(exc)) from exc
         try:
             fitted = fit_record(self._door.job, workspace, record.id, chosen, start=start,
-                                mask=label, marked=bool(marked))
+                                mask=label, marked=bool(marked),
+                                section_image=str(section_image))
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         native_xy = np.stack(composed_native_grid(fitted, 1), axis=-1).astype(np.float64)
-        meta = {"engine": "fireants", "settings": fitted.settings.to_dict()
-                if fitted.settings is not None else chosen.to_dict(),
-                "start": start, "marked": bool(marked), "mask": label,
+        settings = {"restrict_to": list(regions), "exclude": list(left_out),
+                    "section_image": str(section_image), "atlas_image": str(atlas_image),
+                    "mask": label, "smoothness_um": float(smoothness_um),
+                    "metric": str(metric), "edges": bool(edges), "detail": str(detail),
+                    "marked": bool(marked)}
+        meta = {"engine": "fireants", "start": start,
                 "runtime_s": round(float(fitted.engine.get("runtime_s", 0.0)), 1)}
         held = fitted.provenance
         return self.deformation_from_map(
             record.id, native_xy, note=note or "FireANTs SyN, settings of the caller's",
-            meta=meta, weights=fitted.weights,
+            meta=meta, weights=fitted.weights, settings=settings, start=start,
+            engine_settings=dict(fitted.engine.get("native_parameters") or {}),
+            engine_version=str(fitted.engine.get("version") or ""),
             provenance={key: held.get(key) for key in ("inputs", "estimated")})
 
     def fit_elastix(self, section: object, *, restrict_to: Sequence[str] = (),
-                    exclude: Sequence[str] = (), atlas_image: str = "nissl",
-                    mask: str = "none", marked: bool = True,
-                    note: str = "") -> TransformProposal:
+                    exclude: Sequence[str] = (), section_image: str = "preprocessed",
+                    atlas_image: str = "nissl", mask: str = "none", edges: bool = True,
+                    marked: bool = True, note: str = "") -> TransformProposal:
         """Run the Elastix affine (the engine ``elastix_affine`` runs) on the
         section from its current placement and return the result as a
         :class:`TransformProposal`, NOT written (:meth:`set_transforms`
         writes it; its record keeps the call's settings under ``fit``).
-        *restrict_to* / *exclude*: region entries (``"CTX:left"`` for one
-        side); *atlas_image* as for :meth:`fit_fireants`; *mask*: ``"none"``
-        or the NAME of a mask of the section (as :meth:`fit_fireants`; an
-        array is refused ``BAD_ARGS``); *marked* False keeps the section's
+        The settings are ``elastix_affine``'s, by its names and with its
+        defaults: *restrict_to* (region entries, ``"CTX:left"`` for one side),
+        *section_image*, *atlas_image* (as for :meth:`fit_fireants`), *mask*
+        (``"none"`` or the NAME of a mask of the section, as for
+        :meth:`fit_fireants`; an array is refused ``BAD_ARGS``), *edges*;
+        *exclude* adds regions to leave out; *marked* False keeps the section's
         marked damage regions in the fit."""
         from langslice.ops.transforms import elastix_fit
 
@@ -1391,7 +1418,8 @@ class ToolContext:
         try:
             fitted = elastix_fit(self._door.job, self._door.ctx, record.id,
                                  restrict_to=list(restrict_to), exclude=list(exclude),
-                                 atlas_image=str(atlas_image), mask=label, marked=bool(marked))
+                                 atlas_image=str(atlas_image), mask=label, marked=bool(marked),
+                                 section_image=str(section_image), edges=bool(edges))
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
         proposal = self.transform_from_params(record.id, fitted.params,
@@ -1401,6 +1429,7 @@ class ToolContext:
             "engine": "elastix", "restrict_to": list(fitted.report.get("include") or ()),
             "exclude": list(fitted.report.get("exclude") or ()),
             "atlas_image": (fitted.inputs or {}).get("atlas_image_resolved", atlas_image),
+            "section_image": str(section_image), "edges": bool(edges),
             "marked": bool(marked), "mask": label, "inputs": fitted.inputs}}
         return replace(proposal, record=stored)
 
@@ -1755,9 +1784,11 @@ class ToolContext:
         """Set deformations. A row is ``{"id", "map": native_xy, "note"?,
         "meta"?}`` (the full map :meth:`deformation_from_map` takes) or
         ``{"id", "deformation": proposal}`` (:meth:`DeformationProposal.row`).
-        Each replaces the section's deformation, as the deformation a native
-        fit applies is stored (one undo step for the call; a later change to
-        the section's placement clears it). Per section: a frozen deformation
+        Each is stored as the deformation a native fit applies is (one undo
+        step for the call; a later change to the section's placement clears
+        it): it replaces the section's deformation, or, a proposal made on top
+        of it (``deformation_from_map(start="current")``), keeps its steps
+        before its own. Per section: a frozen deformation
         is ``FROZEN``, a map that cannot be stored ``BAD_FIELD``, a section
         without a position or transform ``INVALID_LINEAR_PLACEMENT``, one whose
         inputs differ from *expect* (or whose placement moved since its

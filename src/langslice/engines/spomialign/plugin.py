@@ -48,10 +48,26 @@ DEFAULTS = {
 #: Long edge of the canvas SPOmiAlign receives, px: above its 1152 x 864 grid, so its own
 #: resize brings both images down to that grid as with its published inputs.
 CANVAS_EDGE = 1536
-TRANSFORMS = ("rigid", "affine", "warp", "affine_warp")
-#: The section properties each transform writes (``frozen`` names).
+#: What a call fits (``fit``), as every engine tool names it: the section's
+#: transform, a warp on top of its registration, or both (an affine, then a warp).
+FITS = ("transform", "warp", "both")
+#: The engine's own modes (engine.py ``MODES``).
+MODES = ("rigid", "affine", "warp", "affine_warp")
+#: The section properties each mode writes (``frozen`` names).
 WRITES = {"rigid": ("affine",), "affine": ("affine",), "warp": ("deformation",),
           "affine_warp": ("affine", "deformation")}
+#: SPOmiAlign's sources as LangSlice runs them (the vendored commit).
+ENGINE_VERSION = "SPOmiAlign c7f8b7a"
+#: RoMa as SPOmiAlign builds it (engine.py ``SP.roma_outdoor(coarse_res=560)``).
+MATCHER = "RoMa roma_outdoor, coarse resolution 560"
+
+
+def mode_of(fit: str, rigid: bool) -> str:
+    """The engine mode of a call's *fit* and *rigid*: ``rigid`` or ``affine``
+    for the transform, ``warp``, or ``affine_warp`` for both."""
+    if fit == "transform":
+        return "rigid" if rigid else "affine"
+    return "warp" if fit == "warp" else "affine_warp"
 #: RoMa's weights, which ``roma_outdoor`` downloads into torch's hub cache on first use.
 WEIGHTS = {
     "roma_outdoor.pth": "https://github.com/Parskatt/storage/releases/download/roma/"
@@ -69,7 +85,8 @@ DRAWN_PAIRS = 300
 
 def spomialign(
     sections: list[str],
-    transform: Literal["rigid", "affine", "warp", "affine_warp"],
+    fit: Literal["transform", "warp", "both"],
+    rigid: bool = False,
     section_image: str = "preprocessed",
     atlas_image: str = "nissl",
     mask: str = "none",
@@ -100,28 +117,27 @@ def spomialign(
     other anatomy, mark those regions with mark_damage first (tissue that is ~
     intact but shifted is not damage)]].
 
-    transform chooses what is fitted:
-    - "rigid": rotation and shift; the section keeps its size. Written as the
-      section's transform.
-    - "affine": rotation, shift, scale and shear. Written as the section's
-      transform.
+    fit chooses what is fitted:
+    - "transform": the section's transform: rotation, shift, scale and shear
+      (an affine), or with rigid rotation and shift alone, the section keeping
+      its size. Written as the section's transform.
     - "warp": a smooth local deformation on top of the registration the section
       holds (its transform, and its deformation when it has one[[?set_landmarks ~
       , a landmark warp included, so the landmark move is kept]]); the transform
       stays. Written as the section's deformation.
-    - "affine_warp": an affine, then a warp on top of it (SPOmiAlign's own
-      default). Writes both.
-    A new transform clears the section's deformation, so rigid, affine and
-    affine_warp are refused on a section that holds one: fit warp on it instead.
+    - "both": an affine, then a warp on top of it (SPOmiAlign's own default).
+      Writes both.
+    A new transform clears the section's deformation, so "transform" and
+    "both" are refused on a section that holds one: fit "warp" on it instead.
 
     The warp is SPOmiAlign's smoothed match field: each pair's displacement,
-    filled in between the pairs and blurred by smoothness_um. Where the section
-    and the atlas image share little tissue (a damaged or partial section), the
-    affine follows wrong matches, because it weighs every pair equally and
-    rejects none; the sign is an atlas shrunk off the tissue in the returned
-    overlay. For such a section, fit "rigid", check the returned overlay, then
-    fit "warp". The warp bends whole regions and does not refine individual
-    borders.
+    filled in between the pairs and smoothed by a Gaussian of smoothness_um.
+    Where the section and the atlas image share little tissue (a damaged or
+    partial section), the affine follows wrong matches, because it weighs
+    every pair equally and rejects none; the sign is an atlas shrunk off the
+    tissue in the returned overlay. For such a section, fit "transform" with
+    rigid, check the returned overlay, then fit "warp". The warp bends whole
+    regions and does not refine individual borders.
 
     SPOmiAlign reads one image pair per section, nothing else, and has no
     weighting: it estimates no mask of its own, and a section mask can only
@@ -136,7 +152,9 @@ def spomialign(
 
     Args:
         sections: One to twenty filenames (the extension may be left off).
-        transform: "rigid", "affine", "warp" or "affine_warp".
+        fit: "transform", "warp" or "both".
+        rigid: True fits the transform as a rotation and a shift alone (fit
+            "transform" only). Default false.
         section_image: The section image to match, by name: "preprocessed", a raw channel~
             [[?make_image , or an image made with make_image]]. Default "preprocessed".
         atlas_image: One of the atlas's images (the job statement lists
@@ -146,9 +164,9 @@ def spomialign(
         mask: "none", or the name of a mask of each section[[?make_mask  ~
             (made with make_mask)]]; matches ending where it is below one half
             are dropped. Default "none".
-        smoothness_um: How widely the warp's pair displacements are blurred,
-            in micrometres of the atlas; larger bends broader regions as one.
-            Default 150.
+        smoothness_um: The width (sigma) of the Gaussian that smooths the
+            warp's displacement field, in micrometres of the atlas; larger
+            bends broader regions as one. Default 150.
         matches: How many of the most confident matched pairs the fit uses.
             Default 5000 (SPOmiAlign's).
         view: True returns the picture described below; false returns none.
@@ -156,7 +174,9 @@ def spomialign(
     Returns:
         Per section what was fitted and on what, what the fit used (inputs:
         the section image, the atlas image as asked and as used, the mask, the
-        damage, the brightness scaling), the transform written
+        damage, the brightness scaling), what SPOmiAlign ran at
+        (engine_settings: the matcher, its working grid and micrometres per
+        pixel, the smoothing in its pixels, the pairs), the transform written
         (rotation_deg, scale_x, scale_y, shear, translate_x_mm,
         translate_y_mm about the canvas centre) when one was, for a warp its
         displacement (median and max, mm), fold fraction and plausibility
@@ -427,10 +447,10 @@ def _files(here: Path, pair: dict[str, Any], got: dict[str, Any],
 # --- the tool ---------------------------------------------------------------------------------
 
 
-def _refusal(view_of: Any, frame: Any, transform: str) -> dict[str, Any] | None:
-    """Why *transform* cannot start on this section, before the engine runs."""
+def _refusal(view_of: Any, frame: Any, mode: str) -> dict[str, Any] | None:
+    """Why the engine *mode* cannot start on this section, before the engine runs."""
     sid = view_of.id
-    frozen = [prop for prop in WRITES[transform] if prop in view_of.frozen]
+    frozen = [prop for prop in WRITES[mode] if prop in view_of.frozen]
     if frozen:
         return {"id": sid, "status": "error", "error": "FROZEN",
                 "message": f"the section's {' and '.join(frozen)} may not be changed"}
@@ -438,19 +458,23 @@ def _refusal(view_of: Any, frame: Any, transform: str) -> dict[str, Any] | None:
         return {"id": sid, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
                 "message": "SPOmiAlign starts from the section's placement: give it a "
                            "transform first"}
-    if transform != "warp" and view_of.deformation:
+    if mode != "warp" and view_of.deformation:
         return {"id": sid, "status": "error", "error": "HAS_DEFORMATION",
-                "message": f"{transform} would write a new transform, which clears the "
-                           "section's deformation; fit warp to build on it"}
+                "message": "this fit would write a new transform, which clears the "
+                           "section's deformation; fit \"warp\" to build on it"}
     return None
 
 
-def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transform: str,
-         section_image: str, atlas_image: str, mask: str, smoothness_um: float, matches: int,
-         view: bool) -> ToolResult:
-    if transform not in TRANSFORMS:
-        raise ToolError("BAD_ARGS", f"transform is one of {', '.join(TRANSFORMS)}; "
-                        f"got {transform!r}")
+def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], fit: str,
+         rigid: bool, section_image: str, atlas_image: str, mask: str, smoothness_um: float,
+         matches: int, view: bool) -> ToolResult:
+    if fit not in FITS:
+        raise ToolError("BAD_ARGS", f"fit is one of {', '.join(FITS)}; got {fit!r}")
+    if rigid and fit != "transform":
+        raise ToolError("BAD_ARGS", "rigid fits the transform alone: SPOmiAlign's warp "
+                        "follows an affine or the registration the section holds; give fit "
+                        "\"transform\" with rigid, or leave rigid false")
+    mode = mode_of(fit, bool(rigid))
     if not sections:
         raise ToolError("BAD_ARGS", "name one to twenty sections")
     if int(matches) < 3:
@@ -458,7 +482,7 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
     if not float(smoothness_um) > 0:
         raise ToolError("BAD_ARGS", "smoothness_um is above 0")
     matches, smoothness_um = int(matches), float(smoothness_um)
-    settings = {"transform": transform, "section_image": section_image,
+    settings = {"fit": fit, "rigid": bool(rigid), "section_image": section_image,
                 "atlas_image": atlas_image, "mask": mask, "smoothness_um": smoothness_um,
                 "matches": matches}
     rows: list[dict[str, Any]] = []
@@ -467,12 +491,12 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
         view_of = ctx.section(name)
         frame = _blocks.frame_for(ctx, view_of.id, atlas_image, section_image)
         plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
-        refused = _refusal(view_of, frame, transform)
+        refused = _refusal(view_of, frame, mode)
         if refused:
             rows.append(refused)
             continue
         held = _blocks.section_mask(ctx, view_of.id, mask)
-        on_grid = transform == "warp" and frame.applied_map is not None
+        on_grid = mode == "warp" and frame.applied_map is not None
         pair = _inputs(frame, plane_image, on_grid,
                        None if held is None else np.asarray(held.weights, np.float32))
         pair["smoothing_px"] = smoothness_um / pair["work_um"]
@@ -484,8 +508,8 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
                       inputs, resolved))
     if not ready:
         return ToolResult({"rows": rows, "settings": settings})
-    folder = _blocks.call_folder(ctx, transform)
-    answers = _engine(config, folder, transform, matches, [item[2] for item in ready])
+    folder = _blocks.call_folder(ctx, mode)
+    answers = _engine(config, folder, mode, matches, [item[2] for item in ready])
     pictures = []
     with ctx.writing():
         for (sid, frame, pair, digest, inputs, resolved), got in zip(ready, answers,
@@ -506,17 +530,24 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
                 rows.append({"id": sid, "status": "error", "error": "FIT_FAILED",
                              "message": str(got["error"]), "files": str(relative)})
                 continue
-            what = transform.replace("_", " and ") if transform != "warp" else f"warp on {start}"
+            what = mode.replace("_", " and ") if mode != "warp" else f"warp on {start}"
             note = (f"SPOmiAlign {what}, atlas {resolved}, {int(got['pairs'])} pairs, "
                     f"{in_damage} in marked damage dropped"
                     + (f", {by_mask} outside the mask dropped" if mask != "none" else ""))
+            engine_settings = {
+                "matcher": MATCHER, "mode": mode, "working_grid_px": [WORK_W, WORK_H],
+                "working_um": round(float(pair["work_um"]), 3),
+                "smoothness_um": smoothness_um,
+                "smoothing_sigma_px": round(float(pair["smoothing_px"]), 3),
+                "matches": matches, "canvas_px": list(pair["target"].shape[:2])}
             row: dict[str, Any] = {"id": sid, "status": "ok", "fitted": note,
                                    "files": str(relative), "inputs": inputs, "estimated": None,
+                                   "engine_settings": engine_settings,
                                    **gpu_words(float(got.get("gpu_wait_s", 0.0)),
                                                int(got.get("oom_retries", 0)))}
             if mask != "none":
                 row["mask_note"] = "approximated by dropping matches"
-            if transform != "warp":
+            if mode != "warp":
                 to_native = (pair["from_canvas"] @ _homog(got["matrix"]) @ pair["to_canvas"])[:2]
                 proposal = ctx.transform_from_matrix(sid, to_native, note=note)
                 written = ctx.set_transforms([proposal.row()], expect={sid: digest})
@@ -524,14 +555,16 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
                     rows.append({**written.rows[0], "id": sid})
                     continue
                 row["transform"] = proposal.knobs
-            if transform in ("warp", "affine_warp"):
+            if mode in ("warp", "affine_warp"):
                 native = _full_map(frame, pair, got["matrix"], got["residual"])
                 warp = ctx.deformation_from_map(
                     sid, native, note=note,
                     meta={"sitk_max_px": float(got["sitk_max_px"]), "inputs": inputs,
-                          "estimated": None, "settings": settings})
+                          "estimated": None},
+                    start="current" if pair["on_grid"] else "linear", settings=settings,
+                    engine_settings=engine_settings, engine_version=ENGINE_VERSION)
                 written = ctx.set_deformations(
-                    [warp.row()], expect={sid: digest} if transform == "warp" else None)
+                    [warp.row()], expect={sid: digest} if mode == "warp" else None)
                 if sid not in written.written:
                     rows.append({**written.rows[0], "id": sid})
                     continue
@@ -545,12 +578,12 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
 def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
     options = {**DEFAULTS, **(config or {})}
 
-    def handler(ctx: ToolContext, sections: list[str], transform: str,
+    def handler(ctx: ToolContext, sections: list[str], fit: str, rigid: bool = False,
                 section_image: str = "preprocessed", atlas_image: str = NISSL,
                 mask: str = "none", smoothness_um: float = 150.0, matches: int = 5000,
                 view: bool = True) -> ToolResult:
         _require(options, "python", "src")
-        return _run(ctx, options, sections, transform, section_image, atlas_image, mask,
+        return _run(ctx, options, sections, fit, rigid, section_image, atlas_image, mask,
                     smoothness_um, matches, view)
 
     return [ToolSpec("spomialign", spomialign, handler, kind="write", group="Nonlinear",

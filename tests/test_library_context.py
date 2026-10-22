@@ -95,7 +95,7 @@ def test_an_affine_is_recorded_as_the_scripts_and_undo_reverts_it(images: Path):
         assert entry["parameters"]["affine"]["kind"] == "script"
         assert job.state.by_id(ID0).transform["note"] == "shifted"
         rows = {row["id"]: row for row in job.status()["rows"]}
-        assert rows[ID0]["transform"] == "script"
+        assert rows[ID0]["transform"]["kind"] == "script"
         job.undo()
         assert job.state.by_id(ID0).transform == before
         written = events(job)
@@ -318,22 +318,25 @@ def test_fireants_with_settings_and_a_mask_is_a_proposal_until_written(images: P
         assert unknown.value.code == "UNKNOWN_MASK"
         ops_masks.make_mask(job.job, job.workspace, "tissue", [ID0], source="em")
         assert c.mask(ID0, "tissue").kind == "em"
-        proposal = c.fit_fireants(ID0, settings={"smoothness_um": 50.0, "detail": "coarse"},
+        proposal = c.fit_fireants(ID0, smoothness_um=50.0, detail="coarse",
                                   mask="tissue", note="soft, em mask")
         assert job.state.by_id(ID0).deformation is None
         done = c.set_deformations([proposal.row()])
         assert done.written == [ID0], done.rows
         record = job.job.deformations.current(job.state, job.state.by_id(ID0))
-        meta = record.provenance["script"]["meta"]
-        assert meta["settings"]["smoothness_um"] == 50.0 and meta["engine"] == "fireants"
-        assert meta["mask"] == "tissue"
+        assert record.provenance["script"]["meta"]["engine"] == "fireants"
+        # The tool's names: the step and the record keep the call's settings by them.
+        step = job.state.by_id(ID0).deformation["steps"][-1]
+        assert step["method"] == "script"
+        assert step["settings"]["smoothness_um"] == 50.0 and step["settings"]["mask"] == "tissue"
+        assert step["settings"]["metric"] == "mutual_information"
+        assert record.provenance["settings"]["detail"] == "coarse"
         assert record.provenance["inputs"]["mask"]["name"] == "tissue"
         assert record.provenance["inputs"]["atlas_image"] == "nissl"
-        assert job.state.by_id(ID0).deformation["steps"][-1]["method"] == "script"
         from langslice.core.plugins import ToolError
 
         with pytest.raises(ToolError) as refused:
-            c.fit_fireants(ID0, settings={"no_such": 1})
+            c.fit_fireants(ID0, metric="no_such")
         assert refused.value.code == "BAD_ARGS"
 
 

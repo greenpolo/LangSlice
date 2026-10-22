@@ -21,7 +21,7 @@ import numpy as np
 
 from langslice.core.affine import normalized_physical_affine
 from langslice.core.damage import exclusions
-from langslice.core.engine_output import engine_output
+from langslice.core.engine_output import engine_output, failure_message
 from langslice.core.frozen import FROZEN
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
@@ -288,9 +288,17 @@ def _fit_elastix(
                                       edges=edges, section_weights=weights)
         except Exception as exc:  # nothing is written for this section
             logger.warning("elastix_affine failed for %s: %s", record.id, exc)
-            rows.append({"id": record.id, "status": "error",
-                         "error": getattr(exc, "code", "FIT_FAILED"), "message": str(exc)})
+            code = getattr(exc, "code", "FIT_FAILED")
+            rows.append({"id": record.id, "status": "error", "error": code,
+                         "message": failure_message(
+                             f"{type(exc).__name__}: {exc}", job.engine_log,
+                             f"the Elastix affine of {record.id} failed")
+                         if code == "FIT_FAILED" else str(exc)})
             continue
+        if outcome.get("error") == "FIT_FAILED":
+            outcome["message"] = failure_message(
+                str(outcome.get("message", "")), job.engine_log,
+                f"the Elastix affine of {record.id} failed")
         rows.append(outcome)
         if outcome["status"] != "ok":
             continue
@@ -384,7 +392,9 @@ def elastix_fit(
     except RegionTooSmall as exc:
         raise Refused("REGION_TOO_SMALL", message=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
-        raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
+        raise Refused("FIT_FAILED", message=f"{record.id}: " + failure_message(
+            f"{type(exc).__name__}: {exc}", job.engine_log,
+            f"the Elastix affine of {record.id} failed")) from exc
     block = inputs_block(job.state, workspace, record, section_image=section_image,
                          atlas_image=str(atlas_image),
                          mask=str(mask or ops_masks.NO_MASK).strip(), damage=dropped,

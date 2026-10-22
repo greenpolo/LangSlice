@@ -37,7 +37,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -60,6 +60,11 @@ TARGET_UM, SOURCE_UM = 10.0, 50.0
 #: The plane search's trial planes reach this far (STalign 2.0, _prefit.py).
 SEARCH_TILT_DEG, SEARCH_SHIFT_UM = 6.0, 300.0
 SORTING_METHODS = ("classic", "em", "none")
+#: What a fit fits (``fit``), as every engine tool names it: STalign bends on top
+#: of the section's registration, or refits its transform too.
+FITS = ("warp", "both")
+#: STalign's sources as LangSlice runs them.
+ENGINE_VERSION = "STalign 2.0.0 8a84bf1f"
 SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # (x, y) <-> (row, col)
 
 
@@ -71,8 +76,8 @@ def stalign_lddmm(
     section_image: str = "preprocessed",
     atlas_image: str = "nissl",
     mask: str = "none",
-    smoothness_um: float = 500.0,
-    affine: bool = False,
+    kernel_um: float = 500.0,
+    fit: Literal["warp", "both"] = "warp",
     displacement_um: float = 94.0,
     sorting: dict[str, Any] = {},  # noqa: B006 (a declaration's default, as the native stubs)
     iterations: int = 2000,
@@ -90,15 +95,15 @@ def stalign_lddmm(
 
     STalign bends the atlas image onto each section's image by gradient
     descent on their brightness mismatch, with a linear contrast fit between
-    the two, a smoothness scale (smoothness_um: tissue closer than that bends
+    the two, a kernel width (kernel_um: tissue closer than that bends
     together) and a displacement scale (displacement_um: how far a point may
     be carried before the penalty grows). It starts from the section's
     current registration (its linear placement, and its deformation when it
     has one) and refines it; it does not search from scratch~
     [[?interactive_transform : set the orientation and a rough transform with ~
-    interactive_transform first]]. With affine false the transform stays and
+    interactive_transform first]]. With fit "warp" the transform stays and
     only the bend is fitted, on top of the deformation the section holds[[?set_landmarks ~
-    , a landmark warp included, so the landmark move is kept]]. With affine true
+    , a landmark warp included, so the landmark move is kept]]. With fit "both"
     it also refits the section's in-plane transform and writes it; refused on a
     section that holds a deformation, since a new transform clears it. The
     section's marked damage regions are left out automatically[[?mark_damage ; ~
@@ -135,10 +140,13 @@ def stalign_lddmm(
             by their names), or "nissl", the atlas's Nissl (its template when
             it ships none). Default "nissl"; the reply names the image used.
         mask: "none". STalign takes no section mask (see above).
-        smoothness_um: The bend's smoothness scale in micrometres (STalign's
-            a); larger bends broader patches as one. Default 500.
-        affine: True also refits the in-plane transform (turn, stretch, shift)
-            and writes it; false keeps the current transform. Default false.
+        kernel_um: The width of the kernel that smooths the bend's velocity,
+            in micrometres (STalign's a; not a Gaussian sigma on the
+            displacement, as smoothness_um is elsewhere): larger bends broader
+            patches as one. Default 500.
+        fit: "warp" bends on top of the section's registration and keeps its
+            transform; "both" also refits the in-plane transform (turn,
+            stretch, shift) and writes it. Default "warp".
         displacement_um: The displacement scale in micrometres; larger allows
             a bigger bend. Default 94.
         sorting: {"method": "classic" | "em" | "none"} and any of "match_sd",
@@ -158,7 +166,9 @@ def stalign_lddmm(
         Per section its work id and what the fit uses (inputs: the section image,
         the atlas image as asked and as used, the mask, the damage, the
         brightness scaling), or why it was not started. Each notice brings,
-        per section, the numbers above, what STalign estimated (its sorting,
+        per section, the numbers above, what STalign ran at (engine_settings:
+        its target and atlas grids in micrometres and its own settings), what
+        STalign estimated (its sorting,
         saved with the deformation, and the share of the tissue it left out)
         and the section under its new registration with the atlas borders on
         it; when the sorting set some tissue aside, also the final sorting
@@ -426,19 +436,22 @@ def _loss_picture(energy: np.ndarray, path: Path) -> None:
 
 
 def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], section_image: str,
-           atlas_image: str, mask: str, smoothness_um: float, affine: bool,
+           atlas_image: str, mask: str, kernel_um: float, fit: str,
            displacement_um: float, sorting: dict[str, Any], iterations: int,
            view: bool) -> ToolResult:
     if not sections:
         raise ToolError("BAD_ARGS", "name one to twenty sections")
+    if fit not in FITS:
+        raise ToolError("BAD_ARGS", f"fit is one of {', '.join(FITS)}; got {fit!r}")
+    affine = fit == "both"
     sorted_params = _sorting_params(sorting)
-    params = {**sorted_params, "a": float(smoothness_um),
+    params = {**sorted_params, "a": float(kernel_um),
               "sigma_disp": float(displacement_um), "niter": int(iterations), "nt": 4}
     if not affine:
         params.update(epL=0.0, epT=0.0)
     estimates = (sorting or {}).get("method", "classic") != "none"
     settings = {"section_image": section_image, "atlas_image": atlas_image, "mask": mask,
-                "smoothness_um": smoothness_um, "affine": affine,
+                "kernel_um": kernel_um, "fit": fit,
                 "displacement_um": displacement_um,
                 "sorting": sorting or {"method": "classic"}, "iterations": iterations,
                 "device": config["device"]}
@@ -449,8 +462,8 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
         sid = view_of.id
         if affine and view_of.deformation:
             rows.append({"id": sid, "status": "error", "error": "HAS_DEFORMATION",
-                         "message": "affine true would refit the transform, which clears the "
-                         "section's deformation; fit with affine false to bend on top of it"})
+                         "message": "fit \"both\" would refit the transform, which clears the "
+                         "section's deformation; fit \"warp\" to bend on top of it"})
             continue
         frame, plane_image, resolved = _frame(ctx, sid, atlas_image, section_image)
         if frame.placed_atlas_to_section is None:
@@ -483,7 +496,15 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
             outline = cv2.warpAffine(inside_grid, _placed(frame)[:2], (gw, gh),
                                      flags=cv2.INTER_NEAREST) > 0
             estimated = _blocks.estimated_block(weights, outline)
-            blocks = {"inputs": inputs, "estimated": estimated, "settings": settings}
+            engine_settings = {"target_um": TARGET_UM, "atlas_um": SOURCE_UM,
+                               **json.loads(str(out["settings"])),
+                               "device": str(out["device"])}
+            blocks = {"inputs": inputs, "estimated": estimated, "settings": settings,
+                      "engine_settings": engine_settings}
+            begun = "current" if src["on_grid"] else "linear"
+            meta = {"inputs": inputs, "estimated": estimated}
+            written_as = {"start": begun, "settings": settings,
+                          "engine_settings": engine_settings, "engine_version": ENGINE_VERSION}
             energy = np.asarray(out.get("energy", np.zeros((0, 3))))
             with open(here / "energy.csv", "w", newline="") as fh:
                 writer = csv.writer(fh)
@@ -500,7 +521,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
             # bend only: the map converts before the lock (with affine the conversion reads the
             # new transform, so it waits for it)
             warp = None if affine else lctx.deformation_from_map(
-                sid, native, note=note, meta=blocks, weights=weights)
+                sid, native, note=note, meta=meta, weights=weights, **written_as)
             with lctx.writing():
                 if affine:
                     a_xy = SWAP @ np.asarray(out["A"]) @ SWAP  # source um -> target um (x, y)
@@ -514,8 +535,8 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                         raise ToolError(done.rows[0].get("error", "NOT_WRITTEN"),
                                         done.rows[0].get("message", ""))
                 if warp is None:
-                    warp = lctx.deformation_from_map(sid, native, note=note, meta=blocks,
-                                                     weights=weights)
+                    warp = lctx.deformation_from_map(sid, native, note=note, meta=meta,
+                                                     weights=weights, **written_as)
                 done = lctx.set_deformations([warp.row()],
                                              expect=None if affine else {sid: digest})
                 if sid not in done.written:
@@ -658,14 +679,14 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
             "commit": "8a84bf1f", "engine": "langslice.engines.stalign"}
 
     def lddmm(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
-              atlas_image: str = "nissl", mask: str = "none", smoothness_um: float = 500.0,
-              affine: bool = False, displacement_um: float = 94.0,
+              atlas_image: str = "nissl", mask: str = "none", kernel_um: float = 500.0,
+              fit: str = "warp", displacement_um: float = 94.0,
               sorting: dict[str, Any] | None = None, iterations: int = 2000,
               view: bool = True) -> ToolResult:
         _blocks.refuse_mask("stalign_lddmm", mask, "sorts the section's pixels itself")
         _require(options, "python")
         return _lddmm(ctx, options, sections, section_image, atlas_image, mask,
-                      smoothness_um, affine, displacement_um, dict(sorting or {}),
+                      kernel_um, fit, displacement_um, dict(sorting or {}),
                       iterations, view)
 
     def plane(ctx: ToolContext, sections: list[str], section_image: str = "preprocessed",
