@@ -75,15 +75,18 @@ parallel (each write holds the folder's lock; a long verb re-checks each section
 ## Python
 `import langslice; job = langslice.open_job("<ROOT>/langslice")`; the verbs are methods
 with the same arguments (`job.status()`,
-`job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])`). Each returns, once
-its pictures are on disk, a JSON-safe dict: the CLI's `result` in full (status rows with
-every field, null where unset) plus `artifacts` as the CLI lists them; `reply.images`
-holds the pictures as PIL images. Atlases: `langslice.load_atlas("allen_mouse_25um")`.
-Keep your own files here, never in /tmp: scripts in `scripts/`, the rest (montages,
-tables) in `scratch/`; LangSlice never reads them. Every picture a verb shows is saved here.
+`job.position_sections(sections=[{"id": "<file>", "position_mm": 5.2}])`). Each returns, once its pictures are on disk, a JSON-safe
+dict: the CLI's `result` in full (status rows with every field, null where unset) plus
+`artifacts` as the CLI lists them; `reply.images` holds the pictures as PIL images.
+Atlases: `langslice.load_atlas("allen_mouse_25um")`.
+Keep your own files here, never in /tmp: scripts in `scripts/`, the rest (montages, tables)
+in `scratch/`; LangSlice never reads them. Every picture a verb shows is saved here.
 Run a script with `langslice-job <ROOT>/langslice python scripts/NAME.py [ARGS]`: the job's
 `env/` python, LangSlice usually loaded already. `env install PACKAGE ...` adds packages there.
 Your own method (an affine, a warp field) goes in through `job.context`: `help(job.context)`.
+Judge and choose fits by looking at their pictures, never by image-similarity scores (mutual
+information, outline overlap, edge correlation): the fits optimise those, they track border
+placement poorly, the field has turned away from them and so have we (they chose worse fits).
 
 
 # Agent CLI: brief statement

@@ -203,7 +203,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
                    "schema init", "reply.images", "`scripts/`", "never in /tmp",
                    "`env install PACKAGE ...`", "`job.context`"):
         assert needle in agents, needle
-    assert len(agents.splitlines()) < 85  # one screen, its verb list included
+    assert len(agents.splitlines()) < 90  # one screen, its verb list included
     code, envelope = cli(capsys, str(images), "status")
     assert code == 0
     # The card lists exactly the verbs the job has: none it would refuse.

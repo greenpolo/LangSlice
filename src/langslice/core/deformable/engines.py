@@ -33,6 +33,7 @@ import types
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -221,6 +222,44 @@ def engine_worker() -> None:
     """Process-pool initializer for CPU fits: torch on :data:`FIT_THREADS` threads."""
     torch = import_fireants()
     torch.set_num_threads(FIT_THREADS)
+
+
+#: The GPU's one queue, shared by every process on the machine that fits on it:
+#: FireANTs here, and the engine plugins (STalign, emlddmm and SPOmiAlign take
+#: the same file). The folder is the one every engine sandbox may write.
+GPU_LOCK = Path(os.environ.get("LANGSLICE_GPU_LOCK")
+                or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock")
+#: A fit that still finds the GPU full (a process outside the queue holds it)
+#: waits OOM_WAIT_S, then twice that, ..., and fits again, OOM_RETRIES times.
+OOM_RETRIES = 4
+OOM_WAIT_S = 5.0
+
+
+@contextlib.contextmanager
+def gpu_turn(device: str) -> Iterator[None]:
+    """One fit at a time on the GPU across processes (a lock on :data:`GPU_LOCK`);
+    nothing on the CPU or where file locks are not available."""
+    if device != "cuda" or sys.platform == "win32":
+        yield
+        return
+    import fcntl
+
+    GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with open(GPU_LOCK, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def out_of_memory(exc: BaseException) -> bool:
+    """Whether *exc* is the GPU running out of memory (torch raises it as
+    ``OutOfMemoryError``, some kernels as a generic CUDA error, cuDNN and cuBLAS
+    as their own allocation failures)."""
+    text = str(exc)
+    return (type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text
+            or "CUDNN_STATUS_INTERNAL_ERROR" in text or "CUBLAS_STATUS_ALLOC_FAILED" in text)
 
 
 @contextlib.contextmanager
@@ -431,39 +470,47 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     levels = len(level.iterations)
     scales = [FIREANTS_SHRINK ** k for k in range(levels - 1, -1, -1)]
     height, width = inputs.fixed.shape
-    with _deterministic(torch, device):
-        fixed = image(fixed_channels, inputs.fixed_mask)
-        moving = image(moving_channels, inputs.moving_mask)
-        registration: Any = SyNRegistration(
-            scales=scales, iterations=list(level.iterations),
-            fixed_images=fixed, moving_images=moving,
-            loss_type="masked_custom",
-            custom_loss=_channel_loss(torch, terms, 2 * radius + 1, balanced=traced),
-            optimizer="SGD", optimizer_lr=learning_rate,
-            optimizer_params={"compose_n": 1},
-            smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
-            progress_bar=False, dtype=torch.float32,
-        )
-        # FireANTs builds its optimizers by name; the subclass changes only the step.
-        for half in (registration.fwd_warp, registration.rev_warp):
-            half.optimizer.__class__ = _global_step_sgd()
-        registration.optimize()
-        # Section -> atlas through the midpoint: rev^-1, then fwd; atlas ->
-        # section: fwd^-1, then rev. Both images share one grid, so the
-        # affine part is the identity.
-        with torch.no_grad():
-            forward_warp = registration.fwd_warp.get_warp().detach()
-            reverse_warp = registration.rev_warp.get_warp().detach()
-            forward = compose_warp(forward_warp, _invert(torch, reverse_warp))
-            inverse = compose_warp(reverse_warp, _invert(torch, forward_warp))
-        # Normalized [-1, 1] displacements (x, y) -> millimetres.
-        to_mm = np.array([(width - 1) / 2.0 * inputs.spacing_mm[0],
-                          (height - 1) / 2.0 * inputs.spacing_mm[1]], dtype=np.float64)
-        forward_mm = forward[0].detach().cpu().double().numpy() * to_mm
-        inverse_mm = inverse[0].detach().cpu().double().numpy() * to_mm
-        del registration, fixed, moving
-        if device == "cuda":
+    for attempt in range(OOM_RETRIES + 1):
+        try:
+            with gpu_turn(device), _deterministic(torch, device):
+                fixed = image(fixed_channels, inputs.fixed_mask)
+                moving = image(moving_channels, inputs.moving_mask)
+                registration: Any = SyNRegistration(
+                    scales=scales, iterations=list(level.iterations),
+                    fixed_images=fixed, moving_images=moving,
+                    loss_type="masked_custom",
+                    custom_loss=_channel_loss(torch, terms, 2 * radius + 1, balanced=traced),
+                    optimizer="SGD", optimizer_lr=learning_rate,
+                    optimizer_params={"compose_n": 1},
+                    smooth_grad_sigma=grad_sigma, smooth_warp_sigma=warp_sigma,
+                    progress_bar=False, dtype=torch.float32,
+                )
+                # FireANTs builds its optimizers by name; the subclass changes only the step.
+                for half in (registration.fwd_warp, registration.rev_warp):
+                    half.optimizer.__class__ = _global_step_sgd()
+                registration.optimize()
+                # Section -> atlas through the midpoint: rev^-1, then fwd; atlas ->
+                # section: fwd^-1, then rev. Both images share one grid, so the
+                # affine part is the identity.
+                with torch.no_grad():
+                    forward_warp = registration.fwd_warp.get_warp().detach()
+                    reverse_warp = registration.rev_warp.get_warp().detach()
+                    forward = compose_warp(forward_warp, _invert(torch, reverse_warp))
+                    inverse = compose_warp(reverse_warp, _invert(torch, forward_warp))
+                # Normalized [-1, 1] displacements (x, y) -> millimetres.
+                to_mm = np.array([(width - 1) / 2.0 * inputs.spacing_mm[0],
+                                  (height - 1) / 2.0 * inputs.spacing_mm[1]], dtype=np.float64)
+                forward_mm = forward[0].detach().cpu().double().numpy() * to_mm
+                inverse_mm = inverse[0].detach().cpu().double().numpy() * to_mm
+                del registration, fixed, moving
+                if device == "cuda":
+                    torch.cuda.empty_cache()
+            break
+        except Exception as exc:  # another process took the memory: wait and fit again
+            if device != "cuda" or attempt == OOM_RETRIES or not out_of_memory(exc):
+                raise
             torch.cuda.empty_cache()
+            time.sleep(OOM_WAIT_S * (attempt + 1))
     options: dict[str, Any] = {
         "metric": metric, "loss_terms": [list(t) for t in terms],
         "scales": scales, "iterations": list(level.iterations),
