@@ -17,7 +17,9 @@ A registration file can also be explicitly imported when creating a job.
                         (written by export_maps), landmarks.json (readable
                         corresponding pairs), deformation records (deformable/),
                         every registration it has held (registrations.jsonl),
-                        image-model traces (image_correction/), its pictures (views/)
+                        its made section images (images/<name>.png), its masks
+                        (masks/<name>.npz), image-model traces
+                        (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
   exports/              linear_results.json, spend.json, quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
@@ -181,7 +183,7 @@ is a folder that nothing deletes, so undo can return to it. It holds:
 | `warped_labels/s0` | uint32 `(rows, cols)`: the leaf atlas ids under the composed warp |
 | `footprint/s0` | bool `(rows, cols)`: the placed atlas footprint |
 | `left_out/s0` | bool `(rows, cols)`: the section pixels an engine's own sorting left out; absent otherwise |
-| `weights` | float16 `(rows, cols)` in [0, 1]: the engine's own tissue sorting (P(match)) on the fit grid, `set_mask(source="fit")` copies it; absent when the engine estimated none |
+| `weights` | float16 `(rows, cols)` in [0, 1]: the engine's own tissue sorting (P(match)) on the fit grid, `make_mask(source="fit")` copies it; absent when the engine estimated none |
 
 Each group is an OME-Zarr multiscale image of one level whose `s0` scale is
 the grid's millimetres per pixel (1 on the displacement axis, `type`
@@ -430,14 +432,41 @@ tools: `ref`, `module`, `factory`, `version`, `package_version`, `api_version`,
 the model reads it). `logs/events.jsonl` has a `plugins` line whenever that
 record changes.
 
+## Section images (`sections/<stem>/images/<name>.png`)
+
+One 8-bit gray PNG per made section image a section holds (`make_image`, a
+script's `add_image`, and the opening `preprocessed`; see `registration.md`):
+the working copy's size, in the image file's orientation (the quarter turn and
+flip are applied where it is drawn). Files are never deleted: undo only hides
+the state reference, and a name made again with other pixels gets a new file
+(`<name>.2.png`, ...). `state.json` holds the entry under the section's
+`images`, absent while empty: `source` (`{"recipe": {...}}` with the recipe's
+`weights` (`"auto"` or `{image name: weight}`), `clahe_clip`, `clahe_tiles`,
+`n4`, `denoise`, `contrast` (`[low, high]` or null), `gamma` (or null),
+`invert`; `{"script": note}`; or `{"opening": "adaptive" | "host" | "plain"}`,
+with the host's `settings` for `host`), `file`, `digest` (8 hex digits of the
+pixels and their shape), `made` (ISO time) and, for a recipe with automatic
+weights, `weights_used` (the weights it resolved to, by raw channel). The
+opening `preprocessed` file is the automatic path drawn at the working copy's
+size; pictures and fits draw that path again at their own size.
+
+State format 4 holds these entries; a job of format 3 (the stack's
+`appearance`: recipes and raw channels' display properties) is read through
+the migration when it opens (`core.section_images.Migration`): each recipe is
+made into a file and an entry per section (a section's own override
+honoured), `preprocessed` without a recipe becomes the opening image, the
+display properties are dropped, a mask's `channel` is named `section_image`,
+and the state and its history steps are written again as format 4.
+Deformation records are not rewritten.
+
 ## Masks (`sections/<stem>/masks/<name>.npz`)
 
-One file per mask a section holds (`set_mask`; see `registration.md`). Arrays:
+One file per mask a section holds (`make_mask`; see `registration.md`). Arrays:
 `weights` float16 `(rows, cols)` in [0, 1] on the section's fit grid, `grid`
 `[width, height]`, `made` the ISO time. Files are never deleted: undo only hides
 the state reference, and a mask made again under a name that exists gets a new
 file (`<name>.2.npz`). `state.json` holds the entry under the section's
-`masks`, absent while empty: `kind` (`em` or `fit`), `channel`, `atlas_image`
+`masks`, absent while empty: `kind` (`em` or `fit`), `section_image`, `atlas_image`
 (resolved), `params` (the EM starting points used), `inputs` (the digest of the section's
 orientation, which the mask's pixels sit on), `registration` (the digest of the
 registration it was made at), `file` and `left_out` (the fraction of the placed

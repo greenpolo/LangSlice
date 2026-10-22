@@ -33,8 +33,8 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 
 | Name | Removes |
 |---|---|
-| `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
-| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `set_mask`, `restore_registration` | the tool, as its task or host switch would (`set_mask` and `restore_registration` exist where the Linear or Nonlinear task is on; with `set_mask` off, the `mask` argument of the fits and `look`'s `masks` go too) |
+| `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`, `list_files`, `search_files`, `read_file`, `note`, `redo` | the tool |
+| `position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`, `trace_borders`, `mark_damage`, `make_mask`, `restore_registration` | the tool, as its task or host switch would (`make_mask` and `restore_registration` exist where the Linear or Nonlinear task is on; with `make_mask` off, the `mask` argument of the fits and `look`'s `masks` go too) |
 | `fireants_syn:metric`, `fireants_syn:edges`, `fireants_syn:detail` | that argument of `fireants_syn`, which then keeps its default |
 | `set_landmarks`, `landmark_triangulation` | the landmark pair: each needs the other, so both are disabled together |
 | `export_maps` | the scripting verb |
@@ -237,28 +237,87 @@ a section is never drawn past its source pixels, an atlas plane at most four
 times past its voxels (as an atlas zoom is). Picture resolution affects
 display only, never fit geometry or stored transforms. Source image files are never modified.
 
-## Channels and damage
+## Section images and damage
 
-`set_channel` writes channels. A **raw channel** is a channel of the image
-files, named as the reply lists them; it is never edited, and setting it
-(contrast limits, gamma, colormap) changes only how `look` draws it: pictures,
-not fits. Automatic contrast is computed per section. A **derived channel** is
-a stack-wide recipe over the raw channels: weights, CLAHE, N4 correction,
-denoising, a contrast stretch (`contrast_limits`, `gamma`) and `invert`.
-`preprocessed` is the derived channel the fits and the image model read by
-default (LangSlice's own recipe until it is set); any other name makes another
-derived channel a fit can read as its `section_image`. A recipe applies
-stack-wide, or as the override of the `sections` named; `reset` returns
-`preprocessed` to the default recipe and deletes another derived channel. It
-returns the before/after pictures of up to four sections (a channel the call
-creates has no before, so one picture each). Its description and
-the job statement's Method tell the agent to register on the counterstain
-(DAPI, Hoechst, Nissl, NeuroTrace) alone, enhanced, with every labelling
-channel at weight 0. Inspect a derived channel with `look(channels=[name])`.
-`status` lists each derived channel's recipe (a channel made for some
-sections only shows `none: this channel exists only on the sections listed`
-as its stack recipe). The tool is available in every
-job; ABBA's agent-preprocessing switch controls which raw channels it exports.
+A **section image** is one named grayscale picture of a section that `look`
+draws and every fit reads by name. Two kinds share one namespace per section:
+
+- **raw**: a plane of the image file (`red`/`green`/`blue` for a colour file,
+  `gray`, or the host's channel names or `ch1`, `ch2`... for a multi-page
+  file), never edited;
+- **made**: an image produced from the section's other images by a recipe
+  (`make_image`) or handed in by a script (`job.context.add_image`), saved as
+  `sections/<stem>/images/<name>.png` (8-bit gray, the working copy's size, in
+  the file's orientation; the quarter turn and flip are applied where it is
+  drawn) with an entry in the state (`file_formats.md`).
+
+`preprocessed` is the made image LangSlice writes for every section when the
+job is created: the automatic path (each raw channel weighted by its squared
+tissue coverage, CLAHE clip 4 on 8x8 tiles, the blend brightened toward a
+mid-gray tissue mean; a host's channel blend for an ABBA job that sends
+preprocessing settings; the file as read, in gray, for a job with
+`preprocess="none"`). It is drawn through that path at the size each picture or
+fit reads it, exactly as before section images were files, and its file is
+that drawing at the working copy's size. It is the image every fit reads by
+default (`section_image="preprocessed"`), the image model traces on, and the
+picture of the section that `look` draws when no image is named, as do the
+positioning picture, the opening strips and the landmark views.
+
+`make_image(name, sections=[], weights={}, clahe_clip=4, clahe_tiles=8,
+n4=False, denoise=False, contrast=[], gamma=0, invert=False, delete=False,
+view=True)` makes, replaces or deletes a made image. The steps run in this
+order on each weighted source: N4, denoising, CLAHE; then the weighted blend,
+brightened to a mid-gray tissue mean; then `contrast` (fractions 0 to 1 of the
+blended image, stretched to the full range), `gamma` and `invert`. `weights`
+names the sources (a raw channel or a made image; empty is every raw channel
+by its tissue coverage); an image cannot be its own source. A recipe image is
+computed once on the working copy and read back from its file, resized to the
+size it is drawn at. `sections` empty is every section; naming sections
+remakes the image for them alone under the same name. A name made again with
+other pixels gets a new file (`<name>.2.png`, ...): files are never deleted,
+so undo finds the old one. `preprocessed` made with every argument at its
+default is the opening image again (the same file). `preprocessed` cannot be
+deleted; a raw channel's name cannot be made. One undo step per call. With
+`view`, it returns up to four of the sections (spread over the stack when none
+are named; every one through the CLI and the library), each drawn as `look`'s
+`section` mode draws the image. Refused: `BAD_ARGS`, `UNKNOWN_SLICE_IDS`,
+`UNKNOWN_IMAGE`, `RENDER_FAILED`.
+
+`look(images=[...])` draws one section image alone, in gray, or up to six raw
+channels together, each in its own colour with automatic contrast computed per
+section (black at the background and full colour at the tissue's 95th
+percentile on a dark background, the 1st and 99.5th percentiles on a light
+one). There are no display settings: a stretched, inverted or gamma-corrected
+view is a made image, which a fit can read too. Every caption names the image
+drawn and what it is (its recipe, a script's note, or how the opening image
+was made).
+
+A script registers an image it computed with
+`job.context.add_image(id, name, array, note="")` (`docs/library.md`): an
+`(H, W)` array on the section's working grid in the file's orientation,
+`uint8` or floats from 0 to 1, recorded with the note as its source, one undo
+step. The next fit can read it by name.
+
+Every fit reply's `inputs.section_image` is `{name, kind, file, digest}`: the
+image read (`kind` `raw` or `made`; for a raw channel the section's image file
+and no digest). A fit's cache key holds the image's digest, and the digest map
+of a section's made images is part of what a long verb compares before it
+applies (`ops/inputs.py`): an image made again while a fit computes makes that
+section `STALE_INPUT`. `status` lists the raw channels and the made images
+(`section_images`: each name with its recipe, a script's note or the opening
+image's recipe, `varies` with the sections that differ, and `only` / `except`
+where it exists on some sections). No image changes geometry: every image is
+held at the working copy's size and drawn at the same render size, and
+calibration comes from the file, the host or the atlas width.
+
+The job statement says what the section images are and how `preprocessed` was
+made, that a channel whose signal is sparse shows little of the anatomy the
+atlas draws, which atlas images there are and which one the fits' default
+`nissl` is, and one Method line: a fit compares one section image with one
+atlas image and does best when both show as much internal structure as
+possible and look alike; there is no fixed recipe. `make_image` is available
+in every job; a job that disables it keeps the raw channels and the opening
+`preprocessed`.
 
 ## Masks
 
@@ -267,9 +326,9 @@ saved under the job folder (`sections/<stem>/masks/<name>.npz`, float16; see
 `file_formats.md`). It is **section-side** and has one of two kinds, both a
 three-class EM sorting of the section's pixels into tissue that matches the
 atlas image, artifact and background (after Tward et al. 2025): `em`, made by
-`set_mask` at the section's current registration (the atlas image placed
+`make_mask` at each section's current registration (the atlas image placed
 through its transform and applied deformation, on a 20 µm working grid, from a
-channel you choose, with optional starting points `match_sd`, `background_sd`,
+section image you choose, with optional starting points `match_sd`, `background_sd`,
 `artifact_sd`, `background_mean`, `artifact_mean`), and `fit`, copied from the
 sorting the section's applied deformation saved when its engine estimated one
 (`NO_DEFORMATION` / `NO_SORTING` when there is none). There is no threshold
@@ -289,7 +348,15 @@ flipped (`STALE_MASK`: a fit refuses it; make it again). `status` lists each
 section's masks (name, kind, stale, earlier_registration). `look(masks=[name])`
 outlines a mask where its weight is 0.5 on `section` and `overlay` pictures;
 the picture's caption says so (the ringed patches are what the mask leaves out of
-a fit) and names each mask and its source. `set_mask` returns that `section` picture.
+a fit) and names each mask and its source.
+
+`make_mask(name, sections=[], source="em", section_image="preprocessed",
+atlas_image="nissl", sorting={}, delete=False, view=True)` has the shape of
+`make_image`: `sections` empty is every section, each gets its own mask at its
+own registration, one undo step for the call; a section that cannot get one
+(no position, no deformation for source `fit`) is that section's row, the
+others are written. With `view` it returns up to four of the sections'
+`section` pictures with the mask outlined.
 
 `mark_damage` records atlas regions whose tissue is missing from the section
 or lies folded over other anatomy, including one hemisphere when needed.
@@ -316,7 +383,7 @@ and MCP; any number through the CLI and the library, within the job's
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a channel of the section (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A fit that is hard to believe carries `flags`, as the deformable fits do, each also worded in the row's `warning`: `SCALE_CHANGED` when the scale along either axis changes by more than a factor of 0.8 to 1.25 from the transform the section held (`scale`, `previous`, `limits`), `SHEAR` when the shear changes by more than 0.15 (`shear`, `previous`, `limit`); a section that holds only part of the brain (a hemisphere) can be stretched over atlas it does not hold. A fit that turns the section more than 45 degrees says so in the same `warning`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. A call that fits nothing answers with the code and sentence every section was refused for, when they share one (`HAS_DEFORMATION`, `FROZEN`), else `NOTHING_FITTED` with each section's row naming its own; `fireants_syn` answers the same way. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a section image (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A fit that is hard to believe carries `flags`, as the deformable fits do, each also worded in the row's `warning`: `SCALE_CHANGED` when the scale along either axis changes by more than a factor of 0.8 to 1.25 from the transform the section held (`scale`, `previous`, `limits`), `SHEAR` when the shear changes by more than 0.15 (`shear`, `previous`, `limit`); a section that holds only part of the brain (a hemisphere) can be stretched over atlas it does not hold. A fit that turns the section more than 45 degrees says so in the same `warning`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. A call that fits nothing answers with the code and sentence every section was refused for, when they share one (`HAS_DEFORMATION`, `FROZEN`), else `NOTHING_FITTED` with each section's row naming its own; `fireants_syn` answers the same way. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -329,7 +396,7 @@ a larger region or `interactive_transform`.
 
 ## FireANTs deformation
 
-`fireants_syn` fits the atlas to a channel of the section (`section_image`,
+`fireants_syn` fits the atlas to a section image (`section_image`,
 default `preprocessed`), starting from its current linear placement and any
 applied deformation. Each fit builds on the previous one and can be undone. It
 accepts one to twenty sections, fitted one after another (more is refused with
@@ -341,7 +408,7 @@ as one undo step; 20 sections peaked at 6.4 GB), and: `atlas_image` (default `"n
 on), `detail` (`coarse`, `standard`, `fine`) and optional `restrict_to`
 regions. The step size, the iterations per level and the pyramid are fixed.
 Its reply carries `settings` (the call) and, per section, `inputs` (the
-channel and a digest of its recipe, the atlas image as asked and as resolved,
+section image, `{name, kind, file, digest}`, the atlas image as asked and as resolved,
 the mask (always an object: `name`, `"none"` for no mask, `kind`, `stale`,
 `earlier_registration`), the atlas-side damage regions and the margin every engine
 leaves around them, the regions restricted to (`fireants_syn` and `elastix_affine`
