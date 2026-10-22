@@ -595,7 +595,8 @@ def _overlay_picture(
         base = (x1 - x0, y1 - y0)
     if request.zoom and base is not None:
         options = replace(options, zoom=_zoom_pixels(request.zoom, base))
-    placed = placement_pictures(ws, state, record, position, options, {}, store=store)
+    placed = placement_pictures(ws, state, record, position, options, {}, store=store,
+                                label_note=_registration_words(request, record))
     image = placed.images[0]
     shown: tuple[int, int] = image.size
     um = 0.0

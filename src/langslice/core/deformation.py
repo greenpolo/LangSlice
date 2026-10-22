@@ -307,8 +307,15 @@ class Choice:
         )
 
     def echo(self) -> dict[str, Any]:
+        """The choice as a deformation step and a record store it (the step's
+        own field names, ``fit_section`` and ``fit_atlas``)."""
         return {"smoothness_um": self.smoothness_um, "mask": self.mask,
                 "fit_section": self.fit_section, "fit_atlas": self.fit_atlas}
+
+    def tool_settings(self) -> dict[str, Any]:
+        """The choice by the tools' names, as a fit's reply rows give it."""
+        return {"section_image": self.fit_section, "atlas_image": self.fit_atlas,
+                "smoothness_um": self.smoothness_um, "mask": self.mask}
 
 
 def engine_settings(settings: FitSettings, brain_scale: float = 1.0) -> dict[str, Any]:
