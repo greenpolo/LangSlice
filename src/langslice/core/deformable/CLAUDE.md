@@ -139,7 +139,12 @@ and returns a `record.DeformableRecord`. No custom solver.
   `fit_prepared` runs 1–8 prepared fits (different sections or settings):
   on a GPU one after another in the caller, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
-  candidate is a `CandidateFailure`, never an exception.
+  candidate is a `CandidateFailure`, never an exception. A GPU fit runs in the
+  machine's one GPU queue (`engines.gpu_turn`: a file lock on `GPU_LOCK`,
+  `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, the lock the
+  STalign, emlddmm and SPOmiAlign engines take too), so fits of several jobs
+  never share the GPU's memory; one that still finds it full (a process outside
+  the queue) waits and fits again, `OOM_RETRIES` times.
 
 ## Brain size
 
