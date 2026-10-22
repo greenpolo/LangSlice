@@ -94,7 +94,11 @@ values; the tool's reply is `{"status": "ok", **reply}` (a handler may set
 `status`). `pictures` are PIL images (or arrays) with their captions burned in
 (`ctx.caption(image, text)`); they are sent with the reply and saved in the job
 folder, numbered, like every picture a tool shows, so `zoom` and `read_file`
-reach them. Raising `ToolError(code, message, **details)` refuses the call with
+reach them. A captioned `ctx.overlay_picture(id)` keeps the section it shows,
+and `ctx.caption(image, text, sections=[id])` names the sections a picture of
+the handler's own shows: the saved picture then records the registration each
+section holds, so `restore_registration`'s list names it among the pictures the
+call's write saved; a picture of a proposal not written records none. Raising `ToolError(code, message, **details)` refuses the call with
 `{"status": "error", "error": code, "message": message, **details}`; any other
 exception is a reply `PLUGIN_FAILED` naming it, and the job carries on.
 

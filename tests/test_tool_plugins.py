@@ -911,6 +911,52 @@ def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path
     assert state.by_id("s0.png").deformation["key"] == held["key"]
 
 
+PICTURED = '''
+import numpy as np
+from PIL import Image
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(sections: list[str]):
+    """Ripple sections and show them."""
+
+def handler(ctx, sections):
+    from tests.fixtures.example_plugin import ripple_map
+    rows = [{"id": name, "map": ripple_map(ctx.fit_frame(name), 1.0)} for name in sections]
+    written = ctx.set_deformations(rows)
+    name = sections[0]
+    proposal = ctx.deformation_from_map(name, ripple_map(ctx.fit_frame(name), 2.0))
+    pictures = [ctx.caption(ctx.overlay_picture(name), f"{name}: rippled"),
+                ctx.caption(ctx.overlay_picture(name, proposal={"deformation": proposal}),
+                            f"{name}: a ripple not written"),
+                ctx.caption(Image.fromarray(np.zeros((20, 30, 3), np.uint8)),
+                            f"{name}: a picture of my own",
+                            sections=[name])]
+    return ToolResult(written.reply(), pictures)
+
+def tools():
+    return [ToolSpec("ripple_shown", stub, handler, kind="write", group="Nonlinear",
+                     task="nonlinear", writes=("deformation",))]
+'''
+
+
+def test_a_plugin_s_pictures_are_listed_with_the_registration_its_write_left(make,
+                                                                             images: Path):
+    """A plugin's picture of a section (an overlay, or one of its own named by
+    ``ctx.caption(sections=)``) records the registration the section holds,
+    so the registration list names it; a picture of a proposal not written
+    records none."""
+    state, _c, box = warp_box(images, make("shown_plugin", PICTURED))
+    reply = call(box, "ripple_shown", sections=["s0.png"])
+    assert reply["written"] == ["s0.png"], reply
+    overlay, proposed, own = (entry["id"] for entry in reply["pictures"])
+    number = reply["registration"]["s0.png"]
+    listed = call(box, "restore_registration", section="s0.png")["registrations"]
+    row = next(item for item in listed if item["registration"] == number)
+    assert row["by"] == "ripple_shown" and row["pictures"] == [overlay, own]
+    assert box.job.views.lookup(proposed).registrations == {}
+    assert box.job.views.lookup(own).sections == ("s0.png",)
+
+
 def test_a_proposed_deformation_is_drawn_and_not_written(make, images: Path):
     state, _c, box = warp_box(images, make("fields_plugin", FIELDS))
     depth = len(box.job.undo_stack)

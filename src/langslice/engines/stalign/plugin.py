@@ -412,7 +412,7 @@ def _sorting_picture(ctx: ToolContext, frame: Any, weights: np.ndarray,
     gap = np.full((gh, 8, 3), 255, np.uint8)
     image = Image.fromarray(np.concatenate([left, gap, right], axis=1))
     image.thumbnail((1600, 1600))
-    return ctx.caption(image, title)
+    return ctx.caption(image, title, sections=[frame.id])
 
 
 def _loss_picture(energy: np.ndarray, path: Path) -> None:

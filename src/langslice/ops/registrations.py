@@ -248,7 +248,9 @@ def restore(job: Job, sections: Any) -> RestoredMany:
     ``[{"id": filename, "registration": number}]``; orientation, transform
     and deformation as the section held them), as ONE undo step (see the
     module text). A section that cannot be restored is its own row and the
-    others are written. Refused, nothing written: ``BAD_ARGS`` (no entries,
+    others are written; any other failure partway puts back the sections
+    already changed and raises (nothing written, in memory or on disk).
+    Refused, nothing written: ``BAD_ARGS`` (no entries,
     an entry that is not ``{"id", "registration"}``),
     ``DUPLICATE_SLICE_IDS``, ``UNKNOWN_SLICE_IDS``."""
     entries = list(sections or [])
@@ -276,18 +278,23 @@ def restore(job: Job, sections: Any) -> RestoredMany:
         before = job.snapshot()
         rows: list[dict[str, Any]] = []
         written: list[str] = []
-        for record, item in zip(named, entries, strict=True):
-            try:
-                done = _restore_one(job, record, item["registration"])
-            except Refused as refusal:
-                rows.append({"id": record.id, **refusal.payload()})
-                continue
-            rows.append({"id": done.id, "status": "ok", "registration": done.registration,
-                         **({"replaced": done.replaced}
-                            if done.replaced not in (None, done.registration) else {}),
-                         "written": done.written})
-            if done.written:
-                written.append(done.id)
+        try:
+            for record, item in zip(named, entries, strict=True):
+                try:
+                    done = _restore_one(job, record, item["registration"])
+                except Refused as refusal:
+                    rows.append({"id": record.id, **refusal.payload()})
+                    continue
+                rows.append({"id": done.id, "status": "ok", "registration": done.registration,
+                             **({"replaced": done.replaced}
+                                if done.replaced not in (None, done.registration) else {}),
+                             "written": done.written})
+                if done.written:
+                    written.append(done.id)
+        except BaseException:
+            # all or nothing: a failure partway puts back the sections already changed
+            job.state.restore(before)
+            raise
         if written:
             job.commit(before)
         return RestoredMany(rows=rows, written=written)

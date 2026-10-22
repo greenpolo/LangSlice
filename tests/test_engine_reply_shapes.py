@@ -61,13 +61,16 @@ def test_a_sorting_that_set_nothing_aside_draws_no_picture():
     from langslice.engines.stalign.plugin import _sorting_picture
 
     captions: list[str] = []
-    ctx = SimpleNamespace(caption=lambda image, text: (captions.append(text), image)[1])
-    frame = SimpleNamespace(section_image=np.full((40, 60, 3), 200, np.uint8))
+    shown: list[object] = []
+    ctx = SimpleNamespace(caption=lambda image, text, sections=(): (
+        captions.append(text), shown.append(list(sections)), image)[2])
+    frame = SimpleNamespace(id="s0.png", section_image=np.full((40, 60, 3), 200, np.uint8))
     assert _sorting_picture(ctx, frame, np.ones((40, 60), np.float32), "t") is None
     weights = np.ones((40, 60), np.float32)
     weights[5:15, 5:15] = 0.0
     picture = _sorting_picture(ctx, frame, weights, "t")
     assert isinstance(picture, Image.Image) and captions == ["t"]
+    assert shown == [["s0.png"]]  # the picture names its section
 
 
 def test_a_notice_names_each_flag_once_with_its_regions():

@@ -460,12 +460,13 @@ class ViewStore:
     def _registrations(self, note: PictureNote | None) -> dict[str, int] | None:
         """The registration each section of a picture is drawn under: the
         note's ``extra["registrations"]`` (a picture of a registration the
-        section does not hold), else the ones its sections hold now."""
+        section does not hold; empty for a proposal not written, which shows
+        none), else the ones its sections hold now."""
         if note is None or not note.sections:
             return None
         named = note.extra.get("registrations") if note.extra else None
-        if isinstance(named, dict) and named:
-            return {str(key): int(value) for key, value in named.items()}
+        if isinstance(named, dict):
+            return {str(key): int(value) for key, value in named.items()} or None
         if self.registration_source is None:
             return None
         try:
