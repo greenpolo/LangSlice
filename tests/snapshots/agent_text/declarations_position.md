@@ -6,8 +6,8 @@ Draw pictures of sections and the atlas. Writes nothing.
 
 The same request draws the same kind of picture at every stage of the
 run: no default depends on the stack's state. Each picture gets a number
-and a caption stating the positions, cutting angles, scale and channel
-settings it was drawn with; zoom takes the number.
+and a caption stating the positions, cutting angles, scale and section
+image it was drawn with; zoom takes the number.
 
 Use positioning mode to compare sections with candidate atlas planes
 along the slicing axis. Use overlays to assess in-plane alignment and
@@ -31,12 +31,9 @@ Args:
     positions_mm: Atlas positions in millimetres along the slicing axis:
         the planes "atlas" draws (at least one), and the atlas pictures
         above the ruler in "positioning" (none when empty).
-    channels: The raw channels of each section to draw, by name (several
-        are blended in distinct colours, at most 6), or one derived
-        channel alone: ["preprocessed"] for the channel the fits and the
-        image model read, or the name of another channel
-        made with set_channel. Empty is every raw channel, each with its
-        display settings.
+    images: Section images to draw, by name (status lists them): one image
+        alone, in gray, or up to 6 raw channels together, each in its own
+        colour with automatic contrast. Empty draws `preprocessed`.
     atlas_layers: Any of the atlas's images (the job statement lists
         them: "template" and any other reference images the atlas ships,
         by their names) and "borders". Empty is the mode's default: borders in "overlay",
@@ -50,7 +47,7 @@ Args:
         were drawn. Empty draws none.
     depth: Atlas ontology depth whose region boundaries "borders"
         draws (0 = root, as in BrainGlobe; larger is finer).
-    masks: Names of masks made with set_mask, outlined where
+    masks: Names of masks made with make_mask, outlined where
         their weight is 0.5 on the sections drawn, on the "section" and "overlay" pictures. Empty draws none.
 
 Returns:
@@ -66,7 +63,7 @@ Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 The new picture is as large as the earlier one. In a picture of a
 section or of a section with the atlas on it, the section is read again
 from its original image file at the file's own resolution, only inside
-the box, and drawn with the same channels, display settings and atlas
+the box, and drawn with the same section image and atlas
 borders; the caption says when the file holds fewer pixels than the
 picture. A positioning picture's sections are drawn again from their
 working copies (the file reduced to at most 3072 pixels), and the atlas
@@ -97,7 +94,7 @@ Args:
         "CTX:left" or "CTX:right" selects one displayed side. Overlay
         pictures only. Crops to the entire region with a small margin
         and draws only its border, preserving the saved registration
-        and display settings. An absent region is reported. Leave box
+        and section image. An absent region is reported. Leave box
         empty when using region.
 
 Returns:
@@ -109,77 +106,46 @@ Returns:
     saved picture and enlarged, with no more detail than it had.
 
 
-## set_channel
+## make_image
 
-Set how a channel is displayed, or the recipe of a channel made from the raw ones.
+Make, replace or delete a named section image, from the section's other images.
 
-A raw channel is a channel of the image files, named as the reply's
-`channels` lists them; it is never edited, and setting it changes only how
-look draws it (contrast_limits, gamma, colormap): nothing a fit or the
-image model reads. Every other name is a derived channel, made from the
-raw ones by a recipe (weights, clahe_clip, clahe_tiles, n4, denoise,
-contrast_limits, gamma, invert) for the whole stack, or for the
-sections named as their own recipe. "preprocessed" is the derived channel
-the fits and the image model read by default: LangSlice's default recipe
-until this is called; a new name makes another channel that the
-fits and look can read as well. The setting stays until it is
-changed, and every caption states it. Undoable; another call replaces the
-recipe.
-
-Register on the counterstain. A counterstain (DAPI, Hoechst, Nissl,
-NeuroTrace) labels every cell, so it shows the anatomy the atlas draws; a
-labelling channel (a tracer, an antibody, a reporter) marks only some
-cells, and its bright signal pulls the fits toward it. Give the
-counterstain weight 1 and each labelling channel weight 0, then enhance
-it until the internal anatomy (layers, nuclei, fibre tracts, ventricles)
-is as clear as possible: CLAHE always, N4 where illumination is uneven,
-denoising where it is grainy. A section with one channel, or a
-brightfield stain that already shows the anatomy, uses that channel. The
-preprocessed channel serves both you and the fitting algorithms: look at
-it (`look` with channels ["preprocessed"]) to judge alignment, and the
-fits match it against the atlas. Pale or low-contrast sections
-especially need this before you place or fit them. Inspect the
-before-and-after pictures and compare with the raw channels before
-fitting. A raw channel's display adjustments alone do not change what the
-fitting algorithms receive.
+A section image is a grayscale picture of a section that look draws and
+the fits read by name: the raw channels of the file, never edited, and the
+images made here, each saved under the job folder
+(sections/<name>/images/<name>.png; status lists them). A fit reads the
+file as it is, so a look at an image is what the fit sees. "preprocessed"
+was made when the job opened; make it again, or make others under new
+names, as the sections need. The steps run in this order on each source:
+n4, denoise, CLAHE; then the weighted blend, brightened to a mid-gray
+tissue mean; then contrast, gamma, invert. Undoable.
 
 Args:
-    name: A raw channel's name, "preprocessed", or the name of a derived
-        channel to make or change.
-    sections: Filenames (the extension may be left off) of the sections
-        that get a recipe of their own; empty sets the whole stack's
-        recipe. A raw channel is set for every section that has it.
-    weights: A derived channel's raw channels and their weights, by name
-        (for example {"dapi": 1, "gfp": 0}); a channel left out or at 0
-        is not used. Empty: automatic weights by tissue coverage.
-    clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
+    name: The image's name (not a raw channel's); an existing name is
+        replaced.
+    sections: Filenames (the extension may be left off) of the sections to
+        make it for; empty is every section. A later call can remake it for
+        some sections alone.
+    weights: The images to blend and their weights, by name: {"dapi": 1},
+        {"red": 1}, {"dapi": 1, "gfp": 0.3}, or a made image's name. Empty:
+        each raw channel weighted by how much of the tissue it lights.
+    clahe_clip: Local contrast enhancement (CLAHE) clip limit, 0 (none) to
+        40.
     clahe_tiles: CLAHE tiles per side, 1 to 32.
-    n4: N4 correction of uneven illumination.
-    denoise: Denoising.
-    contrast_limits: [low, high]. For a raw channel, in the file's own
-        intensities: low is drawn black, high at full brightness; empty
-        keeps the current limits, and without limits a channel is drawn
-        with automatic ones, per section: black at the background, full
-        brightness at the tissue's 95th percentile. For a derived channel,
-        [low, high] between 0 and 1 of the recipe's result, stretched to
-        the full range; empty leaves it as it is.
-    gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma (a derived
-        channel's: none).
-    colormap: A raw channel's: "gray", "red", "green", "blue", "magenta",
-        "cyan" or "yellow"; empty keeps the current one.
-    invert: A derived channel's: True draws bright as dark.
-    reset: True returns a raw channel to its default display, "preprocessed"
-        to the default recipe (the stack's, or the named sections' back to
-        the stack's), and deletes another derived channel (with sections,
-        only those sections' recipes of its own); the other arguments are
-        then ignored.
+    n4: Correct uneven illumination (N4).
+    denoise: Patch-based denoising.
+    contrast: [low, high], fractions 0 to 1 of the blended image's range,
+        stretched to the full range; empty leaves it.
+    gamma: 0.1 to 10; 1 or 0 is linear.
+    invert: Bright as dark.
+    delete: True removes the image (from the named sections, or
+        everywhere); the other arguments are then ignored.
     view: True returns the pictures described below; false returns none.
 
 Returns:
-    The settings or recipe now in force, the channels there are, and for
-    a derived channel, up to 4 of the sections (spread over the stack when
-    none are named) two pictures each: the channel before this call, then
-    after it; a channel this call creates has no before, so one picture each.
+    The recipe now in force and the section images there are, and with
+    view up to 4 of the sections (spread over the stack when none are
+    named), each drawn as look's "section" mode draws the image.
 
 
 ## grep_atlas
@@ -245,10 +211,10 @@ Returns:
     to the next placed section, flip and quarter turn, transform,
     damaged regions and damage note, deformation steps, masks
     (name, source, and whether it was made at an earlier registration). Also the
-    cutting angles, the interval breaks, the raw channels' display
-    settings ("auto": automatic contrast limits), the derived channels'
-    recipes (the preprocessed channel's, and any other you made), the
-    background work still running, and what this run lets you change.
+    cutting angles, the interval breaks, the raw channels and the section
+    images made (each with its recipe, or a script's note, and the
+    sections it differs on or exists on), the background work still
+    running, and what this run lets you change.
 
 
 ## list_files

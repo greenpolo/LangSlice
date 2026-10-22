@@ -26,14 +26,14 @@
 ```json
 {
  "error": "UNKNOWN_ARGUMENTS",
- "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, channels, atlas_layers, atlas_opacity, warp, layers, depth, masks. Nothing was done.",
+ "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, images, atlas_layers, atlas_opacity, warp, layers, depth, masks. Nothing was done.",
  "problems": [
   {
    "accepted": [
     "mode",
     "sections",
     "positions_mm",
-    "channels",
+    "images",
     "atlas_layers",
     "atlas_opacity",
     "warp",
@@ -52,12 +52,12 @@
 }
 ```
 
-### `look('section', sections=['s0.png'], channels=['purple'])`
+### `look('section', sections=['s0.png'], images=['purple'])`
 
 ```json
 {
- "error": "UNKNOWN_CHANNEL",
- "message": "s0.png has no channel 'purple'; its channels: gray, or 'preprocessed'",
+ "error": "UNKNOWN_IMAGE",
+ "message": "s0.png has no section image 'purple'; its images: gray, preprocessed",
  "status": "error"
 }
 ```
@@ -135,7 +135,7 @@
  ],
  "pictures": [
   {
-   "caption": "positioning: 1 section below in position order at 0.10 mm, raw gray auto; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm",
+   "caption": "positioning: 1 section below in position order at 0.10 mm, preprocessed; atlas above at 1 position; ruler 0.0-0.2 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.10 mm",
    "id": 1
   }
  ],
@@ -186,7 +186,7 @@
  ],
  "pictures": [
   {
-   "caption": "positioning: 1 section below in position order at 0.25 mm, raw gray auto; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
+   "caption": "positioning: 1 section below in position order at 0.25 mm, preprocessed; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s0.png 0.25 mm",
    "id": 2
   }
  ],
@@ -351,7 +351,7 @@
  ],
  "pictures": [
   {
-   "caption": "positioning: 1 section below in position order at 0.25 mm, raw red, green, blue auto; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s1.png 0.25 mm",
+   "caption": "positioning: 1 section below in position order at 0.25 mm, preprocessed; atlas above at 1 position; ruler 0.0-0.3 mm from anterior (left) to posterior; all at 31.2 um/px. Sections: s1.png 0.25 mm",
    "id": 3
   }
  ],
