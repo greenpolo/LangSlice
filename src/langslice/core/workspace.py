@@ -94,9 +94,11 @@ class Workspace:
     plane_cache: OrderedDict[tuple[float, str, float, float, bool], Image.Image] = field(
         default_factory=OrderedDict, repr=False)
     #: Section images at the working copy's size, uint8 (raw planes, made
-    #: images' files, the opening image): ``(section id, what)`` -> array
-    #: (:mod:`langslice.core.section_images`). Shared: read only.
-    image_cache: dict[tuple[str, str], Any] = field(default_factory=dict, repr=False)
+    #: images' files, the opening image): ``(section id, what)`` -> array, least
+    #: recently used first (bounded by ``core.section_images.IMAGE_CACHE_SIZE``).
+    #: Shared: read only.
+    image_cache: OrderedDict[tuple[str, str], Any] = field(
+        default_factory=OrderedDict, repr=False)
     #: The job folder whose files the made section images are read from (set by
     #: the job when it opens on this workspace; None: no job, and only the raw
     #: channels and the opening image can be drawn).

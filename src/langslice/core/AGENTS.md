@@ -176,14 +176,13 @@ the angles in a caption (empty for the flat plane).
   `ATLAS_RENDER_FAILED` / `BAD_PIVOT`) and `Staged`.
 - `sections.py` — the section renders and their cache: `render_slice`
   (a look drawn unoriented at the render size, then ROTATE, then FLIP;
-  `_look_image`): None is the section's `preprocessed` image (the opening one
-  drawn through the automatic path at that size, `section_images.opening_render`;
-  a remade one its file resized), `{"image": name}` any section image alone in
-  gray, `{"overlay": [raw names]}` raw channels together through
-  `channels.composite`, `{"file": True}` the working copy as read;
-  `drawn_look` resolves a look on a record (a made image carries its digest),
-  `look_token` / `render_cache_key` (the opening keeps `spec.preprocess`, a
-  made image its digest), `canvas_um_per_px`, `shown_section` (the larger
+  `_look_image`): None is the section's `preprocessed` image, `{"image": name}`
+  any section image alone in gray (a raw plane, or a made image's file, the
+  opening `preprocessed` included, resized to the render), `{"overlay": [raw
+  names]}` raw channels together through `channels.composite`, `{"file": True}`
+  the working copy as read; `drawn_look` resolves a look on a record (a made
+  image carries its file's digest), `look_token` / `render_cache_key` (the
+  resolved look), `canvas_um_per_px`, `shown_section` (the larger
   render a picture is drawn from), `rescale_section_matrix`,
   `PREVIEW_LONG_EDGE` (512, the working frame every fit is computed on).
   Every look is drawn at the same size, so no image moves geometry. Cached on
@@ -205,16 +204,17 @@ the angles in a caption (empty for the flat plane).
   steps; sources are raw channels or made images, so chains compose),
   `recipe_words` / `compact_recipe`, `image_names` (raw, `preprocessed`, then
   the made ones), `kind_of`, `plane_of` / `image_plane` (a raw plane or a made
-  file, cached on `Workspace.image_cache`; `preprocessed` without an entry is
-  the opening image drawn at working size), `read_image` -> `ImageView`
+  file, cached on `Workspace.image_cache`, least recently used out past
+  `IMAGE_CACHE_SIZE`; `preprocessed` without an entry is
+  the opening image made in memory, for a workspace with no job), `read_image` -> `ImageView`
   (`payload()`: `{name, kind, file, digest}`, a fit's `inputs.section_image`),
   `identity` (what a fit's cache key holds), `images_digest` (`{name:
   digest}`, part of `section_masks.registration_parts` and so of
   `ops.inputs.section_inputs`). The opening image: `opening_source(spec)`,
-  `opening_words`, `opening_render(ws, id, long_edge)` (the automatic path,
-  `image_prep.adaptive_preprocess` on the working copy resized to that edge,
-  in gray; a host's blend is the working copy itself; `preprocess="none"` the
-  copy in gray), `opening_entry`, `ensure_opening` (every section without one,
+  `opening_words`, `opening_render(ws, id)` (the automatic path,
+  `image_prep.adaptive_preprocess` on the working copy, in gray; a host's blend
+  is the working copy itself; `preprocess="none"` the copy in gray), written
+  once as the file every reader reads, like any made image; `opening_entry`, `ensure_opening` (every section without one,
   on threads, outside undo: `Job.open` and `Job.load`). `summary(state, spec)`:
   `status`'s `section_images`. `Migration(ws, layout)`: a format-3 state's fields as
   format 4 (each `appearance` recipe, a section's override honoured, made into

@@ -88,32 +88,34 @@ def test_a_recipe_is_validated_and_its_defaults_are_the_opening_recipe():
 # --- the opening image ---------------------------------------------------------------------
 
 
-def test_the_opening_image_is_the_default_render_exactly(tmp_path: Path, atlas):
-    """Nothing the engines receive changes: at every size the opening
-    ``preprocessed`` is the automatic path drawn at that size, and its file is
-    that drawing at the working copy's size."""
+def test_the_opening_image_is_one_file_every_reader_reads(tmp_path: Path, atlas):
+    """The opening ``preprocessed`` is the automatic path run once on the working
+    copy and saved; every reader (pictures at any size, the fits) reads that
+    file, resized to its own size, so the reply's file and digest are what the
+    engine read."""
     job, ctx = _open(tmp_path, atlas)
     for record in job.state.slices:
         entry = record.images[images.PREPROCESSED]
         assert entry["source"] == {"opening": "adaptive"}
-        assert (job.folder / entry["file"]).is_file()
         assert entry["file"].endswith(f"{Path(record.id).stem}/images/preprocessed.png")
         source, _factor = ctx.working_source(record.id)
+        held = Image.open(job.folder / entry["file"])
+        assert np.array_equal(np.asarray(held, dtype=np.int16), _gray(adaptive_preprocess(source)))
+        assert entry["digest"] == images.digest_of(np.asarray(held))
         for edge in (64, 120, 160, 512):
-            old = adaptive_preprocess(prepare_image_for_vlm(source, max_long_edge=edge))
             drawn = render_slice(ctx, record, long_edge=edge)
-            assert np.array_equal(_gray(drawn), _gray(old)), edge
-        held = np.asarray(Image.open(job.folder / entry["file"]), dtype=np.int16)
-        assert np.array_equal(held, _gray(adaptive_preprocess(source)))
-        assert entry["digest"] == images.digest_of(held.astype(np.uint8))
-        # What a fit reads is the same render at the fit grid's size.
+            expected = prepare_image_for_vlm(held, max_long_edge=edge)
+            assert np.array_equal(_gray(drawn), _gray(expected)), edge
         grid = deformation.fit_grid(job.state, ctx, record)
         image, identity = deformation.section_image(ctx, job.state, grid,
                                                     images.PREPROCESSED)
-        old = adaptive_preprocess(prepare_image_for_vlm(source,
-                                                        max_long_edge=deformation.FIT_LONG_EDGE))
-        assert np.array_equal(_gray(image), _gray(old))
-        assert identity["name"] == images.PREPROCESSED and identity["kind"] == "made"
+        expected = prepare_image_for_vlm(held, max_long_edge=deformation.FIT_LONG_EDGE)
+        assert np.array_equal(_gray(image), _gray(expected))
+        assert identity == {"name": images.PREPROCESSED, "kind": "made",
+                            "digest": entry["digest"]}
+        assert images.read_image(ctx, record, images.PREPROCESSED).payload() == {
+            "name": images.PREPROCESSED, "kind": "made", "file": entry["file"],
+            "digest": entry["digest"]}
 
 
 def test_a_job_that_preprocesses_nothing_opens_on_the_file_in_gray(tmp_path: Path, atlas):
@@ -270,3 +272,45 @@ def test_a_format_three_job_is_migrated_to_files(tmp_path: Path, atlas):
     source, _ = fresh.working_source("s0.png")
     old_render = adaptive_preprocess(prepare_image_for_vlm(source, max_long_edge=160))
     assert np.array_equal(_gray(drawn), _gray(old_render))
+
+
+def test_a_migration_on_load_keeps_what_another_process_wrote_meanwhile(
+        tmp_path: Path, atlas, monkeypatch):
+    """Job.load reads a format-3 job, then another process migrates it and writes;
+    the load's write of the migrated state reads the file again under the lock
+    first, so the other process's write is kept."""
+    from langslice.job import job as job_module
+
+    job, _ctx = _open(tmp_path, atlas)
+    folder = job.folder
+    old = _format_three(job)
+    (folder / "state.json").write_text(json.dumps({FORMAT_KEY: 3, **old}))
+    job.close()
+
+    other_ctx = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
+    other = Job.load(job.spec, other_ctx, folder=folder)  # migrates and writes format 4
+    with other.writing():
+        before = other.snapshot()
+        record = other.state.by_id("s0.png")
+        assert record is not None
+        record.position_mm = 0.2
+        other.commit(before)
+
+    real = job_module.read_checkpoint
+    calls: list[int] = []
+
+    def stale(path: str, upgrade: Any = None) -> Any:  # the first read saw format 3
+        calls.append(1)
+        if len(calls) == 1:
+            return upgrade({key: value for key, value in old.items()})
+        return real(path, upgrade)
+
+    monkeypatch.setattr(job_module, "read_checkpoint", stale)
+    late_ctx = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
+    late = Job.load(job.spec, late_ctx, folder=folder)
+    assert len(calls) >= 2  # read again under the lock
+    held = late.state.by_id("s0.png")
+    assert held is not None and held.position_mm == 0.2
+    saved = json.loads((folder / "state.json").read_text())
+    row = next(item for item in saved["slices"] if item["id"] == "s0.png")
+    assert saved[FORMAT_KEY] == 4 and row["position_mm"] == 0.2

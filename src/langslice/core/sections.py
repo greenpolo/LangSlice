@@ -34,29 +34,23 @@ _ROTATE_OPS = {
 }
 
 
-def drawn_look(record: SliceState, look: Look) -> Look:
-    """*look* with the section image it draws resolved on *record*: None is the
-    opening ``preprocessed`` (drawn through its own path at each size), a made
-    image carries its digest (``{"image", "digest"}``), an opening image under
-    another name ``{"image", "opening": True}``."""
-    name = PREPROCESSED if look is None else look.get("image")
-    if name is None:
+def drawn_look(record: SliceState, look: Look) -> dict[str, Any]:
+    """*look* with the section image it draws resolved on *record*: None is
+    ``{"image": "preprocessed"}``, and a made image carries its file's digest
+    (``{"image", "digest"}``)."""
+    if look is not None and "image" not in look:
         return look
-    entry = images.entry_of(record, str(name))
+    name = PREPROCESSED if look is None else str(look["image"])
+    entry = images.entry_of(record, name)
     if entry is None:
-        return None if name == PREPROCESSED else {"image": str(name)}
-    if images.is_opening(entry):
-        return None if name == PREPROCESSED else {"image": str(name), "opening": True}
-    return {"image": str(name), "digest": entry.get("digest")}
+        return {"image": name}
+    return {"image": name, "digest": entry.get("digest")}
 
 
 def look_token(ctx: Workspace, record: SliceState, look: Look) -> str:
-    """The render-cache slot of a look on *record*: the opening ``preprocessed``
-    keeps ``spec.preprocess``, a made image its digest."""
-    drawn = drawn_look(record, look)
-    if drawn is None:
-        return str(ctx.spec.preprocess)
-    return json.dumps(drawn, sort_keys=True)
+    """The render-cache slot of a look on *record* (a made image's is its
+    file's digest)."""
+    return json.dumps(drawn_look(record, look), sort_keys=True)
 
 
 def render_cache_key(
@@ -77,12 +71,10 @@ def render_slice(
     """One section as the run sees it: one of its section images, sized and oriented.
 
     *look* None is the section's ``preprocessed`` image
-    (:mod:`langslice.core.section_images`): the opening one is drawn through
-    the automatic path at this size (with ``spec.preprocess == "auto"``,
-    :func:`~langslice.core.image_prep.adaptive_preprocess` on the working copy
-    resized here; a host's blend is the working copy itself), a remade one is
-    its file resized. ``{"image": name}`` is any section image alone, in gray:
-    a raw channel as the file holds it, a made one from its file.
+    (:mod:`langslice.core.section_images`). ``{"image": name}`` is any section
+    image alone, in gray: a raw channel as the file holds it, a made one (the
+    opening ``preprocessed`` included) its file, each held at the working
+    copy's size and resized here.
     ``{"overlay": [raw names]}`` is several raw channels in their colours
     (:func:`langslice.core.channels.composite`); ``{"file": True}`` the working
     copy as read, in colour (a plugin's raw raster). Every look is drawn at the
@@ -106,7 +98,7 @@ def render_slice(
     # How many FILE pixels one render pixel spans, before any quarter-turn:
     # the section's own micrometres per pixel times this is the canvas's.
     ctx.render_scale[key] = file_px_per_px * source.width / float(size[0])
-    prepped = _look_image(ctx, record, drawn_look(record, look), size, long_edge=long_edge)
+    prepped = _look_image(ctx, record, drawn_look(record, look), size)
     rotate = _ROTATE_OPS.get(int(record.rotation_deg) % 360)
     if rotate is not None:
         prepped = prepped.transpose(rotate)
@@ -127,7 +119,7 @@ def _gray(plane: Any) -> Image.Image:
 
 
 def _look_image(
-    ctx: Workspace, record: SliceState, look: Look, size: tuple[int, int], *, long_edge: int,
+    ctx: Workspace, record: SliceState, look: dict[str, Any], size: tuple[int, int],
 ) -> Image.Image:
     """*look* (resolved, :func:`drawn_look`) drawn unoriented at *size*, RGB."""
 
@@ -136,8 +128,6 @@ def _look_image(
             image = image.resize(size, Image.Resampling.LANCZOS)
         return image
 
-    if look is None or look.get("opening"):
-        return _gray(np.asarray(images.opening_render(ctx, record.id, long_edge)))
     if look.get("file"):  # the file as it is, no preprocessing
         image, _factor = read_working_image(ctx.image_path(record.id))
         return framed(image.convert("RGB"))
