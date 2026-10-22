@@ -201,9 +201,10 @@ class ScriptContext(ToolContext):
       ``c.fit_elastix`` (proposals; written by ``set_*``).
     - An image of your own for the fits and pictures: ``c.add_image("<file>",
       "<name>", array, note="...")``, array ``(H, W)`` = ``c.working_grid("<file>")``
-      in the file's orientation (``c.section_raster("<file>", raw=True,
-      images=["red"])`` reads a raw plane, turned as the section is), uint8 or
-      0-1 floats; then ``section_image="<name>"`` in any fit.
+      in the image file's orientation, computed from ``c.raw_plane("<file>",
+      "red")`` or ``c.working_rgb("<file>")`` (never from ``section_raster``,
+      which is turned as the section is), uint8 or 0-1 floats; then
+      ``section_image="<name>"`` in any fit.
     - Marks of your own on the pictures: ``c.add_layer`` (a
       :class:`langslice.plugin_api.Layer`), drawn by ``job.look(...,
       layers=[name])``.

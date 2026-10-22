@@ -172,6 +172,39 @@ def test_remaking_an_image_makes_the_section_stale_for_a_long_verb(tmp_path: Pat
     assert section_inputs(job.state, other) == section_inputs(job.state, other)
 
 
+def test_a_scripts_image_from_the_raw_plane_is_not_mirrored_on_a_flipped_section(
+        tmp_path: Path, atlas):
+    """raw_plane and working_rgb are in the file's orientation, the frame add_image
+    takes, so an image computed from them is drawn turned and flipped exactly as
+    the raw channel it came from."""
+    import langslice
+
+    for index in range(2):
+        _rgb_section(index).save(tmp_path / f"s{index}.png")
+    with langslice.create_job(tmp_path, tasks=["transform", "nonlinear"],
+                              positions={"s0.png": 0.1, "s1.png": 0.1},
+                              orientation={"s0.png": {"flip": True, "rotation_deg": 90}},
+                              pixel_size_um=UM, atlas_loader=lambda _n: atlas) as job:
+        c = job.context
+        red = c.raw_plane("s0.png", "red")
+        file_red = np.asarray(Image.open(tmp_path / "s0.png").convert("RGB"))[..., 0]
+        assert red.shape == c.working_grid("s0.png") and np.array_equal(red, file_red)
+        assert np.array_equal(c.working_rgb("s0.png")[..., 0], file_red)
+        c.add_image("s0.png", "red_negative", 255 - red, note="255 minus red")
+        record = job.state.by_id("s0.png")
+        assert record is not None and record.flip and record.rotation_deg == 90
+        shown_red = np.asarray(render_slice(job.workspace, record, long_edge=4096,
+                                            look={"image": "red"}))[..., 0].astype(int)
+        shown_made = np.asarray(render_slice(job.workspace, record, long_edge=4096,
+                                             look={"image": "red_negative"}))[..., 0]
+        assert np.array_equal(shown_made.astype(int), 255 - shown_red)
+        from langslice.core.plugins import ToolError
+
+        with pytest.raises(ToolError) as unknown:
+            c.raw_plane("s0.png", "preprocessed")
+        assert unknown.value.code == "UNKNOWN_IMAGE"
+
+
 def test_a_script_adds_an_image_the_fits_and_look_read(tmp_path: Path, atlas):
     import langslice
 

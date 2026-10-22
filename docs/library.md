@@ -331,11 +331,12 @@ asks for the atlas's Nissl plane.
 A script hands the fits and the pictures an image it computed (a colour
 deconvolution of a brightfield stain, a cell-density map, an edge map) with
 `c.add_image(id, name, array, note="")`: `array` is `(H, W)` on the section's
-working grid, `c.working_grid(id)`, in the file's orientation, as
-`c.section_raster(id, raw=True, images=[raw name])` gives a raw plane before its
-turn (that raster is turned as the section is: undo the quarter turn and flip
-with `raster.to_section_px`, or compute on an unturned section). It is `uint8`,
-or floats from 0 to 1. The image is saved as `sections/<stem>/images/<name>.png`
+working grid, `c.working_grid(id)`, in the image file's orientation, before the
+section's quarter turn and flip. Compute it from `c.raw_plane(id, name)` (one raw
+channel, `uint8` `(H, W)`) or `c.working_rgb(id)` (the working copy as read,
+`(H, W, 3)`), which are in that frame; never from `c.section_raster(...)`, which
+is turned and flipped as the section is (a flipped section's raster handed back
+would be a mirror image). It is `uint8`, or floats from 0 to 1. The image is saved as `sections/<stem>/images/<name>.png`
 with `note` as its source, one undo step; then `job.look(mode="section",
 sections=[id], images=[name])` draws it and every fit reads it as
 `section_image=name`. A haematoxylin channel, for example:
@@ -343,14 +344,11 @@ sections=[id], images=[name])` draws it and every fit reads it as
 ```python
 from skimage.color import rgb2hed
 
-rgb = c.section_raster(sid, raw=True, level=4096).array   # turned as the section is
+rgb = c.working_rgb(sid)                     # the file's orientation, working size
 hema = rgb2hed(rgb)[..., 0]
 hema = (hema - hema.min()) / (hema.max() - hema.min())
 c.add_image(sid, "hema", hema, note="haematoxylin, skimage rgb2hed")
 ```
-
-(on a section with no quarter turn or flip, where the raster's frame is the
-file's).
 
 ### Marks of your own on the pictures
 

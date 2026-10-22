@@ -831,11 +831,31 @@ class Job:
             # images: written once at the current format (a dry run keeps it
             # in memory).
             if persist:
-                with job.lock.held():
-                    if upgraded:
-                        job._save_history()
-                    job.checkpoint()
+                job._write_upgrade(migration)
         return job
+
+    def _write_upgrade(self, migration: section_images.Migration) -> None:
+        """Write the state and history at the current format, read again under
+        the job's lock first: another process may have migrated (and written
+        to) the job since it was read, and its state is the one kept. Nothing
+        is written when that read needs no upgrade and every section has its
+        opening image."""
+        assert self.workspace is not None
+        with self.lock.held():
+            migration.used = False
+            data = read_checkpoint(self.checkpoint_path, migration)
+            if data is not None:
+                migration.seed(data)
+                self.state.restore(_state_from(data, self.checkpoint_path).to_dict())
+            self.undo_stack, self.redo_stack = self.history.load()
+            made = section_images.ensure_opening(self.workspace, self.layout, self.state)
+            if data is None or migration.used or made or self.history.upgraded:
+                if migration.used or self.history.upgraded:
+                    self._save_history()
+                self.checkpoint()
+            else:
+                self._state_stamp = _stamp(self.checkpoint_path)
+                self._undo_stamp = _stamp(self.undo_path)
 
     @property
     def folder(self) -> Path:

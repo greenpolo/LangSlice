@@ -294,7 +294,9 @@ longer exist be taken over by the images it is opened with.
   outside undo, then the first checkpoint; the open event records
   `resumed`), `load` (as it stands, writing nothing, except once for a job of
   state format 3 or without its opening images: then the migrated state and
-  history are written at format 4 under the lock; a dry run keeps them in
+  history are written at format 4 under the lock, after reading the state file
+  again there (`_write_upgrade`: another process may have migrated and written
+  meanwhile; its state is kept); a dry run keeps them in
   memory, though the image files the migration makes are written), `upgrade` (the job's `Migration`, which every read of the state
   file goes through), `workspace` (setting it gives a workspace without a
   `job_folder` this job's folder, where its made images are read), `writing` / `reading` / `sync` (above), `snapshot` / `commit`, `undo` /

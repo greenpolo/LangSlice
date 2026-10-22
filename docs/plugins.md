@@ -117,6 +117,7 @@ refused (`NOT_FOR_SCRIPTS`).
 | `ctx.channels(id)` | The names of the section's raw channels in file order (`red`, `green`, `blue` or `gray` for a colour file; the host's names or `ch1`, `ch2`... for a multi-page file) |
 | `ctx.image_names(id)` | Every section image of the section ([section images](registration.md#section-images-and-damage)): its raw channels, then `preprocessed` and the images made since; what `images=[name]`, `fit_frame(image=)` and every fit's `section_image` take |
 | `ctx.working_grid(id)` | `(H, W)` of the section's working grid, in the file's orientation: the shape a made image has (`add_image`) |
+| `ctx.raw_plane(id, name)`, `ctx.working_rgb(id)` | One raw channel (`uint8` `(H, W)`) or the working copy as read (`(H, W, 3)`), in the image file's orientation, before the section's quarter turn and flip: the frame `add_image` takes (`section_raster` is turned as the section is) |
 | `ctx.section_raster(id, level=, images=, raw=False)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: see [what a raster shows](#what-a-raster-shows) for what `images` and `raw` give; `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
 | `ctx.section_image(id, ...)` | Only the `array` of `section_raster` (same arguments). **Its pixels are not `section_px`** (see [frames](#frames)) |
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
@@ -188,7 +189,7 @@ building on it: the map is already the whole registration. `note` and `meta`
 | `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation; ok rows carry the proposal's `summary` | `deformation` |
 | `ctx.mark_damage(rows, expect=None)` | rows `{"id", "regions", "note"?}`, as `mark_damage` | any write tool |
 | `ctx.add_layer(id, layer)` | a [layer](#layers) | any write tool |
-| `ctx.add_image(id, name, array, note="")` | a made [section image](registration.md#section-images-and-damage): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation, `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
+| `ctx.add_image(id, name, array, note="")` | a made [section image](registration.md#section-images-and-damage): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation (computed from `raw_plane` or `working_rgb`), `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
 
 A write returns a `WriteResult`: `ok` is false when the call was refused whole
 (`error`, `message`); otherwise `rows` has one row per section asked
@@ -240,7 +241,7 @@ turn, then flip) and reduced to `level`. What the pixels are depends on
 
 | Call | Pixels |
 |---|---|
-| no `images` | The section's `preprocessed` image (gray RGB), what the native fits read by default: the opening one is the automatic path at this size (CLAHE and coverage-weighted blend with `preprocess="auto"`, a host's own blend with `host_preprocessing`, the file in gray with `preprocess="none"`) |
+| no `images` | The section's `preprocessed` image (gray RGB), what the native fits read by default: its file, resized (the opening one is the automatic path run once on the working copy: CLAHE and coverage-weighted blend with `preprocess="auto"`, a host's own blend with `host_preprocessing`, the file in gray with `preprocess="none"`) |
 | `images=[name]` | That section image alone, gray RGB (three equal planes): a raw channel as the file holds it, a made image from its file |
 | `images=[names]` | Those raw channels together, each in its own colour with automatic contrast; a made image among several is `BAD_ARGS` |
 | `raw=True` | The file as an image viewer shows it, 8-bit RGB: no preprocessing, no contrast changes. For a PNG or JPEG this is the delivered image, oriented |

@@ -524,10 +524,12 @@ class ToolContext:
     def add_image(self, section: object, name: str, array: Any, note: str = "") -> dict[str, Any]:
         """Register *array* as the section's made image *name*, made by this
         script (*note* says how; it is recorded as the image's source): a
-        ``(H, W)`` array on the section's working grid in the file's
-        orientation, as ``section_raster(raw=True, images=[name]).array`` gives a
-        raw plane before its quarter turn and flip (:meth:`working_grid` gives
-        ``(H, W)``); ``uint8``, or floats from 0 to 1. Saved as
+        ``(H, W)`` array on the section's working grid in the image FILE's
+        orientation, before the section's quarter turn and flip, as
+        :meth:`raw_plane` and :meth:`working_rgb` give the section (never
+        :meth:`section_raster`, whose pixels are turned and flipped as the
+        section is: a flipped section's raster handed back here would be a
+        mirror image); ``uint8``, or floats from 0 to 1. Saved as
         ``sections/<stem>/images/<name>.png``, one undo step; every fit and
         ``look`` can then read it by name. Returns its entry (``source``,
         ``file``, ``digest``). ``ToolError`` ``BAD_ARGS`` for a raw channel's
@@ -543,6 +545,31 @@ class ToolContext:
                                             array, note)
         except Refused as refusal:
             raise _as_tool_error(refusal) from refusal
+
+    def raw_plane(self, section: object, name: str) -> np.ndarray:
+        """Raw channel *name* of the section, ``uint8`` ``(H, W)`` on its working
+        grid in the image file's orientation: the frame :meth:`add_image` takes.
+        ``ToolError`` ``UNKNOWN_IMAGE`` for a name that is no raw channel."""
+        from langslice.core.section_images import raw_plane
+
+        record = self._record(section)
+        try:
+            return np.array(raw_plane(self._door.ctx, record.id, str(name)))
+        except ValueError as exc:
+            raise ToolError("UNKNOWN_IMAGE", str(exc)) from exc
+
+    def working_rgb(self, section: object) -> np.ndarray:
+        """The section's working copy as read, ``uint8`` ``(H, W, 3)`` in the image
+        file's orientation (a colour file's red, green and blue: what a colour
+        deconvolution reads): the frame :meth:`add_image` takes."""
+        from langslice.core.image_prep import read_working_image
+
+        record = self._record(section)
+        image, _factor = read_working_image(self._door.ctx.image_path(record.id))
+        width, height = self._door.ctx.working_source(record.id)[0].size
+        if image.size != (width, height):
+            image = image.resize((width, height))
+        return np.asarray(image.convert("RGB")).copy()
 
     def working_grid(self, section: object) -> tuple[int, int]:
         """``(H, W)`` of the section's working grid: the shape :meth:`add_image`

@@ -14,6 +14,10 @@ dependencies = [
     "litellm>=1.83.3",
     "openai",
     "brainglobe-atlasapi>=3.0.1",
+    # pandas 3.1 breaks BrainGlobe's atlas loading ("cannot safely cast
+    # non-equivalent int64 to uint16" reading structures.csv, 2026-10-22, with
+    # brainglobe-atlasapi 3.0.1 and 3.0.2); drop the cap once that is fixed upstream.
+    "pandas<3.1",
     "brainglobe-space",
     "numpy",
     "opencv-python-headless",
@@ -74,6 +78,8 @@ dev = [
     # The anthropic-api provider's imports (type check, tests/test_anthropic_api_provider.py).
     "anthropic>=1.13",
     "httpx2",
+    # The docs build (mkdocs.yml, `mkdocs build --strict`).
+    "mkdocs-material>=9.5",
 ]
 
 [tool.setuptools.packages.find]
