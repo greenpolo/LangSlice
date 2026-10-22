@@ -29,7 +29,7 @@ sub-session: looking at the whole stack once yields the information for
 every task, and splitting it re-pays for that reading.
 
 The toolbox: shared tools for the everyday operations (`look` with its four
-modes, `zoom`, the two channel tools, `grep_atlas` / `grep_atlas_view`,
+modes, `zoom`, `make_image`, `grep_atlas` / `grep_atlas_view`,
 `status`, the job-folder tools, `note` / `undo` / `redo` / `restore_registration` /
 `submit`) and one
 tool per registration method (`position_sections`,
@@ -115,8 +115,13 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   the damaged sections and the user's
   damage notes, what is frozen (`core.frozen.statement`: sections sharing a
   freeze are one clause), that the order follows the positions;
-  `channel_facts`: the raw channels, the atlas layers here, and where the
-  caller sizes pictures, `look`'s `resolution` range), the tools BY NAME
+  `channel_facts`: the raw channels; the section images (`SECTION_IMAGES_FACT`:
+  what they are, how `preprocessed` was made, `section_images.opening_words`,
+  that every fit and the image model read one by name); `SPARSE_SIGNAL_FACT`
+  (a channel whose signal is sparse shows little of the anatomy the atlas
+  draws); the atlas images and the one the fits' default `nissl` is
+  (`display_facts`' `nissl_image`); and where the caller sizes pictures,
+  `look`'s `resolution` range), the tools BY NAME
   ONLY (each tool's own description, `doors/declarations.py`, is its only
   description; the one exception, `DEFORMABLE_METHODS`, below), the hard constraints (with the damaged-section guidance:
   a section with marked regions still needs a transform made for its
@@ -190,8 +195,8 @@ the filename, or its stem when no other section shares it; a number is
 refused with the filenames listed, `core.state.unknown_sections`), in every
 argument, label, caption and status line; ordinary writes answer with the
 rows they changed (`Door.answered`) plus `n_sections`; `status`, `undo`,
-`redo` and `submit` return the whole table, and `status` also the channel
-display settings, the derived channels' recipes, the background work
+`redo` and `submit` return the whole table, and `status` also the raw
+channels, the made section images (`section_images`), the background work
 still running and what this run lets the agent change.
 
 ## Host controls
@@ -294,11 +299,11 @@ every section (`require_deformation`), the line says every section and
 deformation at its current `linear_key`; otherwise `submit` has no
 deformation gate.
 
-- `set_channel(name, ...)` and `set_mask(section, name, ...)`: the channels
-  and the section masks the fits read by name.
+- `make_image(name, ...)` and `make_mask(name, ...)`: the section images and
+  the section masks the fits read by name.
 - `fireants_syn(sections, restrict_to=, section_image=, atlas_image=, mask=,
   smoothness_um=, metric=, edges=, detail=, view=)`:
-  FireANTs SyN on a channel against one of the atlas's images, on
+  FireANTs SyN on a section image against one of the atlas's images, on
   top of each section's current registration (each fit builds on the one
   before; undo is how to start over), the marked damage regions left out;
   at most 4 sections per call; `ENGINE_MISSING` without torch and fireants.
@@ -330,9 +335,11 @@ deformation gate.
 job statement carries the job, the facts, the tools by name, the
 constraints and a short Method per task that is on (with
 `interactive_transform`, the alignment lines open by aligning each section by
-hand before any fitting algorithm runs; a Method line says a fit's reply names the channel, atlas image and mask it used; with `set_channel`,
-the Method's first line makes the counterstain alone, enhanced, the channel
-every section is registered on): place each section on
+hand before any fitting algorithm runs; where a fit tool is in the job, a
+Method line says a fit's reply names the section image, atlas image and mask
+it used, and one states the principle (a fit compares one section image with
+one atlas image and does best when both show as much internal structure as
+possible and look alike; no fixed recipe): place each section on
 its own evidence and compare before writing; review the whole stack and
 re-check both sides of a gap before reporting a break; inspect each fit or
 adjustment against surviving internal anatomy and keep only changes that
@@ -343,8 +350,7 @@ in the job (`fireants_syn` and the in-tree engine plugins `stalign_lddmm`,
 agent to try more than one per section and keep the best by looking
 (`restore_registration` puts an earlier fit of a section back), and
 says in one line each what the present methods are (`prompt.DEFORMABLE_METHODS`,
-the methods' own papers' claims; Nash approved the wording 2026-10-21). The
-counterstain line comes first in every Method, positioning off included.
+the methods' own papers' claims; Nash approved the wording 2026-10-21).
 Grouping work is the model's choice.
 Still out: rules of thumb, failure-mode warnings and region names in the
 statement (the same text runs against every BrainGlobe atlas, species and

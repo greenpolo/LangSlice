@@ -138,10 +138,12 @@ FIXES: dict[str, str] = {
                     "LangSlice (see the message).",
     "FIT_FAILED": "See the message; try other settings or regions.",
     "RENDER_FAILED": "See the message; check the section file opens, then retry.",
-    "UNKNOWN_MASK": "Make the mask first[[?set_mask  with set_mask]]; `status` lists each "
+    "UNKNOWN_MASK": "Make the mask first[[?make_mask  with make_mask]]; `status` lists each "
                     "section's masks.",
     "STALE_MASK": "The section was turned or flipped since this mask was made; make the mask again"
-                  "[[?set_mask  with set_mask]].",
+                  "[[?make_mask  with make_mask]].",
+    "UNKNOWN_IMAGE": "`status` lists the section images[[?make_image ; make one with "
+                     "make_image]].",
     "MASK_UNSUPPORTED": "This engine sorts tissue itself and takes no mask; the message names "
                         "the engines that do.",
     "NO_DEFORMATION": "The section holds no deformation; fit one first, or make the mask "

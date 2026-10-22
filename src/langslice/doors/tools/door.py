@@ -103,6 +103,16 @@ def pictured(result: dict[str, Any], looked: Looked) -> dict[str, Any]:
     return result
 
 
+def spread(records: Sequence[Any], cap: int | None) -> list[Any]:
+    """At most *cap* of *records* (None: all), spread evenly over them (the
+    sections a change tool pictures when the call named none)."""
+    if cap is None or len(records) <= cap:
+        return list(records)
+    step = (len(records) - 1) / max(cap - 1, 1)
+    picks = sorted({int(round(index * step)) for index in range(cap)})
+    return [records[index] for index in picks]
+
+
 def as_list(value: Any) -> list[Any]:
     """A model's list argument as a list (None is empty; a single item is a list of one)."""
     if value is None:

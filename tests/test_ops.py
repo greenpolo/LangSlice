@@ -14,7 +14,7 @@ from langslice.agent.engine import build_context
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState
 from langslice.job.job import Job
-from langslice.ops import appearance, damage, notes, positions, transforms
+from langslice.ops import damage, notes, positions, transforms
 from langslice.ops.refusal import Refused
 from tests.fakes import SlabAtlas
 
@@ -89,17 +89,6 @@ def test_notes_append_and_refuse_empty(tmp_path: Path):
     with pytest.raises(Refused):
         notes.add_note(job, "   ")
     assert len(job.undo_stack) == 1
-
-
-def test_appearance_plan_matches_the_write(tmp_path: Path):
-    job, _ = _open(tmp_path)
-    settings = {"channel_weights": None, "clahe_clip": 2.0, "clahe_tiles": 8,
-                "n4": False, "denoise": False}
-    planned = appearance.planned_settings(job.state, ["s1.png"], settings, "s1.png")
-    assert job.state.appearance == {}  # planning writes nothing
-    done = appearance.set_appearance(job, ["s1.png"], settings)
-    assert done.in_force == {"sections": {"s1.png": planned}}
-    assert planned == settings and len(job.undo_stack) == 1
 
 
 def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):

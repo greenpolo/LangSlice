@@ -34,7 +34,7 @@ def test_the_default_nissl_request_is_said_honoured_where_the_template_is_a_niss
 
 def _frame(margin: float | None, note: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
-        id="s0.png", channel_recipe=None, damage_margin_mm=margin, atlas_image_note=note)
+        id="s0.png", section_image_ref=None, damage_margin_mm=margin, atlas_image_note=note)
 
 
 def _ctx() -> SimpleNamespace:
@@ -62,7 +62,7 @@ def test_a_sorting_that_set_nothing_aside_draws_no_picture():
 
     captions: list[str] = []
     ctx = SimpleNamespace(caption=lambda image, text: (captions.append(text), image)[1])
-    frame = SimpleNamespace(channel=np.full((40, 60, 3), 200, np.uint8))
+    frame = SimpleNamespace(section_image=np.full((40, 60, 3), 200, np.uint8))
     assert _sorting_picture(ctx, frame, np.ones((40, 60), np.float32), "t") is None
     weights = np.ones((40, 60), np.float32)
     weights[5:15, 5:15] = 0.0

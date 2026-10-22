@@ -1,13 +1,12 @@
-"""The tools that look, and the channel tool: the bodies behind their declarations.
+"""The tools that look, and the image tool: the bodies behind their declarations.
 
-``look``, ``zoom``, ``grep_atlas_view`` save their own pictures
-(:mod:`langslice.ops.look`): their replies carry ``pictures`` with the
-numbers, and the tool door sends the pictures without saving them again.
-``set_channel`` returns, for a derived channel, its BEFORE / AFTER
-pictures plain; the door saves them and adds their numbers. ``status`` adds
-to the status rows what the run holds besides them (the channel settings,
-the derived channels' recipes, the background work still running, what this run
-lets the agent change). The job-folder tools answer with their ``text``.
+``look``, ``zoom``, ``grep_atlas_view`` and ``make_image`` save their own
+pictures (:mod:`langslice.ops.look`): their replies carry ``pictures`` with
+the numbers, and the tool door sends the pictures without saving them again.
+``status`` adds to the status rows what the run holds besides them (the raw
+channels, the made section images, the background work still running, what
+this run lets the agent change). The job-folder tools answer with their
+``text``.
 """
 
 from __future__ import annotations
@@ -15,23 +14,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import numpy as np
-
-from langslice.core import appearance as looks
-from langslice.core import layers
+from langslice.core import section_images
 from langslice.core.atlas.levels import OVERLAY_DEPTH
-from langslice.core.captions import caption
-from langslice.core.channels import stack_display
-from langslice.core.display import default_options
-from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
+from langslice.core.sizes import AUTO_RESOLUTION
 from langslice.core.state import unknown_sections
 from langslice.core.toolset import TOOLS, tools_for
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.door import Door, Media, as_list, pictured
+from langslice.doors.tools.door import Door, as_list, pictured, spread
 from langslice.doors.tools.view_options import clamp_resolution
-from langslice.ops import appearance as ops_appearance
 from langslice.ops import atlas as ops_atlas
 from langslice.ops import files as ops_files
+from langslice.ops import images as ops_images
 from langslice.ops import look as ops_look
 from langslice.ops.refusal import Refused
 
@@ -68,9 +61,9 @@ def can_change(door: Door) -> list[str]:
         if has("set_landmarks") and has("landmark_triangulation"):
             fits.append("landmark pairs by set_landmarks, applied by landmark_triangulation")
         out.append("deformations" + (f" ({', '.join(fits)})" if fits else ""))
-    if has("set_channel"):
-        out.append("channel display and the derived channels' recipes")
-    if has("set_mask"):
+    if has("make_image"):
+        out.append("the section images the pictures and fits read (make_image)")
+    if has("make_mask"):
         out.append("masks for the fits")
     added = [name for name, tool in tools_for(spec).items()
              if name not in TOOLS and tool.kind == "write" and tool.is_on(spec)]
@@ -79,32 +72,20 @@ def can_change(door: Door) -> list[str]:
     return out
 
 
-#: What ``status`` gives as the stack recipe of a derived channel made for some sections only.
-ONLY_ON_SECTIONS = "none: this channel exists only on the sections listed"
-
-
-def derived_summary(state: Any) -> dict[str, Any]:
-    """Each derived channel's recipe for ``status``: its stack recipe (or ``"default"``)
-    and the sections that hold one of their own."""
-    out: dict[str, Any] = {}
-    for name in looks.derived_names(state):
-        own = sorted(section for section in (
-            (state.appearance.get("derived") or {}).get(name, {}).get("sections") or {}))
-        stack = looks.derived_settings(state, name, "")
-        if stack is None and own and name != looks.PREPROCESSED:
-            stack = ONLY_ON_SECTIONS  # made for those sections alone: nothing stack-wide
-        out[name] = {"stack": stack or "default"}
-        if own:
-            out[name]["sections"] = own
-    out.setdefault(looks.PREPROCESSED, {"stack": "default"})
-    return out
+def raw_channels(door: Door) -> Any:
+    """The raw channels for ``status``: one list when every section shares
+    them, else ``{filename: [names]}``."""
+    named = {record.id: section_images.raw_names(door.ctx, record.id)
+             for record in door.job.state.in_order()}
+    distinct = {tuple(names) for names in named.values()}
+    return list(next(iter(distinct))) if len(distinct) == 1 else named
 
 
 def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     """The looking tools' bodies over *door*."""
     job, ctx = door.job, door.ctx
 
-    def look(mode: str, sections: list[str], channels: list[str],
+    def look(mode: str, sections: list[str], images: list[str],
              positions_mm: list[float] | None = None, atlas_layers: list[str] | None = None,
              atlas_opacity: float = 0.5, warp: str = "applied",
              resolution: int = 0, layers: list[str] | None = None,
@@ -121,7 +102,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         try:
             done = ops_look.look(
                 job, ctx, str(mode or "").strip().lower(), sections=as_list(sections),
-                positions_mm=as_list(positions_mm), channels=as_list(channels),
+                positions_mm=as_list(positions_mm), images=as_list(images),
                 atlas_layers=layers_asked or None, atlas_opacity=atlas_opacity,
                 warp=str(warp or "applied").strip().lower(), resolution=edge,
                 plugin_layers=as_list(layers), depth=depth, masks=as_list(masks))
@@ -153,68 +134,44 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
         return result
 
-    def set_channel(
+    def make_image(
         name: str, sections: list[str], weights: dict[str, float], clahe_clip: float,
-        clahe_tiles: int, n4: bool, denoise: bool, contrast_limits: list[float],
-        gamma: float, colormap: str, invert: bool, reset: bool, view: bool = True,
+        clahe_tiles: int, n4: bool, denoise: bool, contrast: list[float], gamma: float,
+        invert: bool, delete: bool, view: bool = True,
     ) -> dict[str, Any]:
         named = as_list(sections)
-        shown: list[Any] = []
         ids: list[str] | None = None
-        scope = job.state.in_order()
         if named:
             scope, unknown = door.resolve_many(named)
             if unknown or not scope:
                 return {"status": "error", "error": "UNKNOWN_SLICE_IDS",
                         **unknown_sections(job.state, unknown)}
             ids = [record.id for record in scope]
-        if view or door.spec.force_view:
-            cap = job.picture_cap
-            if named:
-                shown = scope[:cap] if cap is not None else list(scope)
-            elif cap is None:
-                shown = list(scope)
-            else:
-                picks = np.linspace(0, len(scope) - 1, min(len(scope), cap))
-                shown = [scope[index] for index in sorted({int(round(v)) for v in picks})]
-        options = default_options("section", long_edge=picture_edge(ctx))
         try:
-            done = ops_appearance.set_channel(
+            done = ops_images.make_image(
                 job, ctx, str(name), ids, weights=dict(weights or {}),
                 clahe_clip=clahe_clip, clahe_tiles=clahe_tiles, n4=bool(n4),
-                denoise=bool(denoise), contrast_limits=as_list(contrast_limits) or None,
-                gamma=float(gamma) if gamma else None, colormap=str(colormap).strip() or None,
-                invert=bool(invert), reset=bool(reset), shown=shown, options=options)
+                denoise=bool(denoise), contrast=as_list(contrast) or None,
+                gamma=float(gamma) if gamma else None, invert=bool(invert),
+                delete=bool(delete))
         except Refused as refusal:
             return refusal.payload()
         except (TypeError, ValueError):
             return {"status": "error", "error": "BAD_ARGS", "message": "gamma is a number."}
-        if done.kind == "raw":
-            return {"status": "ok", "channel": done.name, "properties": done.properties,
-                    "changed": done.changed, "sections": done.sections,
-                    "intensities": done.intensities, "channels": done.channels}
-        parts: list[Media] = []
-        for pair in done.pictures:
-            record = pair.record
-            label = f"{record.id}  {done.name} channel"
-            for when, image, settings in (("BEFORE", pair.before, pair.before_settings),
-                                          ("AFTER", pair.after, pair.after_settings)):
-                if image is None:  # a new channel has no before
-                    continue
-                parts.append(layers.note(
-                    caption(image, f"{label}  {when} ({looks.describe(settings)})"),
-                    sections=(record.id,), mode=when.lower(),
-                    caption=f"{record.id} {done.name} channel "
-                    f"{when.lower()} this call ({looks.describe(settings)})"))
         result: dict[str, Any] = {
-            "status": "ok", "channel": done.name, "scope": ids or "stack",
-            "recipe": done.in_force, "channels": done.channels,
-            "shown": [record.id for record in shown],
+            "status": "ok", "image": done.name, "sections": ids or "every section",
+            **({"deleted": True} if done.deleted else {"recipe": done.in_force}),
+            "section_images": done.images,
         }
-        if done.deleted:
-            result["deleted"] = True
-        result[TOOL_MEDIA_PARTS_KEY] = parts
-        return result
+        if done.deleted or door.spec.off("look:section") or not (
+                view or door.spec.force_view):
+            return result
+        records = [record for record in (job.state.by_id(i) for i in done.sections)
+                   if record is not None]
+        shown = spread(records, job.picture_cap)
+        pictures = ops_look.show_result(job, ctx, "make_image", "section",
+                                        [record.id for record in shown], images=[done.name])
+        return pictured(result, pictures)
 
     def grep_atlas(query: str, section: str, points: list[dict[str, Any]]) -> dict[str, Any]:
         try:
@@ -243,8 +200,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     def status() -> dict[str, Any]:
         state = job.state
         result: dict[str, Any] = {"status": "ok", **door.rows()}
-        result["channel_display"] = stack_display(ctx, state)
-        result["derived_channels"] = derived_summary(state)
+        result["raw_channels"] = raw_channels(door)
+        result["section_images"] = section_images.summary(state, door.spec)
         running = [work.summary() for work in job.background.running()]
         if running:
             result["background_running"] = running
@@ -284,7 +241,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         return result
 
     return {
-        "look": look, "zoom": zoom, "set_channel": set_channel,
+        "look": look, "zoom": zoom, "make_image": make_image,
         "grep_atlas": grep_atlas, "grep_atlas_view": grep_atlas_view, "status": status,
         "list_files": list_files, "search_files": search_files, "read_file": read_file,
     }

@@ -22,8 +22,9 @@ Modules: :mod:`.registry` (every verb and the operation it calls),
 :mod:`.views` (the read verbs), :mod:`.atlas` (the region hierarchy),
 :mod:`.positions` (positions, the cutting angles, the position search),
 :mod:`.order` (corrected order), :mod:`.orientation` (flip and quarter
-turns), :mod:`.damage` (damage flags), :mod:`.appearance` (how sections look
-for viewing and for fits), :mod:`.notes` (run notes), :mod:`.history` (undo
+turns), :mod:`.damage` (damage flags), :mod:`.images` (the made section images
+pictures and fits read), :mod:`.masks` (the section masks fits read),
+:mod:`.notes` (run notes), :mod:`.history` (undo
 and redo), :mod:`.registrations` (one section back to a registration it held),
 :mod:`.transforms` (the in-plane transform: knobs to stored
 numbers, fits, the write), :mod:`.deformable` (the deformation on top of

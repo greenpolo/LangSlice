@@ -22,7 +22,7 @@ from langslice.core.display import default_options
 from langslice.core.sizes import picture_edge
 from langslice.core.state import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.door import Door, as_list, pictured
+from langslice.doors.tools.door import Door, as_list, pictured, spread
 from langslice.ops import damage as ops_damage
 from langslice.ops import history as ops_history
 from langslice.ops import look as ops_look
@@ -169,35 +169,50 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result[TOOL_MEDIA_PARTS_KEY] = list(done.pictures)
         return result
 
-    def set_mask(section: str, name: str, source: str = "em",
-                 channel: str = "preprocessed", atlas_image: str = "nissl",
-                 sorting: dict[str, float] | None = None, delete: bool = False,
-                 view: bool = True) -> dict[str, Any]:
+    def make_mask(name: str, sections: list[str] | None = None, source: str = "em",
+                  section_image: str = "preprocessed", atlas_image: str = "nissl",
+                  sorting: dict[str, float] | None = None, delete: bool = False,
+                  view: bool = True) -> dict[str, Any]:
+        named = as_list(sections)
+        ids: list[str] | None = None
+        if named:
+            scope, unknown = door.resolve_many(named)
+            if unknown or not scope:
+                return {"status": "error", "error": "UNKNOWN_SLICE_IDS",
+                        **unknown_sections(job.state, unknown)}
+            ids = [record.id for record in scope]
         try:
-            done = ops_masks.set_mask(
-                job, ctx, section, str(name), source=str(source or "em"),
-                channel=str(channel or "preprocessed"), atlas_image=str(atlas_image or "nissl"),
-                sorting=dict(sorting or {}), delete=bool(delete))
+            done = ops_masks.make_mask(
+                job, ctx, str(name), ids, source=str(source or "em"),
+                section_image=str(section_image or "preprocessed"),
+                atlas_image=str(atlas_image or "nissl"), sorting=dict(sorting or {}),
+                delete=bool(delete))
         except Refused as refusal:
             return refusal.payload()
-        if done.deleted:
-            return {"status": "ok", "id": done.id, "name": done.name, "deleted": True,
-                    **door.answered(done.id)}
-        entry = done.entry or {}
-        result: dict[str, Any] = {
-            "status": "ok", "id": done.id, "name": done.name, "source": entry.get("kind"),
-            "channel": entry.get("channel"), "atlas_image": entry.get("atlas_image"),
-            "params": entry.get("params"), "left_out": round(float(entry.get("left_out", 0)), 4),
-            **door.answered(done.id),
-        }
+        rows: list[dict[str, Any]] = []
+        for row in done.rows:
+            if row["status"] != "ok":
+                rows.append(row)
+                continue
+            entry = row.get("entry") or {}
+            rows.append({"id": row["id"], "status": "ok"} if done.deleted else {
+                "id": row["id"], "status": "ok", "source": entry.get("kind"),
+                "section_image": entry.get("section_image"),
+                "atlas_image": entry.get("atlas_image"), "params": entry.get("params"),
+                "left_out": round(float(entry.get("left_out", 0)), 4)})
+        result: dict[str, Any] = {"status": "ok", "name": done.name, "rows": rows,
+                                  **({"deleted": True} if done.deleted else {}),
+                                  "n_sections": len(done.made)}
         said = nissl_note(ctx.atlas, str(atlas_image or "nissl"))
-        if said:
+        if said and not done.deleted:
             result["atlas_image_note"] = said
-        if not shows(view):
+        if done.deleted or not shows(view):
             return result
-        shown = ops_look.show_result(job, ctx, "set_mask", "section", [done.id],
-                                     masks=[done.name])
-        return pictured(result, shown)
+        made = [record for record in (job.state.by_id(i) for i in done.made) if record is not None]
+        shown = spread(made, job.picture_cap)
+        pictures = ops_look.show_result(job, ctx, "make_mask", "section",
+                                        [record.id for record in shown], masks=[done.name])
+        return pictured(result, pictures)
 
     def note(text: str) -> dict[str, Any]:
         try:
@@ -293,6 +308,6 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     return {
         "position_sections": position_sections,
         "interactive_transform": interactive_transform, "mark_damage": mark_damage,
-        "set_mask": set_mask, "note": note, "undo": undo, "redo": redo,
+        "make_mask": make_mask, "note": note, "undo": undo, "redo": redo,
         "restore_registration": restore_registration, "submit": submit,
     }

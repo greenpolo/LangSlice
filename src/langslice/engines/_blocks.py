@@ -8,8 +8,6 @@ A reply names what the fit used and nothing about how well it did.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +21,7 @@ NISSL = "nissl"
 BORROWED_NISSL = "ccfv3augmented_nissl"
 #: The engines that take a section mask, for the refusal of the one that does not.
 MASK_ENGINES = "fireants_syn, elastix_affine, emlddmm_stack and spomialign"
-SORTING_SAVED = "saved with the deformation; set_mask source fit"
+SORTING_SAVED = "saved with the deformation; make_mask source fit"
 
 
 def call_folder(ctx: ToolContext, name: str) -> Path:
@@ -43,8 +41,9 @@ def call_folder(ctx: ToolContext, name: str) -> Path:
 
 
 def frame_for(ctx: ToolContext, sid: str, atlas_image: str, section_image: str) -> Any:
-    """The section's fit frame with *section_image* (a channel by name) and *atlas_image*."""
-    frame = ctx.fit_frame(sid, atlas=(atlas_image, "annotation"), channel=section_image)
+    """The section's fit frame with *section_image* (a section image by name) and
+    *atlas_image*."""
+    frame = ctx.fit_frame(sid, atlas=(atlas_image, "annotation"), image=section_image)
     atlas_plane(frame, atlas_image)
     return frame
 
@@ -67,9 +66,9 @@ def atlas_plane(frame: Any, asked: str) -> tuple[np.ndarray, str]:
     return planes[key], str(resolved)
 
 
-def channel_image(frame: Any) -> np.ndarray:
-    """The section channel the frame was asked for, on the fit grid (RGB, uint8)."""
-    return np.asarray(frame.channel, np.uint8)
+def section_pixels(frame: Any) -> np.ndarray:
+    """The section image the frame was asked for, on the fit grid (RGB, uint8)."""
+    return np.asarray(frame.section_image, np.uint8)
 
 
 def section_mask(ctx: ToolContext, sid: str, mask: str) -> Any | None:
@@ -96,15 +95,12 @@ def _margin_mm(frame: Any) -> float | None:
 
 def inputs_block(ctx: ToolContext, frame: Any, *, section_image: str, atlas_image: str,
                  resolved: str, mask: Any | None, brightness: str) -> dict[str, Any]:
-    """The ``inputs`` block of one section: the channel, its recipe, the atlas image (as asked
-    and as resolved), the section mask, the atlas-side damage and what the engine does to
-    brightness."""
-    recipe = getattr(frame, "channel_recipe", None)
-    if isinstance(recipe, dict):
-        recipe = hashlib.sha1(json.dumps(recipe, sort_keys=True).encode()).hexdigest()[:8]
+    """The ``inputs`` block of one section: the section image (name, kind, file, digest), the
+    atlas image (as asked and as resolved), the section mask, the atlas-side damage and what
+    the engine does to brightness."""
+    reference = getattr(frame, "section_image_ref", None)
     return {
-        "section_image": section_image,
-        "section_recipe": str(recipe or "default"),
+        "section_image": dict(reference) if reference else {"name": section_image},
         "atlas_image": atlas_image,
         "atlas_image_resolved": resolved,
         **({"atlas_image_note": note} if atlas_image == NISSL and (

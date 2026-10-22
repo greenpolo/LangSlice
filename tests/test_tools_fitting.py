@@ -100,7 +100,7 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert nope["filenames"] == ["s0.png"]
     assert fit(["s0.png"], ["XYZ"])["error"] == "UNKNOWN_REGIONS"
     assert fit(["s0.png"], atlas_image="spline")["error"] == "BAD_ARGS"
-    assert fit(["s0.png"], section_image="nope")["error"] == "UNKNOWN_CHANNEL"
+    assert fit(["s0.png"], section_image="nope")["error"] == "UNKNOWN_IMAGE"
     assert fit(["s0.png"], mask="missing")["error"] == "UNKNOWN_MASK"
     assert fit([])["error"] == "BAD_ARGS"
     many = fit(["s0.png"] * 5)

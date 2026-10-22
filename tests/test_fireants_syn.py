@@ -59,7 +59,8 @@ def test_each_call_applies_one_fit_on_top_of_the_last(tmp_path: Path, atlas):
         "atlas_image_resolved": "template", "mask": "none", "restrict_to": [],
         "smoothness_um": 80.0, "metric": "mutual_information", "edges": True,
         "detail": "standard"}
-    assert row["inputs"]["section_image"] == "preprocessed"
+    assert row["inputs"]["section_image"]["name"] == "preprocessed"
+    assert row["inputs"]["section_image"]["kind"] == "made"
     assert row["inputs"]["atlas_image_resolved"] == "template"
     assert row["inputs"]["mask"]["name"] == "none" and row["inputs"]["damage"]["side"] == "atlas"
     assert row["estimated"] is None
@@ -97,7 +98,7 @@ def test_the_section_s_marked_regions_are_left_out(tmp_path: Path, atlas):
     ({"sections": [ID], "detail": "ultra"}, "BAD_ARGS"),
     ({"sections": [ID], "atlas_image": "borders"}, "BAD_ARGS"),
     ({"sections": [ID], "atlas_image": "no_such_image"}, "BAD_ARGS"),
-    ({"sections": [ID], "section_image": "nope"}, "UNKNOWN_CHANNEL"),
+    ({"sections": [ID], "section_image": "nope"}, "UNKNOWN_IMAGE"),
     ({"sections": [ID], "mask": "missing"}, "UNKNOWN_MASK"),
     ({"sections": ["nope.png"]}, "UNKNOWN_SLICE_IDS"),
     ({"sections": [ID], "restrict_to": ["NOPE"]}, "UNKNOWN_REGIONS"),

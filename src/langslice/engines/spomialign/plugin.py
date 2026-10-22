@@ -85,8 +85,8 @@ def spomialign(
     RoMa (Edstedt et al. 2024), a dense feature matcher pretrained on DINOv2
     features, so only the tissue's shape and structure need agree, not its stain.
 
-    SPOmiAlign matches distinctive points between the section's image (one
-    channel, by name) and an atlas image with a pretrained dense matcher (RoMa), weights
+    SPOmiAlign matches distinctive points between a section image (by
+    name) and an atlas image with a pretrained dense matcher (RoMa), weights
     the matches toward tissue edges, keeps the most confident (matches), and
     fits the chosen transform to the pairs; it compares no intensities pixel by
     pixel and runs no iterations; a call takes under a minute. It starts from
@@ -137,15 +137,14 @@ def spomialign(
     Args:
         sections: One to twenty filenames (the extension may be left off).
         transform: "rigid", "affine", "warp" or "affine_warp".
-        section_image: The section channel to match, by name: "preprocessed"
-            or another channel of the stack[[?set_channel  (set_channel makes ~
-            and changes them)]]. Default "preprocessed".
+        section_image: The section image to match, by name: "preprocessed", a raw channel~
+            [[?make_image , or an image made with make_image]]. Default "preprocessed".
         atlas_image: One of the atlas's images (the job statement lists
             them: "template" and any other reference images the atlas ships,
             by their names), or "nissl", the atlas's Nissl (its template when
             it ships none). Default "nissl"; the reply names the image used.
-        mask: "none", or the name of a mask of each section[[?set_mask  ~
-            (made with set_mask)]]; matches ending where it is below one half
+        mask: "none", or the name of a mask of each section[[?make_mask  ~
+            (made with make_mask)]]; matches ending where it is below one half
             are dropped. Default "none".
         smoothness_um: How widely the warp's pair displacements are blurred,
             in micrometres of the atlas; larger bends broader regions as one.
@@ -156,7 +155,7 @@ def spomialign(
 
     Returns:
         Per section what was fitted and on what, what the fit used (inputs:
-        the channel, the atlas image as asked and as used, the mask, the
+        the section image, the atlas image as asked and as used, the mask, the
         damage, the brightness scaling), the transform written
         (rotation_deg, scale_x, scale_y, shear, translate_x_mm,
         translate_y_mm about the canvas centre) when one was, for a warp its
@@ -216,7 +215,7 @@ def _inputs(frame: Any, plane_image: np.ndarray, on_grid: bool,
     if frame.excluded is not None:  # marked damage painted as background, as native fits do
         picture[frame.excluded] = 255
     zone = frame.damage_zone if frame.damage_zone is not None else np.zeros(labels.shape, bool)
-    stain = _blocks.channel_image(frame)
+    stain = _blocks.section_pixels(frame)
     plane_px = float(np.mean(frame.plane["px_um"]))
     if on_grid:
         applied = np.asarray(frame.applied_map, np.float32)
@@ -342,7 +341,7 @@ def _full_map(frame: Any, pair: dict[str, Any], matrix: np.ndarray,
     A fit-grid pixel u sits at canvas px c = to_canvas u; SPOmiAlign takes c to
     M c + R(c) on the target canvas (R zero off the canvas, as ITK's field is), which
     :func:`_to_native` reads as native atlas px."""
-    gh, gw = _blocks.channel_image(frame).shape[:2]
+    gh, gw = _blocks.section_pixels(frame).shape[:2]
     ys, xs = np.mgrid[0:gh, 0:gw]
     u = np.stack([xs.ravel(), ys.ravel(), np.ones(xs.size)]).astype(np.float64)
     c = (pair["to_canvas"] @ u)[:2]

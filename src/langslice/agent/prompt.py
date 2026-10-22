@@ -72,12 +72,14 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 def display_facts(
     ctx: Workspace, state: StackState,
 ) -> dict[str, Any]:
-    """The job statement's display facts: raw channels and atlas layers here.
+    """The job statement's display facts: the raw channels, the atlas layers
+    here, and the atlas image the fits' default ``nissl`` is.
 
     ``channels`` is one list when every section shares it, else a mapping
     filename -> names. Unreadable files contribute nothing (the seed will
     report them).
     """
+    from langslice.core.atlas.images import default_image
     from langslice.core.display import available_atlas_channels
 
     named: dict[str, list[str]] = {}
@@ -88,17 +90,39 @@ def display_facts(
             continue
     distinct = {tuple(names) for names in named.values()}
     channels: Any = list(next(iter(distinct))) if len(distinct) == 1 else named
-    return {"channels": channels or None, "atlas_channels": available_atlas_channels(ctx)}
+    return {"channels": channels or None, "atlas_channels": available_atlas_channels(ctx),
+            "nissl_image": default_image(ctx.atlas)}
+
+
+#: The run fact on section images, written with what it needs
+#: (:mod:`langslice.core.needs`); ``{opening}`` is how ``preprocessed`` was made.
+SECTION_IMAGES_FACT = (
+    "- Section images (status lists them[[?list_files , list_files shows their files under "
+    "sections/<name>/images/]]): the raw channels of each file[[?make_image , and the images "
+    "made from them with make_image]]. `preprocessed` was made when the job opened: "
+    "{opening}. Every fit[[?trace_borders  and the image model read||reads]] a section image "
+    "by name, and a picture of it is exactly what they read."
+)
+#: The one fact about a channel's signal the agent cannot see from the atlas side.
+SPARSE_SIGNAL_FACT = ("- A channel whose signal is sparse (a tracer, a reporter) shows little "
+                      "of the anatomy the atlas draws.")
 
 
 def channel_facts(
     channels: list[str] | dict[str, list[str]] | None,
     atlas_channels: tuple[str, ...] | None,
     resolution: int | None,
+    *,
+    opening: str = "",
+    nissl_image: str | None = None,
+    off: Collection[str] = (),
 ) -> list[str]:
-    """The run facts on what the pictures can show: the raw channels, the
-    atlas layers offered here and, where the agent sizes pictures, the
-    largest ``look`` picture."""
+    """The run facts on what the pictures and fits read: the raw channels, the
+    section images (*opening*: how ``preprocessed`` was made), the atlas
+    images (*nissl_image*: what the fits' default ``nissl`` is) and, where the
+    agent sizes pictures, the largest ``look`` picture."""
+    from langslice.core.atlas.images import NISSL
+
     lines: list[str] = []
     raw = ("the planes of each section's file as read; the names come from the file or "
            "the host and may not say which is the stain")
@@ -109,8 +133,14 @@ def channel_facts(
         lines.append(f"- Raw image channels per section ({raw}): "
                      + "; ".join(f"{name}: {', '.join(names)}"
                                  for name, names in channels.items()) + ".")
-    if atlas_channels:
-        lines.append("- Atlas layers on this host: " + ", ".join(atlas_channels) + ".")
+    if opening:
+        lines.append(render(SECTION_IMAGES_FACT.replace("{opening}", opening), off))
+        lines.append(SPARSE_SIGNAL_FACT)
+    images = [name for name in atlas_channels or () if name not in ("borders", NISSL)]
+    if images:
+        lines.append("- Atlas images: " + ", ".join(images) + "."
+                     + (f" The fits' default `{NISSL}` is `{nissl_image}` on this atlas."
+                        if nissl_image else ""))
     if resolution:
         from langslice.core.sizes import MIN_RESOLUTION
 
@@ -187,6 +217,7 @@ def build_job_statement(
     atlas_channels: tuple[str, ...] | None = None,
     max_resolution: int | None = None,
     auto: bool | None = None,
+    nissl_image: str | None = None,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
@@ -246,7 +277,12 @@ def build_job_statement(
         from langslice.core.opening import DEFAULT_IMAGE_LIMIT
 
         max_resolution = DEFAULT_IMAGE_LIMIT[0]
-    facts += channel_facts(channels, atlas_channels, max_resolution if sized else None)
+    from langslice.core.section_images import opening_source, opening_words
+
+    absent = {name for name in ("make_image", "trace_borders") if name not in tool_names}
+    facts += channel_facts(channels, atlas_channels, max_resolution if sized else None,
+                           opening=opening_words(opening_source(spec)), nissl_image=nissl_image,
+                           off=set(off) | absent)
     facts += atlas_facts(state.atlas, atlas_channels)
 
     tools = ("Tools (each one's own description says what it does and returns): "
@@ -416,23 +452,12 @@ def build_job_statement(
     if any(name in tool_names for name in ("elastix_affine", "fireants_syn")):
         if not method:
             method = ["", "Method:"]
-        method.append("- A fit's reply names the channel, atlas image and mask it used.")
+        method.append("- A fit's reply names the section image, atlas image and mask it used.")
         method.append(
-            "- Choose the atlas image each fit compares the section with: the one whose "
-            "contrast is closest to the section's (its stain and imaging) and that lines up "
-            "with the atlas borders. "
-            "Look at the candidates beside the section before choosing; the default "
-            "`nissl` is a starting point, not a rule.")
-
-    if method and not spec.off("set_channel"):
-        # First in the Method: the channel every later step looks at and fits.
-        method.insert(
-            2,
-            "- Before placing or fitting a section, make its counterstain the channel "
-            "you register on: set the preprocessed channel "
-            "(`set_channel`, name \"preprocessed\") to the counterstain alone, "
-            "enhanced, and judge alignment and run fits on it."
-        )
+            "- A fit compares one section image with one atlas image. It does best when both "
+            "show as much internal structure as possible (layers, nuclei, fibre tracts, "
+            "ventricle walls) and when the two look alike. Choose, make and look at images by "
+            "that principle; there is no fixed recipe.")
 
     return "\n".join(
         [

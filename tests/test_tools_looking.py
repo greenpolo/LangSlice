@@ -1,5 +1,5 @@
-"""The looking tools through the tool door: look, zoom, the two channel
-tools and status."""
+"""The looking tools through the tool door: look, zoom and status
+(``make_image``: ``tests/test_make_image_tool.py``)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core import appearance as looks
-from langslice.core.sections import render_slice
 from langslice.core.spec import JobSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
@@ -21,7 +19,6 @@ from langslice.job.background import Landed
 from langslice.job.job import ingest
 from tests.deformable_synthetic import SyntheticAtlas, bump_field, render_section
 from tests.fakes import SlabAtlas
-from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
 
 POSITIONS = (0.05, 0.15, 0.10, 0.20, 0.12)
@@ -109,8 +106,10 @@ def test_look_modes_draw_their_pictures(tmp_path: Path, atlas):
     assert linear["status"] == "ok"
     (positioning,) = look("positioning", positions_mm=[0.1])["pictures"]
     assert positioning["caption"].startswith("positioning: 3 sections")
-    (channel,) = look("section", sections=["s0"], channels=["preprocessed"])["pictures"]
-    assert "preprocessed channel" in channel["caption"]
+    (image,) = look("section", sections=["s0"], images=["preprocessed"])["pictures"]
+    assert "section image preprocessed" in image["caption"]
+    (raw,) = look("section", sections=["s0"], images=["gray"])["pictures"]
+    assert "section image gray (raw channel, as the file holds it)" in raw["caption"]
 
 
 def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
@@ -125,7 +124,7 @@ def test_look_refuses_bad_requests_and_draws_nothing(tmp_path: Path, atlas):
     assert nope["message"].startswith("No section is named 'nope.png', '0'.")
     assert "Sections have no numbers" in nope["message"]
     assert look("overlay", atlas_opacity=2.0)["error"] == "BAD_ARGS"
-    assert look("section", channels=["DAPI"])["error"] == "UNKNOWN_CHANNEL"
+    assert look("section", images=["DAPI"])["error"] == "UNKNOWN_IMAGE"
     assert look("overlay", warp="bent")["error"] == "BAD_WARP"
     assert box.job.views.records() == []
 
@@ -162,136 +161,6 @@ def test_zoom_after_a_change_draws_the_picture_as_it_was(tmp_path: Path, atlas):
     assert result["status"] == "ok" and result["stale"] is True
 
 
-# --- set_channel on a raw channel ----------------------------------------------------
-
-
-def test_channel_properties_persist_are_undoable_and_captioned(tmp_path: Path, atlas):
-    state, _, box = _synthetic(tmp_path, atlas)
-    setter = _tool(box, "set_channel")
-    result = setter("gray", gamma=1.5, contrast_limits=[20, 200])
-    assert result["status"] == "ok" and result["changed"] is True
-    assert result["channel"] == "gray"
-    assert result["properties"]["gamma"] == 1.5
-    assert result["sections"] == ["s0.png", "s1.png", "s2.png"]
-    assert result["intensities"]["dtype"] == "uint8"
-    assert len(box.job.undo_stack) == 1
-    (picture,) = _tool(box, "look")("section", sections=["s0.png"])["pictures"]
-    assert "gray 20-200 gamma 1.5" in picture["caption"]
-    assert _tool(box, "status")()["channel_display"] == "gray 20-200 gamma 1.5"
-    # The same settings again change nothing and take no undo step.
-    assert setter("gray", gamma=1.5, contrast_limits=[20, 200])["changed"] is False
-    assert len(box.job.undo_stack) == 1
-    # A raw channel takes no recipe; a name that is no raw channel is a derived one.
-    assert setter("gray", n4=True)["error"] == "BAD_ARGS"
-    assert setter("dapi", weights={"nope": 1.0})["error"] == "BAD_ARGS"
-    _tool(box, "undo")()
-    assert _tool(box, "status")()["channel_display"] == "gray auto"
-    setter("gray", gamma=2.0)
-    assert setter("gray", reset=True)["properties"] is None
-
-
-# --- set_channel on the preprocessed channel and on derived ones -----------------------
-
-
-def test_preprocessed_recipe_returns_before_and_after_pictures(tmp_path: Path):
-    state, ctx, box = _rgb(tmp_path)
-    record = state.by_id("s0.png")
-    raw = np.asarray(render_slice(ctx, record, long_edge=2048)).copy()
-    default = np.asarray(looks.preprocessed_image(ctx, state, record, long_edge=512)).copy()
-    result = _tool(box, "set_channel")(
-        "preprocessed", sections=["s0.png"], weights={"blue": 1.0})
-    assert result["status"] == "ok", result
-    assert result["scope"] == ["s0.png"] and result["shown"] == ["s0.png"]
-    assert result["channels"] == ["red", "green", "blue", "preprocessed"]
-    before, after = result["pictures"]
-    assert "before this call" in before["caption"] and "after this call" in after["caption"]
-    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert np.asarray(result[TOOL_MEDIA_PARTS_KEY][0]).tobytes() != np.asarray(
-        result[TOOL_MEDIA_PARTS_KEY][1]).tobytes()
-    # The door saved the two plain pictures, with the numbers it listed.
-    records = box.job.views.records()
-    assert [r.seq for r in records] == [before["id"], after["id"]]
-    assert {r.tool for r in records} == {"set_channel"}
-    assert looks.preprocessed_settings(state, "s0.png")["weights"] == {"blue": 1.0}
-    assert looks.preprocessed_settings(state, "s1.png") is None
-    # The preprocessed channel changes; geometry is measured on the default render.
-    record = state.by_id("s0.png")
-    ctx.render_cache.clear()
-    assert np.array_equal(raw, np.asarray(render_slice(ctx, record, long_edge=2048)))
-    changed = np.asarray(looks.preprocessed_image(ctx, state, record, long_edge=512))
-    assert not np.array_equal(default, changed)
-
-
-def test_a_new_derived_channel_has_no_before_and_status_says_where_it_exists(tmp_path: Path):
-    state, _ctx, box = _rgb(tmp_path)
-    result = _tool(box, "set_channel")("inverted", sections=["s0.png"], invert=True)
-    assert result["status"] == "ok", result
-    (only,) = result["pictures"]  # no "default appearance" before for a channel that is new
-    assert "after this call" in only["caption"]
-    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
-    entry = _tool(box, "status")()["derived_channels"]["inverted"]
-    assert entry["stack"].startswith("none") and entry["sections"] == ["s0.png"]
-    # Changing it again has a real before; so does the existing preprocessed channel.
-    again = _tool(box, "set_channel")("inverted", sections=["s0.png"], invert=True, gamma=0.5)
-    assert len(again["pictures"]) == 2
-    default = _tool(box, "status")()["derived_channels"]["preprocessed"]
-    assert default["stack"] == "default"
-
-
-def test_a_section_recipe_wins_and_a_reset_returns_to_the_stack(tmp_path: Path):
-    state, _, box = _rgb(tmp_path)
-    tool = _tool(box, "set_channel")
-    whole = tool("preprocessed", weights={"red": 1.0})
-    assert whole["scope"] == "stack" and whole["shown"] == ["s0.png", "s1.png"]
-    assert tool("preprocessed", sections=["s1.png"], weights={"green": 1.0},
-                clahe_tiles=4)["scope"] == ["s1.png"]
-    assert looks.preprocessed_settings(state, "s0.png")["weights"] == {"red": 1.0}
-    assert looks.preprocessed_settings(state, "s1.png")["clahe_tiles"] == 4
-    assert _tool(box, "status")()["derived_channels"]["preprocessed"]["stack"]["weights"] == {
-        "red": 1.0}
-    tool("preprocessed", sections=["s1.png"], reset=True)
-    assert looks.preprocessed_settings(state, "s1.png")["weights"] == {"red": 1.0}
-    tool("preprocessed", reset=True)
-    assert looks.preprocessed_settings(state, "s0.png") is None
-    assert _tool(box, "status")()["derived_channels"]["preprocessed"]["stack"] == "default"
-    # Another name makes another channel, and a reset deletes it.
-    made = tool("dapi_clahe", weights={"blue": 1.0}, clahe_clip=3.0)
-    assert made["status"] == "ok" and "dapi_clahe" in made["channels"]
-    assert "dapi_clahe" in _tool(box, "status")()["derived_channels"]
-    assert tool("dapi_clahe", reset=True)["deleted"] is True
-    assert "dapi_clahe" not in _tool(box, "status")()["derived_channels"]
-
-
-def test_the_recipe_is_one_undoable_checkpointed_write(tmp_path: Path):
-    state, ctx, box = _rgb(tmp_path)
-    _tool(box, "set_channel")("preprocessed", weights={"green": 1.0})
-    saved = load_checkpoint(ctx.checkpoint_path)
-    assert saved is not None
-    assert saved.appearance["derived"]["preprocessed"]["stack"]["weights"] == {"green": 1.0}
-    assert len(box.job.undo_stack) == 1
-    assert _tool(box, "undo")()["status"] == "ok"
-    assert not state.appearance.get("derived")
-    assert _tool(box, "redo")()["status"] == "ok"
-    assert state.appearance["derived"]["preprocessed"]["stack"]["weights"] == {"green": 1.0}
-
-
-def test_the_recipe_refuses_bad_settings_before_writing(tmp_path: Path):
-    state, _, box = _rgb(tmp_path)
-    tool = _tool(box, "set_channel")
-    assert tool("preprocessed", weights={"nope": 1.0})["error"] == "BAD_ARGS"
-    assert tool("preprocessed", clahe_clip=-1)["error"] == "BAD_ARGS"
-    assert tool("preprocessed", sections=["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"
-    assert not state.appearance.get("derived") and not box.job.undo_stack
-
-
-def test_n4_and_denoise_run(tmp_path: Path):
-    state, _, box = _rgb(tmp_path)
-    result = _tool(box, "set_channel")(
-        "preprocessed", sections=["s0.png"], n4=True, denoise=True)
-    assert result["status"] == "ok", result
-    assert looks.preprocessed_settings(state, "s0.png")["n4"] is True
-
-
 # --- status -------------------------------------------------------------------------------
 
 
@@ -303,14 +172,15 @@ def test_status_is_the_table_and_what_the_run_lets_change(tmp_path: Path, atlas)
     assert result["rows"][0]["position_mm"] == 0.05
     assert result["cutting_angles_deg"] == {"pitch": 0.0, "yaw": 0.0}
     assert result["interval_breaks"] == []
-    assert result["derived_channels"] == {"preprocessed": {"stack": "default"}}
-    assert result["channel_display"] == "gray auto"
+    assert result["raw_channels"] == ["gray"]
+    assert result["section_images"] == {"preprocessed": {
+        "opening": "the file as read, in gray, unenhanced", "made": "when the job opened"}}
     assert "background_running" not in result
     assert result["can_change"] == [
         "positions (the order follows them)", "cutting angles",
         "orientation and mirroring and in-plane transforms by hand",
         "in-plane transforms by elastix_affine", "damaged regions",
-        "channel display and the derived channels' recipes", "masks for the fits"]
+        "the section images the pictures and fits read (make_image)", "masks for the fits"]
 
 
 def test_status_lists_the_background_work_still_running(tmp_path: Path, atlas):

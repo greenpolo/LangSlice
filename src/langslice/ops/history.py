@@ -32,7 +32,7 @@ _LINEAR = ("flip", "rotation_deg", "transform")
 _FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("placement", _PLACEMENT), ("linear", _LINEAR),
     ("damage", ("damaged_regions", "damage_note")), ("landmarks", ("landmarks",)),
-    ("deformation", ("deformation",)),
+    ("deformation", ("deformation",)), ("images", ("images",)), ("masks", ("masks",)),
 )
 
 
@@ -57,9 +57,6 @@ def describe_step(old: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, A
         groups.append("placement")
     if old.get("cutting_angles_deg") != new.get("cutting_angles_deg") and "placement" not in groups:
         groups.append("placement")
-    appearance = old.get("appearance") != new.get("appearance")
-    if appearance and not groups:
-        groups.append("appearance")
     if old.get("notes") != new.get("notes") and not groups:
         groups = ["notes"]
     return {"sections": sections, "fields": groups}
