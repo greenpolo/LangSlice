@@ -110,10 +110,10 @@ def test_recovers_a_known_offset_and_records_it_like_any_fit(tmp_path: Path, atl
     error = _error_vs(truth, state.slices[0].transform["params"])
     assert error["rotation"] < 0.3 and error["scale"] < 0.01 and error["corner_px"] < 1.5, error
     # The same reply and record shape as a silhouette fit.
-    assert set(row["physical"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
+    assert set(row["transform"]) == {"rotation_deg", "scale_x", "scale_y", "shear",
                                     "translate_x_mm", "translate_y_mm", "pivot"}
-    assert row["physical"]["translate_x_mm"] == pytest.approx(0.15, abs=0.01)
-    assert row["physical"]["translate_y_mm"] == pytest.approx(-0.10, abs=0.01)
+    assert row["transform"]["translate_x_mm"] == pytest.approx(0.15, abs=0.01)
+    assert row["transform"]["translate_y_mm"] == pytest.approx(-0.10, abs=0.01)
     assert row["mirrored"] is False
     assert row["calibration"] == {"section_um_per_px": UM, "source": "host"}
     assert "params" not in row  # the six raw numbers stay host-side
@@ -212,7 +212,7 @@ def test_a_manual_tweak_keeps_the_fits_shear(tmp_path: Path, atlas):
     row = _tool(box, "elastix_affine")([ID], view=False)["results"][0]
     fit = dict(state.slices[0].transform)
     fitted = list(fit["params"])
-    knobs = {key: value for key, value in row["physical"].items() if key != "pivot"}
+    knobs = {key: value for key, value in row["transform"].items() if key != "pivot"}
     assert abs(knobs["shear"]) > 0.03, knobs
 
     def tweak(**entry: Any) -> dict[str, Any]:

@@ -70,6 +70,11 @@ def _check_name(name: Any) -> str:
 
 def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     given = dict(sorting or {})
+    held = [key for key in ("method", "artifact") if key in given]
+    if held:  # the keys another engine's sorting takes
+        raise Refused("BAD_ARGS", message=f"make_mask's sorting is the fits' EM with an "
+                      f"artifact class: it takes no {' or '.join(held)}; its keys are "
+                      f"{list(SORTING_KEYS)}.")
     unknown = sorted(set(given) - set(SORTING_KEYS))
     if unknown:
         raise Refused("BAD_ARGS", message=f"sorting takes {list(SORTING_KEYS)}; not {unknown}.")
@@ -228,7 +233,11 @@ def _from_em(
     except Refused:
         raise
     except Exception as exc:  # noqa: BLE001 - the sort's failure is the caller's refusal
-        raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
+        from langslice.core.engine_output import failure_message
+
+        raise Refused("FIT_FAILED", message=f"{record.id}: " + failure_message(
+            f"{type(exc).__name__}: {exc}", job.engine_log,
+            f"the sorting of {record.id} failed")) from exc
     meta = {"kind": "em", "section_image": section_image, "atlas_image": atlas_image,
             "params": facts.get("params", {}),
             "inputs": grid_digest(record),

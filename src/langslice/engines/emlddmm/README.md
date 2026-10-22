@@ -33,7 +33,11 @@ or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--tool-plugi
 ## The tools
 
 - **`emlddmm_stack`** (write, Nonlinear, background; arguments `sections`, `slot_um`,
-  `section_image`, `atlas_image`, `mask`, `smoothness_um`, `rigid`, `warp`, `warp_freedom`, `iterations`, `sorting`, `view`):
+  `section_image`, `atlas_image`, `mask`, `kernel_um`, `fit`, `warp_freedom`, `iterations`, `sorting`, `view`;
+  `kernel_um` is emlddmm's `a` (500), `fit` `"transform"`, `"warp"` or `"both"` (default),
+  `iterations` the 200 um scale's steps (100; the 100 and 50 um scales take half and a
+  quarter, the published [100, 50, 25]), `sorting` the five starting points, no `method` or
+  `artifact`):
   the joint fit of the placed sections on the stack's current plane (`lock_slice_axis`,
   `out_of_plane=False`, slice matching), one piece of background work over the whole stack (every
   section in it is `SECTION_BUSY` until it lands), one undo step. Per section: a transform and
@@ -44,7 +48,10 @@ or `langslice.create_job(..., plugins=["plugin:tools"])`. Options (`--tool-plugi
   the device. The notice names the sections not (fully) written with the reason, the sections with
   warp flags and the energy file (or says it was not captured), and the overlays of up to four
   written sections (flagged first, then most moved) with how far each moved. Everything per
-  section is in `sections.csv`.
+  section is in `sections.csv`. A deformation keeps the call's `settings` as its step's and
+  what the plugin chose (the stack, the slots, emlddmm's per-scale configuration) as the
+  record's `engine.native_parameters`; a section read through the deformation it held is
+  written with `start="current"`, keeping its chain.
 - **`emlddmm_plane`** (read, Positioning, task `angles`; arguments `sections`, `slot_um`,
   `atlas_image`, `iterations`, `view`): the same stack with the plane free and no warp
   (`lock_slice_axis` false, warp never started, `up_vector` as published). Proposes pitch, yaw and

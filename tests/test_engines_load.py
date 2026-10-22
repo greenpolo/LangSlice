@@ -35,7 +35,7 @@ TOOLS = {
 CALLS = {
     "stalign_lddmm": {"sections": ["s0"]},
     "stalign_plane_search": {"sections": ["s0"]},
-    "spomialign": {"sections": ["s0"], "transform": "affine"},
+    "spomialign": {"sections": ["s0"], "fit": "transform"},
     "emlddmm_stack": {"sections": ["s0", "s1"], "slot_um": 100.0},
     "emlddmm_plane": {"sections": ["s0", "s1"], "slot_um": 100.0},
 }
@@ -99,13 +99,13 @@ def test_nothing_of_the_engine_environments_is_imported():
 # --- the contract: argument order, the mask rules, the blocks ----------------------------------
 
 ARGUMENTS = {
-    "stalign_lddmm": ["sections", "section_image", "atlas_image", "mask", "smoothness_um",
-                      "affine", "displacement_um", "sorting", "iterations", "view"],
+    "stalign_lddmm": ["sections", "section_image", "atlas_image", "mask", "kernel_um",
+                      "fit", "displacement_um", "sorting", "iterations", "view"],
     "stalign_plane_search": ["sections", "section_image", "atlas_image", "view"],
-    "spomialign": ["sections", "transform", "section_image", "atlas_image", "mask",
+    "spomialign": ["sections", "fit", "rigid", "section_image", "atlas_image", "mask",
                    "smoothness_um", "matches", "view"],
     "emlddmm_stack": ["sections", "slot_um", "section_image", "atlas_image", "mask",
-                      "smoothness_um", "rigid", "warp", "warp_freedom", "iterations", "sorting",
+                      "kernel_um", "fit", "warp_freedom", "iterations", "sorting",
                       "view"],
     "emlddmm_plane": ["sections", "slot_um", "section_image", "atlas_image", "iterations",
                       "view"],

@@ -728,7 +728,7 @@ def test_a_deformation_write_is_one_undo_step_and_the_overlay_shows_it(images: P
     assert len(job.undo_stack) == depth + 1
     assert "deformation drawn" in reply["pictures"][0]["caption"]
     rows = {row["id"]: row for row in call(box, "status")["rows"]}
-    assert rows["s0.png"]["deformation_steps"] == 1
+    assert rows["s0.png"]["deformation"]["steps"] == ["plugin:ripple_sections"]
     key = state.by_id("s0.png").deformation["key"]
     assert call(box, "undo")["status"] == "ok"
     assert state.by_id("s0.png").deformation is None and state.by_id("s1.png").deformation is None
@@ -833,6 +833,82 @@ def test_a_long_tool_writes_its_proposals_and_a_moved_section_is_stale(make, ima
     rows = {row["id"]: row for row in reply["rows"]}
     assert rows["s0.png"]["status"] == "ok" and rows["s1.png"]["error"] == "STALE_INPUT"
     assert state.by_id("s0.png").deformation and state.by_id("s1.png").deformation is None
+
+
+CHAINED = '''
+import numpy as np
+from langslice.plugin_api import ToolResult, ToolSpec
+
+def stub(sections: list[str], amplitude_px: float = 1.0):
+    """Ripple sections on top of the deformation each holds."""
+
+def handler(ctx, sections, amplitude_px=1.0):
+    import cv2
+    from tests.fixtures.example_plugin import ripple_map
+    rows = []
+    for name in sections:
+        frame = ctx.fit_frame(name)
+        held = frame.applied_map
+        field = ripple_map(frame, amplitude_px)
+        start = "linear"
+        if held is not None:  # the ripple read through the deformation the section holds
+            placed = np.linalg.inv(frame.placed_atlas_to_section)
+            grid = np.einsum("ij,hwj->hwi", np.linalg.inv(placed)[:2],
+                             np.concatenate([field, np.ones(field.shape[:2] + (1,))], -1))
+            applied = np.asarray(held, np.float32)
+            field = np.stack([cv2.remap(np.ascontiguousarray(applied[..., c]),
+                                        grid[..., 0].astype(np.float32),
+                                        grid[..., 1].astype(np.float32), cv2.INTER_LINEAR,
+                                        borderMode=cv2.BORDER_REPLICATE)
+                              for c in range(2)], -1).astype(np.float64)
+            start = "current"
+        rows.append(ctx.deformation_from_map(
+            name, field, note=f"ripple {amplitude_px} on {start}", start=start,
+            settings={"amplitude_px": amplitude_px},
+            engine_settings={"wavelength_px": "grid height"},
+            engine_version="ripple 1").row())
+    return ToolResult(ctx.set_deformations(rows).reply())
+
+def tools():
+    return [ToolSpec("ripple_chain", stub, handler, kind="write", group="Nonlinear",
+                     task="nonlinear", writes=("deformation",), long=True)]
+'''
+
+
+def test_a_warp_built_on_the_held_deformation_keeps_its_chain(make, images: Path):
+    """A plugin's warp made on top of the deformation a section holds is that
+    deformation's child: the section's steps stay before its own, its record
+    names the held record as its parent, and its settings and the engine's
+    numbers are kept as a FireANTs record keeps them."""
+    state, _c, box = warp_box(images, make("chain_plugin", CHAINED))
+    job = box.job
+    first = call(box, "ripple_chain", sections=["s0.png"], amplitude_px=1.0)
+    assert first["written"] == ["s0.png"], first
+    held = state.by_id("s0.png").deformation
+    assert [step["start"] for step in held["steps"]] == ["linear"]
+    second = call(box, "ripple_chain", sections=["s0.png"], amplitude_px=0.5)
+    assert second["written"] == ["s0.png"], second
+    chained = state.by_id("s0.png").deformation
+    assert [(step["method"], step["start"]) for step in chained["steps"]] == [
+        ("plugin:ripple_chain", "linear"), ("plugin:ripple_chain", "current")]
+    assert chained["steps"][1]["settings"] == {"amplitude_px": 0.5}
+    record = job.deformations.current(state, state.by_id("s0.png"))
+    assert record is not None and record.parent is not None and record.step == 1
+    assert record.parent.saved_as == held["record"].rsplit("/", 1)[-1]
+    assert record.engine["native_parameters"] == {"wavelength_px": "grid height"}
+    assert record.engine["version"] == "ripple 1"
+    assert record.provenance["start"] == "current"
+    assert record.provenance["settings"] == {"amplitude_px": 0.5}
+    # The record on disk names its parent, and reads back with it.
+    saved = json.loads((job.layout.resolve(chained["record"]) / "record.json").read_text())
+    assert saved["parent"] == held["record"].rsplit("/", 1)[-1]
+    rows = {row["id"]: row for row in call(box, "status")["rows"]}
+    assert rows["s0.png"]["deformation"] == {
+        "method": "plugin:ripple_chain", "steps": ["plugin:ripple_chain", "plugin:ripple_chain"],
+        "settings": {"amplitude_px": 0.5}}
+    # Undo takes the second step back to the first.
+    call(box, "undo")
+    assert state.by_id("s0.png").deformation["key"] == held["key"]
 
 
 def test_a_proposed_deformation_is_drawn_and_not_written(make, images: Path):

@@ -27,13 +27,20 @@ matched the CPU's to 0.001 atlas px on a test section), `threads` (4), `timeout_
 
 ## The tools
 
-- **`stalign_lddmm`** (write, Nonlinear, background; arguments `sections, section_image, atlas_image, mask, smoothness_um, affine, displacement_um, sorting, iterations, view`): STalign's 2-D `LDDMM` per section, one
+- **`stalign_lddmm`** (write, Nonlinear, background; arguments `sections, section_image, atlas_image, mask, kernel_um, fit, displacement_um, sorting, iterations, view`): STalign's 2-D `LDDMM` per section, one
   piece of background work each; a write to a section whose fit runs is refused
-  (`SECTION_BUSY`). `affine=false` (default) holds the transform and bends only; on a section
+  (`SECTION_BUSY`). `kernel_um` is STalign's `a` (500), the width of the kernel that smooths
+  the velocity, not a Gaussian sigma on the displacement as `smoothness_um` is elsewhere.
+  `fit="warp"` (default) holds the transform and bends only; on a section
   that holds a deformation (a landmark warp, an earlier fit) the atlas is first carried through
   it, so the landmark move is kept (the 2026-10-18 test: kept on all six displaced-tissue
-  sections, while STalign's own landmark term failed on one). `affine=true` is refused on a
-  section with a deformation (`HAS_DEFORMATION`). Each landing is its own undo step. The notice
+  sections, while STalign's own landmark term failed on one), and the bend is written with
+  `start="current"`: the section keeps that deformation's steps before its own and the record
+  names it as its parent. `fit="both"` is refused on a
+  section with a deformation (`HAS_DEFORMATION`). Each landing is its own undo step; the
+  deformation keeps the call's `settings` as its step's and `engine_settings` (the target
+  and atlas grids, 10 and 50 um, and the settings STalign chose) as the record's
+  `engine.native_parameters`, which the notice also carries. The notice
   gives what was fitted, the displacement summary and flags, and what STalign estimated (the share of tissue its sorting left out), and names the files of STalign's mismatch record (`energy.csv`, `mismatch.png`); the
   record itself is not sent (Nash: "just a readable file in the job, not something that gets
   dumped into context automatically"). Pictures: the overlay and the final sorting.

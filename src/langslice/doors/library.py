@@ -256,10 +256,16 @@ class ScriptContext(ToolContext):
 
     def deformation_from_map(self, section: object, native_xy: Any, *, note: str = "",
                              meta: Mapping[str, Any] | None = None, weights: Any = None,
-                             provenance: Mapping[str, Any] | None = None) -> DeformationProposal:
+                             provenance: Mapping[str, Any] | None = None,
+                             start: str = "linear",
+                             settings: Mapping[str, Any] | None = None,
+                             engine_settings: Mapping[str, Any] | None = None,
+                             engine_version: str = "") -> DeformationProposal:
         self._begin()
         return super().deformation_from_map(section, native_xy, note=note, meta=meta,
-                                            weights=weights, provenance=provenance)
+                                            weights=weights, provenance=provenance, start=start,
+                                            settings=settings, engine_settings=engine_settings,
+                                            engine_version=engine_version)
 
     def set_positions(self, rows: Sequence[Mapping[str, Any]], *,
                       cutting_angles: Mapping[str, float] | None = None,

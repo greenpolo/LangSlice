@@ -2,7 +2,7 @@
 
 A LangSlice tool plugin (`docs/plugins.md` in LangSlice) that offers SPOmiAlign
 (Wang et al. 2026, Brief Bioinform) to the registration agent as one tool,
-`spomialign(sections, transform, section_image, atlas_image, mask, smoothness_um, matches, view)`. Revised
+`spomialign(sections, fit, rigid, section_image, atlas_image, mask, smoothness_um, matches, view)`. Revised
 2026-10-19 after Fable's review
 (`_local/notes/2026-10-19_comparator_plugin_review/spomialign_review.md`).
 
@@ -24,6 +24,11 @@ or `langslice.create_job(..., plugins=["plugin:tools"])` with this folder on
 `timeout_s`. RoMa's weights load from `~/.cache/torch/hub/checkpoints`.
 
 ## What a call does
+
+`fit` (`"transform"`, `"warp"`, `"both"`) and `rigid` choose the engine's mode:
+`"transform"` is SPOmiAlign's `affine`, or with `rigid` its `rigid`; `"warp"` its
+`bspline`; `"both"` its `affine+bspline` default (`affine_warp` below). `rigid` with
+another `fit` is refused `BAD_ARGS`.
 
 1. **Refusals first**, per section, before the engine runs: `FROZEN` (the affine for
    rigid, affine and affine_warp; the deformation for warp and affine_warp),
@@ -60,9 +65,15 @@ or `langslice.create_job(..., plugins=["plugin:tools"])` with this folder on
 
    None rejects outlier pairs: the dropped homography mode was the only one with RANSAC.
    The linear part is written through `transform_from_matrix`, the full map through
-   `deformation_from_map`, in one undo step.
+   `deformation_from_map`, in one undo step: a warp on a section that holds a deformation
+   with `start="current"`, so the section keeps that deformation's steps before its own and
+   the record names it as its parent; the call's `settings`, and the engine's own numbers
+   (`engine_settings`: the matcher, the mode, the 1152 x 864 working grid and its
+   micrometres per pixel, `smoothing_sigma_px`, the pairs, the canvas), with the record, as
+   its step's settings and its `engine.native_parameters`; each row carries
+   `engine_settings` too.
 
-Job files, per call under `plugins/spomialign/calls/<n>_<transform>/`: `in.npz`, `out.npz`,
+Job files, per call under `plugins/spomialign/calls/<n>_<mode>/`: `in.npz`, `out.npz`,
 `log.txt`; per section in `<section>/`: `atlas.png` (the atlas image as SPOmiAlign saw it,
 the damage zone outlined), `section.png`, `settings.json`, `matches.csv` (every pair used,
 and those passed over in the damage zone, in pixels of the two PNGs, with confidence) and
@@ -107,6 +118,6 @@ SPOmiAlign code. In LangSlice, SPOmiAlign's code is to ship inside LangSlice's o
 
 ## Limits (the engine's own)
 
-One RGB image pair per call. No weighting in the matcher: a section mask can only drop matches whose section end has weight under 0.5 (the reply says "approximated by dropping matches"), and it estimates no mask of its own (`estimated` is null). Brightness: 8-bit, Nissl rendered dark on white. `smoothness_um` becomes `smoothing_px` per section from the canvas geometry.
+One RGB image pair per call. No weighting in the matcher: a section mask can only drop matches whose section end has weight under 0.5 (the reply says "approximated by dropping matches"), and it estimates no mask of its own (`estimated` is null). Brightness: 8-bit, Nissl rendered dark on white. `smoothness_um` (a Gaussian sigma on the displacement field, as `fireants_syn`'s is) becomes `smoothing_px` per section from the canvas geometry.
 
 A missing interpreter or source folder is refused at call time with `ENGINE_UNAVAILABLE`.

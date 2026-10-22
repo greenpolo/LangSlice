@@ -76,3 +76,36 @@ def engine_output(path: str | Path | None, label: str = "") -> Iterator[None]:
                 os.dup2(saved, 2)
                 os.close(saved)
                 _HELD["saved"] = None
+
+
+#: The longest first line of an engine's error a reply carries, in characters.
+FAILURE_CHARS = 240
+
+
+def failure_message(text: str, path: str | Path | None, label: str = "") -> str:
+    """What a reply says of an engine that failed: the first line of its
+    error *text* (at most :data:`FAILURE_CHARS` characters), and, when the
+    whole error was appended to *path* (the job's ``logs/engine.log``, headed
+    by *label*), that the log holds it. A GPU that ran out of memory is said
+    in words: another fit held it, and the call can run again."""
+    whole = str(text or "").strip() or "no error text"
+    first = whole.splitlines()[0].strip()
+    if len(first) > FAILURE_CHARS:
+        first = first[:FAILURE_CHARS - 3].rstrip() + "..."
+    kept = False
+    if path is not None:
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as stream:
+                stream.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {label or 'failed'}\n"
+                             f"{whole}\n")
+            kept = True
+        except OSError:
+            kept = False
+    words = first
+    if "out of memory" in whole.lower():
+        words += (". The GPU ran out of memory, most likely while another fit held it; "
+                  "running the call again fits it from the start")
+    if kept:
+        words += ". logs/engine.log holds the whole error"
+    return words + ("" if words.endswith(".") else ".")

@@ -503,17 +503,20 @@ def reference(
 
 def record_from_map(
     ctx: Workspace, grid: Grid, native_xy: np.ndarray, *, method: str,
-    provenance: dict[str, Any],
+    provenance: dict[str, Any], native_parameters: dict[str, Any] | None = None,
+    engine_version: str = "",
 ) -> DeformableRecord:
     """A deformation made elsewhere as an applied record on *grid*: *native_xy*
     ``(H, W, 2)`` is the full map from the fit grid's pixel centres to native
     atlas-plane pixels (``(H, W)`` the grid image's size), stored as the residual
     over the grid's linear placement
     (:func:`langslice.core.deformable.warp_from_native_map`). The record's
-    engine is *method*; its provenance is *provenance* with the section grid's
-    facts."""
+    engine is *method*, with *native_parameters* (what the engine ran at, in
+    its own units) and *engine_version*; its provenance is *provenance* with
+    the section grid's facts."""
     outcome = warp_from_native_map(ctx.atlas, grid.placement, native_xy, DETAIL_LEVEL,
-                                   engine=method)
+                                   engine=method, native_parameters=native_parameters,
+                                   engine_version=engine_version)
     outcome.provenance = {
         **provenance, "section_id": grid.record.id, "linear_handoff": grid.handoff,
         "section_grid": {"size": list(grid.image.size), "long_edge": FIT_LONG_EDGE,
