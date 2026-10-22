@@ -31,10 +31,10 @@ def _open(tmp_path: Path) -> Job:
     return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
 
 
-def _refused(call: Any, *args: Any, **kwargs: Any) -> Refused:
+def _refused(call: Any, *args: Any, code: str = "BAD_PATH", **kwargs: Any) -> Refused:
     with pytest.raises(Refused) as caught:
         call(*args, **kwargs)
-    assert caught.value.code == "BAD_PATH"
+    assert caught.value.code == code
     return caught.value
 
 
@@ -47,7 +47,15 @@ def test_paths_outside_the_job_folder_are_refused(tmp_path: Path):
         _refused(files.read_file, job, bad)
         _refused(files.list_files, job, bad)
         _refused(files.search_files, job, "outside", bad)
-    _refused(files.read_file, job, "no_such_file.txt")
+    missing = _refused(files.read_file, job, "history/no_such_file.txt", code="NOT_FOUND")
+    # A path that does not exist names the nearest folder above it and what it holds.
+    assert missing.details["nearest"] == "history"
+    assert "the nearest folder above it that does, 'history', holds:" in str(
+        missing.details["message"])
+    deep = _refused(files.list_files, job, "sections/s0/deformable/x", code="NOT_FOUND")
+    assert deep.details["nearest"] == "sections/s0"
+    assert deep.details["holds"] == sorted(deep.details["holds"], key=lambda name: (
+        not name.endswith("/"), name))
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks")
@@ -79,7 +87,7 @@ def test_listing_search_and_reading_are_capped_and_paged(tmp_path: Path):
     folder = job.layout.folder
     listed = files.list_files(job)
     assert listed.text.index("history/") < listed.text.index("state.json")  # folders first
-    only = files.list_files(job, pattern="*.json")
+    only = files.list_files(job, glob="*.json")
     assert only.entries and all(e.path.endswith(".json") for e in only.entries)
     many = folder / "many"
     many.mkdir()

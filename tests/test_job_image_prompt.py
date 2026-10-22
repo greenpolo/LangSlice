@@ -163,7 +163,7 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         # placement, so the deformation fitted to them is undone first.
         job.undo()
         assert job.state.by_id(SECTION).deformation is None
-        job.export_maps(slices=[SECTION])
+        job.export_maps(sections=[SECTION])
         labels = tifffile.imread(folder / "sections" / "s0" / "labels.tif")
         distance = np.asarray(ndimage.distance_transform_edt(~_borders(labels)))
         assert borders.sum() > 50
@@ -172,6 +172,6 @@ def test_export_maps_writes_each_traced_sections_reply_on_its_maps_grid(images, 
         # A section with no completed trace now loses the reply an earlier export left.
         while job.state.by_id(SECTION).image_correction is not None:  # its fit, then the trace
             job.undo()
-        again = job.export_maps(slices=[SECTION])
+        again = job.export_maps(sections=[SECTION])
         assert again.get("status") != "error", again
         assert not path.exists()

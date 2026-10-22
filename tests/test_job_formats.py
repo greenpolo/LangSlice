@@ -363,7 +363,7 @@ def test_full_resolution_maps_are_on_the_file_pixels(placed, tmp_path, monkeypat
     images = tmp_path / "stack"
     shutil.copytree(root.parent, images)
     job = langslice.open_job(str(images), atlas_loader=atlas_loader())
-    reply = job.export_maps(slices=[ID1], full_resolution=True)
+    reply = job.export_maps(sections=[ID1], full_resolution=True)
     job.close()
     assert reply["written"] == [ID1] and reply["full_resolution"] is True
     with Image.open(images / ID1) as image:

@@ -35,6 +35,9 @@ CARD_FILES = ("AGENTS.md", "CLAUDE.md")
 #: The brief the agent CLI writes beside the card (``langslice-job FOLDER
 #: brief``, :mod:`langslice.doors.cli.brief`), which the card names first.
 BRIEF_FILE = "BRIEF.md"
+#: Every verb's description and arguments as the job declares them, written by
+#: ``brief`` beside the brief (:func:`langslice.doors.cli.catalog.tools_text`).
+TOOLS_FILE = "TOOLS.md"
 
 
 #: How the card words what a limit counts (``Verb.limits``' keys).
@@ -134,7 +137,7 @@ written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
   - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation;
     `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.
 - `views/`, `views.jsonl` (pictures, their index); `exports/` (results, `quicknii.json`,
-  `visualign.json`); `logs/` (events, CLI calls, background runs).
+  `visualign.json`); `logs/` (events, background runs, CLI calls, each reply in `calls/`).
 Maps and pictures are derived, never read back: editing one changes no registration.
 
 ## Pictures and coordinates
@@ -156,8 +159,8 @@ Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index`
 `pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
 `error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
 verb re-checks each section first: `STALE_INPUT`, run it again for that section).
-`langslice-job ops` lists the verbs; `langslice-job {layout.folder} schema VERB [VERB ...]` gives
-their arguments, several at once (every verb without one); `schema init` the job flags.
+`{TOOLS_FILE}` (from `brief`) describes every verb and its arguments; `langslice-job {layout.folder}
+schema VERB [VERB ...]` as JSON (every verb without one), `ops` lists them, `schema init` the flags.
 {verbs}
 
 ## Python

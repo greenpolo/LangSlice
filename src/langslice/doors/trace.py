@@ -12,7 +12,9 @@ so it appends to one file per job folder (``cli_<folder>_<digest>.jsonl``,
 
 The agent CLI also logs every call in the job folder, whatever the
 environment says (:func:`log_call`: ``logs/calls.jsonl``): the verb, its
-arguments as given, the envelope's outcome and the artifacts' paths.
+arguments as given, the envelope's outcome and the artifacts' paths; and it
+keeps each call's whole envelope as it was printed (:func:`save_reply`:
+``logs/calls/<n>_<verb>.json``), which the call's line names under ``reply``.
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ TRACE_DIR_ENV = "LANGSLICE_TRACE_DIR"
 
 #: The agent CLI's call log in the job folder.
 CALLS_FILE = "calls.jsonl"
+#: The folder of ``logs/`` that keeps each call's envelope (:func:`save_reply`).
+REPLIES_DIR = "calls"
 
 
 class HostTrace:
@@ -71,6 +75,29 @@ def log_call(logs_folder: Path, record: dict[str, Any]) -> None:
             {"at": datetime.now().isoformat(timespec="seconds"), **record})
 
 
+def save_reply(logs_folder: Path, verb: str, text: str) -> Path | None:
+    """Keep one agent-CLI call's envelope, *text* as printed, as
+    ``logs/calls/<n>_<verb>.json`` (``n`` the next free number, six digits;
+    a number another process took first moves this one to the next). The
+    path, or None when it could not be written (never raises)."""
+    folder = Path(logs_folder) / REPLIES_DIR
+    safe = "".join(c if c.isalnum() or c in "_-" else "_" for c in verb) or "call"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        number = sum(1 for _ in folder.iterdir()) + 1
+        for _attempt in range(1000):
+            path = folder / f"{number:06d}_{safe}.json"
+            try:
+                with path.open("x", encoding="utf-8") as handle:
+                    handle.write(text + "\n")
+                return path
+            except FileExistsError:
+                number += 1
+    except Exception:
+        logger.warning("Could not keep the reply of %s in %s", verb, folder, exc_info=True)
+    return None
+
+
 def _append(path: Path, record: dict[str, Any]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,4 +107,5 @@ def _append(path: Path, record: dict[str, Any]) -> None:
         logger.warning("Could not write a record to %s", path, exc_info=True)
 
 
-__all__ = ["CALLS_FILE", "TRACE_DIR_ENV", "HostTrace", "cli_trace", "log_call"]
+__all__ = ["CALLS_FILE", "REPLIES_DIR", "TRACE_DIR_ENV", "HostTrace", "cli_trace", "log_call",
+           "save_reply"]

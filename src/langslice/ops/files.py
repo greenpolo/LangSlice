@@ -3,9 +3,11 @@
 Three functions modelled on a coding agent's file tools: :func:`list_files`,
 :func:`search_files` and :func:`read_file`. Every path is relative to the job
 folder and kept inside it (:mod:`langslice.job.browse`); a path that leaves it
-is refused (``BAD_PATH``). Each answers a small record whose ``text`` is the
-model-facing reply, capped (``browse.LIST_ENTRIES``, ``SEARCH_MATCHES``,
-``READ_LINES``, ``TEXT_BYTES``) with a line saying what was left out.
+is refused (``BAD_PATH``), and one that does not exist is ``NOT_FOUND``, whose
+message names the nearest folder above it that exists and what it holds.
+Each answers a small record whose ``text`` is the model-facing reply, capped
+(``browse.LIST_ENTRIES``, ``SEARCH_MATCHES``, ``READ_LINES``, ``TEXT_BYTES``)
+with a line saying what was left out.
 
 What is worth opening: ``views.jsonl`` (one JSON line per picture the model
 was shown: number, tool, sections, caption, step), ``state.json`` (the whole
@@ -25,7 +27,7 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from langslice.job import browse
-from langslice.job.browse import PathRefused
+from langslice.job.browse import PathMissing, PathRefused
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
@@ -77,6 +79,9 @@ def _folder(job: Job) -> Path:
 def _resolved(job: Job, path: str) -> Path:
     try:
         return browse.resolve(_folder(job), path)
+    except PathMissing as error:
+        raise Refused("NOT_FOUND", message=str(error), nearest=error.nearest,
+                      holds=error.holds) from error
     except PathRefused as error:
         raise Refused("BAD_PATH", message=str(error)) from error
 
@@ -89,22 +94,22 @@ def _size(size: int) -> str:
     return f"{size / 1_000_000:.1f} MB"
 
 
-def list_files(job: Job, path: str = ".", pattern: str = "") -> Listing:
+def list_files(job: Job, path: str = ".", glob: str = "") -> Listing:
     """The files and folders at *path* (folders first), each with its kind and size.
 
-    With a glob *pattern* (``*.json``, ``views/*``), every file below *path*
-    whose name or path matches. At most ``browse.LIST_ENTRIES`` are shown; the
-    reply ends with ``N more`` for the rest.
+    With a *glob* (``*.json``, ``views/*``; ``*`` is every file), every file
+    below *path* whose name or path matches. At most ``browse.LIST_ENTRIES``
+    are shown; the reply ends with ``N more`` for the rest.
     """
     start = _resolved(job, path)
-    entries, hidden = browse.list_entries(_folder(job), start, str(pattern or ""))
+    entries, hidden = browse.list_entries(_folder(job), start, str(glob or ""))
     shown = browse.relative(_folder(job), start)
     rows = [f"{e.path}/" if e.kind == "dir" else f"{e.path}  {e.kind}, {_size(e.size)}"
             for e in entries]
     if not rows:
         rows = ["(nothing)"]
     if hidden:
-        rows.append(f"... {hidden} more (narrow the path or the pattern)")
+        rows.append(f"... {hidden} more (narrow the path or the glob)")
     head = f"{shown}:" if start.is_dir() else f"{shown} (a file):"
     return Listing(shown, tuple(entries), hidden, "\n".join([head, *rows]))
 

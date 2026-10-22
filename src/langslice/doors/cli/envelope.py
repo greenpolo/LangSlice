@@ -50,7 +50,7 @@ EXIT_INTERNAL = 4
 #: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
     "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "WRONG_SIDE_PAIR", "EMPTY_BOX",
-    "NO_JOB", "NO_IMAGES", "ATLAS_ENDPOINT_OUTSIDE",
+    "NO_JOB", "NO_IMAGES", "ATLAS_ENDPOINT_OUTSIDE", "NOT_FOUND",
 })
 
 #: The disabled list of the job the call is about, once it is open (set by
@@ -77,6 +77,9 @@ FIXES: dict[str, str] = {
               "with --job-dir is named by its own folder.",
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
     "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
+    "BAD_PATH": "Give a path inside the job folder, relative to it.",
+    "NOT_FOUND": "The message names the nearest folder above the path that exists and what "
+                 "it holds; give a path from there[[?list_files  (list_files lists it)]].",
     "NOTHING_TO_REDO": "Redo follows an undo only.",
     "UNKNOWN_REGISTRATION": "List the section's registrations[[?restore_registration : "
                             "`langslice-job {job} restore_registration --section NAME`]].",
@@ -136,7 +139,9 @@ FIXES: dict[str, str] = {
                                 "]])]] first.",
     "ENGINE_MISSING": "torch or fireants does not import on this host; reinstall "
                     "LangSlice (see the message).",
-    "FIT_FAILED": "See the message; try other settings or regions.",
+    "FIT_FAILED": "The engine failed on this section: the message "
+                  "says why, and logs/engine.log holds the whole error. When the GPU ran "
+                  "out of memory, run the call again.",
     "RENDER_FAILED": "See the message; check the section file opens, then retry.",
     "UNKNOWN_MASK": "Make the mask first[[?make_mask  with make_mask]]; `status` lists each "
                     "section's masks.",

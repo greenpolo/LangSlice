@@ -45,6 +45,42 @@ class PathRefused(ValueError):
     """A path outside the job folder, or one that cannot be read; the message is plain."""
 
 
+#: How many names of the nearest existing folder a missing path's refusal lists.
+NEAREST_NAMES = 20
+
+
+class PathMissing(PathRefused):
+    """A path inside the job folder that does not exist: ``nearest`` is the
+    nearest folder above it that does (relative to the job folder, ``.`` for
+    the folder itself) and ``holds`` the names in it (folders end in ``/``),
+    at most :data:`NEAREST_NAMES`, ``more`` the number left out."""
+
+    def __init__(self, message: str, nearest: str, holds: list[str], more: int) -> None:
+        super().__init__(message)
+        self.nearest = nearest
+        self.holds = holds
+        self.more = more
+
+
+def _missing(root: Path, text: str, candidate: Path) -> PathMissing:
+    """The refusal of *candidate*, a path under *root* that does not exist."""
+    nearest = candidate.parent
+    while nearest != root and not nearest.is_dir():
+        nearest = nearest.parent
+    if root not in nearest.parents and nearest != root:
+        nearest = root
+    try:
+        names = sorted(nearest.iterdir(), key=lambda p: (not p.is_dir(), p.name))
+    except OSError:
+        names = []
+    holds = [p.name + ("/" if p.is_dir() else "") for p in names[:NEAREST_NAMES]]
+    more = max(len(names) - NEAREST_NAMES, 0)
+    shown = nearest.relative_to(root).as_posix() or "."
+    listed = (", ".join(holds) + (f" and {more} more" if more else "")) if holds else "nothing"
+    return PathMissing(f"'{text}' does not exist in the job folder; the nearest folder above "
+                       f"it that does, '{shown}', holds: {listed}.", shown, holds, more)
+
+
 @dataclass(frozen=True)
 class Entry:
     """One listed item: its path relative to the job folder."""
@@ -71,7 +107,7 @@ def resolve(folder: Path, path: str = ".") -> Path:
     if resolved != root and root not in resolved.parents:
         raise PathRefused(f"'{text}' is outside the job folder; only files inside it can be read.")
     if not resolved.exists():
-        raise PathRefused(f"'{text}' does not exist in the job folder.")
+        raise _missing(root, text, resolved)
     return resolved
 
 

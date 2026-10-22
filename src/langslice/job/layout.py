@@ -24,7 +24,8 @@ without an id. Inside::
     exports/             linear_results.json, spend.json (the agent run's spend),
                          a host's result.json, quicknii.json and visualign.json
     logs/                events.jsonl (opens), runs/ (the agent CLI's
-                         background runs), calls.jsonl (the agent CLI's calls)
+                         background runs), calls.jsonl (the agent CLI's calls),
+                         calls/ (each call's envelope)
     prompt.txt           a saved ABBA job's copy prompt
     trace/               agent transcripts: LangSlice's own agent's trace, and
                          a coding agent's session copied in by its harness

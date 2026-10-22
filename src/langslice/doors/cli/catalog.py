@@ -25,6 +25,7 @@ the envelope; :mod:`langslice.doors.cli.jobcli` prints it.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 from typing import Any
@@ -52,6 +53,8 @@ JOB_COMMANDS: dict[str, str] = {
                 "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID): its answer, or "
                 "after 30 s its state `running` (wait again); --timeout SECONDS.",
+    "ops": "This job's own verbs: each one's kind, group, one-line summary and whether it "
+           "is long.",
     "schema [VERB ...]": "This job's verbs as `langslice-job schema` gives them, its tool "
                          "plugins' included: several at once, every verb without one.",
     "env [install PACKAGE ...|remove]": "The job's own Python environment (made when "
@@ -67,7 +70,7 @@ JOB_COMMANDS: dict[str, str] = {
 
 def command_names() -> list[str]:
     """The job commands by name (``init``, ``brief``, ``runs``, ``wait``,
-    ``env``, ``python``)."""
+    ``ops``, ``schema``, ``env``, ``python``)."""
     return [key.split()[0] for key in JOB_COMMANDS]
 
 
@@ -119,6 +122,13 @@ def command_entry(name: str) -> dict[str, Any]:
 def canonical_verb(name: str) -> str:
     """A verb's name from what a caller typed (kebab-case accepted)."""
     return name.strip().replace("-", "_")
+
+
+#: What ``ops`` says of a long verb.
+LONG_WORDS = ("A long verb computes outside the job lock and may take minutes; a call "
+              "still running after 30 s answers with its run id and state running (the "
+              "run goes on; `wait ID` collects its answer), and --background answers at "
+              "once.")
 
 
 def verbs_table(spec: Any = None) -> list[dict[str, Any]]:
@@ -228,18 +238,116 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
                         "of the current folder, if any)")
 
 
-def ops(_args: argparse.Namespace) -> Envelope:
-    """``langslice-job ops``."""
+def ops(args: argparse.Namespace) -> Envelope:
+    """``langslice-job ops`` (the verbs, with the plugin tools of the job in the
+    current folder), or ``langslice-job FOLDER ops`` (``args.job``: that job's
+    own verbs only, as its settings declare them)."""
+    folder = getattr(args, "job", None)
+    if folder:
+        from langslice.doors.jobs import NoJob
+
+        try:
+            declared = Declared(folder)
+        except NoJob as exc:
+            return Envelope.failure("NO_JOB", str(exc))
+        except (FileNotFoundError, ValueError) as exc:
+            return Envelope.failure("JOB_UNREADABLE", str(exc), exit=EXIT_REFUSED)
+        from langslice.doors.declarations import summary
+
+        table = [{**row, "summary": summary(row["name"], declared.variant)}
+                 for row in verbs_table(declared.spec) if declared.has(row["name"])]
+        job = declared.folder or folder
+        return Envelope(result={
+            "job": job, "verbs": table,
+            "usage": f"langslice-job {job} VERB --args '{{...}}' [--key value] [--dry-run] "
+                     "[--background] [--verbose]",
+            "long": LONG_WORDS, "job_commands": JOB_COMMANDS,
+        }, next=[f"langslice-job {job} brief", f"langslice-job {job} schema VERB [VERB ...]"])
     return Envelope(result={
         "verbs": verbs_table(_spec_here()),
         "usage": "langslice-job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
                  "[--background] [--verbose]",
-        "long": "A long verb computes outside the job lock and may take minutes; a call "
-                "still running after 30 s answers with its run id and state running (the "
-                "run goes on; `wait ID` collects its answer), and --background answers at "
-                "once.",
+        "long": LONG_WORDS,
         "job_commands": JOB_COMMANDS,
     }, next=["langslice-job FOLDER brief", "langslice-job FOLDER schema VERB [VERB ...]"])
+
+
+def _type_words(schema: dict[str, Any], defs: dict[str, Any]) -> str:
+    """A JSON schema's type in words: ``string``, ``list of numbers``, one of
+    the enum's values, an object's keys."""
+    if "$ref" in schema:
+        return _type_words(defs.get(schema["$ref"].rsplit("/", 1)[-1], {}), defs)
+    if "enum" in schema:
+        return "one of " + ", ".join(json.dumps(value) for value in schema["enum"])
+    if "const" in schema:
+        return json.dumps(schema["const"])
+    for key in ("anyOf", "oneOf"):
+        if key in schema:
+            return " or ".join(_type_words(part, defs) for part in schema[key])
+    kind = schema.get("type")
+    if kind == "array":
+        return "list of " + _type_words(schema.get("items") or {}, defs)
+    if kind == "object":
+        keys = list((schema.get("properties") or {}).keys())
+        if keys:
+            need = set(schema.get("required") or [])
+            return "{" + ", ".join(key + ("" if key in need else "?") for key in keys) + "}"
+        return "object"
+    return {"string": "string", "integer": "whole number", "number": "number",
+            "boolean": "true or false", "null": "null"}.get(str(kind), str(kind or "any"))
+
+
+def argument_lines(name: str, variant: Any) -> list[str]:
+    """Verb *name*'s arguments as declared in *variant*, one line each: its
+    name, type in words, and default (or ``required``)."""
+    from langslice.doors.declarations import arguments_schema
+
+    schema = arguments_schema(name, variant)
+    defs = schema.get("$defs") or {}
+    need = set(schema.get("required") or [])
+    lines = []
+    for argument, entry in (schema.get("properties") or {}).items():
+        default = ("required" if argument in need
+                   else f"default {json.dumps(entry.get('default'))}")
+        lines.append(f"- `{argument}`: {_type_words(entry, defs)}; {default}")
+    return lines
+
+
+def tools_text(folder: str, names: list[str], variant: Any, spec: Any) -> str:
+    """``TOOLS.md``: every verb of *names* (the job's, in order) as declared
+    in *variant*, the run's declarations: its summary line, kind and group,
+    its description and its arguments, the same words ``langslice-job FOLDER
+    schema`` gives as JSON."""
+    from langslice.doors.declarations import declaration
+    from langslice.ops.registry import verbs_for
+
+    verbs = verbs_for(spec)
+    lines = [
+        "# LangSlice tools",
+        "",
+        f"Every verb of this job as `langslice-job {folder} schema VERB` declares it, "
+        "written by `brief`; the same words, as text. Call a verb as "
+        f"`langslice-job {folder} VERB --args '{{...}}'`.",
+        "",
+    ]
+    for name in names:
+        if name not in verbs:
+            continue
+        declared = declaration(name, variant)
+        verb = verbs[name]
+        head = declared.doc.split("\n", 1)
+        body = head[1] if len(head) > 1 else ""
+        lines += [f"## {name}", "",
+                  f"{declared.summary} ({verb.kind}, {verb.group}"
+                  + (", long" if verb.long else "") + ")", ""]
+        text = "\n".join(line[8:] if line.startswith(" " * 8) else line.strip()
+                         for line in body.split("\n")).strip()
+        if text:
+            lines += [text, ""]
+        arguments = argument_lines(name, variant)
+        if arguments:
+            lines += ["Arguments:", *arguments, ""]
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _names(given: Any) -> list[str]:
