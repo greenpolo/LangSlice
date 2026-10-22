@@ -810,6 +810,13 @@ class Job:
         """The undo history's index (``history/index.json``)."""
         return str(self.history.index_path)
 
+    @property
+    def engine_log(self) -> str | None:
+        """Where the registration engines' own output goes while they fit
+        (``logs/engine.log``, :mod:`langslice.core.engine_output`); None for
+        a job that persists nothing."""
+        return str(self.layout.logs_dir / "engine.log") if self.persist else None
+
     def portable(self, correction: dict[str, Any]) -> dict[str, Any]:
         """An image correction's record with its paths relative to the job folder."""
         converted = state_paths({"slices": [{"image_correction": correction}]},

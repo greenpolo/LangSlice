@@ -465,21 +465,30 @@ Append one line to the run notes, which are saved with the results.
 
 Undo the last write. A tool call, or a finished piece of background work, is one step.
 
+        Args:
+            steps: How many steps to undo at once, newest first (all the history
+                holds when it holds fewer).
+
         Returns:
             The sections undone and the fields that changed, and the rows of
             those sections.
         
 
+- `steps` (integer):
 
 ## redo
 
 Redo the write that ``undo`` reversed.
+
+        Args:
+            steps: How many undone steps to redo at once.
 
         Returns:
             The sections redone and the fields that changed, and the rows of
             those sections.
         
 
+- `steps` (integer):
 
 ## submit
 

@@ -132,9 +132,10 @@ wording; `registry.py` lists which.
   file is answered with its `views.jsonl` record (`job.views.records()`) and the
   number to give `zoom`, never pixels; `views.jsonl`, `state.json`
   (the run notes) and `job.json` read as text.
-- `history.py` — `undo(job)` / `redo(job)`: `Stepped` (`done`, `moved`: the
-  sections whose position the step changed, which the tool door's gates
-  forget, `depth`); `moved_positions(before, state)`.
+- `history.py` — `undo(job, steps=1)` / `redo(job, steps=1)`: that many
+  steps under one hold of the job's lock (fewer when the history holds
+  fewer); `Stepped` (`done`, `depth`, `step`: the sections and field groups
+  the steps changed together, `describe_step`, `steps`: how many were taken).
 - `registrations.py` — `restore_registration`'s operations over the job's
   registration store (`job/registrations.py`): `listing(job, section)` ->
   `Listed` (`held`, the number the section holds; `rows`: per registration
@@ -243,7 +244,10 @@ wording; `registry.py` lists which.
   computed outside the lock, `STALE_INPUT` for a section that changed);
   a tiny restricted region is `REGION_TOO_SMALL` before the engine runs;
   a fit that turns a section more than `LARGE_TURN_DEG` from its previous
-  transform carries `turn_deg`. With `restrict_to`, each ok row carries
+  transform carries `turn_deg`, and one whose scale or shear changes past
+  `SCALE_CHANGE_LIMITS` / `SHEAR_CHANGE_LIMIT` from it carries `flags`
+  (`plausibility_flags`: `SCALE_CHANGED`, `SHEAR`); each fit runs inside
+  `core.engine_output.engine_output(job.engine_log)`. With `restrict_to`, each ok row carries
   `restrict_box`: the regions' bounding box on that section's canvas as
   `[x0, y0, x1, y1]` fractions (`region_box`; `core.canvas.zoom_box`'s
   zoom). Refused: `UNKNOWN_SLICE_IDS`, `BAD_ARGS`. Returns `AffineFit`
@@ -272,10 +276,17 @@ wording; `registry.py` lists which.
   `written`; with `options=`, `pictures(...)` draws each fit (the final
   borders on the image it read, titled with the settings) and each traced
   section's trace (`pictures`, `traces`, `render_failed`, each drawn row's
-  `image_indexes`). Its callers: `fireants_syn` and `traces.land_trace`. An
+  `image_indexes`). Its callers: `fireants_syn` and `traces.land_trace`. The
+  engine runs inside `core.engine_output.engine_output(job.engine_log)` (what
+  it prints goes to `logs/engine.log`); a fit's ok row (not a cached one)
+  carries `gpu_rows(record.engine)`: `gpu_wait_s` from `GPU_WAIT_SHOWN_S` of
+  waiting for the machine's GPU queue, `retried` in words after the GPU ran
+  out of memory. An
   applied record is saved in the section's folder (`job.deformations`:
   `sections/<stem>/deformable/<key>`) and the section's `deformation` holds
-  its path relative to the job folder; the step of a traced fit records the
+  its path relative to the job folder; each step names its `method`
+  (`fireants_syn`, or `trace_borders` for a traced fit; a step saved before
+  steps named it has none, `job.registrations.made_by` reads it); the step of a traced fit records the
   trace it read (`trace`: the trace's artifact directory); a traced fit
   section reads the trace's artifacts under the job folder
   (`traced_lines(root=...)`).
@@ -288,8 +299,11 @@ wording; `registry.py` lists which.
   (undo is how to start over); *restrict_to*
   checked against the atlas (`region_entries`); refused, nothing done:
   `ENGINE_MISSING` (`refuse_without_engine`: FireANTs and torch must import, `engine_ready`),
-  `BAD_ARGS` (no sections, more than `MAX_FIREANTS_SYN_SECTIONS` (4), an unknown
-  atlas image, metric, detail or smoothness, a malformed region list),
+  `BAD_ARGS` (no sections, an unknown
+  atlas image, metric, detail or smoothness, a malformed region list;
+  more than `MAX_FIREANTS_SYN_SECTIONS` (20, every fitted section held in
+  memory until the call's one write, `SECTION_CAP_REASON`) is the tool door's
+  `TOO_MANY_SECTIONS`),
   `UNKNOWN_CHANNEL`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
   `warp_from_map(job, workspace, section, native_xy, method=, step=,
   provenance=, weights=)`: a deformation made elsewhere (a tool plugin's), given as the
@@ -440,7 +454,8 @@ wording; `registry.py` lists which.
   `limits`: the most one
   call takes at every door, by what it counts (`fireants_syn` takes at most
   `MAX_FIREANTS_SYN_SECTIONS` `sections`; a plugin's own); the reference card
-  lists them. The picture and transform-section cap of the ADK and MCP doors is
+  lists them, and `check_section_count`'s `TOO_MANY_SECTIONS` says why in its
+  `message`. The picture and transform-section cap of the ADK and MCP doors is
   the job's `picture_cap`, not a limit here. Every door is built from it: `build_tools`
   makes the tools `enabled(spec)` names (the ADK and MCP doors), the MCP
   door's `readOnlyHint` is `kind == "read"`, and the agent CLI
@@ -458,7 +473,11 @@ the job folder through one hook (`Job.views.shown`, `src/langslice/job/`).
 adds/updates/deletes stable corresponding pairs, ONE undo step for the batch,
 and applies no deformation. It resolves the exact saved picture recipe and
 explicit atlas/section roles; it refuses captions, gutters, out-of-image
-coordinates, missing geometry and stale atlas planes. Section endpoints are
+coordinates, missing geometry and stale atlas planes, and, before writing, an
+atlas endpoint outside the atlas (`_refuse_outside`: `ATLAS_ENDPOINT_OUTSIDE`,
+`pairs` the call's labels, the message giving each the nearest point inside the
+atlas at least `INSIDE_MARGIN_PX` from its outline, in the numbers the
+endpoint was given in). Section endpoints are
 original-image edge fractions; atlas endpoints are native plane pixels.
 `landmark_triangulation(job, workspace, section)` explicitly applies the full
 set, at least three pairs, on its written linear placement. The first application

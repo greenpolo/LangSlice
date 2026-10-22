@@ -316,7 +316,7 @@ and MCP; any number through the CLI and the library, within the job's
 their current setting. Rotation and left-right flip orient the section
 before its in-plane affine.
 
-`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a channel of the section (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. A call that fits nothing answers with the code and sentence every section was refused for, when they share one (`HAS_DEFORMATION`, `FROZEN`), else `NOTHING_FITTED` with each section's row naming its own; `fireants_syn` answers the same way. `restrict_to` selects the anatomy that steers it. Region selections
+`elastix_affine` takes as many sections per call as `interactive_transform` does (more is refused with `TOO_MANY_SECTIONS`, an empty list with `BAD_ARGS`), and refines each placement by matching a channel of the section (`section_image`, default `preprocessed`) against one of the atlas's images (`atlas_image`, default `"nissl"`), with an optional named `mask` and the edge channel pair (`edges`, default on). Each ok row carries the `inputs` it read and `estimated: null`. A fit that is hard to believe carries `flags`, as the deformable fits do, each also worded in the row's `warning`: `SCALE_CHANGED` when the scale along either axis changes by more than a factor of 0.8 to 1.25 from the transform the section held (`scale`, `previous`, `limits`), `SHEAR` when the shear changes by more than 0.15 (`shear`, `previous`, `limit`); a section that holds only part of the brain (a hemisphere) can be stretched over atlas it does not hold. A fit that turns the section more than 45 degrees says so in the same `warning`. A section that holds a deformation is refused with `HAS_DEFORMATION`: undo the deformation first, or fit a warp on it. A call that fits nothing answers with the code and sentence every section was refused for, when they share one (`HAS_DEFORMATION`, `FROZEN`), else `NOTHING_FITTED` with each section's row naming its own; `fireants_syn` answers the same way. `restrict_to` selects the anatomy that steers it. Region selections
 include descendants and may specify a [side](#sides), such as `"CTX:left"`.
 A restricted fit highlights those borders and may zoom its result picture
 to them; other borders remain faint. Use region `zoom` for an isolated border.
@@ -332,7 +332,10 @@ a larger region or `interactive_transform`.
 `fireants_syn` fits the atlas to a channel of the section (`section_image`,
 default `preprocessed`), starting from its current linear placement and any
 applied deformation. Each fit builds on the previous one and can be undone. It
-accepts one to four sections and: `atlas_image` (default `"nissl"`), `mask`
+accepts one to twenty sections, fitted one after another (more is refused with
+`TOO_MANY_SECTIONS`, whose message says why: every fitted section is held in
+memory, about 170 MB on a 1536-pixel fit grid, until the call writes them all
+as one undo step; 20 sections peaked at 6.4 GB), and: `atlas_image` (default `"nissl"`), `mask`
 (default `"none"`), `smoothness_um` (default 80), `metric`
 (`mutual_information`, the default, or `local_correlation`), `edges` (default
 on), `detail` (`coarse`, `standard`, `fine`) and optional `restrict_to`
@@ -345,6 +348,13 @@ leaves around them, the regions restricted to (`fireants_syn` and `elastix_affin
 only), and the brightness scaling in words) and `estimated` (null for FireANTs,
 which sorts nothing itself); the deformation record's provenance holds the same
 blocks. The reply names what was used and nothing about how well it worked.
+A fit that waited a second or more for the machine's GPU queue (one fit at a
+time across every job on the machine) says how long in its row (`gpu_wait_s`),
+and one that found the GPU's memory taken by a process outside the queue,
+waited and ran again says so in words (`retried`); the SPOmiAlign, STalign and
+emlddmm engines report their wait the same way. What the engines print (the
+GPU compiler's first-fit warnings, the memory allocator's) goes to the job's
+`logs/engine.log`, never into the reply.
 `restrict_to` belongs to `fireants_syn` and `elastix_affine` only.
 The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically. A restricted fit moves only that
@@ -436,7 +446,10 @@ from the top-left of the whole image. Panel offsets are included. On a zoom, x,y
 are the numbers its grid prints (pixels of the whole picture it was cut from),
 so a number read off any grid works whether the call names the zoom or the whole
 picture; a point the zoom does not show is refused with the range it covers in
-those numbers. `look` in
+those numbers. An atlas endpoint outside the atlas, where no brain is drawn, is
+refused before anything is written (`ATLAS_ENDPOINT_OUTSIDE`); the refusal names
+the pair and gives the nearest point inside the atlas, 1.5 atlas pixels in from
+its outline, in the same numbers. `look` in
 `section` or `overlay` mode provides section points; `overlay` also provides
 atlas points. For an atlas-only view tied to a section, use
 `look(mode="atlas", sections=["s01.tif"])`: it draws that section's own
@@ -491,9 +504,9 @@ debris) takes no pair either.
 
 The reply names the region drawn at each atlas endpoint the call placed
 (`atlas_endpoint_regions`, by pair id, from the section's current atlas plane).
-An atlas endpoint outside the atlas, where no brain is drawn, is saved, listed in
-`outside_atlas` and named in a `warning`: for a pair on the outline the atlas
-endpoint belongs on the drawn border or just inside it.
+An atlas endpoint outside the atlas is refused, with the nearest point inside
+it (above): for a pair on the outline the atlas endpoint belongs on the drawn
+border or just inside it.
 
 On the command line a list of objects such as `pairs` goes through `--args`,
 as a JSON object or a file, and a list of four numbers such as a zoom's box
@@ -642,9 +655,11 @@ Custom models and prompts are described in the [library guide](library.md#image-
 ## Writes, review and submission
 
 Writes checkpoint the job and form undo steps; `undo` and `redo` persist
-across sessions. Their reply says which step it took back or forward: `undone`
-(or `redone`) holds the `sections` it touched and the `fields` it changed,
-then the status rows of those sections and the remaining depth.
+across sessions. Each takes `steps` (default 1): that many steps at once, or
+all the history holds when it holds fewer. Their reply says which steps it took back or forward: `undone`
+(or `redone`) holds the `sections` they touched and the `fields` they changed,
+then the status rows of those sections and the remaining depth; with more than
+one step asked, `steps` (how many were taken) and, when fewer, a `message`.
 
 Undo is one history for the whole job, so it returns a section to an earlier
 fit only while nothing else was written since. Each registration a section

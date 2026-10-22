@@ -58,6 +58,26 @@ def test_a_batch_write_undoes_and_redoes_as_one_step(tmp_path: Path):
     assert _tool(box, "redo")()["error"] == "NOTHING_TO_REDO"
 
 
+def test_undo_and_redo_take_several_steps_in_one_call(tmp_path: Path):
+    state, _, box = _box(tmp_path)
+    for k, name in enumerate(["s0.png", "s1.png", "s2.png"]):
+        _tool(box, "position_sections")([{"id": name, "position_mm": 1.0 + k}], view=False)
+    assert len(box.job.undo_stack) == 3
+    undone = _tool(box, "undo")(steps=2)
+    assert undone["status"] == "ok" and undone["steps"] == 2 and undone["undo_depth"] == 1
+    assert sorted(undone["undone"]["sections"]) == ["s1.png", "s2.png"]
+    assert [_positions(state)[n] for n in ("s0.png", "s1.png", "s2.png")] == [1.0, None, None]
+    # More than the history holds: all of it, and the reply says so.
+    redone = _tool(box, "redo")(steps=5)
+    assert redone["steps"] == 2 and redone["redo_depth"] == 0
+    assert "the history held 2" in redone["message"]
+    assert [_positions(state)[n] for n in ("s0.png", "s1.png", "s2.png")] == [1.0, 2.0, 3.0]
+    # One step (the default) answers as before, with no count.
+    assert "steps" not in _tool(box, "undo")()
+    assert _tool(box, "undo")(steps=0)["error"] == "BAD_ARGS"
+    assert _tool(box, "undo")(steps=1.5)["error"] == "BAD_ARGS"
+
+
 def test_unknown_ids_are_named_and_nothing_is_written(tmp_path: Path):
     state, ctx, box = _box(tmp_path, placed=True)
     before = state.to_dict()
@@ -190,7 +210,9 @@ def test_interactive_transform_refuses_bad_calls_without_writing(tmp_path: Path)
     assert duplicate["duplicate_ids"] == ["s0.png"]
     many = tool([{"id": f"s{i}.png"} for i in range(5)])
     assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4,
-                    "requested": 5}
+                    "requested": 5, "message": "interactive_transform takes at most 4 "
+                    "sections per call here; 5 were named. Nothing was done: split them over "
+                    "calls."}
     assert tool([])["error"] == "BAD_ARGS"
     nothing = tool([{"id": "nope.png", "rotation_deg": 1}])
     assert nothing["status"] == "error" and nothing["error"] == "NOTHING_WRITTEN"

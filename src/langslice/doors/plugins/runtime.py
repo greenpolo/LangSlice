@@ -62,7 +62,10 @@ def _over_limit(tool: ToolSpec, arguments: Mapping[str, Any]) -> dict[str, Any] 
         count = len(asked) if isinstance(asked, (list, tuple)) else 0
         if count > cap:
             return {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": cap,
-                    "requested": count}
+                    "requested": count,
+                    "message": f"{tool.name} takes at most {cap} sections per call (its "
+                    f"plugin's limit); {count} were named. Nothing was done: split them over "
+                    "calls."}
     return None
 
 

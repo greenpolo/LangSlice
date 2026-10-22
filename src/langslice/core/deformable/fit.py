@@ -615,6 +615,8 @@ def finish_fit(
         "version": result.engine_version,
         "runtime_s": result.runtime_s, "native_parameters": result.native_parameters,
         "notes": result.notes,
+        **({"gpu_wait_s": round(result.gpu_wait_s, 1)} if result.gpu_wait_s else {}),
+        **({"oom_retries": result.oom_retries} if result.oom_retries else {}),
         "working_grid": {"size": list(grid.size), "spacing_mm": list(grid.spacing_mm),
                          "origin_mm": list(grid.origin_mm)},
         "step_details": prepared.details,

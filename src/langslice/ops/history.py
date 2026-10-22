@@ -1,4 +1,4 @@
-"""Undo and redo: one step of the job's history, either way."""
+"""Undo and redo: steps of the job's history, either way (one by default)."""
 
 from __future__ import annotations
 
@@ -18,9 +18,11 @@ class Stepped:
     done: bool
     #: The steps left on that side afterwards (undo: undo steps; redo: redo).
     depth: int = 0
-    #: What the step was: ``{"sections": the sections it touched, "fields":
-    #: what changed}`` (:func:`describe_step`).
+    #: What the steps were together: ``{"sections": the sections they
+    #: touched, "fields": what changed}`` (:func:`describe_step`).
     step: dict[str, Any] = field(default_factory=dict)
+    #: How many steps were taken (fewer than asked when the history held fewer).
+    steps: int = 0
 
 
 #: The section fields each tool group writes, in the order they are told
@@ -63,17 +65,32 @@ def describe_step(old: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, A
     return {"sections": sections, "fields": groups}
 
 
-def undo(job: Job) -> Stepped:
-    """Restore the state before the last write: one step back."""
-    before = job.snapshot()
-    if not job.undo():
+def _steps(job: Job, step: Any, steps: int) -> tuple[dict[str, Any], int]:
+    """Take up to *steps* history steps with *step* (``job.undo`` or
+    ``job.redo``) under one hold of the job's lock: the state before them
+    and how many were taken."""
+    with job.writing():
+        before = job.snapshot()
+        taken = 0
+        while taken < max(1, int(steps)) and step():
+            taken += 1
+    return before, taken
+
+
+def undo(job: Job, steps: int = 1) -> Stepped:
+    """Restore the state before the last write: *steps* steps back (as many
+    as the history holds when it holds fewer)."""
+    before, taken = _steps(job, job.undo, steps)
+    if not taken:
         return Stepped(done=False, depth=len(job.undo_stack))
-    return Stepped(done=True, depth=len(job.undo_stack), step=describe_step(job.snapshot(), before))
+    return Stepped(done=True, depth=len(job.undo_stack),
+                   step=describe_step(job.snapshot(), before), steps=taken)
 
 
-def redo(job: Job) -> Stepped:
-    """Re-apply the write :func:`undo` reversed."""
-    before = job.snapshot()
-    if not job.redo():
+def redo(job: Job, steps: int = 1) -> Stepped:
+    """Re-apply the writes :func:`undo` reversed, *steps* of them."""
+    before, taken = _steps(job, job.redo, steps)
+    if not taken:
         return Stepped(done=False, depth=len(job.redo_stack))
-    return Stepped(done=True, depth=len(job.redo_stack), step=describe_step(before, job.snapshot()))
+    return Stepped(done=True, depth=len(job.redo_stack),
+                   step=describe_step(before, job.snapshot()), steps=taken)
