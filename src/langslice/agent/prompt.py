@@ -5,9 +5,10 @@ its own description (:mod:`langslice.doors.declarations`); the statement
 names the tools and describes none, except the deformable methods when a job
 has more than one (:data:`DEFORMABLE_METHODS`: what each published method is,
 so that none reads as the default). It gives no rules of thumb and no
-warnings about failure modes. The one place for strategy is the short
-"Method:" section per task that is on (look before writing, review the
-stack, inspect each fit against internal anatomy); ``position.playbook``
+warnings about failure modes. The short "Method:" section per task that is
+on holds facts and first principles only, never an order of steps (compare
+before writing, review the stack, judge each fit against internal anatomy,
+what a fit can and cannot correct, what makes a fit work); ``position.playbook``
 replaces the positioning lines with a step-by-step method for models that
 do not find one on their own.
 
@@ -397,56 +398,44 @@ def build_job_statement(
             "alignment.", off
         ))
 
-    if spec.has("transform") and not spec.off("interactive_transform"):
+    fits = [name for name in ("elastix_affine", *DEFORMABLE_METHODS) if name in tool_names]
+    if spec.has("transform"):
         if not method:
             method = ["", "Method:"]
-        # The first alignment line, after placement: a hand alignment comes before any fit.
-        method.append(
-            "- Align each section by hand with `interactive_transform` as well as you "
-            "can before running any fitting algorithm: match its outline and its "
-            "internal anatomy (ventricles, fibre tracts, layer boundaries, the "
-            "midline) to the atlas. Fitting algorithms refine a placement that is "
-            "already close; they do not correct a large offset."
-        )
-        method.append(
-            "- After each automatic fit or manual adjustment, inspect the returned "
-            "overlay against surviving internal anatomy. Refine each slice's "
-            "alignment, damaged slices included, until no further improvement is "
-            "possible with the available transforms. Keep changes only if they "
-            "improve the alignment."
-        )
+        if fits:
+            method.append(
+                "- Fitting algorithms refine a placement that is already close; they do not "
+                "correct a large offset.")
+        if not spec.off("interactive_transform"):
+            method.append(
+                "- After each automatic fit or manual adjustment, inspect the returned "
+                "overlay against surviving internal anatomy. Refine each slice's "
+                "alignment, damaged slices included, until no further improvement is "
+                "possible with the available transforms. Keep changes only if they "
+                "improve the alignment."
+            )
 
     if spec.has("nonlinear"):
         if not method:
             method = ["", "Method:"]
         if "mark_damage" in tool_names:
             method.append(
-                "- Before fitting a damaged section, mark the regions it has lost with "
-                "`mark_damage`, so that every region it still has drives its fits."
+                "- Every fit leaves the regions marked with `mark_damage` out of the atlas, "
+                "so that the regions a damaged section still has drive its fits."
             )
         engines = [name for name in DEFORMABLE_METHODS if name in tool_names]
         method.append(
-            "- Run each fit on the whole section first, then refine regions. Inspect each fit's "
-            "borders against the section's internal anatomy"
+            "- Inspect each fit's borders against the section's internal anatomy"
             + (" and, where traced, its traced borders"
                if "trace_borders" in tool_names else "")
-            + "; undo a fit that does not improve the alignment"
-            + (" and fit that section again with another method or other settings"
-               if len(engines) > 1 else
-               render("[[?fireants_syn  and fit that section again with different `fireants_syn` "
-                      "settings, such as another smoothness_um or another atlas image]]", off))
-            + "."
+            + "; undo a fit that does not improve the alignment."
         )
         if len(engines) > 1:
-            method.append(render(
+            method.append(
                 "- Several published deformable methods are available; none is the default, "
-                "and each suits different sections. Try more than one on each section, compare "
-                "their overlays, and keep the one whose borders best follow the section's "
-                "internal anatomy ([[?restore_registration `restore_registration` puts an "
-                "earlier fit of a section back||undo returns to the earlier fit]]). Each fit "
-                "builds on the section's current registration, so methods can be chained, for "
-                "example a stack-wide fit refined per section.", off
-            ))
+                "and each suits different sections. Each fit builds on the section's current "
+                "registration, so methods can be chained."
+            )
             method.extend(f"  - `{name}`: {DEFORMABLE_METHODS[name]}" for name in engines)
 
     if any(name in tool_names for name in ("elastix_affine", "fireants_syn")):
