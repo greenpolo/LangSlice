@@ -10,15 +10,15 @@ and returns the file's pixels there, read only around those points
 (:func:`read_region`: a tiled or pyramidal TIFF through tifffile's zarr
 store, never decoded whole; any other file decoded and cut).
 
-The colours are the picture's own. A look (the raw channels with their
-display settings, the default appearance, the preprocessed channel) is a
+The colours are the picture's own. A look (a section image, the raw
+channels together, the working copy as read) is a
 function of the whole section, CLAHE included, so it is not recomputed on a
 window. Instead it is drawn on the whole working copy as every unzoomed
 picture draws it, and carried to the file's pixels by a local linear fit
 (a guided filter, He, Sun and Tang 2013): around each working-copy pixel
 the look is fitted as an offset plus a gain on the raw channels, and the
 fit is applied to the raw channels read from the file. A look that is a
-plain map of the raw channels (the default raw display) is carried exactly;
+plain map of the raw channels (a raw channel, or several together) is carried exactly;
 CLAHE's local contrast is carried at the working copy's scale, and the
 file's finer detail comes through at that contrast. Where the working copy
 is too flat to fit, the gain falls back to the one fitted over the whole
@@ -37,8 +37,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.core.appearance import Look
 from langslice.core.image_prep import IntensityRange, read_pages
+from langslice.core.section_images import Look
 from langslice.core.state import SliceState
 from langslice.core.workspace import Workspace
 

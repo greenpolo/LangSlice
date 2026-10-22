@@ -33,7 +33,6 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.affine import denormalized_affine, physical_affine_matrix
-from langslice.core.appearance import Look
 from langslice.core.canvas import (
     CanvasGeometry,
     PanelFrame,
@@ -49,6 +48,7 @@ from langslice.core.display import (
     atlas_image_picture,
 )
 from langslice.core.layers import note
+from langslice.core.section_images import Look
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
     render_slice,
@@ -145,8 +145,8 @@ def draw_canvas(
     """The physical canvas pictures of one section at one placement.
 
     *section* is the working frame a transform is computed on; the
-    picture is drawn from the render the options ask for (the view
-    appearance or a raw channel), large enough that each panel, zoom
+    picture is drawn from the render the options ask for (a section
+    image, or raw channels together), large enough that each panel, zoom
     included, comes out at *long_edge* (None: ``options.long_edge``)
     unless the section's working copy has fewer pixels, with a matrix and
     the pivot carried onto it. The one renderer of every placement

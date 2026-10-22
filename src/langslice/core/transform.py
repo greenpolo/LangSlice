@@ -171,7 +171,7 @@ def elastix_settings(
 ) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
-    The section's preprocessed channel against *atlas_image* (one of the
+    The section image (default ``preprocessed``) against *atlas_image* (one of the
     atlas's images, :func:`langslice.core.atlas.images.atlas_images`; default
     :data:`ELASTIX_ATLAS_IMAGE`: ``elastix_affine``'s ``atlas_image``),
     mutual information plus, with *edges*, the edge channel (the Elastix stain
@@ -223,7 +223,7 @@ def elastix_affine(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
-    channel: str = "preprocessed",
+    section_image: str = "preprocessed",
     edges: bool = True,
     section_weights: np.ndarray | None = None,
 ) -> ElastixFit:
@@ -233,7 +233,7 @@ def elastix_affine(
     scale its pictures draw it, :func:`calibrate`) and never searches from
     scratch: the atlas plane is placed there on the deformable fit grid
     (``deformation.fit_grid``), the
-    section's *channel* (:func:`langslice.core.deformation.stain_image`)
+    *section_image* (:func:`langslice.core.deformation.section_image`)
     and the placed atlas image are prepared
     exactly as a deformable stain fit prepares them (section and atlas masks,
     excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
@@ -251,7 +251,7 @@ def elastix_affine(
 
     start = [float(v) for v in start_params]
     grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
-    image, look = deformation.stain_image(ctx, state, grid, channel)
+    image, look = deformation.section_image(ctx, state, grid, section_image)
     width, height = grid.image.size
     prepared = prepare_fit(
         image, ctx.atlas, grid.placement,
@@ -284,7 +284,7 @@ def elastix_affine(
         report=report, placement=fitted, start_placement=grid.placement,
         grid_image=grid.image, fit_image=image,
         engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
-                "fit_look": look, "native_parameters": result.native_parameters},
+                "section_image": look, "native_parameters": result.native_parameters},
     )
 
 
@@ -296,7 +296,7 @@ def fit_elastix(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     atlas_image: str = ELASTIX_ATLAS_IMAGE,
-    channel: str = "preprocessed",
+    section_image: str = "preprocessed",
     edges: bool = True,
     section_weights: np.ndarray | None = None,
 ) -> dict[str, Any]:
@@ -330,7 +330,8 @@ def fit_elastix(
         )
         fit = elastix_affine(state, ctx, record, start,
                              include=include, exclude=exclude, atlas_image=atlas_image,
-                             channel=channel, edges=edges, section_weights=section_weights)
+                             section_image=section_image, edges=edges,
+                             section_weights=section_weights)
     except RegionTooSmall as error:
         return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
                 "message": render(str(error), ctx.spec.switched_off)}

@@ -186,7 +186,9 @@ def redraw(
         try:
             drawn = RENDERERS[renderer](recipe, window, workspace, state, store, long_edge)
         except looks.LookError as exc:
-            if region or exc.code != "UNKNOWN_SECTION" or source is None:
+            # A section gone, or a recipe another version of LangSlice saved:
+            # the saved picture is cropped instead.
+            if region or exc.code not in ("UNKNOWN_SECTION", "UNREADABLE_RECIPE") or source is None:
                 raise
             return _crop(None, box, source, long_edge or picture_edge(workspace), stale=True,
                          note_text=str(exc))

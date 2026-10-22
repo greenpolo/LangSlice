@@ -6,7 +6,7 @@ frame at :data:`~langslice.core.deformation.FIT_LONG_EDGE`). Two kinds, both
 the three-class EM sorting of the section into tissue that matches the atlas
 image, artifact and background (:func:`langslice.core.deformable.masks.em_weights`):
 
-- ``em``: made by ``set_mask`` at the section's current registration
+- ``em``: made by ``make_mask`` at the section's current registration
   (:func:`em_sorting`);
 - ``fit``: copied from the applied deformation record's saved sorting
   (:func:`fit_weights`).
@@ -37,7 +37,6 @@ from typing import Any, Protocol
 import cv2
 import numpy as np
 
-from langslice.core import appearance as looks
 from langslice.core.atlas.images import resolve_image
 from langslice.core.atlas.size import brain_scale
 from langslice.core.deformable.geometry import WorkingGrid, sample_native
@@ -55,6 +54,7 @@ from langslice.core.deformable.plane_images import (
 )
 from langslice.core.deformable.render import composed_native_grid
 from langslice.core.deformation import RecordStore, fit_grid, linear_key
+from langslice.core.section_images import images_digest
 from langslice.core.state import SliceState, StackState
 from langslice.core.workspace import Workspace
 
@@ -84,7 +84,7 @@ class MaskView:
     """A mask as a fit reads it: *weights* float32 on the fit grid, *stale*
     when the section's pixel grid changed since it was made (it was turned or
     flipped), *earlier_registration* when its registration (placement,
-    deformation, appearance, damage) changed since: information, never a refusal."""
+    deformation, section images, damage) changed since: information, never a refusal."""
 
     name: str
     kind: str
@@ -100,17 +100,18 @@ class MaskView:
 
 def registration_parts(state: StackState, record: SliceState) -> dict[str, Any]:
     """What ``ops.inputs.section_inputs`` and :func:`registration_digest` both
-    digest: the linear placement, the fit appearance and the damage marks."""
+    digest: the linear placement, the made images (their digests) and the
+    damage marks."""
     return {
         "linear": linear_key(state, record),
-        "fit_look": looks.preprocessed_settings(state, record.id),
+        "images": images_digest(record),
         "damage": {"regions": list(record.damaged_regions)},
     }
 
 
 def registration_digest(state: StackState, record: SliceState) -> str:
     """A digest of what a mask of *record* depends on: its linear placement,
-    its fit appearance, its damage marks and its applied deformation. The same
+    its made images, its damage marks and its applied deformation. The same
     content as ``ops.inputs.section_inputs(..., deformation=True)``, which a
     mask stores at creation (core cannot import ops)."""
     held = {**registration_parts(state, record),
@@ -160,13 +161,13 @@ def _gray(image: np.ndarray) -> np.ndarray:
 
 def em_sorting(
     ws: Workspace, state: StackState, record: SliceState, store: RecordStore, *,
-    channel_image: np.ndarray, atlas_image: str, params: dict[str, float],
+    section_image: np.ndarray, atlas_image: str, params: dict[str, float],
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """The EM sorting of *record*'s section against *atlas_image* at its CURRENT
     registration: ``(WM, facts)``, WM the float32 P(match) on the fit grid and
     *facts* ``{"params", "left_out"}``.
 
-    *channel_image* is the channel being sorted on the fit grid (brightness
+    *section_image* is the section image being sorted on the fit grid (brightness
     0-1, or uint8; colour is averaged). The atlas image is placed through the
     section's linear placement and, when it holds one, its applied
     deformation (``store.current``); the footprint is the placed outline
@@ -187,7 +188,7 @@ def em_sorting(
     scale = brain_scale(ws.atlas)
     resolved = resolve_image(ws.atlas, atlas_image)
 
-    section = _gray(channel_image)
+    section = _gray(section_image)
     if section.shape != (height, width):
         section = cv2.resize(section, (width, height), interpolation=cv2.INTER_AREA)
 
@@ -230,7 +231,7 @@ def em_sorting(
 def fit_weights(store: RecordStore, state: StackState, record: SliceState) -> np.ndarray | None:
     """The applied deformation record's saved sorting as float32 on the fit
     grid, or None when the section holds no deformation or its record saved no
-    sorting (``set_mask`` source ``fit``: ``NO_DEFORMATION`` / ``NO_SORTING``)."""
+    sorting (``make_mask`` source ``fit``: ``NO_DEFORMATION`` / ``NO_SORTING``)."""
     held = store.current(state, record)
     if held is None or held.weights is None:
         return None
@@ -255,7 +256,7 @@ def write_mask(
 ) -> dict[str, Any]:
     """Save *weights* as *record*'s mask *name* and return its state entry
     (also set as ``record.masks[name]``). *meta* carries ``kind`` (``em`` or
-    ``fit``), ``channel``, ``atlas_image`` (resolved), ``params``, ``inputs``
+    ``fit``), ``section_image``, ``atlas_image`` (resolved), ``params``, ``inputs``
     (:func:`grid_digest` at creation), ``registration``
     (:func:`registration_digest` at creation) and ``left_out``. ``ValueError``
     for a bad name, kind or weights."""
@@ -280,7 +281,7 @@ def write_mask(
     finally:
         temporary.unlink(missing_ok=True)
     entry = {
-        "kind": kind, "channel": str(meta.get("channel", "")),
+        "kind": kind, "section_image": str(meta.get("section_image", "")),
         "atlas_image": str(meta.get("atlas_image", "")),
         "params": dict(meta.get("params") or {}), "inputs": str(meta.get("inputs", "")),
         "registration": str(meta.get("registration", "")),

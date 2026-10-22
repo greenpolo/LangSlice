@@ -9,25 +9,16 @@ read them, never mutate them.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import numpy as np
 from PIL import Image
 
 from langslice.core import channels
-from langslice.core.appearance import (
-    DEFAULT_CLAHE_CLIP,
-    DEFAULT_CLAHE_TILES,
-    Look,
-    look_token,
-    tone,
-    weights_for,
-)
-from langslice.core.image_prep import (
-    adaptive_preprocess,
-    custom_appearance,
-    prepare_image_for_vlm,
-)
+from langslice.core import section_images as images
+from langslice.core.image_prep import prepare_image_for_vlm, read_working_image
+from langslice.core.section_images import PREPROCESSED, Look
 from langslice.core.state import SliceState
 from langslice.core.workspace import Workspace
 
@@ -43,16 +34,37 @@ _ROTATE_OPS = {
 }
 
 
+def drawn_look(record: SliceState, look: Look) -> Look:
+    """*look* with the section image it draws resolved on *record*: None is the
+    opening ``preprocessed`` (drawn through its own path at each size), a made
+    image carries its digest (``{"image", "digest"}``), an opening image under
+    another name ``{"image", "opening": True}``."""
+    name = PREPROCESSED if look is None else look.get("image")
+    if name is None:
+        return look
+    entry = images.entry_of(record, str(name))
+    if entry is None:
+        return None if name == PREPROCESSED else {"image": str(name)}
+    if images.is_opening(entry):
+        return None if name == PREPROCESSED else {"image": str(name), "opening": True}
+    return {"image": str(name), "digest": entry.get("digest")}
+
+
+def look_token(ctx: Workspace, record: SliceState, look: Look) -> str:
+    """The render-cache slot of a look on *record*: the opening ``preprocessed``
+    keeps ``spec.preprocess``, a made image its digest."""
+    drawn = drawn_look(record, look)
+    if drawn is None:
+        return str(ctx.spec.preprocess)
+    return json.dumps(drawn, sort_keys=True)
+
+
 def render_cache_key(
     ctx: Workspace, record: SliceState, *, long_edge: int, look: Look = None,
 ) -> tuple[str, bool, int, int, str]:
-    """The key a render is cached under: the section plus everything it shows.
-
-    The default appearance keeps ``spec.preprocess`` in the look slot, so its
-    keys are the ones every earlier caller computed.
-    """
+    """The key a render is cached under: the section plus everything it shows."""
     return (record.id, record.flip, record.rotation_deg, long_edge,
-            look_token(ctx, look))
+            look_token(ctx, record, look))
 
 
 def render_slice(
@@ -62,19 +74,20 @@ def render_slice(
     long_edge: int = PREVIEW_LONG_EDGE,
     look: Look = None,
 ) -> Image.Image:
-    """One section as the run sees it: normalized, enhanced, corrected.
+    """One section as the run sees it: one of its section images, sized and oriented.
 
-    *look* None is the DEFAULT appearance: with ``spec.preprocess == "auto"``
-    the section is run through
-    :func:`~langslice.core.image_prep.adaptive_preprocess` — per-channel CLAHE plus a
-    DAPI-weighted grayscale blend — so dim fluorescence reads like the atlas
-    instead of like a black field; a host's multi-channel snapshot arrives
-    already blended (``spec.host_preprocessing``). Any other look
-    (:mod:`langslice.core.appearance`) is drawn from the section's raw
-    channels at the SAME size, so geometry never depends on appearance; a
-    derived channel's look is its recipe (:func:`langslice.core.appearance.validate_recipe`).
-    Display only: the user's file is never touched. The whole image frame is
-    always drawn.
+    *look* None is the section's ``preprocessed`` image
+    (:mod:`langslice.core.section_images`): the opening one is drawn through
+    the automatic path at this size (with ``spec.preprocess == "auto"``,
+    :func:`~langslice.core.image_prep.adaptive_preprocess` on the working copy
+    resized here; a host's blend is the working copy itself), a remade one is
+    its file resized. ``{"image": name}`` is any section image alone, in gray:
+    a raw channel as the file holds it, a made one from its file.
+    ``{"overlay": [raw names]}`` is several raw channels in their colours
+    (:func:`langslice.core.channels.composite`); ``{"file": True}`` the working
+    copy as read, in colour (a plugin's raw raster). Every look is drawn at the
+    SAME size, so geometry never depends on the image drawn. Display only: the
+    user's file is never touched. The whole image frame is always drawn.
 
     *long_edge* is a ceiling, never a target: a source smaller than it is
     returned at its own size (nothing is upsampled).
@@ -89,15 +102,11 @@ def render_slice(
 
     # The working copy, not the file: a whole-slide scan is read once, small.
     source, file_px_per_px = ctx.working_source(record.id)
-    working_size = source.size
-    prepped = prepare_image_for_vlm(source, max_long_edge=long_edge)
+    size = prepare_image_for_vlm(source, max_long_edge=long_edge).size
     # How many FILE pixels one render pixel spans, before any quarter-turn:
     # the section's own micrometres per pixel times this is the canvas's.
-    ctx.render_scale[key] = file_px_per_px * source.width / float(prepped.width)
-    if look is not None:
-        prepped = _look_image(ctx, record, look, working_size, prepped.size)
-    elif ctx.spec.preprocess == "auto" and ctx.spec.host_preprocessing is None:
-        prepped = adaptive_preprocess(prepped)
+    ctx.render_scale[key] = file_px_per_px * source.width / float(size[0])
+    prepped = _look_image(ctx, record, drawn_look(record, look), size, long_edge=long_edge)
     rotate = _ROTATE_OPS.get(int(record.rotation_deg) % 360)
     if rotate is not None:
         prepped = prepped.transpose(rotate)
@@ -112,68 +121,34 @@ def render_slice(
     return prepped
 
 
-def _look_image(
-    ctx: Workspace,
-    record: SliceState,
-    look: dict[str, Any],
-    working_size: tuple[int, int],
-    size: tuple[int, int],
-) -> Image.Image:
-    """*look* drawn from the raw channels, sized like the default."""
-    names, planes = ctx.section_channels(record.id)
+def _gray(plane: Any) -> Image.Image:
+    held = np.asarray(plane, dtype=np.uint8)
+    return Image.fromarray(np.stack([held, held, held], axis=-1))
 
-    def at_working(plane: np.ndarray) -> Image.Image:
-        image = Image.fromarray(plane)
-        if image.size != working_size:
-            image = image.resize(working_size, Image.Resampling.LANCZOS)
-        return image
+
+def _look_image(
+    ctx: Workspace, record: SliceState, look: Look, size: tuple[int, int], *, long_edge: int,
+) -> Image.Image:
+    """*look* (resolved, :func:`drawn_look`) drawn unoriented at *size*, RGB."""
 
     def framed(image: Image.Image) -> Image.Image:
         if image.size != size:
             image = image.resize(size, Image.Resampling.LANCZOS)
         return image
 
-    def placed(plane: np.ndarray) -> np.ndarray:
-        return np.asarray(framed(at_working(plane)), dtype=np.uint8)
-
-    def named(name: str) -> np.ndarray:
-        if name not in names:
-            raise ValueError(f"{record.id} has no channel {name!r}; channels: {', '.join(names)}")
-        return planes[names.index(name)]
-
-    if look.get("file"):  # the file as it is, no channel properties, no preprocessing
-        from langslice.core.image_prep import read_working_image
-
+    if look is None or look.get("opening"):
+        return _gray(np.asarray(images.opening_render(ctx, record.id, long_edge)))
+    if look.get("file"):  # the file as it is, no preprocessing
         image, _factor = read_working_image(ctx.image_path(record.id))
         return framed(image.convert("RGB"))
-    properties = look.get("properties") or {}
-    ranges = (channels.intensity_ranges(ctx, record.id)
-              if any((value or {}).get("contrast_limits") is not None
-                     for value in properties.values()) else None)
-    if "channel" in look:
-        name = str(look["channel"])
-        if name not in properties:  # as read
-            plane = placed(named(name))
-            return Image.fromarray(np.stack([plane, plane, plane], axis=-1))
-        whole = np.asarray(at_working(named(name)), dtype=np.float32)
-        return channels.composite([(name, whole)], framed=framed, size=size,
-                                  properties=properties, ranges=ranges, single=True)
     if "overlay" in look:
         # Each channel stretched on its whole working plane, then added in
         # its colour.
-        shown = [(str(name), np.asarray(at_working(named(str(name))), dtype=np.float32))
+        shown = [(str(name), np.asarray(images.raw_plane(ctx, record.id, str(name)),
+                                        dtype=np.float32))
                  for name in look["overlay"]]
-        return channels.composite(shown, framed=framed, size=size,
-                                  properties=properties, ranges=ranges)
-    blended = custom_appearance(
-        [placed(plane) for plane in planes],
-        channel_weights=weights_for(look, list(names)),
-        clahe_clip=float(look.get("clahe_clip", DEFAULT_CLAHE_CLIP)),
-        clahe_tiles=int(look.get("clahe_tiles", DEFAULT_CLAHE_TILES)),
-        n4=bool(look.get("n4")),
-        denoise=bool(look.get("denoise")),
-    )
-    return tone(blended, look)
+        return channels.composite(shown, framed=framed, size=size)
+    return framed(_gray(images.image_plane(ctx, record, str(look["image"]))))
 
 
 def canvas_um_per_px(

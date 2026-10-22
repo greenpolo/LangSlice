@@ -52,7 +52,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langslice.core import deformation
+from langslice.core import deformation, section_images
 from langslice.core import frozen as freeze
 from langslice.core.discovery import discover_slices
 from langslice.core.frozen import FROZEN
@@ -62,6 +62,7 @@ from langslice.job import formats
 from langslice.job import registrations as regs
 from langslice.job.background import SECTION_BUSY, BackgroundWork, in_worker
 from langslice.job.checkpoint import (
+    Upgrade,
     read_checkpoint,
     relative_to,
     state_paths,
@@ -655,11 +656,11 @@ class Job:
         #: False: nothing this job holds is written (the state, the history,
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
         self.persist = True
-        #: The workspace the job's sections and atlas are read through
-        #: (set by :meth:`open`, :meth:`load` and the tool door): every
-        #: checkpoint rewrites ``registration.json`` through it
-        #: (:func:`langslice.job.formats.write_registration`).
-        self.workspace: Workspace | None = None
+        self._workspace: Workspace | None = None
+        #: How a format-3 state file and history step are read as the current
+        #: format (the section image migration, set by :meth:`open` and
+        #: :meth:`load`; None refuses them).
+        self.upgrade: Upgrade | None = None
         self._state_stamp = _stamp(self.checkpoint_path)
         self._undo_stamp = _stamp(self.undo_path)
         #: A read's view of a state another process saved while it held the
@@ -686,6 +687,21 @@ class Job:
         self._lock = lock
         if self._write_derived not in lock.before_release:
             lock.before_release.append(self._write_derived)
+
+    @property
+    def workspace(self) -> Workspace | None:
+        """The workspace the job's sections and atlas are read through (set by
+        :meth:`open`, :meth:`load` and the tool door): every checkpoint rewrites
+        ``registration.json`` through it
+        (:func:`langslice.job.formats.write_registration`), and its made
+        section images are read from this job's folder."""
+        return self._workspace
+
+    @workspace.setter
+    def workspace(self, workspace: Workspace | None) -> None:
+        self._workspace = workspace
+        if workspace is not None and getattr(workspace, "job_folder", None) is None:
+            workspace.job_folder = str(self.layout.folder)
 
     def wire_views(self) -> None:
         """Number each saved picture's ``step`` with the undo history's depth
@@ -725,17 +741,22 @@ class Job:
         check_owner(layout)
         layout.ensure()
         lock = FolderLock(layout.folder)
+        if getattr(workspace, "job_folder", None) is None:
+            workspace.job_folder = str(layout.folder)
+        migration = section_images.Migration(workspace, layout)
         with lock.held():  # read and first checkpoint as one write
             state = None
             resumed = False
             if spec.resume:
-                data = read_checkpoint(str(layout.state_file))
+                data = read_checkpoint(str(layout.state_file), migration)
+                if data is not None:
+                    migration.seed(data)
                 state = None if data is None else _state_from(data, layout.state_file)
                 changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
                     raise inputs_changed(layout.folder, changed)
             write_job_file(layout, spec=spec.to_dict())
-            history = History(layout.history_dir)
+            history = History(layout.history_dir, migration)
             undo: list[dict[str, Any]] = []
             redo: list[dict[str, Any]] = []
             if state is not None:
@@ -752,12 +773,18 @@ class Job:
                     history.load()  # read before it is emptied: never delete unread steps
             if history.problem is not None:
                 workspace.progress(f"[job] {history.problem}")
+            # The opening ``preprocessed`` image of every section without one,
+            # outside undo: part of the job as it opens.
+            section_images.ensure_opening(workspace, layout, state)
             job = cls(state, spec, layout=layout, results_path=results_path,
                       undo=undo, redo=redo, history=history)
             job.lock = lock
             job.workspace = workspace
-            if not undo and not redo and history.exists():
-                job._save_history()  # a fresh job empties a history it read; never another
+            job.upgrade = migration
+            if (not undo and not redo and history.exists()) or history.upgraded:
+                # a fresh job empties a history it read, never another's; an
+                # upgraded one is written again at the current format
+                job._save_history()
             job.checkpoint()
         layout.log_event("open", resumed=resumed)
         return job
@@ -780,19 +807,34 @@ class Job:
         images = Path(os.path.abspath(workspace.image_folder))
         layout = JobLayout(Path(os.path.abspath(folder)), images)
         check_owner(layout)
-        data = read_checkpoint(str(layout.state_file))
+        if getattr(workspace, "job_folder", None) is None:
+            workspace.job_folder = str(layout.folder)
+        migration = section_images.Migration(workspace, layout)
+        data = read_checkpoint(str(layout.state_file), migration)
         if data is None:
             raise FileNotFoundError(f"No job state in {layout.folder}")
-        history = History(layout.history_dir)
+        migration.seed(data)
+        history = History(layout.history_dir, migration)
         undo, redo = history.load()
         job = cls(_state_from(data, layout.state_file), spec, layout=layout,
                   results_path=results_path,
                   undo=undo, redo=redo, history=history)
         job.persist = persist
         job.workspace = workspace
+        job.upgrade = migration
         if not persist:
             job.views = DiscardedViews(layout)
             job.wire_views()
+        upgraded = migration.used or history.upgraded
+        if section_images.ensure_opening(workspace, layout, job.state) or upgraded:
+            # A job of the older state format, or one without its opening
+            # images: written once at the current format (a dry run keeps it
+            # in memory).
+            if persist:
+                with job.lock.held():
+                    if upgraded:
+                        job._save_history()
+                    job.checkpoint()
         return job
 
     @property
@@ -899,7 +941,7 @@ class Job:
         if stamp in (self._state_stamp, self._peek_stamp):
             return
         try:
-            data = read_checkpoint(self.checkpoint_path)
+            data = read_checkpoint(self.checkpoint_path, self.upgrade)
         except (OSError, ValueError):
             return
         if data is None:
@@ -1086,7 +1128,7 @@ class Job:
         if state_stamp == self._state_stamp:
             return None
         try:
-            data = read_checkpoint(self.checkpoint_path)
+            data = read_checkpoint(self.checkpoint_path, self.upgrade)
         except (OSError, ValueError):
             logger.warning("State file %s changed but does not read; keeping the job's state",
                            self.checkpoint_path, exc_info=True)

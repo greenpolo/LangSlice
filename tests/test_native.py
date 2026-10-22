@@ -157,7 +157,8 @@ def _stripes(rgb: np.ndarray) -> float:
 def test_a_section_zoom_reads_the_file_at_its_own_resolution(big: Path, rotation: int,
                                                               flip: bool):
     ws, state = _stack(big, rotation=rotation, flip=flip)
-    (whole,) = look(ws, state, LookRequest(mode="section", long_edge=512))
+    (whole,) = look(ws, state, LookRequest(mode="section", long_edge=512,
+                                           images=("red", "green", "blue")))
     shown = _content(whole)
     ys, xs = np.nonzero(_red(shown))
     cx, cy = xs.mean() / shown.shape[1], ys.mean() / shown.shape[0]
@@ -189,7 +190,8 @@ def test_a_file_that_cannot_be_read_leaves_the_working_copy(big: Path, tmp_path:
     folder.mkdir()
     (folder / "big.tif").write_bytes((big / "big.tif").read_bytes())
     ws, state = _stack(folder)
-    (whole,) = look(ws, state, LookRequest(mode="section", long_edge=512))
+    (whole,) = look(ws, state, LookRequest(mode="section", long_edge=512,
+                                           images=("red", "green", "blue")))
     window = (0.4, 0.4, 0.46, 0.46)
     read = _content(redraw(whole.recipe, window, ws, state))
     (folder / "big.tif").unlink()  # the working copy is held; the file is gone

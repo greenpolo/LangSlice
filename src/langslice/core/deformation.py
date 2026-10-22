@@ -9,8 +9,8 @@ here:
   :data:`FIT_LONG_EDGE` with its linear placement
   (:func:`langslice.core.handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
-  the section's channel (:mod:`langslice.core.appearance`, a raw channel or a
-  derived one such as ``preprocessed``, set by ``set_channel``), or the image
+  one of the section's images (:mod:`langslice.core.section_images`: a raw
+  channel, ``preprocessed`` or another made image, by name), or the image
   model's traced lines mapped onto that grid;
 - the resolved :class:`Choice` and its engine settings;
 - :class:`RecordStore`: results cached by a digest of every input (the same
@@ -42,7 +42,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.core import appearance as looks
+from langslice.core import section_images as images
+from langslice.core.channels import channel_colors
 from langslice.core.deformable import (
     CandidateFailure,
     DeformableRecord,
@@ -196,29 +197,30 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
         grid.image.size, Image.Resampling.BILINEAR)
 
 
-def stain_image(
-    ctx: Workspace, state: StackState, grid: Grid, channel: str,
+def section_image(
+    ctx: Workspace, state: StackState, grid: Grid, name: str,
 ) -> tuple[Image.Image, Any]:
-    """``(image, identity)`` of the channel a fit reads on the fit grid
-    (:mod:`langslice.core.appearance`): ``preprocessed``, a raw channel or a
-    derived one.
+    """``(image, identity)`` of section image *name* a fit reads, on the fit
+    grid (:mod:`langslice.core.section_images`: a raw channel, ``preprocessed``
+    or another made image, drawn as :func:`langslice.core.sections.render_slice`
+    draws it at :data:`FIT_LONG_EDGE`). *identity* names it for the record
+    cache: ``{name, kind, digest}`` (the opening ``preprocessed``: how it is
+    drawn), so a fit is not reused after the image is made again.
+    ``ValueError`` for a name the section lacks.
 
-    Traced fit sections draw their pictures on the preprocessed channel too.
+    Traced fit sections draw their pictures on the ``preprocessed`` image too.
     """
+    from langslice.core.sections import render_slice
+
     record = grid.record
-    if channel == looks.PREPROCESSED:
-        look = looks.preprocessed_settings(state, record.id)
-        image = looks.preprocessed_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
-        identity: dict[str, Any] = {"fit_look": look}
-        if look is None:  # the default appearance: what it is drawn from, so a
-            # saved fit is not reused after the run's preprocessing changes
-            identity["default"] = [looks.look_token(ctx, None), ctx.spec.host_preprocessing]
-    else:
-        image = looks.channel_image(ctx, state, record, channel, long_edge=FIT_LONG_EDGE)
-        recipe = (looks.derived_settings(state, channel, record.id)
-                  if channel in looks.derived_names(state) else None)
-        identity = {"channel": channel, "recipe": recipe,
-                    "token": looks.look_token(ctx, recipe)}
+    if images.kind_of(ctx, record, name) is None:
+        raise ValueError(f"{record.id} has no section image {name!r}; its images: "
+                         f"{', '.join(images.image_names(ctx, record))}")
+    image = render_slice(ctx, record, long_edge=FIT_LONG_EDGE, look={"image": name})
+    identity = images.identity(ctx, record, name)
+    if identity.get("opening"):  # what it is drawn from, so a saved fit is not
+        # reused after the run's preprocessing changes
+        identity["host"] = ctx.spec.host_preprocessing
     return _on_grid(image, grid), identity
 
 
@@ -736,7 +738,7 @@ def _blend_atlas(
     """The atlas images pulled through the record's map, blended under the lines.
 
     One image is gray; two are added in their colours
-    (:func:`langslice.core.appearance.channel_colors`), as everywhere else.
+    (:func:`langslice.core.channels.channel_colors`), as everywhere else.
     """
     labels = native_labels(ctx.atlas, record.placement)
     nx, ny = composed_native_grid(record, 1)
@@ -751,7 +753,7 @@ def _blend_atlas(
         atlas = pulled(kinds[0])[..., None] * 255.0
     else:
         atlas = sum(pulled(kind)[..., None] * np.asarray(rgb, dtype=np.float32)
-                    for kind, _word, rgb in looks.channel_colors(kinds))
+                    for kind, _word, rgb in channel_colors(kinds))
     pixels = np.asarray(base, dtype=np.float32)
     mixed = pixels * (1.0 - opacity) + atlas * opacity
     return Image.fromarray(np.rint(np.clip(mixed, 0, 255)).astype(np.uint8))

@@ -40,7 +40,6 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from langslice.core.appearance import Look
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.canvas import zoom_box
@@ -54,6 +53,7 @@ from langslice.core.scale import (
     section_at,
     section_um_per_px,
 )
+from langslice.core.section_images import Look
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.state import Angles, SliceState, StackState, filename_stem
 from langslice.core.workspace import Workspace

@@ -4,9 +4,9 @@ One entry point, :func:`look`, takes a :class:`LookRequest` and returns one
 :class:`LookPicture` per picture:
 
 - ``section`` — each section alone, oriented, the whole image
-  (:func:`langslice.core.display.framed_section`): its raw channels with
-  their display properties (:mod:`langslice.core.channels`), or its
-  ``preprocessed`` channel;
+  (:func:`langslice.core.display.framed_section`): one of its section images
+  (:mod:`langslice.core.section_images`; ``preprocessed`` by default), or
+  several raw channels together (:mod:`langslice.core.channels`);
 - ``atlas`` — the atlas plane alone at each of ``positions_mm``, at the
   stack's view angles (``StackState.view_angles``), in the chosen atlas
   layers (the atlas's images and ``borders``;
@@ -21,13 +21,13 @@ One entry point, :func:`look`, takes a :class:`LookRequest` and returns one
   consecutive run of positions with its own ruler segment.
 
 Defaults never read the job's state: no ``sections`` is every section; no
-``channels`` is every raw channel, each with its display properties (as
-napari shows a file); the atlas layers default per mode
+``images`` is the ``preprocessed`` image, what every fit reads by default;
+the atlas layers default per mode
 (:data:`ATLAS_LAYER_DEFAULTS`). The same request draws the same kind of
 picture at every stage of a run.
 
 Each picture carries a caption for the picture index (position, angles,
-scale, the channel settings in force) and a recipe, ``{"renderer": "look",
+scale, the section image drawn) and a recipe, ``{"renderer": "look",
 "args": ..., "state": ..., "base": [w, h], "shown": [w, h], "um_per_px": x}``:
 the request (one picture's sections or position; a positioning picture's
 the whole call's sections and positions and its ``part``), the facts of the stack
@@ -41,7 +41,6 @@ into the pixels; the doors send them beside each picture.
 from __future__ import annotations
 
 import copy
-import importlib
 import json
 import logging
 from collections.abc import Sequence
@@ -51,20 +50,13 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from langslice.core.appearance import (
-    DERIVED,
-    PREPROCESSED,
-    channel_colors,
-    derived_names,
-    derived_settings,
-)
-from langslice.core.appearance import describe as describe_look
+from langslice.core import section_images as images_
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
 from langslice.core.canvas import AUTO_BORDER_COLOR
 from langslice.core.captions import angles_label, caption, view_angles_label
-from langslice.core.channels import CHANNELS_KEY, all_properties, display_words
+from langslice.core.channels import colour_words
 from langslice.core.display import (
     DEFAULT_ATLAS_OPACITY,
     DEFAULT_BORDER_THICKNESS,
@@ -84,6 +76,7 @@ from langslice.core.positioning import (
     positioning_pictures,
 )
 from langslice.core.scale import framed_um_per_px
+from langslice.core.section_images import PREPROCESSED
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.sizes import picture_edge
 from langslice.core.state import Angles, SliceState, StackState
@@ -95,9 +88,6 @@ from langslice.core.workspace import Workspace
 MODES: tuple[str, ...] = LOOK_MODES
 #: The recipe's renderer name (:mod:`langslice.core.zoom` dispatches on it).
 RENDERER = "look"
-#: The ``channels`` entry that picks the section's preprocessed channel (any
-#: derived channel's name picks that one).
-PREPROCESSED_CHANNEL = PREPROCESSED
 #: ``atlas_layers`` when the request gives none, per mode.
 ATLAS_LAYER_DEFAULTS: dict[str, tuple[str, ...]] = {
     "section": (),
@@ -116,11 +106,8 @@ FROM_FILE = " from the image file"
 #: The section fields a picture of it depends on (:func:`snapshot`).
 SECTION_FIELDS: tuple[str, ...] = (
     "index_original", "index_corrected", "position_mm", "cutting_angles_deg", "flip",
-    "rotation_deg", "transform", "deformation", "damaged_regions", "landmarks",
+    "rotation_deg", "transform", "deformation", "damaged_regions", "landmarks", "images",
 )
-#: The appearance entries a picture depends on (display properties and the
-#: derived channels' recipes; ``preprocessed`` is the older home of one).
-APPEARANCE_KEYS: tuple[str, ...] = (CHANNELS_KEY, DERIVED, PREPROCESSED)
 #: Default: let `canvas.resolve_border_color` pick the per-picture cased
 #: arrangement (Nash, 2026-10-14: "Just have black with white outlines or
 #: white with black outlines (the outlines having outlines themselves)").
@@ -135,7 +122,7 @@ UNCALIBRATED = " (uncalibrated)"
 
 class LookError(ValueError):
     """A request look cannot draw: ``code`` is ``UNKNOWN_MODE``,
-    ``UNKNOWN_SECTION``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
+    ``UNKNOWN_SECTION``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS`` (atlas mode
     without ``positions_mm``), ``NO_POSITION`` (a section without one, in
     overlay mode), ``BAD_WARP``, ``UNKNOWN_PART`` (a positioning part past
@@ -156,8 +143,9 @@ class LookRequest:
     sections: tuple[str, ...] = ()
     #: Atlas positions (``atlas`` and ``positioning``).
     positions_mm: tuple[float, ...] = ()
-    #: Raw channel names, or ``("preprocessed",)``; empty: every raw channel.
-    channels: tuple[str, ...] = ()
+    #: Section images: one alone, or several raw channels together; empty:
+    #: ``preprocessed``.
+    images: tuple[str, ...] = ()
     #: Any of the atlas's images and ``borders``; None: the mode's default.
     atlas_layers: tuple[str, ...] | None = None
     #: Opacity of atlas images under an overlay; None: 0.5 when one is shown.
@@ -193,7 +181,7 @@ class LookRequest:
         return {
             "mode": self.mode, "sections": list(self.sections),
             "positions_mm": [float(v) for v in self.positions_mm],
-            "channels": list(self.channels),
+            "images": list(self.images),
             "atlas_layers": None if self.atlas_layers is None else list(self.atlas_layers),
             "atlas_opacity": self.atlas_opacity, "warp": self.warp,
             "long_edge": self.long_edge, "zoom": [float(v) for v in self.zoom],
@@ -206,13 +194,14 @@ class LookRequest:
     @classmethod
     def from_args(cls, args: dict[str, Any]) -> LookRequest:
         unknown = sorted(set(args) - set(cls.__dataclass_fields__))
-        if unknown:
-            raise ValueError(f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
+        if unknown:  # a recipe another version of LangSlice saved
+            raise LookError("UNREADABLE_RECIPE",
+                            f"Unknown picture recipe key(s) {unknown} (views.jsonl)")
         layers = args["atlas_layers"]
         return cls(
             mode=str(args["mode"]), sections=tuple(str(s) for s in args["sections"]),
             positions_mm=tuple(float(v) for v in args["positions_mm"]),
-            channels=tuple(str(c) for c in args["channels"]),
+            images=tuple(str(c) for c in args["images"]),
             atlas_layers=None if layers is None else tuple(str(v) for v in layers),
             atlas_opacity=args["atlas_opacity"], warp=str(args["warp"]),
             long_edge=args["long_edge"],
@@ -262,9 +251,8 @@ def _plain(value: Any) -> Any:
 
 def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False) -> dict[str, Any]:
     """The facts of *state* a picture of *ids* depends on: each section's
-    :data:`SECTION_FIELDS`, the display properties and the preprocessed
-    recipe, and with *view_angles* the angles an atlas picture without a
-    section is drawn at."""
+    :data:`SECTION_FIELDS` (their section images included), and with
+    *view_angles* the angles an atlas picture without a section is drawn at."""
     sections: dict[str, Any] = {}
     for section_id in ids:
         record = state.by_id(section_id)
@@ -272,11 +260,7 @@ def snapshot(state: StackState, ids: Sequence[str], *, view_angles: bool = False
             sections[section_id] = {name: getattr(record, name) for name in SECTION_FIELDS}
             if record.layers:  # only a section with plugin layers records them
                 sections[section_id]["layers"] = record.layers
-    data: dict[str, Any] = {
-        "sections": sections,
-        "appearance": {key: state.appearance[key] for key in APPEARANCE_KEYS
-                       if key in state.appearance},
-    }
+    data: dict[str, Any] = {"sections": sections}
     if view_angles:
         data["view_angles"] = list(state.view_angles)
     return _plain(data)
@@ -329,46 +313,49 @@ def restored(state: StackState, held: dict[str, Any]) -> StackState:
             setattr(record, name, copy.deepcopy(value))
         if "layers" not in fields:
             record.layers = []
-    appearance = held.get("appearance") or {}
-    for key in APPEARANCE_KEYS:
-        if key in appearance:
-            out.appearance[key] = copy.deepcopy(appearance[key])
-        else:
-            out.appearance.pop(key, None)
     return out
 
 
 # --- options and words ----------------------------------------------------------------
 
 
-def _channels_for(ws: Workspace, state: StackState, record: SliceState,
-                  channels: Sequence[str]) -> tuple[tuple[str, ...], str]:
-    """``(raw names, version)`` *record* is drawn in: every raw channel by
-    default, or the named ones, or (version) a derived channel, alone."""
-    wanted = tuple(str(name) for name in channels)
-    names = tuple(ws.section_channels(record.id)[0])
-    derived = [name for name in derived_names(state) if name not in names]
-    picked = [name for name in wanted if name in derived]
-    if picked:
-        if len(wanted) > 1:
-            raise LookError("MIXED_CHANNELS", f"{picked[0]!r} is a derived channel and is shown "
-                            "alone, not with other channels")
-        if picked[0] != PREPROCESSED_CHANNEL and derived_settings(
-                state, picked[0], record.id) is None:
-            raise LookError("UNKNOWN_CHANNEL", f"derived channel {picked[0]!r} has no recipe "
-                            f"for {record.id}")
-        return (), picked[0]
+def _images_for(ws: Workspace, record: SliceState,
+                images: Sequence[str]) -> tuple[tuple[str, ...], str]:
+    """``(raw names drawn together, image drawn alone)`` for *record*: the
+    ``preprocessed`` image by default, one named image alone, or several raw
+    channels together."""
+    wanted = tuple(dict.fromkeys(str(name) for name in images))
     if not wanted:
-        return names[:MAX_OVERLAY_CHANNELS], ""
-    unknown = [name for name in wanted if name not in names]
+        return (), PREPROCESSED
+    known = images_.image_names(ws, record)
+    unknown = [name for name in wanted if name not in known]
     if unknown:
-        raise LookError("UNKNOWN_CHANNEL", f"{record.id} has no channel "
-                        f"{', '.join(map(repr, unknown))}; its channels: {', '.join(names)}, "
-                        f"or {', '.join(repr(name) for name in derived)}")
+        raise LookError("UNKNOWN_IMAGE", f"{record.id} has no section image "
+                        f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
+    if len(wanted) == 1:
+        return (), wanted[0]
+    raw = images_.raw_names(ws, record.id)
+    made = [name for name in wanted if name not in raw]
+    if made:
+        raise LookError("MIXED_IMAGES", f"{made[0]!r} is a made image and is drawn alone; "
+                        "several images are drawn together only when all are raw channels")
     if len(wanted) > MAX_OVERLAY_CHANNELS:
         raise LookError("TOO_MANY_CHANNELS",
                         f"at most {MAX_OVERLAY_CHANNELS} raw channels are drawn together")
     return wanted, ""
+
+
+def image_text(ws: Workspace, record: SliceState, name: str) -> str:
+    """What section image *name* of *record* is, for a caption."""
+    if images_.kind_of(ws, record, name) == images_.RAW:
+        return "raw channel, as the file holds it"
+    entry = images_.entry_of(record, name) or {}
+    held = dict(entry.get("source") or images_.opening_source(ws.spec))
+    if "recipe" in held:
+        return images_.recipe_words(held["recipe"])
+    if "script" in held:
+        return f"made by a script: {held['script']}"
+    return f"{images_.opening_words(held)}, made when the job opened"
 
 
 def _atlas_layers(ws: Workspace, request: LookRequest) -> tuple[str, ...]:
@@ -400,7 +387,7 @@ def _highlighted(ws: Workspace, request: LookRequest) -> tuple[tuple[str, frozen
 
 
 def _options(
-    request: LookRequest, *, names: tuple[str, ...], version: str, layers: tuple[str, ...],
+    request: LookRequest, *, names: tuple[str, ...], image: str, layers: tuple[str, ...],
     long_edge: int, zoom_px: tuple[float, ...] = (),
     regions: tuple[tuple[str, frozenset[int]], ...] = (),
 ) -> DisplayOptions:
@@ -408,7 +395,7 @@ def _options(
     opacity = (request.atlas_opacity if request.atlas_opacity is not None
                else DEFAULT_ATLAS_OPACITY if images else 0.0)
     return DisplayOptions(
-        mode=_DISPLAY_MODE[request.mode], zoom=zoom_px, channels=names, version=version,
+        mode=_DISPLAY_MODE[request.mode], zoom=zoom_px, channels=names, image=image,
         atlas_channels=layers, atlas_opacity=float(opacity), regions=regions,
         outlines="none" if request.region_only else "all",
         border_color=_BORDER_COLOR, border_thickness=DEFAULT_BORDER_THICKNESS,
@@ -416,20 +403,15 @@ def _options(
     )
 
 
-def channel_words(state: StackState, record: SliceState, names: Sequence[str], version: str,
-                  ) -> tuple[str, str]:
-    """``(short, full)``: the channels shown, for a burned label and for the
-    index caption, each channel with its own display setting
-    (:func:`langslice.core.channels.display_words`: ``raw red, green auto;
-    blue 0-70 gamma 0.8``)."""
-    if version:
-        return (version,
-                f"{version} channel ({describe_look(derived_settings(state, version, record.id))})")
-    # One channel is drawn in gray; among several, each in its overlay colour.
-    colours = ({name: word for name, word, _rgb in channel_colors(names)} if len(names) > 1
-               else {name: "gray" for name in names})
-    words = "raw " + display_words(names, all_properties(state), colours)
-    return words, words
+def image_words(ws: Workspace, record: SliceState, names: Sequence[str], image: str,
+                ) -> tuple[str, str]:
+    """``(short, full)``: what of the section is drawn, for a burned label and
+    for the index caption: the section image and what it is, or the raw
+    channels in their colours."""
+    if names:
+        words = "raw " + colour_words(names)
+        return words, f"{words}, each with automatic contrast"
+    return image, f"section image {image} ({image_text(ws, record, image)})"
 
 
 def _orientation(record: SliceState) -> str:
@@ -486,8 +468,8 @@ def _section_picture(
     ws: Workspace, state: StackState, record: SliceState, request: LookRequest, long_edge: int,
     base: tuple[int, int] | None,
 ) -> LookPicture:
-    names, version = _channels_for(ws, state, record, request.channels)
-    options = _options(request, names=names, version=version, layers=(), long_edge=long_edge)
+    names, image = _images_for(ws, record, request.images)
+    options = _options(request, names=names, image=image, layers=(), long_edge=long_edge)
     look_ = options.look(state, record)
     whole = render_slice(ws, record, long_edge=long_edge, look=look_)
     base = base or whole.size
@@ -523,7 +505,7 @@ def _section_picture(
     um = base_um * (max((request.zoom[2] - request.zoom[0]) * base[0],
                         (request.zoom[3] - request.zoom[1]) * base[1]) / max(picture.size)
                     if request.zoom else 1.0)
-    short, full = channel_words(state, record, names, version)
+    short, full = image_words(ws, record, names, image)
     label = (f"{_zoom_tag(request.zoom, base, picture.size)}{record.id}"
              f"{_orientation(record)}  [{short}]{enlarged}")
     text = (f"{record.id} section{_orientation(record)}, "
@@ -558,9 +540,9 @@ def _overlay_picture(
 ) -> LookPicture:
     if record.position_mm is None:
         raise LookError("NO_POSITION", f"{record.id} has no position to draw the atlas at")
-    names, version = _channels_for(ws, state, record, request.channels)
+    names, picked = _images_for(ws, record, request.images)
     layers = _atlas_layers(ws, request)
-    options = _options(request, names=names, version=version, layers=layers,
+    options = _options(request, names=names, image=picked, layers=layers,
                        long_edge=long_edge, regions=_highlighted(ws, request))
     position = float(record.position_mm)
     if request.zoom and base is None:
@@ -579,7 +561,7 @@ def _overlay_picture(
         shown = (x1 - x0, y1 - y0)
         um = placed.canvas.frame.um_per_px / panel.factor
     base = base or shown
-    short, full = channel_words(state, record, names, version)
+    short, full = image_words(ws, record, names, picked)
     drawn = placed.row.get("deformation_drawn")
     warp_words = ("deformation drawn: the section is warped onto the atlas, which keeps "
                   "its place" if drawn else
@@ -654,8 +636,8 @@ def overlay_region_window(
     if len(records) != 1:
         raise LookError("BAD_REGION_PICTURE", "Region zoom needs a single-section overlay.")
     record = records[0]
-    names, version = _channels_for(ws, state, record, request.channels)
-    options = _options(request, names=names, version=version,
+    names, image = _images_for(ws, record, request.images)
+    options = _options(request, names=names, image=image,
                        layers=_atlas_layers(ws, request),
                        long_edge=int(request.long_edge or picture_edge(ws)),
                        regions=_highlighted(ws, request))
@@ -706,17 +688,12 @@ def _draw_masks(
     ``"reason"``. A mask this section does not hold is a note, not a refusal."""
     if not request.masks or not panels:
         return []
+    from langslice.core import section_masks
     from langslice.core.native import unorient
     from langslice.core.plugin_layers import _colour, _draw_scalar, _Mapper
     from langslice.core.plugins import Layer
-
-    try:  # chunk A's module; until it lands, no mask can be read
-        section_masks = importlib.import_module("langslice.core.section_masks")
-    except ImportError:
-        raise LookError("UNKNOWN_MASK", "this build has no section masks; make one with "
-                        "set_mask") from None
     held: dict[str, Any] = getattr(record, "masks", None) or {}
-    layout = getattr(ws, "layout", None)
+    layout: Any = getattr(ws, "layout", None)
     mapper = _Mapper(state, record, panels, ws, warp)
     notes: list[dict[str, Any]] = []
     for index, name in enumerate(request.masks):
@@ -724,7 +701,7 @@ def _draw_masks(
         notes.append(entry)
         if name not in held:
             entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
-                         "set_mask")
+                         "make_mask")
             continue
         try:
             view = section_masks.read_mask(layout, state, record, name)
@@ -737,7 +714,7 @@ def _draw_masks(
                          earlier_registration=bool(view.earlier_registration))
         except KeyError:
             entry.update(drawn=False, reason=f"{record.id} has no mask {name!r}; make it with "
-                         "set_mask")
+                         "make_mask")
         except Exception as exc:  # noqa: BLE001 - a picture without its outline beats none
             logger.warning("mask %s of %s could not be drawn", name, record.id, exc_info=True)
             entry.update(drawn=False, reason=f"the mask could not be read or placed ({exc})")
@@ -756,8 +733,8 @@ def _mask_words(notes: list[dict[str, Any]], record: SliceState) -> str:
         if note_.get("kind") == "fit":
             source = "copied from the sorting the section's deformation saved"
         else:
-            source = (f"sorted from channel {entry.get('channel', '?')} against atlas image "
-                      f"{entry.get('atlas_image', '?')}")
+            source = (f"sorted from section image {entry.get('section_image', '?')} against "
+                      f"atlas image {entry.get('atlas_image', '?')}")
         parts.append(f"{note_['name']!r} ({source})")
     if not parts:
         return ""
@@ -777,7 +754,7 @@ def _atlas_picture(
     base: tuple[int, int] | None, base_um: float | None, angles: Angles,
 ) -> LookPicture:
     layers = _atlas_layers(ws, request)
-    options = _options(request, names=(), version="", layers=layers, long_edge=long_edge)
+    options = _options(request, names=(), image="", layers=layers, long_edge=long_edge)
     voxel = atlas_um_per_px(ws.atlas)
     measured = base is None or base_um is None
     whole = None
@@ -851,16 +828,16 @@ def _positioning(
 ) -> list[LookPicture]:
     records = _records(state, request.sections)
     layers = _atlas_layers(ws, request)
-    atlas_options = _options(request, names=(), version="", layers=layers, long_edge=long_edge)
+    atlas_options = _options(request, names=(), image="", layers=layers, long_edge=long_edge)
     shown_words: dict[str, str] = {}
 
     def look_of(record: SliceState) -> Any:
-        names, version = _channels_for(ws, state, record, request.channels)
-        shown_words.setdefault(record.id, channel_words(state, record, names, version)[0])
-        return _options(request, names=names, version=version, layers=(),
+        names, image = _images_for(ws, record, request.images)
+        shown_words.setdefault(record.id, image_words(ws, record, names, image)[0])
+        return _options(request, names=names, image=image, layers=(),
                         long_edge=long_edge).look(state, record)
 
-    for record in records:  # refuse a bad channel before drawing anything
+    for record in records:  # refuse a bad image before drawing anything
         look_of(record)
     words = sorted(set(shown_words.values()))
     try:
@@ -991,6 +968,6 @@ def _base_um(recipe: dict[str, Any]) -> float | None:
 
 __all__ = [
     "ATLAS_LAYER_DEFAULTS", "LookError", "LookPicture", "LookRequest", "MODES",
-    "PREPROCESSED_CHANNEL", "RENDERER", "changed_since", "channel_words", "differs_since",
+    "RENDERER", "changed_since", "differs_since", "image_words",
     "look", "redraw", "restored", "snapshot",
 ]

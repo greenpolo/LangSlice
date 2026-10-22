@@ -64,7 +64,7 @@ job.json             settings: the JobSpec under "spec", format_version (1),
                      gives them to the agent); the agent CLI's "viewer"; a saved
                      ABBA job's job_id and its own fields under "host" (kind,
                      params)
-state.json           the checkpoint (StackState, state format 3): THE TRUTH
+state.json           the checkpoint (StackState, state format 4): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
@@ -73,6 +73,10 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                              warp.ome.zarr, the parent a sibling it names
   registrations.jsonl        every registration the section has held, numbered
                              (registrations.py); read back by restore_registration
+  images/<name>.png          made section images (core/section_images.py: the
+                             opening preprocessed, make_image's, a script's
+                             add_image); never deleted, <name>.2.png on a remake
+  masks/<name>.npz           section masks (core/section_masks.py); never deleted
   image_correction/<key>/    trace_borders calls, attempt-NN inside
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
   coords.tif, labels.tif,    the section's maps (formats.py), written only by
@@ -231,7 +235,7 @@ longer exist be taken over by the images it is opened with.
   the waiting thread runs that landing itself.
 - `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
   `JobLayout` (the folder, every name, `section_dir`,
-  `deformable_dir`, `image_correction_dir`, `section_views_dir`,
+  `deformable_dir`, `masks_dir`, `images_dir`, `image_correction_dir`, `section_views_dir`,
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
@@ -263,9 +267,11 @@ longer exist be taken over by the images it is opened with.
   the only file rewritten per step, and step files it no longer names are
   deleted, so the folder holds at most `UNDO_DEPTH` (50) undo steps plus
   the redo side. A new step never takes the name of an existing file (a
-  second job on the same folder). An unreadable or newer history (index,
-  any step, step files without an index, or a step of another state
-  format) starts the session without undo and is never deleted:
+  second job on the same folder). A step of state format 3 is read through
+  `History.upgrade` (the job's section image migration) and written again at
+  the current format by the next `save` (`upgraded`). An unreadable or newer
+  history (index, any step, step files without an index, or a step of
+  another state format) starts the session without undo and is never deleted:
   `History.problem` says why (logged, and `Job.open` says it through the
   progress log), and `save` writes and deletes nothing while it is set; a
   fresh job reads a history before emptying it. Only a history that was read is pruned.
@@ -276,15 +282,22 @@ longer exist be taken over by the images it is opened with.
   stable id). The channel token stays here, not in a folder that may be
   shared. `register`, `lookup` (refuses a newer entry).
 - `checkpoint.py` — `state.json`: `write_checkpoint` (atomic, versioned,
-  `STATE_FORMAT_VERSION` 3), `read_checkpoint`,
-  `current_state` (refuses any other format: a newer LangSlice's asks for
-  an update, an older pre-release's for a new job, `--fresh` or
-  `resume=False`; history steps are read the same way), `write_json_atomic` (every job file's writer),
+  `STATE_FORMAT_VERSION` 4), `read_checkpoint(path, upgrade=)`,
+  `current_state(data, upgrade=)` (format 3, `UPGRADABLE_FORMAT`, through
+  *upgrade*: `core.section_images.Migration`; refuses any other format: a
+  newer LangSlice's asks for an update, an older pre-release's for a new job,
+  `--fresh` or `resume=False`; history steps are read the same way), `write_json_atomic` (every job file's writer),
   `state_paths` and `relative_to` (a state's stored paths made relative to
   the job folder).
-- `job.py` — `Job`: `open` (resume or ingest, then the first checkpoint;
-  the open event records `resumed`), `load` (as it stands, writing
-  nothing), `writing` / `reading` / `sync` (above), `snapshot` / `commit`, `undo` /
+- `job.py` — `Job`: `open` (resume or ingest, the opening `preprocessed`
+  image of every section without one, `core.section_images.ensure_opening`,
+  outside undo, then the first checkpoint; the open event records
+  `resumed`), `load` (as it stands, writing nothing, except once for a job of
+  state format 3 or without its opening images: then the migrated state and
+  history are written at format 4 under the lock; a dry run keeps them in
+  memory, though the image files the migration makes are written), `upgrade` (the job's `Migration`, which every read of the state
+  file goes through), `workspace` (setting it gives a workspace without a
+  `job_folder` this job's folder, where its made images are read), `writing` / `reading` / `sync` (above), `snapshot` / `commit`, `undo` /
   `redo` (each lists the registrations it leaves: `list_registrations(before)`,
   the store `registrations`, made by the tool `acting(tool)` names for the
   thread, else `script`; `registered`, the journal of (thread, section,

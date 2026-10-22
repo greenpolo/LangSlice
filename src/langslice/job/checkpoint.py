@@ -7,9 +7,11 @@ may share one job folder; they take turns under its write lock
 (:meth:`langslice.job.job.Job.writing`).
 
 The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next
-to the state's own fields. A checkpoint of any other format is refused,
-never guessed at: a newer one asks for a newer LangSlice, an older one (a
-pre-release LangSlice's) for a new job.
+to the state's own fields. A checkpoint of format 3 is read through the
+job's upgrade (:data:`UPGRADABLE_FORMAT`: its appearance recipes made into
+section image files, :class:`langslice.core.section_images.Migration`); any
+other format is refused, never guessed at: a newer one asks for a newer
+LangSlice, an older one (a pre-release LangSlice's) for a new job.
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ from typing import Any
 
 from langslice.core.state import StackState
 
+#: A reader of a format-3 state's fields that returns them as format 4.
+Upgrade = Callable[[dict[str, Any]], dict[str, Any]]
+
 #: The key a job-folder file carries its format version under.
 FORMAT_KEY = "format_version"
 #: The checkpoint's format. Every path on a section record (a deformation's
@@ -30,8 +35,13 @@ FORMAT_KEY = "format_version"
 #: carries its own cutting angles (``SliceState.cutting_angles_deg``). A
 #: state whose sections share one angle also writes it as the stack's
 #: ``cutting_angles_deg``; one whose sections differ (a registration
-#: supplied per section) writes the stack's as null.
-STATE_FORMAT_VERSION = 3
+#: supplied per section) writes the stack's as null. Every section's made
+#: images are entries (``SliceState.images``) naming files under the job
+#: folder; the stack has no ``appearance``.
+STATE_FORMAT_VERSION = 4
+#: The older format a job's upgrade reads (``Job``'s; the stack's
+#: ``appearance`` recipes and display properties).
+UPGRADABLE_FORMAT = 3
 
 
 def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
@@ -113,9 +123,10 @@ def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
     return convert
 
 
-def current_state(data: dict[str, Any]) -> dict[str, Any]:
+def current_state(data: dict[str, Any], upgrade: Upgrade | None = None) -> dict[str, Any]:
     """A checkpoint's state fields, without the version key; ``ValueError``
-    for any format but :data:`STATE_FORMAT_VERSION`."""
+    for any format but :data:`STATE_FORMAT_VERSION`, or
+    :data:`UPGRADABLE_FORMAT` read through *upgrade*."""
     version = data.get(FORMAT_KEY, 0)
     if not isinstance(version, int) or isinstance(version, bool) or version < 0:
         raise ValueError(f"Unreadable checkpoint format_version {version!r}")
@@ -123,6 +134,8 @@ def current_state(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"This checkpoint was written by a newer LangSlice (format {version}; this "
             f"version reads format {STATE_FORMAT_VERSION}). Update LangSlice to open it.")
+    if version == UPGRADABLE_FORMAT and upgrade is not None:
+        return upgrade({key: value for key, value in data.items() if key != FORMAT_KEY})
     if version < STATE_FORMAT_VERSION:
         raise ValueError(
             f"This checkpoint was made by an older pre-release LangSlice (format {version}; "
@@ -131,13 +144,13 @@ def current_state(data: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in data.items() if key != FORMAT_KEY}
 
 
-def read_checkpoint(path: str) -> dict[str, Any] | None:
-    """A checkpoint's state fields (:func:`current_state`); ``None`` if
-    there is no file."""
+def read_checkpoint(path: str, upgrade: Upgrade | None = None) -> dict[str, Any] | None:
+    """A checkpoint's state fields (:func:`current_state`, a format-3 one
+    through *upgrade*); ``None`` if there is no file."""
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not hold a stack state")
-    return current_state(data)
+    return current_state(data, upgrade)

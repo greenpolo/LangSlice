@@ -195,7 +195,7 @@ from pairing, engine and stain metric (`metric_for`); lines against
 an atlas image and the stain against `borders`/`borders_merged` are refused.
 The step size is fixed.
 
-Stain defaults, and why: with the EM section mask (now made by `set_mask`),
+Stain defaults, and why: with the EM section mask (now made by `make_mask`),
 mutual information
 recovered more of the human raters' own corrections than local correlation
 on Carey 2026 brightfield and LSD_910 immunofluorescence, did less harm where
@@ -245,7 +245,7 @@ drawn borders, nothing to fence off) minus the damage zone, so an outline
 beyond the atlas can draw it out.
 
 The EM sorting (`em_weights`; made by `core/section_masks.em_sorting`, which
-`set_mask` calls, never by a fit): the section's P(match) is a section mask;
+`make_mask` calls, never by a fit): the section's P(match) is a section mask;
 a fit given one compares only pixels with P(match) >= `EM_MATCH_THRESHOLD`
 (0.5), ANDed into the footprint's fixed mask (`prepare_fit(section_weights=)`);
 the atlas (moving) mask is not touched, and the damage zone stays atlas-side.
@@ -284,7 +284,7 @@ footprint mask the fixed mask starts from, `left_out` (section pixels an engine'
 own weighting dropped, on the section grid, None otherwise; for review
 pictures, never read back into a fit), `weights` (the engine's own P(match)
 sorting, float16 on the section grid, None when it estimated nothing: the
-source of `set_mask`'s `fit` kind), excluded ids, `native_to_volume_index` (plane pixel → atlas
+source of `make_mask`'s `fit` kind), excluded ids, `native_to_volume_index` (plane pixel → atlas
 volume index, so exports need no atlas object), `save()`/`load()`,
 and a free-form `provenance` dict saved with the metadata (the linear tool
 stores section id, linear handoff metadata and its inputs there). The job

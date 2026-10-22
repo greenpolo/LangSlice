@@ -24,7 +24,7 @@ def pair_picture(
         request = look.LookRequest(
             mode=mode,
             sections=(record.id,),
-            channels=("preprocessed",) if role == "section" else (),
+            images=("preprocessed",) if role == "section" else (),
             atlas_layers=("template", "borders") if role == "atlas" else ("template",),
             long_edge=512,
         )

@@ -9,39 +9,33 @@ from langslice.core.engine_inputs import (
     InputsBlock,
     damage_block,
     mask_block,
-    recipe_digest,
 )
 
 
 def test_the_inputs_block_names_what_was_used():
+    image = {"name": "preprocessed", "kind": "made",
+             "file": "sections/s0/images/preprocessed.png", "digest": "ab12cd34"}
     block = InputsBlock(
-        section_image="preprocessed", section_recipe=recipe_digest(None), atlas_image="nissl",
+        section_image=image, atlas_image="nissl",
         atlas_image_resolved="ccfv3augmented_nissl", mask=mask_block(),
         damage=damage_block(["TH"], 0.1), restrict_to=["STR"])
     assert block.payload() == {
-        "section_image": "preprocessed", "section_recipe": "default", "atlas_image": "nissl",
+        "section_image": image, "atlas_image": "nissl",
         "atlas_image_resolved": "ccfv3augmented_nissl",
         "mask": {"name": "none", "kind": None, "stale": False, "earlier_registration": False},
         "damage": {"regions": ["TH"], "margin_mm": 0.1, "side": "atlas"},
         "restrict_to": ["STR"], "brightness": NATIVE_BRIGHTNESS}
-    named = InputsBlock("dapi", "ab12cd34", "template", "template",
+    raw = {"name": "dapi", "kind": "raw", "file": "s0.tif", "digest": None}
+    named = InputsBlock(raw, "template", "template",
                         mask_block("hole", "em"), damage_block([], 0.1))
     assert named.payload()["mask"] == {"name": "hole", "kind": "em", "stale": False,
                                        "earlier_registration": False}
     assert named.payload()["restrict_to"] == []
 
 
-def test_a_recipe_digest_is_eight_hex_digits_of_its_json():
-    recipe = {"weights": {"dapi": 1.0}, "clahe_clip": 2.0, "n4": False}
-    digest = recipe_digest(recipe)
-    assert len(digest) == 8 and int(digest, 16) >= 0
-    assert recipe_digest(dict(reversed(list(recipe.items())))) == digest
-    assert recipe_digest({**recipe, "n4": True}) != digest
-
-
 def test_the_estimated_block():
     assert EstimatedBlock().payload() == {"sorting": None, "left_out_fraction": None}
-    saved = EstimatedBlock("saved with the deformation; set_mask source fit", 0.07)
+    saved = EstimatedBlock("saved with the deformation; make_mask source fit", 0.07)
     assert saved.payload()["left_out_fraction"] == 0.07
 
 
