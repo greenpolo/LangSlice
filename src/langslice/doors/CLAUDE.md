@@ -111,7 +111,9 @@ process forks for it, `cli/warm.py`).
   `fit_frame` (`placed_atlas_to_section`: the current placement; `image=` a
   section image as `section_image` with `section_image_ref`), `atlas_slice`,
   `section_inputs`, `channels` (a section's raw channel names), `image_names`
-  (its section images), `working_grid`,
+  (its section images), `working_grid`, `raw_plane` / `working_rgb` (a raw
+  channel and the working copy in the file's orientation, the frame
+  `add_image` takes),
   `read_registration` (each section in its current orientation, `params`, `at=` a
   fixed plane, `registered_on="oriented"` for a file made on the oriented
   render); `section_raster(images=, raw=)`;
