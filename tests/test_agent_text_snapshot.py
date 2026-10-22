@@ -204,7 +204,7 @@ def _refusal_script() -> list[tuple[str, str, list[tuple[str, tuple[Any, ...], d
         ("exploring", "full", [
             ("look", ("section",), {"sections": [0, "nope.png"]}),
             ("look", ("section",), {"sections": [ID0], "view": {"mode": "section"}}),
-            ("look", ("section",), {"sections": [ID0], "channels": ["purple"]}),
+            ("look", ("section",), {"sections": [ID0], "images": ["purple"]}),
             ("zoom", ([0, 0, 50, 50],), {"picture": 999}),
             ("read_file", ("../outside.txt",), {}),
             ("undo", (), {}),
