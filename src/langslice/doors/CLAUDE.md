@@ -229,7 +229,7 @@ process forks for it, `cli/warm.py`).
   Python entry point and what a method returns, and to keep the agent's own
   files in `scripts/` and `scratch/` of the job folder, not `/tmp`; one line
   pointing a method of the agent's own to `help(job.context)`; first,
-  run `brief` and read `BRIEF.md`; under 85 lines, `tests/test_agent_cli.py`),
+  run `brief` and read `BRIEF.md`; under 90 lines, `tests/test_agent_cli.py`),
   `write_card` (writes where missing or worded differently; never raises).
   Written by every door that opens or makes a job.
 - `trace.py` — `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`), `HostTrace` (the MCP
