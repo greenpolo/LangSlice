@@ -108,7 +108,7 @@ Run facts:
 - Alignment canvas: each section is drawn at its TRUE physical size from its pixel size (read from the file, or given by the host; without one the section image's width is mapped onto the atlas plane's width and the tool payload says uncalibrated), and the atlas at its voxel size; scale 1.0 is the section's calibrated size.
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
-- Section images (status lists them, list_files shows their files under sections/<name>/images/): the raw channels of each file, and the images made from them with make_image. `preprocessed` was made when the job opened: the file as read, in gray, unenhanced. Every fitreads a section image by name, and a picture of it is exactly what they read.
+- Section images (status lists them, list_files shows their files under sections/<name>/images/): the raw channels of each file, and the images made from them with make_image. `preprocessed` was made when the job opened: the file as read, in gray, unenhanced. Every fit reads a section image by name, and a picture of it is exactly what they read.
 - A channel whose signal is sparse (a tracer, a reporter) shows little of the anatomy the atlas draws.
 - Atlas images: template. The fits' default `nissl` is `template` on this atlas.
 - Picture size is yours to choose: look's resolution runs from 128 to 2000 pixels.

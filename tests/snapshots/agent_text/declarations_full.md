@@ -511,9 +511,9 @@ model and runs its optimisation on the GPU.
 SyN bends the atlas onto a section image of each section, starting
 from the section's current registration (its linear placement, and its
 deformation when it has one), so each fit builds on the one before;
-undo goes back. Fit the whole section first, then refine regions with
-restrict_to. A piece displaced more than about 400 um from its
-place is moved with landmarks first. The section's marked damage regions are left out of
+undo goes back. `restrict_to` refines single regions on top of the
+current fit. SyN does not move a piece displaced more than about
+400 um from its place; landmarks do. The section's marked damage regions are left out of
 the atlas automatically. Needs a position and a transform. Applied as the
 section's deformation, one undoable write; a later change to the
 section's position, orientation, cutting angles or transform clears it.
