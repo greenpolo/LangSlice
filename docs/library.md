@@ -190,7 +190,7 @@ lists them. For a script:
   keeps its files in `scripts/` and `scratch/` and is its own computation.
 
 A long computation takes `digest = c.section_inputs(id)` first and passes
-`expect={id: digest}` to the write: a section whose placement, appearance or
+`expect={id: digest}` to the write: a section whose placement, made images or
 damage changed meanwhile is that row's `STALE_INPUT`, nothing written for it.
 Without `expect=` the write lands on the section as it now stands.
 
@@ -305,9 +305,9 @@ note="")` runs FireANTs SyN, the engine `fireants_syn` runs, and returns a
 `standard`, `fine`), `atlas_image` (`"nissl"`), `stain_metric`
 (`mutual_information`, `local_correlation`), `stain_edges`, `structures` and
 `neighbourhood_um` (some regions only), `exclude`. `mask` is `"none"` or the
-NAME of a mask of the section that `set_mask` made (`c.mask(id, name)` reads
+NAME of a mask of the section that `make_mask` made (`c.mask(id, name)` reads
 one: `UNKNOWN_MASK`, `STALE_MASK`); an array is refused (`BAD_ARGS`, make the
-mask with `set_mask` so the job holds it). `start="current"` fits on top of the
+mask with `make_mask` so the job holds it). `start="current"` fits on top of the
 applied deformation; `marked=False` keeps the section's marked damage regions
 in the fit. The proposal's provenance holds the fit's `inputs` and `estimated`
 blocks, as a tool's reply does.
@@ -318,12 +318,39 @@ runs, from the current placement, and returns a `TransformProposal` (refused
 `set_deformations` / `set_transforms` write them as the script's: the
 FireANTs settings, start, mask name and runtime in the deformation's
 provenance `meta`, the Elastix call's settings under the transform record's
-`fit`. `c.channel_names(id)` lists the channels a fit can read, and
-`c.fit_frame(id, channel="preprocessed")` gives one of them on the fit grid
-(`frame.channel`, `frame.channel_name`; `stain=True` is the same for
-`preprocessed`); `atlas=("nissl",)` asks for the atlas's Nissl plane.
+`fit`. `c.image_names(id)` lists the section images a fit can read, and
+`c.fit_frame(id, image="preprocessed")` gives one of them on the fit grid
+(`frame.section_image`, and `frame.section_image_ref`: `{name, kind, file,
+digest}`; `stain=True` is the same for `preprocessed`); `atlas=("nissl",)`
+asks for the atlas's Nissl plane.
 `c.deformation_from_map(..., weights=)` stores an engine's own sorting (float
-`(H, W)` on the fit grid) with the record, where `set_mask(source="fit")` finds it.
+`(H, W)` on the fit grid) with the record, where `make_mask(source="fit")` finds it.
+
+### An image of your own for the fits
+
+A script hands the fits and the pictures an image it computed (a colour
+deconvolution of a brightfield stain, a cell-density map, an edge map) with
+`c.add_image(id, name, array, note="")`: `array` is `(H, W)` on the section's
+working grid, `c.working_grid(id)`, in the file's orientation, as
+`c.section_raster(id, raw=True, images=[raw name])` gives a raw plane before its
+turn (that raster is turned as the section is: undo the quarter turn and flip
+with `raster.to_section_px`, or compute on an unturned section). It is `uint8`,
+or floats from 0 to 1. The image is saved as `sections/<stem>/images/<name>.png`
+with `note` as its source, one undo step; then `job.look(mode="section",
+sections=[id], images=[name])` draws it and every fit reads it as
+`section_image=name`. A haematoxylin channel, for example:
+
+```python
+from skimage.color import rgb2hed
+
+rgb = c.section_raster(sid, raw=True, level=4096).array   # turned as the section is
+hema = rgb2hed(rgb)[..., 0]
+hema = (hema - hema.min()) / (hema.max() - hema.min())
+c.add_image(sid, "hema", hema, note="haematoxylin, skimage rgb2hed")
+```
+
+(on a section with no quarter turn or flip, where the raster's frame is the
+file's).
 
 ### Marks of your own on the pictures
 
@@ -341,7 +368,7 @@ A proposal's numbers without writing it: `c.deformation_from_map(id,
 xy).summary` (displacement, fold fraction, flags), the same numbers a native
 fit's reply carries. The current composed map: `c.fit_frame(id).applied_map`,
 `job.section_maps(id)`. Raw and preprocessed rasters at any size:
-`c.section_raster(id, level=, channels=["preprocessed"], raw=True)`. The
+`c.section_raster(id, level=, images=["preprocessed"])`, `raw=True`. The
 damage masks every native fit leaves out: `c.fit_frame(id).excluded`,
 `.damage_zone`. A registration made elsewhere: `c.read_registration(path)`.
 The atlas object: `job.workspace.atlas`, `langslice.load_atlas(name)`. Run

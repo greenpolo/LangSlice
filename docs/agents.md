@@ -158,7 +158,7 @@ outside engine's answer) puts its result into the job through the library's
 card points to it.
 
 The CLI and the library cap no pictures or sections per call: `look`,
-`grep_atlas_view`, `set_channel` and the change tools
+`grep_atlas_view`, `make_image`, `make_mask` and the change tools
 save and return every picture they draw, and `interactive_transform` and
 `elastix_affine` take any number of sections. What still limits a call is the
 job's own `transform.max_parallel` for those two, `fireants_syn`'s section cap

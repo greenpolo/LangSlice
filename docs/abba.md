@@ -65,7 +65,7 @@ move. A user's existing spline or BigWarp registration is protected.
 Damage notes inform the agent; only atlas regions it marks are excluded
 from fits.
 
-Custom preprocessing exports only the channels with a weight above 0.
+Custom preprocessing exports only the channels with a weight above 0; the blend is the job's opening `preprocessed` image, and every exported page stays a raw channel the agent can draw or make images from.
 Use the preview to check contrast between anatomical regions.
 
 ## Run and review

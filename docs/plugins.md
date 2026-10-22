@@ -114,14 +114,16 @@ refused (`NOT_FOR_SCRIPTS`).
 | Call | Gives |
 |---|---|
 | `ctx.sections()`, `ctx.section(id)` | `SectionView`: `id`, `index`, `file_size`, `pixel_size_um`, `pixel_size_source`, `position_mm`, `angles`, `flip`, `rotation_deg`, `affine` (`kind`, the six normalized numbers `matrix`, `knobs`, `mirrored`), `deformation`, `damaged_regions`, `damage_note`, `layers`, `frozen` |
-| `ctx.channels(id)` | The names of the section's raw channels in file order (`red`, `green`, `blue` or `gray` for a colour file; the host's names or `ch1`, `ch2`... for a multi-page file): what `channels=[name]` takes |
-| `ctx.section_raster(id, level=, channels=, raw=False)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: see [what a raster shows](#what-a-raster-shows) for what `channels` and `raw` give; `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
+| `ctx.channels(id)` | The names of the section's raw channels in file order (`red`, `green`, `blue` or `gray` for a colour file; the host's names or `ch1`, `ch2`... for a multi-page file) |
+| `ctx.image_names(id)` | Every section image of the section ([section images](registration.md#section-images-and-damage)): its raw channels, then `preprocessed` and the images made since; what `images=[name]`, `fit_frame(image=)` and every fit's `section_image` take |
+| `ctx.working_grid(id)` | `(H, W)` of the section's working grid, in the file's orientation: the shape a made image has (`add_image`) |
+| `ctx.section_raster(id, level=, images=, raw=False)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: see [what a raster shows](#what-a-raster-shows) for what `images` and `raw` give; `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
 | `ctx.section_image(id, ...)` | Only the `array` of `section_raster` (same arguments). **Its pixels are not `section_px`** (see [frames](#frames)) |
 | `ctx.atlas()` | `AtlasView`: `name`, `resolution_um`, `orientation`, `species`, `plane`, `shape` |
-| `ctx.fit_frame(id, atlas=, channel=, stain=)` | `FitFrame`: the section on its fit grid (`image`; `channel` and `channel_name` for `channel=`, any name `ctx.channel_names(id)` lists; `stain=True` is `channel="preprocessed"`), `"nissl"` in `atlas=` the atlas's Nissl plane (under both names), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `excluded` (the native plane's pixels of the section's marked damage regions, sides included, which every native fit leaves out; None when none are marked), `damage_zone` (`excluded` widened by the margin the native fits also leave out of their comparison, 0.1 mm scaled to the atlas's brain size), `stain` with `stain=True` (the section's preprocessed channel on the grid of `image`, the picture the native fits read), `applied_map` (the native atlas pixel of every fit-grid pixel through the section's current registration, its deformation included, `(H, W, 2)` as `deformation_from_map` takes it: where an engine that builds on a landmark warp or an earlier fit starts; None without a deformation), `plane` (the plane in atlas micrometres: `center_um`, `dx`, `dy`, `px_um`, `shape`, and `native_to_um`, the 3x3 taking a native pixel centre `[x, y, 1]` to its atlas micrometres, voxel centres at index times resolution) |
+| `ctx.fit_frame(id, atlas=, image=, stain=)` | `FitFrame`: the section on its fit grid (`image`: its `preprocessed` image; `section_image` and `section_image_ref` (`{name, kind, file, digest}`, what a fit reply's `inputs.section_image` names) for `image=`, any name `ctx.image_names(id)` lists; `stain=True` is `image="preprocessed"`), `"nissl"` in `atlas=` the atlas's Nissl plane (under both names), the atlas plane at its position and angles on the native atlas grid (`atlas["template"]`, `["annotation"]`, and any other of the atlas's images asked for with `atlas=`, by its BrainGlobe name), `atlas_to_section` (3x3: native atlas pixels to fit-grid pixels with no in-plane transform), `placed_atlas_to_section` (the same map under the section's stored transform, its current linear placement; None without a transform), `excluded` (the native plane's pixels of the section's marked damage regions, sides included, which every native fit leaves out; None when none are marked), `damage_zone` (`excluded` widened by the margin the native fits also leave out of their comparison, 0.1 mm scaled to the atlas's brain size), `stain` with `stain=True` (the section's `preprocessed` image on the grid of `image`, the picture the native fits read by default), `applied_map` (the native atlas pixel of every fit-grid pixel through the section's current registration, its deformation included, `(H, W, 2)` as `deformation_from_map` takes it: where an engine that builds on a landmark warp or an earlier fit starts; None without a deformation), `plane` (the plane in atlas micrometres: `center_um`, `dx`, `dy`, `px_um`, `shape`, and `native_to_um`, the 3x3 taking a native pixel centre `[x, y, 1]` to its atlas micrometres, voxel centres at index times resolution) |
 | `ctx.atlas_slice(id, kind=)` | One of those atlas planes |
-| `ctx.channel_names(id)` / `ctx.mask(id, name)` | The channel names a fit can read (raw, then derived); a section's mask by name as a `MaskView` (`weights` float `(H, W)`, `kind`, `params`, `left_out`; `UNKNOWN_MASK`, `STALE_MASK`) |
-| `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, appearance, damage marks); for [`expect=`](#long-tools-and-stale_input) |
+| `ctx.mask(id, name)` | A section's mask by name as a `MaskView` (`weights` float `(H, W)`, `kind`, `params`, `left_out`; `UNKNOWN_MASK`, `STALE_MASK`) |
+| `ctx.section_inputs(id)` | A digest of what a computation on the section reads (placement, its made images' digests, damage marks); for [`expect=`](#long-tools-and-stale_input) |
 | `ctx.read_registration(path, sections=(), at=None, registered_on="file")` | A registration file made elsewhere (QuickNII, VisuAlign, DeepSlice, `registration.json`) as `placements`, nothing written; see [reading a registration](#reading-a-registration) |
 | `ctx.layers(id)` | The layers the section shows |
 | `ctx.atlas_plane(position_mm, pitch_deg=0, yaw_deg=0, kinds=)` | `AtlasPlane`: the atlas plane at any position and angles, on its native grid (`atlas`, `plane` as `fit_frame` gives them) |
@@ -158,7 +160,7 @@ run the native engines with settings and a section mask of the caller's own
 and return a `DeformationProposal` / `TransformProposal`, not written
 ([the native engines](library.md#the-native-engines-with-settings-of-your-own)).
 
-`ctx.deformation_from_map(id, native_xy, note="", meta=None, weights=None, provenance=None)` (`weights`: the float `(H, W)` sorting the engine estimated, kept with the record for `set_mask(source="fit")`; `provenance`: the fit's `inputs` and `estimated` blocks) takes a
+`ctx.deformation_from_map(id, native_xy, note="", meta=None, weights=None, provenance=None)` (`weights`: the float `(H, W)` sorting the engine estimated, kept with the record for `make_mask(source="fit")`; `provenance`: the fit's `inputs` and `estimated` blocks) takes a
 deformable method's result: `native_xy` is a float array `(H, W, 2)`, `H` by
 `W` the fit grid's `image`, giving for each fit-grid pixel centre `(x, y)` the
 native atlas pixel `(x, y)` it corresponds to. It is the whole map, linear
@@ -186,6 +188,7 @@ building on it: the map is already the whole registration. `note` and `meta`
 | `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation; ok rows carry the proposal's `summary` | `deformation` |
 | `ctx.mark_damage(rows, expect=None)` | rows `{"id", "regions", "note"?}`, as `mark_damage` | any write tool |
 | `ctx.add_layer(id, layer)` | a [layer](#layers) | any write tool |
+| `ctx.add_image(id, name, array, note="")` | a made [section image](registration.md#section-images-and-damage): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation, `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
 
 A write returns a `WriteResult`: `ok` is false when the call was refused whole
 (`error`, `message`); otherwise `rows` has one row per section asked
@@ -233,15 +236,17 @@ to be absent there. `ctx.caption(image, text)`.
 
 `section_raster` is always the section as its orientation sets it (quarter
 turn, then flip) and reduced to `level`. What the pixels are depends on
-`channels` and `raw`:
+`images` and `raw`:
 
 | Call | Pixels |
 |---|---|
-| no `channels` | The default appearance: with `preprocess="auto"` the CLAHE and DAPI-weighted blend LangSlice's pictures show (a host's own blend with `host_preprocessing`); with `preprocess="none"` the file |
-| `channels=["preprocessed"]` | The channel the native fits read |
-| `channels=[names]` | Those raw channels in their colours with the display properties set on them (`set_channel`) |
-| `raw=True` | The file as an image viewer shows it, 8-bit RGB: no preprocessing, no channel properties, no contrast changes. For a PNG or JPEG this is the delivered image, oriented |
-| `raw=True, channels=[name]` | That one raw channel as gray RGB (three equal planes), as read from the file whatever display properties are set. More than one channel, or `preprocessed`, is `BAD_ARGS`; so is a name the section does not have |
+| no `images` | The section's `preprocessed` image (gray RGB), what the native fits read by default: the opening one is the automatic path at this size (CLAHE and coverage-weighted blend with `preprocess="auto"`, a host's own blend with `host_preprocessing`, the file in gray with `preprocess="none"`) |
+| `images=[name]` | That section image alone, gray RGB (three equal planes): a raw channel as the file holds it, a made image from its file |
+| `images=[names]` | Those raw channels together, each in its own colour with automatic contrast; a made image among several is `BAD_ARGS` |
+| `raw=True` | The file as an image viewer shows it, 8-bit RGB: no preprocessing, no contrast changes. For a PNG or JPEG this is the delivered image, oriented |
+| `raw=True, images=[name]` | That one raw channel as gray RGB, as read from the file. More than one image, or a made one, is `BAD_ARGS` |
+
+A name the section has no image of is `UNKNOWN_IMAGE`.
 
 Pixels come from LangSlice's working copy (a file over 3072 pixels on the long
 edge is already reduced to it) and never above the source size, so
@@ -300,7 +305,7 @@ A tool declared `long=True` is not run under the job's write lock. It reads
 minutes while the agent or other commands keep working), then writes with
 `expect={id: digest}` (for a deformation, the digest without
 `deformation=True` covers the placement the map was computed on; with it,
-the deformation it built on too). A section whose placement, appearance or damage changed
+the deformation it built on too). A section whose placement, made images or damage changed
 meanwhile comes back as that section's row `STALE_INPUT`, nothing written for
 it; the others are written. A long call's writes are one undo step too, unless
 another write landed on the job between two of them: then they stay separate
