@@ -949,6 +949,16 @@ def test_ops_and_schema_list_the_plugin_tools_of_the_job_in_the_folder(
     main(["ops"])
     plain = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
     assert [item["name"] for item in plain] == list(verbs_for())
+    # From elsewhere, the job's folder names the job: its plugin verbs with
+    # native ones, several at once.
+    main([str(folder), "schema", "nudge_sections", "look"])
+    both = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["result"]["verbs"]
+    assert list(both) == ["nudge_sections", "look"]
+    assert set(both["nudge_sections"]["arguments"]["properties"]) == {"sections", "dx"}
+    main(["schema", "nudge_sections"])  # no job here: how to name one
+    refused = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
+    assert refused["code"] == "UNKNOWN_VERB"
+    assert "langslice-job FOLDER schema nudge_sections" in refused["message"]
     card = (Path(folder) / "AGENTS.md").read_text()
     assert "`nudge_sections` (write, Linear" in card and "`section_brightness` (read" in card
 

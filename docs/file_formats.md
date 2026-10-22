@@ -25,6 +25,7 @@ A registration file can also be explicitly imported when creating a job.
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls and background runs, events.jsonl (job events,
                         a script_write line per write a script's job.context landed);
+                        engine.log (what the registration engines printed while they fit);
                         env.lock, held while env/ is made
   trace/                agent transcripts: the built-in agent's trace, a coding agent's session copied in by its harness plugin
   env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
@@ -108,8 +109,10 @@ and y by height. `physical` records rotation, scales, shear, translations
 in millimetres and pivot. A residual's `record` is its folder relative to
 the job folder ([deformation records](#deformation-records-sectionsnamedeformablekey));
 coordinate maps include that deformation as well as the affine.
-Each of its `steps` says how a step was made: a native fit's `start`
-(`linear` or `current`), settings and regions; a landmark application's
+Each of its `steps` says how a step was made: a native fit's `method`
+(`fireants_syn`, or `trace_borders` for the fit of a trace; a step a job saved
+before steps named their method has none and is read as one of these),
+`start` (`linear` or `current`), settings and regions; a landmark application's
 `method` `landmark_triangulation`; a deformation a tool plugin wrote
 (`docs/plugins.md`), `{"method": "plugin:<tool>", "start": "linear", "note"?}`,
 whose record has the engine name `plugin:<tool>`, the `inverse_source`

@@ -194,36 +194,75 @@ def _endpoint(
 
 def _atlas_regions(
     workspace: Workspace, plane: dict[str, Any], items: Sequence[dict[str, Any]]
-) -> tuple[dict[str, str], list[str]]:
+) -> dict[str, str]:
     """The region drawn at each of *items*' atlas endpoint on the atlas *plane*
-    (``plane_context``), as ``ACRONYM (name)`` by pair id, and the ids whose
-    atlas endpoint is outside the atlas."""
+    (``plane_context``), as ``ACRONYM (name)`` by pair id."""
     from langslice.ops.atlas import label_at, plane_annotation, region_words
 
     if not items:
-        return {}, []
+        return {}
     annotation = plane_annotation(workspace, plane)
     structures = structure_table(workspace.atlas)
-    regions: dict[str, str] = {}
-    outside: list[str] = []
-    for item in items:
-        label = label_at(annotation, item["atlas_native_xy"])
-        if not label:
-            regions[item["id"]] = "outside the atlas"
-            outside.append(item["id"])
-            continue
-        regions[item["id"]] = region_words(structures, label)
-    return regions, outside
+    return {item["id"]: region_words(structures, label_at(annotation,
+                                                         item["atlas_native_xy"]) or 0)
+            for item in items}
 
 
-def _outside_words(outside: Sequence[str]) -> str:
-    one = len(outside) == 1
-    return (f"The atlas endpoint{'' if one else 's'} of {', '.join(outside)} "
-            f"{'is' if one else 'are'} outside the atlas, where no brain is drawn: "
-            f"{'it pairs' if one else 'they pair'} empty atlas with the tissue. For a pair "
-            "on the outline, put the atlas endpoint on the drawn border or just inside it; "
-            "a point read off a close-up picture lands within a few pixels of what you "
-            "meant, a point read off a whole picture can miss by 20 pixels or more.")
+#: How deep inside the atlas (native pixels from its outline) the point a
+#: refusal proposes lies, so that the rounding of picture pixels keeps it inside.
+INSIDE_MARGIN_PX = 1.5
+
+
+def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
+                    placed: Sequence[tuple[str, dict[str, Any]]]) -> None:
+    """Refuse the call (``ATLAS_ENDPOINT_OUTSIDE``, nothing written) when an
+    atlas endpoint of *placed* (``(label, pair)``) lies outside the atlas on
+    *plane*, naming for each the nearest point inside it in the numbers it
+    was given in (a zoom's: the whole picture's)."""
+    from scipy.ndimage import distance_transform_edt
+
+    from langslice.ops.atlas import label_at, plane_annotation
+
+    if not placed:
+        return
+    annotation = plane_annotation(workspace, plane)
+    outside = [(label, pair) for label, pair in placed
+               if not label_at(annotation, pair["atlas_native_xy"])]
+    if not outside:
+        return
+    inside = annotation != 0
+    depth = np.asarray(distance_transform_edt(inside))
+    deep = depth >= INSIDE_MARGIN_PX
+    target = deep if deep.any() else inside
+    # The index of the nearest target pixel, per pixel: (2, rows, cols).
+    nearest = np.asarray(distance_transform_edt(~target, return_distances=False,
+                                                return_indices=True))
+    sentences = []
+    for label, pair in outside:
+        endpoint = pair["atlas"]
+        seq = endpoint["picture"]
+        x, y = endpoint["pixel_xy"]
+        sentence = (f"{label}, atlas endpoint: the point ({x:g}, {y:g}) in picture {seq} is "
+                    "outside the atlas, where no brain is drawn, so it would pair empty atlas "
+                    "with the tissue")
+        c, r = (int(np.clip(np.rint(v), 0, n - 1)) for v, n in zip(
+            pair["atlas_native_xy"], (annotation.shape[1], annotation.shape[0]), strict=True))
+        if target.any():
+            row, col = int(nearest[0][r, c]), int(nearest[1][r, c])
+            matrix = np.asarray(endpoint["geometry"]["pixel_to_native"], dtype=float)
+            full = np.vstack([matrix[:2], [0.0, 0.0, 1.0]])
+            px, py = geometry.transform(np.linalg.inv(full)[:2], [float(col), float(row)])
+            picture = job.views.lookup(seq)
+            frame = source_frame((picture.recipe or {}) if picture is not None else None)
+            if frame is not None:
+                px, py = (float(v) for v in frame.to_source([px, py]))
+            sentence += (f"; the nearest point inside it is ({px:.0f}, {py:.0f}) in picture "
+                         f"{seq}")
+        sentences.append(sentence + ".")
+    raise Refused(
+        "ATLAS_ENDPOINT_OUTSIDE", pairs=[label for label, _pair in outside],
+        message=" ".join(sentences) + " Nothing was written. For a pair on the outline, put "
+        "the atlas endpoint on the drawn border or just inside it.")
 
 
 def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
@@ -285,6 +324,7 @@ def set_landmarks(
         raise Refused("BAD_ARGS", message="A pair ID may be edited or deleted only once per batch.")
     changed: list[str] = []
     placed: list[dict[str, Any]] = []
+    labels: list[str] = []
     deleted = list(by_id) if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
         raise Refused("BAD_ARGS", message=f'delete ["{DELETE_ALL}"] stands alone.')
@@ -338,9 +378,12 @@ def set_landmarks(
         if "atlas" in edit:
             item["plane"] = geometry.plane_context(job.state, record)
             placed.append(item)
+            labels.append(label)
         item["stale"] = geometry.stale(job.state, record, item)
         by_id[pair_id] = item
         changed.append(pair_id)
+    _refuse_outside(job, workspace, geometry.plane_context(job.state, record),
+                    list(zip(labels, placed, strict=True)))
     current["pairs"] = list(by_id.values())
     before = job.snapshot()
     written = bool(pairs or delete) and record.landmarks != current
@@ -348,8 +391,7 @@ def set_landmarks(
         record.landmarks = current
         job.commit(before)
     rows = _listing(job, record)
-    regions, outside = _atlas_regions(workspace, geometry.plane_context(job.state, record),
-                                      placed)
+    regions = _atlas_regions(workspace, geometry.plane_context(job.state, record), placed)
     return {
         "status": "ok",
         "section": record.id,
@@ -358,7 +400,6 @@ def set_landmarks(
                                                 "nothing was written."}),
         "changed": changed,
         **({"atlas_endpoint_regions": regions} if regions else {}),
-        **({"outside_atlas": outside, "warning": _outside_words(outside)} if outside else {}),
         "deleted": deleted,
         "counts": _counts(rows),
         "landmarks": rows,

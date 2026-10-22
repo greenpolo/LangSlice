@@ -39,15 +39,17 @@ posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * res
 are (row, col), centres at integers. Section positions in `state.json` and the verbs are
 millimetres along the slicing axis.
 
-## CLI (JSON on stdout: ok, result, artifacts, warnings, next)
+## CLI (JSON on stdout: ok, picture_files, result, artifacts, warnings, next)
 `langslice-job <ROOT>/langslice VERB --args '{...}'` (or `--key value`); `--dry-run`
-(writes nothing), `--background` then `wait [id]` (within 30 s: the answer, or `STILL_RUNNING`:
-wait again; `runs` lists runs), `--verbose`. Pictures come back as file paths under `artifacts`,
-each with its `index` in the reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad
-arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal. Calls may run in
-parallel (each write holds the folder's lock; a long verb re-checks each section first:
-`STALE_INPUT`, run it again for that section). `langslice-job ops` lists the verbs;
-`langslice-job schema VERB` (or `VERB --help`) gives the arguments, `schema init` the job flags.
+(writes nothing), `--verbose`. A long verb's call answers within 30 s: its result, or its run id
+and state `running` (the run goes on, also if your shell ends the command where a process may
+outlive it; `wait [id]` waits 30 s more, `runs` lists runs, `--background` answers at once).
+Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index` in the reply's
+`pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
+`error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
+verb re-checks each section first: `STALE_INPUT`, run it again for that section).
+`langslice-job ops` lists the verbs; `langslice-job <ROOT>/langslice schema VERB [VERB ...]` gives
+their arguments, several at once (every verb without one); `schema init` the job flags.
 - `look` (read, Common): Draw pictures of sections and the atlas. Writes nothing.
 - `zoom` (read, Common): Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 - `set_channel` (write, Common): Set how a channel is displayed, or the recipe of a channel made from the raw ones.
@@ -62,7 +64,7 @@ parallel (each write holds the folder's lock; a long verb re-checks each section
 - `mark_damage` (write, Common): Mark the atlas regions a section has lost, so that every fit leaves them out.
 - `set_mask` (write, Common): Make, replace or delete a named mask of one section: which tissue a fit compares.
 - `elastix_affine` (write, Linear, long): Fit sections' in-plane affine transforms automatically with elastix.
-- `fireants_syn` (write, Nonlinear, long; at most 4 sections per call): Fit the atlas onto sections with FireANTs SyN, on their current registration.
+- `fireants_syn` (write, Nonlinear, long; at most 20 sections per call): Fit the atlas onto sections with FireANTs SyN, on their current registration.
 - `set_landmarks` (write, Nonlinear): Add, update or delete persistent corresponding landmarks. Does not apply a warp.
 - `landmark_triangulation` (write, Nonlinear): Apply this section's saved landmark set as a piecewise affine warp.
 - `note` (write, Common): Append one line to the run notes, which are saved with the results.
@@ -136,9 +138,9 @@ Work with the tools, then call `submit`.
 Opening pictures: `langslice-job <ROOT>/langslice brief` saves them as picture files; open every one before any write. They show every section in strips, in the stack's current order, each labelled, with the atlas at its current position beneath it at the same scale when the stack has positions; when a section has none, atlas reference strips at evenly spaced positions follow.
 
 Commands:
-- Every tool is a command: `langslice-job <ROOT>/langslice TOOL --args '{...}'` (or `--name value`); `langslice-job schema TOOL` gives its arguments and description. Pictures come back as files under `artifacts` (kind `view`, in the order the reply's `pictures` lists their numbers); open them to see them.
+- Every tool is a command: `langslice-job <ROOT>/langslice TOOL --args '{...}'` (or `--name value`); `langslice-job <ROOT>/langslice schema TOOL [TOOL ...]` gives their arguments and descriptions, several at once. Pictures come back as files: `picture_files` lists them first, `artifacts` again with their kinds (`view`, in the order the reply's `pictures` lists their numbers); open them to see them.
 - `--dry-run` runs a write without writing and reports what would change; the fits are only checked, not run.
-- Long tools (elastix_affine, fireants_syn, export_maps) can run with `--background`, which answers at once with a run id; `wait ID` answers within 30 s with the run's answer, or STILL_RUNNING while it runs (wait again).
+- Long tools (elastix_affine, fireants_syn, export_maps): a call answers with the result or, still running after 30 s, with its run id and state `running`; the run goes on (also when your shell ends the command, where a process may outlive it) and `wait ID` answers within 30 s with its answer or its state (wait again). `--background` answers at once with the run id; `runs` lists the runs. Do not start a fit again while its run goes on.
 - Commands may run in parallel: each write holds the job folder's lock, and a long tool re-checks each section before it applies (STALE_INPUT when the section changed meanwhile: run it again for that section).
 
 Status table (filename, position, spacing to the next placed section, flags):

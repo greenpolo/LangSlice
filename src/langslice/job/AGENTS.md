@@ -147,6 +147,9 @@ this way (`doors/jobs.py`), so a call beside a running agent changes
 nothing until its first write. `Job.persist` False (`Job.load(...,
 persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
 checkpoint, no history, and `views.DiscardedViews` saves no picture.
+`Job.engine_log` is where the engines' own output goes while they fit
+(`logs/engine.log`, `core.engine_output`); None for a job that persists
+nothing.
 
 **One writer at a time, across processes.** Every write goes lock -> sync -> apply -> commit -> unlock: `Job.writing()` holds
 the folder's `lock.FolderLock` (`job.lock`, `filelock`: `fcntl` on Linux

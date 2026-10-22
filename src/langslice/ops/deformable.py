@@ -43,6 +43,7 @@ from langslice.core.engine_inputs import (
     mask_block,
     recipe_digest,
 )
+from langslice.core.engine_output import engine_output
 from langslice.core.handoff import digest
 from langslice.core.state import SliceState
 from langslice.ops import masks as ops_masks
@@ -185,6 +186,28 @@ def fit_regions(fit: deformation.Job) -> tuple[tuple[str, ...], tuple[str, ...]]
             tuple(str(name) for name in fit.settings.exclude))
 
 
+#: A fit's row names its wait for the machine's GPU queue from this many seconds.
+GPU_WAIT_SHOWN_S = 1.0
+
+
+def gpu_rows(engine: Mapping[str, Any]) -> dict[str, Any]:
+    """What a fit's row says of the machine's GPU queue, from its record's
+    ``engine``: ``gpu_wait_s`` when it waited for its turn
+    (:data:`GPU_WAIT_SHOWN_S` or more), ``retried`` in words when the GPU ran
+    out of memory and the fit ran again."""
+    out: dict[str, Any] = {}
+    waited = float(engine.get("gpu_wait_s") or 0.0)
+    if waited >= GPU_WAIT_SHOWN_S:
+        out["gpu_wait_s"] = round(waited)
+    retries = int(engine.get("oom_retries") or 0)
+    if retries:
+        times = "once" if retries == 1 else f"{retries} times"
+        out["retried"] = (f"The GPU ran out of memory {times} (another process held it); "
+                          "the fit waited and ran again from the start, so this result is "
+                          "whole.")
+    return out
+
+
 def fit_deformable(
     job: Job,
     workspace: Workspace,
@@ -322,7 +345,8 @@ def fit_deformable(
                      **({"trace_regions": {"include": list(regions[0]),
                                            "exclude": list(regions[1])}}
                         if inherited else {})})
-    deformation.run_jobs(workspace, jobs)
+    with engine_output(job.engine_log, f"deformable fits of {len(jobs)} section(s)"):
+        deformation.run_jobs(workspace, jobs)
 
     with job.writing():
         before = job.snapshot()
@@ -376,6 +400,8 @@ def _apply(
                    engine_settings=deformation.engine_settings(fit.settings, brain_scale),
                    **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
                    cached=fit.cached)
+        if not fit.cached:
+            row.update(gpu_rows(outcome.engine))
         linear = deformation.linear_key(state, record)
         include, exclude = fit_regions(fit)
         outcome.provenance = deformation.provenance(
@@ -397,7 +423,9 @@ def _apply(
             continue
         record.deformation = deformation.reference(
             folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
-            step={"start": start, **fit.choice.echo(), "include": list(include),
+            step={"method": "trace_borders" if fit.choice.fit_section
+                  == deformation.TRACED_BORDERS else "fireants_syn",
+                  "start": start, **fit.choice.echo(), "include": list(include),
                   "exclude": list(exclude)},
             previous=held, numbers=numbers,
         )
@@ -683,8 +711,14 @@ def fit_caption(record: SliceState, fit: deformation.Job, row: dict[str, Any],
 #: The metrics and detail levels ``fireants_syn`` takes.
 METRICS = ("mutual_information", "local_correlation")
 DETAILS = ("coarse", "standard", "fine")
-#: Sections one :func:`fireants_syn` call takes.
-MAX_FIREANTS_SYN_SECTIONS = 4
+#: Sections one :func:`fireants_syn` call takes: the fits run one after
+#: another on the GPU, but every fitted section is held in memory until the
+#: call writes them as one undo step (measured on 1536-pixel fit grids: about
+#: 3.2 GB for the process, then 170 MB a section; 20 sections peaked at 6.4 GB).
+MAX_FIREANTS_SYN_SECTIONS = 20
+#: Why a call of more sections is refused (``TOO_MANY_SECTIONS``'s message).
+SECTION_CAP_REASON = ("every fitted section is held in memory (about 170 MB) until the call "
+                      "writes them all as one undo step")
 
 
 def engine_ready() -> bool:
@@ -766,7 +800,8 @@ def fit_record(
                                                appearance.PREPROCESSED)
         prepared = prepare_fit(image, workspace.atlas, grid.placement, settings,
                                previous=previous, section_weights=weights)
-        with deformation.engine_lock():
+        with deformation.engine_lock(), engine_output(job.engine_log,
+                                                      f"FireANTs fit of {record.id}"):
             outcome = run_prepared(prepared)
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
         raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc

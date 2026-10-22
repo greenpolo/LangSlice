@@ -136,15 +136,19 @@ and returns a `record.DeformableRecord`. No custom solver.
   `with_section_mask(prepared, mask)` narrows a prepared fit's fixed mask to
   a caller's own (bool on the section grid; a script's `fit_fireants(mask=)`,
   the Elastix affine's `mask=`).
-  `fit_prepared` runs 1–8 prepared fits (different sections or settings):
+  `fit_prepared` runs the prepared fits of a call (different sections or settings):
   on a GPU one after another in the caller, on the CPU in a spawn process
   pool (`cpu_count // FIT_THREADS` workers at most, one per fit); a failing
   candidate is a `CandidateFailure`, never an exception. A GPU fit runs in the
   machine's one GPU queue (`engines.gpu_turn`: a file lock on `GPU_LOCK`,
   `LANGSLICE_GPU_LOCK` or `~/.cache/langslice-stalign/gpu.lock`, the lock the
-  STalign, emlddmm and SPOmiAlign engines take too), so fits of several jobs
+  STalign, emlddmm and SPOmiAlign engines take too; it yields a `GpuTurn`
+  whose `waited_s` is how long the lock was waited for), so fits of several jobs
   never share the GPU's memory; one that still finds it full (a process outside
-  the queue) waits and fits again, `OOM_RETRIES` times.
+  the queue) waits and fits again, `OOM_RETRIES` times. The `EngineResult`
+  carries both (`gpu_wait_s`, `oom_retries`), and `finish_fit` puts them in
+  the record's `engine` when not zero (a fit's row reads them,
+  `ops.deformable.gpu_rows`).
 
 ## Brain size
 

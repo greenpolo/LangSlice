@@ -17,8 +17,11 @@ anything and reports what would change; ``elastix_affine``, ``fireants_syn``
 and ``trace_borders``, and every tool of a plugin, are only checked, not run; not with
 ``--background``),
 ``--background`` (answer at
-once with a run id), ``--verbose`` (the whole reply: whole-stack rows, the
-descriptions written for a model), ``--timeout SECONDS`` (``wait``).
+once with a run id; without it a long verb runs as a background run all the
+same where a process may outlive its command, the call waiting up to
+``background.WAIT_S`` for it, :func:`_detached`), ``--verbose`` (the whole
+reply: whole-stack rows, the descriptions written for a model), ``--timeout
+SECONDS`` (``wait``).
 
 Each call opens the job as it stands on disk (``doors.jobs.open_folder``),
 runs the verb through the same tool a running agent has (``look``'s
@@ -154,6 +157,17 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         return describe(name, folder)
     if name == "init":
         return init(folder, rest, atlas_loader=atlas_loader)
+    if name == "schema":  # `langslice-job schema VERB ... --job FOLDER`
+        from langslice.doors.cli.catalog import schema
+        from langslice.doors.jobs import NoJob, find
+
+        try:
+            job = str(find(folder))
+        except NoJob as exc:
+            return Envelope.failure("NO_JOB", str(exc))
+        named = [token for index, token in enumerate(rest) if not token.startswith("-")
+                 and (index == 0 or rest[index - 1] != "--job")]  # FOLDER names the job
+        return schema(argparse.Namespace(verb=named, job=job))
     options, arguments, positional = parse(rest)
     if name == "brief":
         if arguments or positional:
@@ -329,10 +343,63 @@ def _flag_value(annotation: Any, values: list[str]) -> Any:
         return values[-1]
 
 
+#: A corrected call lists the arguments not given (at their defaults) when
+#: the verb takes at most this many.
+SHORT_SIGNATURE = 5
+
+
+def _first_sentence(text: str) -> str:
+    head, dot, _rest = text.partition(". ")
+    return (head + dot).strip() if dot else text.strip()
+
+
+def _flag_text(value: Any) -> str:
+    """One value as a flag takes it (JSON for a list, an object or a number)."""
+    import shlex
+
+    return shlex.quote(value if isinstance(value, str) else json.dumps(value))
+
+
+def corrected_call(tool: Any, verb: str, arguments: dict[str, Any], job: str) -> str:
+    """The fix of an ``UNKNOWN_ARGUMENTS`` refusal: every argument *verb*
+    takes, with the first sentence of its description and its default, then
+    the call made of the arguments it knows (*arguments*, the unknown ones
+    left out), the required ones it lacks as placeholders and, for a short
+    signature (:data:`SHORT_SIGNATURE`), the others at their defaults."""
+    import inspect
+
+    from langslice.doors.declarations import argument_texts
+
+    declared = {name: parameter for name, parameter in inspect.signature(tool).parameters.items()
+                if name != "tool_context"}
+    texts = argument_texts(tool.__doc__ or "")
+    takes = []
+    for name, parameter in declared.items():
+        about = _first_sentence(texts.get(name, "")).rstrip(".")
+        default = ("required" if parameter.default is inspect.Parameter.empty
+                   else f"default {json.dumps(parameter.default)}")
+        takes.append(f"{name} ({about + '; ' if about else ''}{default})")
+    parts = [f"langslice-job {job} {verb}"]
+    short = len(declared) <= SHORT_SIGNATURE
+    for name, parameter in declared.items():
+        flag = "--" + name.replace("_", "-")
+        if name in arguments:
+            parts.append(f"{flag} {_flag_text(arguments[name])}")
+        elif parameter.default is inspect.Parameter.empty:
+            parts.append(f"{flag} <{name}>")
+        elif short:
+            parts.append(f"{flag} {_flag_text(parameter.default)}")
+    return (f"{verb} takes {'; '.join(takes) or 'no arguments'}. Call it as: "
+            f"`{' '.join(parts)}`.")
+
+
 def arguments_for(tool: Any, options: dict[str, Any],
-                  flags: dict[str, list[str]], verb: str) -> dict[str, Any]:
+                  flags: dict[str, list[str]], verb: str,
+                  job: str = "FOLDER") -> dict[str, Any]:
     """The call's arguments: ``--args``, then each flag over it, read as the
-    tool declares them; refused (exit 2) when one is unknown or missing."""
+    tool declares them; refused (exit 2) when one is unknown (the fix: what
+    the verb takes and the call without the unknown ones,
+    :func:`corrected_call`) or missing."""
     import inspect
 
     from langslice.doors.tools.arguments import argument_refusal, normalize_arguments
@@ -347,8 +414,12 @@ def arguments_for(tool: Any, options: dict[str, Any],
                           else values[-1])
     refusal = argument_refusal(tool, arguments)
     if refusal is not None:
-        raise _Refusal(Envelope.failure("UNKNOWN_ARGUMENTS", refusal["message"],
-                                        result=refusal, verb=verb))
+        top_level = all(problem.get("argument") == "(top level)"
+                        for problem in refusal.get("problems") or [])
+        known = {name: value for name, value in arguments.items() if name in declared}
+        raise _Refusal(Envelope.failure(
+            "UNKNOWN_ARGUMENTS", refusal["message"], result=refusal, verb=verb, job=job,
+            fix=corrected_call(tool, verb, known, job) if top_level else None))
     missing = [name for name, parameter in declared.items()
                if parameter.default is inspect.Parameter.empty and name not in arguments]
     if missing:
@@ -419,7 +490,8 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
                 + f") have no {verb}.",
                 result={"verbs": offered}, job=job_folder, verb=verb))
         tool = tools[verb]
-        arguments = arguments_for(tool, options, flags, verb)
+        arguments = arguments_for(tool, options, flags, verb, job_folder)
+        long = verbs_for(opened.spec)[verb].long
         if options.get("run_id"):
             background.begin(opened.job.layout, options["run_id"])
         if options.get("background") and not options.get("run_id"):
@@ -427,22 +499,44 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
                                       verbose=bool(options.get("verbose")))
             envelope = Envelope(result={"run": run_id, "verb": verb, "state": "running"},
                                 next=[f"langslice-job {job_folder} wait {run_id}"])
+        elif long and not dry_run and not options.get("run_id") and background.detaching():
+            envelope = _detached(opened.job.layout, job_folder, verb, arguments,
+                                 verbose=bool(options.get("verbose")))
         elif dry_run and (verb in CHECKED_ONLY or verb not in VERBS):
             # a plugin tool runs an engine of its own: checked, never run
             envelope = _checked(opened, verb, arguments)
         else:
             envelope = _run(opened, verb, tool, arguments, dry_run=dry_run,
                             verbose=bool(options.get("verbose")))
-        if dry_run and envelope.ok and verbs_for(opened.spec)[verb].long:
-            # A long verb: the real call may take minutes; --background
-            # answers at once and `wait` collects the answer.
-            envelope.next = [*envelope.next, _command(job_folder, verb, arguments)
-                             + " --background"]
+        if dry_run and envelope.ok and long and not envelope.next:
+            # A long verb's real call (checked, not run): it answers within
+            # 30 s, with the run id while it still runs.
+            envelope.next = [_command(job_folder, verb, arguments)]
         envelope.call = arguments
         return envelope
     finally:
         DISABLED.reset(token)
         opened.close()
+
+
+def _detached(layout: Any, job_folder: str, verb: str, arguments: dict[str, Any], *,
+              verbose: bool) -> Envelope:
+    """A long verb's call where a process may outlive its command
+    (:func:`background.detaching`): the verb runs as a background run and the
+    call waits for it, at most :data:`background.WAIT_S`, then answers as
+    ``wait`` does. A command ended meanwhile ends only the waiting (the run
+    goes on); Ctrl-C ends the run too."""
+    run_id = background.start(layout, verb, arguments, verbose=verbose)
+    progress(f"langslice-job: {verb} runs as run {run_id}; if this command is ended, the "
+             f"run goes on: `langslice-job {job_folder} wait {run_id}`")
+    try:
+        record = background.wait(layout, run_id, background.WAIT_S)
+    except KeyboardInterrupt:
+        background.cancel(layout, run_id)
+        raise
+    if record is None:
+        return Envelope.failure("UNKNOWN_RUN", f"No run {run_id}.", job=job_folder)
+    return run_answer(job_folder, run_id, record, background.WAIT_S)
 
 
 def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
@@ -801,14 +895,22 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     record = background.wait(layout, run_id, waited)
     if record is None:
         return Envelope.failure("UNKNOWN_RUN", f"No run {run_id}.", job=job_folder)
+    return run_answer(job_folder, run_id, record, waited)
+
+
+def run_answer(job_folder: str, run_id: str, record: dict[str, Any],
+               waited: float) -> Envelope:
+    """What ``wait`` (or a long verb's detached call) answers after waiting
+    *waited* seconds for run *run_id*: its answer once it has one; while it
+    runs, ``ok`` with its state ``running`` and the command that waits again;
+    ``RUN_LOST`` when its process ended without one."""
     state = record.get("state")
     if state == "running":
-        still = Envelope.failure("STILL_RUNNING",
-                                 f"Run {run_id} is still running (waited {waited:g} s).",
-                                 result=background.brief(record), job=job_folder,
-                                 exit=EXIT_REFUSED)
-        still.next = [f"langslice-job {job_folder} wait {run_id}"]
-        return still
+        return Envelope(
+            result={**background.brief(record), "waited_s": waited,
+                    "message": f"Still running after {waited:g} s; the run goes on. Wait "
+                    "again for its answer."},
+            next=[f"langslice-job {job_folder} wait {run_id}"])
     if state != "finished" or not isinstance(record.get("envelope"), dict):
         return Envelope.failure("RUN_LOST", f"Run {run_id} ended without an answer.",
                                 result=background.brief(record), job=job_folder,
