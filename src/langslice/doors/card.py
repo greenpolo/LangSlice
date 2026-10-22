@@ -166,10 +166,10 @@ with the same arguments {example}. Each returns, once its pictures are on disk, 
 dict: the CLI's `result` in full (status rows with every field, null where unset) plus
 `artifacts` as the CLI lists them; `reply.images` holds the pictures as PIL images.
 {background}Atlases: `langslice.load_atlas("allen_mouse_25um")`.
-Keep your own files here, never in /tmp: scripts in `scripts/`, the rest (montages, tables)
-in `scratch/`; LangSlice never reads them. Every picture a verb shows is saved here.
-Run a script with `langslice-job {layout.folder} python scripts/NAME.py [ARGS]`: the job's
-`env/` python, LangSlice usually loaded already. `env install PACKAGE ...` adds packages there.
+Keep your own files here, never in /tmp: scripts in `scripts/`, the rest in `scratch/`.
+Run a script with `langslice-job {layout.folder} python scripts/NAME.py [ARGS]` (the job's
+`env/` python; `env install PACKAGE ...` adds packages), but run long verbs (the fits) as
+commands: a command your harness ends takes its script, and the fits in it, with it.
 Your own method (an affine, a warp field) goes in through `job.context`: `help(job.context)`.
 Judge and choose fits by looking at their pictures, never by image-similarity scores (mutual
 information, outline overlap, edge correlation): the fits optimise those, they track border
