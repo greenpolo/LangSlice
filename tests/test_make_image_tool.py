@@ -206,3 +206,14 @@ def test_a_script_adds_an_image_the_fits_and_look_read(tmp_path: Path, atlas):
         summary = job.status()["section_images"]["hema"]
         assert summary == {"script": "one minus red", "except": ["s1.png"]}
         assert images.PREPROCESSED in job.status()["section_images"]
+
+
+def test_a_fit_picture_is_drawn_on_the_section_image_it_read(tmp_path: Path, atlas):
+    pytest.importorskip("itk")
+    _job, _ctx, box = _box(tmp_path, atlas)
+    _tool(box, "make_image")("greens", weights={"green": 1}, view=False)
+    fit = _tool(box, "elastix_affine")(["s0.png"], section_image="greens")
+    assert fit["status"] == "ok", fit
+    assert "section image greens" in fit["pictures"][0]["caption"]
+    plain = _tool(box, "elastix_affine")(["s1.png"])
+    assert "section image preprocessed" in plain["pictures"][0]["caption"]

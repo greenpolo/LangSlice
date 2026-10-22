@@ -113,6 +113,13 @@ def spread(records: Sequence[Any], cap: int | None) -> list[Any]:
     return [records[index] for index in picks]
 
 
+def drawn_image(section_image: Any) -> list[str]:
+    """The ``images`` a fit's or a mask's picture is drawn with: the section
+    image it read (none for ``preprocessed``, ``look``'s default)."""
+    name = str(section_image or "preprocessed").strip()
+    return [] if name == "preprocessed" else [name]
+
+
 def as_list(value: Any) -> list[Any]:
     """A model's list argument as a list (None is empty; a single item is a list of one)."""
     if value is None:

@@ -2,7 +2,8 @@
 
 ``elastix_affine`` and ``fireants_syn`` fit, apply, then show each fitted
 section under its new registration with the atlas borders on it
-(:func:`langslice.ops.look.show_result`), unless the call's ``view`` is
+(:func:`langslice.ops.look.show_result`), drawn on the section image the fit
+read, unless the call's ``view`` is
 false and the host does not force it. With ``restrict_to`` those regions'
 borders are drawn thick and the others faint, and the picture is zoomed to
 the regions' box when that magnifies it at least
@@ -20,7 +21,7 @@ from typing import Any
 from langslice.core.atlas.images import resolve_image
 from langslice.core.display import default_options
 from langslice.core.sizes import AUTO_RESOLUTION, picture_edge
-from langslice.doors.tools.door import Door, as_list, pictured
+from langslice.doors.tools.door import Door, as_list, drawn_image, pictured
 from langslice.doors.tools.view_options import clamp_resolution
 from langslice.ops import deformable as ops_deformable
 from langslice.ops import exports as ops_exports
@@ -131,7 +132,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         zooms = {str(row["id"]): window for row in fits
                  if (window := ops_transforms.zoom_window(row.get("restrict_box")))}
         shown = ops_look.show_result(job, ctx, "elastix_affine", "overlay", fitted,
-                                     zooms=zooms, highlight=regions)
+                                     zooms=zooms, highlight=regions,
+                                     images=drawn_image(section_image))
         return pictured(result, shown)
 
     def fireants_syn(sections: list[str], restrict_to: list[str],
@@ -170,7 +172,7 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 if window is not None:
                     zooms[name] = window
         shown = ops_look.show_result(job, ctx, "fireants_syn", "overlay", drawn, zooms=zooms,
-                                     highlight=regions)
+                                     highlight=regions, images=drawn_image(section_image))
         return pictured(result, shown)
 
     def trace_borders(section: str, prompt: str, restrict_to: list[str]) -> dict[str, Any]:

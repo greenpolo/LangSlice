@@ -278,7 +278,8 @@ process forks for it, `cli/warm.py`).
   row's `warning`, `affine_flag_words`), `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
-  force it; `interactive_transform` and `elastix_affine` drop the
+  force it (a fit's and an `em` mask's picture drawn on the section image
+  it read, `door.drawn_image`); `interactive_transform` and `elastix_affine` drop the
   deformations their write made stale before drawing it, so the picture
   shows the section as it now stands; a restricted fit's picture
   highlights its `restrict_to` regions and zooms to them only past

@@ -22,7 +22,7 @@ from langslice.core.display import default_options
 from langslice.core.sizes import picture_edge
 from langslice.core.state import unknown_sections
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.door import Door, as_list, pictured, spread
+from langslice.doors.tools.door import Door, as_list, drawn_image, pictured, spread
 from langslice.ops import damage as ops_damage
 from langslice.ops import history as ops_history
 from langslice.ops import look as ops_look
@@ -210,8 +210,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             return result
         made = [record for record in (job.state.by_id(i) for i in done.made) if record is not None]
         shown = spread(made, job.picture_cap)
+        sorted_on = drawn_image(section_image) if str(source or "em") == "em" else []
         pictures = ops_look.show_result(job, ctx, "make_mask", "section",
-                                        [record.id for record in shown], masks=[done.name])
+                                        [record.id for record in shown], masks=[done.name],
+                                        images=sorted_on)
         return pictured(result, pictures)
 
     def note(text: str) -> dict[str, Any]:
