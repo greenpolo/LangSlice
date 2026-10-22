@@ -397,7 +397,8 @@ longer exist be taken over by the images it is opened with.
   the index. Each picture of sections records `registrations`, the number of
   the registration each section was drawn under (`view.json` and the index
   line; `PictureRecord.registrations`): the note's `extra["registrations"]`
-  (a `look` of a registration the section does not hold), else what
+  (a `look` of a registration the section does not hold; empty for a
+  proposal not written, which records none), else what
   `registration_source` answers (`Job.wire_views` sets it to
   `Job.registration_numbers`, the numbers the sections hold now).
   `save(tiles=True)`: a sheet's tiles, their JPEGs listed as artifacts of kind

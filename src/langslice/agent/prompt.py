@@ -101,7 +101,7 @@ SECTION_IMAGES_FACT = (
     "- Section images (status lists them[[?list_files , list_files shows their files under "
     "sections/<name>/images/]]): the raw channels of each file[[?make_image , and the images "
     "made from them with make_image]]. `preprocessed` was made when the job opened: "
-    "{opening}. Every fit[[?trace_borders  and the image model read||reads]] a section image "
+    "{opening}. Every fit[[?trace_borders  and the image model read|| reads]] a section image "
     "by name, and a picture of it is exactly what they read."
 )
 #: The one fact about a channel's signal the agent cannot see from the atlas side.

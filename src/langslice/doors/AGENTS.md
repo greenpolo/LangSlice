@@ -139,7 +139,11 @@ process forks for it, `cli/warm.py`).
   `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
   written, the settings as its step's `settings` / the record's `fit`); `overlay_picture` and
   `positioning_picture` (a proposal drawn on a copy of the state), with a
-  deformation proposal drawn through an in-memory record store) and
+  deformation proposal drawn through an in-memory record store; a proposal's
+  note records no registration, `extra["registrations"]` empty), `caption`
+  (keeps the drawn picture's sections on the captioned copy, or takes
+  `sections=` for a picture of the handler's own, so the saved picture
+  records each section's registration) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
   write tool's call as one undo step, `ToolError` / `Refused` / any exception
   as a reply, the reply and pictures from the `ToolResult`). `provenance.py`:

@@ -187,6 +187,17 @@ class TransformProposal:
         return {"id": self.id, "transform": self.record}
 
 
+def _no_registration(image: Image.Image) -> None:
+    """Mark the picture drawn of a proposal not written: its saved index line
+    records no registration the section holds (``extra["registrations"]``
+    empty, :meth:`langslice.job.views.ViewStore._registrations`)."""
+    from langslice.core.layers import note_of
+
+    held = note_of(image)
+    if held is not None:
+        held.extra = {**held.extra, "registrations": {}}
+
+
 @dataclass(frozen=True)
 class DeformationProposal:
     """A deformation a method found, as LangSlice stores it, not written yet
@@ -1492,6 +1503,8 @@ class ToolContext:
             drawn = looks.look(self._door.ctx, state, request, store=store)
         except looks.LookError as exc:
             raise ToolError(exc.code, str(exc)) from exc
+        if proposal:  # a proposal not written shows no registration the section holds
+            _no_registration(drawn[0].image)
         return drawn[0].image
 
     def positioning_picture(self, ids: Sequence[object], *,
@@ -1546,6 +1559,8 @@ class ToolContext:
             raise ToolError(exc.code, str(exc)) from exc
         images = [picture.image for picture in drawn]
         if proposal:
+            for image in images:  # a proposal not written shows no registration held
+                _no_registration(image)
             images = [self.caption(image, "proposal: positions and angles drawn as proposed, "
                                    "NOT written") for image in images]
         return images
@@ -1561,15 +1576,33 @@ class ToolContext:
         return store
 
     @staticmethod
-    def caption(image: Image.Image, text: str) -> Image.Image:
+    def caption(image: Image.Image, text: str, *,
+                sections: Sequence[object] = ()) -> Image.Image:
         """*image* with *text* in a caption band below it (pictures reach a
         model as bare attachments: what they show is said in the picture, and in the
-        caption its entry in the reply's ``pictures`` carries)."""
+        caption its entry in the reply's ``pictures`` carries). The captioned
+        picture shows the sections *image* was drawn of (an
+        :meth:`overlay_picture`'s section), or *sections* (filenames) for a
+        picture of the handler's own: its saved index line names them and the
+        registration each is drawn under, which ``restore_registration``'s
+        list reads."""
         from langslice.core.captions import caption
-        from langslice.core.layers import annotate
+        from langslice.core.layers import annotate, note_of
 
+        drawn = note_of(image)
+        shown = tuple(str(name) for name in sections) or (
+            tuple(drawn.sections) if drawn is not None else ())
+        fields: dict[str, Any] = {"caption": text}
+        if shown:
+            fields["sections"] = shown
+            fields["mode"] = drawn.mode if drawn is not None and drawn.mode else "plugin"
+        captioned = annotate(caption(image, text), **fields)
+        if drawn is not None and "registrations" in drawn.extra:  # a proposal shows none
+            held = note_of(captioned)
+            if held is not None:
+                held.extra["registrations"] = dict(drawn.extra["registrations"])
         # the text is also the picture's caption in the reply's ``pictures`` list
-        return annotate(caption(image, text), caption=text)
+        return captioned
 
     # --- background work --------------------------------------------------------------------
 

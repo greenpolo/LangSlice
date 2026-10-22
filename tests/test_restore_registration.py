@@ -174,6 +174,35 @@ def test_several_sections_go_back_in_one_step_and_a_refused_one_is_its_row(capsy
     job.close()
 
 
+def test_a_failure_partway_through_a_batch_restore_changes_nothing(capsys, images,
+                                                                 monkeypatch):
+    """Not a refusal but an error on the second section: the first section put
+    back is put back again as it was, in memory too, and nothing is written."""
+    from langslice.ops import registrations as ops_registrations
+
+    job = langslice.open_job(images)
+    job.interactive_transform(sections=[{"id": ID0, **IDENTITY, "scale_x": 1.1},
+                                        {"id": ID1, **IDENTITY, "scale_x": 1.2}], view=False)
+    depth = len(job.job.undo_stack)
+    real = ops_registrations._restore_one
+
+    def broken(held_job, record, number):
+        if record.id == ID1:
+            raise RuntimeError("a registration entry that does not read")
+        return real(held_job, record, number)
+
+    monkeypatch.setattr(ops_registrations, "_restore_one", broken)
+    with pytest.raises(RuntimeError):
+        ops_registrations.restore(job.job, [{"id": ID0, "registration": 1},
+                                            {"id": ID1, "registration": 1}])
+    assert job.job.state.by_id(ID0).transform["physical"]["scale_x"] == pytest.approx(1.1)
+    assert len(job.job.undo_stack) == depth
+    on_disk = json.loads((images / "langslice" / "state.json").read_text())
+    held = next(row for row in on_disk["slices"] if row["id"] == ID0)
+    assert held["transform"]["physical"]["scale_x"] == pytest.approx(1.1)
+    job.close()
+
+
 def test_look_draws_an_earlier_registration_and_writes_nothing(capsys, images):
     job = langslice.open_job(images)
     turned = job.interactive_transform(

@@ -366,7 +366,9 @@ class ScriptContext(ToolContext):
                  if linear and held is not None and held.panel is not None else None,
                  recipe={"renderer": "transport_snapshot", "args": {}, "proposal": what},
                  caption=f"{text}: {held.caption}" if held is not None and held.caption
-                 else text)
+                 else text,
+                 # a proposal not written: no registration the section holds
+                 extra={"registrations": {}})
 
         return self._save([picture], noted, {"section": record.id, "proposal": what})[0]
 
@@ -393,7 +395,8 @@ class ScriptContext(ToolContext):
             note(shown_picture, sections=tuple(names), mode="positioning",
                  recipe={"renderer": "transport_snapshot", "args": {},
                          "proposal": "positions and angles"},
-                 caption=PREVIEW_CAPTION.format(what="positions and angles"))
+                 caption=PREVIEW_CAPTION.format(what="positions and angles"),
+                 extra={"registrations": {}})
 
         return self._save(pictures, noted, {"sections": names, "proposal": "positioning"})
 

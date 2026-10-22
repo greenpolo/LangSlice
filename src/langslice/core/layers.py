@@ -155,6 +155,13 @@ def annotate(image: Image.Image, **fields: Any) -> Image.Image:
     return image
 
 
+def note_of(image: Image.Image) -> PictureNote | None:
+    """The latest note made for this very image in the block collecting now
+    (:func:`collecting`), or None (none made, or nothing collecting)."""
+    notes = _NOTES.get()
+    return None if notes is None else note_for(image, notes)
+
+
 def note_for(
     image: Image.Image, notes: list[tuple[Image.Image, PictureNote]],
 ) -> PictureNote | None:
