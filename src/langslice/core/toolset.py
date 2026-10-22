@@ -113,7 +113,8 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     # --- looking (every run) -----------------------------------------------------
     ToolDef("look", "read", "Common", options=_LOOK_OPTIONS, essential=True),
     ToolDef("zoom", "read", "Common"),
-    ToolDef("set_channel", "write", "Common"),
+    # The made section images the pictures and fits read by name.
+    ToolDef("make_image", "write", "Common"),
     ToolDef("grep_atlas", "read", "Common", options={"points": ""}),
     ToolDef("grep_atlas_view", "read", "Common"),
     ToolDef("status", "read", "Common", essential=True),
@@ -129,7 +130,7 @@ TOOLS: dict[str, ToolDef] = {tool.name: tool for tool in (
     ToolDef("mark_damage", "write", "Common"),
     # The section-side mask the fits take by name (an EM sorting); useless
     # where no fit exists, and it is drawn in look's section mode.
-    ToolDef("set_mask", "write", "Common",
+    ToolDef("make_mask", "write", "Common",
             when=lambda spec: spec.has("transform") or spec.has("nonlinear"),
             needs=(("look:section",),)),
     # --- fitting ----------------------------------------------------------------------

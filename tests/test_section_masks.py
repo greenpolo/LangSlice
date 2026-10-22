@@ -61,7 +61,7 @@ def _setup(folder: Path, atlas: SyntheticAtlas, *, hole: bool):
 def test_the_sorting_leaves_a_hole_out_and_keeps_the_tissue(tmp_path: Path, atlas):
     state, ctx, record, job, gray = _setup(tmp_path, atlas, hole=True)
     weights, facts = section_masks.em_sorting(
-        ctx, state, record, job.deformations, channel_image=gray, atlas_image="nissl", params={})
+        ctx, state, record, job.deformations, section_image=gray, atlas_image="nissl", params={})
     assert weights.dtype == np.float32 and weights.shape == gray.shape
     assert weights.min() >= 0.0 and weights.max() <= 1.0
     hole = _hole(gray.shape[::-1])
@@ -76,11 +76,11 @@ def test_the_sorting_leaves_a_hole_out_and_keeps_the_tissue(tmp_path: Path, atla
 def test_a_clean_section_loses_little(tmp_path: Path, atlas):
     state, ctx, record, job, gray = _setup(tmp_path, atlas, hole=False)
     weights, facts = section_masks.em_sorting(
-        ctx, state, record, job.deformations, channel_image=gray, atlas_image="template",
+        ctx, state, record, job.deformations, section_image=gray, atlas_image="template",
         params={})
     assert facts["left_out"] < 0.1
     again, again_facts = section_masks.em_sorting(
-        ctx, state, record, job.deformations, channel_image=gray, atlas_image="template",
+        ctx, state, record, job.deformations, section_image=gray, atlas_image="template",
         params={})
     assert np.array_equal(weights, again) and facts == again_facts
 
@@ -88,15 +88,15 @@ def test_a_clean_section_loses_little(tmp_path: Path, atlas):
 def test_sorting_widths_and_means_can_be_given(tmp_path: Path, atlas):
     state, ctx, record, job, gray = _setup(tmp_path, atlas, hole=True)
     _, facts = section_masks.em_sorting(
-        ctx, state, record, job.deformations, channel_image=gray, atlas_image="template",
+        ctx, state, record, job.deformations, section_image=gray, atlas_image="template",
         params={"match_sd": 0.2, "background_mean": 0.9})
     assert facts["params"]["match_sd"] == pytest.approx(0.2)
     assert facts["params"]["background_mean"] == pytest.approx(0.9)
     with pytest.raises(ValueError, match="Unknown sorting key"):
-        section_masks.em_sorting(ctx, state, record, job.deformations, channel_image=gray,
+        section_masks.em_sorting(ctx, state, record, job.deformations, section_image=gray,
                                  atlas_image="template", params={"threshold": 0.5})
     with pytest.raises(ValueError, match="has no image"):
-        section_masks.em_sorting(ctx, state, record, job.deformations, channel_image=gray,
+        section_masks.em_sorting(ctx, state, record, job.deformations, section_image=gray,
                                  atlas_image="gfp", params={})
 
 
@@ -104,7 +104,7 @@ def test_sorting_widths_and_means_can_be_given(tmp_path: Path, atlas):
 
 
 def _meta(state: StackState, record: SliceState, **over: Any) -> dict[str, Any]:
-    return {"kind": "em", "channel": "preprocessed", "atlas_image": "template",
+    return {"kind": "em", "section_image": "preprocessed", "atlas_image": "template",
             "params": {"match_sd": 0.1}, "inputs": section_masks.grid_digest(record),
             "registration": section_masks.registration_digest(state, record),
             "left_out": 0.04, **over}

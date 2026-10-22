@@ -1,4 +1,4 @@
-"""Persistent landmark geometry and display annotations, independent of appearance."""
+"""Persistent landmark geometry and display annotations, independent of the image drawn."""
 
 from __future__ import annotations
 

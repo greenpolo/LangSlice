@@ -1,6 +1,7 @@
-"""The channel model: raw channels displayed with properties that never reach
-a fit, and one preprocessed channel per section that every fit and the image
-model read (``core.channels``, ``core.appearance``, ``ops.appearance``)."""
+"""Raw channels: drawn alone as the file holds them, several together in their
+colours with automatic contrast (``core.channels``), read from the file's own
+intensities; and what every fit and the image model read: the section image
+named, ``preprocessed`` by default (``core.section_images``)."""
 
 from __future__ import annotations
 
@@ -14,40 +15,24 @@ import tifffile
 from PIL import Image
 
 from langslice.agent.engine import build_context
-from langslice.core import appearance as looks
 from langslice.core import channels
-from langslice.core.display import default_options
-from langslice.core.handoff import prepare_linear_registration
+from langslice.core import section_images as images
 from langslice.core.image_prep import IntensityRange, working_intensity_ranges
 from langslice.core.sections import render_slice
 from langslice.core.spec import JobSpec
 from langslice.core.state import SliceState, StackState
 from langslice.job.job import Job
-from langslice.ops import appearance as ops_appearance
-from langslice.ops.refusal import Refused
 from tests.deformable_synthetic import SyntheticAtlas
-from tests.linear_tool_helpers import load_checkpoint
+from tests.test_section_images import _rgb_section
 
 POSITION = 0.1
 UM = 25.0
-RECIPE = {"channel_weights": [0.0, 1.0, 0.0], "clahe_clip": 2.0, "clahe_tiles": 4,
-          "n4": False, "denoise": False}
+RECIPE = images.validate_recipe(weights={"green": 1.0}, clahe_clip=2.0, clahe_tiles=4)
 
 
 @pytest.fixture(scope="module")
 def atlas() -> SyntheticAtlas:
     return SyntheticAtlas()
-
-
-def _rgb_section(seed: int = 0) -> Image.Image:
-    """Tissue whose three colour planes carry different structure."""
-    rng = np.random.default_rng(seed)
-    yy, xx = np.mgrid[:120, :160]
-    body = ((yy - 60) / 50.0) ** 2 + ((xx - 80) / 70.0) ** 2 < 1
-    red = np.where(body, 90 + 60 * np.sin(xx / 6.0), 5)
-    green = np.where(body, 40 + 150 * ((yy // 15 + xx // 15) % 2), 5)
-    blue = np.where(body, rng.uniform(20, 60, body.shape), 5)
-    return Image.fromarray(np.stack([red, green, blue], axis=-1).clip(0, 255).astype(np.uint8))
 
 
 def _open(tmp_path: Path, atlas: SyntheticAtlas, n: int = 2) -> tuple[Job, Any]:
@@ -63,88 +48,28 @@ def _open(tmp_path: Path, atlas: SyntheticAtlas, n: int = 2) -> tuple[Job, Any]:
     return job, ctx
 
 
-def _pixels(image: Image.Image) -> np.ndarray:
-    return np.asarray(image).copy()
+def _remake(job: Job, ctx: Any, record: SliceState) -> None:
+    """``preprocessed`` made again from :data:`RECIPE` (as ``make_image`` does)."""
+    array, _ = images.make(ctx, record.id, record.images, RECIPE)
+    images.write_image(job.layout, record, images.PREPROCESSED, array, {"recipe": RECIPE})
 
 
-# --- display properties --------------------------------------------------------
+# --- raw channels ------------------------------------------------------------------
 
 
-def test_display_properties_change_pictures_and_never_the_preprocessed_channel(
-    tmp_path: Path, atlas,
-):
+def test_one_raw_channel_is_drawn_as_the_file_holds_it_and_several_in_colours(
+        tmp_path: Path, atlas):
     job, ctx = _open(tmp_path, atlas)
-    state = job.state
-    record = state.slices[0]
-    preprocessed = _pixels(looks.preprocessed_image(ctx, state, record, long_edge=512))
-    default = _pixels(render_slice(ctx, record, long_edge=512))
-    overlay = {"overlay": ["red", "green"]}
-    plain = _pixels(render_slice(ctx, record, long_edge=512,
-                                 look=channels.with_properties(state, overlay)))
-
-    done = ops_appearance.set_raw_channel(
-        job, ctx, "red", contrast_limits=[20, 120], gamma=0.5, colormap="magenta")
-    assert done.changed and len(job.undo_stack) == 1
-    assert done.properties == {"contrast_limits": [20.0, 120.0], "gamma": 0.5,
-                               "colormap": "magenta"}
-    assert done.sections == ["s0.png", "s1.png"]
-    assert done.intensities is not None and done.intensities["dtype"] == "uint8"
-    assert done.intensities["dtype_range"] == [0.0, 255.0]
-    assert state.appearance["channels"]["red"]["gamma"] == 0.5
-
-    # The pictures of raw channels change ...
-    shown = channels.with_properties(state, overlay)
-    assert shown is not None and shown["properties"]["red"]["colormap"] == "magenta"
-    assert not np.array_equal(_pixels(render_slice(ctx, record, long_edge=512, look=shown)),
-                              plain)
-    # ... and nothing a fit or the image model reads does.
-    ctx.render_cache.clear()
-    assert np.array_equal(_pixels(looks.preprocessed_image(ctx, state, record, long_edge=512)),
-                          preprocessed)
-    assert np.array_equal(_pixels(render_slice(ctx, record, long_edge=512)), default)
-    assert looks.preprocessed_settings(state, record.id) is None
-
-    # An argument left out keeps its value; reset clears them all.
-    again = ops_appearance.set_raw_channel(job, ctx, "red", gamma=2.0)
-    assert again.properties is not None and again.properties["contrast_limits"] == [20.0, 120.0]
-    assert ops_appearance.set_raw_channel(job, ctx, "red", reset=True).properties is None
-    assert "channels" not in state.appearance
-    assert not ops_appearance.set_raw_channel(job, ctx, "red", reset=True).changed
-    assert len(job.undo_stack) == 3  # the unchanged call took no step
-    job.undo()
-    assert state.appearance["channels"]["red"]["gamma"] == 2.0
-
-
-def test_display_properties_persist_into_a_later_session(tmp_path: Path, atlas):
-    """Set once, a channel's display stays: checkpointed with the job, and a
-    job reopened from the folder keeps it."""
-    job, ctx = _open(tmp_path, atlas)
-    ops_appearance.set_raw_channel(job, ctx, "red", gamma=0.5, colormap="magenta")
-    saved = load_checkpoint(ctx.checkpoint_path)
-    assert saved is not None
-    held = saved.appearance["channels"]["red"]
-    assert (held["gamma"], held["colormap"]) == (0.5, "magenta")
-    later = build_context(job.spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
-    reopened = Job.open(job.spec, later, folder=later.job_folder,
-                        results_path=later.results_path)
-    assert reopened.state.appearance["channels"]["red"]["gamma"] == 0.5
-
-
-def test_bad_channel_properties_are_refused_with_nothing_written(tmp_path: Path, atlas):
-    job, ctx = _open(tmp_path, atlas)
-    with pytest.raises(Refused) as unknown:
-        ops_appearance.set_raw_channel(job, ctx, "dapi", gamma=2.0)
-    assert unknown.value.code == "UNKNOWN_CHANNEL"
-    assert unknown.value.details["channels"] == ["blue", "green", "red"]
-    for bad in ({"contrast_limits": [120, 20]}, {"contrast_limits": [1]},
-                {"gamma": 0.0}, {"colormap": "plaid"}):
-        with pytest.raises(Refused) as refused:
-            ops_appearance.set_raw_channel(job, ctx, "red", **bad)
-        assert refused.value.code == "BAD_ARGS"
-    assert job.state.appearance == {} and not job.undo_stack
-
-
-# --- file intensities -----------------------------------------------------------
+    record = job.state.slices[0]
+    source = np.asarray(_rgb_section(0))
+    green = np.asarray(render_slice(ctx, record, long_edge=160, look={"image": "green"}))
+    assert np.array_equal(green[..., 0], source[..., 1])
+    assert (green[..., 0] == green[..., 2]).all()
+    together = np.asarray(render_slice(ctx, record, long_edge=160,
+                                       look={"overlay": ["red", "green", "blue"]}))
+    assert together.shape == source.shape and not (together[..., 0] == together[..., 1]).all()
+    assert channels.colour_words(["red", "green", "blue"]) == "red + green + blue"
+    assert channels.colour_words(["DAPI", "GFP"]) == "DAPI green + GFP magenta"
 
 
 def _sixteen_bit(path: Path) -> np.ndarray:
@@ -156,7 +81,7 @@ def _sixteen_bit(path: Path) -> np.ndarray:
     return ramp
 
 
-def test_contrast_limits_are_file_intensities(tmp_path: Path, atlas):
+def test_a_page_is_read_from_its_own_intensities(tmp_path: Path, atlas):
     ramp = _sixteen_bit(tmp_path / "s0.tif")
     ranges = working_intensity_ranges(tmp_path / "s0.tif")
     assert [(r.dtype, r.low, r.high) for r in ranges] == [
@@ -171,21 +96,6 @@ def test_contrast_limits_are_file_intensities(tmp_path: Path, atlas):
     held = channels.intensity_ranges(ctx, "s0.tif")["ch1"]
     np.testing.assert_allclose(held.to_file(planes[0]), ramp, atol=(40000 / 255.0) + 1)
 
-    state = StackState(atlas="x", slices=[SliceState(id="s0.tif", index_original=0,
-                                                     index_corrected=0)])
-    channels.set_properties(state, "ch1", channels.ChannelProperties((1000.0, 21000.0)))
-    look = channels.with_properties(state, {"channel": "ch1"})
-    drawn = np.asarray(render_slice(ctx, state.slices[0], long_edge=512, look=look))[..., 0]
-    row = drawn[50].astype(float)
-    raw = ramp[50].astype(float)
-    expected = np.clip((raw - 1000.0) / 20000.0, 0, 1) * 255.0
-    assert np.abs(row - expected).max() <= 3.0  # 8-bit working planes
-    assert row[raw >= 21000].min() == 255 and row[0] == 0
-    summary = channels.channel_summary(ctx, ["s0.tif"], "ch1")
-    assert summary is not None and summary["dtype"] == "uint16"
-    assert 1000 <= summary["percentiles"]["1"] < 2000
-    assert 40000 < summary["percentiles"]["99.5"] <= 41000
-
 
 def test_an_eight_bit_file_reads_as_its_own_intensities(tmp_path: Path):
     _rgb_section().save(tmp_path / "a.png")
@@ -194,68 +104,19 @@ def test_an_eight_bit_file_reads_as_its_own_intensities(tmp_path: Path):
     assert only.to_plane(51.0) == 51.0
 
 
-# --- the preprocessed channel ----------------------------------------------------
-
-
-def test_the_default_preprocessed_channel_is_the_default_render(tmp_path: Path, atlas):
-    job, ctx = _open(tmp_path, atlas)
-    state = job.state
-    record = state.slices[0]
-    record.transform = {"params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
-    assert (looks.preprocessed_image(ctx, state, record, long_edge=512)
-            is render_slice(ctx, record, long_edge=512))
-    default = prepare_linear_registration(state, ctx, record.id, long_edge=512)
-    shown = prepare_linear_registration(state, ctx, record.id, long_edge=512,
-                                        preprocessed=True)
-    assert np.array_equal(np.asarray(shown.image), np.asarray(default.image))
-    assert "preprocessed" not in shown.metadata
-
-    looks.set_settings(state, None, dict(RECIPE))
-    recipe = prepare_linear_registration(state, ctx, record.id, long_edge=512,
-                                         preprocessed=True)
-    assert not np.array_equal(np.asarray(recipe.image), np.asarray(default.image))
-    assert recipe.metadata["preprocessed"] == RECIPE
-    # Same frame, size and placement: only the pixels differ.
-    assert recipe.image.size == default.image.size
-    np.testing.assert_array_equal(recipe.atlas_to_slice, default.atlas_to_slice)
-    # Geometry is still measured on the default render.
-    plain = prepare_linear_registration(state, ctx, record.id, long_edge=512)
-    assert np.array_equal(np.asarray(plain.image), np.asarray(default.image))
-
-
-def test_recipes_override_per_section_and_reset(tmp_path: Path, atlas):
-    job, ctx = _open(tmp_path, atlas)
-    state = job.state
-    options = default_options("section")
-    done = ops_appearance.set_channel(job, ctx, "preprocessed", None, clahe_clip=2.0,
-                                      shown=state.in_order()[:1], options=options)
-    assert done.in_force["stack"]["clahe_clip"] == 2.0
-    assert done.in_force["stack"]["weights"] is None
-    assert len(done.pictures) == 1 and done.pictures[0].before_settings is None
-    assert done.pictures[0].after_settings == looks.preprocessed_settings(state, "s0.png")
-    assert not np.array_equal(np.asarray(done.pictures[0].before),
-                              np.asarray(done.pictures[0].after))
-
-    ops_appearance.set_channel(job, ctx, "preprocessed", ["s1.png"], weights={"green": 1.0})
-    stack = looks.preprocessed_settings(state, "s0.png")
-    assert stack is not None and stack["clahe_clip"] == 2.0
-    override = looks.preprocessed_settings(state, "s1.png")
-    assert override is not None and override["weights"] == {"green": 1.0}
-    ops_appearance.set_channel(job, ctx, "preprocessed", ["s1.png"], reset=True)
-    assert looks.preprocessed_settings(state, "s1.png") == stack
-    ops_appearance.set_channel(job, ctx, "preprocessed", None, reset=True)
-    assert looks.preprocessed_settings(state, "s0.png") is None
-    assert len(job.undo_stack) == 4
-
-    refusals = {
-        "UNKNOWN_SLICE_IDS": dict(sections=["nope.png"]),
-        "BAD_ARGS": dict(sections=None, clahe_clip=-1.0),
-    }
-    for code, kwargs in refusals.items():
-        with pytest.raises(Refused) as refused:
-            ops_appearance.set_channel(job, ctx, "preprocessed", **kwargs)
-        assert refused.value.code == code
-    assert len(job.undo_stack) == 4
+def test_automatic_limits_read_the_background_and_the_tissue():
+    """A dark background: black at the background level, full colour at the
+    tissue's 95th percentile; a light background keeps the percentiles."""
+    rng = np.random.default_rng(1)
+    plane = rng.normal(12.0, 2.0, (200, 300)).astype(np.float32)
+    plane[50:150, 60:240] = rng.uniform(30.0, 90.0, (100, 180))
+    plane[:20, :40] = 0.0  # an unscanned tile
+    ((low, high),) = channels.auto_limits([plane])
+    assert 10.0 < low < 14.0
+    assert high == pytest.approx(np.percentile(plane[50:150, 60:240], 95), abs=1.0)
+    bright = 255.0 - plane
+    ((low, high),) = channels.auto_limits([bright])
+    assert (low, high) == pytest.approx(tuple(np.percentile(bright, (1.0, 99.5))))
 
 
 # --- what the algorithms read ------------------------------------------------------
@@ -265,7 +126,7 @@ class _Stop(Exception):
     pass
 
 
-def test_the_elastix_affine_reads_the_preprocessed_channel(tmp_path: Path, atlas, monkeypatch):
+def test_the_elastix_affine_reads_the_section_image_named(tmp_path: Path, atlas, monkeypatch):
     from langslice.core import deformable, deformation
     from langslice.core import transform as tr
 
@@ -280,28 +141,25 @@ def test_the_elastix_affine_reads_the_preprocessed_channel(tmp_path: Path, atlas
 
     monkeypatch.setattr(deformable, "prepare_fit", capture)
     start = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-    for _ in range(2):
-        with pytest.raises(_Stop):
-            tr.elastix_affine(state, ctx, record, start)
-        looks.set_settings(state, None, dict(RECIPE))
-    grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
-    default = np.asarray(grid.image)
-    assert np.array_equal(seen[0], default)  # the default recipe: the default render
-    wanted = looks.preprocessed_image(ctx, state, record, long_edge=deformation.FIT_LONG_EDGE)
-    assert np.array_equal(seen[1], np.asarray(wanted.resize(grid.image.size,
-                                                            Image.Resampling.BILINEAR)
-                                              if wanted.size != grid.image.size else wanted))
-    assert not np.array_equal(seen[1], default)
-    # Display properties are not read.
-    channels.set_properties(state, "green", channels.ChannelProperties(gamma=3.0))
     with pytest.raises(_Stop):
         tr.elastix_affine(state, ctx, record, start)
-    assert np.array_equal(seen[2], seen[1])
+    grid = deformation.fit_grid(state, ctx, record, transform={"params": start})
+    assert np.array_equal(seen[0], np.asarray(grid.image))  # the opening preprocessed
+    _remake(job, ctx, record)
+    with pytest.raises(_Stop):
+        tr.elastix_affine(state, ctx, record, start)
+    wanted = render_slice(ctx, record, long_edge=deformation.FIT_LONG_EDGE)
+    assert np.array_equal(seen[1], np.asarray(wanted))
+    assert not np.array_equal(seen[1], seen[0])
+    with pytest.raises(_Stop):
+        tr.elastix_affine(state, ctx, record, start, section_image="blue")
+    blue = render_slice(ctx, record, long_edge=deformation.FIT_LONG_EDGE, look={"image": "blue"})
+    assert np.array_equal(seen[2], np.asarray(blue))
 
 
-def test_the_fireants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atlas, monkeypatch):
-    """What FireANTs SyN is handed is the section's preprocessed channel on the fit
-    grid: a recipe changes it, a raw channel's display properties do not."""
+def test_the_fireants_syn_fit_reads_the_section_image(tmp_path: Path, atlas, monkeypatch):
+    """What FireANTs SyN is handed is the section image on the fit grid, and its
+    cache key changes when the image is made again."""
     from langslice.core import deformation
     from langslice.ops import deformable as ops_deformable
 
@@ -310,27 +168,22 @@ def test_the_fireants_syn_fit_reads_the_preprocessed_channel(tmp_path: Path, atl
     record = state.slices[0]
     record.transform = {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                         "calibration": {"section_um_per_px": UM, "source": "host"}}
-    seen: list[np.ndarray] = []
-    monkeypatch.setattr(deformation, "run_jobs", lambda _ws, jobs: seen.extend(
-        np.asarray(item.image).copy() for item in jobs))
+    seen: list[Any] = []
+    monkeypatch.setattr(deformation, "run_jobs", lambda _ws, jobs: seen.extend(jobs))
     monkeypatch.setattr(ops_deformable, "refuse_without_engine", lambda: None)
     ops_deformable.fireants_syn(job, ctx, [record.id])
-    looks.set_settings(state, None, dict(RECIPE))
+    _remake(job, ctx, job.state.slices[0])
     ops_deformable.fireants_syn(job, ctx, [record.id])
-    grid = deformation.fit_grid(state, ctx, record)
-    wanted = looks.preprocessed_image(ctx, state, record, long_edge=deformation.FIT_LONG_EDGE)
-    if wanted.size != grid.image.size:
-        wanted = wanted.resize(grid.image.size, Image.Resampling.BILINEAR)
+    record = job.state.slices[0]
+    wanted = render_slice(ctx, record, long_edge=deformation.FIT_LONG_EDGE)
     assert len(seen) == 2
-    assert np.array_equal(seen[1], np.asarray(wanted))
-    assert not np.array_equal(seen[0], seen[1])
-    # Display properties are not read.
-    channels.set_properties(state, "green", channels.ChannelProperties(gamma=3.0))
-    ops_deformable.fireants_syn(job, ctx, [record.id])
-    assert np.array_equal(seen[2], seen[1])
+    assert np.array_equal(np.asarray(seen[1].image), np.asarray(wanted))
+    assert not np.array_equal(np.asarray(seen[0].image), np.asarray(seen[1].image))
+    assert seen[0].key != seen[1].key
+    assert seen[1].image_identity["digest"] == record.images["preprocessed"]["digest"]
 
 
-def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypatch):
+def test_the_image_model_reads_the_preprocessed_image(tmp_path: Path, monkeypatch):
     from langslice.core.handoff import LinearRegistrationInput
     from langslice.core.nonlinear import registration_tool as tool
     from langslice.core.nonlinear.upright import Upright
@@ -347,11 +200,9 @@ def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypa
     labels = np.zeros((40, 60), dtype=np.int64)
     labels[5:30, 5:25] = 100000001
     placement = np.array([[1.0, 0.0, 6.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]])
-    asked: list[dict[str, Any]] = []
     metadata: dict[str, Any] = {}
 
-    def prepared(*_args, **kwargs):
-        asked.append(kwargs)
+    def prepared(*_args, **_kwargs):
         return LinearRegistrationInput(original, placement, "test", 4, "coronal", 0, 0,
                                        dict(metadata))
 
@@ -364,22 +215,7 @@ def test_the_image_model_reads_the_preprocessed_channel(tmp_path: Path, monkeypa
                        lambda request: SimpleNamespace(image=original, route="test"))
     calls = tmp_path / "calls"
     tool.start_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
-    assert asked[-1]["preprocessed"] is True
-    metadata["preprocessed"] = dict(RECIPE)  # a recipe: a new call key
+    # preprocessed made again: a new call key
+    metadata["section_image"] = {"name": "preprocessed", "digest": "ab12cd34"}
     tool.start_correction(state, ctx, record.id, image_model=model, calls_dir=calls)
     assert len([path for path in calls.iterdir() if path.is_dir()]) == 2
-
-
-def test_automatic_limits_read_the_background_and_the_tissue():
-    """A dark background: black at the background level, full colour at the
-    tissue's 95th percentile; a light background keeps the percentiles."""
-    rng = np.random.default_rng(1)
-    plane = rng.normal(12.0, 2.0, (200, 300)).astype(np.float32)
-    plane[50:150, 60:240] = rng.uniform(30.0, 90.0, (100, 180))
-    plane[:20, :40] = 0.0  # an unscanned tile
-    ((low, high),) = channels.auto_limits([plane])
-    assert 10.0 < low < 14.0
-    assert high == pytest.approx(np.percentile(plane[50:150, 60:240], 95), abs=1.0)
-    bright = 255.0 - plane
-    ((low, high),) = channels.auto_limits([bright])
-    assert (low, high) == pytest.approx(tuple(np.percentile(bright, (1.0, 99.5))))

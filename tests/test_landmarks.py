@@ -90,10 +90,10 @@ def test_batch_edit_persist_undo_delete_and_stale_plane(tmp_path):
         record = job.state.by_id(record.id)
         assert not any(p["stale"] for p in record.landmarks["pairs"])
         before = job.snapshot()
-        job.state.appearance = {"channels": {"gray": {"gamma": 2}}}
+        job.state.notes.append("a note")
         job.commit(before)
         assert not any(p["stale"] for p in record.landmarks["pairs"])
-        assert job.undo()  # appearance
+        assert job.undo()  # the note
         assert job.undo()  # first landmark batch
         empty = json.loads(derived.read_text())
         assert empty["pairs"] == [] and empty["next_id"] == 1

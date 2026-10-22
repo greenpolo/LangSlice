@@ -23,9 +23,9 @@ from typing import Any
 
 from PIL import Image
 
-from langslice.core.appearance import Look
 from langslice.core.atlas.render import atlas_um_per_px
 from langslice.core.atlas_fetch import atlas_section
+from langslice.core.section_images import Look
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_cache_key, render_slice
 from langslice.core.state import Angles, SliceState, StackState
 from langslice.core.transform import calibrate

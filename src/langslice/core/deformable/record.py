@@ -261,7 +261,7 @@ class DeformableRecord:
     left_out: np.ndarray | None = None
     #: The engine's own three-class sorting of the section: P(match), float16
     #: on the section (fit) grid; None when the engine estimated nothing.
-    #: ``set_mask`` with source ``fit`` copies it into a section mask.
+    #: ``make_mask`` with source ``fit`` copies it into a section mask.
     weights: np.ndarray | None = None
     #: The folder this record is saved in, or will be (a job's store names it
     #: by the record's key, :class:`langslice.core.deformation.RecordStore`):

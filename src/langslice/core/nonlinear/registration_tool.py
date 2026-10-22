@@ -309,22 +309,22 @@ def start_correction(
     Both are part of the call key and are recorded on the result, where a
     traced ``fit_deformable`` reads them.
 
-    The model is shown the section's preprocessed channel
-    (:mod:`langslice.core.appearance`); a recipe other than the default is
-    part of the call key, so a changed recipe makes a new call.
+    The model is shown the section's ``preprocessed`` image
+    (:mod:`langslice.core.section_images`); a remade one is part of the call
+    key (its digest), so making it again makes a new call.
     """
     provider, model = image_model.provider, image_model.model
     if not isinstance(prompt, str):
         raise ValueError("prompt must be text")
     # Validate prerequisites before spending a call or marking an attempt.
-    prepared = prepare_linear_registration(state, ctx, section_id, preprocessed=True)
+    prepared = prepare_linear_registration(state, ctx, section_id)
     fingerprint = correction_fingerprint(state, ctx, section_id)
     key: dict[str, Any] = {
         "geometry": fingerprint, "provider": provider, "model": model, "inputs": INPUT_VERSION,
     }
-    recipe = prepared.metadata.get("preprocessed")
-    if recipe is not None:  # the section the model is shown is not the default render
-        key["preprocessed"] = recipe
+    remade = prepared.metadata.get("section_image")
+    if remade is not None:  # the section the model is shown is not the opening image
+        key["section_image"] = remade
     regions = {name: list(entries) for name, entries in
                (("include", include), ("exclude", exclude)) if entries}
     if regions:

@@ -72,7 +72,7 @@ whose imports are core-only:
   the mirror under a frozen orientation (`toolset.off_names`): every door and
   text renders by it;
 - the linear method's core: `state.py`, `spec.py`, `workspace.py`,
-  `appearance.py`, `atlas_fetch.py`, `atlas_grep.py`, `display.py`,
+  `section_images.py`, `atlas_fetch.py`, `atlas_grep.py`, `display.py`,
   `opening.py`, `transform.py`, `deformation.py`, `discovery.py`. Their
   entries are in the linear agent environment's guide
   (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method;
@@ -175,49 +175,64 @@ the angles in a caption (empty for the flat plane).
   working frame, calibration, canvas and resolved pivot; `StageFailure`
   `ATLAS_RENDER_FAILED` / `BAD_PIVOT`) and `Staged`.
 - `sections.py` — the section renders and their cache: `render_slice`
-  (ROTATE first, then FLIP, then the display-only `--preprocess auto`
-  enhancement; a non-default look drawn from the raw channels over the same
-  frame, `_look_image`, raw channels through `channels.composite`),
-  `render_cache_key`, `canvas_um_per_px`, `shown_section` (the larger render
-  a picture is drawn from), `rescale_section_matrix`, `PREVIEW_LONG_EDGE`
-  (512, the working frame every fit is computed on). Cached on the
-  workspace (`render_cache`, `render_scale`): read, never mutate.
-- `appearance.py` and `channels.py` — the channel model, as in napari. The
-  raw channels are never edited. Derived channels are stack-wide recipes by
-  name (`StackState.appearance["derived"]` = `{name: {"stack": recipe,
-  "sections": {id: override}}}`; recipe = `weights` {raw name: weight} or None
-  for coverage weights, CLAHE clip and tiles, N4, denoise, `contrast_limits`
-  and `gamma` (fractions of the blended image), `invert`; `validate_recipe`,
-  `derived_settings`, `set_derived`, `derived_names`, `channel_names`,
-  `channel_image(ws, state, record, name, long_edge=)` for a raw or derived
-  name, `tone` for the stretch and invert steps, `weights_for`). `preprocessed`
-  is one: LangSlice's default recipe (None) is the default render exactly; the
-  older `appearance["preprocessed"]` entry (positional `channel_weights`, no
-  tone steps) is read through `migrate` and moved to `derived` by the next
-  write, never written again; `preprocessed_settings`, `set_settings`,
-  `preprocessed_image` stay as wrappers. The Elastix affine and every
-  deformable fit (`deformation.stain_image`) and the image-model routes
-  (`handoff.prepare_linear_registration(preprocessed=True)`; a recipe joins
-  the call key) read it. Geometry (calibration, the maps)
-  is measured on the default render. `channels.py`: each raw
-  channel name's display properties (`appearance["channels"]`,
-  `ChannelProperties`: `contrast_limits` in FILE intensities, `gamma`,
-  `colormap` from `COLORMAPS`; `validate_properties`, `set_properties`,
-  `with_properties` adds them to a raw look so the render cache keys them),
-  applied where raw channels are drawn (`composite`: the raw pictures; a
-  channel without contrast limits is drawn between its automatic limits,
-  `auto_limits`, per section: on a dark background black at its background
-  median and full colour at its `TISSUE_WHITE_PERCENTILE` (95) inside the
-  tissue, Otsu on the mean of the section's channels; on a light background
-  its 1st and 99.5th percentiles) and restated in captions, each channel
-  with its own setting (`setting_words`, `display_words`: `red, green auto;
-  blue 0-70 gamma 0.8`; `stack_display` for the status reply);
-  nothing a fit or the image model reads uses them. `intensity_ranges`
-  (cached on `Workspace.intensity_cache`, from
+  (a look drawn unoriented at the render size, then ROTATE, then FLIP;
+  `_look_image`): None is the section's `preprocessed` image (the opening one
+  drawn through the automatic path at that size, `section_images.opening_render`;
+  a remade one its file resized), `{"image": name}` any section image alone in
+  gray, `{"overlay": [raw names]}` raw channels together through
+  `channels.composite`, `{"file": True}` the working copy as read;
+  `drawn_look` resolves a look on a record (a made image carries its digest),
+  `look_token` / `render_cache_key` (the opening keeps `spec.preprocess`, a
+  made image its digest), `canvas_um_per_px`, `shown_section` (the larger
+  render a picture is drawn from), `rescale_section_matrix`,
+  `PREVIEW_LONG_EDGE` (512, the working frame every fit is computed on).
+  Every look is drawn at the same size, so no image moves geometry. Cached on
+  the workspace (`render_cache`, `render_scale`): read, never mutate.
+- `section_images.py` — section images (`docs/registration.md`, "Section
+  images and damage"): one named grayscale picture of a section that `look`
+  draws and every fit reads. **Raw**: a plane of the file
+  (`Workspace.section_channels`, `raw_plane` at the working copy's size),
+  never edited. **Made**: `SliceState.images[name]` = `{"source": {"recipe":
+  ...} | {"script": note} | {"opening": "adaptive" | "host" | "plain"},
+  "file", "digest", "made", "weights_used"?}`, the file
+  `sections/<stem>/images/<name>.png` (8-bit gray, the working copy's size,
+  unoriented; `write_file` / `write_image`, never overwritten: other pixels
+  under a name get `<name>.2.png`, the same pixels reuse the file;
+  `_Layout.images_dir`). `validate_recipe` (weights `"auto"` or `{image:
+  weight}`, `clahe_clip`, `clahe_tiles`, `n4`, `denoise`, `contrast`,
+  `gamma`, `invert`; `OPENING_RECIPE` its defaults), `make` (a recipe on the
+  working copy: `image_prep.custom_appearance` over the sources, then the tone
+  steps; sources are raw channels or made images, so chains compose),
+  `recipe_words` / `compact_recipe`, `image_names` (raw, `preprocessed`, then
+  the made ones), `kind_of`, `plane_of` / `image_plane` (a raw plane or a made
+  file, cached on `Workspace.image_cache`; `preprocessed` without an entry is
+  the opening image drawn at working size), `read_image` -> `ImageView`
+  (`payload()`: `{name, kind, file, digest}`, a fit's `inputs.section_image`),
+  `identity` (what a fit's cache key holds), `images_digest` (`{name:
+  digest}`, part of `section_masks.registration_parts` and so of
+  `ops.inputs.section_inputs`). The opening image: `opening_source(spec)`,
+  `opening_words`, `opening_render(ws, id, long_edge)` (the automatic path,
+  `image_prep.adaptive_preprocess` on the working copy resized to that edge,
+  in gray; a host's blend is the working copy itself; `preprocess="none"` the
+  copy in gray), `opening_entry`, `ensure_opening` (every section without one,
+  on threads, outside undo: `Job.open` and `Job.load`). `summary(state, spec)`:
+  `status`'s `section_images`. `Migration(ws, layout)`: a format-3 state's fields as
+  format 4 (each `appearance` recipe, a section's override honoured, made into
+  a file and an entry; `preprocessed` without a recipe the opening image;
+  display properties dropped; a mask's `channel` named `section_image`), one
+  memo across the checkpoint and its history steps (`seed` takes a format-4
+  state's entries). `Look` is the render's look type.
+- `channels.py` — raw channels drawn together: `composite` (each channel
+  stretched between its automatic limits, `auto_limits`, per section: on a
+  dark background black at its background median and full colour at its
+  `TISSUE_WHITE_PERCENTILE` (95) inside the tissue, Otsu on the mean of the
+  section's channels; on a light background its 1st and 99.5th percentiles,
+  `OVERLAY_STRETCH`; then added in its colour), `channel_colors` (a channel
+  named after a colour keeps it), `colour_words` for captions,
+  `intensity_ranges` (cached on `Workspace.intensity_cache`, from
   `image_prep.working_intensity_ranges`: the linear stretch each page's
-  working plane was read with) maps file intensities to plane values;
-  `channel_summary` gives a channel's sample type, its range and its 1st and
-  99.5th percentiles.
+  working plane was read with; `native.py` reads a zoom's file pixels through
+  it). Nothing a fit reads comes from here.
 - `captions.py` — `caption` (a COPY with the text in a band below the
   picture, so a picture pixel is the content's own, the coordinates a zoom
   is given in; `min_width` lays the band out at least that wide; never
@@ -280,7 +295,7 @@ the angles in a caption (empty for the flat plane).
   `grep_atlas`'s region rows under the same `rows` key, are left as they
   are; the agent CLI and the library), `status_text`.
 - `section_masks.py` — a section's masks, saved per section
-  (`SliceState.masks`: kind `em` | `fit`, channel, resolved atlas image,
+  (`SliceState.masks`: kind `em` | `fit`, section image, resolved atlas image,
   params, the registration digest it was made at, file, left-out fraction;
   absent from the serialized state while empty). A mask is a float16 weight
   image `(H, W)` in [0, 1] on the fit grid, in
@@ -289,7 +304,7 @@ the angles in a caption (empty for the flat plane).
   `<name>.2.npz`, so an undone state still finds its file) and read by
   `read_mask` -> `MaskView` (float32 weights, `stale` when
   `grid_digest` — the section's orientation — differs; `earlier_registration`
-  when `registration_digest` — placement, fit appearance, damage marks, applied
+  when `registration_digest` — placement, made images' digests, damage marks, applied
   deformation, the content of `ops.inputs.section_inputs(...,
   deformation=True)` — differs: information, never a refusal). `em_sorting` makes the three-class EM sorting
   at the section's current registration (atlas image through the applied
@@ -300,7 +315,7 @@ the angles in a caption (empty for the flat plane).
   never mask the section. A fit takes a mask as
   `prepare_fit(section_weights=)`, thresholded at 0.5.
 - `engine_inputs.py` — the two blocks every fit reply and record provenance
-  carry: `InputsBlock` (section image and its recipe digest, atlas image as
+  carry: `InputsBlock` (the section image, `{name, kind, file, digest}`, atlas image as
   asked and resolved, mask, the atlas-side damage entry, `restrict_to`, the
   engine's brightness scaling in words) and `EstimatedBlock` (the engine's own
   saved sorting and the fraction it left out). They name what was used, never
@@ -329,7 +344,7 @@ the angles in a caption (empty for the flat plane).
   and crop, side by side (`beside`), their outlines strong over the
   faint borders; `DamagePictureError` `NO_POSITION` / `NO_REGIONS`.
 - `look.py` — `look`'s four pictures through the renderers above:
-  `look(ws, state, LookRequest(mode, sections=, positions_mm=, channels=,
+  `look(ws, state, LookRequest(mode, sections=, positions_mm=, images=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
   highlight=, region_only=, layers=, masks=, depth=), store=)`
   returns one `LookPicture` per section (`section`:
@@ -341,25 +356,26 @@ the angles in a caption (empty for the flat plane).
   one, `UNKNOWN_PART` past the last); a picture without a section says
   when its angles are the median of differing sections'
   (`atlas_caption(median=)`). Defaults never read the job's state: every section,
-  every raw channel with its display properties (`channels` may instead
-  name raw channels, or one derived channel alone: `["preprocessed"]`, or a
-  name made with `set_channel`), `ATLAS_LAYER_DEFAULTS` per
+  the `preprocessed` image (`images` names one section image alone, drawn in
+  gray, or up to `MAX_OVERLAY_CHANNELS` raw channels together in their
+  colours; `_images_for`), `ATLAS_LAYER_DEFAULTS` per
   mode. `masks=` names masks of the section outlined where their weight is
   0.5 on `section` and `overlay` pictures (`_draw_masks`: the weights from
   `section_masks.read_mask` drawn as a scalar layer by `plugin_layers`; a
-  mask the section lacks is a note, no module is `UNKNOWN_MASK`). Each picture has an index caption (position, angles, um/px, the
-  channel settings in force) and a JSON recipe `{"renderer": "look",
+  mask the section lacks is a note). Each picture has an index caption (position, angles, um/px, the
+  section image drawn and what it is, `image_words`) and a JSON recipe `{"renderer": "look",
   "args", "state", "base", "shown", "um_per_px"}`: the request (a
   positioning picture's: the whole call's sections and positions and its
   `part`, so a zoom redraws that picture at the call's scale), the
-  `snapshot` of the stack facts it was drawn from (`SECTION_FIELDS`, the
-  display properties and preprocessed recipe, the view angles for atlas
+  `snapshot` of the stack facts it was drawn from (`SECTION_FIELDS`, each
+  section's made images included, the view angles for atlas
   and positioning), the unzoomed and shown content sizes. Both go on the
   picture's note (`layers.annotate` keeps an overlay's frame for its
   layers). `redraw(recipe, window, ws, state)` draws a recipe at a window,
-  from `restored(state, snapshot)` and `stale` when `changed_since`.
-  `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_CHANNEL`,
-  `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
+  another version of LangSlice saved is `UNREADABLE_RECIPE` (the zoom crops
+  the saved picture). `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
+  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `UNKNOWN_PART`, `UNKNOWN_REGIONS`. An overlay's
   `highlight` regions (a restricted fit's `restrict_to`) are drawn
   `atlas.render.HIGHLIGHT_WIDTH` times as thick, the other borders faint,
@@ -516,9 +532,8 @@ the angles in a caption (empty for the flat plane).
 - `jpeg.py` — the doors' one JPEG encoding (below).
 - `handoff.py` — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
-  long_edge=, transform=, preprocessed=)` (the oriented section
-  render, or with `preprocessed` the section's preprocessed channel in the
-  same frame, and the
+  long_edge=, transform=)` (the oriented section render, its
+  `preprocessed` image, metadata `section_image` naming a remade one, and the
   3x3 from native atlas-plane pixel centres onto it, calibration checked,
   `LinearRegistrationInput`; the trace's canvas and every deformable fit's
   grid; its matrix is `linear_placement_matrix`, the one path from the six
@@ -599,8 +614,7 @@ and the `look` renderers note theirs; `ops.deformable.pictures` notes
 the deformation fits (`fireants_syn`, a landed trace; through `core.deformation.picture(note=...)`, with
 a `WarpNote`: the record resampled onto the picture, the caption band,
 whether the field is drawn, the border style) and traces, and the tool door
-the pictures it labels itself (`set_channel`'
-before/after). With
+the pictures it labels itself. With
 nothing collecting, a note costs nothing. The job saves the pictures
 (`langslice.job.views`, `job/CLAUDE.md`).
 

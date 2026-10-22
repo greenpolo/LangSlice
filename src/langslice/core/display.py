@@ -7,12 +7,11 @@ damage pictures, :func:`default_options`) and drawn by the shared renderers
 section and atlas pictures below):
 
 - ``mode`` — :data:`MODE_RULES` says what each mode draws.
-- ``channels`` — what of the SECTION is shown: one or more raw channel names
-  (each with its display setting or automatic contrast limits,
-  :mod:`langslice.core.channels`; one is gray, several are added in distinct
-  colours, ABBA's multichannel display), or the version ``preprocessed``
-  (what registration reads) or another derived channel's name; neither is the
-  section's default render.
+- ``image`` and ``channels`` — what of the SECTION is shown: one section
+  image alone, in gray (:mod:`langslice.core.section_images`; empty is
+  ``preprocessed``, what every fit reads by default), or several raw channels
+  added in distinct colours with automatic contrast (ABBA's multichannel
+  display, :mod:`langslice.core.channels`).
 - ``atlas_channels`` — what of the ATLAS is shown: any of the atlas's images
   (``template`` and the additional references the BrainGlobe atlas ships,
   by their names, :mod:`langslice.core.atlas.images`) and ``borders`` (the
@@ -40,11 +39,6 @@ from typing import cast
 import numpy as np
 from PIL import Image
 
-from langslice.core.appearance import (
-    Look,
-    channel_colors,
-    derived_settings,
-)
 from langslice.core.atlas.core import get_reference_slice
 from langslice.core.atlas.images import TEMPLATE, atlas_images
 from langslice.core.atlas.levels import OVERLAY_DEPTH
@@ -63,8 +57,9 @@ from langslice.core.canvas import (
     regions_left,
     resolve_border_color,
 )
-from langslice.core.channels import all_properties, display_words, with_properties
+from langslice.core.channels import channel_colors, colour_words
 from langslice.core.image_prep import mask_box
+from langslice.core.section_images import PREPROCESSED, Look
 from langslice.core.sections import render_slice
 from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.space import Plane
@@ -141,11 +136,10 @@ class DisplayOptions:
     #: ``[x0, y0, x1, y1]`` pixels of the unzoomed picture (:func:`zoom_fractions`);
     #: empty is the whole picture.
     zoom: tuple[float, ...]
-    #: Raw channel names shown (empty: the default render, or the version).
+    #: Raw channel names drawn together in their colours (empty: one image).
     channels: tuple[str, ...]
-    #: A derived channel's name (``preprocessed``, or one made with ``set_channel``),
-    #: or empty.
-    version: str
+    #: The section image drawn alone (empty: ``preprocessed``).
+    image: str
     atlas_channels: tuple[str, ...]
     atlas_opacity: float
     #: ``(name as asked, ids including descendants)`` per highlighted region;
@@ -195,41 +189,20 @@ class DisplayOptions:
         return self.borders or bool(self.regions)
 
     def look(self, state: StackState, record: SliceState) -> Look:
-        """The look a picture of *record* is drawn in: the version
-        ``preprocessed`` is the preprocessed channel, no channels
-        the default render (None); raw channels carry their display
-        properties."""
-        if self.version:
-            return derived_settings(state, self.version, record.id)
-        if not self.channels:
-            return None
-        # One channel is stretched too, in gray (the `channels` strip is the
-        # unmodified picture).
-        return with_properties(state, {"overlay": list(self.channels)})
-
-    def channel_colors(self, state: StackState | None = None) -> dict[str, str]:
-        """Colour of each raw channel in an overlay (empty for one channel or a
-        version); with *state*, a channel's own colormap wins."""
-        if len(self.channels) < 2:
-            return {}
-        held = all_properties(state) if state is not None else {}
-        out: dict[str, str] = {}
-        for name, word, _rgb in channel_colors(self.channels):
-            own = held[name].colormap if name in held else None
-            out[name] = own or word
-        return out
+        """The look a picture of *record* is drawn in: ``preprocessed`` (None),
+        another section image alone, or the raw channels together."""
+        if self.channels:
+            return {"overlay": list(self.channels)}
+        if self.image and self.image != PREPROCESSED:
+            return {"image": self.image}
+        return None
 
     def section_tag(self, state: StackState | None = None) -> str:
-        """Caption fragment naming what of the section is shown ("" for the
-        default render): each raw channel with its display setting, ``auto``
-        without *state* (:func:`langslice.core.channels.display_words`)."""
-        if self.version:
-            return f"  [{self.version} channel]"
-        if not self.channels:
-            return ""
-        held = all_properties(state) if state is not None else {}
-        colours = self.channel_colors(state) or {self.channels[0]: "gray"}
-        return "  [raw " + display_words(self.channels, held, colours) + "]"
+        """Caption fragment naming what of the section is shown: the section
+        image, or the raw channels in their colours."""
+        if self.channels:
+            return "  [raw " + colour_words(self.channels) + "]"
+        return f"  [{self.image or PREPROCESSED}]"
 
     def atlas_name(self) -> str:
         """How captions name the atlas picture."""
@@ -253,7 +226,7 @@ def default_options(
     """The options a picture uses when called with none (internal callers)."""
     rule = MODE_RULES[mode]
     return DisplayOptions(
-        mode=mode, zoom=(), channels=(), version="",
+        mode=mode, zoom=(), channels=(), image="",
         atlas_channels=rule.atlas_default if atlas_channels is None else atlas_channels,
         atlas_opacity=0.0, regions=(), outlines="all", border_color=AUTO_BORDER_COLOR,
         border_thickness=DEFAULT_BORDER_THICKNESS, long_edge=long_edge,
@@ -295,7 +268,7 @@ def atlas_image_picture(
     ``template`` alone is left to the renderers' own reference path (the pixels
     every earlier picture showed). Any other atlas image is stretched inside
     the atlas anatomy. Two images are added in their two colours
-    (:func:`langslice.core.appearance.channel_colors`); no image is a black
+    (:func:`langslice.core.channels.channel_colors`); no image is a black
     plane (the lines alone).
     """
     images = tuple(kind for kind in kinds if kind != BORDERS)
@@ -369,8 +342,7 @@ def framed_section(
     """One section as corrected, the whole image, in the call's look and zoom.
 
     *long_edge* None is the call's picture size (``options.long_edge``);
-    *look* overrides the options' (``preprocess`` draws a target's
-    appearance before and after its write). A zoom renders the section
+    *look* overrides the options'. A zoom renders the section
     larger (never past its working copy) and crops the requested fraction,
     so it magnifies.
     """

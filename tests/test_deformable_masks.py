@@ -1,7 +1,7 @@
 """The masks a deformable fit is given (``core.deformable.masks``,
 ``prepare_fit(section_weights=)``) and the FireANTs engine's determinism.
 
-No fit sorts the section by itself: a section mask (``set_mask``'s EM
+No fit sorts the section by itself: a section mask (``make_mask``'s EM
 sorting, :func:`~langslice.core.deformable.masks.em_weights`) reaches a fit as
 weights thresholded at 0.5 and ANDed into the section (fixed) mask; the
 atlas-side damage zone stays as it was. The Elastix affine and the fits of

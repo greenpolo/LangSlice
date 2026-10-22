@@ -303,7 +303,7 @@ def test_the_cli_takes_per_section_angles(capsys, images):
     assert state is not None
     assert {name: state.by_id(name).cutting_angles_deg for name in IDS} == SECTION_ANGLES
     saved = json.loads((job / "state.json").read_text())
-    assert saved["format_version"] == 3 and saved["cutting_angles_deg"] is None
+    assert saved["format_version"] == 4 and saved["cutting_angles_deg"] is None
     # --section-angles and --pitch exclude each other.
     code, envelope = cli(capsys, str(images), "init", "--tasks", "nonlinear",
                          "--image-provider", "none", "--pitch", "1",

@@ -7,7 +7,7 @@ Two kinds of mask:
   (moving) mask = the same footprint minus the excluded regions and an
   :data:`EXCLUSION_MARGIN_MM` margin around them (the damage zone). The
   damage zone is atlas-side and always applied; it never masks the section.
-- The EM SORTING (:func:`em_weights`), made by ``set_mask`` through
+- The EM SORTING (:func:`em_weights`), made by ``make_mask`` through
   :func:`langslice.core.section_masks.em_sorting` and saved per section: it
   asks, pixel by pixel, whether the section matches the atlas image placed
   at the section's registration, is an artifact or is background. A fit
@@ -121,7 +121,7 @@ EM_BACKGROUND_DISTANCE_UM = 500.0
 EM_MATCH_THRESHOLD = 0.5
 
 
-#: The keys of a sorting (``em_weights(sorting=)``, ``set_mask``'s ``sorting``).
+#: The keys of a sorting (``em_weights(sorting=)``, ``make_mask``'s ``sorting``).
 SORTING_KEYS = ("match_sd", "background_sd", "artifact_sd", "background_mean", "artifact_mean")
 
 

@@ -12,7 +12,9 @@ steps the index no longer names are deleted after each index write.
 An unreadable index or step starts the job without a history (logged): the
 history is a convenience, the checkpoint is the record. A history from a
 newer LangSlice, or a step of another state format, is likewise ignored,
-never guessed at. Either way the
+never guessed at, except a format-3 step, read through the job's upgrade
+(:attr:`History.upgrade`) and written again at the current format by the next
+:meth:`History.save`. Either way the
 history on disk is left exactly as it is: :attr:`History.problem` is set and
 :meth:`History.save` writes and deletes nothing until a later
 :meth:`History.load` reads a valid one (undo works for the session, in
@@ -30,6 +32,7 @@ from typing import Any
 from langslice.job.checkpoint import (
     FORMAT_KEY,
     STATE_FORMAT_VERSION,
+    Upgrade,
     current_state,
     write_json_atomic,
 )
@@ -56,8 +59,13 @@ class History:
     entry it has not written yet (matched by identity) and the index.
     """
 
-    def __init__(self, folder: Path) -> None:
+    def __init__(self, folder: Path, upgrade: Upgrade | None = None) -> None:
         self.folder = Path(folder)
+        #: Reads a format-3 step as the current format (the job's section
+        #: image migration); None refuses one like any other format.
+        self.upgrade = upgrade
+        #: Step files read through :attr:`upgrade`, written again by :meth:`save`.
+        self._upgraded: set[str] = set()
         self.next = 1
         #: id(entry) -> (entry, step file name) for every entry on disk.
         self._known: dict[int, tuple[dict[str, Any], str]] = {}
@@ -73,11 +81,14 @@ class History:
         data = json.loads((self.folder / name).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError(f"{name} does not hold a state")
-        return current_state(data)
+        if data.get(FORMAT_KEY) != STATE_FORMAT_VERSION:
+            self._upgraded.add(name)
+        return current_state(data, self.upgrade)
 
     def load(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """``(undo, redo)`` from disk; empty without a history."""
         self._known = {}
+        self._upgraded = set()
         self.problem = None
         try:
             index = json.loads(self.index_path.read_text(encoding="utf-8"))
@@ -104,6 +115,12 @@ class History:
             self._known[id(entry)] = (entry, name)
         return undo, redo
 
+    @property
+    def upgraded(self) -> bool:
+        """Whether the history read holds steps of the older format, read through
+        :attr:`upgrade` (the next :meth:`save` writes them again)."""
+        return bool(self._upgraded)
+
     def _unreadable(self, why: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         self.problem = (f"The undo history in {self.folder} cannot be used: {why}. It is left "
                         "untouched; undo covers this session's steps only.")
@@ -123,6 +140,10 @@ class History:
             held = self._known.get(id(entry))
             if held is not None and held[0] is entry:
                 name = held[1]
+                if name in self._upgraded:  # read through the upgrade: now the current format
+                    write_json_atomic(str(self.folder / name),
+                                      {FORMAT_KEY: STATE_FORMAT_VERSION, **entry}, indent=None)
+                    self._upgraded.discard(name)
             else:
                 # Never over another writer's step (a second job on this folder).
                 while (self.folder / _step_name(self.next)).exists():

@@ -45,7 +45,8 @@ def test_section_mode_one_picture_per_section(tmp_path: Path):
         assert recipe["args"]["sections"] == list(picture.sections)
         assert list(recipe["state"]["sections"]) == list(picture.sections)
         assert "view_angles" not in recipe["state"]
-        assert "25.0 um/px" in picture.caption and "raw gray" in picture.caption
+        assert "25.0 um/px" in picture.caption
+        assert "section image preprocessed" in picture.caption
         held = note_for(picture.image, notes)
         assert held is not None and held.recipe == picture.recipe
         assert held.caption == picture.caption and held.mode == "section"
@@ -54,11 +55,12 @@ def test_section_mode_one_picture_per_section(tmp_path: Path):
 def test_section_refusals(tmp_path: Path):
     ws, state = stack(tmp_path)
     one = ("s0.png",)
-    look(ws, state, LookRequest("section", sections=one, channels=("preprocessed",)))
-    for channels, code in ((("DAPI",), "UNKNOWN_CHANNEL"),
-                           (("gray", "preprocessed"), "MIXED_CHANNELS")):
+    look(ws, state, LookRequest("section", sections=one, images=("preprocessed",)))
+    look(ws, state, LookRequest("section", sections=one, images=("gray",)))
+    for images, code in ((("DAPI",), "UNKNOWN_IMAGE"),
+                         (("gray", "preprocessed"), "MIXED_IMAGES")):
         with pytest.raises(LookError) as caught:
-            look(ws, state, LookRequest("section", sections=one, channels=channels))
+            look(ws, state, LookRequest("section", sections=one, images=images))
         assert caught.value.code == code
     with pytest.raises(LookError) as caught:
         look(ws, state, LookRequest("section", sections=("nope.png",)))
@@ -133,7 +135,7 @@ def test_snapshot_changed_and_restored(tmp_path: Path):
 
 
 def test_request_round_trips_through_recipe_args():
-    request = LookRequest("overlay", sections=("a.tif",), positions_mm=(1.5,), channels=("DAPI",),
+    request = LookRequest("overlay", sections=("a.tif",), positions_mm=(1.5,), images=("DAPI",),
                           atlas_layers=("borders",), atlas_opacity=0.3, warp="none",
                           long_edge=640, zoom=(0.1, 0.2, 0.5, 0.6))
     assert LookRequest.from_args(json.loads(json.dumps(request.args()))) == request

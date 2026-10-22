@@ -61,7 +61,8 @@ def test_shear_nonsquare_round_trip(tmp_path, monkeypatch):
 def test_rotation_then_flip_and_requested_grid_calibration(tmp_path, monkeypatch):
     state, ctx, record, _ = setup_section(tmp_path, monkeypatch)
     record.rotation_deg, record.flip = 90, True
-    original = Image.open(tmp_path / record.id).convert("RGB")
+    # preprocess "none": the opening image is the file as read, in gray
+    original = Image.open(tmp_path / record.id).convert("L").convert("RGB")
     expected = original.transpose(Image.Transpose.ROTATE_90).transpose(
         Image.Transpose.FLIP_LEFT_RIGHT
     )
