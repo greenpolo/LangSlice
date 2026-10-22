@@ -97,7 +97,9 @@ plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/)
                      the only place a plugin tool writes
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
-logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, artifacts)
+logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, an error's
+                     code and message, artifacts, `reply`)
+logs/calls/<n>_<verb>.json  each agent-CLI call's envelope as printed
 trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
                      built-in agent's trace, a coding agent's session copied in by
                      `langslice session-end` (`doors/cli/transcripts.py`)
@@ -107,6 +109,7 @@ AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
 BRIEF.md             the agent CLI's brief (`langslice-job FOLDER brief`, `init`):
                      the job statement and the opening pictures' paths
+TOOLS.md             every verb of the job, its description and arguments (by `brief`)
 ```
 
 **The public files (`docs/file_formats.md` has every field).**
@@ -306,7 +309,8 @@ longer exist be taken over by the images it is opened with.
   number), and `registered_since(mark)` for a door's reply), `checkpoint` (state, then `registration.json`, then the
   observers: `observe(fn)` calls *fn* with the state after every
   checkpoint and reload, the hosts' live views; one that raises is logged),
-  the image-correction jobs (`start_image_job`, `settle_image_corrections`,
+  `registration_numbers(ids)` (the listed registration each section holds,
+  what a saved picture records), the image-correction jobs (`start_image_job`, `settle_image_corrections`,
   `wait_image_job`: timeout None waits as long as it takes; the call is
   forgotten only once its reply is recorded), `background` (above), `close`
   (the background work, then the pictures), `wire_views` (a saved
@@ -390,7 +394,14 @@ longer exist be taken over by the images it is opened with.
   redraw the picture (from the note's `recipe=` / `caption=`, or the `recipes` /
   `captions` lists of `save`); `step` is `save(step=)` or `ViewStore.step_source()`.
   `lookup(seq)` and `latest(exclude_tool="zoom")` return a `PictureRecord` from
-  the index. One background
+  the index. Each picture of sections records `registrations`, the number of
+  the registration each section was drawn under (`view.json` and the index
+  line; `PictureRecord.registrations`): the note's `extra["registrations"]`
+  (a `look` of a registration the section does not hold), else what
+  `registration_source` answers (`Job.wire_views` sets it to
+  `Job.registration_numbers`, the numbers the sections hold now).
+  `save(tiles=True)`: a sheet's tiles, their JPEGs listed as artifacts of kind
+  `tile` (`Saved.view_kind`), not `view`. One background
   thread per store, ending when its queue is empty; `flush` (`ops.submit`,
   `Job.emit_results`, `Job.close`, the library after every verb) and
   `flush_all` (interpreter exit) wait for it. `at_exit(fn)` runs a function
@@ -420,7 +431,9 @@ longer exist be taken over by the images it is opened with.
   writes never share one.
 - `browse.py` — read-only browsing of the job folder for `ops/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
-  pointing out are refused with `PathRefused`), `list_entries`, `search`
+  pointing out are refused with `PathRefused`; one that does not exist with
+  `PathMissing`, naming the nearest folder above it that exists and at most
+  `NEAREST_NAMES` of its names), `list_entries`, `search`
   (regex, else plain text; case-insensitive; text files only), `read_lines`,
   `kind_of` (dir/text/picture/binary), and the caps (`LIST_ENTRIES`,
   `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips

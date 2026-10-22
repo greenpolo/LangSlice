@@ -40,9 +40,10 @@ tool per registration method (`position_sections`,
 borders on it for `interactive_transform`, `elastix_affine` and `fireants_syn`
 (zoomed to `restrict_to`), the shaded damage for `mark_damage`. Nothing
 previews; everything is undoable. Each registration a section holds is
-numbered (`job/registrations.py`), and `restore_registration` puts one
-section's earlier one back whatever was written since, which is how two
-fits of a section are compared; undo takes back only the job's last write.
+numbered (`job/registrations.py`): `look` draws a section under an earlier
+one without writing it, which is how two fits of a section are compared, and
+`restore_registration` puts earlier ones back on the sections named, whatever
+was written since; undo takes back only the job's last write.
 `interactive_transform` batches up to four independent sections in one
 call and one undo step; a dependent refinement waits for the first
 picture. Every picture is saved in the job folder with a number, so `zoom`
@@ -127,7 +128,8 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   a section with marked regions still needs a transform made for its
   surviving anatomy, by hand or by `elastix_affine`, which leaves the
   marked regions out; `engine_fact` when FireANTs is missing), the per-task user
-  notes (`task_notes`), the short "Method:" section. `display_facts` reads
+  notes (`task_notes`), the short "Method:" section (facts and first
+  principles, no order of steps). `display_facts` reads
   the run's raw channels and atlas channels. Every door's statement is
   assembled in `doors/statement.py`.
 - `plugins.py` — the ADK plugins every session runs with:
@@ -333,25 +335,28 @@ deformation gate.
 
 **Lean harness.** Tools return data, no interpretation in any payload. The
 job statement carries the job, the facts, the tools by name, the
-constraints and a short Method per task that is on (with
-`interactive_transform`, the alignment lines open by aligning each section by
-hand before any fitting algorithm runs; where a fit tool is in the job, a
-Method line says a fit's reply names the section image, atlas image and mask
-it used, and one states the principle (a fit compares one section image with
-one atlas image and does best when both show as much internal structure as
-possible and look alike; no fixed recipe): place each section on
-its own evidence and compare before writing; review the whole stack and
-re-check both sides of a gap before reporting a break; inspect each fit or
+constraints and a short Method per task that is on, holding facts and first
+principles only, never an order of steps (approved by Nash 2026-10-22, with
+his principles in his words: "more visible structure = good, more visual
+similarity = good"): place each section on its own
+evidence and compare before writing; review the whole stack and re-check
+both sides of a gap before reporting a break; where a fit tool is in the job,
+that fitting algorithms refine a placement that is already close and do not
+correct a large offset; with `interactive_transform`, inspect each fit or
 adjustment against surviving internal anatomy and keep only changes that
-improve it; mark a damaged section's lost regions before fitting it; fit
-the whole section first, then regions. With more than one deformable method
-in the job (`fireants_syn` and the in-tree engine plugins `stalign_lddmm`,
-`spomialign`, `emlddmm_stack`), the Method says none is the default, asks the
-agent to try more than one per section and keep the best by looking
-(`restore_registration` puts an earlier fit of a section back), and
-says in one line each what the present methods are (`prompt.DEFORMABLE_METHODS`,
-the methods' own papers' claims; Nash approved the wording 2026-10-21).
-Grouping work is the model's choice.
+improve it; that every fit leaves the marked damage regions out; inspect each
+deformable fit against internal anatomy and undo one that does not improve;
+a fit's reply names the section image, atlas image and mask it used, and the
+principle (a fit compares one section image with one atlas image and does
+best when both show as much internal structure as possible and look alike;
+no fixed recipe). With more than one deformable method in the job
+(`fireants_syn` and the in-tree engine plugins `stalign_lddmm`, `spomialign`,
+`emlddmm_stack`), the Method says none is the default and each suits
+different sections, that each fit builds on the section's current
+registration so methods can be chained, and says in one line each what the
+present methods are (`prompt.DEFORMABLE_METHODS`, the methods' own papers'
+claims; Nash approved the wording 2026-10-21). Which methods to try, in what
+order, and how to group work is the model's choice.
 Still out: rules of thumb, failure-mode warnings and region names in the
 statement (the same text runs against every BrainGlobe atlas, species and
 plane). Each tool's description is the only place it is described, apart from

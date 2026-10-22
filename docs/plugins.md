@@ -155,13 +155,15 @@ reads its answer (an ITK/ANTs displacement field or transform file, a
 SimpleITK object, an array of pixel displacements) as the full map
 `deformation_from_map` takes, and `ctx.transform_from_itk(...)` an affine as a
 `TransformProposal` ([an outside engine's files](library.md#an-outside-engines-files)).
-`ctx.fit_fireants(id, settings=, mask=, start=, em=, marked=)` and
-`ctx.fit_elastix(id, restrict_to=, exclude=, atlas_image=, mask=, marked=)`
-run the native engines with settings and a section mask of the caller's own
-and return a `DeformationProposal` / `TransformProposal`, not written
+`ctx.fit_fireants(id, restrict_to=, exclude=, section_image=, atlas_image=,
+mask=, smoothness_um=, metric=, edges=, detail=, start=, marked=)` and
+`ctx.fit_elastix(id, restrict_to=, exclude=, section_image=, atlas_image=,
+mask=, edges=, marked=)` run the native engines with settings and a section
+mask of the caller's own, by the tools' names and with their defaults, and
+return a `DeformationProposal` / `TransformProposal`, not written
 ([the native engines](library.md#the-native-engines-with-settings-of-your-own)).
 
-`ctx.deformation_from_map(id, native_xy, note="", meta=None, weights=None, provenance=None)` (`weights`: the float `(H, W)` sorting the engine estimated, kept with the record for `make_mask(source="fit")`; `provenance`: the fit's `inputs` and `estimated` blocks) takes a
+`ctx.deformation_from_map(id, native_xy, note="", meta=None, weights=None, provenance=None, start="linear", settings=None, engine_settings=None, engine_version="")` (`weights`: the float `(H, W)` sorting the engine estimated, kept with the record for `make_mask(source="fit")`; `provenance`: the fit's `inputs` and `estimated` blocks; `settings`: the call's settings by the tool's names, the step's `settings` that `status` and the registration list show; `engine_settings` and `engine_version`: what the engine ran at, in its own units, kept as the record's `engine.native_parameters` and `engine.version`, as a FireANTs record keeps its own) takes a
 deformable method's result: `native_xy` is a float array `(H, W, 2)`, `H` by
 `W` the fit grid's `image`, giving for each fit-grid pixel centre `(x, y)` the
 native atlas pixel `(x, y)` it corresponds to. It is the whole map, linear
@@ -176,9 +178,16 @@ deformation is: the residual over the section's current linear placement
 (`field_mm = (placed_atlas_to_section @ native - pixel) * mm_per_px`, which
 gives the map back exactly, to float32 rounding), with an inverse LangSlice
 computes by fixed-point iteration (`inverse_consistency_mm` is how far the
-two disagree). It replaces whatever deformation the section holds rather than
-building on it: the map is already the whole registration. `note` and `meta`
-(JSON values) are kept in the record's provenance.
+two disagree). With `start="linear"` (the default: the map was made from the
+section's linear placement) it replaces whatever deformation the section
+holds. With `start="current"` (the map was made on top of the deformation the
+section holds, read through `FitFrame.applied_map`) the held record is its
+record's parent and the section's steps stay before its own, as a native fit
+chains, so the section's files keep what the warp was built on; it is written
+only while the section still holds that deformation (`STALE_INPUT`
+otherwise), and a section holding none is `BAD_ARGS`. Either way the map is
+the whole registration. `note` and `meta` (JSON values) are kept in the
+record's provenance.
 
 **Writing.** Each write goes through the operation a native tool uses.
 
@@ -186,7 +195,7 @@ building on it: the map is already the whole registration. `note` and `meta`
 |---|---|---|
 | `ctx.set_positions(rows, cutting_angles=None, expect=None)` | rows `{"id", "position_mm"}`; positions are clamped into the atlas range and reported; the stack is renumbered by position | `position` (and `angles` with `cutting_angles`) |
 | `ctx.set_transforms(rows, expect=None)` | rows `{"id", "transform"}` (a `TransformProposal`'s `record`) or `{"id", "params", "note"?}` | `affine` |
-| `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation; ok rows carry the proposal's `summary` | `deformation` |
+| `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation, or, made with `start="current"`, builds on it; ok rows carry the proposal's `summary` | `deformation` |
 | `ctx.mark_damage(rows, expect=None)` | rows `{"id", "regions", "note"?}`, as `mark_damage` | any write tool |
 | `ctx.add_layer(id, layer)` | a [layer](#layers) | any write tool |
 | `ctx.add_image(id, name, array, note="")` | a made [section image](registration.md#section-images-and-damage): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation (computed from `raw_plane` or `working_rgb`), `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
@@ -204,8 +213,9 @@ with it.
 
 A deformation is written as a native fit's is: the record is saved in the
 section's folder (`sections/<name>/deformable/<key>/`, its engine
-`plugin:<tool>`), the section's `deformation` names it with one step
-`{"method": "plugin:<tool>", "start": "linear", "note"?}`, and `look`,
+`plugin:<tool>`), the section's `deformation` names it with a step
+`{"method": "plugin:<tool>", "start": "linear" | "current", "note"?,
+"settings"?}` (after the held deformation's steps for `current`), and `look`,
 `export_maps`, `registration.json`, the VisuAlign markers and the ABBA
 connector read it like any other. A section without a position or transform is
 that section's row `INVALID_LINEAR_PLACEMENT`, as a native fit refuses it; a
@@ -339,7 +349,32 @@ STalign, SPOmiAlign and emlddmm ship in `langslice.engines` as tool plugins: `la
 (the same shapes: `inputs.mask` an object, `inputs.damage.margin_mm` the margin the engine leaves
 around marked damage, no `restrict_to` where the engine takes none). `ctx.caption` also
 sets the caption its picture's entry in the reply's `pictures` carries. `FitFrame` gains
-`damage_margin_mm` and `atlas_image_note`. All three are long tools: an engine computes
+`damage_margin_mm` and `atlas_image_note`.
+
+One vocabulary runs across them and the native fits. `fit` says what is fitted:
+`"transform"`, `"warp"` (on top of the section's registration) or `"both"`
+(`spomialign`: all three, required, and `rigid=True` with `"transform"` for a
+rotation and a shift alone; `stalign_lddmm`: `"warp"` (default) or `"both"`;
+`emlddmm_stack`: all three, default `"both"`). `smoothness_um` is a Gaussian
+sigma on the displacement field wherever it appears (`fireants_syn`'s update
+field, 80; `spomialign`'s matched-pair field, 150); the LDDMM engines' velocity
+kernel is `kernel_um` (`stalign_lddmm`'s and `emlddmm_stack`'s `a`, 500 each).
+`iterations` is one whole number (`stalign_lddmm`: its steps, 2000;
+`emlddmm_stack` and `emlddmm_plane`: the 200 um scale's steps, 100, the 100 and
+50 um scales taking half and a quarter, [100, 50, 25] as published). `sorting`
+is one shape everywhere (`make_mask`'s, `stalign_lddmm`'s and `emlddmm_stack`'s):
+the five starting points `match_sd`, `background_sd`, `artifact_sd`,
+`background_mean`, `artifact_mean`, plus `method` and `artifact` where the
+engine takes them (STalign alone); a key a tool cannot honour is refused by
+name. A transform's knobs come back under `transform` in every reply that
+carries them. Each writes its deformation with its call's `settings`, its own
+numbers (`engine_settings`: SPOmiAlign's matcher, working grid and smoothing in
+its pixels; STalign's target and atlas grids and the settings it chose;
+emlddmm's stack, slots and per-scale configuration) and its version, as a
+FireANTs record holds them; a warp made on the deformation the section holds
+(`spomialign`'s and `stalign_lddmm`'s warp on a held deformation, an
+`emlddmm_stack` section read through its deformation) is written with
+`start="current"`, keeping the section's chain. All three are long tools: an engine computes
 outside the job's write lock, so its minutes never hold up the other commands, and writes
 with `expect=`. Each call's files go in a folder of its own,
 `plugins/<tool>/calls/NNNN_<kind>/`, made when the call starts, so calls running at once

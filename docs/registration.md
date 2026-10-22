@@ -161,12 +161,12 @@ a different `frozen` is refused like one resumed with other `inputs`.
 
 | Tool | Use |
 |---|---|
-| `look` | `section`: tissue alone; `atlas`: atlas planes; `overlay`: tissue with registered atlas borders; `positioning`: sections and atlas along the slicing axis |
+| `look` | `section`: tissue alone; `atlas`: atlas planes, at positions or at each named section's own plane; `overlay`: tissue with registered atlas borders; `positioning`: sections and atlas along the slicing axis |
 | `zoom` | Redraw a saved picture's pixel box, or an overlay's single atlas region |
 | `grep_atlas` | Find region acronyms, names and ids; with `points`, the region drawn at given points of saved pictures |
 | `grep_atlas_view` | Show the atlas with only the selected regions' borders |
 | `status` | Read placements, settings, constraints and pending work |
-| `list_files`, `search_files`, `read_file` | Inspect the job folder |
+| `list_files`, `search_files`, `read_file` | Inspect the job folder (`list_files(path, glob)`, `search_files(query, path, glob)`; a path that does not exist is `NOT_FOUND`, naming the nearest folder above it and what it holds) |
 
 Every picture is numbered, captioned and saved. `zoom(picture=N,
 box=[x0,y0,x1,y1])` redraws its selected area; omitting `picture` uses the
@@ -195,6 +195,35 @@ atlas plane for an atlas picture drawn with `look(mode="atlas",
 sections=[...])`, and the source picture of a crop. A picture of the section
 alone draws no atlas and is refused with `NO_ATLAS_IN_PICTURE`, as is an atlas
 picture not tied to a section. `grep_atlas:points` switches the argument off.
+
+`look(mode="atlas", sections=[...])` draws one atlas picture per section, at
+that section's own position and cutting angles (captioned `atlas at 5.00 mm
+... (s0.png's cutting angles)`); `positions_mm` with sections is refused
+`BAD_ARGS` unless it is the sections' own positions.
+
+`look(mode="overlay" or "section", registrations={filename: number})` draws
+each named section under that earlier registration of its own (the number its
+status row and `restore_registration`'s list give), writing nothing: no state,
+no undo step. The caption says `registration 3 (not held)` (or `(held)`), the
+picture index records the registration drawn, and a zoom of the picture draws
+it again without calling it stale for being a registration the section does
+not hold. With `sections` empty only the named sections are drawn; a named
+section missing from `sections` is `BAD_ARGS`, another mode `BAD_ARGS`, and the
+registration's own refusals apply (`UNKNOWN_REGISTRATION`,
+`REGISTRATION_ELSEWHERE`, `DEFORMATION_UNREADABLE`).
+
+On the agent CLI and the library (no per-call picture cap), `look(...,
+sheet=True)` also tiles the pictures it drew into sheets of up to 16, each at
+most the viewer's largest picture: each tile is one picture as drawn, scaled
+down whole, under a header naming its number; the sheet is captioned with
+every tile's caption and saved as a picture of its own (mode `sheet`), whose
+recipe lists each tile's picture and box. Every picture is still saved and
+numbered (on the CLI its JPEG is an artifact of kind `tile`, the sheet the
+one in `picture_files`); the reply's `pictures` lists the sheets with their
+tiles and `tiled` the pictures they tile. `zoom` on a sheet takes the box on
+the tile holding most of it and zooms that tile's own picture (the reply's
+`sheet` and `box`, the box in that picture's pixels); `region` is refused on a
+sheet, and a box over no tile is `EMPTY_BOX`.
 
 For an overlay, `zoom(region="CA1:left")` crops to the entire selected
 region with a small margin and shows only that region's border. It accepts
@@ -430,7 +459,12 @@ and one that found the GPU's memory taken by a process outside the queue,
 waited and ran again says so in words (`retried`); the SPOmiAlign, STalign and
 emlddmm engines report their wait the same way. What the engines print (the
 GPU compiler's first-fit warnings, the memory allocator's) goes to the job's
-`logs/engine.log`, never into the reply.
+`logs/engine.log`, never into the reply. A fit whose engine fails is that
+section's row `FIT_FAILED`: its message is the error's first line (a GPU out of
+memory said in words, with that running the call again fits it from the start)
+and that `logs/engine.log` holds the whole error, which is appended there; the
+same holds for `elastix_affine`, `make_mask` and the library's `fit_fireants`
+and `fit_elastix`.
 `restrict_to` belongs to `fireants_syn` and `elastix_affine` only.
 The restricted atlas mask includes a 300 µm neighbourhood around them;
 marked damage is excluded automatically. A restricted fit moves only that
@@ -742,6 +776,17 @@ all the history holds when it holds fewer. Their reply says which steps it took 
 then the status rows of those sections and the remaining depth; with more than
 one step asked, `steps` (how many were taken) and, when fewer, a `message`.
 
+Every status row (the whole table `status` returns, and the rows of the
+sections a write changed) gives the section's `transform`: its `kind`, the
+knobs `interactive_transform` takes (`rotation_deg`, `scale_x`, `scale_y`,
+`shear`, `translate_x_mm`, `translate_y_mm`, `pivot`) and `mirrored`; and the
+`deformation` it holds: `method` (its last step's), `steps` (every step's
+method, first first) and `settings` (what the last step was made with, by the
+tools' names: a native fit's `section_image`, `atlas_image`, `mask`,
+`smoothness_um`, `metric`, `edges`, `detail` and `restrict_to`; a plugin's or a
+script's call settings). Replies give a transform's knobs under `transform`
+everywhere (`interactive_transform`, `elastix_affine`, the plugins' rows).
+
 Undo is one history for the whole job, so it returns a section to an earlier
 fit only while nothing else was written since. Each registration a section
 holds (its orientation, transform and deformation) is numbered instead, per
@@ -750,19 +795,28 @@ section, and kept whatever comes after
 the section's status row says which it holds (`registration`), and so does the
 reply to the write that left it (the row it changed, or `registration`
 `{section: number}` beside a plugin tool's own rows, or "Now registration n of
-section" in a background notice). `restore_registration(section)` lists a
-section's registrations (number, the tool that made it, when, the one held,
-and `not_here` for one fitted at another position or cutting angles) and
-writes nothing; `restore_registration(section, registration=n)` puts number
-`n` back, orientation, transform and deformation together, as one undo step
-that touches no other section, and shows the section's overlay. It is refused
-with `UNKNOWN_REGISTRATION` for a number the section never held (the reply
-lists its numbers), `REGISTRATION_ELSEWHERE` for a deformation fitted with the
-section at another position or other cutting angles (put the section back
-there first), `FROZEN` for a property the job froze that it would change, and
-`SECTION_BUSY` while background work runs on the section. A registration held
-before its section's list began (a job made by an older LangSlice) is listed
-when a write replaces it, or when the tool lists the section. Change tools return review pictures unless `view=False`;
+section" in a background notice). `restore_registration(section=...)` lists a
+section's registrations and writes nothing: per number the tool that made it
+and when, its `transform` (kind and the knobs `interactive_transform` takes),
+its `deformation` (`method`: the last step's; `steps`: every step's method;
+`settings`: what the last step was made with, by the tools' names), `pictures`
+(the numbers of the pictures the write that left it saved: `views.jsonl`
+records the registration each picture's sections were drawn under), the one
+held, and `not_here` for one fitted at another position or cutting angles.
+`restore_registration(sections=[{"id", "registration"}, ...])` puts one number
+back on each section named, orientation, transform and deformation together,
+as one undo step that touches no other section, and shows their overlays; a
+section that cannot go back is its own row (`results`) and the others are
+written. A section is refused with `UNKNOWN_REGISTRATION` for a number it never
+held (the row lists its numbers), `REGISTRATION_ELSEWHERE` for a deformation
+fitted with the section at another position or other cutting angles (put the
+section back there first), `FROZEN` for a property the job froze that it would
+change, and `SECTION_BUSY` while background work runs on the section; when no
+section can go back, the first row's code leads the reply. `look` draws a
+section under any of its registrations without writing it (`registrations`,
+[Looking](#looking-and-calibration)). A registration held before its section's
+list began (a job made by an older LangSlice) is listed when a write replaces
+it, or when the tool lists the section. Change tools return review pictures unless `view=False`;
 a host's `force_view=True` (`linear run --force-view`) forces `view=True`, and the argument is not offered. It defaults to false, so
 the agent may suppress a picture. Work running in the background
 (`trace_borders`, a plugin's) holds its sections: any write to them is refused
