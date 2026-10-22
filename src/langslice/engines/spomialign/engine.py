@@ -81,18 +81,25 @@ class gpu_queue:
     def __init__(self, device):
         self.device = str(device)
         self.handle = None
+        self.waited_s = 0.0
 
     def __enter__(self):
         if self.device.startswith("cuda"):
             GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
             self.handle = open(GPU_LOCK, "w")
+            asked = time.monotonic()
             fcntl.flock(self.handle, fcntl.LOCK_EX)
+            self.waited_s = time.monotonic() - asked
         return self
 
     def __exit__(self, *exc):
         if self.handle is not None:
             fcntl.flock(self.handle, fcntl.LOCK_UN)
             self.handle.close()
+
+
+#: Times the GPU was out of memory and a call ran again (RETRIES["n"]).
+RETRIES = {"n": 0}
 
 
 def retried(device, call):
@@ -105,6 +112,7 @@ def retried(device, call):
                     or not out_of_memory(exc)):
                 raise
             torch.cuda.empty_cache()
+            RETRIES["n"] += 1
             time.sleep(OOM_WAIT_S * (attempt + 1))
     raise AssertionError("unreachable")
 
@@ -229,15 +237,16 @@ def main() -> int:
     if mode not in MODES:
         raise SystemExit(f"mode is one of {MODES}; got {mode!r}")
     device = SP.resolve_torch_device(os.environ.get("SPOMIALIGN_DEVICE") or None)
-    with gpu_queue(device):
-        return _match_all(data, mode, device)
+    with gpu_queue(device) as turn:
+        return _match_all(data, mode, device, turn.waited_s)
 
 
-def _match_all(data, mode: str, device) -> int:
+def _match_all(data, mode: str, device, waited_s: float = 0.0) -> int:
     model = retried(device, lambda: SP.roma_outdoor(device=device, coarse_res=560,
                                                     upsample_res=(H, W)))
-    result: dict[str, np.ndarray] = {}
+    result: dict[str, np.ndarray] = {"gpu_wait_s": np.array(waited_s)}
     for i in range(int(data["n"])):
+        before = RETRIES["n"]
         try:
             held = f"section_keep_{i}"
             got = retried(device, lambda i=i, held=held: run(
@@ -247,6 +256,7 @@ def _match_all(data, mode: str, device) -> int:
                 data[held].astype(bool) if held in data.files else None))
         except Exception as exc:  # one section failing leaves the others
             got = {"error": np.array(f"{type(exc).__name__}: {exc}")}
+        got["oom_retries"] = np.array(RETRIES["n"] - before)
         result.update({f"{key}_{i}": value for key, value in got.items()})
     np.savez(sys.argv[2], **result)
     return 0

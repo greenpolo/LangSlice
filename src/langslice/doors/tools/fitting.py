@@ -46,6 +46,21 @@ def nothing_fitted(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {"error": "NOTHING_FITTED"}
 
 
+def affine_flag_words(flag: dict[str, Any]) -> str:
+    """One ``elastix_affine`` plausibility flag
+    (:func:`langslice.ops.transforms.plausibility_flags`) as a sentence."""
+    if flag.get("code") == "SCALE_CHANGED":
+        scale, held = flag.get("scale") or [], flag.get("previous") or []
+        return (f"SCALE_CHANGED: this fit scales the section to {scale} from {held}, more "
+                "than a section shrinks or swells; it may have stretched the section over "
+                "atlas it does not hold. Compare its picture with the previous one.")
+    if flag.get("code") == "SHEAR":
+        return (f"SHEAR: this fit shears the section by {flag.get('shear')} (it held "
+                f"{flag.get('previous')}); a section is rarely sheared that much. Compare its "
+                "picture with the previous one.")
+    return str(flag.get("code"))
+
+
 def bodies(door: Door) -> dict[str, Callable[..., Any]]:
     """The fit tools' bodies over *door*."""
     job, ctx, spec = door.job, door.ctx, door.spec
@@ -90,10 +105,13 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         for row in fits:
             row.pop("params", None)  # the six raw numbers stay host-side
             turn = row.pop("turn_deg", None)
+            words = []
             if turn is not None:
-                row["warning"] = (
-                    f"This fit turns the section {turn:.0f} degrees from its previous "
-                    "transform.")
+                words.append(f"This fit turns the section {turn:.0f} degrees from its "
+                             "previous transform.")
+            words += [affine_flag_words(flag) for flag in row.get("flags") or []]
+            if words:
+                row["warning"] = " ".join(words)
         result: dict[str, Any] = {
             "status": "ok" if fits else "error",
             **({} if fits else nothing_fitted(done.rows)),

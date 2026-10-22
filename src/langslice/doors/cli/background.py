@@ -9,6 +9,12 @@ envelope. Each run is one record, ``logs/runs/<id>.json`` in the job folder
 ``started_at``, ``pid``, and once finished ``finished_at``, ``exit`` and the
 ``envelope``), with the process's stderr in ``logs/runs/<id>.log``. A run
 whose process is gone without an answer reads as ``lost``.
+
+Where a process may outlive the command that started it
+(:func:`detaching`), a long verb called without ``--background`` runs the
+same way: the call starts the run and waits for it, at most :data:`WAIT_S`,
+so a harness that ends the command (Codex ends commands its agent has left
+running) ends only the waiting; the run goes on and ``wait`` collects it.
 """
 
 from __future__ import annotations
@@ -32,10 +38,27 @@ CHILD_COMMAND: list[str] = [sys.executable, "-m", "langslice.doors.cli.jobcli"]
 START_GRACE_S = 120.0
 #: How often ``wait`` looks.
 POLL_S = 0.25
-#: How long ``wait`` waits without ``--timeout`` before it answers
-#: ``STILL_RUNNING``: a harness ends a command it finds too long, so a wait
-#: answers well within that and the agent waits again.
+#: How long ``wait`` (and a long verb's call that runs detached) waits
+#: without ``--timeout`` before it answers with the run still running: a
+#: harness ends a command it finds too long, so a wait answers well within
+#: that and the agent waits again.
 WAIT_S = 30.0
+#: ``0`` runs a long verb called without ``--background`` in the calling
+#: process, ``1`` detached; unset, detached except under Claude Code
+#: (``CLAUDECODE`` set), whose sandbox ends the processes a command leaves
+#: running when it returns.
+DETACH_ENV = "LANGSLICE_DETACH"
+
+
+def detaching() -> bool:
+    """Whether a long verb called without ``--background`` runs detached
+    here (:data:`DETACH_ENV`)."""
+    value = os.environ.get(DETACH_ENV, "").strip().lower()
+    if value in ("0", "false", "no", "off"):
+        return False
+    if value in ("1", "true", "yes", "on"):
+        return True
+    return not os.environ.get("CLAUDECODE")
 
 
 def runs_dir(layout: JobLayout) -> Path:
@@ -191,6 +214,20 @@ def listing(layout: JobLayout) -> list[dict[str, Any]]:
 def latest(layout: JobLayout) -> str | None:
     runs = listing(layout)
     return str(runs[0]["id"]) if runs else None
+
+
+def cancel(layout: JobLayout, run_id: str) -> None:
+    """End the run's process (Ctrl-C on a call that waits for its own run)."""
+    import signal
+
+    record = _read(layout, run_id) or {}
+    pid = record.get("pid")
+    if record.get("state") == "running" and isinstance(pid, int) and pid > 0 \
+            and pid != os.getpid():
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
 
 
 def wait(layout: JobLayout, run_id: str, timeout: float | None) -> dict[str, Any] | None:

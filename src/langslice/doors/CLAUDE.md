@@ -90,7 +90,8 @@ process forks for it, `cli/warm.py`).
   declared defaults and hands every argument to the body by name; ADK's
   `tool_context` is added when the body takes it; a body lacking a declared
   argument is a `TypeError`), `arguments_schema(name, variant)` (pydantic
-  JSON schema, unknown keys refused). `FULL` is the variant of a caller
+  JSON schema, unknown keys refused), `argument_texts(doc)` (each argument's
+  `Args` entry on one line). `FULL` is the variant of a caller
   without a job (LangSlice's coronal base prompt for the OpenAI models).
 - `plugins/` — tool plugins (`docs/plugins.md`); `langslice/plugin_api.py`
   re-exports its names. `loader.py`: `load(ref, config)` imports
@@ -225,7 +226,9 @@ process forks for it, `cli/warm.py`).
   the CLI and the library cap no pictures or transform sections, so the card
   states none; `transform_cap_line`: the job's
   own `transform.max_parallel` when lower; less the verbs its `disabled` list
-  names, `disabled_names`), `schema init` and `--help`, the
+  names, `disabled_names`), how a long verb's call answers (within 30 s, its
+  run going on), `picture_files`, `FOLDER schema VERB [VERB ...]`, `schema
+  init`, the
   Python entry point and what a method returns, and to keep the agent's own
   files in `scripts/` and `scratch/` of the job folder, not `/tmp`; one line
   pointing a method of the agent's own to `help(job.context)`; first,
@@ -259,10 +262,12 @@ process forks for it, `cli/warm.py`).
   tool bodies (`looking.py`: `look`, `zoom`, the two channel tools,
   `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
-  `mark_damage`, `note`, `undo`, `redo`, `restore_registration` (0 lists,
+  `mark_damage`, `note`, `undo`, `redo` (`steps`, default 1: that many in
+  one call, `ops.history`), `restore_registration` (0 lists,
   `ops.registrations.listing`; a number puts it back and shows the
   section's overlay), `submit`; `fitting.py`:
-  `elastix_affine`, `fireants_syn`, `trace_borders`,
+  `elastix_affine` (its `turn_deg` and plausibility `flags` worded in the
+  row's `warning`, `affine_flag_words`), `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
   force it; `interactive_transform` and `elastix_affine` drop the
@@ -369,7 +374,8 @@ process forks for it, `cli/warm.py`).
     `ENV_PREFIXES` / `HOME` (`envkey`); a fork per call, its process group
     killed when the client goes (`SIGKILL`) or signals; `reap`; idle
     `check` (stale code, a gone job, frames shared again when `state.json`
-    changed); `IDLE_S`). Child `_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
+    changed, unless the job is now submitted, `_submitted`); `IDLE_S` (10
+    min), `SUBMITTED_IDLE_S` (60 s) once the job is submitted). Child `_child`: `setpgid`, `PR_SET_PDEATHSIG`, the
     fds on 0-2, cwd, environment, `sys.argv` / `sys.path` / `sys.executable`,
     `_streams`, `_fresh_process` (tempdir, tz, logging, `formats.source`,
     numpy's seed), `jobcli.run`, `as_python` (exit codes, tracebacks,
@@ -384,7 +390,9 @@ process forks for it, `cli/warm.py`).
     marks and rendered for the job's disabled list (`DISABLED`, set by
     `job.call` once the job is open);
     `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
-    `next`, `error` {code, message, fix}), `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
+    `next`, `error` {code, message, fix}; printed with `picture_files`, the
+    paths of the artifacts of `PICTURE_KINDS`, second when there are any),
+    `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
     `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other refusal
     3); `FIXES` per code; `stdout_to_stderr()` (stdout holds the envelope
@@ -395,12 +403,16 @@ process forks for it, `cli/warm.py`).
     `index` and `label`), the facts (`viewer`, `resolution`, `image_model`),
     all written to `BRIEF.md`.
   - `catalog.py` — `ops` (the listed verbs: name, kind, group, summary,
-    `long`; `JOB_COMMANDS`) and `schema [VERB] [--job FOLDER]`
-    (`SCHEMA_VERSION` 3; `canonical_verb` accepts kebab-case; per verb
+    `long`; `JOB_COMMANDS`) and `schema [VERB ...] [--job FOLDER]`
+    (`SCHEMA_VERSION` 3; `canonical_verb` accepts kebab-case, `_names`
+    comma-separated lists; per verb
     `Declared.entry`: `summary`, `description`, `kind`, `group`, `long`,
-    `arguments`; declared for the
+    `arguments`; one verb's entry as the result, several (or every) verbs'
+    under `verbs`; declared for the
     job given or of the current folder, only its verbs (`Opened.listed_verbs`;
-    another answers `VERB_OFF`), else `FULL` with a `hint`; a job
+    another answers `VERB_OFF`), else `FULL` with a `hint`; a name that is no
+    verb answers `UNKNOWN_VERB`, which without a job says how to name one (its
+    plugin verbs are known only with it); a job
     that cannot be read answers `JOB_UNREADABLE`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
     `init`'s read off `job.init_parser` by `flags_table`). Both return the
@@ -412,9 +424,17 @@ process forks for it, `cli/warm.py`).
     nothing),
     `parse` (`--args`, `--name value`, `--dry-run`, `--background`,
     `--verbose`, `--timeout`, the child's `--run-id`), `arguments_for` (flags
-    read as the verb declares them), `call` (open, `VERB_OFF` /
+    read as the verb declares them; an unknown one refused with
+    `corrected_call` as the fix: every argument with the first sentence of its
+    `Args` entry, `declarations.argument_texts`, and its default, then the
+    call without the unknown ones, a short signature's others at their
+    defaults), `FOLDER schema [VERB ...]` (catalog's `schema` for that job),
+    `call` (open, `VERB_OFF` /
     `IMAGE_MODEL_OFF`, `--dry-run` with `--background` refused, background
-    start, dry run, run), `_run` (the tool inside `job.views.captured()`; an
+    start; a long verb without `--background` where `background.detaching()`
+    runs as a background run the call waits for, `_detached`: at most
+    `background.WAIT_S`, then answered as `wait` answers, Ctrl-C ending the run
+    too; dry run, run), `_run` (the tool inside `job.views.captured()`; an
     image-model verb's calls settled before answering, each landed outcome
     shown; `submit` writes the results; pictures listed as artifacts with
     `index` and `label`, `job.views.artifacts`; an image-model verb waits
@@ -428,8 +448,9 @@ process forks for it, `cli/warm.py`).
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
     `brief`, `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
-    `background.WAIT_S` (30 s), then `STILL_RUNNING` with the run's state and
-    the command that waits again), and `env` (`jobenv.command`). `CHECKED_ONLY`:
+    `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or
+    while it runs `ok` with its state, `waited_s`, a message and the command
+    that waits again (exit 0), or `RUN_LOST`), and `env` (`jobenv.command`). `CHECKED_ONLY`:
     `trace_borders`, `elastix_affine` and `fireants_syn`
     are checked, not run, by `--dry-run`, and so is every plugin tool (a verb not in `VERBS`).
   - `jobenv.py` — `env` (`langslice-job FOLDER env [install PACKAGE ...|remove]`):
@@ -467,8 +488,11 @@ process forks for it, `cli/warm.py`).
     started within `START_GRACE_S`, is `lost`; the process probed with a null
     signal, on Windows with psutil when installed, else
     `OpenProcess`/`GetExitCodeProcess`), `listing`, `latest`, `wait`
-    (`WAIT_S`: what `wait` waits without `--timeout`, well inside the time a
-    harness gives a command).
+    (`WAIT_S`: what `wait` waits without `--timeout`, and a detached long
+    call, well inside the time a harness gives a command), `cancel` (the run's
+    process sent `SIGTERM`), `detaching()` (`DETACH_ENV`, `LANGSLICE_DETACH`:
+    `0` no, `1` yes; unset, yes unless `CLAUDECODE` is set: Claude Code's
+    sandbox ends what a command leaves running).
 
 ## Live shared editing
 
@@ -500,14 +524,16 @@ with `view=True`; larger batches can set `view=False`); application shows the
 resulting overlay, at `look`'s size (`landmark_triangulation` takes `resolution`
 where `look` does: `dropped_arguments` drops both together; `TOO_MANY_LANDMARK_VIEWS`
 says how many pairs were sent and what to resend; the landmark codes' `FIXES`
-are specific, written with needs marks). `grep_atlas`'s `points` (`PicturePoint`) is
+are specific, written with needs marks; `ATLAS_ENDPOINT_OUTSIDE`, an argument
+code (exit 2), resends the pairs at the inside point its message gives). `grep_atlas`'s `points` (`PicturePoint`) is
 the option `grep_atlas:points`. The CLI reads a list of numbers from one
 comma-separated flag (`--box 960,230,1300,940`) and returns `grep_atlas`'s rows
 unshortened (`ROW_VERBS`). `status`' `can_change` names the
 landmark tools when they are on. Both honor forced
 views and undo/checkpoint normally. `undo` / `redo` answer with `undone` /
 `redone` (sections, fields), the rows of those sections and the depth, not the
-whole table.
+whole table; with `steps` above 1, also `steps` taken and, when the history
+held fewer, a `message`.
 
 MCP reply-budget shrinking saves each delivered JPEG with a distinct immutable
 picture number and resized endpoint geometry. `extra.transport_source_picture`

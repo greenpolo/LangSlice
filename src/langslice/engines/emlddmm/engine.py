@@ -176,13 +176,16 @@ class gpu_turn:
 
     def __init__(self, device: str):
         self.device = device
+        self.waited_s = 0.0
 
     def __enter__(self):
         self.handle = None
         if self.device.startswith("cuda"):
             GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
             self.handle = open(GPU_LOCK, "w")
+            asked = time.monotonic()
             fcntl.flock(self.handle, fcntl.LOCK_EX)
+            self.waited_s = time.monotonic() - asked
         return self
 
     def __exit__(self, *exc):
@@ -232,7 +235,8 @@ def run(z, out: dict) -> None:
               "out_of_plane": [False], "A": A0, "n_draw": 0, "full_outputs": True}
     if plane:
         config["up_vector"] = [[float(v) for v in p["up_vector"]]]
-    with gpu_turn(device):
+    with gpu_turn(device) as turn:
+        out["gpu_wait_s"] = turn.waited_s
         if device.startswith("cuda"):
             torch.cuda.reset_peak_memory_stats()
         result = emlddmm.emlddmm_multiscale(**config)[-1]

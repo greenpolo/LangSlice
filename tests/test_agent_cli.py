@@ -98,7 +98,8 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, look = cli(capsys, "schema", "look")
     assert code == 0 and "resolution" in look["result"]["arguments"]["properties"]
     code, fit = cli(capsys, "schema", "elastix_affine")
-    assert fit["result"]["long"] is True and fit["next"][0].endswith("--background")
+    # A long verb's call is safe in the foreground: no --background suggested.
+    assert fit["result"]["long"] is True and not fit["next"][0].endswith("--background")
     code, everything = cli(capsys, "schema")
     assert code == 0 and "fireants_syn" in everything["result"]["verbs"]
     assert everything["result"]["schema_version"] == 3
@@ -108,6 +109,35 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
     assert "langslice-job ops" in unknown["error"]["fix"]
+    # Without a job, a name that may be a job's plugin verb says how to name the job.
+    assert "langslice-job FOLDER schema align_everything" in unknown["error"]["message"]
+
+
+def test_schema_of_several_verbs_at_once(capsys):
+    """`schema` takes several verbs (separate or comma-separated) and answers
+    with each under `verbs`, job commands included; one unknown refuses all."""
+    code, several = cli(capsys, "schema", "look", "zoom,undo", "wait")
+    assert code == 0, several
+    verbs = several["result"]["verbs"]
+    assert list(verbs) == ["look", "zoom", "undo", "wait"]
+    assert "resolution" in verbs["look"]["arguments"]["properties"]
+    assert "steps" in verbs["undo"]["arguments"]["properties"]
+    assert verbs["wait"]["kind"] == "command"
+    code, refused = cli(capsys, "schema", "look", "spomialign")
+    assert code == 2 and refused["error"]["code"] == "UNKNOWN_VERB"
+    assert "'spomialign'" in refused["error"]["message"]
+
+
+def test_schema_in_a_jobs_folder_declares_its_verbs(capsys, images):
+    """`langslice-job FOLDER schema VERB ...` declares the verbs for that job,
+    as `schema --job FOLDER` does (a tool plugin's verbs: test_tool_plugins)."""
+    job = init(capsys, images)
+    code, both = cli(capsys, str(job), "schema", "look", "fireants_syn")
+    assert code == 0, both
+    assert both["result"]["job"] == str(job)
+    assert set(both["result"]["verbs"]) == {"look", "fireants_syn"}
+    code, one = cli(capsys, str(images), "schema", "undo")
+    assert code == 0 and one["result"]["verb"] == "undo" and one["result"]["job"] == str(job)
 
 
 def test_stdout_holds_the_envelope_alone_when_the_atlas_prints(capsys, images, monkeypatch):
@@ -433,10 +463,14 @@ def test_a_write_returns_its_pictures_as_artifact_paths(capsys, images):
         "view", "view_json", "labels", "borders"]
     record = json.loads(Path(turned["artifacts"][1]["path"]).read_text())
     assert record["tool"] == "interactive_transform" and record["mode"] == "overlay"
+    # The pictures to open come first, before the reply: their JPEGs' paths.
+    assert list(turned)[:3] == ["ok", "picture_files", "result"]
+    assert turned["picture_files"] == [turned["artifacts"][0]["path"]]
     # view false: no picture.
     code, blind = cli(capsys, str(images), "interactive_transform", "--sections",
                       json.dumps([{"id": ID0, "rotation_deg": 3.0}]), "--view", "false")
     assert code == 0 and blind["artifacts"] == [] and "pictures" not in blind["result"]
+    assert "picture_files" not in blind
     # A number names no section: refused with the filenames.
     code, numbered = cli(capsys, str(images), "position_sections", "--sections",
                          '[{"id": 1, "position_mm": 0.15}]')
@@ -455,7 +489,25 @@ def test_exit_codes_and_fix_hints(capsys, images):
                          "--bogus", "1")
     assert code == 2 and envelope["ok"] is False
     assert envelope["error"]["code"] == "UNKNOWN_ARGUMENTS"
-    assert "langslice-job schema position_sections" in envelope["error"]["fix"]
+    job = images / "langslice"
+    fix = envelope["error"]["fix"]
+    assert fix.startswith("position_sections takes sections (") and "cutting_angles (" in fix
+    assert (f"Call it as: `langslice-job {job} position_sections --sections '[]' "
+            "--cutting-angles '{}' --view true`.") in fix
+    # The guessed names of the file tools: what each argument means, and the
+    # call without the unknown ones (no aliases are accepted).
+    code, envelope = cli(capsys, str(images), "read_file", "--path", "AGENTS.md",
+                         "--start", "10", "--end", "40")
+    assert code == 2 and envelope["error"]["code"] == "UNKNOWN_ARGUMENTS"
+    assert "accepted: path, offset, limit" in envelope["error"]["message"]
+    assert envelope["error"]["fix"] == (
+        "read_file takes path (The file, relative to the job folder; required); offset (Lines "
+        "to skip from the start; default 0); limit (Lines to show, at most 2000; default 400). "
+        f"Call it as: `langslice-job {job} read_file --path AGENTS.md --offset 0 --limit "
+        "400`.")
+    code, envelope = cli(capsys, str(images), "list_files", "--recursive", "--limit", "5")
+    assert code == 2 and "pattern (A glob" in envelope["error"]["fix"]
+    assert f"`langslice-job {job} list_files --path . --pattern ''`" in envelope["error"]["fix"]
     code, envelope = cli(capsys, str(images), "look")
     assert code == 2 and envelope["error"]["code"] == "MISSING_ARGUMENTS"
     assert envelope["result"] == {"missing": ["mode"]}
@@ -509,7 +561,9 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
         code, envelope = cli(capsys, str(images), fit, "--sections", ID0, "--dry-run")
         assert code == 0 and envelope["result"] == {"dry_run": True, "simulated": False,
                                                     "sections": [ID0]}, fit
-        assert envelope["next"][-1].endswith("--background")
+        # The real call is safe in the foreground (it answers within 30 s).
+        assert envelope["next"] == [f"langslice-job {job} {fit} --args "
+                                    f"'{json.dumps({'sections': [ID0]})}'"]
     code, envelope = cli(capsys, str(images), "fireants_syn", "--sections", "nope.png",
                          "--dry-run")
     assert code == 2 and envelope["error"]["code"] == "UNKNOWN_SLICE_IDS"
@@ -617,7 +671,8 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
 
 def test_wait_answers_still_running_within_its_default_wait(capsys, images, monkeypatch):
     """A harness ends a command it finds too long, so `wait` answers by itself
-    (``background.WAIT_S``, 30 s) with the run still running and how to wait again."""
+    (``background.WAIT_S``, 30 s) with the run still running and how to wait
+    again: an answer (ok, exit 0), not an error."""
     import time
 
     from langslice.doors.cli import background
@@ -633,15 +688,75 @@ def test_wait_answers_still_running_within_its_default_wait(capsys, images, monk
     started = time.monotonic()
     code, envelope = cli(capsys, str(images), "wait", run_id)
     assert time.monotonic() - started < 10
-    assert code == 3 and envelope["error"]["code"] == "STILL_RUNNING"
-    assert "waited 0.5 s" in envelope["error"]["message"]
+    assert code == 0 and envelope["ok"] is True and "error" not in envelope
     assert envelope["result"]["state"] == "running" and envelope["result"]["id"] == run_id
+    assert envelope["result"]["waited_s"] == 0.5
+    assert "Still running after 0.5 s" in envelope["result"]["message"]
     assert envelope["next"] == [f"langslice-job {job} wait {run_id}"]
     # --timeout still sets it.
     started = time.monotonic()
     code, envelope = cli(capsys, str(images), "wait", run_id, "--timeout", "1.5")
-    assert code == 3 and time.monotonic() - started >= 1.5
-    assert "waited 1.5 s" in envelope["error"]["message"]
+    assert code == 0 and time.monotonic() - started >= 1.5
+    assert envelope["result"]["waited_s"] == 1.5
+    # A run whose process is gone is still a failure.
+    background._write(layout, {"id": run_id, "verb": "fireants_syn", "arguments": {},
+                               "state": "running", "started_at": "2026-10-21T00:00:00+00:00",
+                               "started": time.time(), "pid": 2 ** 22 + 12345})
+    code, lost = cli(capsys, str(images), "wait", run_id)
+    assert code == 4 and lost["ok"] is False and lost["error"]["code"] == "RUN_LOST"
+
+
+def test_detaching_follows_the_setting_and_claude_code(monkeypatch):
+    """A long verb's foreground call runs detached unless LANGSLICE_DETACH says
+    no, or, unset, under Claude Code, whose sandbox ends what a command leaves."""
+    from langslice.doors.cli.background import DETACH_ENV, detaching
+
+    monkeypatch.delenv(DETACH_ENV, raising=False)
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    assert detaching()
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert not detaching()
+    monkeypatch.setenv(DETACH_ENV, "1")
+    assert detaching()
+    monkeypatch.setenv(DETACH_ENV, "0")
+    monkeypatch.delenv("CLAUDECODE")
+    assert not detaching()
+
+
+def test_a_long_verb_runs_detached_and_answers_within_its_wait(capsys, images, monkeypatch):
+    """Where processes may outlive their command, a long verb called without
+    --background runs as a background run: the call answers with its result
+    when it lands in time, else with its run id and state running (the run
+    goes on, and `wait` collects it)."""
+    from langslice.doors.cli import background
+    from langslice.job.layout import JobLayout
+
+    init(capsys, images)
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO / "src"), str(REPO))))
+    monkeypatch.chdir(REPO)
+    code, placed = cli(capsys, str(images), "position_sections", "--args", json.dumps(
+        {"sections": [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}],
+         "view": False}))
+    assert code == 0, placed
+    monkeypatch.setenv(background.DETACH_ENV, "1")
+    monkeypatch.setattr(background, "WAIT_S", 120.0)
+    code, fitted = cli(capsys, str(images), "elastix_affine", "--sections", ID0)
+    assert code == 0, fitted
+    run = fitted["result"]["run"]
+    (row,) = fitted["result"]["results"]
+    assert row["id"] == ID0 and row["status"] == "ok"
+    assert fitted["picture_files"] and Path(fitted["picture_files"][0]).is_file()
+    assert background.read(JobLayout(images / "langslice"), run)["state"] == "finished"
+    # A wait shorter than the fit: the call answers with the run still going.
+    monkeypatch.setattr(background, "WAIT_S", 0.01)
+    code, running = cli(capsys, str(images), "elastix_affine", "--sections", ID1)
+    assert code == 0 and running["ok"] is True, running
+    assert running["result"]["state"] == "running"
+    later = running["result"]["id"]
+    assert running["next"] == [f"langslice-job {images / 'langslice'} wait {later}"]
+    code, landed = cli(capsys, str(images), "wait", later, "--timeout", "120")
+    assert code == 0 and landed["result"]["run"] == later
+    assert landed["result"]["results"][0]["id"] == ID1
 
 
 # --- live shared editing --------------------------------------------------------------
@@ -782,6 +897,11 @@ def test_the_cli_and_the_library_cap_no_pictures_or_sections_but_fireants_syn(ca
         most = limits["fireants_syn"]["sections"]
         refused = job.fireants_syn(sections=[ID0] * (most + 1))
         assert refused["error"] == "TOO_MANY_SECTIONS" and refused["max_sections"] == most
+        # The refusal says why the cap holds.
+        assert most == 20 and refused["message"] == (
+            "fireants_syn takes at most 20 sections per call (every fitted section is held in "
+            "memory (about 170 MB) until the call writes them all as one undo step); 21 were "
+            "named. Nothing was done: split them over calls.")
         # Past what the ADK door takes: every section written, every picture shown.
         sections = [ID0, ID1, ID2] * 2
         written = job.interactive_transform(

@@ -367,3 +367,25 @@ def test_a_changed_source_file_stops_the_server(warm):
     assert "warmprobe.py changed" in logs(place)
     wait_warm(place)  # a new server, started by that call
     assert logs(place).count("warm in ") >= 2
+
+
+def test_a_submitted_jobs_server_exits_after_a_short_idle(tmp_path):
+    """Once the job is submitted the server shares no frames again and stops
+    after ``SUBMITTED_IDLE_S`` without a call, not ``IDLE_S``."""
+    from types import SimpleNamespace
+
+    from langslice.doors.cli import warm
+
+    assert warm.SUBMITTED_IDLE_S < warm.IDLE_S <= 15 * 60
+    state = tmp_path / "state.json"
+    (tmp_path / "job.json").write_text("{}")
+    state.write_text(json.dumps({"submitted": False, "slices": []}))
+    assert warm._submitted(str(tmp_path)) is False
+    stopped: list[str] = []
+    server = SimpleNamespace(
+        sources=SimpleNamespace(changed=lambda: None, add_loaded=lambda: None),
+        folder=str(tmp_path), state_stamp=warm._stat(str(state)), submitted=False,
+        stop_listening=stopped.append)
+    state.write_text(json.dumps({"submitted": True, "slices": [{"id": "a"}]}))
+    warm.Server.check(server)  # type: ignore[arg-type]
+    assert server.submitted is True and stopped == []

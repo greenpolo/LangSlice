@@ -12,6 +12,9 @@ apply_patches()
 # Tests never write the atlas disk cache in the user's home; the cache's own
 # tests point it at a temporary folder.
 os.environ.setdefault("LANGSLICE_ATLAS_CACHE", "off")
+# A long verb's CLI call runs in its own process unless a test detaches it
+# (whatever harness runs the tests: Claude Code sets CLAUDECODE).
+os.environ["LANGSLICE_DETACH"] = "0"
 
 
 @pytest.fixture(scope="module")

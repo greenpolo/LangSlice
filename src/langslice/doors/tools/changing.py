@@ -205,14 +205,20 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         except Refused as refusal:
             return refusal.payload()
 
-    def stepped(word: str, depth_key: str, step: Any) -> dict[str, Any]:
-        """The reply to an undo or redo: which step it took back or forward
-        (its sections and the fields it changed), the rows of those sections
-        and the depth."""
+    def stepped(word: str, depth_key: str, step: Any, asked: int) -> dict[str, Any]:
+        """The reply to an undo or redo: which steps it took back or forward
+        (their sections and the fields they changed), the rows of those
+        sections and the depth; with more than one step asked, how many it
+        took."""
         info = step.step
         what: dict[str, Any] = {"sections": info.get("sections", []),
                                 "fields": info.get("fields", [])}
         result: dict[str, Any] = {"status": "ok", word: what, depth_key: step.depth}
+        if asked > 1:
+            result["steps"] = step.steps
+            if step.steps < asked:
+                result["message"] = (f"{asked} steps were asked and the history held "
+                                     f"{step.steps}: all {step.steps} were taken.")
         if what["sections"]:
             rows = door.changed(what["sections"])
             result["changed"] = rows["changed"]
@@ -221,17 +227,32 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 result["interval_breaks"] = rows["interval_breaks"]
         return result
 
-    def undo() -> dict[str, Any]:
-        step = ops_history.undo(job)
+    def step_count(steps: Any) -> int | None:
+        try:
+            count = int(steps)
+        except (TypeError, ValueError):
+            return None
+        return count if count >= 1 and count == steps else None
+
+    def undo(steps: int = 1) -> dict[str, Any]:
+        count = step_count(steps)
+        if count is None:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "steps is a whole number, 1 or more."}
+        step = ops_history.undo(job, count)
         if not step.done:
             return {"status": "error", "error": "NOTHING_TO_UNDO"}
-        return stepped("undone", "undo_depth", step)
+        return stepped("undone", "undo_depth", step, count)
 
-    def redo() -> dict[str, Any]:
-        step = ops_history.redo(job)
+    def redo(steps: int = 1) -> dict[str, Any]:
+        count = step_count(steps)
+        if count is None:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "steps is a whole number, 1 or more."}
+        step = ops_history.redo(job, count)
         if not step.done:
             return {"status": "error", "error": "NOTHING_TO_REDO"}
-        return stepped("redone", "redo_depth", step)
+        return stepped("redone", "redo_depth", step, count)
 
     def restore_registration(section: str, registration: int = 0,
                              view: bool = True) -> dict[str, Any]:

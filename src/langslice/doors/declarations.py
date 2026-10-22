@@ -740,7 +740,8 @@ def fireants_syn(
     used.
 
     Args:
-        sections: One to four filenames (the extension may be left off).
+        sections: One to twenty filenames (the extension may be left off); the
+            fits run one after another.
         restrict_to: Regions to fit by (acronyms, names or ids, descendants
             included; "CTX:left" or "CTX:right" for one side): the atlas and
             the section are both cut to the regions' neighbourhood and the
@@ -847,8 +848,12 @@ def note(text: str) -> dict[str, Any]:
     ...
 
 
-def undo() -> dict[str, Any]:
+def undo(steps: int = 1) -> dict[str, Any]:
     """Undo the last write. A tool call, or a finished piece of background work, is one step.
+
+    Args:
+        steps: How many steps to undo at once, newest first (all the history
+            holds when it holds fewer).
 
     Returns:
         The sections undone and the fields that changed, and the rows of
@@ -857,8 +862,11 @@ def undo() -> dict[str, Any]:
     ...
 
 
-def redo() -> dict[str, Any]:
+def redo(steps: int = 1) -> dict[str, Any]:
     """Redo the write that ``undo`` reversed.
+
+    Args:
+        steps: How many undone steps to redo at once.
 
     Returns:
         The sections redone and the fields that changed, and the rows of
@@ -967,7 +975,9 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
     picture it was cut from), so a number read off any grid works whether you
     name the zoom's picture or the whole picture. ]]Saved geometry resolves the
     exact referenced view, including old zooms, orientation and an applied warp.
-    Caption/gutter/out-of-image points are refused. [[?look:atlas A picture of the
+    Caption/gutter/out-of-image points are refused, and so is an atlas endpoint
+    outside the atlas (the refusal gives the nearest point inside it).
+    [[?look:atlas A picture of the
     atlas alone supplies atlas points only when drawn with
     look(mode="atlas", sections=[section]); generic atlas browsing has no
     section context. ]]Plane changes retain pairs but flag their atlas
@@ -1002,8 +1012,7 @@ def set_landmarks(section: str, pairs: list[LandmarkPair] = [],
 
     Returns:
         The changed and deleted IDs; for each pair given an atlas endpoint, the
-        region drawn there (`atlas_endpoint_regions`), with a warning naming
-        any atlas endpoint outside the atlas; and every pair of the section, one record
+        region drawn there (`atlas_endpoint_regions`); and every pair of the section, one record
         each: id, atlas and section as {picture, x, y}, and state: applied (in
         the landmark warp applied now, as they are), moved (in it, but at other
         endpoints now), pending (saved, not in it) or stale (placed against an
@@ -1263,6 +1272,24 @@ def _without_argument(doc: str, name: str) -> str:
         skipping = False
         out.append(line)
     return "\n".join(out)
+
+
+def argument_texts(doc: str) -> dict[str, str]:
+    """Each argument's ``Args`` entry of a declared description *doc* (as
+    :func:`model_doc` indents it), on one line: ``{name: text}``."""
+    texts: dict[str, str] = {}
+    name = None
+    for line in doc.split("\n"):
+        if line.startswith(" " * 16) and name is not None:
+            texts[name] += " " + line.strip()
+            continue
+        name = None
+        head = line[12:] if line.startswith(" " * 12) and not line.startswith(" " * 13) else ""
+        key, colon, text = head.partition(":")
+        if colon and key.isidentifier():
+            name = key
+            texts[name] = text.strip()
+    return texts
 
 
 def _with_prompt(doc: str, prompt: str) -> str:

@@ -586,12 +586,16 @@ def test_the_listing_follows_the_warp_states(tmp_path):
         job.close()
 
 
-def test_the_reply_names_the_region_at_each_atlas_endpoint_and_flags_one_outside(tmp_path):
+def test_the_reply_names_the_region_at_each_atlas_endpoint_and_refuses_one_outside(tmp_path):
+    """A pair whose atlas endpoint lies where no brain is drawn is refused
+    before anything is written, and the refusal gives the nearest point inside
+    the atlas in the picture's numbers; that point is accepted."""
+    import re
+
     job, ws, record = setup(tmp_path)
     try:
         reply = landmarks.set_landmarks(job, ws, record.id, saved_pairs(job, ws, record))
         assert set(reply["atlas_endpoint_regions"]) == {"L1", "L2", "L3"}
-        assert "outside_atlas" not in reply
         moved = saved_pairs(job, ws, record)[0]["section"]
         reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L1", "section": moved}])
         assert "atlas_endpoint_regions" not in reply  # a section-only edit places no atlas end
@@ -599,10 +603,25 @@ def test_the_reply_names_the_region_at_each_atlas_endpoint_and_flags_one_outside
         panel = next(p for p in job.views.lookup(seq).recipe["endpoint_panels"]
                      if p["role"] == "atlas")
         x0, y0 = panel["bounds"][:2]
-        corner = {"picture": seq, "x": x0 + 1, "y": y0 + 1}
-        reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L2", "atlas": corner}])
-        assert reply["written"] is True and reply["outside_atlas"] == ["L2"]
-        assert reply["atlas_endpoint_regions"] == {"L2": "outside the atlas"}
+        corner = {"picture": seq, "x": float(x0 + 1), "y": float(y0 + 1)}
+        annotation = atlas.plane_annotation(ws, geometry.plane_context(job.state, record))
+        native = geometry.transform(panel["pixel_to_native"], [corner["x"], corner["y"]])
+        assert not atlas.label_at(annotation, native)  # the panel's corner holds no brain
+        before = job.snapshot()
+        with pytest.raises(Refused) as caught:
+            landmarks.set_landmarks(job, ws, record.id, [{"id": "L2", "atlas": corner}])
+        assert caught.value.code == "ATLAS_ENDPOINT_OUTSIDE"
+        message = caught.value.payload()["message"]
+        assert message.startswith(f"pairs[0] (L2), atlas endpoint: the point "
+                                  f"({corner['x']:g}, {corner['y']:g}) in picture {seq} is "
+                                  "outside the atlas")
+        assert "Nothing was written." in message and job.snapshot() == before
+        found = re.search(r"the nearest point inside it is \((\d+), (\d+)\) in picture", message)
+        assert found is not None
+        inside = {"picture": seq, "x": float(found[1]), "y": float(found[2])}
+        reply = landmarks.set_landmarks(job, ws, record.id, [{"id": "L2", "atlas": inside}])
+        assert reply["written"] and reply["changed"] == ["L2"]
+        assert not reply["atlas_endpoint_regions"]["L2"].startswith("region 0")
     finally:
         job.close()
 

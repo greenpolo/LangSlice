@@ -1,4 +1,4 @@
-"""``langslice-job ops`` and ``langslice-job schema [VERB]``: what the agent CLI offers.
+"""``langslice-job ops`` and ``langslice-job schema [VERB ...]``: what the agent CLI offers.
 
 Both read the registry (:data:`langslice.ops.registry.VERBS`) and the
 verbs' declarations (:mod:`langslice.doors.declarations`), the same ones the
@@ -7,9 +7,13 @@ agent and MCP tools are built from, so the list and the schemas are what
 group, one line, ``long`` where it computes outside the job lock and may
 take minutes). ``schema`` gives per verb what a model reads of it: the
 whole declared description, the one-line summary, the argument schema and
-``long``; declared as the job's settings declare it with ``--job FOLDER``,
+``long``; one verb's entry as the result, several verbs' (separate
+arguments or comma-separated) or every verb's under ``verbs``; declared as
+the job's settings declare it with ``--job FOLDER`` (or as
+``langslice-job FOLDER schema [VERB ...]``, :mod:`langslice.doors.cli.job`),
 or the job of the folder it runs in, otherwise every argument (``hint``
-says how to narrow it). ``schema`` is versioned (:data:`SCHEMA_VERSION`).
+says how to narrow it), and then a job's plugin verbs are unknown (the
+refusal says how to name the job). ``schema`` is versioned (:data:`SCHEMA_VERSION`).
 ``schema`` of a job command
 (``init``, ``brief``, ``runs``, ``wait``, ``env``, ``python``: :data:`JOB_COMMANDS`) gives its
 summary, usage and flags (``init``'s are its parser's,
@@ -47,7 +51,9 @@ JOB_COMMANDS: dict[str, str] = {
     "runs [ID]": "The background runs (newest first), or one run: running, finished "
                 "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID): its answer, or "
-                "STILL_RUNNING after 30 s (wait again); --timeout SECONDS.",
+                "after 30 s its state `running` (wait again); --timeout SECONDS.",
+    "schema [VERB ...]": "This job's verbs as `langslice-job schema` gives them, its tool "
+                         "plugins' included: several at once, every verb without one.",
     "env [install PACKAGE ...|remove]": "The job's own Python environment (made when "
         "missing; it also imports LangSlice's packages): its python, and `install` puts "
         "pip packages in it, listed in scripts/requirements.txt; `remove` deletes it and "
@@ -215,7 +221,8 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
     subparsers.add_parser("ops", help="List the verbs of the agent CLI (JSON)")
     schema = subparsers.add_parser(
         "schema", help="A verb's description and arguments (JSON)")
-    schema.add_argument("verb", nargs="?", default=None, help="One verb (default: every verb)")
+    schema.add_argument("verb", nargs="*", default=[],
+                        help="One or more verbs (default: every verb)")
     schema.add_argument("--job", default=None, metavar="FOLDER",
                         help="Declare the verb as this job's settings do (default: the job "
                         "of the current folder, if any)")
@@ -227,44 +234,65 @@ def ops(_args: argparse.Namespace) -> Envelope:
         "verbs": verbs_table(_spec_here()),
         "usage": "langslice-job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
                  "[--background] [--verbose]",
-        "long": "A long verb computes outside the job lock and may take minutes: run it "
-                "with --background (answers at once with a run id), then `wait ID` (it "
-                "answers within 30 s; wait again while it says STILL_RUNNING).",
+        "long": "A long verb computes outside the job lock and may take minutes; a call "
+                "still running after 30 s answers with its run id and state running (the "
+                "run goes on; `wait ID` collects its answer), and --background answers at "
+                "once.",
         "job_commands": JOB_COMMANDS,
-    }, next=["langslice-job FOLDER brief", "langslice-job schema VERB"])
+    }, next=["langslice-job FOLDER brief", "langslice-job FOLDER schema VERB [VERB ...]"])
+
+
+def _names(given: Any) -> list[str]:
+    """The verbs ``schema`` was given (one argument each, or comma-separated)."""
+    if given is None:
+        return []
+    items = [given] if isinstance(given, str) else list(given)
+    return [canonical_verb(part) for item in items for part in str(item).split(",")
+            if part.strip()]
 
 
 def schema(args: argparse.Namespace) -> Envelope:
-    """``langslice-job schema [VERB] [--job FOLDER]``."""
+    """``langslice-job schema [VERB ...] [--job FOLDER]`` (also
+    ``langslice-job FOLDER schema [VERB ...]``): one verb's entry, several
+    verbs' under ``verbs``, or every verb's."""
     from langslice.doors.jobs import NoJob
     from langslice.ops.registry import verbs_for
 
-    if args.verb is not None and canonical_verb(args.verb) in command_names():
-        name = canonical_verb(args.verb)  # init, brief, runs, wait: no job needed
+    names = _names(args.verb)
+    commands = command_names()
+    if len(names) == 1 and names[0] in commands:
+        name = names[0]  # init, brief, runs, wait: no job needed
         entry = command_entry(name)
         return Envelope(result={"schema_version": SCHEMA_VERSION, "verb": name, **entry},
                         next=[entry["usage"]])
     try:
         declared = Declared(args.job)
-        if args.verb is None:  # every verb
-            result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, **declared.facts(),
-                                      "verbs": {name: declared.entry(name)
-                                                for name in verbs_for(declared.spec)
-                                                if declared.has(name)}}
-            nexts: list[str] = []
-        else:
-            name = canonical_verb(args.verb)
-            if name not in verbs_for(declared.spec):
-                return Envelope.failure("UNKNOWN_VERB", f"No verb {args.verb!r}.")
-            if not declared.has(name):
-                return Envelope.failure(
-                    "VERB_OFF", f"This job's settings have no {name}.",
-                    job=declared.folder or "<folder>", verb=name)
-            result = {"schema_version": SCHEMA_VERSION, "verb": name, **declared.facts(),
-                      **declared.entry(name)}
+        verbs = verbs_for(declared.spec)
+        unknown = [name for name in names if name not in verbs and name not in commands]
+        if unknown:
+            message = f"No verb {', '.join(repr(name) for name in unknown)}."
+            if declared.folder is None:
+                message += (" A job's tool plugins add verbs of their own, known with its "
+                            "folder: `langslice-job FOLDER schema "
+                            + " ".join(names) + "`.")
+            return Envelope.failure("UNKNOWN_VERB", message)
+        off = [name for name in names if name in verbs and not declared.has(name)]
+        if off:
+            return Envelope.failure(
+                "VERB_OFF", f"This job's settings have no {', '.join(off)}.",
+                job=declared.folder or "<folder>", verb=off[0])
+        nexts: list[str] = []
+        if len(names) == 1:
+            name = names[0]
+            result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "verb": name,
+                                      **declared.facts(), **declared.entry(name)}
             folder = declared.folder or "FOLDER"
-            nexts = [f"langslice-job {folder} {name} --args '{{...}}'"
-                     + (" --background" if verbs_for(declared.spec)[name].long else "")]
+            nexts = [f"langslice-job {folder} {name} --args '{{...}}'"]
+        else:  # several verbs, or every verb
+            chosen = names or [name for name in verbs if declared.has(name)]
+            result = {"schema_version": SCHEMA_VERSION, **declared.facts(),
+                      "verbs": {name: command_entry(name) if name in commands
+                                else declared.entry(name) for name in chosen}}
     except NoJob as exc:
         return Envelope.failure("NO_JOB", str(exc))
     except (FileNotFoundError, ValueError) as exc:
@@ -287,4 +315,4 @@ def describe(name: str, folder: str) -> Envelope:
             job = str(find(folder))
         except (NoJob, OSError):
             job = None
-    return schema(argparse.Namespace(verb=name, job=job))
+    return schema(argparse.Namespace(verb=[name], job=job))

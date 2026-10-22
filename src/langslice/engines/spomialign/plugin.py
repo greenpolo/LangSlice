@@ -135,7 +135,7 @@ def spomialign(
     Each call is one undoable write.
 
     Args:
-        sections: One to four filenames (the extension may be left off).
+        sections: One to twenty filenames (the extension may be left off).
         transform: "rigid", "affine", "warp" or "affine_warp".
         section_image: The section channel to match, by name: "preprocessed"
             or another channel of the stack[[?set_channel  (set_channel makes ~
@@ -298,10 +298,26 @@ def _engine(config: dict[str, Any], folder: Path, mode: str, matches: int,
         raise ToolError("ENGINE_FAILED", f"SPOmiAlign did not run: {tail[0]}")
     out = np.load(dst)
     results = []
+    waited = float(out["gpu_wait_s"]) if "gpu_wait_s" in out.files else 0.0
     for i in range(len(pairs)):
         got = {key[: -len(f"_{i}")]: out[key] for key in out.files if key.endswith(f"_{i}")}
+        got["gpu_wait_s"] = waited  # the call's one wait for the GPU queue
         results.append(got)
     return results
+
+
+def gpu_words(waited_s: float, retries: int) -> dict[str, Any]:
+    """What a row says of the machine's GPU queue, as fireants_syn's rows say it:
+    ``gpu_wait_s`` from a second's wait, ``retried`` when the GPU ran out of memory."""
+    out: dict[str, Any] = {}
+    if waited_s >= 1.0:
+        out["gpu_wait_s"] = round(waited_s)
+    if retries:
+        times = "once" if retries == 1 else f"{retries} times"
+        out["retried"] = (f"The GPU ran out of memory {times} (another process held it); "
+                          "the fit waited and ran again from the start, so this result is "
+                          "whole.")
+    return out
 
 
 def _to_native(pair: dict[str, Any], canvas_xy: np.ndarray) -> np.ndarray:
@@ -437,7 +453,7 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
         raise ToolError("BAD_ARGS", f"transform is one of {', '.join(TRANSFORMS)}; "
                         f"got {transform!r}")
     if not sections:
-        raise ToolError("BAD_ARGS", "name one to four sections")
+        raise ToolError("BAD_ARGS", "name one to twenty sections")
     if int(matches) < 3:
         raise ToolError("BAD_ARGS", "matches is at least 3")
     if not float(smoothness_um) > 0:
@@ -496,7 +512,9 @@ def _run(ctx: ToolContext, config: dict[str, Any], sections: list[str], transfor
                     f"{in_damage} in marked damage dropped"
                     + (f", {by_mask} outside the mask dropped" if mask != "none" else ""))
             row: dict[str, Any] = {"id": sid, "status": "ok", "fitted": note,
-                                   "files": str(relative), "inputs": inputs, "estimated": None}
+                                   "files": str(relative), "inputs": inputs, "estimated": None,
+                                   **gpu_words(float(got.get("gpu_wait_s", 0.0)),
+                                               int(got.get("oom_retries", 0)))}
             if mask != "none":
                 row["mask_note"] = "approximated by dropping matches"
             if transform != "warp":
@@ -537,7 +555,7 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
                     smoothness_um, matches, view)
 
     return [ToolSpec("spomialign", spomialign, handler, kind="write", group="Nonlinear",
-                     writes=("affine", "deformation"), limits={"sections": 4}, long=True,
+                     writes=("affine", "deformation"), limits={"sections": 20}, long=True,
                      version="2",
                      meta={"method": "SPOmiAlign", "paper": "Wang et al. 2026, Brief Bioinform",
                            "commit": "c7f8b7a", "engine": "langslice.engines.spomialign"})]
