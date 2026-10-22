@@ -592,7 +592,7 @@ def make_mask(
         starting points, and the fraction of the section's tissue it leaves
         out, or why the section has no mask. With view, up to 4 of the
         sections (spread over the stack when none are named), each drawn as
-        look's "section" mode draws it, with the mask's 0.5 outline on it,
+        look's "section" mode draws the image it sorted, with the mask's 0.5 outline on it,
         and a caption saying the outlines trace the mask's edge, that the
         ringed patches are what the mask leaves out of a fit, and the mask's
         name and source.

@@ -300,7 +300,8 @@ step. The next fit can read it by name.
 
 Every fit reply's `inputs.section_image` is `{name, kind, file, digest}`: the
 image read (`kind` `raw` or `made`; for a raw channel the section's image file
-and no digest). A fit's cache key holds the image's digest, and the digest map
+and no digest); the picture `elastix_affine` and `fireants_syn` return of
+what they wrote is drawn on that image. A fit's cache key holds the image's digest, and the digest map
 of a section's made images is part of what a long verb compares before it
 applies (`ops/inputs.py`): an image made again while a fit computes makes that
 section `STALE_INPUT`. `status` lists the raw channels and the made images
@@ -356,7 +357,7 @@ atlas_image="nissl", sorting={}, delete=False, view=True)` has the shape of
 own registration, one undo step for the call; a section that cannot get one
 (no position, no deformation for source `fit`) is that section's row, the
 others are written. With `view` it returns up to four of the sections'
-`section` pictures with the mask outlined.
+`section` pictures of the image it sorted, with the mask outlined.
 
 `mark_damage` records atlas regions whose tissue is missing from the section
 or lies folded over other anatomy, including one hemisphere when needed.
