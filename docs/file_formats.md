@@ -25,7 +25,9 @@ A registration file can also be explicitly imported when creating a job.
   exports/              linear_results.json, spend.json, quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
                         plugins/script/: the layers a script left through job.context
-  logs/                 the agent CLI's calls and background runs, events.jsonl (job events,
+  logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
+                        calls/<n>_<verb>.json, each call's whole envelope as printed)
+                        and background runs, events.jsonl (job events,
                         a script_write line per write a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
                         env.lock, held while env/ is made
@@ -34,6 +36,7 @@ A registration file can also be explicitly imported when creating a job.
   scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
   AGENTS.md, CLAUDE.md  the reference card for coding agents
   BRIEF.md              the agent CLI's brief
+  TOOLS.md              every verb of the job with its description and arguments (written by brief)
 ```
 
 The job folder is `<images>/langslice/` unless `--job-dir` says otherwise (a
@@ -114,16 +117,23 @@ coordinate maps include that deformation as well as the affine.
 Each of its `steps` says how a step was made: a native fit's `method`
 (`fireants_syn`, or `trace_borders` for the fit of a trace; a step a job saved
 before steps named their method has none and is read as one of these),
-`start` (`linear` or `current`), settings and regions; a landmark application's
-`method` `landmark_triangulation`; a deformation a tool plugin wrote
-(`docs/plugins.md`), `{"method": "plugin:<tool>", "start": "linear", "note"?}`,
-whose record has the engine name `plugin:<tool>`, the `inverse_source`
-`fixed-point inversion of the supplied map`, and in its `provenance` the
-`plugin` (`tool`, `call`, `version`, `note`, `meta`). One a script wrote
-through the library's `job.context` ([your own method](library.md#your-own-method))
-is the same with `script` for `plugin:<tool>` and a provenance `script`
-(`call`, `note`, `meta`, `argv0`: the path of the running script); its
-`fit_fireants` puts the engine's settings in `meta`. A transform written by a
+`start` (`linear` or `current`), settings (`fit_section`, `fit_atlas`, `mask`,
+`smoothness_um`, and for a stain fit `metric`, `edges` and `detail`; a step
+saved before these were recorded lacks them) and regions; a landmark
+application's `method` `landmark_triangulation`; a deformation a tool plugin
+wrote (`docs/plugins.md`), `{"method": "plugin:<tool>", "start": "linear" |
+"current", "note"?, "settings"?}` (`current`: made on top of the deformation
+the section held, whose steps come first and whose record is its record's
+`parent`; `settings`: the call's, by the tool's names), whose record has the
+engine name `plugin:<tool>`, the engine's own numbers and version where the
+plugin gave them (`engine.native_parameters`, `engine.version`), the
+`inverse_source` `fixed-point inversion of the supplied map`, and in its
+`provenance` `start`, `settings` and the `plugin` (`tool`, `call`, `version`,
+`note`, `meta`). One a script wrote through the library's `job.context`
+([your own method](library.md#your-own-method)) is the same with `script` for
+`plugin:<tool>` and a provenance `script` (`call`, `note`, `meta`, `argv0`: the
+path of the running script); `fit_fireants` gives its call's settings by
+`fireants_syn`'s names and FireANTs' own numbers. A transform written by a
 tool plugin has the `kind` `plugin:<tool>`, by a script `script` (and its
 `note`; from `fit_elastix`, the call's settings under `fit` in `state.json`).
 A `script_write` line in `logs/events.jsonl` (`property`, `sections`, `notes`,
@@ -219,7 +229,9 @@ leave the same registration share its number), `position_mm` and
 `rotation_deg`, `transform` (as `state.json` holds it) and `deformation` (the
 section's `deformation` entry, naming its record under `deformable/`, or
 null). A status row's `registration` is the number of the one the section
-holds. The file is read back, as the deformation records are; a line cut
+holds. `restore_registration`'s list adds, per registration, the pictures its
+write saved: the `views.jsonl` pictures drawn by the tool named in `by` whose
+`registrations` give the section that number. The file is read back, as the deformation records are; a line cut
 short is skipped.
 
 ## Pictures
@@ -227,8 +239,13 @@ short is skipped.
 Each picture a door showed is saved as a folder `<number>_<tool>[_<mode>]/`
 under `views/` (several sections) or `sections/<name>/views/` (one;
 `job/views.py`), holding `view.jpg` (the bytes the model got) and `view.json`
-(tool, arguments, caption, history step, and the recipe `zoom` redraws it
-from), and listed in `views.jsonl`. A
+(tool, arguments, caption, history step, the recipe `zoom` redraws it from,
+and `registrations`: the number of the registration each of its sections was
+drawn under, `{filename: number}`, for the sections that held a listed one or
+a `look` drew under one), and listed in `views.jsonl` (with the same
+`registrations`). A `look` sheet is a picture of mode `sheet` whose recipe
+(`renderer` `sheet`) lists each tile's `picture`, its `box` on the sheet and
+the picture's `size`. A
 placement picture and an `fireants_syn` picture carry
 `labels.tif` (the atlas id under every pixel below the caption, no tissue
 rule), `borders.png` and a frame in `view.json`.

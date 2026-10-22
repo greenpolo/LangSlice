@@ -119,7 +119,9 @@ process forks for it, `cli/warm.py`).
   render); `section_raster(images=, raw=)`;
   conversions `transform_from_matrix` / `transform_from_params`, and
   `deformation_from_map` (a full fit-grid-to-native map as a
-  `DeformationProposal`, `ops.deformable.warp_from_map`); writes
+  `DeformationProposal`, `ops.deformable.warp_from_map`; `start="current"`
+  for a map made on top of the held deformation, its chain kept; `settings`,
+  `engine_settings`, `engine_version` kept as a native fit's); writes
   `set_positions`, `set_transforms`, `set_deformations`
   (`ops.deformable.apply_warps`, maps converted before the lock),
   `mark_damage` through `ops/`, `add_image` (a made section image,
@@ -132,8 +134,10 @@ process forks for it, `cli/warm.py`).
   `write_frame` / `map_from_itk` / `transform_from_itk` (`core.itk_io`: an
   outside engine's inputs and answer), `fit_fireants` / `fit_elastix`
   (`ops.deformable.fit_record`, `ops.transforms.elastix_fit`: the native
-  engines with settings and a mask of the caller's own, a proposal not
-  written, the settings in its `meta` / the record's `fit`); `overlay_picture` and
+  engines with settings and a mask of the caller's own, by the tools' names
+  and with their defaults (`restrict_to`, `section_image`, `atlas_image`,
+  `mask`, `smoothness_um`, `metric`, `edges`, `detail`), a proposal not
+  written, the settings as its step's `settings` / the record's `fit`); `overlay_picture` and
   `positioning_picture` (a proposal drawn on a copy of the state), with a
   deformation proposal drawn through an in-memory record store) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
@@ -238,12 +242,15 @@ process forks for it, `cli/warm.py`).
   files in `scripts/` and `scratch/` of the job folder, not `/tmp`; one line
   pointing a method of the agent's own to `help(job.context)`; first,
   run `brief` and read `BRIEF.md`; under 90 lines, `tests/test_agent_cli.py`),
-  `write_card` (writes where missing or worded differently; never raises).
+  `write_card` (writes where missing or worded differently; never raises);
+  `TOOLS_FILE` (`TOOLS.md`, which the card names and `brief` writes).
   Written by every door that opens or makes a job.
 - `trace.py` — `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`), `HostTrace` (the MCP
   door's trace: one JSON line per record, images as descriptors; one file
   per session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
-  file per job folder) and `log_call` (`logs/calls.jsonl`).
+  file per job folder), `log_call` (`logs/calls.jsonl`) and `save_reply`
+  (`logs/calls/<n>_<verb>.json`, `REPLIES_DIR`: a call's envelope as printed,
+  the next free six-digit number).
 - `tools/` — the tool door: `toolbox.py` (`build_tools`, `ToolBox`, which
   keeps the `Door` it built as `door`; sets
   `Job.picture_cap` to `MAX_IMAGES_PER_CALL` (4), or to None with
@@ -266,18 +273,25 @@ process forks for it, `cli/warm.py`).
   `answered`, `resolve_many`; `pictured`, `as_list`, `spread`: the sections
   a change tool pictures when the call names none), the
   tool bodies (`looking.py`: `look` (`images`: one section image alone, or
-  raw channels together; empty draws `preprocessed`), `zoom`, `make_image`
+  raw channels together; empty draws `preprocessed`; `registrations`
+  `{filename: number}`, a section under an earlier registration of its own,
+  nothing written; `sheet`, declared where pictures are uncapped, tiles the
+  pictures into sheets at the box's `max_view_edge`: the reply's `pictures`
+  are the sheets, `tiled` the pictures they tile), `zoom` (on a sheet, the
+  tile's picture, with `sheet` and `box`), `make_image`
   (its `section` pictures through `ops.look.show_result`, none where
   `look:section` is off, which also drops its `view`), `grep_atlas`,
   `grep_atlas_view`, `status` (`raw_channels`, `section_images`:
   `core.section_images.summary`), the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
   `mark_damage`, `make_mask` (per-section `rows`), `note`, `undo`, `redo` (`steps`, default 1: that many in
-  one call, `ops.history`), `restore_registration` (0 lists,
-  `ops.registrations.listing`; a number puts it back and shows the
-  section's overlay), `submit`; `fitting.py`:
+  one call, `ops.history`), `restore_registration` (`section` lists,
+  `ops.registrations.listing`; `sections` `[{id, registration}]` puts them
+  back, per-section `results`, one undo step, and shows their overlays;
+  both or neither `BAD_ARGS`), `submit`; `fitting.py`:
   `elastix_affine` (its `turn_deg` and plausibility `flags` worded in the
-  row's `warning`, `affine_flag_words`), `fireants_syn`, `trace_borders`,
+  row's `warning`, `affine_flag_words`; the knobs under `transform`),
+  `fireants_syn`, `trace_borders`,
   `export_maps`; a change tool's picture is drawn after its write by
   `ops.look.show_result` unless its `view` is false and the host does not
   force it (a fit's and an `em` mask's picture drawn on the section image
@@ -412,9 +426,14 @@ process forks for it, `cli/warm.py`).
     -> `Brief`: the statement for door `cli` (no gates, `auto` sizing),
     the opening strips saved as the job's `opening` views (artifacts with
     `index` and `label`), the facts (`viewer`, `resolution`, `image_model`),
-    all written to `BRIEF.md`.
+    all written to `BRIEF.md` (artifact `brief`); `write_tools`: `TOOLS.md`
+    (artifact `tools`), every verb of the toolbox as its run declares it
+    (`ToolBox.variant`, `catalog.tools_text`).
   - `catalog.py` — `ops` (the listed verbs: name, kind, group, summary,
-    `long`; `JOB_COMMANDS`) and `schema [VERB ...] [--job FOLDER]`
+    `long`; `JOB_COMMANDS`; with `args.job`, `FOLDER ops`, the job's own
+    verbs declared for it), `tools_text` (`TOOLS.md`: per verb its summary,
+    kind, group, description and `argument_lines`, each argument's type in
+    words and default, from `arguments_schema`) and `schema [VERB ...] [--job FOLDER]`
     (`SCHEMA_VERSION` 3; `canonical_verb` accepts kebab-case, `_names`
     comma-separated lists; per verb
     `Declared.entry`: `summary`, `description`, `kind`, `group`, `long`,
@@ -430,14 +449,19 @@ process forks for it, `cli/warm.py`).
     envelope. `describe(name, folder)`: what `FOLDER NAME --help` answers,
     `schema NAME` declared for FOLDER's job when it has one.
   - `job.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every
-    call logged by `record` and, with `LANGSLICE_TRACE_DIR`, traced; any
+    call logged by `record` (its line in `calls.jsonl` with an error's code
+    and message and `reply`, the envelope kept by `trace.save_reply`) and,
+    with `LANGSLICE_TRACE_DIR`, traced; `FOLDER ops` answers `catalog.ops`
+    for the job; any
     `HELP_FLAGS` token, `--help` / `-h`, answers `catalog.describe` and runs
     nothing),
     `parse` (`--args`, `--name value`, `--dry-run`, `--background`,
     `--verbose`, `--timeout`, the child's `--run-id`), `arguments_for` (flags
     read as the verb declares them; an unknown one refused with
     `corrected_call` as the fix: every argument with the first sentence of its
-    `Args` entry, `declarations.argument_texts`, and its default, then the
+    `Args` entry (`_first_sentence`: not cut at an abbreviation's full stop,
+    `ABBREVIATIONS`, or inside brackets),
+    `declarations.argument_texts`, and its default, then the
     call without the unknown ones, a short signature's others at their
     defaults), `FOLDER schema [VERB ...]` (catalog's `schema` for that job),
     `call` (open, `VERB_OFF` /

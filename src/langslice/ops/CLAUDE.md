@@ -120,7 +120,9 @@ wording; `registry.py` lists which.
   section), ONE undo step for the call. `em`: the EM sorting of the section
   image against the atlas image at each section's CURRENT registration;
   `fit`: the sorting the applied deformation saved (`NO_DEFORMATION`,
-  `NO_SORTING`). A section that cannot get its mask is its row (`NO_POSITION`,
+  `NO_SORTING`). *sorting* takes the five starting points (`SORTING_KEYS`),
+  the shape every engine's `sorting` has; `method` and `artifact`, keys only
+  STalign's takes, are refused by name (`BAD_ARGS`). A section that cannot get its mask is its row (`NO_POSITION`,
   `INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_SORTING`, `FIT_FAILED`);
   when none can, the first row's refusal. Refused: `UNKNOWN_SLICE_IDS`,
   `SECTION_BUSY`, `UNKNOWN_IMAGE`, `UNKNOWN_MASK` (delete), `BAD_ARGS`.
@@ -132,8 +134,10 @@ wording; `registry.py` lists which.
   verb `make_mask`.
 - `notes.py` — `add_note(job, text)`.
 - `files.py` — read-only file access over the job folder for the native agent
-  (`job.browse` keeps every path inside it; `BAD_PATH` otherwise):
-  `list_files(job, path=".", pattern="")` -> `Listing`, `search_files(job, query,
+  (`job.browse` keeps every path inside it; `BAD_PATH` otherwise, and
+  `NOT_FOUND` for a path that does not exist, with `nearest`, the nearest
+  folder above it that does, and `holds`, its names; `browse.PathMissing`):
+  `list_files(job, path=".", glob="")` -> `Listing`, `search_files(job, query,
   path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
   `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
   file is answered with its `views.jsonl` record (`job.views.records()`) and the
@@ -146,19 +150,29 @@ wording; `registry.py` lists which.
 - `registrations.py` — `restore_registration`'s operations over the job's
   registration store (`job/registrations.py`): `listing(job, section)` ->
   `Listed` (`held`, the number the section holds; `rows`: per registration
-  `registration`, `by`, `at`, the transform's kind, `deformation_steps`,
-  `held`, and `not_here` for one whose deformation was fitted at another
-  position or cutting angles; the registration the section holds is listed
-  first when it never was; no state written); `restore(job, section, number)`
-  -> `Restored` (`registration`, `replaced`, `written`: False when the section
-  holds it already): orientation, transform and deformation set as the entry
-  holds them, ONE undo step, the other sections untouched. Refused, nothing
-  written: `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGISTRATION` (with `registrations`,
-  the section's numbers), `SECTION_BUSY` / `FROZEN` (`check_frozen` with the
-  properties it would change: `orientation`, `affine`, `deformation`),
-  `REGISTRATION_ELSEWHERE` (its deformation's `linear_key` is not the one the
-  section would have: another position or cutting angles), `DEFORMATION_UNREADABLE`
-  (its record folder is gone). The verb `restore_registration`.
+  `registration`, `by`, `at`, `transform` (`core.status.transform_entry`: kind
+  and knobs), `deformation` (`core.status.deformation_entry`: method, steps,
+  settings), `pictures` (`saved_pictures`: the numbers of the `views.jsonl`
+  pictures drawn by the tool in `by` whose `registrations` give the section
+  that number), `held`, and `not_here` for one whose deformation was fitted at
+  another position or cutting angles; the registration the section holds is
+  listed first when it never was; no state written); `restore(job,
+  [{"id", "registration"}])` -> `RestoredMany` (`rows` per section in call
+  order: ok with `registration`, `replaced`, `written` (False when the section
+  holds it already), or that section's refusal; `written`): each section's
+  orientation, transform and deformation set as its entry holds them, ONE undo
+  step for the call, the other sections untouched. Refused per section:
+  `UNKNOWN_REGISTRATION` (with `registrations`, the section's numbers),
+  `SECTION_BUSY` / `FROZEN` (`check_frozen` with the properties it would
+  change: `orientation`, `affine`, `deformation`), `REGISTRATION_ELSEWHERE`
+  (its deformation's `linear_key` is not the one the section would have:
+  another position or cutting angles), `DEFORMATION_UNREADABLE` (its record
+  folder is gone), `BAD_ARGS` (not a number); refused whole, nothing written:
+  `BAD_ARGS` (no entries, an entry not `{id, registration}`),
+  `UNKNOWN_SLICE_IDS`, `DUPLICATE_SLICE_IDS`. `entry_for(job, section,
+  number)` -> `(record, entry, held)`: a registration as it can sit on the
+  section now (the refusals above), what `look`'s `registrations` draws. The
+  verb `restore_registration`.
 - `submit.py` — `submit(job, summary=, notes=, interval_breaks=,
   traces=, workspace=, gate=)`: first every piece of the job's
   background work is waited for (`Job.background.wait_all`: under the door's
@@ -293,7 +307,11 @@ wording; `registry.py` lists which.
   `sections/<stem>/deformable/<key>`) and the section's `deformation` holds
   its path relative to the job folder; each step names its `method`
   (`fireants_syn`, or `trace_borders` for a traced fit; a step saved before
-  steps named it has none, `job.registrations.made_by` reads it); the step of a traced fit records the
+  steps named it has none, `job.registrations.made_by` reads it) and the
+  choice's settings, a stain fit's `metric`, `edges` and `detail` too; a
+  fit's `FIT_FAILED` row says the error's first line and appends the whole
+  error to `logs/engine.log` (`core.engine_output.failure_message`, as
+  `elastix_affine`'s, `fit_record`'s and `make_mask`'s); the step of a traced fit records the
   trace it read (`trace`: the trace's artifact directory); a traced fit
   section reads the trace's artifacts under the job folder
   (`traced_lines(root=...)`).
@@ -313,19 +331,28 @@ wording; `registry.py` lists which.
   `TOO_MANY_SECTIONS`),
   `UNKNOWN_IMAGE`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
   `warp_from_map(job, workspace, section, native_xy, method=, step=,
-  provenance=, weights=)`: a deformation made elsewhere (a tool plugin's), given as the
+  provenance=, weights=, start=, settings=, engine_settings=, engine_version=)`:
+  a deformation made elsewhere (a tool plugin's), given as the
   full map from the fit grid's pixel centres to native atlas pixels, built as
   a record (`core.deformation.record_from_map`: the residual over the current
-  linear placement, a fixed-point inverse, the usual diagnostics), not
-  written: `MappedWarp` (record, key, `linear_key`, step, numbers). Refused:
-  `UNKNOWN_SLICE_IDS`, `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`.
+  linear placement, a fixed-point inverse, the usual diagnostics; the engine's
+  `native_parameters` and `version`), not written: `MappedWarp` (record, key,
+  `linear_key`, step, numbers, `parent_key`). *start* `current`: made on top of
+  the section's applied deformation, which becomes the record's `parent` (its
+  `step` one more) and whose key the section must still hold. The step carries
+  *settings* (the call's, by the tool's names). Refused: `UNKNOWN_SLICE_IDS`,
+  `INVALID_LINEAR_PLACEMENT`, `BAD_FIELD`, `BAD_ARGS` (`current` without a
+  deformation), `DEFORMATION_UNREADABLE`.
   `apply_warps(job, warps)`: writes them as ONE undo step under the job's
-  lock, each replacing the section's deformation (step `start` `linear`);
+  lock, each replacing the section's deformation (step `start` `linear`) or,
+  with a `parent_key`, keeping its steps before its own (`start` `current`);
   per row `FROZEN`, `STALE_INPUT` (the placement is not the one the warp was
-  built on), `RECORD_WRITE_FAILED`. Returns `WarpsApplied`.
+  built on, or the section no longer holds its parent), `RECORD_WRITE_FAILED`.
+  Returns `WarpsApplied`.
   `fit_record(job, workspace, section, settings, start="linear"|"current",
-  mask=, em=True, marked=True)`: one FireANTs stain fit with a
-  `FitSettings` of the caller's own, in this process under the engine lock,
+  mask=, em=True, marked=True, section_image="preprocessed")`: one FireANTs
+  stain fit with a `FitSettings` of the caller's own on that section image
+  (`UNKNOWN_IMAGE`), in this process under the engine lock,
   written nowhere (a script's `job.context.fit_fireants`): the record;
   `mask` through `core.deformable.fit.with_section_mask`, `em` False runs
   once, `marked` adds the section's marked regions to `exclude`. Refused:
@@ -389,7 +416,7 @@ wording; `registry.py` lists which.
   `NO_SIDES`.
 - `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
   images=, atlas_layers=, atlas_opacity=, warp="applied", resolution=,
-  plugin_layers=, depth=6)` and
+  plugin_layers=, depth=6, masks=, registrations=, sheet_edge=)` and
   `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
   save their own pictures (`save_pictures`: `job.views.save` with the note's
   recipe and caption), so each has a picture number at once: the reply
@@ -398,10 +425,25 @@ wording; `registry.py` lists which.
   every picture `core.look.look` draws, or the first `Job.picture_cap` of them
   (4 at the agent tools and MCP, None at the CLI and the library, set by
   `build_tools`; `look.split_shown`); the rest are `not_shown`, each with the
-  arguments that get it. `zoom` redraws a box
+  arguments that get it. `registrations` (`{filename: number}`, modes
+  `section` and `overlay`): each named section drawn under that registration
+  of its own (`registrations.entry_for`) on a copy of the state, writing
+  nothing; the request's `registrations` words the caption, the picture's note
+  `extra["registrations"]` is what `views.jsonl` records, and with no
+  `sections` only those sections are drawn (`BAD_ARGS`: another mode, a named
+  section not among `sections`). `sheet_edge` (the door's viewer edge; None:
+  no sheet): every picture drawn saved as a tile (`ViewStore.save(tiles=True)`),
+  then tiled into sheets of at most `core.sheet.MAX_TILES`
+  (`core.sheet.tile`), saved in one call as pictures of mode `sheet`
+  (`SHEET_MODE`) whose recipe lists the tiles; `Looked.pictures` holds the
+  sheets, `entries` the tiles (each with its `sheet`), `sheets` the sheets'
+  numbers, captions and tiles. `zoom` redraws a box
   of picture `picture` (default: `views.latest(exclude_tool="zoom")`) through
   `core.zoom.redraw` and saves it as tool `zoom`; `stale` when the stack has
-  changed since. Instead of a box, `region` selects exactly one atlas region
+  changed since. On a sheet (`_zoom_sheet`) the box is read on the tile that
+  holds most of it (`core.sheet.tile_under`, `to_tile`) and that tile's picture
+  is zoomed (`Zoomed.sheet`, `box`); `region` there is `BAD_REGION_PICTURE`, a
+  box over no tile `EMPTY_BOX`. Instead of a box, `region` selects exactly one atlas region
   on a saved overlay, cropped to its bounds with only its border drawn;
   `BAD_REGION_PICTURE` on other modes and `REGION_NOT_IN_PLANE` when absent.
   A picture with no recipe or whose sections are gone is cropped
@@ -421,7 +463,9 @@ wording; `registry.py` lists which.
   name (numbered, captioned, zoomable); at most `Job.picture_cap` shown (None:
   all), the rest `not_shown` with the `look` call that draws them, a failed picture
   `failed` (the write stands).
-- `views.py` — `status(job)` (`StackStatus`: the status rows, angles,
+- `views.py` — `status(job)` (`StackStatus`: the status rows (each with its
+  `transform`, kind and knobs, and `deformation`, method, steps and settings:
+  `core.status`), angles,
   breaks as the filenames of the sections after each gap,
   `core.state.break_ids`; a row with properties the user froze carries
   `frozen: [...]`, one the user gave a damage note `damage_by_user: true`,
@@ -534,3 +578,5 @@ Every ok row of `fireants_syn` and `elastix_affine` carries `inputs`
 and resolved, mask, atlas-side damage, `restrict_to`, brightness) and
 `estimated`; the result's `settings` is the call; `elastix_affine` refuses a
 section that holds a deformation (`HAS_DEFORMATION`, that section's row).
+`elastix_affine`'s rows keep the knobs as `physical` here; the tool door
+answers them under `transform`, as every reply carrying the knobs does.

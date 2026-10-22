@@ -283,7 +283,13 @@ the angles in a caption (empty for the flat plane).
   `display.framed_atlas(um_per_px=)`) draw at exactly that scale.
 - `status.py` — the status table, data for the doors rather than a
   picture, a section named by its filename alone (no index):
-  `status_rows` (a section with plugin layers carries `layers`: name, kind,
+  `status_rows` (each row's `transform` is `transform_entry`: the stored
+  transform's `kind`, its knobs as `interactive_transform` takes them and
+  `mirrored`, null without one; a section holding a deformation carries
+  `deformation`, `deformation_entry`: `method` (the last step's,
+  `step_method`), `steps` (every step's method) and `settings`
+  (`step_settings`: a plugin's or script's `settings`, else the native step's
+  own by the tools' names); a section with plugin layers carries `layers`: name, kind,
   frame, tool, which `uniform_rows` takes as an extra field; a section with
   masks carries `masks`: name, kind, stale, earlier_registration), `compact_rows` (a model's:
   null and empty fields left out), `uniform_rows` / `with_uniform_rows` (a script's: every
@@ -325,7 +331,10 @@ the angles in a caption (empty for the flat plane).
   operations) while an engine runs, so what it and the programs it starts
   print (the GPU compiler's warnings, torch's allocator, Elastix) never reaches
   a reply; process-wide, nested and overlapping runs share the first log,
-  None leaves stderr as it is.
+  None leaves stderr as it is. `failure_message(text, path, label)`: what a
+  reply says of an engine that failed, the error's first line (at most
+  `FAILURE_CHARS`), a GPU out of memory said in words, and that the log holds
+  the whole error, which it appends there.
 - `atlas/images.py` — `atlas_images` ends with the alias `nissl`;
   `default_image(atlas)` is what it stands for (the borrowed Nissl; the
   augmented atlas's template; an additional reference whose name contains
@@ -346,11 +355,13 @@ the angles in a caption (empty for the flat plane).
 - `look.py` — `look`'s four pictures through the renderers above:
   `look(ws, state, LookRequest(mode, sections=, positions_mm=, images=,
   atlas_layers=, atlas_opacity=, warp=, long_edge=, zoom=, part=,
-  highlight=, region_only=, layers=, masks=, depth=), store=)`
+  highlight=, region_only=, layers=, masks=, depth=, registrations=), store=)`
   returns one `LookPicture` per section (`section`:
   `display.framed_section`; `overlay`: `placement.placement_pictures` mode
   `overlay`, the applied deformation unless `warp` is `none`), per position
-  (`atlas`: `display.framed_atlas` at the stack's view angles) or per run
+  (`atlas`: `display.framed_atlas` at the stack's view angles), per named
+  section in `atlas` mode (at that section's own position and angles;
+  `positions_mm` other than theirs `BAD_ARGS`) or per run
   of positions (`positioning`: one picture for up to `PER_PICTURE`
   sections, several for a longer stack; `part` (0-based) draws only that
   one, `UNKNOWN_PART` past the last); a picture without a section says
@@ -371,7 +382,12 @@ the angles in a caption (empty for the flat plane).
   section's made images included, the view angles for atlas
   and positioning), the unzoomed and shown content sizes. Both go on the
   picture's note (`layers.annotate` keeps an overlay's frame for its
-  layers). `redraw(recipe, window, ws, state)` draws a recipe at a window,
+  layers). `registrations` (`(section, number, held)` each) names the
+  registration the state given draws a section under (the ops layer puts it
+  on a copy of the state): the caption says `registration 3 (not held)`, and
+  `changed_since(besides=)` leaves those sections' `REGISTRATION_FIELDS` out,
+  so a zoom of the picture is not stale for drawing a registration the
+  section does not hold. `redraw(recipe, window, ws, state)` draws a recipe at a window,
   from `restored(state, snapshot)` and `stale` when `changed_since`; a recipe
   another version of LangSlice saved is `UNREADABLE_RECIPE` (the zoom crops
   the saved picture). `LookError` codes: `UNKNOWN_MODE`, `UNKNOWN_SECTION`, `UNKNOWN_IMAGE`,
@@ -425,6 +441,14 @@ the angles in a caption (empty for the flat plane).
   With `region`, exactly one region replaces the box, on an overlay only
   (`BAD_REGION_PICTURE` otherwise); absent anatomy is `REGION_NOT_IN_PLANE`.
   The bounds and borders come from the saved overlay, never today's state.
+- `sheet.py` — `look`'s sheet: `tile(tiles, long_edge, title=)` lays saved
+  pictures (`Tile`: image, number, label) in a grid (`grid`: the columns
+  closest to a square sheet), each scaled down whole under a header band
+  naming its number, nothing drawn over it, the sheet captioned; `recipe`
+  (renderer `sheet`: each tile's `picture`, `box` on the sheet and the
+  picture's `size`), `tile_under` (the tile holding most of a box) and
+  `to_tile` (a sheet box in the tile picture's pixels), which `ops.look.zoom`
+  reads; `MAX_TILES` (16) per sheet.
 - `zoom_grid.py` and `picture_geometry.source_frame` — the coordinate grid every
   zoom carries. `source_frame(recipe)` is where a zoom's pixels lie in the
   whole (unzoomed) picture's pixels (`SourceFrame`: `to_source`, `to_picture`,

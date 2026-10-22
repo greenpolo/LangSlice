@@ -34,14 +34,19 @@ Initialize a job, read its brief, then choose tools from the live schema:
 ```bash
 langslice-job sections/ init --tasks position,transform,nonlinear --viewer codex
 langslice-job sections/ brief
-langslice-job ops
+langslice-job sections/ ops
 langslice-job sections/ schema look zoom fireants_syn
 langslice-job sections/ look --mode positioning
 ```
 
 `FOLDER` can be the image folder or its job folder. `init` runs no agent.
 The job contains identical `AGENTS.md` and `CLAUDE.md` reference cards;
-`brief` writes `BRIEF.md` and returns the opening pictures as file paths.
+`brief` writes `BRIEF.md` and returns the opening pictures as file paths, and
+writes `TOOLS.md` beside it: every verb of the job with its description and
+its arguments (type and default), the words `schema` gives as JSON, so an
+agent reads them once from a file instead of one `--help` per verb.
+`langslice-job FOLDER ops` lists the job's own verbs (`langslice-job ops`
+lists every verb).
 The coding agent opens those pictures with its image reader and decides what
 to do next. Keep its scripts in the job's `scripts/` and other work in
 `scratch/`, and run them with `langslice-job FOLDER python scripts/NAME.py`.
@@ -132,7 +137,9 @@ stack rows. `artifacts` lists absolute file paths, kinds and picture numbers.
 `picture_files`, second in the envelope and only when the call drew pictures,
 repeats the paths of the pictures to open (`view` and `opening` JPEGs, in
 order), so an agent reading the reply finds them first; the envelope's other
-keys are unchanged. Open `view` images to assess alignment. `zoom` uses a saved picture number,
+keys are unchanged. A `look` with `--sheet` attaches its sheets: the pictures
+they tile are saved and numbered too, listed as artifacts of kind `tile`, not
+in `picture_files`. Open `view` images to assess alignment. `zoom` uses a saved picture number,
 or the latest non-zoom picture when omitted. A failed call has an `error`
 with a `code`, `message` and `fix`.
 
@@ -355,8 +362,12 @@ The built-in agent always writes a JSONL trace: `--trace-dir`, then
 `LANGSLICE_TRACE_DIR`, then the job's `trace/` folder. It records model and
 tool events; images are described by type, size and byte count rather than
 embedded. MCP traces record calls and results, not the host model's private
-conversation. The agent CLI logs every call in `logs/calls.jsonl` and uses
-`LANGSLICE_TRACE_DIR` for additional tool traces. The Claude Code and
+conversation. The agent CLI logs every call in `logs/calls.jsonl` (the verb,
+its arguments as given, the outcome, an error's code and message, the
+artifacts, the seconds) and keeps each call's whole envelope, as printed, in
+`logs/calls/<n>_<verb>.json`, which the call's line names under `reply`, so a
+reply the harness cut short or the agent did not keep is still in the job; it
+uses `LANGSLICE_TRACE_DIR` for additional tool traces. The Claude Code and
 Antigravity plugins copy a registration agent's own transcript into the
 job's `trace/` folder when its session ends (Transcripts, above).
 

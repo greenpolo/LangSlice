@@ -32,10 +32,14 @@ the method returns. `look(resolution=N)` is bounded by source pixels, with
 no model-viewer cap.
 
 Each write checkpoints the job and is undoable with `undo()` and `redo()`.
-`restore_registration(section=..., registration=n)` puts one section back to
-a registration it held earlier (its status row's `registration`), whatever
-was written since; without `registration` it lists them
-([writes](registration.md#writes-review-and-submission)).
+`restore_registration(sections=[{"id": ..., "registration": n}, ...])` puts
+sections back to registrations they held earlier (their status rows'
+`registration`), whatever was written since, as one undo step;
+`restore_registration(section=...)` lists one section's, and `look(...,
+registrations={id: n})` draws one without writing it
+([writes](registration.md#writes-review-and-submission)). `look(...,
+sheet=True)` tiles the pictures into sheets
+([looking](registration.md#looking-and-calibration)).
 The handle reloads other processes' saved changes before each call; a read
 never waits for another process's write lock.
 Registration requirements still apply. See [registration tools](registration.md).
@@ -297,34 +301,41 @@ image), read only.
 
 ### The native engines with settings of your own
 
-`c.fit_fireants(id, settings=None, mask="none", start="linear", marked=True,
-note="")` runs FireANTs SyN, the engine `fireants_syn` runs, and returns a
-`DeformationProposal` NOT written. `settings` is a
-`langslice.core.deformable.FitSettings` or a mapping of its fields over
-`fireants_syn`'s defaults: `smoothness_um` (80), `detail` (`coarse`,
-`standard`, `fine`), `atlas_image` (`"nissl"`), `stain_metric`
-(`mutual_information`, `local_correlation`), `stain_edges`, `structures` and
-`neighbourhood_um` (some regions only), `exclude`. `mask` is `"none"` or the
-NAME of a mask of the section that `make_mask` made (`c.mask(id, name)` reads
-one: `UNKNOWN_MASK`, `STALE_MASK`); an array is refused (`BAD_ARGS`, make the
-mask with `make_mask` so the job holds it). `start="current"` fits on top of the
-applied deformation; `marked=False` keeps the section's marked damage regions
-in the fit. The proposal's provenance holds the fit's `inputs` and `estimated`
-blocks, as a tool's reply does.
-`c.fit_elastix(id, restrict_to=(), exclude=(), atlas_image="nissl",
-mask="none", marked=True, note="")` runs the Elastix affine `elastix_affine`
-runs, from the current placement, and returns a `TransformProposal` (refused
+`c.fit_fireants(id, restrict_to=(), exclude=(), section_image="preprocessed",
+atlas_image="nissl", mask="none", smoothness_um=80.0,
+metric="mutual_information", edges=True, detail="standard", start="linear",
+marked=True, note="")` runs FireANTs SyN, the engine `fireants_syn` runs, and
+returns a `DeformationProposal` NOT written. Its settings are `fireants_syn`'s,
+by its names and with its defaults (`restrict_to` fits those regions'
+neighbourhood only; `exclude` adds regions to leave out). `mask` is `"none"` or
+the NAME of a mask of the section that `make_mask` made (`c.mask(id, name)`
+reads one: `UNKNOWN_MASK`, `STALE_MASK`); an array is refused (`BAD_ARGS`, make
+the mask with `make_mask` so the job holds it). `start="current"` fits on top
+of the applied deformation and the written step keeps the chain; `marked=False`
+keeps the section's marked damage regions in the fit. The proposal's provenance
+holds the fit's `inputs` and `estimated` blocks, as a tool's reply does.
+`c.fit_elastix(id, restrict_to=(), exclude=(), section_image="preprocessed",
+atlas_image="nissl", mask="none", edges=True, marked=True, note="")` runs the
+Elastix affine `elastix_affine` runs, with its names and defaults, from the
+current placement, and returns a `TransformProposal` (refused
 `HAS_DEFORMATION` on a section that holds a deformation).
 `set_deformations` / `set_transforms` write them as the script's: the
-FireANTs settings, start, mask name and runtime in the deformation's
-provenance `meta`, the Elastix call's settings under the transform record's
+FireANTs call's settings as the deformation step's `settings` (what `status`
+and the registration list show) and in the record's provenance, the engine's
+own numbers in its `engine.native_parameters`, the start and runtime in
+provenance `meta`; the Elastix call's settings under the transform record's
 `fit`. `c.image_names(id)` lists the section images a fit can read, and
 `c.fit_frame(id, image="preprocessed")` gives one of them on the fit grid
 (`frame.section_image`, and `frame.section_image_ref`: `{name, kind, file,
 digest}`; `stain=True` is the same for `preprocessed`); `atlas=("nissl",)`
 asks for the atlas's Nissl plane.
 `c.deformation_from_map(..., weights=)` stores an engine's own sorting (float
-`(H, W)` on the fit grid) with the record, where `make_mask(source="fit")` finds it.
+`(H, W)` on the fit grid) with the record, where `make_mask(source="fit")` finds it;
+`start="current"` marks a map made on top of the held deformation (read
+through `frame.applied_map`), so the written step keeps the section's chain;
+`settings=` (the call's, by the tool's names), `engine_settings=` and
+`engine_version=` are kept as a native fit keeps its own
+([plugins](plugins.md#toolcontext)).
 
 ### An image of your own for the fits
 
