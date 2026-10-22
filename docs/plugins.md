@@ -341,6 +341,8 @@ never share one. A notice words a fit's plausibility flags as the native fits do
 once, a region code with its regions (`flag_words(summary)` of `langslice.plugin_api`,
 on a `DeformationProposal.summary`: `FOLDS, REGION_COMPRESSED (CA1, DG)`).
 
+Every GPU fit on the machine, these engines' and `fireants_syn`'s, takes one queue (a file lock, `~/.cache/langslice-stalign/gpu.lock`, or `LANGSLICE_GPU_LOCK`), so jobs running at once never fill the GPU together; a fit that still runs out of GPU memory waits and runs again.
+
 Each engine's description opens with what the method is and where it comes from (its paper),
 as `fireants_syn`'s does. A job with more than one deformable method (`fireants_syn` and any of
 these) has a Method in its job statement that says none is the default, asks the agent to try

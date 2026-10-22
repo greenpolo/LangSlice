@@ -35,9 +35,11 @@ pairs fitted, and those in the damage zone passed over to reach them),
 
 from __future__ import annotations
 
+import fcntl
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -56,6 +58,57 @@ from scipy.ndimage import map_coordinates  # noqa: E402
 #: SPOmiAlign's registration grid (roma.py ``H, W = 864, 1152``; paper: "1152 x 864")
 H, W = 864, 1152
 #: RoMa pixel coordinates are corner based (``W / 2 (x + 1)``): pixel centre + 0.5
+#: The GPU's one queue, shared with FireANTs, STalign and emlddmm (their lock file).
+GPU_LOCK = Path(os.environ.get("LANGSLICE_GPU_LOCK")
+                or Path.home() / ".cache" / "langslice-stalign" / "gpu.lock")
+#: A section that still finds the GPU full waits OOM_WAIT_S, twice that, ... and runs again.
+OOM_RETRIES = 4
+OOM_WAIT_S = 5.0
+
+
+def out_of_memory(exc: BaseException) -> bool:
+    """The GPU ran out of memory (torch's error, or what cuDNN and cuBLAS raise
+    when their allocation fails)."""
+    text = str(exc)
+    return (type(exc).__name__ == "OutOfMemoryError" or "out of memory" in text
+            or "CUDNN_STATUS_INTERNAL_ERROR" in text or "CUBLAS_STATUS_ALLOC_FAILED" in text)
+
+
+class gpu_queue:
+    """The whole call, the matcher's loading included, in the GPU's queue (a
+    lock on GPU_LOCK); nothing on the CPU."""
+
+    def __init__(self, device):
+        self.device = str(device)
+        self.handle = None
+
+    def __enter__(self):
+        if self.device.startswith("cuda"):
+            GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
+            self.handle = open(GPU_LOCK, "w")
+            fcntl.flock(self.handle, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        if self.handle is not None:
+            fcntl.flock(self.handle, fcntl.LOCK_UN)
+            self.handle.close()
+
+
+def retried(device, call):
+    """*call*, run again when a process outside the queue has taken the GPU's memory."""
+    for attempt in range(OOM_RETRIES + 1):
+        try:
+            return call()
+        except Exception as exc:
+            if (not str(device).startswith("cuda") or attempt == OOM_RETRIES
+                    or not out_of_memory(exc)):
+                raise
+            torch.cuda.empty_cache()
+            time.sleep(OOM_WAIT_S * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 CORNER = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
 MODES = ("rigid", "affine", "warp", "affine_warp")
 
@@ -176,15 +229,22 @@ def main() -> int:
     if mode not in MODES:
         raise SystemExit(f"mode is one of {MODES}; got {mode!r}")
     device = SP.resolve_torch_device(os.environ.get("SPOMIALIGN_DEVICE") or None)
-    model = SP.roma_outdoor(device=device, coarse_res=560, upsample_res=(H, W))
+    with gpu_queue(device):
+        return _match_all(data, mode, device)
+
+
+def _match_all(data, mode: str, device) -> int:
+    model = retried(device, lambda: SP.roma_outdoor(device=device, coarse_res=560,
+                                                    upsample_res=(H, W)))
     result: dict[str, np.ndarray] = {}
     for i in range(int(data["n"])):
         try:
             held = f"section_keep_{i}"
-            got = run(model, device, data[f"target_{i}"], data[f"source_{i}"],
-                      data[f"keep_{i}"].astype(bool), mode, int(data["matches"]),
-                      float(data[f"smoothing_px_{i}"]),
-                      data[held].astype(bool) if held in data.files else None)
+            got = retried(device, lambda i=i, held=held: run(
+                model, device, data[f"target_{i}"], data[f"source_{i}"],
+                data[f"keep_{i}"].astype(bool), mode, int(data["matches"]),
+                float(data[f"smoothing_px_{i}"]),
+                data[held].astype(bool) if held in data.files else None))
         except Exception as exc:  # one section failing leaves the others
             got = {"error": np.array(f"{type(exc).__name__}: {exc}")}
         result.update({f"{key}_{i}": value for key, value in got.items()})
