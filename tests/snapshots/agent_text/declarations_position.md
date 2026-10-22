@@ -16,8 +16,9 @@ deformation against internal anatomy.
 Args:
     mode: "section": each section alone, as oriented, the whole
         image. "atlas": the atlas plane alone at each of positions_mm,
-        at the stack's cutting angles, or with one section at that
-        section's own plane (positions_mm may be empty). "overlay": each section under its
+        at the stack's cutting angles; or, for each section named, at that
+        section's own position and cutting angles (positions_mm then
+        empty). "overlay": each section under its
         current registration, with the atlas borders and any other
         atlas_layers on it. "positioning": the sections and the atlas
         along the slicing axis as ABBA lays them out: the atlas at
@@ -49,6 +50,13 @@ Args:
         draws (0 = root, as in BrainGlobe; larger is finer).
     masks: Names of masks made with make_mask, outlined where
         their weight is 0.5 on the sections drawn, on the "section" and "overlay" pictures. Empty draws none.
+    registrations: {filename: number}: on the "section" and "overlay" pictures, each section named is drawn
+        under that earlier registration of its own, by the number its status
+        row gives (restore_registration lists them).
+        Nothing is written; the caption says which registration it is and
+        whether the section holds it. With sections empty, only these
+        sections are drawn. Empty draws the registration each section
+        holds.
 
 Returns:
     Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -208,8 +216,11 @@ The stack as it stands, and what this run lets you change. Writes nothing.
 
 Returns:
     One row per section in stack order: filename, position, distance
-    to the next placed section, flip and quarter turn, transform,
-    damaged regions and damage note, deformation steps, masks
+    to the next placed section, flip and quarter turn, transform (kind,
+    rotation_deg, scale_x, scale_y, shear, translate_x_mm, translate_y_mm,
+    mirrored), damaged regions and damage note, deformation (the method
+    that made it, every step's method, and the settings it was made
+    with), the number of the registration it holds, masks
     (name, source, and whether it was made at an earlier registration). Also the
     cutting angles, the interval breaks, the raw channels and the section
     images made (each with its recipe, or a script's note, and the
@@ -228,8 +239,9 @@ run notes (state.json), the settings (job.json) and the results.
 Args:
     path: A folder inside the job folder, relative to it; "." is the job
         folder itself.
-    pattern: A glob (e.g. "*.json", "views/*"): every file below path
-        whose name or path matches. Empty lists path itself.
+    glob: Every file below path whose name or path matches this glob
+        ("*.json", "views/*"; "*" is every file below path). Empty lists
+        path itself.
 
 Returns:
     The entries, folders first, each with its kind and size, at most 200,

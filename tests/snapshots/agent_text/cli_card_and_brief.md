@@ -26,7 +26,7 @@ written to `BRIEF.md` here. Open every picture, then work as it says.
   - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation;
     `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.
 - `views/`, `views.jsonl` (pictures, their index); `exports/` (results, `quicknii.json`,
-  `visualign.json`); `logs/` (events, CLI calls, background runs).
+  `visualign.json`); `logs/` (events, background runs, CLI calls, each reply in `calls/`).
 Maps and pictures are derived, never read back: editing one changes no registration.
 
 ## Pictures and coordinates
@@ -48,8 +48,8 @@ Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index`
 `pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
 `error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
 verb re-checks each section first: `STALE_INPUT`, run it again for that section).
-`langslice-job ops` lists the verbs; `langslice-job <ROOT>/langslice schema VERB [VERB ...]` gives
-their arguments, several at once (every verb without one); `schema init` the job flags.
+`TOOLS.md` (from `brief`) describes every verb and its arguments; `langslice-job <ROOT>/langslice
+schema VERB [VERB ...]` as JSON (every verb without one), `ops` lists them, `schema init` the flags.
 - `look` (read, Common): Draw pictures of sections and the atlas. Writes nothing.
 - `zoom` (read, Common): Zoom into a pixel box or one atlas region of an earlier picture. Writes nothing.
 - `make_image` (write, Common): Make, replace or delete a named section image, from the section's other images.
@@ -70,7 +70,7 @@ their arguments, several at once (every verb without one); `schema init` the job
 - `note` (write, Common): Append one line to the run notes, which are saved with the results.
 - `undo` (write, Common): Undo the last write. A tool call, or a finished piece of background work, is one step.
 - `redo` (write, Common): Redo the write that ``undo`` reversed.
-- `restore_registration` (write, Common): Put back a registration a section held before: its orientation, transform and deformation.
+- `restore_registration` (write, Common): Put back registrations sections held before: their orientation, transform and deformation.
 - `submit` (write, Common): End the run. Call this exactly once, last.
 - `export_maps` (read, Common, long): Write each placed section's maps and the stack's exports, from the job as it stands.
 
@@ -129,10 +129,10 @@ Method:
 - After writing, review the whole stack against the atlas, watch for spacings that differ from their neighbours, and re-check the sections on either side of any gap before reporting an interval break.
 - Submit when the work is complete; address any missing requirements it returns.
 - Positions can be revisited throughout registration. If zooms or repeated looks suggest that a section's placement is wrong, return to atlas comparisons and re-place it, even after beginning linear or nonlinear alignment.
-- Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
+- Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
-- Before fitting a damaged section, mark the regions it has lost with `mark_damage`, so that every region it still has drives its fits.
-- Run each fit on the whole section first, then refine regions. Inspect each fit's borders against the section's internal anatomy; undo a fit that does not improve the alignment and fit that section again with different `fireants_syn` settings, such as another smoothness_um or another atlas image.
+- Every fit leaves the regions marked with `mark_damage` out of the atlas, so that the regions a damaged section still has drive its fits.
+- Inspect each fit's borders against the section's internal anatomy; undo a fit that does not improve the alignment.
 - A fit's reply names the section image, atlas image and mask it used.
 - A fit compares one section image with one atlas image. It does best when both show as much internal structure as possible (layers, nuclei, fibre tracts, ventricle walls) and when the two look alike. Choose, make and look at images by that principle; there is no fixed recipe.
 
@@ -147,7 +147,7 @@ Commands:
 - Commands may run in parallel: each write holds the job folder's lock, and a long tool re-checks each section before it applies (STALE_INPUT when the section changed meanwhile: run it again for that section).
 
 Status table (filename, position, spacing to the next placed section, flags):
-filename  position_mm  delta_to_next_mm  flags  transform(kind, mirrored)
+filename  position_mm  delta_to_next_mm  flags  transform(kind, mirrored)  deformation(methods)
 s0.png  unplaced  -
 s1.png  unplaced  -
 s2.png  unplaced  -
