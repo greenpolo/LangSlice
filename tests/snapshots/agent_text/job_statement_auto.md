@@ -36,10 +36,10 @@ Method:
 - After writing, review the whole stack against the atlas, watch for spacings that differ from their neighbours, and re-check the sections on either side of any gap before reporting an interval break.
 - Submit when the work is complete; address any missing requirements it returns.
 - Positions can be revisited throughout registration. If zooms or repeated looks suggest that a section's placement is wrong, return to atlas comparisons and re-place it, even after beginning linear or nonlinear alignment.
-- Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
+- Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
-- Before fitting a damaged section, mark the regions it has lost with `mark_damage`, so that every region it still has drives its fits.
-- Run each fit on the whole section first, then refine regions. Inspect each fit's borders against the section's internal anatomy; undo a fit that does not improve the alignment and fit that section again with different `fireants_syn` settings, such as another smoothness_um or another atlas image.
+- Every fit leaves the regions marked with `mark_damage` out of the atlas, so that the regions a damaged section still has drive its fits.
+- Inspect each fit's borders against the section's internal anatomy; undo a fit that does not improve the alignment.
 - A fit's reply names the section image, atlas image and mask it used.
 - A fit compares one section image with one atlas image. It does best when both show as much internal structure as possible (layers, nuclei, fibre tracts, ventricle walls) and when the two look alike. Choose, make and look at images by that principle; there is no fixed recipe.
 

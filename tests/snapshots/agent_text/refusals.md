@@ -26,7 +26,7 @@
 ```json
 {
  "error": "UNKNOWN_ARGUMENTS",
- "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, images, atlas_layers, atlas_opacity, warp, layers, depth, masks. Nothing was done.",
+ "message": "look: Unknown key(s) in (top level): view; accepted: mode, sections, positions_mm, images, atlas_layers, atlas_opacity, warp, layers, depth, masks, registrations. Nothing was done.",
  "problems": [
   {
    "accepted": [
@@ -39,7 +39,8 @@
     "warp",
     "layers",
     "depth",
-    "masks"
+    "masks",
+    "registrations"
    ],
    "argument": "(top level)",
    "unknown": [

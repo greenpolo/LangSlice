@@ -16,8 +16,9 @@ deformation against internal anatomy.
 Args:
     mode: "section": each section alone, as oriented, the whole
         image. "atlas": the atlas plane alone at each of positions_mm,
-        at the stack's cutting angles, or with one section at that
-        section's own plane (positions_mm may be empty). "overlay": each section under its
+        at the stack's cutting angles; or, for each section named, at that
+        section's own position and cutting angles (positions_mm then
+        empty). "overlay": each section under its
         current registration, with the atlas borders and any other
         atlas_layers on it. "positioning": the sections and the atlas
         along the slicing axis as ABBA lays them out: the atlas at
@@ -49,6 +50,13 @@ Args:
         draws (0 = root, as in BrainGlobe; larger is finer).
     masks: Names of masks made with make_mask, outlined where
         their weight is 0.5 on the sections drawn, on the "section" and "overlay" pictures. Empty draws none.
+    registrations: {filename: number}: on the "section" and "overlay" pictures, each section named is drawn
+        under that earlier registration of its own, by the number its status
+        row gives (restore_registration lists them).
+        Nothing is written; the caption says which registration it is and
+        whether the section holds it. With sections empty, only these
+        sections are drawn. Empty draws the registration each section
+        holds.
 
 Returns:
     Up to 4 pictures, attached in the order `pictures` lists them, each
@@ -206,8 +214,11 @@ The stack as it stands, and what this run lets you change. Writes nothing.
 
 Returns:
     One row per section in stack order: filename, position, distance
-    to the next placed section, flip and quarter turn, transform,
-    damaged regions and damage note, deformation steps, masks
+    to the next placed section, flip and quarter turn, transform (kind,
+    rotation_deg, scale_x, scale_y, shear, translate_x_mm, translate_y_mm,
+    mirrored), damaged regions and damage note, deformation (the method
+    that made it, every step's method, and the settings it was made
+    with), the number of the registration it holds, masks
     (name, source, and whether it was made at an earlier registration). Also the
     cutting angles, the interval breaks, the raw channels and the section
     images made (each with its recipe, or a script's note, and the
@@ -226,8 +237,9 @@ run notes (state.json), the settings (job.json) and the results.
 Args:
     path: A folder inside the job folder, relative to it; "." is the job
         folder itself.
-    pattern: A glob (e.g. "*.json", "views/*"): every file below path
-        whose name or path matches. Empty lists path itself.
+    glob: Every file below path whose name or path matches this glob
+        ("*.json", "views/*"; "*" is every file below path). Empty lists
+        path itself.
 
 Returns:
     The entries, folders first, each with its kind and size, at most 200,
@@ -606,25 +618,33 @@ Returns:
 
 ## restore_registration
 
-Put back a registration a section held before: its orientation, transform and deformation.
+Put back registrations sections held before: their orientation, transform and deformation.
 
 Each registration a section holds gets a number, kept whatever is
 written after it: the `registration` of its status row and of the reply
 to the write that left it. Undo takes back the job's last write; this
-returns one section to any earlier registration, such as a fit made
-before another method's, and leaves the other sections as they are. One
-undoable write. A deformation fitted with the section at another position
-or other cutting angles is refused until the section is back there.
+returns sections to any earlier registrations, such as fits made before
+another method's, and leaves the other sections as they are. One
+undoable write for the call. A deformation fitted with the section at
+another position or other cutting angles is refused until the section is
+back there. look draws an earlier registration
+without writing it.
 
 Args:
-    section: Filename (the extension may be left off).
-    registration: The number to put back; 0 lists the section's
-        registrations (number, the tool that made it, when) and writes
-        nothing.
+    section: Filename (the extension may be left off) of a section whose
+        registrations to list; writes nothing. Give section or sections.
+    sections: The registrations to put back: {id, registration} per
+        section, id a filename and registration a number from the list.
 
 Returns:
-    The registration the section holds now and the one it replaced, its
-    row, and the picture; or the list.
+    With section, its registrations: per number the tool that made it and
+    when, its transform (kind, rotation_deg, scale_x, scale_y, shear,
+    translate_x_mm, translate_y_mm), its deformation (the method that made
+    it, every step's method, and the settings it was made with), the
+    numbers of the pictures saved with the write that left it, and which
+    one the section holds. With sections, per section the registration
+    it holds now and the one it replaced, or why it was not put back;
+    the rows of the sections written, and the pictures.
 
 
 ## submit
