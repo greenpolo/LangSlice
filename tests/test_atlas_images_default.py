@@ -73,3 +73,15 @@ def test_other_names_are_checked_against_the_atlas():
     # The borrowed Nissl exists only on an atlas that takes it.
     with pytest.raises(ValueError, match="has no image"):
         resolve_image(atlas, images.BORROWED_NISSL)
+
+
+@pytest.mark.parametrize(("space", "takes"), [
+    ("allen-adult-mouse-ccf-space", True),
+    (None, True),  # an older package that names no space: the grid decides
+    ("ccfv2_mouse-space", False),  # the 2011 atlas: CCFv3's grid, not its anatomy
+])
+def test_only_the_ccfv3_space_borrows_the_nissl(space, takes):
+    atlas = _Atlas(name="grid_100um", shape=(132, 80, 114), resolution=(100.0, 100.0, 100.0))
+    if space is not None:
+        atlas.metadata["coordinate_space"] = {"name": space}
+    assert images._takes_borrowed_nissl(atlas) is takes

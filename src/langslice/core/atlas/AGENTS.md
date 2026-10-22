@@ -39,7 +39,15 @@ here is a verbatim copy — edit one, mirror to the other.
   `atlas_volume`): BrainGlobe's `template` and every additional reference the
   atlas ships, under BrainGlobe's names, plus `ccfv3augmented_nissl` for an
   Allen CCFv3 atlas (no Nissl of its own): the Blue Brain Nissl template of
-  `ccfv3augmented_mouse_25um` resampled onto its grid.
+  `ccfv3augmented_mouse_25um` resampled onto its grid. CCFv3 means the CCFv3
+  grid and, where the metadata names one, the CCFv3 coordinate space
+  (`CCFV3_SPACE`): the Allen CCFv2 atlases share the grid, not the anatomy.
+- `details.py` — BrainGlobe's own paragraph about each atlas (its "Atlas
+  details" page, CC BY 4.0), kept in `brainglobe_atlas_details.json` by atlas
+  name (lower case) with the page's commit; `atlas_description(name)`, which
+  the job statement quotes (`agent/prompt.py`, `atlas_facts`): what the
+  reference images are and where one is misaligned. Refresh with
+  `python -m langslice.core.atlas.details`.
 - `sides.py` — one side of a region, `"CTX:left"`: the grammar
   (`split_side`), the native plane's two ML halves
   (`ml_halves`: ML volume index per pixel from `oblique.plane_index_coordinates`

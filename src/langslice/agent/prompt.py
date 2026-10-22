@@ -119,6 +119,24 @@ def channel_facts(
     return lines
 
 
+def atlas_facts(atlas_name: str, atlas_channels: tuple[str, ...] | None) -> list[str]:
+    """The run facts on what the atlas and its images are: BrainGlobe's own
+    description of the atlas (:mod:`langslice.core.atlas.details`) and, where
+    the atlas is offered it, what the borrowed Nissl is."""
+    from langslice.core.atlas.details import atlas_description
+    from langslice.core.atlas.images import AUGMENTED_ATLAS, BORROWED_NISSL
+
+    lines: list[str] = []
+    described = atlas_description(atlas_name)
+    if described:
+        lines.append(f"- The atlas as BrainGlobe describes it: {described}")
+    if atlas_channels and BORROWED_NISSL in atlas_channels:
+        lines.append(f"- `{BORROWED_NISSL}`: the Nissl template of {AUGMENTED_ATLAS} (the "
+                     "Blue Brain averaged Nissl, registered to the CCFv3 annotation), "
+                     "resampled onto this atlas's grid.")
+    return lines
+
+
 #: Heading of each task's user notes, in the order the tasks are listed.
 _TASK_NOTES: tuple[tuple[str, str, str], ...] = (
     ("position", "position", "Positioning"),
@@ -229,6 +247,7 @@ def build_job_statement(
 
         max_resolution = DEFAULT_IMAGE_LIMIT[0]
     facts += channel_facts(channels, atlas_channels, max_resolution if sized else None)
+    facts += atlas_facts(state.atlas, atlas_channels)
 
     tools = ("Tools (each one's own description says what it does and returns): "
              + ", ".join(f"`{name}`" for name in tool_names) + ".")
@@ -398,6 +417,12 @@ def build_job_statement(
         if not method:
             method = ["", "Method:"]
         method.append("- A fit's reply names the channel, atlas image and mask it used.")
+        method.append(
+            "- Choose the atlas image each fit compares the section with: the one whose "
+            "contrast is closest to the section's (its stain and imaging) and that lines up "
+            "with the atlas borders. "
+            "Look at the candidates beside the section before choosing; the default "
+            "`nissl` is a starting point, not a rule.")
 
     if method and not spec.off("set_channel"):
         # First in the Method: the channel every later step looks at and fits.
