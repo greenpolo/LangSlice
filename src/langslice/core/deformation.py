@@ -204,8 +204,8 @@ def section_image(
     grid (:mod:`langslice.core.section_images`: a raw channel, ``preprocessed``
     or another made image, drawn as :func:`langslice.core.sections.render_slice`
     draws it at :data:`FIT_LONG_EDGE`). *identity* names it for the record
-    cache: ``{name, kind, digest}`` (the opening ``preprocessed``: how it is
-    drawn), so a fit is not reused after the image is made again.
+    cache: ``{name, kind, digest}``, so a fit is not reused after the image is
+    made again.
     ``ValueError`` for a name the section lacks.
 
     Traced fit sections draw their pictures on the ``preprocessed`` image too.
@@ -217,11 +217,7 @@ def section_image(
         raise ValueError(f"{record.id} has no section image {name!r}; its images: "
                          f"{', '.join(images.image_names(ctx, record))}")
     image = render_slice(ctx, record, long_edge=FIT_LONG_EDGE, look={"image": name})
-    identity = images.identity(ctx, record, name)
-    if identity.get("opening"):  # what it is drawn from, so a saved fit is not
-        # reused after the run's preprocessing changes
-        identity["host"] = ctx.spec.host_preprocessing
-    return _on_grid(image, grid), identity
+    return _on_grid(image, grid), images.identity(ctx, record, name)
 
 
 def traced_lines(

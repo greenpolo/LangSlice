@@ -256,12 +256,20 @@ job is created: the automatic path (each raw channel weighted by its squared
 tissue coverage, CLAHE clip 4 on 8x8 tiles, the blend brightened toward a
 mid-gray tissue mean; a host's channel blend for an ABBA job that sends
 preprocessing settings; the file as read, in gray, for a job with
-`preprocess="none"`). It is drawn through that path at the size each picture or
-fit reads it, exactly as before section images were files, and its file is
-that drawing at the working copy's size. It is the image every fit reads by
+`preprocess="none"`), run once on the working copy and saved as its file.
+From then on it is an ordinary made image: every reader (the fits, the image
+model, `look`, zooms, masks) reads that file, resized to the size it works at,
+so a fit reply's file and digest are exactly what the engine read. Before
+section images, this path ran again at each reader's size (CLAHE on 1536 px for
+a fit, on the picture's size for a picture); reading the one file changed the
+default fit input by 1.5 to 3.2 gray levels on average, up to 107 at an edge
+or a speck, on 16 sections whose 2048-pixel working copies are larger than
+the 1536-pixel fit grid (2026-10-22). It is the image every fit reads by
 default (`section_image="preprocessed"`), the image model traces on, and the
 picture of the section that `look` draws when no image is named, as do the
 positioning picture, the opening strips and the landmark views.
+`make_image("preprocessed")` with every argument at its default writes the
+same file again.
 
 `make_image(name, sections=[], weights={}, clahe_clip=4, clahe_tiles=8,
 n4=False, denoise=False, contrast=[], gamma=0, invert=False, delete=False,

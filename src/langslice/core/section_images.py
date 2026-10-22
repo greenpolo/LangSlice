@@ -25,13 +25,11 @@ job is created (:func:`opening_entry`, ``{"opening": "adaptive"}``: the
 automatic path, :func:`langslice.core.image_prep.adaptive_preprocess`;
 ``{"opening": "host", "settings": ...}``: a host's channel blend;
 ``{"opening": "plain"}``: the working copy as read, in gray, for a job that
-preprocesses nothing). It is the image every picture that names no image draws
-and every fit's default. The opening image is drawn through that path at the
-size each picture or fit reads it (CLAHE runs on the pixels it is drawn at,
-exactly as before section images were files); its file is that drawing at the
-working copy's size. A recipe image (``make_image``, ``preprocessed`` remade
-included) is computed once on the working copy and read back from its file,
-resized to the size it is drawn at.
+preprocesses nothing), computed once at the working copy's size. It is the
+image every picture that names no image draws and every fit's default. Every
+made image, the opening one included, is read from its file by every reader
+(fits, the image model, ``look``, zooms, masks), resized to the size that
+reader works at, so the file and its digest are exactly what a reader read.
 
 Geometry never depends on an image's pixels: every image is held at the
 working copy's size and drawn at the same render size, and calibration comes
@@ -61,7 +59,6 @@ from langslice.core.image_prep import (
     adaptive_preprocess,
     coverage_weights,
     custom_appearance,
-    prepare_image_for_vlm,
 )
 from langslice.core.state import SliceState, StackState
 from langslice.core.workspace import Workspace
@@ -90,6 +87,8 @@ AUTO = "auto"
 PNG_COMPRESS_LEVEL = 3
 #: Threads the opening images of a stack are made on.
 OPENING_THREADS = 8
+#: Working-size planes kept on ``Workspace.image_cache`` (a few megabytes each).
+IMAGE_CACHE_SIZE = 64
 
 #: A look, as :func:`langslice.core.sections.render_slice` takes it: ``None``
 #: (the section's ``preprocessed`` image), ``{"image": name}`` (one section
@@ -246,16 +245,16 @@ def opening_words(source: Mapping[str, Any]) -> str:
     return "the file as read, in gray, unenhanced"
 
 
-def opening_render(ws: Workspace, section_id: str, long_edge: int | None = None) -> Image.Image:
-    """The opening ``preprocessed`` image at *long_edge* (None: the working copy's
-    size), unoriented, 8-bit gray: the working copy resized, then the automatic
-    path at that size (a host's blend is already in the working copy)."""
+def opening_render(ws: Workspace, section_id: str) -> Image.Image:
+    """The opening ``preprocessed`` image, unoriented, 8-bit gray, at the working
+    copy's size: the automatic path (:func:`~langslice.core.image_prep.adaptive_preprocess`)
+    on the working copy (a host's blend is the working copy itself; a job that
+    preprocesses nothing has the copy in gray)."""
     source, _factor = ws.working_source(section_id)
-    edge = max(source.size) if long_edge is None else int(long_edge)
-    prepped = prepare_image_for_vlm(source, max_long_edge=edge)
+    image = source
     if ws.spec.preprocess == "auto" and ws.spec.host_preprocessing is None:
-        prepped = adaptive_preprocess(prepped)
-    return prepped.convert("L")
+        image = adaptive_preprocess(source)
+    return image.convert("L")
 
 
 def is_opening(entry: Mapping[str, Any] | None) -> bool:
@@ -376,10 +375,17 @@ def _resolved_file(ws: Workspace, entry: Mapping[str, Any]) -> Path:
 
 
 def _cached(ws: Workspace, key: tuple[str, str], make: Callable[[], np.ndarray]) -> np.ndarray:
-    held = ws.image_cache.get(key)
+    """*key*'s plane from the workspace's cache, least recently used out past
+    :data:`IMAGE_CACHE_SIZE` planes."""
+    cache = ws.image_cache
+    held = cache.get(key)
     if held is None:
         held = make()
-        ws.image_cache[key] = held
+        cache[key] = held
+        while len(cache) > IMAGE_CACHE_SIZE:
+            cache.popitem(last=False)
+    else:
+        cache.move_to_end(key)
     return held
 
 
@@ -411,7 +417,8 @@ def plane_of(
 ) -> np.ndarray:
     """Section image *name* at the working copy's size (uint8 ``(H, W)``,
     unoriented): a raw plane, or a made image's file (``preprocessed`` without
-    an entry: the opening image drawn at that size). ``ValueError`` naming the
+    an entry, a workspace with no job: the opening image made in memory).
+    ``ValueError`` naming the
     images for any other name."""
     if name in raw_names(ws, section_id):
         return raw_plane(ws, section_id, name)
@@ -472,13 +479,8 @@ def read_image(ws: Workspace, record: SliceState, name: str) -> ImageView:
 def identity(ws: Workspace, record: SliceState, name: str) -> dict[str, Any]:
     """What names the image a fit reads, for its cache key and record:
     ``{name, kind, digest}`` (a raw channel's digest is the file's name)."""
-    kind = kind_of(ws, record, name)
-    entry = entry_of(record, name)
-    if kind == MADE and entry is None:
-        return {"name": name, "kind": MADE, "opening": opening_source(ws.spec),
-                "preprocess": ws.spec.preprocess}
-    return {"name": name, "kind": kind,
-            "digest": None if entry is None or kind == RAW else entry.get("digest")}
+    view = read_image(ws, record, name)
+    return {"name": name, "kind": view.kind, "digest": view.digest}
 
 
 def images_digest(record: SliceState) -> dict[str, str]:

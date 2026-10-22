@@ -447,8 +447,8 @@ the state reference, and a name made again with other pixels gets a new file
 with the host's `settings` for `host`), `file`, `digest` (8 hex digits of the
 pixels and their shape), `made` (ISO time) and, for a recipe with automatic
 weights, `weights_used` (the weights it resolved to, by raw channel). The
-opening `preprocessed` file is the automatic path drawn at the working copy's
-size; pictures and fits draw that path again at their own size.
+opening `preprocessed` file is the automatic path run on the working copy;
+like every made image, each reader reads the file, resized to its own size.
 
 State format 4 holds these entries; a job of format 3 (the stack's
 `appearance`: recipes and raw channels' display properties) is read through
@@ -457,7 +457,11 @@ made into a file and an entry per section (a section's own override
 honoured), `preprocessed` without a recipe becomes the opening image, the
 display properties are dropped, a mask's `channel` is named `section_image`,
 and the state and its history steps are written again as format 4.
-Deformation records are not rewritten.
+Deformation records are not rewritten. A recipe image is made once on the
+working copy, so a fit on a migrated job reads that file: it is not the image
+the older LangSlice ran the recipe on at the fit's size, and a refit does not
+reproduce the job's earlier fit. The first open of a large job takes a while
+(about 2-3 minutes for 20-30 sections whose recipe denoises); later opens do not.
 
 ## Masks (`sections/<stem>/masks/<name>.npz`)
 
