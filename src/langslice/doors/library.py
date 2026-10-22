@@ -176,8 +176,9 @@ class ScriptContext(ToolContext):
     worked example):
 
     - ``f = c.fit_frame("<file>", stain=True)``: ``f.image`` the section on
-      the fit grid (H, W, 3), ``f.stain`` its preprocessed channel (what the
-      native fits read), ``f.atlas["template"]`` / ``["annotation"]`` the
+      the fit grid (H, W, 3), ``f.stain`` its ``preprocessed`` image (what the
+      native fits read by default; ``image="<name>"`` gives another section image
+      as ``f.section_image``), ``f.atlas["template"]`` / ``["annotation"]`` the
       atlas plane on its native grid, ``f.placed_atlas_to_section`` 3x3 native
       atlas px -> fit-grid px (the current placement).
     - Take ``d = c.section_inputs("<file>")`` before computing and pass
@@ -198,6 +199,11 @@ class ScriptContext(ToolContext):
       atlas planes anywhere: ``c.atlas_plane``, ``c.atlas_volume``.
     - The native engines with settings of your own: ``c.fit_fireants``,
       ``c.fit_elastix`` (proposals; written by ``set_*``).
+    - An image of your own for the fits and pictures: ``c.add_image("<file>",
+      "<name>", array, note="...")``, array ``(H, W)`` = ``c.working_grid("<file>")``
+      in the file's orientation (``c.section_raster("<file>", raw=True,
+      images=["red"])`` reads a raw plane, turned as the section is), uint8 or
+      0-1 floats; then ``section_image="<name>"`` in any fit.
     - Marks of your own on the pictures: ``c.add_layer`` (a
       :class:`langslice.plugin_api.Layer`), drawn by ``job.look(...,
       layers=[name])``.

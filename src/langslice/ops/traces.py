@@ -142,7 +142,7 @@ def trace_borders(
     saved reply at its geometry reused (``cached``), the section's
     ``image_correction`` record written as ONE undo step when it changed,
     and a piece of background work started. The model is shown the
-    section's preprocessed channel and the same picture with the placed
+    section's ``preprocessed`` image and the same picture with the placed
     atlas borders (``registration_tool.start_correction``): with
     *restrict_to*, only those regions' borders (descendants included,
     ``"CTX:left"`` for one side), and the section's marked regions left out
@@ -155,7 +155,7 @@ def trace_borders(
     top of the section's applied deformation where it holds one, else its
     linear placement; with *restrict_to*, by those regions only) and is
     applied as its own undo step. A section whose inputs (placement,
-    preprocessed channel, damage, deformation) changed since this call gets
+    section images, damage, deformation) changed since this call gets
     nothing, its notice saying ``STALE_INPUT``. With *options*, the fit and
     the trace are drawn and saved with the work.
 
@@ -274,7 +274,7 @@ def _landed(job: Job, record: Any) -> bool:
 
 
 def _stale(trace: dict[str, Any]) -> Landed:
-    return Landed(status=FAILED, text=f"{STALE_INPUT}: the section's placement, preprocessed "
-                  "channel, damage, deformation or trace changed before the trace landed; "
+    return Landed(status=FAILED, text=f"{STALE_INPUT}: the section's placement, section "
+                  "images, damage, deformation or trace changed before the trace landed; "
                   "nothing was applied. Run trace_borders again.",
                   result={"error": STALE_INPUT, "trace": trace})

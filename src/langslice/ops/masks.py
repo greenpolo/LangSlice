@@ -1,4 +1,4 @@
-"""The ``set_mask`` verb: a section's named section-side masks.
+"""The ``make_mask`` verb: the sections' named section-side masks.
 
 A mask is a weight image on the section's fit grid (:mod:`langslice.core.section_masks`)
 of one of two kinds, both the three-class EM sorting of the tissue: ``em`` (made
@@ -8,24 +8,27 @@ takes a mask by its name (``fireants_syn``, ``elastix_affine`` and the
 engines of tool plugins). Nothing else makes a mask: no threshold and no
 drawn region; the damage marks are the atlas side and never mask the section.
 
-:func:`set_mask` writes ``SliceState.masks`` (one undo step) and the weights
-under the job folder (``sections/<stem>/masks/<name>.npz``, never deleted:
-undo hides the state reference). :func:`mask_names` and :func:`read` are what
-the fits and the pictures read through.
+:func:`make_mask` writes ``SliceState.masks`` of each section named (one undo
+step for the call) and the weights under the job folder
+(``sections/<stem>/masks/<name>.npz``, never deleted: undo hides the state
+reference). :func:`read` and :func:`section_weights` are what the fits and the
+pictures read through.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from langslice.core import appearance, deformation
+from langslice.core import deformation
 from langslice.core.atlas.images import resolve_image
 from langslice.core.deformable.masks import SORTING_KEYS
+from langslice.core.section_images import PREPROCESSED
 from langslice.core.section_masks import NAME_PATTERN, RESERVED_NAMES
+from langslice.ops.images import check_image
 from langslice.ops.refusal import Refused, check_frozen, unknown_sections
 
 if TYPE_CHECKING:
@@ -41,16 +44,20 @@ NO_MASK = "none"
 
 
 @dataclass(frozen=True)
-class MaskSet:
-    """What :func:`set_mask` did."""
+class MasksMade:
+    """What :func:`make_mask` did: one row per section named."""
 
-    id: str
     name: str
     deleted: bool = False
-    #: The state entry now held (``kind``, ``channel``, ``atlas_image``, ``params``,
-    #: ``left_out``...); None for a deleted mask.
-    entry: dict[str, Any] | None = None
-    record: SliceState | None = field(default=None, repr=False)
+    #: Per section: ``{"id", "status": "ok", "entry"}`` (the state entry now held:
+    #: ``kind``, ``section_image``, ``atlas_image``, ``params``, ``left_out``...; none
+    #: for a deleted mask), or ``{"id", "status": "error", "error", "message"}``.
+    rows: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def made(self) -> list[str]:
+        """The sections whose mask was written (or removed)."""
+        return [row["id"] for row in self.rows if row["status"] == "ok"]
 
 
 def _check_name(name: Any) -> str:
@@ -76,16 +83,34 @@ def _check_sorting(sorting: Mapping[str, Any] | None) -> dict[str, float]:
     return values
 
 
-def set_mask(
-    job: Job, workspace: Workspace, section: Any, name: str, *, source: str = "em",
-    channel: str = appearance.PREPROCESSED, atlas_image: str = "nissl",
-    sorting: Mapping[str, Any] | None = None, delete: bool = False,
-) -> MaskSet:
-    """Make, replace or delete the mask *name* of one section. One undo step.
+def _records(job: Job, sections: Sequence[Any] | None) -> list[SliceState]:
+    state = job.state
+    if not sections:
+        return state.in_order()
+    found: list[SliceState] = []
+    unknown: list[str] = []
+    for ref in sections:
+        record = state.resolve(ref)
+        if record is None:
+            unknown.append(str(ref))
+        elif record not in found:
+            found.append(record)
+    if unknown:
+        raise unknown_sections(state, unknown)
+    return found
 
-    ``em``: sort the section's pixels of *channel* against *atlas_image* at its
-    CURRENT registration (the atlas placed through its transform and applied
-    deformation), with the optional starting points *sorting*
+
+def make_mask(
+    job: Job, workspace: Workspace, name: str, sections: Sequence[Any] | None = None, *,
+    source: str = "em", section_image: str = PREPROCESSED, atlas_image: str = "nissl",
+    sorting: Mapping[str, Any] | None = None, delete: bool = False,
+) -> MasksMade:
+    """Make, replace or delete the mask *name* of each section named (empty:
+    every section). One undo step for the call.
+
+    ``em``: sort each section's pixels of *section_image* against *atlas_image*
+    at its CURRENT registration (the atlas placed through its transform and
+    applied deformation), with the optional starting points *sorting*
     (:data:`SORTING_KEYS`); ``fit``: the sorting the section's applied
     deformation saved with its record, copied. The mask is stale only once the
     section is turned or flipped; a new registration only marks it made at an earlier one
@@ -93,41 +118,62 @@ def set_mask(
     *delete* removes the entry (the weights file stays; undo brings the entry
     back).
 
-    Refused (nothing written): ``UNKNOWN_SLICE_IDS``, ``SECTION_BUSY``,
-    ``BAD_ARGS`` (the name, the source, the starting points, an atlas image the
-    atlas does not have), ``UNKNOWN_CHANNEL``, ``NO_POSITION``,
-    ``INVALID_LINEAR_PLACEMENT``, ``UNKNOWN_MASK`` (delete of a name the
-    section does not have), ``NO_DEFORMATION`` / ``NO_SORTING`` (source
-    ``fit``), ``FIT_FAILED`` (the sort failed, the message says how).
+    A section that cannot get its mask is that section's row (``NO_POSITION``,
+    ``INVALID_LINEAR_PLACEMENT``, ``NO_DEFORMATION`` / ``NO_SORTING`` for source
+    ``fit``, ``FIT_FAILED``); the others are written. Refused, nothing written:
+    ``UNKNOWN_SLICE_IDS``, ``SECTION_BUSY``, ``BAD_ARGS`` (the name, the source,
+    the starting points, an atlas image the atlas does not have), ``UNKNOWN_IMAGE``,
+    ``UNKNOWN_MASK`` (delete of a name no section named holds), and, when no
+    section could get its mask, the first section's refusal.
     """
-    record = job.state.resolve(section)
-    if record is None:
-        raise unknown_sections(job.state, [str(section)])
-    check_frozen(job, [record.id])
+    records = _records(job, sections)
+    check_frozen(job, [record.id for record in records])
     label = _check_name(name)
     if delete:
-        if label not in (record.masks or {}):
-            raise Refused("UNKNOWN_MASK", message=f"{record.id} has no mask {label!r}.",
-                          masks=sorted(record.masks or {}))
+        holding = [record for record in records if label in (record.masks or {})]
+        if not holding:
+            raise Refused("UNKNOWN_MASK", message=f"no section named holds a mask {label!r}.",
+                          masks=sorted({mask for record in records for mask in record.masks}))
         before = job.snapshot()
-        del record.masks[label]
+        for record in holding:
+            del record.masks[label]
         job.commit(before)
-        return MaskSet(id=record.id, name=label, deleted=True, record=record)
+        return MasksMade(name=label, deleted=True,
+                         rows=[{"id": record.id, "status": "ok"} for record in holding])
     kind = str(source or "em").strip().lower()
     if kind not in SOURCES:
         raise Refused("BAD_ARGS", message=f"source is one of {list(SOURCES)}.")
     params = _check_sorting(sorting)
-    before = job.snapshot()  # the mask entry is set by the write below
-    if kind == "fit":
-        entry = _from_fit(job, workspace, record, label)
-    else:
-        entry = _from_em(job, workspace, record, label, channel=str(channel or "").strip(),
-                         atlas_image=str(atlas_image or "nissl"), params=params)
+    image = str(section_image or PREPROCESSED).strip()
+    resolved = ""
+    if kind == "em":
+        try:
+            resolved = resolve_image(workspace.atlas, str(atlas_image or "nissl"))
+        except ValueError as exc:
+            raise Refused("BAD_ARGS", message=str(exc)) from exc
+        check_image(job, workspace, records, image)
+    rows: list[dict[str, Any]] = []
+    first: Refused | None = None
+    before = job.snapshot()  # the mask entries are set by the writes below
+    for record in records:
+        try:
+            entry = (_from_fit(job, record, label) if kind == "fit" else
+                     _from_em(job, workspace, record, label, section_image=image,
+                              atlas_image=resolved, params=params))
+        except Refused as refusal:
+            first = first or refusal
+            rows.append({"id": record.id, **refusal.payload(), "status": "error",
+                         "message": str(refusal.details.get("message") or refusal.code)})
+            continue
+        rows.append({"id": record.id, "status": "ok", "entry": entry})
+    if not any(row["status"] == "ok" for row in rows):
+        assert first is not None
+        raise first
     job.commit(before)
-    return MaskSet(id=record.id, name=label, entry=entry, record=record)
+    return MasksMade(name=label, rows=rows)
 
 
-def _from_fit(job: Job, workspace: Workspace, record: SliceState, name: str) -> dict[str, Any]:
+def _from_fit(job: Job, record: SliceState, name: str) -> dict[str, Any]:
     from langslice.core.section_masks import (
         fit_weights,
         grid_digest,
@@ -148,7 +194,7 @@ def _from_fit(job: Job, workspace: Workspace, record: SliceState, name: str) -> 
     inside = weights < 0.5
     if footprint is not None and footprint.shape == inside.shape and footprint.any():
         inside = inside[footprint]
-    meta = {"kind": "fit", "channel": "", "atlas_image": str(atlas), "params": {},
+    meta = {"kind": "fit", "section_image": "", "atlas_image": str(atlas), "params": {},
             "inputs": grid_digest(record),
             "registration": registration_digest(job.state, record),
             "left_out": float(inside.mean()) if inside.size else 0.0}
@@ -156,7 +202,7 @@ def _from_fit(job: Job, workspace: Workspace, record: SliceState, name: str) -> 
 
 
 def _from_em(
-    job: Job, workspace: Workspace, record: SliceState, name: str, *, channel: str,
+    job: Job, workspace: Workspace, record: SliceState, name: str, *, section_image: str,
     atlas_image: str, params: dict[str, float],
 ) -> dict[str, Any]:
     from langslice.core.section_masks import (
@@ -168,29 +214,22 @@ def _from_em(
 
     if record.position_mm is None:
         raise Refused("NO_POSITION", message=f"{record.id} has no position yet.")
-    known = appearance.channel_names(job.state, workspace, record)
-    if channel not in known:
-        raise Refused("UNKNOWN_CHANNEL", channel=channel, channels=list(known))
-    try:
-        resolved = resolve_image(workspace.atlas, atlas_image)
-    except ValueError as exc:
-        raise Refused("BAD_ARGS", message=str(exc)) from exc
     try:
         grid = deformation.fit_grid(job.state, workspace, record)
     except (ValueError, OSError) as exc:
         raise Refused("INVALID_LINEAR_PLACEMENT", message=f"{record.id}: {exc}") from exc
     try:
-        image, _identity = deformation.stain_image(workspace, job.state, grid, channel)
+        image, _identity = deformation.section_image(workspace, job.state, grid, section_image)
         pixels = np.asarray(image.convert("L"), dtype=np.float32) / 255.0
         with deformation.engine_lock():
             weights, facts = em_sorting(workspace, job.state, record, job.deformations,
-                                        channel_image=pixels, atlas_image=resolved,
+                                        section_image=pixels, atlas_image=atlas_image,
                                         params=params)
     except Refused:
         raise
     except Exception as exc:  # noqa: BLE001 - the sort's failure is the caller's refusal
         raise Refused("FIT_FAILED", message=f"{record.id}: {type(exc).__name__}: {exc}") from exc
-    meta = {"kind": "em", "channel": channel, "atlas_image": resolved,
+    meta = {"kind": "em", "section_image": section_image, "atlas_image": atlas_image,
             "params": facts.get("params", {}),
             "inputs": grid_digest(record),
             "registration": registration_digest(job.state, record),
@@ -216,7 +255,7 @@ def read(job: Job, record: SliceState, name: str) -> MaskView:
         return read_mask(job.layout, job.state, record, name)
     except KeyError as exc:
         raise Refused("UNKNOWN_MASK", message=f"{record.id} has no mask {name!r}; make it "
-                      "with set_mask.", masks=sorted(record.masks or {})) from exc
+                      "with make_mask.", masks=sorted(record.masks or {})) from exc
     except ValueError as exc:  # the file cannot be read
         raise Refused("FIT_FAILED", message=str(exc)) from exc
 
@@ -233,7 +272,7 @@ def section_weights(job: Job, record: SliceState, name: str) -> np.ndarray | Non
     view = read(job, record, label)
     if view.stale:
         raise Refused("STALE_MASK", message=f"{record.id}'s mask {label!r} was made before the "
-                      "section changed; make it again with set_mask.")
+                      "section changed; make it again with make_mask.")
     return weights_of(view)
 
 

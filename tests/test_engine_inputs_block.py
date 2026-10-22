@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from tests.linear_tool_helpers import tool_named as _tool
-from tests.test_set_mask_tool import ID, SyntheticAtlas, _setup
+from tests.test_make_mask_tool import ID, SyntheticAtlas, _setup
 
 pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
 
-INPUT_KEYS = {"section_image", "section_recipe", "atlas_image", "atlas_image_resolved",
+INPUT_KEYS = {"section_image", "atlas_image", "atlas_image_resolved",
               "mask", "damage", "restrict_to", "brightness"}
 
 
@@ -30,6 +30,8 @@ def test_every_fit_reply_names_what_it_used(tmp_path: Path, atlas, name: str):
     assert "settings" in done
     (row,) = done["results"]
     assert set(row["inputs"]) == INPUT_KEYS
+    assert set(row["inputs"]["section_image"]) == {"name", "kind", "file", "digest"}
+    assert row["inputs"]["section_image"]["name"] == "preprocessed"
     assert row["inputs"]["damage"]["side"] == "atlas"
     assert "estimated" in row and row["estimated"] is None
     assert "quality" not in str(row).lower()

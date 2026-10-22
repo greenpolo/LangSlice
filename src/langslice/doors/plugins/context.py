@@ -118,11 +118,13 @@ class FitFrame:
     while the section has none marked. ``damage_zone`` is ``excluded`` widened
     by the margin the native fits also leave out of their comparison
     (:data:`langslice.core.deformable.masks.EXCLUSION_MARGIN_MM`, scaled to the
-    atlas's brain size); None with ``excluded``. ``channel`` is the channel
-    ``fit_frame(channel=)`` asked for, on the same grid as ``image`` (RGB
-    ``uint8``) and ``channel_name`` its name; ``stain`` is the section's
-    preprocessed channel the same way (``stain=True`` is ``channel="preprocessed"``),
-    the picture the native fits read; each None unless asked for.
+    atlas's brain size); None with ``excluded``. ``section_image`` is the
+    section image ``fit_frame(image=)`` asked for, on the same grid as ``image``
+    (RGB ``uint8``, three equal planes) and ``section_image_ref`` what names it
+    (``{name, kind, file, digest}``, a fit reply's ``inputs.section_image``);
+    ``stain`` is the section's ``preprocessed`` image the same way
+    (``stain=True`` is ``image="preprocessed"``), the picture the native fits
+    read by default; each None unless asked for.
     """
 
     id: str
@@ -140,14 +142,11 @@ class FitFrame:
     #: set: the margin the native fits report, whether or not damage is marked).
     damage_margin_mm: float | None = None
     stain: np.ndarray | None = None
-    channel: np.ndarray | None = None
-    channel_name: str | None = None
+    section_image: np.ndarray | None = None
+    section_image_ref: dict[str, Any] | None = None
     #: ``{asked name: the atlas image it resolved to}`` for each image in
     #: ``atlas`` (``"nissl"`` is the atlas's Nissl image, else its template).
     atlas_resolved: dict[str, str] = field(default_factory=dict)
-    #: Eight hex digits of ``channel``'s recipe (``core.engine_inputs.recipe_digest``),
-    #: ``"default"`` for a channel without a recipe of its own; None without ``channel``.
-    channel_recipe: str | None = None
     #: What the answer to the default ``"nissl"`` request was when it resolved to the
     #: ``template`` (a Nissl template honours it; an atlas without a Nissl falls back); None
     #: when ``"nissl"`` was not asked for or has an image of its own.
@@ -510,22 +509,49 @@ class ToolContext:
     def channels(self, section: object) -> tuple[str, ...]:
         """The names of the section's raw channels, in file order (``red``,
         ``green``, ``blue``, or ``gray``, for a colour file; the host's names or
-        ``ch1``, ``ch2``... for a multi-page file): what ``section_raster(...,
-        channels=[name])`` takes."""
+        ``ch1``, ``ch2``... for a multi-page file)."""
         names, _planes = self._door.ctx.section_channels(self._record(section).id)
         return tuple(str(name) for name in names)
 
-    def channel_names(self, section: object) -> tuple[str, ...]:
-        """Every channel a fit or a picture can read on the section, by name:
-        its raw channels (:meth:`channels`), then the derived ones
-        (``preprocessed`` and any ``set_channel`` made)."""
-        from langslice.core import appearance
+    def image_names(self, section: object) -> tuple[str, ...]:
+        """Every section image a fit or a picture can read on the section, by
+        name: its raw channels (:meth:`channels`), then ``preprocessed`` and
+        the images made since (``make_image``, :meth:`add_image`)."""
+        from langslice.core.section_images import image_names
 
+        return tuple(image_names(self._door.ctx, self._record(section)))
+
+    def add_image(self, section: object, name: str, array: Any, note: str = "") -> dict[str, Any]:
+        """Register *array* as the section's made image *name*, made by this
+        script (*note* says how; it is recorded as the image's source): a
+        ``(H, W)`` array on the section's working grid in the file's
+        orientation, as ``section_raster(raw=True, images=[name]).array`` gives a
+        raw plane before its quarter turn and flip (:meth:`working_grid` gives
+        ``(H, W)``); ``uint8``, or floats from 0 to 1. Saved as
+        ``sections/<stem>/images/<name>.png``, one undo step; every fit and
+        ``look`` can then read it by name. Returns its entry (``source``,
+        ``file``, ``digest``). ``ToolError`` ``BAD_ARGS`` for a raw channel's
+        name, another shape or values."""
+        from langslice.ops import images as ops_images
+
+        self._require()
         record = self._record(section)
-        return tuple(appearance.channel_names(self._door.state, self._door.ctx, record))
+        try:
+            with self.writing():
+                live = self._door.state.by_id(record.id) or record
+                return ops_images.add_image(self._door.job, self._door.ctx, live, str(name),
+                                            array, note)
+        except Refused as refusal:
+            raise _as_tool_error(refusal) from refusal
+
+    def working_grid(self, section: object) -> tuple[int, int]:
+        """``(H, W)`` of the section's working grid: the shape :meth:`add_image`
+        takes, the file's orientation."""
+        width, height = self._door.ctx.working_source(self._record(section).id)[0].size
+        return height, width
 
     def mask(self, section: object, name: str) -> Any:
-        """The section's mask *name* (``set_mask`` made it) as a
+        """The section's mask *name* (``make_mask`` made it) as a
         :class:`langslice.core.section_masks.MaskView`: ``weights`` (float
         ``(H, W)`` on the fit grid, 0 to 1), ``kind`` (``em`` / ``fit``),
         ``params`` and ``left_out``. ``ToolError`` ``UNKNOWN_MASK`` for a name the
@@ -540,7 +566,7 @@ class ToolContext:
             raise _as_tool_error(refusal) from refusal
         if view.stale:
             raise ToolError("STALE_MASK", f"{record.id}'s mask {name!r} was made before the "
-                            "section changed; make it again with set_mask.")
+                            "section changed; make it again with make_mask.")
         return view
 
     def section_inputs(self, section: object, *, deformation: bool = False) -> str:
@@ -551,37 +577,34 @@ class ToolContext:
         return section_inputs(self._door.state, self._record(section), deformation=deformation)
 
     def section_image(self, section: object, *, level: str | int = "auto",
-                      channels: Sequence[str] | None = None, raw: bool = False) -> np.ndarray:
+                      images: Sequence[str] | None = None, raw: bool = False) -> np.ndarray:
         """The pixels of :meth:`section_raster`. Their frame is NOT the image
         file's (turned and flipped as the orientation sets it, and reduced):
         convert coordinates with :meth:`section_raster`'s methods before they
         go in a ``section_px`` layer."""
-        return self.section_raster(section, level=level, channels=channels, raw=raw).array
+        return self.section_raster(section, level=level, images=images, raw=raw).array
 
     def section_raster(self, section: object, *, level: str | int = "auto",
-                       channels: Sequence[str] | None = None, raw: bool = False,
+                       images: Sequence[str] | None = None, raw: bool = False,
                        ) -> SectionRaster:
         """The section as its orientation sets it (RGB ``uint8`` ``array``,
         never larger than the source) with the frame it is in
         (:class:`SectionRaster`). *level* is the long edge in pixels, or ``low`` /
-        ``medium`` / ``high`` / ``auto`` (the job's picture size). *channels*:
-        raw channel names (drawn in their colours with the channel display
-        properties the agent set), or ``["preprocessed"]`` for the channel the
-        fits read; None is the default appearance (the preprocessed blend
-        when the job preprocesses).
+        ``medium`` / ``high`` / ``auto`` (the job's picture size). *images*: one
+        section image by name (:meth:`image_names`; gray, three equal planes),
+        or several raw channels drawn together in their colours; None is the
+        ``preprocessed`` image, what the fits read by default.
 
         *raw* gives the file's own pixels, turned and flipped as the
-        orientation sets it and reduced to *level*: with no *channels*, the
+        orientation sets it and reduced to *level*: with no *images*, the
         file as an image viewer shows it (8-bit RGB; what a delivered PNG
-        is), no preprocessing and no channel properties; with exactly one
-        channel name, that raw channel as gray RGB (three equal planes), as
-        read from the file, whatever display properties the agent set.
+        is), no preprocessing; with exactly one raw channel name, that raw
+        channel as gray RGB, as read from the file.
         The pixels come from the working copy (a file longer than 3072
         pixels is already reduced), so *level* at or above the file's long
         edge gives the file itself for a file of that size or less."""
-        from langslice.core.appearance import preprocessed_settings
-        from langslice.core.channels import with_properties
         from langslice.core.maps import render_sizes
+        from langslice.core.section_images import kind_of
         from langslice.core.sections import render_slice
         from langslice.core.sizes import picture_edge
 
@@ -595,21 +618,28 @@ class ToolContext:
         else:
             raise ToolError("BAD_ARGS", f"level is a pixel size or one of "
                             f"{', '.join(PICTURE_EDGES)}; got {level!r}")
+        names = [str(name) for name in images or ()]
+        known = self.image_names(record.id)
+        unknown = [name for name in names if name not in known]
+        if unknown:
+            raise ToolError("UNKNOWN_IMAGE", f"{record.id} has no section image "
+                            f"{', '.join(map(repr, unknown))}; its images: {', '.join(known)}")
         look: Any = None
         if raw:
-            names = [str(name) for name in channels or ()]
-            if len(names) > 1 or names == ["preprocessed"]:
-                raise ToolError("BAD_ARGS", "raw takes no channel (the file as it is) or one "
+            if len(names) > 1 or (names and kind_of(self._door.ctx, record, names[0]) != "raw"):
+                raise ToolError("BAD_ARGS", "raw takes no image (the file as it is) or one "
                                 "raw channel name")
-            look = {"channel": names[0]} if names else {"file": True}
-        elif channels:
-            names = [str(name) for name in channels]
-            look = (preprocessed_settings(self._door.state, record.id)
-                    if names == ["preprocessed"]
-                    else with_properties(self._door.state, {"overlay": names}))
+            look = {"image": names[0]} if names else {"file": True}
+        elif len(names) == 1:
+            look = {"image": names[0]}
+        elif names:
+            if any(kind_of(self._door.ctx, record, name) != "raw" for name in names):
+                raise ToolError("BAD_ARGS", "several images are drawn together only when all "
+                                "are raw channels")
+            look = {"overlay": names}
         try:
             image = render_slice(self._door.ctx, record, long_edge=edge, look=look)
-        except ValueError as exc:  # a channel the section does not have
+        except ValueError as exc:
             raise ToolError("BAD_ARGS", str(exc)) from exc
         return SectionRaster(
             id=record.id, array=np.asarray(image.convert("RGB")),
@@ -635,7 +665,7 @@ class ToolContext:
         return self._grids[key]
 
     def fit_frame(self, section: object, *, atlas: Sequence[str] = (
-            "template", "annotation"), channel: str | None = None,
+            "template", "annotation"), image: str | None = None,
             stain: bool = False) -> FitFrame:
         """The section and its atlas plane on the fit grid (:class:`FitFrame`).
         Needs a position. *atlas* picks the atlas planes to sample:
@@ -644,10 +674,10 @@ class ToolContext:
         the atlas's Nissl image where it has one, else its template
         (:func:`langslice.core.atlas.images.default_image`), under the name
         asked for and under the image's own; a name the atlas does not have is
-        skipped. *channel* adds that channel of the section on the grid:
-        a raw channel, ``"preprocessed"`` or a derived channel
-        (``channel_names``); ``ToolError`` ``UNKNOWN_CHANNEL`` for another.
-        *stain* True is ``channel="preprocessed"`` and also fills ``stain``."""
+        skipped. *image* adds that section image on the grid: a raw channel,
+        ``"preprocessed"`` or another made image (:meth:`image_names`);
+        ``ToolError`` ``UNKNOWN_IMAGE`` for another. *stain* True is
+        ``image="preprocessed"`` and also fills ``stain``."""
         from langslice.core import deformation
         from langslice.core.atlas.images import atlas_images, nissl_note, resolve_image
         from langslice.core.atlas.size import brain_scale
@@ -662,7 +692,7 @@ class ToolContext:
 
         record = self._record(section)
         grid = self._grid(record)
-        image = grid.image.convert("RGB")
+        oriented = grid.image.convert("RGB")
         placement = grid.placement
         workspace = self._door.ctx
         planes: dict[str, np.ndarray] = {}
@@ -697,7 +727,7 @@ class ToolContext:
             from langslice.core.deformable.render import composed_native_grid
 
             held = self._door.job.deformations.current(self._door.state, record)
-            if held is not None and tuple(held.section_size) == image.size:
+            if held is not None and tuple(held.section_size) == oriented.size:
                 applied = np.stack(composed_native_grid(held, 1), axis=-1)
         excluded = zone = None
         _, marked = exclusions(record)
@@ -710,29 +740,26 @@ class ToolContext:
             spacing_mm = float(np.mean(_plane_frame(workspace.atlas, placement)["px_um"])) / 1000.0
             zone = dilate(excluded, EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)
                           / spacing_mm)
-        wanted = "preprocessed" if stain and channel is None else channel
+        wanted = "preprocessed" if stain and image is None else image
         picture: np.ndarray | None = None
+        reference: dict[str, Any] | None = None
         if wanted is not None:
-            known = self.channel_names(record.id)
-            if wanted not in known:
-                raise ToolError("UNKNOWN_CHANNEL", f"{record.id} has no channel {wanted!r}; "
-                                f"its channels: {', '.join(known)}", channels=list(known))
-            picture = np.asarray(deformation.stain_image(
-                workspace, self._door.state, grid, wanted)[0].convert("RGB"))
-        recipe_text: str | None = None
-        if wanted is not None:
-            from langslice.core import appearance
-            from langslice.core.engine_inputs import recipe_digest
+            from langslice.core.section_images import read_image
 
-            recipe_text = recipe_digest(
-                appearance.derived_settings(self._door.state, wanted, record.id)
-                if wanted in appearance.derived_names(self._door.state) else None)
+            known = self.image_names(record.id)
+            if wanted not in known:
+                raise ToolError("UNKNOWN_IMAGE", f"{record.id} has no section image "
+                                f"{wanted!r}; its images: {', '.join(known)}",
+                                images=list(known))
+            picture = np.asarray(deformation.section_image(
+                workspace, self._door.state, grid, wanted)[0].convert("RGB"))
+            reference = read_image(workspace, record, wanted).payload()
         preprocessed = picture if wanted == "preprocessed" else (
-            np.asarray(deformation.stain_image(
+            np.asarray(deformation.section_image(
                 workspace, self._door.state, grid, "preprocessed")[0].convert("RGB"))
             if stain else None)
         return FitFrame(
-            id=record.id, image=np.asarray(image), atlas=planes,
+            id=record.id, image=np.asarray(oriented), atlas=planes,
             atlas_to_section=np.asarray(placement.atlas_to_section, dtype=np.float64),
             plane=_plane_frame(workspace.atlas, placement),
             position_mm=float(placement.position_mm),
@@ -740,8 +767,8 @@ class ToolContext:
             placed_atlas_to_section=placed, applied_map=applied, excluded=excluded,
             damage_zone=zone, damage_margin_mm=round(
                 float(EXCLUSION_MARGIN_MM * brain_scale(workspace.atlas)), 4),
-            stain=preprocessed, channel=picture, channel_name=wanted,
-            atlas_resolved=resolved_names, channel_recipe=recipe_text,
+            stain=preprocessed, section_image=picture, section_image_ref=reference,
+            atlas_resolved=resolved_names,
             atlas_image_note=nissl_note(workspace.atlas, "nissl") if "nissl" in resolved_names
             else None)
 
@@ -870,7 +897,7 @@ class ToolContext:
         (JSON values) are kept with it. *weights*: the weighting the engine
         estimated for itself, a float ``(H, W)`` array on the fit grid in
         [0, 1] (its tissue sorting; stored as float16 with the record, and
-        what ``set_mask(source="fit")`` copies); None when it estimated none.
+        what ``make_mask(source="fit")`` copies); None when it estimated none.
         *provenance*: JSON values added to the record's provenance (the
         ``inputs`` and ``estimated`` blocks of a fit,
         :mod:`langslice.core.engine_inputs`). ``ToolError`` ``BAD_FIELD`` for an
@@ -1097,7 +1124,7 @@ class ToolContext:
                     ) -> dict[str, Path]:
         """Write what an engine outside LangSlice registers, into *folder*:
         on the fit grid (:attr:`FitFrame.image`'s pixels), ``section``
-        (RGB), ``stain`` (the preprocessed channel the native fits read,
+        (RGB), ``stain`` (the preprocessed image the native fits read,
         gray) and ``placed_template`` / ``placed_annotation`` (the atlas
         plane drawn on that grid at the section's current placement, so the
         two images already overlap where the placement puts them); on the
@@ -1264,9 +1291,9 @@ class ToolContext:
         one, else its template), ``stain_metric``, ``stain_edges``,
         ``structures`` and ``neighbourhood_um`` to fit some regions only,
         ``exclude``). *mask*: ``"none"`` or the NAME of a mask of the section
-        (``set_mask`` made it; :meth:`mask` reads one): its weights at or above
+        (``make_mask`` made it; :meth:`mask` reads one): its weights at or above
         0.5 are compared, the others left out. An array is refused
-        (``BAD_ARGS``): make the mask with ``set_mask`` so the job holds it.
+        (``BAD_ARGS``): make the mask with ``make_mask`` so the job holds it.
         *start* ``linear`` fits from the linear placement, ``current`` on
         top of the applied deformation; *marked* False leaves the section's
         marked damage regions in the fit."""
@@ -1826,11 +1853,11 @@ class ToolContext:
 def _mask_name(mask: Any) -> str:
     """*mask* as a fit takes it: ``"none"`` or a mask's name. An array (a
     script's own weights) is refused: a mask a fit reads is one the job holds
-    (``set_mask``), so every door leaves the same trace."""
+    (``make_mask``), so every door leaves the same trace."""
     if isinstance(mask, str):
         return mask.strip() or "none"
     raise ToolError("BAD_ARGS", "mask is 'none' or the NAME of a mask of the section made "
-                    "with set_mask; an array is not taken (make the mask with set_mask first)")
+                    "with make_mask; an array is not taken (make the mask with make_mask first)")
 
 
 def _as_tool_error(refusal: Refused) -> ToolError:

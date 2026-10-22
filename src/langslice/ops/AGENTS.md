@@ -33,8 +33,7 @@ wording; `registry.py` lists which.
   shows its result, takes the call's core `core.display.DisplayOptions`
   and returns the plain PIL pictures `src/langslice/core/` draws (captions
   burned in, each noted for the job's saved views). Without options a write
-  draws nothing (a script). Where a picture must exist before the write
-  (`set_channel` on a derived channel: the BEFORE picture), it is drawn first. The change
+  draws nothing (a script). The change
   tools' pictures of what they wrote are `look.show_result`'s, drawn by the
   tool door after the write.
 - It never words anything for a model. Job rules (frozen
@@ -97,32 +96,40 @@ wording; `registry.py` lists which.
   agent's note after it. With *options*, `core.damage.damage_picture` (a
   picture that fails is `render_failed`, the write standing). Returns
   `DamageRegions`.
-- `appearance.py` — `set_appearance(job, ids, settings, name)`,
-  `planned_settings` (what a write would leave, written nowhere) and
-  `preprocess(job, workspace, ids, settings, shown=, options=, name=)`:
-  per shown section the derived channel's BEFORE and AFTER pictures (uncaptioned,
-  `BeforeAfter`), drawn before the write; a failure refuses the call
-  (`RENDER_FAILED`), nothing written. `set_channel(job, workspace, name, sections,
-  weights=, clahe_clip=, clahe_tiles=, n4=, denoise=, contrast_limits=, gamma=,
-  colormap=, invert=, reset=, shown=, options=)`: one write for a raw channel
-  (display properties, stack-wide, `core/channels.py`; a recipe argument is
-  `BAD_ARGS`; no undo step when nothing changed) or a derived channel (a recipe,
-  stack-wide or as the override of `sections`; `preprocessed` is the one every
-  fit and the image model read by default, `core/appearance.py`; `reset`
-  returns it to the default or deletes another); returns `ChannelSet`. The verb
-  `set_channel`.
-- `masks.py` — `set_mask(job, workspace, section, name, source=, channel=,
-  atlas_image=, sorting=, delete=)`: a section-side mask by name
-  (`core/section_masks.py`), ONE undo step. `em`: the EM sorting of the
-  channel against the atlas image at the section's CURRENT registration;
+- `images.py` — `make_image(job, workspace, name, sections, weights=,
+  clahe_clip=, clahe_tiles=, n4=, denoise=, contrast=, gamma=, invert=,
+  delete=)`: a made section image (`core/section_images.py`) for the
+  sections named (empty: every section), each computed from its own images
+  and saved as a file before ONE undo step sets the entries;
+  `preprocessed` with every argument at its default writes the opening
+  image again; `delete` removes the entries (`preprocessed` cannot be
+  deleted). Refused: `BAD_ARGS` (the name: a raw channel's, `none`, `all`,
+  a bad spelling; a bad value; an image made from itself), `UNKNOWN_SLICE_IDS`,
+  `UNKNOWN_IMAGE` (a weighted image a section lacks; delete of a name no
+  named section holds), `RENDER_FAILED`. Returns `ImagesMade` (`name`,
+  `sections`, `deleted`, `in_force`: the image as `status` lists it,
+  `images`: every name of the stack). `add_image(job, workspace, record,
+  name, array, note)`: a script's image (`(H, W)` on the working grid in the
+  file's orientation, `uint8` or 0-1 floats), source `{"script": note}`, one
+  undo step; `BAD_ARGS`. `check_image(job, workspace, records, name)` (what a
+  fit reads, `UNKNOWN_IMAGE`), `read`, `image_names`, `stack_images`. The verb
+  `make_image`.
+- `masks.py` — `make_mask(job, workspace, name, sections, source=,
+  section_image=, atlas_image=, sorting=, delete=)`: a section-side mask by
+  name (`core/section_masks.py`) for each section named (empty: every
+  section), ONE undo step for the call. `em`: the EM sorting of the section
+  image against the atlas image at each section's CURRENT registration;
   `fit`: the sorting the applied deformation saved (`NO_DEFORMATION`,
-  `NO_SORTING`). `UNKNOWN_CHANNEL`, `UNKNOWN_MASK` (delete), `BAD_ARGS`,
-  `NO_POSITION`, `FIT_FAILED`. `read` / `section_weights(job, record, name)`
-  are what a fit reads: `"none"` gives None, a name gives the weights
-  (`UNKNOWN_MASK`, `STALE_MASK` when the section's orientation, the grid
-  digest `core.section_masks.grid_digest`, differs from the one it was made on; a
-  changed registration only marks it `earlier_registration`). The
-  verb `set_mask`.
+  `NO_SORTING`). A section that cannot get its mask is its row (`NO_POSITION`,
+  `INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_SORTING`, `FIT_FAILED`);
+  when none can, the first row's refusal. Refused: `UNKNOWN_SLICE_IDS`,
+  `SECTION_BUSY`, `UNKNOWN_IMAGE`, `UNKNOWN_MASK` (delete), `BAD_ARGS`.
+  Returns `MasksMade` (`rows`, `made`). `read` / `section_weights(job,
+  record, name)` are what a fit reads: `"none"` gives None, a name gives the
+  weights (`UNKNOWN_MASK`, `STALE_MASK` when the section's orientation, the
+  grid digest `core.section_masks.grid_digest`, differs from the one it was
+  made on; a changed registration only marks it `earlier_registration`). The
+  verb `make_mask`.
 - `notes.py` — `add_note(job, text)`.
 - `files.py` — read-only file access over the job folder for the native agent
   (`job.browse` keeps every path inside it; `BAD_PATH` otherwise):
@@ -292,7 +299,7 @@ wording; `registry.py` lists which.
   (`traced_lines(root=...)`).
   `fireants_syn(job, workspace, sections, restrict_to=, section_image=,
   atlas_image=, mask=, smoothness_um=, metric=, edges=, detail=)`: the FireANTs
-  SyN fit, applied as ONE undo step: on a channel of the section
+  SyN fit, applied as ONE undo step: on a section image
   (`section_image`, default `preprocessed`) against one of the atlas's
   images (`core.atlas.images`; `nissl` resolves per atlas) with a named section
   mask, on top of the applied deformation
@@ -304,7 +311,7 @@ wording; `registry.py` lists which.
   more than `MAX_FIREANTS_SYN_SECTIONS` (20, every fitted section held in
   memory until the call's one write, `SECTION_CAP_REASON`) is the tool door's
   `TOO_MANY_SECTIONS`),
-  `UNKNOWN_CHANNEL`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
+  `UNKNOWN_IMAGE`, `UNKNOWN_MASK`, `UNKNOWN_SLICE_IDS`, `UNKNOWN_REGIONS`, `NO_SIDES`. The verb `fireants_syn`.
   `warp_from_map(job, workspace, section, native_xy, method=, step=,
   provenance=, weights=)`: a deformation made elsewhere (a tool plugin's), given as the
   full map from the fit grid's pixel centres to native atlas pixels, built as
@@ -365,7 +372,8 @@ wording; `registry.py` lists which.
   call was prepared). Returns `TraceStarted`.
 - `inputs.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
-  position, plane, angles, flip, rotation, transform; its fit appearance;
+  position, plane, angles, flip, rotation, transform; its made images'
+  digests, so an image made again while a long verb runs makes it stale;
   damage: marked regions and a mark naming none; with `deformation` the applied deformation's key, with `trace`
   its image correction), `STALE_INPUT`, `stale_row`.
 - `atlas.py` — `grep_atlas(job, workspace, query="", section="", points=())`: with `points` it adds `region_at_points` (the region a saved picture drew at each `{picture, x, y}`, from its `labels.tif`, an atlas picture's section plane or a crop's source; at most `MAX_POINTS`; `NO_ATLAS_IN_PICTURE`); the region
@@ -380,7 +388,7 @@ wording; `registry.py` lists which.
   `clamped`). Refused: `BAD_ARGS`, `NO_STRUCTURES`, `UNKNOWN_REGIONS`,
   `NO_SIDES`.
 - `look.py` — `look(job, workspace, mode, sections=, positions_mm=,
-  channels=, atlas_layers=, atlas_opacity=, warp="applied", resolution=,
+  images=, atlas_layers=, atlas_opacity=, warp="applied", resolution=,
   plugin_layers=, depth=6)` and
   `zoom(job, workspace, box=(), picture=None, region="")`. Unlike the older read verbs they
   save their own pictures (`save_pictures`: `job.views.save` with the note's
@@ -401,13 +409,13 @@ wording; `registry.py` lists which.
   `source` picture, so a crop of a crop is cut from the original. Refused:
   `NO_PICTURE`, `UNKNOWN_PICTURE`, `PICTURE_NOT_SAVED` (no saved image to
   crop, or a dry run's unknown number), `BAD_BOX`, `EMPTY_BOX`, and the look
-  refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_CHANNEL`,
-  `MIXED_CHANNELS`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
+  refusals (`UNKNOWN_SLICE_IDS`, `UNKNOWN_MODE`, `UNKNOWN_IMAGE`,
+  `MIXED_IMAGES`, `TOO_MANY_CHANNELS`, `UNKNOWN_LAYER`, `NO_POSITIONS`,
   `NO_POSITION`, `BAD_WARP`, `BAD_ARGS`, `UNKNOWN_PLUGIN_LAYER`). `look`'s
   `plugin_layers` names the layers tool plugins left (`"all"`: every one) to
   draw on `section` and `overlay` pictures (`BAD_ARGS` in another mode);
   `Looked.layers` says per picture which were drawn. `show_result(job, workspace, tool,
-  mode, sections, positions_mm=, zooms=)`: the picture a change tool shows
+  mode, sections, positions_mm=, zooms=, masks=, images=)`: the picture a change tool shows
   of what it wrote, drawn as `look` draws `overlay` (one per section, each
   zoomed to its window) or `positioning`, saved under the change tool's
   name (numbered, captioned, zoomable); at most `Job.picture_cap` shown (None:
@@ -432,13 +440,13 @@ wording; `registry.py` lists which.
   `docs/plugins.md`), which `enabled(spec)` reads;
   `VERBS` itself stays the native table (and without plugins `verbs_for` is
   `VERBS`). The gating (`when`):
-  `look`, `zoom`, both channel tools, `grep_atlas`, `grep_atlas_view`,
+  `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`,
   `status`, the job-folder tools (`list_files`, `search_files`, `read_file`),
   `note`, `undo`, `redo`, `mark_damage` and `submit` in every run;
   `position_sections` with the `position` task or the stack's cutting angles
   left to the agent (`transform.angles`, `positions_on`);
   `interactive_transform` and `elastix_affine` with `transform`; `fireants_syn`
-  with `nonlinear`; `set_mask` and `restore_registration` with `transform` or
+  with `nonlinear`; `make_mask` and `restore_registration` with `transform` or
   `nonlinear`; `trace_borders` with `nonlinear` and an image model (a
   task whose properties are all frozen on every section is not on,
   `JobSpec.has`; a tool that writes only properties frozen on every section,
@@ -522,7 +530,7 @@ explicit application or undo. An unchanged application is a no-op.
 
 
 Every ok row of `fireants_syn` and `elastix_affine` carries `inputs`
-(`core.engine_inputs.InputsBlock`: channel and recipe digest, atlas image asked
+(`core.engine_inputs.InputsBlock`: the section image `{name, kind, file, digest}`, atlas image asked
 and resolved, mask, atlas-side damage, `restrict_to`, brightness) and
 `estimated`; the result's `settings` is the call; `elastix_affine` refuses a
 section that holds a deformation (`HAS_DEFORMATION`, that section's row).

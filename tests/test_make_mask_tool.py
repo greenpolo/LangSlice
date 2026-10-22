@@ -1,5 +1,5 @@
-"""``set_mask``: em and fit sources, delete, stale after a write, the masks a fit
-takes by name, and ``HAS_DEFORMATION`` from ``elastix_affine``."""
+"""``make_mask``: em and fit sources, every section or some, delete, stale after a
+write, the masks a fit takes by name, and ``HAS_DEFORMATION`` from ``elastix_affine``."""
 
 from __future__ import annotations
 
@@ -52,11 +52,13 @@ def test_the_digest_a_mask_stores_is_the_fit_inputs_digest(tmp_path: Path, atlas
 
 def test_an_em_mask_is_made_listed_stays_usable_after_a_write_and_deleted(tmp_path: Path, atlas):
     state, _, box = _setup(tmp_path, atlas)
-    tool = _tool(box, "set_mask")
-    made = tool(ID, "tissue", view=False)
+    tool = _tool(box, "make_mask")
+    made = tool("tissue", view=False)
     assert made["status"] == "ok", made
-    assert made["source"] == "em" and made["atlas_image"] == "template"
-    assert 0.0 <= made["left_out"] <= 1.0
+    (row,) = made["rows"]
+    assert row["id"] == ID and row["source"] == "em" and row["atlas_image"] == "template"
+    assert row["section_image"] == "preprocessed"
+    assert 0.0 <= row["left_out"] <= 1.0
     assert len(box.job.undo_stack) == 1
     row = _tool(box, "status")()["rows"][0]
     assert row["masks"] == [{"name": "tissue", "kind": "em", "stale": False,
@@ -76,17 +78,18 @@ def test_an_em_mask_is_made_listed_stays_usable_after_a_write_and_deleted(tmp_pa
     refused = _tool(box, "elastix_affine")([ID], mask="tissue", view=False)
     assert refused["results"][0]["error"] == "STALE_MASK"
     state.slices[0].rotation_deg = 0
-    assert tool(ID, "tissue", delete=True)["deleted"] is True
-    assert tool(ID, "tissue", delete=True)["error"] == "UNKNOWN_MASK"
-    assert tool(ID, "bad name!", view=False)["error"] == "BAD_ARGS"
-    assert tool(ID, "none", view=False)["error"] == "BAD_ARGS"
-    assert tool(ID, "m", channel="nope", view=False)["error"] == "UNKNOWN_CHANNEL"
-    assert tool(ID, "m", sorting={"bogus": 1}, view=False)["error"] == "BAD_ARGS"
+    assert tool("tissue", sections=[ID], delete=True)["deleted"] is True
+    assert tool("tissue", delete=True)["error"] == "UNKNOWN_MASK"
+    assert tool("bad name!", view=False)["error"] == "BAD_ARGS"
+    assert tool("none", view=False)["error"] == "BAD_ARGS"
+    assert tool("m", section_image="nope", view=False)["error"] == "UNKNOWN_IMAGE"
+    assert tool("m", sorting={"bogus": 1}, view=False)["error"] == "BAD_ARGS"
+    assert tool("m", sections=["nope.png"], view=False)["error"] == "UNKNOWN_SLICE_IDS"
 
 
 def test_a_mask_stays_usable_by_a_second_fit_that_builds_on_the_first(tmp_path: Path, atlas):
     _, _, box = _setup(tmp_path, atlas)
-    _tool(box, "set_mask")(ID, "tissue", view=False)
+    _tool(box, "make_mask")("tissue", view=False)
     first = _tool(box, "fireants_syn")([ID], mask="tissue", view=False, detail="coarse")
     assert first["status"] == "ok", first
     second = _tool(box, "fireants_syn")([ID], mask="tissue", view=False, detail="coarse")
@@ -98,7 +101,7 @@ def test_a_mask_stays_usable_by_a_second_fit_that_builds_on_the_first(tmp_path: 
 
 def test_the_mask_is_drawn_on_the_section_and_look_outlines_it(tmp_path: Path, atlas):
     _, _, box = _setup(tmp_path, atlas)
-    made = _tool(box, "set_mask")(ID, "tissue")
+    made = _tool(box, "make_mask")("tissue", sections=[ID])
     assert made["status"] == "ok", made
     assert len(made["pictures"]) == 1
     looked = _tool(box, "look")("section", sections=[ID], masks=["tissue"])
@@ -108,11 +111,11 @@ def test_the_mask_is_drawn_on_the_section_and_look_outlines_it(tmp_path: Path, a
 
 def test_the_picture_caption_says_what_the_outline_means(tmp_path: Path, atlas):
     _, _, box = _setup(tmp_path, atlas)
-    made = _tool(box, "set_mask")(ID, "tissue")
+    made = _tool(box, "make_mask")("tissue")
     (picture,) = made["pictures"]
     caption = picture["caption"]
     assert "leaves out" in caption and "'tissue'" in caption
-    assert "sorted from channel preprocessed against atlas image" in caption
+    assert "sorted from section image preprocessed against atlas image" in caption
     # A plain look of the section, with no mask asked for, says nothing of masks.
     plain = _tool(box, "look")("section", sections=[ID])["pictures"][0]["caption"]
     assert "mask" not in plain
@@ -120,17 +123,17 @@ def test_the_picture_caption_says_what_the_outline_means(tmp_path: Path, atlas):
 
 def test_the_fit_source_needs_a_deformation_that_saved_a_sorting(tmp_path: Path, atlas):
     state, _, box = _setup(tmp_path, atlas)
-    tool = _tool(box, "set_mask")
-    assert tool(ID, "kept", source="fit", view=False)["error"] == "NO_DEFORMATION"
+    tool = _tool(box, "make_mask")
+    assert tool("kept", source="fit", view=False)["error"] == "NO_DEFORMATION"
     done = _tool(box, "fireants_syn")([ID], view=False, detail="coarse")
     assert done["status"] == "ok", done
     # FireANTs sorts nothing by itself now.
-    assert tool(ID, "kept", source="fit", view=False)["error"] == "NO_SORTING"
+    assert tool("kept", source="fit", view=False)["error"] == "NO_SORTING"
 
 
 def test_fireants_takes_an_em_mask_by_name_and_names_it(tmp_path: Path, atlas):
     state, _, box = _setup(tmp_path, atlas)
-    _tool(box, "set_mask")(ID, "tissue", view=False)
+    _tool(box, "make_mask")("tissue", view=False)
     done = _tool(box, "fireants_syn")([ID], mask="tissue", view=False, detail="coarse")
     assert done["status"] == "ok", done
     row = done["results"][0]
@@ -147,5 +150,5 @@ def test_a_linear_refit_on_a_warped_section_is_refused(tmp_path: Path, atlas):
     assert state.slices[0].deformation is not None
 
 
-def test_set_mask_is_off_where_the_job_has_no_fit(tmp_path: Path, atlas):
+def test_make_mask_is_off_where_the_job_has_no_fit(tmp_path: Path, atlas):
     assert ops_masks.NO_MASK == "none"

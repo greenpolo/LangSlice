@@ -1138,7 +1138,7 @@ def stub():
     """Mark the red feature."""
 
 def handler(ctx):
-    raster = ctx.section_raster("s0.png", level=LEVEL)
+    raster = ctx.section_raster("s0.png", level=LEVEL, images=["red", "green", "blue"])
     red = (raster.array[..., 0] > 200) & (raster.array[..., 1] < 80)
     ys, xs = np.nonzero(red)
     centre = raster.to_section_px([[xs.mean(), ys.mean()]])
@@ -1171,7 +1171,7 @@ def test_a_mark_made_from_section_image_pixels_is_drawn_on_the_feature(
 
     def picture_of(**kwargs: Any) -> np.ndarray:
         return np.asarray(call(box, "look", mode="section", sections=["s0.png"],
-                               **kwargs)["images"][0])
+                               images=["red", "green", "blue"], **kwargs)["images"][0])
 
     plain, drawn = picture_of(), picture_of(layers=["mark", "mask"])
 
@@ -1590,8 +1590,8 @@ def stub(section: str, channel: str = ""):
 def handler(ctx, section, channel=""):
     names = [channel] if channel else None
     default = ctx.section_raster(section, level=64).array
-    raw = ctx.section_raster(section, level=64, channels=names, raw=True).array
-    tinted = ctx.section_raster(section, level=64, channels=names).array if names else default
+    raw = ctx.section_raster(section, level=64, images=names, raw=True).array
+    tinted = ctx.section_raster(section, level=64, images=names).array if names else default
     return ToolResult({"default": default.tolist(), "raw": raw.tolist(),
                        "tinted": tinted.tolist()})
 
@@ -1638,11 +1638,14 @@ def test_raw_section_raster_of_one_channel_is_that_page_as_gray(make, images: Pa
     plane = np.array(pages[1][:, ::-1])
     assert (raw[..., 0] == raw[..., 1]).all() and (raw[..., 1] == raw[..., 2]).all()
     np.testing.assert_array_equal(raw[..., 0], plane)
-    # without raw the channel is drawn in its colour
-    assert not np.array_equal(np.array(reply["tinted"], dtype=np.uint8), raw)
-    # more than one channel, or the preprocessed one, is no raw read
+    # without raw one raw channel is the same section image, as the file holds it
+    np.testing.assert_array_equal(np.array(reply["tinted"], dtype=np.uint8), raw)
+    # a name the section has no image of is refused
     again = call(box, "rasters", section="s0.tif", channel="nope")
-    assert again["error"] == "BAD_ARGS"
+    assert again["error"] == "UNKNOWN_IMAGE"
+    # the preprocessed image is no raw read
+    made = call(box, "rasters", section="s0.tif", channel="preprocessed")
+    assert made["error"] == "BAD_ARGS"
 
 
 CHANNELS = '''

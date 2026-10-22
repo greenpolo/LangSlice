@@ -80,7 +80,7 @@ process forks for it, `cli/warm.py`).
   verbs answer once their work has landed); `uncapped` (the CLI and the
   library, `build_tools(scripting=True)`): `_UNCAPPED_DOCS` words the
   picture and section counts of `look`, `grep_atlas_view`,
-  `set_channel`, `interactive_transform` and
+  `make_image`, `make_mask`, `interactive_transform` and
   `elastix_affine` without the ADK and MCP cap; `brain_scale` (the job's
   atlas brain's, `core.atlas.size`, passed by the toolbox and the CLI's
   `schema` for a job): `_SCALED_DOCS` states the distances a description
@@ -108,17 +108,20 @@ process forks for it, `cli/warm.py`).
   they made stale, `merge_calls` False: each outermost write one undo step;
   `provenance`: a deformation record's `plugin` or `script` entry, the latter
   with `argv0`); `ToolContext(door, caller, call)` (reads `sections`, `section_image`, `atlas`,
-  `fit_frame` (`placed_atlas_to_section`: the current placement), `atlas_slice`,
-  `section_inputs`, `channels` (a section's raw channel names),
+  `fit_frame` (`placed_atlas_to_section`: the current placement; `image=` a
+  section image as `section_image` with `section_image_ref`), `atlas_slice`,
+  `section_inputs`, `channels` (a section's raw channel names), `image_names`
+  (its section images), `working_grid`,
   `read_registration` (each section in its current orientation, `params`, `at=` a
   fixed plane, `registered_on="oriented"` for a file made on the oriented
-  render); `section_raster(raw=)`;
+  render); `section_raster(images=, raw=)`;
   conversions `transform_from_matrix` / `transform_from_params`, and
   `deformation_from_map` (a full fit-grid-to-native map as a
   `DeformationProposal`, `ops.deformable.warp_from_map`); writes
   `set_positions`, `set_transforms`, `set_deformations`
   (`ops.deformable.apply_warps`, maps converted before the lock),
-  `mark_damage` through `ops/`, `add_layer`
+  `mark_damage` through `ops/`, `add_image` (a made section image,
+  `ops.images.add_image`), `add_layer`
   through `job/plugin_store` (a script's under `plugins/script/`), `expect=` fingerprints refusing `STALE_INPUT`
   rows; `writing()` holds the lock around several writes; a plugin call's writes are
   one undo step unless another write came between; `atlas_plane` /
@@ -258,11 +261,16 @@ process forks for it, `cli/warm.py`).
   `nonlinear.image_prompt`, as an untested `custom` profile), `door.py`
   (`Door`, what every tool body of a run shares: the job, the workspace,
   the picture level, the image model, `rows`, `changed`,
-  `answered`, `resolve_many`; `pictured`, `as_list`), the
-  tool bodies (`looking.py`: `look`, `zoom`, the two channel tools,
-  `grep_atlas`, `grep_atlas_view`, `status`, the job-folder tools;
+  `answered`, `resolve_many`; `pictured`, `as_list`, `spread`: the sections
+  a change tool pictures when the call names none), the
+  tool bodies (`looking.py`: `look` (`images`: one section image alone, or
+  raw channels together; empty draws `preprocessed`), `zoom`, `make_image`
+  (its `section` pictures through `ops.look.show_result`, none where
+  `look:section` is off, which also drops its `view`), `grep_atlas`,
+  `grep_atlas_view`, `status` (`raw_channels`, `section_images`:
+  `core.section_images.summary`), the job-folder tools;
   `changing.py`: `position_sections`, `interactive_transform`,
-  `mark_damage`, `note`, `undo`, `redo` (`steps`, default 1: that many in
+  `mark_damage`, `make_mask` (per-section `rows`), `note`, `undo`, `redo` (`steps`, default 1: that many in
   one call, `ops.history`), `restore_registration` (0 lists,
   `ops.registrations.listing`; a number puts it back and shows the
   section's overlay), `submit`; `fitting.py`:

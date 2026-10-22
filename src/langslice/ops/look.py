@@ -168,7 +168,7 @@ def look(
     mode: str,
     sections: Sequence[Any] = (),
     positions_mm: Sequence[float] = (),
-    channels: Sequence[str] = (),
+    images: Sequence[str] = (),
     atlas_layers: Sequence[str] | None = None,
     atlas_opacity: float | None = None,
     warp: str = "applied",
@@ -182,7 +182,9 @@ def look(
     and caption.
 
     No argument reads the job's state: no *sections* is every section, no
-    *channels* every raw channel, no *atlas_layers* the mode's default.
+    *images* the ``preprocessed`` image (one section image is drawn alone, in
+    gray; several raw channels together in their colours), no *atlas_layers*
+    the mode's default.
     *sections* are filenames (``StackState.resolve``). *resolution* is a picture's
     long edge (clamped up to :data:`~langslice.core.sizes.MIN_RESOLUTION`); a
     door passes one only where its caller sizes the pictures (image_resolution
@@ -190,7 +192,7 @@ def look(
     ``auto`` whatever the job's level). At most
     ``Job.picture_cap`` pictures (None: all) are saved and returned; the rest are
     ``not_shown``. Refused: ``BAD_ARGS``, ``UNKNOWN_SLICE_IDS``,
-    ``UNKNOWN_MODE``, ``UNKNOWN_CHANNEL``, ``MIXED_CHANNELS``,
+    ``UNKNOWN_MODE``, ``UNKNOWN_IMAGE``, ``MIXED_IMAGES``,
     ``TOO_MANY_CHANNELS``, ``UNKNOWN_LAYER``, ``NO_POSITIONS``,
     ``NO_POSITION``, ``BAD_WARP``, ``OPTION_OFF`` (the job disables the
     mode: ``look:<mode>`` in its ``disabled`` list).
@@ -201,7 +203,7 @@ def look(
     were drawn. Refused: ``BAD_ARGS`` in another mode, ``UNKNOWN_PLUGIN_LAYER``
     for a name no drawn section has.
 
-    *masks* names masks (:func:`langslice.ops.masks.set_mask`) of the drawn
+    *masks* names masks (:func:`langslice.ops.masks.make_mask`) of the drawn
     sections, outlined where their weight is 0.5 on pictures of mode ``section`` or
     ``overlay`` (:mod:`langslice.core.plugin_layers`, as a scalar layer); the reply's
     ``masks`` says which were drawn. Refused: ``BAD_ARGS`` in another mode,
@@ -243,7 +245,7 @@ def look(
         raise Refused("BAD_ARGS", message="depth is a whole number, 0 or more.")
     request = looks.LookRequest(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
-        channels=tuple(str(c) for c in _strings(channels, "channels")), atlas_layers=layers,
+        images=tuple(str(c) for c in _strings(images, "images")), atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
         warp=str(warp or "applied"), long_edge=edge, layers=named, masks=mask_names, depth=depth)
     try:
@@ -280,7 +282,7 @@ def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) 
     if unknown:
         raise Refused("UNKNOWN_MASK", unknown=unknown, masks=held,
                       message=f"No drawn section has a mask named {', '.join(unknown)}; the "
-                      f"masks: {', '.join(held) or 'none'}. Make one with set_mask.")
+                      f"masks: {', '.join(held) or 'none'}. Make one with make_mask.")
 
 
 def _layer_notes(shown: Sequence[looks.LookPicture], entries: Sequence[dict[str, Any]],
@@ -323,7 +325,7 @@ def show_result(
     job: Job, workspace: Workspace, tool: str, mode: str, sections: Sequence[str], *,
     positions_mm: Sequence[float] = (), zooms: Mapping[str, Sequence[float]] | None = None,
     highlight: Sequence[str] = (), resolution: int | None = None,
-    masks: Sequence[str] = (),
+    masks: Sequence[str] = (), images: Sequence[str] = (),
 ) -> Looked:
     """The picture a change tool shows of what it wrote, drawn as ``look``
     draws *mode* and saved under *tool* (so it has a number, a caption and a
@@ -339,7 +341,8 @@ def show_result(
     draws them), and a section whose picture fails is ``failed``. *resolution*
     is the long edge of each picture, as ``look``'s (None: the job's level).
     *masks* names masks of the sections outlined on a ``section`` or ``overlay``
-    picture (``set_mask``'s picture).
+    picture (``make_mask``'s picture); *images* the section image drawn
+    (``make_image``'s picture; empty: ``preprocessed``).
     """
     state = job.state
     drawn: list[looks.LookPicture] = []
@@ -361,7 +364,8 @@ def show_result(
                 request = looks.LookRequest(mode=mode, sections=(section,), zoom=window,
                                             highlight=tuple(str(v) for v in highlight),
                                             long_edge=edge,
-                                            masks=tuple(str(v) for v in masks))
+                                            masks=tuple(str(v) for v in masks),
+                                            images=tuple(str(v) for v in images))
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
                 except Exception as exc:  # noqa: BLE001 - the write stands; say why

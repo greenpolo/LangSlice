@@ -142,6 +142,25 @@ def test_a_fit_whose_section_moved_meanwhile_is_refused_for_that_section(
     agent.close()
 
 
+def test_a_fit_whose_section_image_was_made_again_meanwhile_is_refused(
+        capsys, images, monkeypatch):
+    _needs_engine()
+    agent = langslice.open_job(images)
+    during(monkeypatch, deformation, "run_jobs",
+           lambda: agent.make_image(name="preprocessed", sections=[ID0],
+                                    weights={"gray": 1}, clahe_clip=2, view=False))
+    code, envelope = cli(capsys, str(images), "fireants_syn", "--sections",
+                         json.dumps([ID0, ID1]), "--view", "false")
+    assert code == 0, envelope
+    rows = {row["id"]: row for row in envelope["result"]["results"]}
+    assert rows[ID0]["error"] == "STALE_INPUT"
+    assert rows[ID1]["status"] == "ok" and rows[ID1]["written"] is True
+    held = saved(images)
+    assert held[ID0]["images"]["preprocessed"]["source"]["recipe"]["clahe_clip"] == 2.0
+    assert not held[ID0].get("deformation")
+    agent.close()
+
+
 def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, monkeypatch):
     pytest.importorskip("itk")
     from langslice.core import transform

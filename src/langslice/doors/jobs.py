@@ -107,11 +107,12 @@ class JobContext(Workspace):
     and the results path the job is opened at). The agent driver's
     ``EngineContext`` adds the model."""
 
-    job_folder: str
+    #: The job folder is :attr:`Workspace.job_folder`, always set here.
     results_path: str
 
     @property
     def layout(self) -> JobLayout:
+        assert self.job_folder is not None
         return JobLayout(Path(self.job_folder), Path(self.image_folder))
 
     @property

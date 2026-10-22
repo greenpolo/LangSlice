@@ -43,13 +43,13 @@ from langslice.core.toolset import (
     positions_on,
 )
 from langslice.ops import (
-    appearance,
     atlas,
     damage,
     deformable,
     exports,
     files,
     history,
+    images,
     landmarks,
     look,
     masks,
@@ -115,7 +115,7 @@ class Verb:
 _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "look": look.look,
     "zoom": look.zoom,
-    "set_channel": appearance.set_channel,
+    "make_image": images.make_image,
     "grep_atlas": atlas.grep_atlas,
     "grep_atlas_view": atlas.grep_atlas_view,
     "status": views.status,
@@ -125,7 +125,7 @@ _FUNCTIONS: dict[str, Callable[..., Any]] = {
     "position_sections": positions.position_sections,
     "interactive_transform": transforms.interactive_transform,
     "mark_damage": damage.mark_damage,
-    "set_mask": masks.set_mask,
+    "make_mask": masks.make_mask,
     "elastix_affine": transforms.elastix_affine,
     "fireants_syn": deformable.fireants_syn,
     "set_landmarks": landmarks.set_landmarks,

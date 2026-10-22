@@ -98,7 +98,7 @@ def test_look_refusals(tmp_path: Path):
         (dict(mode="sideways"), "UNKNOWN_MODE"),
         (dict(mode="atlas"), "NO_POSITIONS"),
         (dict(mode="section", warp="wavy"), "BAD_WARP"),
-        (dict(mode="section", channels=["nope"]), "UNKNOWN_CHANNEL"),
+        (dict(mode="section", images=["nope"]), "UNKNOWN_IMAGE"),
         (dict(mode="atlas", positions_mm=[0.1], atlas_opacity=3), "BAD_ARGS"),
         (dict(mode="section", sections="s0.png"), "BAD_ARGS"),
     ]

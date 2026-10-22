@@ -48,7 +48,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from langslice.core import appearance as looks
+from langslice.core import section_images as images
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
 from langslice.core.needs import render
@@ -86,7 +86,7 @@ def look(
     mode: LookMode,
     sections: list[str] = [],
     positions_mm: list[float] = [],
-    channels: list[str] = [],
+    images: list[str] = [],
     atlas_layers: list[AtlasLayer] = [],
     atlas_opacity: float = 0.5,
     warp: Warp = "applied",
@@ -99,8 +99,8 @@ def look(
 
     The same request draws the same kind of picture at every stage of the
     run: no default depends on the stack's state. Each picture gets a number
-    and a caption stating the positions, cutting angles, scale and channel
-    settings it was drawn with[[?zoom ; zoom takes the number]].
+    and a caption stating the positions, cutting angles, scale and section
+    image it was drawn with[[?zoom ; zoom takes the number]].
 
     [[?look:positioning Use positioning mode to compare sections with candidate atlas planes
     along the slicing axis. ]][[?look:overlay Use overlays to assess in-plane alignment and
@@ -127,12 +127,9 @@ def look(
             [[?look:positioning , and ]]]]~
             [[?look:positioning the atlas pictures
             above the ruler in "positioning" (none when empty)]].
-        channels: The raw channels of each section to draw, by name (several
-            are blended in distinct colours, at most 6), or one derived
-            channel alone: ["preprocessed"] for the channel the fits and the
-            image model read[[?set_channel , or the name of another channel
-            made with set_channel]]. Empty is every raw channel, each with its
-            display settings.
+        images: Section images to draw, by name (status lists them): one image
+            alone, in gray, or up to 6 raw channels together, each in its own
+            colour with automatic contrast. Empty draws `preprocessed`.
         atlas_layers: Any of the atlas's images (the job statement lists
             them: "template" and any other reference images the atlas ships,
             by their names) and "borders". Empty is the mode's default: ~
@@ -156,7 +153,7 @@ def look(
             were drawn. Empty draws none.
         depth: Atlas ontology depth whose region boundaries "borders"
             draws (0 = root, as in BrainGlobe; larger is finer).
-        masks: [[?set_mask Names of masks made with set_mask, outlined where
+        masks: [[?make_mask Names of masks made with make_mask, outlined where
             their weight is 0.5 on the sections drawn, on the [[#look:section=\"section\"||~
             look:overlay=\"overlay\"]] pictures. Empty draws none.]]
 
@@ -174,7 +171,7 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str,
     The new picture is as large as the earlier one. In a picture of a
     section or of a section with the atlas on it, the section is read again
     from its original image file at the file's own resolution, only inside
-    the box, and drawn with the same channels, display settings and atlas
+    the box, and drawn with the same section image and atlas
     borders; the caption says when the file holds fewer pixels than the
     picture. [[?look:positioning A positioning picture's sections are drawn again from their
     working copies (the file reduced to at most 3072 pixels), and the atlas
@@ -206,7 +203,7 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str,
             "CTX:left" or "CTX:right" selects one displayed side. Overlay
             pictures only. Crops to the entire region with a small margin
             and draws only its border, preserving the saved registration
-            and display settings. An absent region is reported. Leave box
+            and section image. An absent region is reported. Leave box
             empty when using region.
 
     Returns:
@@ -220,90 +217,58 @@ def zoom(box: list[float] = [], picture: int = 0, region: str = "") -> dict[str,
     ...
 
 
-def set_channel(
+def make_image(
     name: str,
     sections: list[str] = [],
     weights: dict[str, float] = {},
-    clahe_clip: float = looks.DEFAULT_CLAHE_CLIP,
-    clahe_tiles: int = looks.DEFAULT_CLAHE_TILES,
+    clahe_clip: float = images.DEFAULT_CLAHE_CLIP,
+    clahe_tiles: int = images.DEFAULT_CLAHE_TILES,
     n4: bool = False,
     denoise: bool = False,
-    contrast_limits: list[float] = [],
+    contrast: list[float] = [],
     gamma: float = 0.0,
-    colormap: str = "",
     invert: bool = False,
-    reset: bool = False,
+    delete: bool = False,
     view: bool = True,
 ) -> dict[str, Any]:
-    """Set how a channel is displayed, or the recipe of a channel made from the raw ones.
+    """Make, replace or delete a named section image, from the section's other images.
 
-    A raw channel is a channel of the image files, named as the reply's
-    `channels` lists them; it is never edited, and setting it changes only how
-    look draws it (contrast_limits, gamma, colormap): nothing a fit or the
-    image model reads. Every other name is a derived channel, made from the
-    raw ones by a recipe (weights, clahe_clip, clahe_tiles, n4, denoise,
-    contrast_limits, gamma, invert) for the whole stack, or for the
-    sections named as their own recipe. "preprocessed" is the derived channel
-    the fits and the image model read by default: LangSlice's default recipe
-    until this is called; a new name makes another channel that the
-    fits and look can read as well. The setting stays until it is
-    changed, and every caption states it. Undoable; another call replaces the
-    recipe.
-
-    Register on the counterstain. A counterstain (DAPI, Hoechst, Nissl,
-    NeuroTrace) labels every cell, so it shows the anatomy the atlas draws; a
-    labelling channel (a tracer, an antibody, a reporter) marks only some
-    cells, and its bright signal pulls the fits toward it. Give the
-    counterstain weight 1 and each labelling channel weight 0, then enhance
-    it until the internal anatomy (layers, nuclei, fibre tracts, ventricles)
-    is as clear as possible: CLAHE always, N4 where illumination is uneven,
-    denoising where it is grainy. A section with one channel, or a
-    brightfield stain that already shows the anatomy, uses that channel. The
-    preprocessed channel serves both you and the fitting algorithms: look at
-    it (`look` with channels ["preprocessed"]) to judge alignment, and the
-    fits match it against the atlas. Pale or low-contrast sections
-    especially need this before you place or fit them. Inspect the
-    before-and-after pictures and compare with the raw channels before
-    fitting. A raw channel's display adjustments alone do not change what the
-    fitting algorithms receive.
+    A section image is a grayscale picture of a section that look draws and
+    the fits read by name: the raw channels of the file, never edited, and the
+    images made here, each saved under the job folder
+    (sections/<name>/images/<name>.png; status lists them). A fit reads the
+    file as it is, so a look at an image is what the fit sees. "preprocessed"
+    was made when the job opened; make it again, or make others under new
+    names, as the sections need. The steps run in this order on each source:
+    n4, denoise, CLAHE; then the weighted blend, brightened to a mid-gray
+    tissue mean; then contrast, gamma, invert. Undoable.
 
     Args:
-        name: A raw channel's name, "preprocessed", or the name of a derived
-            channel to make or change.
-        sections: Filenames (the extension may be left off) of the sections
-            that get a recipe of their own; empty sets the whole stack's
-            recipe. A raw channel is set for every section that has it.
-        weights: A derived channel's raw channels and their weights, by name
-            (for example {"dapi": 1, "gfp": 0}); a channel left out or at 0
-            is not used. Empty: automatic weights by tissue coverage.
-        clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40.
+        name: The image's name (not a raw channel's); an existing name is
+            replaced.
+        sections: Filenames (the extension may be left off) of the sections to
+            make it for; empty is every section. A later call can remake it for
+            some sections alone.
+        weights: The images to blend and their weights, by name: {"dapi": 1},
+            {"red": 1}, {"dapi": 1, "gfp": 0.3}, or a made image's name. Empty:
+            each raw channel weighted by how much of the tissue it lights.
+        clahe_clip: Local contrast enhancement (CLAHE) clip limit, 0 (none) to
+            40.
         clahe_tiles: CLAHE tiles per side, 1 to 32.
-        n4: N4 correction of uneven illumination.
-        denoise: Denoising.
-        contrast_limits: [low, high]. For a raw channel, in the file's own
-            intensities: low is drawn black, high at full brightness; empty
-            keeps the current limits, and without limits a channel is drawn
-            with automatic ones, per section: black at the background, full
-            brightness at the tissue's 95th percentile. For a derived channel,
-            [low, high] between 0 and 1 of the recipe's result, stretched to
-            the full range; empty leaves it as it is.
-        gamma: 0.1 to 10; 1 is linear. 0 keeps the current gamma (a derived
-            channel's: none).
-        colormap: A raw channel's: "gray", "red", "green", "blue", "magenta",
-            "cyan" or "yellow"; empty keeps the current one.
-        invert: A derived channel's: True draws bright as dark.
-        reset: True returns a raw channel to its default display, "preprocessed"
-            to the default recipe (the stack's, or the named sections' back to
-            the stack's), and deletes another derived channel (with sections,
-            only those sections' recipes of its own); the other arguments are
-            then ignored.
+        n4: Correct uneven illumination (N4).
+        denoise: Patch-based denoising.
+        contrast: [low, high], fractions 0 to 1 of the blended image's range,
+            stretched to the full range; empty leaves it.
+        gamma: 0.1 to 10; 1 or 0 is linear.
+        invert: Bright as dark.
+        delete: True removes the image (from the named sections, or
+            everywhere); the other arguments are then ignored.
         view: True returns the pictures described below; false returns none.
 
     Returns:
-        The settings or recipe now in force, the channels there are, and for
-        a derived channel, up to 4 of the sections (spread over the stack when
-        none are named) two pictures each: the channel before this call, then
-        after it; a channel this call creates has no before, so one picture each.
+        The recipe now in force and the section images there are[[?look:section , and with
+        view up to 4 of the sections (spread over the stack when none are
+        named), each drawn as look's "section" mode draws the image]].
     """
     ...
 
@@ -372,12 +337,12 @@ def status() -> dict[str, Any]:
     Returns:
         One row per section in stack order: filename, position, distance
         to the next placed section, flip and quarter turn, transform,
-        damaged regions and damage note, deformation steps[[?set_mask , masks
+        damaged regions and damage note, deformation steps[[?make_mask , masks
         (name, source, and whether it was made at an earlier registration)]]. Also the
-        cutting angles, the interval breaks, the raw channels' display
-        settings ("auto": automatic contrast limits), the derived channels'
-        recipes (the preprocessed channel's, and any other you made), the
-        background work still running, and what this run lets you change.
+        cutting angles, the interval breaks, the raw channels and the section
+        images made (each with its recipe, or a script's note, and the
+        sections it differs on or exists on), the background work still
+        running, and what this run lets you change.
     """
     ...
 
@@ -577,56 +542,60 @@ def mark_damage(section: str, regions: list[str], note: str = "") -> dict[str, A
 # --- fitting ----------------------------------------------------------------------
 
 
-def set_mask(
-    section: str,
+def make_mask(
     name: str,
+    sections: list[str] = [],
     source: MaskSource = "em",
-    channel: str = "preprocessed",
+    section_image: str = "preprocessed",
     atlas_image: FitAtlas = "nissl",
     sorting: dict[str, float] = {},
     delete: bool = False,
     view: bool = True,
 ) -> dict[str, Any]:
-    """Make, replace or delete a named mask of one section: which tissue a fit compares.
+    """Make, replace or delete a named mask of sections: which tissue a fit compares.
 
-    A mask holds a weight from 0 to 1 for each pixel of the section; a fit
+    A mask holds a weight from 0 to 1 for each pixel of a section; a fit
     that takes it by name ignores the pixels under 0.5. It sorts the
     section's pixels into tissue, artifact and background by their brightness
-    in a channel and by where the atlas puts tissue, as the fits' own estimate
-    does, and it is the only way a fit leaves out a hole, a tear or a stain.
-    The mask sits on the section's own pixels, so it stays usable after
+    in a section image and by where the atlas puts tissue, as the fits' own
+    estimate does, and it is the only way a fit leaves out a hole, a tear or a
+    stain. Each section gets its own mask, made at its own current
+    registration. The mask sits on the section's own pixels, so it stays usable after
     fits and moves; status says when it was made at an earlier registration.
     Turning or flipping the section makes a fit refuse it until it is made
     again. The marked damage regions are not part of a mask; every
     fit leaves them out of the atlas on its own. Undoable.
 
     Args:
-        section: A filename (the extension may be left off).
         name: The mask's name; an existing name is replaced.
-        source: "em": sort the section's pixels now, at its current
+        sections: Filenames (the extension may be left off) of the sections to
+            make it for; empty is every section.
+        source: "em": sort each section's pixels now, at its current
             registration, against atlas_image. "fit": the sorting the
             section's applied deformation saved with it, copied as it was
             (NO_DEFORMATION or NO_SORTING when it has none).
-        channel: The section channel to sort (a raw channel, "preprocessed"~
-            [[?set_channel  or one you made with set_channel]]); "em" only.
+        section_image: The section image to sort ("preprocessed", a raw channel~
+            [[?make_image  or an image made with make_image]]); "em" only.
         atlas_image: The atlas image the sorting compares with ("nissl" is the
             atlas's Nissl image where it has one, else its template); "em"
             only.
         sorting: Starting points of the sort, each between 0 and 1 of the
-            channel's brightness or a spread in the same units: match_sd,
+            section image's brightness or a spread in the same units: match_sd,
             background_sd, artifact_sd, background_mean, artifact_mean. Empty
             uses the defaults; "em" only.
-        delete: True removes the mask; the other arguments except section and
-            name are then ignored.
-        view: True returns the picture described below; false returns none.
+        delete: True removes the mask (from the named sections, or
+            everywhere); the other arguments except name are then ignored.
+        view: True returns the pictures described below; false returns none.
 
     Returns:
-        The mask's source, channel, atlas image and starting points, and the
-        fraction of the section's tissue it leaves out. With view, the
-        section drawn as look's "section" mode draws it, with the mask's
-        0.5 outline on it, and a caption saying the outlines trace the mask's
-        edge, that the ringed patches are what the mask leaves out of a fit,
-        and the mask's name and source.
+        Per section the mask's source, section image, atlas image and
+        starting points, and the fraction of the section's tissue it leaves
+        out, or why the section has no mask. With view, up to 4 of the
+        sections (spread over the stack when none are named), each drawn as
+        look's "section" mode draws it, with the mask's 0.5 outline on it,
+        and a caption saying the outlines trace the mask's edge, that the
+        ringed patches are what the mask leaves out of a fit, and the mask's
+        name and source.
     """
     ...
 
@@ -644,7 +613,7 @@ def elastix_affine(
 
     For a few sections at a time. Elastix refines each section's current
     placement (from the identity when it has no transform) by matching a
-    channel of the section against an atlas image, inner anatomy included. It
+    section image against an atlas image, inner anatomy included. It
     adjusts from where the
     section is and does not search from scratch: it moves a section by
     small amounts and does not turn it over. The section's marked damage
@@ -662,8 +631,8 @@ def elastix_affine(
     a larger region[[?interactive_transform  or interactive_transform]]. No fit is written for it.
 
     Both images are scaled from their 1st to 99th percentile inside the
-    atlas outline to 0-1. The reply names the channel, atlas image and mask each
-    fit used.
+    atlas outline to 0-1. The reply names the section image, atlas image and mask
+    each fit used.
 
     Args:
         sections: One to four filenames (the extension may be left off).
@@ -672,15 +641,13 @@ def elastix_affine(
             atlas within 300 um of them, against the tissue the fit lays
             there. Only the ANTs and Elastix fits take it. Empty fits by
             every region.
-        section_image: The section channel to match: "preprocessed" (the channel
-            the fits and the image model read by default), a raw channel's name~
-            [[?set_channel  or a channel you made with set_channel]].
-        atlas_image: One of the atlas's images (the job statement lists
-            them: "template" and any other reference images the atlas ships,
-            by their names) or "nissl", the atlas's Nissl image where it has
-            one, else its template.
-        mask: "none" compares every pixel of the section[[?set_mask , or the
-            name of a mask of that section made with set_mask: pixels with
+        section_image: The section image to match, by name: "preprocessed", a raw channel~
+            [[?make_image , or an image made with make_image]].
+        atlas_image: One of the atlas's images, by name (the job statement lists
+            them and says what each is), or "nissl", the atlas's Nissl image
+            where it has one, else its template.
+        mask: "none" compares every pixel of the section[[?make_mask , or the
+            name of a mask of that section made with make_mask: pixels with
             a weight under 0.5 are left out]].
         edges: True also matches the edges (the gradient magnitude) of both
             images, as a second term of equal weight.
@@ -719,7 +686,7 @@ def fireants_syn(
     run by FireANTs (Jena et al. 2026, Nature Communications), which keeps SyN's
     model and runs its optimisation on the GPU.
 
-    SyN bends the atlas onto a channel of each section, starting
+    SyN bends the atlas onto a section image of each section, starting
     from the section's current registration (its linear placement, and its
     deformation when it has one), so each fit builds on the one before;
     undo goes back. Fit the whole section first, then refine regions with
@@ -736,8 +703,8 @@ def fireants_syn(
 
     Both images are scaled from their 1st to 99th percentile inside the
     atlas outline to 0-1. The step size and the number of iterations at each
-    scale are fixed. The reply names the channel, atlas image and mask each fit
-    used.
+    scale are fixed. The reply names the section image, atlas image and mask each
+    fit used.
 
     Args:
         sections: One to twenty filenames (the extension may be left off); the
@@ -747,15 +714,13 @@ def fireants_syn(
             the section are both cut to the regions' neighbourhood and the
             displacement fades to nothing beyond it. Only the ANTs and
             Elastix fits take it. Empty fits by every region.
-        section_image: The section channel to match: "preprocessed" (the channel
-            the fits and the image model read by default), a raw channel's name~
-            [[?set_channel  or a channel you made with set_channel]].
-        atlas_image: One of the atlas's images (the job statement lists
-            them: "template" and any other reference images the atlas ships,
-            by their names) or "nissl", the atlas's Nissl image where it has
-            one, else its template.
-        mask: "none" compares every pixel of the section[[?set_mask , or the
-            name of a mask of that section made with set_mask: pixels with
+        section_image: The section image to match, by name: "preprocessed", a raw channel~
+            [[?make_image , or an image made with make_image]].
+        atlas_image: One of the atlas's images, by name (the job statement lists
+            them and says what each is), or "nissl", the atlas's Nissl image
+            where it has one, else its template.
+        mask: "none" compares every pixel of the section[[?make_mask , or the
+            name of a mask of that section made with make_mask: pixels with
             a weight under 0.5 are left out]].
         smoothness_um: The warp's smoothness scale in micrometres, as for an
             adult mouse brain (a larger or smaller brain scales it): the
@@ -790,8 +755,8 @@ def trace_borders(section: str, prompt: str = "", restrict_to: list[str] = []) -
     """Trace the atlas borders onto a section with the image model, then fit it with FireANTs.
 
     LangSlice's own nonlinear method, packaged: the image model is shown the
-    section with its placed atlas borders and draws them on the section's
-    anatomy; when it answers, FireANTs fits the traced borders (80 um
+    section's "preprocessed" image with its placed atlas borders and draws
+    them on the section's anatomy; when it answers, FireANTs fits the traced borders (80 um
     smoothness) on top of the section's current registration and the
     deformation is applied as its own undoable step. The section needs a
     position and a transform; its marked damage regions are left out of
@@ -1065,9 +1030,9 @@ def landmark_triangulation(
 #: Every declared verb, in :data:`langslice.ops.registry.VERBS` order.
 STUBS: dict[str, Callable[..., Any]] = {
     stub.__name__: stub for stub in (
-        look, zoom, set_channel,
+        look, zoom, make_image,
         grep_atlas, grep_atlas_view, status, list_files, search_files, read_file,
-        position_sections, interactive_transform, mark_damage, set_mask,
+        position_sections, interactive_transform, mark_damage, make_mask,
         elastix_affine, fireants_syn, set_landmarks, landmark_triangulation,
         trace_borders,
         note, undo, redo, restore_registration, submit, export_maps,
@@ -1076,7 +1041,7 @@ STUBS: dict[str, Callable[..., Any]] = {
 
 #: The change tools: each returns its picture unless ``view`` is false.
 VIEW_TOOLS: tuple[str, ...] = (
-    "set_channel", "set_mask", "position_sections", "interactive_transform", "elastix_affine",
+    "make_image", "make_mask", "position_sections", "interactive_transform", "elastix_affine",
     "fireants_syn", "set_landmarks", "landmark_triangulation", "restore_registration",
 )
 
@@ -1190,9 +1155,12 @@ _UNCAPPED_DOCS: dict[str, tuple[tuple[str, str], ...]] = {
         "`not_shown` with the call that draws them.",
         "Every picture drawn, in the order `pictures` lists them, each with its\n"
         "number and caption."),),
-    "set_channel": ((
+    "make_image": ((
         "up to 4 of the sections (spread over the stack when none are named)",
         "each of the sections (the whole stack when none are named)"),),
+    "make_mask": ((
+        "up to 4 of the\nsections (spread over the stack when none are named)",
+        "each of the sections\n(the whole stack when none are named)"),),
     "grep_atlas_view": ((
         "Up to 4 pictures with their numbers and captions",
         "One picture per position with its number and caption"),),
@@ -1338,7 +1306,7 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
         dropped.append("view")
     if name == "position_sections" and not variant.positions:
         dropped.append("sections")
-    if name in ("look", "elastix_affine", "fireants_syn") and is_off(variant.off, "set_mask"):
+    if name in ("look", "elastix_affine", "fireants_syn") and is_off(variant.off, "make_mask"):
         dropped.append("masks" if name == "look" else "mask")  # nothing to name
     if name == "fireants_syn":
         dropped += [option for option in TOOLS[name].options
@@ -1355,6 +1323,8 @@ def dropped_arguments(name: str, variant: Variant) -> tuple[str, ...]:
         dropped.append("layers")  # they are drawn on those two modes only
     if name == "grep_atlas" and is_off(variant.off, "grep_atlas:points"):
         dropped.append("points")
+    if name == "make_image" and is_off(variant.off, "look:section"):
+        dropped.append("view")  # its pictures are look's section pictures
     if name == "zoom" and is_off(variant.off, "look:overlay"):
         dropped.append("region")  # a region is zoomed on an overlay only
     return tuple(dropped)

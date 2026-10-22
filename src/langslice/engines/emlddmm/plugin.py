@@ -24,7 +24,7 @@ Frames. The stack frame has z along the planes' normal and (row, column) along t
 atlas rows and columns, origin at the most anterior section's plane centre. Section k sits at its
 distance from that plane, snapped to a slot grid ``slot_um`` apart along the slicing axis (the
 agent's choice, no default; emlddmm needs evenly spaced slices, an empty slot carries no data,
-``W0`` 0). Each section enters already placed: its image (a channel by name), grey, read as it is in
+``W0`` 0). Each section enters already placed: its section image (by name), grey, read as it is in
 [0, 1] (as the Fig 3 benchmark runner), area-averaged to ``section_um``, resampled through the
 section's current registration (its
 deformation included, ``FitFrame.applied_map``) onto the stack's in-plane grid, which is the union
@@ -126,8 +126,8 @@ def emlddmm_stack(
     emlddmm explains every placed section as a picture of the same 3-D atlas:
     one smooth 3-D warp of the atlas, one shared scale and shear for the stack,
     and for each section its own in-plane turn and shift (its mounting). It
-    fits all of them together against the sections' images (one channel, by
-    name), with a contrast fit in small blocks and an EM sorting of every
+    fits all of them together against the sections' images (one section
+    image, by name), with a contrast fit in small blocks and an EM sorting of every
     pixel into matching tissue, background and artifact, so holes, debris and
     empty slide are set aside. Neighbouring sections constrain each other: a
     section with little anatomy is bent and shifted the way the stack is. The
@@ -144,9 +144,9 @@ def emlddmm_stack(
     pixel's weight in the fit, so a pixel at 0.3 counts at 0.3. Besides the
     mask, emlddmm estimates its own sorting during the fit; the final sorting
     of each section it writes a deformation for is saved with that
-    deformation[[?set_mask , and set_mask can take it as a mask for another fit ~
-    (source fit)]]. It keeps its own brightness scaling: the channel as it is,
-    0 to 1.
+    deformation[[?make_mask , and make_mask can take it as a mask for another fit ~
+    (source fit)]]. It keeps its own brightness scaling: the section image as it
+    is, 0 to 1.
 
     Writes, per section: with rigid true its transform (turn, shift, and the
     stack's scale and shear) and with warp true its deformation, the
@@ -183,15 +183,14 @@ def emlddmm_stack(
             moves sections further from where you placed them and limits what
             the fit can resolve along the slicing axis. Two sections may not
             share a slot.
-        section_image: The section channel to fit, by name: "preprocessed"
-            or another channel of the stack[[?set_channel  (set_channel makes ~
-            and changes them)]]. Read as grey, as it is, 0 to 1. Default
-            "preprocessed".
+        section_image: The section image to fit, by name: "preprocessed", a raw channel~
+            [[?make_image , or an image made with make_image]]. Read as grey, as it
+            is, 0 to 1. Default "preprocessed".
         atlas_image: One of the atlas's images (the job statement lists
             them), or "nissl", the atlas's Nissl (its template when it ships
             none). Default "nissl"; the reply names the image used.
         mask: "none", or the name of a mask that every section in the stack
-            has[[?set_mask  (made with set_mask)]]; its weights multiply the
+            has[[?make_mask  (made with make_mask)]]; its weights multiply the
             fit's weight on that section. Default "none".
         smoothness_um: The warp's smoothness scale in micrometres, across
             sections too; tissue closer than this bends together. Default 500.
@@ -213,7 +212,7 @@ def emlddmm_stack(
         The work id, the number of sections in the stack, those left out with
         why, the sections that will not get a transform and what they get, the
         furthest a section moves to its slot, the device, and per section what
-        the fit uses (inputs: the channel, the atlas image as asked and as
+        the fit uses (inputs: the section image, the atlas image as asked and as
         used, the mask, the damage, the brightness scaling); or why it was not
         started. The notice that follows brings, per section, what emlddmm
         estimated (its sorting and the share of the tissue it left out).
@@ -255,7 +254,7 @@ def emlddmm_plane(
             within about one interval of its place, set it to the section
             thickness, or to about half the interval between neighbouring
             sections.
-        section_image: The section channel to fit, as for emlddmm_stack.
+        section_image: The section image to fit, as for emlddmm_stack.
         atlas_image: One of the atlas's images or "nissl", as for the fit.
         iterations: Steps at the three scales. Default [100, 50, 25].
         view: True returns the pictures described below; false returns none.
@@ -319,7 +318,7 @@ def _section(ctx: ToolContext, sid: str, section_image: str, atlas_image: str, m
     _plane_image, resolved = _blocks.atlas_plane(frame, atlas_image)
     held = _blocks.section_mask(ctx, sid, mask)
     placed = _placed(frame)
-    grey = _blocks.channel_image(frame).astype(np.float64).mean(axis=2)
+    grey = _blocks.section_pixels(frame).astype(np.float64).mean(axis=2)
     gh, gw = grey.shape
     border = np.concatenate([grey[0], grey[-1], grey[:, 0], grey[:, -1]])
     slide = float(np.median(border))

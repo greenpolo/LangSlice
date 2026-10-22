@@ -145,7 +145,7 @@ def _fake_frame(h: int = 40, w: int = 60):
     annotation[5:35, 8:52] = 1
     return SimpleNamespace(
         id="s0.png", atlas={"annotation": annotation, "template": np.full((h, w), 100.0)},
-        channel=np.full((h, w, 3), 200, np.uint8), plane={"px_um": (25.0, 25.0)},
+        section_image=np.full((h, w, 3), 200, np.uint8), plane={"px_um": (25.0, 25.0)},
         placed_atlas_to_section=np.eye(3), excluded=None, damage_zone=None, applied_map=None)
 
 
@@ -167,7 +167,7 @@ def test_the_atlas_image_resolves_and_the_reply_blocks_name_what_was_used():
     assert _blocks.estimated_block(None, inside) is None
     estimated = _blocks.estimated_block(weights, inside)
     assert estimated is not None and 0.4 < estimated["left_out_fraction"] < 0.6
-    assert "set_mask source fit" in estimated["sorting"]
+    assert "make_mask source fit" in estimated["sorting"]
 
 
 def test_spomialign_drops_matches_by_the_section_mask_on_its_canvas():
