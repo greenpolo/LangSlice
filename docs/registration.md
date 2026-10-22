@@ -385,9 +385,14 @@ names the image it resolved to, and where that is the template of
 `"nissl"` request was honoured by the atlas's Nissl template. The images are BrainGlobe's `"template"` and every additional
 reference the atlas ships, under BrainGlobe's names (for example
 `ccfv3augmented_mouse_25um`, whose template is the Blue Brain averaged Nissl,
-also ships a single-animal Nissl). The job statement lists them, and `look`
-draws any of them as an atlas layer. One addition: an Allen CCFv3
-atlas (which ships no Nissl) is also offered `"ccfv3augmented_nissl"`, the
+also ships a single-animal Nissl). The job statement lists them, quotes
+BrainGlobe's own description of the atlas (what its images are, and where one
+does not line up with the annotation), and asks the agent to fit against the
+image whose contrast is closest to the section's and that lines up with the
+borders; `look` draws any of them as an atlas layer. One addition: an Allen CCFv3
+atlas (which ships no Nissl; one whose BrainGlobe metadata names the CCFv3
+coordinate space, `allen-adult-mouse-ccf-space`, or names none and has its
+grid) is also offered `"ccfv3augmented_nissl"`, the
 Blue Brain averaged Nissl template from `ccfv3augmented_mouse_25um`, which is
 the CCFv3 grid extended 0.35 mm at the front; it downloads on first use.
 

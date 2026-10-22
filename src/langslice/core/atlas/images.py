@@ -27,8 +27,8 @@ NISSL = "nissl"
 #: ship no Nissl, but ``ccfv3augmented_mouse_25um`` is the CCFv3 grid extended
 #: 0.35 mm at the front, and its template is the Blue Brain averaged Nissl
 #: aligned to the CCFv3 annotation (Piluso et al. 2025). An atlas covering
-#: exactly the CCFv3 extent is offered that template as one more image,
-#: resampled onto its own grid.
+#: exactly the CCFv3 extent, in the CCFv3 coordinate space, is offered that
+#: template as one more image, resampled onto its own grid.
 BORROWED_NISSL = "ccfv3augmented_nissl"
 AUGMENTED_ATLAS = "ccfv3augmented_mouse_25um"
 AUGMENTED_VOXEL_MM = 0.025
@@ -37,13 +37,27 @@ AUGMENTED_VOXEL_MM = 0.025
 #: Checked by annotation agreement (best match at 14 planes, 91 % of a mid plane).
 AUGMENTED_AP_OFFSET_MM = 0.35
 _CCFV3_EXTENT_MM = (13.2, 8.0, 11.4)
+#: BrainGlobe's name for the Allen CCFv3 coordinate space. The Allen CCFv2
+#: atlases share CCFv3's grid but not its anatomy (their borders sit 100-300 um
+#: from CCFv3's), so a grid match alone does not qualify an atlas.
+CCFV3_SPACE = "allen-adult-mouse-ccf-space"
 _borrowed: dict[tuple[str, tuple[int, ...]], np.ndarray] = {}
+
+
+def _coordinate_space(atlas: Any) -> str | None:
+    """The coordinate space the atlas's BrainGlobe metadata names, if any."""
+    metadata = getattr(atlas, "metadata", None)
+    space = metadata.get("coordinate_space") if isinstance(metadata, dict) else None
+    return str(space.get("name")) if isinstance(space, dict) and space.get("name") else None
 
 
 def _takes_borrowed_nissl(atlas: Any) -> bool:
     try:
         context = atlas_space_context(atlas)
     except Exception:  # noqa: BLE001 - not a BrainGlobe-style atlas
+        return False
+    space = _coordinate_space(atlas)
+    if space is not None and space != CCFV3_SPACE:
         return False
     extent = np.asarray(context.shape) * np.asarray(context.resolution_um) / 1000.0
     return (context.orientation == "asr" and getattr(atlas, "atlas_name", "") != AUGMENTED_ATLAS

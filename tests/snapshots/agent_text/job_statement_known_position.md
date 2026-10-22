@@ -16,6 +16,7 @@ Run facts:
 - Transform frame: rotation and scales act about the pivot (the canvas centre unless the section's transform holds another), x runs right and y runs down, shifts are millimetres.
 - Raw image channels per section (the planes of each section's file as read; the names come from the file or the host and may not say which is the stain): s0.png: gray; s1.png: red, green, blue; s2.png: gray.
 - Atlas layers on this host: template, nissl, borders.
+- The atlas as BrainGlobe describes it: Allen Adult Mouse Brain Atlas: For many researchers working with mice, this is the "default" atlas for a variety of tasks. It is also the basis for the most commonly used common coordinate space (CCFv3). It is usually the best mouse atlas to start with, but it has some disadvantages. It has a reference image based on STP, which may not produce the best results for other imaging modalities, and you may want to try atlases based on other modalities. It also has limited annotations in some regions (alternatives such as the Enhanced and Unified Mouse Brain Atlas may be better if the Allen Adult Mouse Brain Atlas is not annotated sufficiently). (This version: 25μm resolution.)
 
 Tools (each one's own description says what it does and returns): `look`, `zoom`, `set_channel`, `grep_atlas`, `grep_atlas_view`, `status`, `list_files`, `search_files`, `read_file`, `interactive_transform`, `mark_damage`, `set_mask`, `elastix_affine`, `note`, `undo`, `redo`, `restore_registration`, `submit`.
 
@@ -30,5 +31,6 @@ Method:
 - Align each section by hand with `interactive_transform` as well as you can before running any fitting algorithm: match its outline and its internal anatomy (ventricles, fibre tracts, layer boundaries, the midline) to the atlas. Fitting algorithms refine a placement that is already close; they do not correct a large offset.
 - After each automatic fit or manual adjustment, inspect the returned overlay against surviving internal anatomy. Refine each slice's alignment, damaged slices included, until no further improvement is possible with the available transforms. Keep changes only if they improve the alignment.
 - A fit's reply names the channel, atlas image and mask it used.
+- Choose the atlas image each fit compares the section with: the one whose contrast is closest to the section's (its stain and imaging) and that lines up with the atlas borders. Look at the candidates beside the section before choosing; the default `nissl` is a starting point, not a rule.
 
 Work with the tools, then call `submit`.
