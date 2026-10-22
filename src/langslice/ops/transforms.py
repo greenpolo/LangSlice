@@ -21,6 +21,7 @@ import numpy as np
 
 from langslice.core.affine import normalized_physical_affine
 from langslice.core.damage import exclusions
+from langslice.core.engine_output import engine_output
 from langslice.core.frozen import FROZEN
 from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
@@ -109,6 +110,36 @@ def _turn_deg(previous: Mapping[str, Any] | None, outcome: Mapping[str, Any]) ->
     before = float(((previous or {}).get("physical") or {}).get("rotation_deg") or 0.0)
     after = float((outcome.get("physical") or {}).get("rotation_deg") or 0.0)
     return abs((after - before + 180.0) % 360.0 - 180.0)
+
+
+#: An affine fit whose scale along either axis changes by more than this
+#: ratio either way from the previous transform is flagged ``SCALE_CHANGED``
+#: (a section shrinks or swells in processing by much less than that).
+SCALE_CHANGE_LIMITS = (0.8, 1.25)
+#: An affine fit that changes the shear by more than this is flagged ``SHEAR``.
+SHEAR_CHANGE_LIMIT = 0.15
+
+
+def plausibility_flags(previous: Mapping[str, Any] | None,
+                       outcome: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """An affine fit's implausible changes from the section's *previous*
+    transform (none: the identity), as the deformable fits' flags are given:
+    ``SCALE_CHANGED`` (``scale``, ``previous``, ``limits`` per axis ratio) and
+    ``SHEAR`` (``shear``, ``previous``, ``limit`` on the change)."""
+    before = (previous or {}).get("physical") or {}
+    after = outcome.get("physical") or {}
+    scale = [float(after.get(key) or 1.0) for key in ("scale_x", "scale_y")]
+    held = [float(before.get(key) or 1.0) for key in ("scale_x", "scale_y")]
+    low, high = SCALE_CHANGE_LIMITS
+    flags: list[dict[str, Any]] = []
+    if any(not low <= new / old <= high for new, old in zip(scale, held, strict=True) if old):
+        flags.append({"code": "SCALE_CHANGED", "scale": [round(v, 3) for v in scale],
+                      "previous": [round(v, 3) for v in held], "limits": [low, high]})
+    shear, was = float(after.get("shear") or 0.0), float(before.get("shear") or 0.0)
+    if abs(shear - was) > SHEAR_CHANGE_LIMIT:
+        flags.append({"code": "SHEAR", "shear": round(shear, 3), "previous": round(was, 3),
+                      "limit": SHEAR_CHANGE_LIMIT})
+    return flags
 
 
 def det_sign(transform: Mapping[str, Any] | None) -> int:
@@ -251,9 +282,10 @@ def _fit_elastix(
             rows.append({"id": record.id, **refusal.payload()})
             continue
         try:
-            outcome = fit_elastix(state, workspace, record, include=kept, exclude=dropped,
-                                  atlas_image=fit_atlas, channel=section_image, edges=edges,
-                                  section_weights=weights)
+            with engine_output(job.engine_log, f"Elastix affine of {record.id}"):
+                outcome = fit_elastix(state, workspace, record, include=kept, exclude=dropped,
+                                      atlas_image=fit_atlas, channel=section_image,
+                                      edges=edges, section_weights=weights)
         except Exception as exc:  # nothing is written for this section
             logger.warning("elastix_affine failed for %s: %s", record.id, exc)
             rows.append({"id": record.id, "status": "error",
@@ -270,6 +302,9 @@ def _fit_elastix(
         turn = _turn_deg(record.transform, outcome)
         if turn > LARGE_TURN_DEG:
             outcome["turn_deg"] = round(turn, 1)
+        flags = plausibility_flags(record.transform, outcome)
+        if flags:
+            outcome["flags"] = flags
         fits.append((record, outcome, kept, dropped))
     with job.writing():
         records_out: dict[str, dict[str, Any]] = {}
@@ -343,9 +378,10 @@ def elastix_fit(
     stored = (record.transform or {}).get("params")
     start = list(stored) if stored is not None and len(stored) == 6 else list(IDENTITY_PARAMS)
     try:
-        fit = elastix_affine(job.state, workspace, record, start, include=include,
-                             exclude=dropped, atlas_image=resolved, channel=section_image,
-                             edges=edges, section_weights=weights)
+        with engine_output(job.engine_log, f"Elastix affine of {record.id}"):
+            fit = elastix_affine(job.state, workspace, record, start, include=include,
+                                 exclude=dropped, atlas_image=resolved, channel=section_image,
+                                 edges=edges, section_weights=weights)
     except RegionTooSmall as exc:
         raise Refused("REGION_TOO_SMALL", message=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal

@@ -147,15 +147,17 @@ posterior, 1 superior to inferior, 2 right to left), voxel i's centre at i * res
 are (row, col), centres at integers. Section positions in `state.json` and the verbs are
 millimetres along the slicing axis.
 
-## CLI (JSON on stdout: ok, result, artifacts, warnings, next)
+## CLI (JSON on stdout: ok, picture_files, result, artifacts, warnings, next)
 `langslice-job {layout.folder} VERB --args '{{...}}'` (or `--key value`); `--dry-run`
-(writes nothing), `--background` then `wait [id]` (within 30 s: the answer, or `STILL_RUNNING`:
-wait again; `runs` lists runs), `--verbose`. Pictures come back as file paths under `artifacts`,
-each with its `index` in the reply's `pictures` (their numbers). Exit codes: 0 ok, 2 bad
-arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal. Calls may run in
-parallel (each write holds the folder's lock; a long verb re-checks each section first:
-`STALE_INPUT`, run it again for that section). `langslice-job ops` lists the verbs;
-`langslice-job schema VERB` (or `VERB --help`) gives the arguments, `schema init` the job flags.
+(writes nothing), `--verbose`. A long verb's call answers within 30 s: its result, or its run id
+and state `running` (the run goes on, also if your shell ends the command where a process may
+outlive it; `wait [id]` waits 30 s more, `runs` lists runs, `--background` answers at once).
+Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index` in the reply's
+`pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
+`error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
+verb re-checks each section first: `STALE_INPUT`, run it again for that section).
+`langslice-job ops` lists the verbs; `langslice-job {layout.folder} schema VERB [VERB ...]` gives
+their arguments, several at once (every verb without one); `schema init` the job flags.
 {verbs}
 
 ## Python

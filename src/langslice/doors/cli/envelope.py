@@ -5,6 +5,7 @@ prints exactly one JSON object on stdout and nothing else; progress and logs
 go to stderr. The envelope::
 
     {"ok": true|false,
+     "picture_files": ["/.../view.jpg", ...],   # only when the call drew pictures
      "result": {...},                       # the verb's reply, concise
      "artifacts": [{"path": "...", "kind": "view"}, ...],
      "warnings": ["..."],
@@ -17,7 +18,9 @@ the job (a gate or a rule: the stack is not in a state the verb accepts),
 folder and listed under ``artifacts`` by absolute path and kind (``view``
 the JPEG, ``view_json`` its frame, ``labels`` the uint32 atlas ids,
 ``borders`` the drawn borders, ``results`` an export, ``card`` the
-reference card).
+reference card); ``picture_files`` repeats the JPEGs' paths (kinds
+:data:`PICTURE_KINDS`), in order, second in the envelope, where an agent
+reading the reply sees them first.
 """
 
 from __future__ import annotations
@@ -34,6 +37,9 @@ from typing import Any
 
 from langslice.core.needs import render
 
+#: The artifacts that are pictures to open (``picture_files``).
+PICTURE_KINDS = ("view", "opening")
+
 EXIT_OK = 0
 EXIT_ARGUMENTS = 2
 EXIT_REFUSED = 3
@@ -44,7 +50,7 @@ EXIT_INTERNAL = 4
 #: and ``TOO_MANY_*`` code.
 ARGUMENT_CODES = frozenset({
     "MISSING_ARGUMENTS", "DUPLICATE_SLICE_IDS", "NO_SIDES", "WRONG_SIDE_PAIR", "EMPTY_BOX",
-    "NO_JOB", "NO_IMAGES",
+    "NO_JOB", "NO_IMAGES", "ATLAS_ENDPOINT_OUTSIDE",
 })
 
 #: The disabled list of the job the call is about, once it is open (set by
@@ -94,13 +100,12 @@ FIXES: dict[str, str] = {
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
     "NOTHING_WRITTEN": "Each section's row under result.results names its problem.",
     "UNKNOWN_RUN": "List the background runs with `langslice-job {job} runs`.",
-    "STILL_RUNNING": "The run goes on; wait again: `langslice-job {job} wait <id>` (each wait "
-                     "answers within 30 s; `--timeout SECONDS` sets how long).",
     "RUN_LOST": "The background process ended without an answer; see its log under "
                 "logs/runs/ and run the verb again. If every background run is lost, "
                 "your shell ends the processes a command leaves running when it returns "
-                "(sandboxes do this): run the verb without --background, in your "
-                "harness's own background mode if it has one.",
+                "(sandboxes do this): run the verb as `LANGSLICE_DETACH=0 langslice-job "
+                "...`, without --background, in your harness's own background mode if it "
+                "has one.",
     "BAD_REGISTRATION": "Give --registration a QuickNII/VisuAlign JSON or XML, a DeepSlice "
                         "CSV/JSON/XML or a LangSlice registration.json whose entries name "
                         "this folder's section images (by file name, stem or _sNNN number) "
@@ -154,7 +159,10 @@ FIXES: dict[str, str] = {
                                "or in calls of four pairs or fewer.",
     "BAD_LANDMARK_POINT": "Give x,y inside the image content the message states[[?zoom  (on a "
                           "zoom, numbers its grid prints)]].",
-    "BAD_LANDMARK_PICTURE": "Draw this section with look (sections=[its filename]) and give "
+    "ATLAS_ENDPOINT_OUTSIDE": "Nothing was written. Send the pairs again with each atlas "
+                              "endpoint the message names at the point inside the atlas it "
+                              "gives, or on the drawn border where you meant it.",
+    "BAD_LANDMARK_PICTURE":"Draw this section with look (sections=[its filename]) and give "
                             "that picture's number; the message says which sections the "
                             "picture you named covers.",
     "STALE_LANDMARK_PLANE": "Draw the section's current atlas plane with look, then re-place "
@@ -195,9 +203,13 @@ class Envelope:
     call: dict[str, Any] | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"ok": self.ok, "result": self.result,
-                               "artifacts": self.artifacts, "warnings": self.warnings,
-                               "next": self.next}
+        out: dict[str, Any] = {"ok": self.ok}
+        pictures = [str(item.get("path")) for item in self.artifacts
+                    if item.get("kind") in PICTURE_KINDS]
+        if pictures:
+            out["picture_files"] = pictures
+        out.update({"result": self.result, "artifacts": self.artifacts,
+                    "warnings": self.warnings, "next": self.next})
         if self.error is not None:
             out["error"] = self.error
         return out

@@ -127,7 +127,7 @@ def stalign_lddmm(
     waits for it. Judge the overlay against the internal anatomy.
 
     Args:
-        sections: One to four filenames (the extension may be left off).
+        sections: One to twenty filenames (the extension may be left off).
         section_image: The section channel to fit, by name: "preprocessed"
             or another channel of the stack[[?set_channel  (set_channel makes ~
             and changes them)]]. STalign reads it as grey.
@@ -431,7 +431,7 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
            displacement_um: float, sorting: dict[str, Any], iterations: int,
            view: bool) -> ToolResult:
     if not sections:
-        raise ToolError("BAD_ARGS", "name one to four sections")
+        raise ToolError("BAD_ARGS", "name one to twenty sections")
     sorted_params = _sorting_params(sorting)
     params = {**sorted_params, "a": float(smoothness_um),
               "sigma_disp": float(displacement_um), "niter": int(iterations), "nt": 4}
@@ -528,10 +528,14 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
             left = (f"; its sorting left out {estimated['left_out_fraction']:.0%} of the tissue "
                     "and is saved with the deformation") if estimated and (
                         estimated["left_out_fraction"] is not None) else ""
+            waited = float(out.get("gpu_wait_s", 0.0))
+            queue = {"gpu_wait_s": round(waited)} if waited >= 1.0 else {}
             text = (f"{note}; displacement median {summary['displacement_mm']['median']} mm, "
                     f"max {summary['displacement_mm']['max']} mm; fold fraction "
                     f"{summary.get('fold_fraction', 0)}; flags {flags}{left}. "
-                    f"STalign's mismatch record: "
+                    + (f"It waited {round(waited)} s for the machine's GPU queue. "
+                       if queue else "")
+                    + f"STalign's mismatch record: "
                     f"{relative / 'energy.csv'} (plot: {relative / 'mismatch.png'}).")
             pictures = []
             if view:
@@ -544,7 +548,8 @@ def _lddmm(ctx: ToolContext, config: dict[str, Any], sections: list[str], sectio
                              "and no sorting picture is sent.")
                 else:
                     pictures.append(sorting)
-            return ToolResult({"notice": text, "id": sid, **summary, **blocks}, pictures)
+            return ToolResult({"notice": text, "id": sid, **summary, **queue, **blocks},
+                              pictures)
 
         try:
             work = ctx.start_work([sid], land)
@@ -672,7 +677,7 @@ def tools(config: dict[str, Any] | None = None) -> list[ToolSpec]:
     return [
         ToolSpec("stalign_lddmm", stalign_lddmm, lddmm, kind="write", group="Nonlinear",
                  task="nonlinear", writes=("affine", "deformation"), long=True,
-                 limits={"sections": 4}, version="1", meta=meta),
+                 limits={"sections": 20}, version="1", meta=meta),
         ToolSpec("stalign_plane_search", stalign_plane_search, plane, kind="read",
                  group="Positioning", task="angles", limits={"sections": 8}, version="1",
                  meta=meta),

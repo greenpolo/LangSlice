@@ -127,19 +127,22 @@ def opening_for_cli(folder: str, pictures: int | None,
         "",
         "Commands:",
         f"- Every tool is a command: `langslice-job {folder} TOOL --args '{{...}}'` (or "
-        "`--name value`); `langslice-job schema TOOL` gives its arguments and description. "
-        "Pictures come back as files under `artifacts` (kind `view`, in the order the "
-        "reply's `pictures` lists their numbers); open them to see them.",
+        f"`--name value`); `langslice-job {folder} schema TOOL [TOOL ...]` gives their "
+        "arguments and descriptions, several at once. Pictures come back as files: "
+        "`picture_files` lists them first, `artifacts` again with their kinds (`view`, in "
+        "the order the reply's `pictures` lists their numbers); open them to see them.",
         render("- `--dry-run` runs a write without writing and reports what would change"
                "[[?elastix_affine|fireants_syn|trace_borders ; the "
                "[[#elastix_affine|fireants_syn=fits||trace_borders=trace_borders]] "
                "are only checked, not run]]" + (
                    "; a plugin's engine tools are only checked too" if getattr(
                        spec, "plugins", None) else "") + ".", disabled),
-        f"- Long tools ({', '.join(long_verbs(disabled, spec))}) can run with `--background`, "
-        "which "
-        "answers at once with a run id; `wait ID` answers within 30 s with the run's "
-        "answer, or STILL_RUNNING while it runs (wait again).",
+        f"- Long tools ({', '.join(long_verbs(disabled, spec))}): a call answers with the "
+        "result or, still running after 30 s, with its run id and state `running`; the run "
+        "goes on (also when your shell ends the command, where a process may outlive it) "
+        "and `wait ID` answers within 30 s with its answer or its state (wait again). "
+        "`--background` answers at once with the run id; `runs` lists the runs. Do not start "
+        "a fit again while its run goes on.",
         "- Commands may run in parallel: each write holds the job folder's lock, and a "
         "long tool re-checks each section before it applies (STALE_INPUT when the "
         "section changed meanwhile: run it again for that section).",

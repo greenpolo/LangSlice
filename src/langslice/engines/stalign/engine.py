@@ -135,13 +135,16 @@ class gpu_turn:
 
     def __init__(self, device: str):
         self.device = device
+        self.waited_s = 0.0
 
     def __enter__(self):
         self.handle = None
         if self.device.startswith("cuda"):
             CACHE.mkdir(parents=True, exist_ok=True)
             self.handle = open(CACHE / "gpu.lock", "w")
+            asked = time.monotonic()
             fcntl.flock(self.handle, fcntl.LOCK_EX)
+            self.waited_s = time.monotonic() - asked
         return self
 
     def __exit__(self, *exc):
@@ -175,7 +178,8 @@ def run(z, out: dict) -> None:
         if "pointsI" in z.files:
             kw.update(pointsI=z["pointsI"], pointsJ=z["pointsJ"])
         A0 = z["A0"]
-        with gpu_turn(device):
+        with gpu_turn(device) as turn:
+            out["gpu_wait_s"] = turn.waited_s
             result = STalign.LDDMM([z["xI0"], z["xI1"]], z["I"], [z["xJ0"], z["xJ1"]], z["J"],
                                    L=A0[:2, :2].copy(), T=A0[:2, 2].copy(), prefit=False,
                                    draw="end", device=device, dtype=dtype, num_threads=threads,

@@ -132,6 +132,10 @@ class EngineResult:
     #: Section pixels the fit's metric left out, on the working grid (an
     #: engine that estimates its own weighting reports them); None otherwise.
     left_out: np.ndarray | None = None
+    #: Seconds the fit waited for the machine's GPU queue (:func:`gpu_turn`).
+    gpu_wait_s: float = 0.0
+    #: Times the GPU was out of memory and the fit ran again (:data:`OOM_RETRIES`).
+    oom_retries: int = 0
 
 
 def run_engine(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
@@ -235,20 +239,31 @@ OOM_RETRIES = 4
 OOM_WAIT_S = 5.0
 
 
+@dataclass
+class GpuTurn:
+    """How long a fit waited for its turn on the GPU (:func:`gpu_turn`)."""
+
+    waited_s: float = 0.0
+
+
 @contextlib.contextmanager
-def gpu_turn(device: str) -> Iterator[None]:
+def gpu_turn(device: str) -> Iterator[GpuTurn]:
     """One fit at a time on the GPU across processes (a lock on :data:`GPU_LOCK`);
-    nothing on the CPU or where file locks are not available."""
+    nothing on the CPU or where file locks are not available. Yields how long
+    the turn was waited for."""
+    turn = GpuTurn()
     if device != "cuda" or sys.platform == "win32":
-        yield
+        yield turn
         return
     import fcntl
 
     GPU_LOCK.parent.mkdir(parents=True, exist_ok=True)
     with open(GPU_LOCK, "w") as handle:
+        asked = time.perf_counter()
         fcntl.flock(handle, fcntl.LOCK_EX)
+        turn.waited_s = time.perf_counter() - asked
         try:
-            yield
+            yield turn
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
@@ -470,9 +485,11 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
     levels = len(level.iterations)
     scales = [FIREANTS_SHRINK ** k for k in range(levels - 1, -1, -1)]
     height, width = inputs.fixed.shape
+    waited_s, retries = 0.0, 0
     for attempt in range(OOM_RETRIES + 1):
         try:
-            with gpu_turn(device), _deterministic(torch, device):
+            with gpu_turn(device) as turn, _deterministic(torch, device):
+                waited_s += turn.waited_s
                 fixed = image(fixed_channels, inputs.fixed_mask)
                 moving = image(moving_channels, inputs.moving_mask)
                 registration: Any = SyNRegistration(
@@ -510,6 +527,7 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
             if device != "cuda" or attempt == OOM_RETRIES or not out_of_memory(exc):
                 raise
             torch.cuda.empty_cache()
+            retries += 1
             time.sleep(OOM_WAIT_S * (attempt + 1))
     options: dict[str, Any] = {
         "metric": metric, "loss_terms": [list(t) for t in terms],
@@ -537,6 +555,7 @@ def _run_fireants(inputs: EngineInputs, settings: FitSettings, metric: Metric) -
         native_parameters={"SyNRegistration": options},
         runtime_s=time.perf_counter() - start,
         engine_version=f"fireants {FIREANTS_VERSION} (torch {torch.__version__}, {device})",
+        gpu_wait_s=waited_s, oom_retries=retries,
     )
 
 

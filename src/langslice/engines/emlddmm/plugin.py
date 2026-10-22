@@ -921,7 +921,10 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
                 if r["estimated"] and r["estimated"]["left_out_fraction"] is not None]
         energy = (f"emlddmm's energy record: {relative}/energy.csv (plot: {relative}/energy.png)"
                   if _captured(out) else "emlddmm's energy record was not captured")
+        waited = float(out.get("gpu_wait_s", 0.0))
         text = (f"{note}: written for {len(written)} of {len(secs)} sections"
+                + (f"; it waited {round(waited)} s for the machine's GPU queue"
+                   if waited >= 1.0 else "")
                 + (f"; not (fully) written: {', '.join(problems)}" if problems else "")
                 + (f"; warp flags: {', '.join(flagged)}" if flagged else "")
                 + (f"; the sorting emlddmm estimated left out, of the tissue, {', '.join(left)}, "
@@ -933,6 +936,7 @@ def _stack_tool(ctx: ToolContext, config: dict[str, Any], names: list[str], slot
         pictures = [lctx.caption(lctx.overlay_picture(r["id"]), f"{r['id']}: after emlddmm")
                     for r in shown] if view else []
         return ToolResult({"notice": text, "files": relative, "settings": settings,
+                           **({"gpu_wait_s": round(waited)} if waited >= 1.0 else {}),
                            "rows": [{"id": r["id"], "inputs": r["inputs"],
                                      "estimated": r["estimated"]} for r in rows]}, pictures)
 

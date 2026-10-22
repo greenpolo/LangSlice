@@ -40,7 +40,8 @@ folder; one changed, it answers that call ``stale`` (the call runs cold and
 starts a new server), stops listening and exits once its running calls end.
 A caller whose environment differs where the loaded libraries read it
 (:data:`ENV_PREFIXES`, ``HOME``) runs cold. It exits after
-:data:`IDLE_S` without a call. A section written since the last call has its
+:data:`IDLE_S` without a call, or :data:`SUBMITTED_IDLE_S` once the job is
+submitted. A section written since the last call has its
 frame computed again while the server is idle.
 
 A child: its own process group, killed with the server, the caller's
@@ -66,8 +67,11 @@ from typing import Any
 
 #: ``0`` (or ``false``, ``no``, ``off``) runs every call cold.
 WARM_ENV = "LANGSLICE_WARM"
-#: Seconds without a call after which the warm process exits.
-IDLE_S = 30 * 60
+#: Seconds without a call after which the warm process exits (an agent's
+#: pauses between calls are far shorter; a long verb's call is no pause).
+IDLE_S = 10 * 60
+#: Seconds without a call after which the warm process of a submitted job exits.
+SUBMITTED_IDLE_S = 60.0
 #: Seconds between the idle warm process's checks for changed code and state.
 CHECK_S = 5.0
 #: How long a new server waits for the one it replaces to finish its calls.
@@ -623,6 +627,15 @@ def _quiet_pools() -> None:
         asyn.reset_lock()
 
 
+def _submitted(folder: str) -> bool:
+    """Whether the job's saved state says it was submitted."""
+    try:
+        with open(os.path.join(folder, "state.json"), encoding="utf-8") as handle:
+            return bool(json.load(handle).get("submitted"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def _reseed(folder: str) -> int:
     """Share the frames of the job's sections as they stand now."""
     from langslice.core.maps import share_frames
@@ -736,6 +749,7 @@ class Server:
         self.selector.register(self.wake_r, selectors.EVENT_READ, "wake")
         self.last_call = time.monotonic()
         self.state_stamp = _stat(os.path.join(folder, "state.json"))
+        self.submitted = _submitted(folder)
 
     def _stop(self, *_: Any) -> None:
         self.stopping = True
@@ -761,15 +775,16 @@ class Server:
             now = time.monotonic()
             if self.listener is None or self.calls:
                 continue
-            if now - self.last_call > IDLE_S:
-                self.stop_listening("idle")
+            if now - self.last_call > (SUBMITTED_IDLE_S if self.submitted else IDLE_S):
+                self.stop_listening("idle, the job submitted" if self.submitted else "idle")
             elif now - last_check >= CHECK_S:
                 last_check = now
                 self.check()
 
     def check(self) -> None:
         """While idle: stop on changed code or a job folder that is gone;
-        share the frames again when the state changed."""
+        share the frames again when the state changed (not once the job is
+        submitted: then it exits after :data:`SUBMITTED_IDLE_S` idle)."""
         changed = self.sources.changed()
         if changed is not None:
             self.stop_listening(f"{changed} changed")
@@ -780,6 +795,9 @@ class Server:
             return
         if stamp != self.state_stamp:
             self.state_stamp = stamp
+            self.submitted = _submitted(self.folder)
+            if self.submitted:
+                return
             try:
                 frames = _reseed(self.folder)
                 self.sources.add_loaded()

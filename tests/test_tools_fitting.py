@@ -104,8 +104,7 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert fit(["s0.png"], mask="missing")["error"] == "UNKNOWN_MASK"
     assert fit([])["error"] == "BAD_ARGS"
     many = fit(["s0.png"] * 5)
-    assert many == {"status": "error", "error": "TOO_MANY_SECTIONS", "max_sections": 4,
-                    "requested": 5}
+    assert many["error"] == "TOO_MANY_SECTIONS" and many["max_sections"] == 4
     assert state.slices[0].transform is None and box.job.undo_stack == []
 
     # One real fit, restricted to a region: one undo step, a picture zoomed to it.
@@ -136,6 +135,30 @@ def test_elastix_affine_refuses_then_fits_once_and_shows_the_region(tmp_path: Pa
     assert state.slices[0].transform is None
 
 
+def test_an_affine_fit_that_scales_or_shears_far_is_flagged():
+    """An Elastix fit whose scale changes by more than a section shrinks or
+    swells, or that shears it, carries flags, worded in the row's warning."""
+    from langslice.doors.tools.fitting import affine_flag_words
+    from langslice.ops.transforms import plausibility_flags
+
+    def fit(**physical: float) -> dict[str, Any]:
+        return {"physical": {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
+                             "shear": 0.0, **physical}}
+
+    assert plausibility_flags(None, fit(scale_x=1.05, shear=0.02)) == []
+    flags = plausibility_flags(None, fit(scale_x=0.67, shear=0.24))
+    assert flags == [
+        {"code": "SCALE_CHANGED", "scale": [0.67, 1.0], "previous": [1.0, 1.0],
+         "limits": [0.8, 1.25]},
+        {"code": "SHEAR", "shear": 0.24, "previous": 0.0, "limit": 0.15}]
+    # Measured from the transform the section held: a manual 0.7 kept is no change.
+    assert plausibility_flags(fit(scale_x=0.7), fit(scale_x=0.68)) == []
+    words = [affine_flag_words(flag) for flag in flags]
+    assert words[0].startswith("SCALE_CHANGED: this fit scales the section to [0.67, 1.0] "
+                               "from [1.0, 1.0]")
+    assert words[1].startswith("SHEAR: this fit shears the section by 0.24 (it held 0.0)")
+
+
 # --- fireants_syn --------------------------------------------------------------------------
 
 
@@ -159,6 +182,12 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
     assert again["results"][0]["steps"] == 2
     assert "pictures" not in again and TOOL_MEDIA_PARTS_KEY not in again
     assert len(state.by_id("s1.png").deformation["steps"]) == 2
+    # Each step names its method, as a plugin's steps do.
+    assert [step["method"] for step in state.by_id("s1.png").deformation["steps"]] == [
+        "fireants_syn", "fireants_syn"]
+    # What the engine printed went to the job's log, not the caller's stderr.
+    assert "deformable fits of 1 section(s)" in (
+        box.job.layout.logs_dir / "engine.log").read_text()
     _tool(box, "undo")()
     assert len(state.by_id("s1.png").deformation["steps"]) == 1
     # A changed placement clears the deformation in the same step; undo restores both.

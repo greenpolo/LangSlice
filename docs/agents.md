@@ -35,7 +35,7 @@ Initialize a job, read its brief, then choose tools from the live schema:
 langslice-job sections/ init --tasks position,transform,nonlinear --viewer codex
 langslice-job sections/ brief
 langslice-job ops
-langslice-job schema look --job sections/
+langslice-job sections/ schema look zoom fireants_syn
 langslice-job sections/ look --mode positioning
 ```
 
@@ -52,8 +52,12 @@ their tools after the native ones in `ops`, `schema` and the reference card,
 and calls them by name like any other.
 
 Tool names and arguments are shared with MCP and the built-in agent.
-`langslice-job schema VERB --job FOLDER` gives the exact arguments enabled
-for that job; `schema init` lists initialization flags. Sections are named
+`langslice-job FOLDER schema VERB [VERB ...]` (or `langslice-job schema VERB
+... --job FOLDER`) gives the exact arguments enabled for that job, its tool
+plugins' verbs included: one verb's entry, or several verbs' (separate or
+comma-separated) under `verbs`, every verb's without one. Without a job a
+plugin's verb is unknown, and the refusal says how to name the job.
+`schema init` lists initialization flags. Sections are named
 by image filename (a unique stem also works), never by number.
 
 ```bash
@@ -69,25 +73,44 @@ List arguments accept repeated flags or a JSON list; a list of numbers also
 takes one comma-separated flag (`zoom --box 960,230,1300,940`); a list of
 objects (`set_landmarks` pairs) goes through `--args '{...}'` or
 `--args @pairs.json`. A boolean flag alone means true. Kebab-case and
-snake_case are accepted. `grep_atlas` returns its rows by default.
+snake_case are accepted. `grep_atlas` returns its rows by default. An
+unknown argument is refused (`UNKNOWN_ARGUMENTS`) with a `fix` that lists
+every argument the verb takes, with the first sentence of its description
+and its default, and the call without the unknown ones (for a verb of five
+arguments or fewer, the others at their defaults); no other names are
+accepted.
 
-Long calls can run detached:
+Long calls run detached:
 
 ```bash
+langslice-job sections/ fireants_syn --sections s01.tif
 langslice-job sections/ fireants_syn --sections s01.tif --background
 langslice-job sections/ runs
 langslice-job sections/ wait
 ```
 
+A long verb (the fits, `trace_borders`, `export_maps`, every plugin tool)
+called without `--background` starts a background run and waits for it, at
+most 30 seconds: it answers with the run's answer (its `result` carries `run`),
+or, while the run still runs, with `ok` true, `result` the run's `id`,
+`state` `running`, `waited_s` and a message, and `next` the command that
+waits again. The run goes on whatever happens to the command, so a harness
+that ends a command it has left running (Codex does, about ten seconds after
+the agent's own code stops waiting on it, however long the command had run)
+ends only the waiting; `runs` lists the run and `wait` collects it. Ctrl-C on
+the call ends the run too. `--background` answers at once with the run id.
 `runs ID` and `wait ID` address a particular run. `wait` answers within 30
-seconds: with the run's answer, or, while it still runs, `STILL_RUNNING`
-(exit 3) with the run's state and the command that waits again, so an agent
-polls instead of holding a command its harness may end as too long.
-`--timeout SECONDS` sets how long it waits. A detached run needs a
-shell that lets a process outlive the command that started it; a sandbox that
-ends them when the command returns (Claude Code's) loses every run
-(`RUN_LOST`), so there a long verb runs without `--background`, in the
-harness's own background mode (the Claude Code agents say so). `--dry-run` previews a
+seconds the same way: the run's answer, or its state `running` (`ok`, exit 0)
+and the command that waits again, so an agent polls instead of holding a
+command its harness may end as too long; a run whose process ended without an
+answer is `RUN_LOST` (exit 4). `--timeout SECONDS` sets how long it waits.
+A detached run needs a shell that lets a process outlive the command that
+started it; a sandbox that ends them when the command returns (Claude Code's)
+loses every run (`RUN_LOST`). `LANGSLICE_DETACH=0` runs a long verb called
+without `--background` in the calling process, as one call, and `1` detaches
+it; unset, it is detached except under Claude Code (`CLAUDECODE` set), whose
+agents run a long verb in the harness's own background mode (the Claude Code
+agents say so). `--dry-run` previews a
 write without saving; expensive fits (`elastix_affine`, `fireants_syn`, `trace_borders`
 and every plugin tool, engines included) are validated without running them.
 `export_maps` is available through this CLI and Python to write the job's
@@ -101,21 +124,28 @@ section's image-model reply to `exports/traces/<name>.npz`
 Stdout contains one JSON envelope; diagnostics go to stderr:
 
 ```json
-{"ok":true,"result":{"status":"ok"},"artifacts":[],"warnings":[],"next":[]}
+{"ok":true,"picture_files":["/job/views/000012_look/view.jpg"],"result":{"status":"ok"},"artifacts":[{"path":"/job/views/000012_look/view.jpg","kind":"view","index":0}],"warnings":[],"next":[]}
 ```
 
 `result` contains the tool reply; `--verbose` includes its full text and
 stack rows. `artifacts` lists absolute file paths, kinds and picture numbers.
-Open `view` images to assess alignment. `zoom` uses a saved picture number,
+`picture_files`, second in the envelope and only when the call drew pictures,
+repeats the paths of the pictures to open (`view` and `opening` JPEGs, in
+order), so an agent reading the reply finds them first; the envelope's other
+keys are unchanged. Open `view` images to assess alignment. `zoom` uses a saved picture number,
 or the latest non-zoom picture when omitted. A failed call has an `error`
 with a `code`, `message` and `fix`.
 
 | Exit code | Meaning |
 |---|---|
-| 0 | Successful call |
+| 0 | Successful call, or a long run still running when the call or `wait` answered |
 | 2 | Invalid command, arguments, section or job path |
-| 3 | Job refusal, write-lock timeout or background work still running at the wait timeout |
+| 3 | Job refusal or write-lock timeout |
 | 4 | Internal error or background run that ended without an answer |
+
+What the registration engines print while they fit (the GPU compiler's
+warnings on the first FireANTs fit, torch's memory allocator, Elastix) goes to
+the job's `logs/engine.log`, never to the call's stderr or reply.
 
 `init --viewer claude` caps later pictures at 2000 px; `codex` and `openai`
 cap them at 2048 px. `look --resolution N` requests a long edge of at least
@@ -132,8 +162,10 @@ The CLI and the library cap no pictures or sections per call: `look`,
 save and return every picture they draw, and `interactive_transform` and
 `elastix_affine` take any number of sections. What still limits a call is the
 job's own `transform.max_parallel` for those two, `fireants_syn`'s section cap
-and any limit a tool plugin declares; the job card states them. (LangSlice's
-own agent and MCP keep four pictures, and four sections, per call.)
+(20: each fitted section is held in memory until the call writes them all)
+and any limit a tool plugin declares; the job card states them, and the
+refusal (`TOO_MANY_SECTIONS`) says why. (LangSlice's
+own agent and MCP keep four pictures, and four transform sections, per call.)
 
 ### The job's own Python environment
 
@@ -182,7 +214,7 @@ files of the modules it loaded from outside the standard library and
 site-packages (LangSlice's own, a tool plugin's), the import path's folders
 and the atlas's folder. When one changed, that call runs cold, the warm
 process stops taking calls and exits once its running calls end, and the
-call starts a new one. It exits after 30 minutes without a call. It never
+call starts a new one. It exits after 10 minutes without a call, or one minute once the job is submitted. It never
 touches the GPU, so each call initialises CUDA itself as a cold call does.
 `LANGSLICE_WARM=0` runs every call cold. It is Linux only; elsewhere every
 call is cold. Its socket, lock and log are in `$XDG_RUNTIME_DIR/langslice-warm/`

@@ -305,6 +305,12 @@ the angles in a caption (empty for the flat plane).
   engine's brightness scaling in words) and `EstimatedBlock` (the engine's own
   saved sorting and the fraction it left out). They name what was used, never
   quality.
+- `engine_output.py` — `engine_output(path, label)`: file descriptor 2 pointed
+  at a log file (the job's `logs/engine.log`, `Job.engine_log`, passed by the
+  operations) while an engine runs, so what it and the programs it starts
+  print (the GPU compiler's warnings, torch's allocator, Elastix) never reaches
+  a reply; process-wide, nested and overlapping runs share the first log,
+  None leaves stderr as it is.
 - `atlas/images.py` — `atlas_images` ends with the alias `nissl`;
   `default_image(atlas)` is what it stands for (the borrowed Nissl; the
   augmented atlas's template; an additional reference whose name contains
