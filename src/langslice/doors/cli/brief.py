@@ -10,7 +10,9 @@ order as the ADK agent's seed message), drawn at the job's viewer's limits
 (:func:`langslice.doors.jobs.job_viewer`) and saved in the job folder as
 the opening views (``views/<seq>_opening/view.jpg``, as the ADK run saves
 its own). Everything is also written to ``BRIEF.md`` in the job folder,
-which the job's reference card names first. ``init`` writes the statement
+which the job's reference card names first, and every verb's description and
+arguments, as this job declares them, to ``TOOLS.md`` beside it
+(:func:`langslice.doors.cli.catalog.tools_text`). ``init`` writes the statement
 without pictures (:func:`build` with ``pictures=False``).
 """
 
@@ -35,9 +37,11 @@ class Brief:
     #: ``{"text": ...}`` and ``{"picture": n, "path": ...}`` in reading order.
     opening: list[dict[str, Any]] = field(default_factory=list)
     #: Each opening picture (kind ``opening``, ``index`` its reading order,
-    #: ``label`` the strip text before it), then the brief file.
+    #: ``label`` the strip text before it), then the brief file and the tools file.
     artifacts: list[dict[str, Any]] = field(default_factory=list)
     path: Path | None = None
+    #: ``TOOLS.md``, every verb's description (None when it could not be written).
+    tools_path: Path | None = None
     facts: dict[str, Any] = field(default_factory=dict)
 
 
@@ -106,7 +110,30 @@ def build(opened: Any, *, pictures: bool = True) -> Brief:
     brief.path = write(job.layout.folder, brief, pictures=pictures)
     if brief.path is not None:
         brief.artifacts.append({"path": str(brief.path), "kind": "brief"})
+    brief.tools_path = write_tools(job.layout.folder, box)
+    if brief.tools_path is not None:
+        brief.artifacts.append({"path": str(brief.tools_path), "kind": "tools"})
     return brief
+
+
+def write_tools(folder: Path, box: Any) -> Path | None:
+    """Write ``TOOLS.md`` (:func:`langslice.doors.cli.catalog.tools_text`) for
+    the toolbox *box* of the job in *folder*: its verbs as its run declares
+    them. Its path, or None when it could not be written."""
+    import logging
+
+    from langslice.doors.card import TOOLS_FILE
+    from langslice.doors.cli.catalog import tools_text
+
+    path = Path(folder) / TOOLS_FILE
+    try:
+        content = tools_text(str(folder), list(box.names), box.variant, box.job.spec)
+        with path.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(content)
+    except Exception:  # noqa: BLE001 - the brief stands without its tools file
+        logging.getLogger(__name__).warning("Could not write %s", path, exc_info=True)
+        return None
+    return path
 
 
 def text(folder: Path, brief: Brief, *, pictures: bool) -> str:
@@ -119,7 +146,7 @@ def text(folder: Path, brief: Brief, *, pictures: bool) -> str:
         "stack as it stands now (`status` gives the table alone). Read this first, then "
         "open every opening picture listed at the end before any write. `AGENTS.md` "
         "(the same as `CLAUDE.md`) is the reference card: files, coordinates, verbs, "
-        "exit codes.",
+        "exit codes. `TOOLS.md` holds every verb's description and arguments.",
         "",
         "## Job statement",
         "",

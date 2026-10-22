@@ -158,7 +158,7 @@ made = langslice.create_job(images, tasks=["nonlinear"], positions={"s0.png": 0.
                             pixel_size_um=PIXEL_SIZE_UM, image_model=model,
                             job_dir=images.parent / "one", atlas_loader=loader)
 made.status()
-made.export_maps(slices=["s0.png"])
+made.export_maps(sections=["s0.png"])
 made.close()
 forbidden = tuple(sys.argv[2:])
 print(json.dumps(sorted(

@@ -314,8 +314,13 @@ def test_brief_is_the_native_statement_and_opening(capsys, images):
     brief = (job / "BRIEF.md").read_text(encoding="utf-8")
     assert statement.replace("\r\n", "\n") in brief
     assert all(item["path"] in brief for item in opening)
-    assert envelope["artifacts"][-1] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
+    assert envelope["artifacts"][-2] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
     assert "BRIEF.md" in (job / "AGENTS.md").read_text()
+    # TOOLS.md beside it holds every verb's description and arguments, as declared here.
+    assert envelope["artifacts"][-1] == {"path": str(job / "TOOLS.md"), "kind": "tools"}
+    tools = (job / "TOOLS.md").read_text(encoding="utf-8")
+    assert "## look" in tools and "## export_maps" in tools and "- `mode`: one of" in tools
+    assert "TOOLS.md" in (job / "AGENTS.md").read_text()
     assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048
 
 
@@ -418,6 +423,13 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
     assert seen["exit"] == 0 and seen["artifacts"] == [
         item["path"] for item in envelope["artifacts"]]
     assert lines[2]["ok"] is False and lines[2]["error"] == "NOTHING_TO_UNDO"
+    # Each call's whole envelope, as printed, is kept beside the log; the line names it.
+    assert [line["reply"] for line in lines] == [
+        "logs/calls/000001_init.json", "logs/calls/000002_look.json",
+        "logs/calls/000003_undo.json"]
+    assert json.loads((job / lines[1]["reply"]).read_text()) == envelope
+    assert json.loads((job / lines[2]["reply"]).read_text()) == refused
+    assert lines[2]["message"] == refused["error"]["message"]
     # The trace, as the MCP door writes its own: one file for the job.
     files = list(traces.glob("cli_stack_*.jsonl"))
     assert len(files) == 1
@@ -506,8 +518,15 @@ def test_exit_codes_and_fix_hints(capsys, images):
         f"Call it as: `langslice-job {job} read_file --path AGENTS.md --offset 0 --limit "
         "400`.")
     code, envelope = cli(capsys, str(images), "list_files", "--recursive", "--limit", "5")
-    assert code == 2 and "pattern (A glob" in envelope["error"]["fix"]
-    assert f"`langslice-job {job} list_files --path . --pattern ''`" in envelope["error"]["fix"]
+    assert code == 2 and "glob (Every file below path whose name or path matches this glob " \
+        "(\"*.json\", \"views/*\"; \"*\" is every file below path); default \"\")" \
+        in envelope["error"]["fix"]
+    assert f"`langslice-job {job} list_files --path . --glob ''`" in envelope["error"]["fix"]
+    code, envelope = cli(capsys, str(images), "read_file", "--path", "sections/nope/x.json")
+    assert code == 2 and envelope["error"]["code"] == "NOT_FOUND"
+    assert "the nearest folder above it that does, 'sections', holds:" in (
+        envelope["error"]["message"])
+    assert "nearest folder above the path" in envelope["error"]["fix"]
     code, envelope = cli(capsys, str(images), "look")
     assert code == 2 and envelope["error"]["code"] == "MISSING_ARGUMENTS"
     assert envelope["result"] == {"missing": ["mode"]}
@@ -542,10 +561,52 @@ def test_an_internal_error_exits_4(capsys, images, monkeypatch):
     assert "boom" in envelope["error"]["message"]
 
 
+def test_a_first_sentence_ends_at_a_sentence_not_an_abbreviation():
+    from langslice.doors.cli.job import _first_sentence
+
+    assert _first_sentence('A glob (e.g. "*.json"): every file. Empty lists it.') == (
+        'A glob (e.g. "*.json"): every file.')
+    assert _first_sentence("Steps, e.g. three. More.") == "Steps, e.g. three."
+    assert _first_sentence("No full stop") == "No full stop"
+
+
+def test_folder_ops_lists_the_job_s_own_verbs(capsys, images):
+    job = init(capsys, images, "--tasks", "position")
+    code, envelope = cli(capsys, str(images), "ops")
+    assert code == 0, envelope
+    names = [row["name"] for row in envelope["result"]["verbs"]]
+    assert envelope["result"]["job"] == str(job)
+    assert "look" in names and "position_sections" in names
+    assert "fireants_syn" not in names and "elastix_affine" not in names
+    assert envelope["next"][0] == f"langslice-job {job} brief"
+    code, envelope = cli(capsys, str(images), "ops", "--bogus")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+
+
+def test_a_failed_fit_says_the_first_line_and_keeps_the_rest_in_the_log(tmp_path):
+    from langslice.core.engine_output import failure_message
+
+    log = tmp_path / "logs" / "engine.log"
+    text = ("AcceleratorError: CUDA error: out of memory\nSearch for "
+            "`cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/...\nmore lines")
+    words = failure_message(text, log, "the fit of s0.png failed")
+    assert words.startswith("AcceleratorError: CUDA error: out of memory. The GPU ran out of "
+                            "memory")
+    assert "cudaErrorMemoryAllocation" not in words
+    assert words.endswith("logs/engine.log holds the whole error.")
+    held = log.read_text()
+    assert "the fit of s0.png failed" in held and "more lines" in held
+    assert failure_message("ValueError: bad", None) == "ValueError: bad."
+
+
 def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     job = init(capsys, images)
     state_before = (job / "state.json").read_bytes()
-    views_before = sorted(path.name for path in job.rglob("*"))
+
+    def files() -> list[str]:  # every call's reply is kept in logs/calls/, a dry run's too
+        return sorted(path.name for path in job.rglob("*") if "calls" not in path.parts)
+
+    views_before = files()
     code, envelope = cli(capsys, str(images), "position_sections", "--sections",
                          json.dumps([{"id": ID1, "position_mm": 0.15}]), "--dry-run")
     assert code == 0, envelope
@@ -555,7 +616,7 @@ def test_dry_run_reports_the_change_and_writes_nothing(capsys, images):
     assert envelope["artifacts"] == []
     assert envelope["next"] and "--dry-run" not in envelope["next"][0]
     assert (job / "state.json").read_bytes() == state_before
-    assert sorted(path.name for path in job.rglob("*")) == views_before
+    assert files() == views_before
     # A fit is checked, not run.
     for fit in ("fireants_syn", "elastix_affine"):
         code, envelope = cli(capsys, str(images), fit, "--sections", ID0, "--dry-run")
@@ -581,11 +642,11 @@ def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
         [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
          {"id": ID2, "position_mm": 0.2}]), "--view", "false")
     assert code == 0, _placed
-    code, envelope = cli(capsys, str(images), "export-maps", "--slices", ID0,
+    code, envelope = cli(capsys, str(images), "export-maps", "--sections", ID0,
                          "--dry-run")
     assert code == 0 and envelope["result"]["files_written"] is False
     assert envelope["artifacts"] == [] and not (job / "sections/s0/coords.tif").exists()
-    code, envelope = cli(capsys, str(images), "export_maps", "--slices", ID0)
+    code, envelope = cli(capsys, str(images), "export_maps", "--sections", ID0)
     assert code == 0, envelope
     assert envelope["result"]["written"] == [ID0] and envelope["result"]["n_files"] >= 5
     kinds = {artifact["kind"] for artifact in envelope["artifacts"]}

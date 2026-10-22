@@ -157,6 +157,17 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         return describe(name, folder)
     if name == "init":
         return init(folder, rest, atlas_loader=atlas_loader)
+    if name == "ops":  # `langslice-job FOLDER ops`: the job's own verbs
+        from langslice.doors.cli.catalog import ops
+        from langslice.doors.jobs import NoJob, find
+
+        if rest:
+            raise _Refusal(Envelope.failure(
+                "BAD_ARGUMENTS", "ops takes no arguments.", verb=name))
+        try:
+            return ops(argparse.Namespace(job=str(find(folder))))
+        except NoJob as exc:
+            return Envelope.failure("NO_JOB", str(exc))
     if name == "schema":  # `langslice-job schema VERB ... --job FOLDER`
         from langslice.doors.cli.catalog import schema
         from langslice.doors.jobs import NoJob, find
@@ -196,14 +207,16 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
 def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
            seconds: float, run_id: str | None = None) -> None:
     """Log one call in the job folder (``logs/calls.jsonl``: the verb, its
-    arguments as given, the envelope's outcome, the artifacts' paths) and,
-    with ``LANGSLICE_TRACE_DIR`` set, trace it as the MCP door traces a tool
-    call (:mod:`langslice.doors.trace`). Never raises; a folder without a
-    job logs nothing."""
+    arguments as given, the envelope's outcome and message, the artifacts'
+    paths, and ``reply``: the envelope itself as printed, kept in
+    ``logs/calls/``, :func:`langslice.doors.trace.save_reply`) and, with
+    ``LANGSLICE_TRACE_DIR`` set, trace it as the MCP door traces a tool call
+    (:mod:`langslice.doors.trace`). Never raises; a folder without a job logs
+    nothing."""
     import os
 
     from langslice.doors.jobs import NoJob, find
-    from langslice.doors.trace import TRACE_DIR_ENV, cli_trace, log_call
+    from langslice.doors.trace import TRACE_DIR_ENV, cli_trace, log_call, save_reply
     from langslice.job.layout import JobLayout
 
     try:
@@ -214,12 +227,15 @@ def record(folder: str, verb: str, rest: list[str], envelope: Envelope, *,
         paths = [str(item.get("path")) for item in envelope.artifacts]
         from langslice.doors.cli.warm import in_child
 
+        kept = save_reply(layout.logs_dir, verb, dumps(envelope))
         log_call(layout.logs_dir, {
             "verb": verb, "arguments": list(rest), "ok": envelope.ok, "exit": envelope.exit,
             "warm": in_child(),
-            **({"error": envelope.error.get("code")} if envelope.error else {}),
+            **({"error": envelope.error.get("code"),
+                "message": envelope.error.get("message")} if envelope.error else {}),
             **({"run": run_id} if run_id else {}),
             "warnings": len(envelope.warnings), "artifacts": paths,
+            **({"reply": layout.relative(kept)} if kept is not None else {}),
             "seconds": round(seconds, 3),
         })
         trace = cli_trace(layout.folder, os.environ.get(TRACE_DIR_ENV))
@@ -348,9 +364,24 @@ def _flag_value(annotation: Any, values: list[str]) -> Any:
 SHORT_SIGNATURE = 5
 
 
+#: Abbreviations whose full stop ends no sentence (:func:`_first_sentence`).
+ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "cf.", "vs.")
+
+
 def _first_sentence(text: str) -> str:
-    head, dot, _rest = text.partition(". ")
-    return (head + dot).strip() if dot else text.strip()
+    """*text* up to the first full stop and space that ends a sentence: not
+    one inside an abbreviation (:data:`ABBREVIATIONS`) or a bracket."""
+    depth = 0
+    for index, char in enumerate(text):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth = max(depth - 1, 0)
+        elif char == "." and text[index + 1:index + 2] == " " and depth == 0:
+            head = text[:index + 1]
+            if not head.lower().endswith(ABBREVIATIONS):
+                return head.strip()
+    return text.strip()
 
 
 def _flag_text(value: Any) -> str:
@@ -548,7 +579,7 @@ def _command(job_folder: str, verb: str, arguments: dict[str, Any]) -> str:
 def _checked(opened: Any, verb: str, arguments: dict[str, Any]) -> Envelope:
     """A dry run of a verb that is not simulated: its sections resolved."""
     refs = [entry.get("id", "") if isinstance(entry, dict) else entry
-            for key in ("sections", "slices") for entry in (arguments.get(key) or [])]
+            for entry in (arguments.get("sections") or [])]
     refs += [arguments[key] for key in ("section", "id")
              if arguments.get(key) not in (None, "")]
     known = [opened.job.state.resolve(ref) for ref in refs]
