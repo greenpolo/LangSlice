@@ -10,7 +10,10 @@ again.
 - :func:`look` draws one of the four modes (:mod:`langslice.core.look`). A
   call shows every picture drawn, or at most ``Job.picture_cap`` of them
   (the agent tools and MCP); the rest are named in ``not_shown`` with the
-  arguments that get them.
+  arguments that get them. With ``registrations`` a section is drawn under an
+  earlier registration of its own, writing nothing; with ``sheet`` the
+  pictures are saved as usual and shown tiled into sheets
+  (:mod:`langslice.core.sheet`).
 - :func:`zoom` draws a box of an earlier picture again at more detail
   (:mod:`langslice.core.zoom`), from the picture's recipe; a picture with no
   recipe, or whose sections are gone, is cropped from its saved image. The
@@ -21,13 +24,14 @@ from __future__ import annotations
 
 import io
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
 from langslice.core import look as looks
+from langslice.core import sheet as sheets
 from langslice.core import zoom as zooms
 from langslice.core.atlas.levels import OVERLAY_DEPTH
 from langslice.core.layers import PictureNote, collecting, note_for
@@ -68,6 +72,9 @@ class Looked:
     #: "section", "name", "drawn"}`` (and ``kind``, ``stale`` for a mask drawn, ``reason``
     #: for one not).
     masks: list[dict[str, Any]] = field(default_factory=list)
+    #: ``look`` with ``sheet``: the sheets' ``{"id", "caption", "tiles"}``
+    #: (``pictures`` then holds the sheets, and ``entries`` the tiled pictures).
+    sheets: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,10 @@ class Zoomed:
     redrawn: bool = True
     #: The stack has changed since the source picture; it was redrawn as it was.
     stale: bool = False
+    #: The sheet the box was given on (None: not a sheet); ``picture`` is then
+    #: the tile's picture and ``box`` the box on it.
+    sheet: int | None = None
+    box: list[float] = field(default_factory=list)
 
 
 # --- saving ------------------------------------------------------------------------------
@@ -94,12 +105,14 @@ def _picture_id(name: str) -> int:
 
 def save_pictures(
     job: Job, workspace: Workspace, tool: str, drawn: Sequence[Any],
-    notes: list[tuple[Image.Image, PictureNote]], arguments: dict[str, Any],
+    notes: list[tuple[Image.Image, PictureNote]], arguments: dict[str, Any], *,
+    tiles: bool = False,
 ) -> list[dict[str, Any]]:
     """Save *drawn* (objects with ``image``, ``caption``, ``recipe``,
     ``sections``, ``mode``) through the job's picture store, with the notes
     the core made while drawing them (*notes*, from
-    :func:`langslice.core.layers.collecting`); ``[{"id", "caption"}]``."""
+    :func:`langslice.core.layers.collecting`); ``[{"id", "caption"}]``.
+    *tiles*: a sheet shows them (:meth:`langslice.job.views.ViewStore.save`)."""
     if not drawn:
         return []
     items: list[tuple[Image.Image | bytes, PictureNote | None]] = []
@@ -114,7 +127,7 @@ def save_pictures(
         items.append((picture.image, held))
     placed = any(has_frame(held) for _image, held in items)
     names = job.views.save(tool=tool, pictures=items, arguments=arguments,
-                           atlas=workspace.atlas if placed else None)
+                           atlas=workspace.atlas if placed else None, tiles=tiles)
     return [{"id": _picture_id(name), "caption": picture.caption}
             for name, picture in zip(names, drawn, strict=True)]
 
@@ -176,6 +189,8 @@ def look(
     plugin_layers: Sequence[str] = (),
     depth: int = OVERLAY_DEPTH,
     masks: Sequence[str] = (),
+    registrations: Mapping[str, Any] | None = None,
+    sheet_edge: int | None = None,
 ) -> Looked:
     """Draw *mode* (``section``, ``atlas``, ``overlay`` or ``positioning``;
     :func:`langslice.core.look.look`) and save every picture with its recipe
@@ -208,6 +223,19 @@ def look(
     ``overlay`` (:mod:`langslice.core.plugin_layers`, as a scalar layer); the reply's
     ``masks`` says which were drawn. Refused: ``BAD_ARGS`` in another mode,
     ``UNKNOWN_MASK`` for a name no drawn section holds.
+
+    *registrations* (``{filename: number}``, mode ``section`` or ``overlay``)
+    draws each section it names under that registration of its own
+    (:func:`langslice.ops.registrations.entry_for`), writing nothing: the
+    caption says which, and whether the section holds it; with no *sections*
+    only those sections are drawn. Refused: ``BAD_ARGS`` (another mode, a
+    section not among *sections*), ``UNKNOWN_REGISTRATION``,
+    ``REGISTRATION_ELSEWHERE``, ``DEFORMATION_UNREADABLE``.
+
+    *sheet_edge* (None: no sheet) shows the pictures tiled into sheets of at
+    most that long edge, :data:`langslice.core.sheet.MAX_TILES` each
+    (:func:`sheet_pictures`): every picture is saved and numbered as usual
+    (its JPEG an artifact of kind ``tile``), and ``pictures`` holds the sheets.
     """
     state = job.state
     if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
@@ -226,6 +254,9 @@ def look(
             ids.append(record.id)
     if unknown:
         raise unknown_sections(state, [str(ref) for ref in unknown])
+    shown_under: tuple[tuple[str, int, bool], ...] = ()
+    if registrations:
+        state, ids, shown_under = _under_registrations(job, str(mode), ids, registrations)
     try:
         positions = tuple(float(v) for v in _strings(positions_mm, "positions_mm"))
     except (TypeError, ValueError):
@@ -247,13 +278,59 @@ def look(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
         images=tuple(str(c) for c in _strings(images, "images")), atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
-        warp=str(warp or "applied"), long_edge=edge, layers=named, masks=mask_names, depth=depth)
+        warp=str(warp or "applied"), long_edge=edge, layers=named, masks=mask_names, depth=depth,
+        registrations=shown_under)
     try:
         with collecting() as notes:
             drawn = looks.look(workspace, state, request, store=job.deformations)
     except looks.LookError as exc:
         raise Refused(exc.code, message=str(exc)) from exc
-    return _reply(job, workspace, LOOK_TOOL, drawn, notes, request.mode, request.args())
+    if shown_under:
+        numbers = {name: number for name, number, _held in shown_under}
+        for picture in drawn:
+            held = note_for(picture.image, notes)
+            if held is not None and picture.sections and picture.sections[0] in numbers:
+                held.extra["registrations"] = {picture.sections[0]: numbers[picture.sections[0]]}
+    arguments = request.args()
+    if registrations:
+        arguments["registrations"] = {name: number for name, number, _held in shown_under}
+    if sheet_edge:
+        return _sheet_reply(job, workspace, drawn, notes, request.mode, arguments,
+                            int(sheet_edge))
+    return _reply(job, workspace, LOOK_TOOL, drawn, notes, request.mode, arguments)
+
+
+def _under_registrations(
+    job: Job, mode: str, ids: list[str], registrations: Mapping[str, Any],
+) -> tuple[Any, list[str], tuple[tuple[str, int, bool], ...]]:
+    """``(state, ids, shown)``: a copy of the job's state with each section
+    *registrations* names under that registration of its own, the sections to
+    draw, and ``(section, number, held)`` per section named. Nothing is written."""
+    from langslice.core.state import StackState
+    from langslice.ops import registrations as ops_registrations
+
+    if mode not in ("section", "overlay"):
+        raise Refused("BAD_ARGS", message="registrations are drawn in mode section or "
+                      "overlay.")
+    if not isinstance(registrations, Mapping):
+        raise Refused("BAD_ARGS", message="registrations is {filename: number}.")
+    trial = StackState.from_dict(job.state.to_dict())
+    shown: list[tuple[str, int, bool]] = []
+    for ref, number in registrations.items():
+        record, entry, held = ops_registrations.entry_for(job, ref, number)
+        if ids and record.id not in ids:
+            raise Refused("BAD_ARGS", message=f"registrations names {record.id}, which is not "
+                          "among the sections to draw; add it to sections, or leave sections "
+                          "empty.")
+        copy_ = trial.by_id(record.id)
+        assert copy_ is not None
+        copy_.flip = bool(entry.get("flip"))
+        copy_.rotation_deg = int(entry.get("rotation_deg") or 0)
+        copy_.transform = entry.get("transform")
+        copy_.deformation = entry.get("deformation")
+        shown.append((record.id, int(entry["id"]), held == int(entry["id"])))
+    drawn = ids or [name for name, _number, _held in shown]
+    return trial, drawn, tuple(shown)
 
 
 def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) -> None:
@@ -316,6 +393,62 @@ def _reply(
     return Looked(pictures=[picture.image for picture in shown], entries=entries,
                   not_shown=not_shown(rest, mode), layers=_layer_notes(shown, entries),
                   masks=_mask_notes(shown, entries))
+
+
+#: The mode a sheet is saved under (its folder ``<n>_look_sheet``).
+SHEET_MODE = "sheet"
+
+
+def _tile_label(picture: looks.LookPicture) -> str:
+    what = ", ".join(picture.sections)
+    if not what and picture.extra.get("position_mm") is not None:
+        what = f"atlas at {float(picture.extra['position_mm']):.2f} mm"
+    return f"{what} ({picture.mode})" if what else picture.mode
+
+
+def _sheet_reply(
+    job: Job, workspace: Workspace, drawn: list[looks.LookPicture],
+    notes: list[tuple[Image.Image, PictureNote]], mode: str, arguments: dict[str, Any],
+    long_edge: int,
+) -> Looked:
+    """Every picture drawn saved as usual (as tiles), then shown tiled into
+    sheets of at most :data:`~langslice.core.sheet.MAX_TILES`, each saved as
+    a picture of its own (mode ``sheet``) whose recipe lists its tiles."""
+    entries = save_pictures(job, workspace, LOOK_TOOL, drawn, notes, arguments, tiles=True)
+    images: list[Image.Image] = []
+    made: list[dict[str, Any]] = []
+    items: list[tuple[Image.Image | bytes, PictureNote | None]] = []
+    parts: list[list[dict[str, Any]]] = []
+    for start in range(0, len(drawn), sheets.MAX_TILES):
+        part = list(zip(drawn[start:start + sheets.MAX_TILES],
+                        entries[start:start + sheets.MAX_TILES], strict=True))
+        numbers = [entry["id"] for _picture, entry in part]
+        title = (f"sheet of pictures {', '.join(str(n) for n in numbers)}: each tile one "
+                 "picture, scaled down; zoom a box on a tile to draw that picture's box")
+        sheet = sheets.tile([sheets.Tile(picture.image, entry["id"], _tile_label(picture))
+                             for picture, entry in part], long_edge, title=title)
+        caption = (f"sheet of {len(part)} {mode} pictures, each scaled to "
+                   f"{sheet.scale:.2f} of its size: "
+                   + "; ".join(f"picture {entry['id']}: {picture.caption}"
+                               for picture, entry in part))
+        recipe = sheets.recipe(sheet)
+        held = PictureNote(sections=tuple(dict.fromkeys(
+            name for picture, _entry in part for name in picture.sections)),
+            mode=SHEET_MODE, recipe=recipe, caption=caption)
+        items.append((sheet.image, held))
+        parts.append([entry for _picture, entry in part])
+        made.append({"caption": caption, "tiles": [{"picture": tile["picture"], "box": tile["box"]}
+                                                   for tile in sheet.tiles]})
+        images.append(sheet.image)
+    names = job.views.save(tool=LOOK_TOOL, pictures=items, arguments={**arguments, "sheet": True})
+    for name, sheet_entry, tiled in zip(names, made, parts, strict=True):
+        sheet_entry["id"] = _picture_id(name)
+        for entry in tiled:
+            entry["sheet"] = sheet_entry["id"]
+    made = [{"id": entry.get("id", 0), "caption": entry["caption"], "tiles": entry["tiles"]}
+            for entry in made]
+    return Looked(pictures=images, entries=entries, layers=_layer_notes(drawn, entries),
+                  masks=_mask_notes(drawn, entries), sheets=made)
 
 
 # --- a change tool's picture --------------------------------------------------------------
@@ -469,6 +602,8 @@ def zoom(
     from langslice.ops import atlas as _atlas  # noqa: F401  (registers its recipe renderer)
 
     target = _target(job, picture)
+    if (target.recipe or {}).get("renderer") == sheets.RENDERER:
+        return _zoom_sheet(job, workspace, target, box, region)
     recipe = target.recipe
     renderer = (recipe or {}).get("renderer")
     crop = renderer == zooms.CROP_RENDERER
@@ -525,7 +660,36 @@ def zoom(
                   redrawn=made.redrawn, stale=made.stale)
 
 
+def _zoom_sheet(job: Job, workspace: Workspace, target: PictureRecord, box: Sequence[float],
+                region: str) -> Zoomed:
+    """A zoom on a sheet: the box on the tile that holds most of it, drawn as
+    a zoom of that tile's picture (:func:`zoom`); the reply names the sheet."""
+    recipe = target.recipe or {}
+    numbers = [int(tile["picture"]) for tile in recipe.get("tiles") or []]
+    listed = ", ".join(str(n) for n in numbers)
+    if region:
+        raise Refused("BAD_REGION_PICTURE", picture=target.seq, message=(
+            f"Picture {target.seq} is a sheet; zoom a region on one of its tiles' "
+            f"pictures ({listed}) by number."))
+    try:
+        asked = [float(v) for v in box]
+    except (TypeError, ValueError):
+        raise Refused("BAD_BOX", message="box is [x0, y0, x1, y1] in pixels.") from None
+    if len(asked) != 4 or asked[2] <= asked[0] or asked[3] <= asked[1]:
+        raise Refused("BAD_BOX", message=f"Picture {target.seq} is a sheet: give a box "
+                      "[x0, y0, x1, y1] in its pixels over one tile.")
+    held = sheets.tile_under(recipe, asked)
+    if held is None:
+        raise Refused("EMPTY_BOX", message=f"The box {asked} covers no tile of sheet "
+                      f"{target.seq}; its tiles are pictures {listed}, each at its box: "
+                      + "; ".join(f"{t['picture']} at {t['box']}"
+                                  for t in recipe.get("tiles") or []) + ".")
+    inner = sheets.to_tile(held, asked)
+    done = zoom(job, workspace, inner, picture=int(held["picture"]))
+    return replace(done, sheet=target.seq, box=inner)
+
+
 __all__ = [
-    "LOOK_TOOL", "ZOOM_TOOL", "Looked", "Zoomed", "look", "not_shown",
+    "LOOK_TOOL", "SHEET_MODE", "ZOOM_TOOL", "Looked", "Zoomed", "look", "not_shown",
     "save_pictures", "show_result", "zoom",
 ]

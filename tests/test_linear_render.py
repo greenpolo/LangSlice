@@ -87,9 +87,9 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     assert rows[1]["flip"] is True
     assert rows[2]["position_mm"] is None
     assert rows[2]["damage_note"] == "half the section is gone"
-    assert rows[0]["transform"] == "silhouette"
-    assert rows[0]["transform_mirrored"] is True
-    assert rows[1]["transform_mirrored"] is None
+    assert rows[0]["transform"]["kind"] == "silhouette"
+    assert rows[0]["transform"]["mirrored"] is True
+    assert rows[1]["transform"] is None
 
     # A note alone (a host's ``inputs.damaged``) does not make a section damaged.
     assert rows[2]["damaged"] is False and rows[2]["damaged_regions"] == []

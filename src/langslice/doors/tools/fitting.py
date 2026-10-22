@@ -105,6 +105,8 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         fits = [row for row in done.rows if row.get("status") == "ok"]
         for row in fits:
             row.pop("params", None)  # the six raw numbers stay host-side
+            # the knobs under the one name every reply gives them
+            row["transform"] = row.pop("physical", None)
             turn = row.pop("turn_deg", None)
             words = []
             if turn is not None:
@@ -202,9 +204,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 + ". Carry on; its notice comes at the head of a later reply, and "
                 "submit waits for it."}
 
-    def export_maps(slices: list[str], full_resolution: bool) -> dict[str, Any]:
+    def export_maps(sections: list[str], full_resolution: bool) -> dict[str, Any]:
         try:
-            done = ops_exports.export_maps(job, ctx, as_list(slices),
+            done = ops_exports.export_maps(job, ctx, as_list(sections),
                                            full_resolution=bool(full_resolution))
         except Refused as refusal:
             return refusal.payload()

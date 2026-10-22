@@ -45,6 +45,14 @@ class SectionPosition(TypedDict, total=False):
 
 
 @with_config(ConfigDict(extra="forbid"))
+class SectionRegistration(TypedDict, total=False):
+    """One ``restore_registration`` section: the registration to put back."""
+
+    id: str
+    registration: int
+
+
+@with_config(ConfigDict(extra="forbid"))
 class CuttingAngles(TypedDict, total=False):
     """``position_sections``' cutting angles, for the whole stack."""
 

@@ -89,7 +89,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
              positions_mm: list[float] | None = None, atlas_layers: list[str] | None = None,
              atlas_opacity: float = 0.5, warp: str = "applied",
              resolution: int = 0, layers: list[str] | None = None,
-             depth: int = OVERLAY_DEPTH, masks: list[str] | None = None) -> dict[str, Any]:
+             depth: int = OVERLAY_DEPTH, masks: list[str] | None = None,
+             registrations: dict[str, int] | None = None,
+             sheet: bool = False) -> dict[str, Any]:
         note = ""
         edge: int | None = None
         if resolution and door.level == AUTO_RESOLUTION:
@@ -105,7 +107,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
                 positions_mm=as_list(positions_mm), images=as_list(images),
                 atlas_layers=layers_asked or None, atlas_opacity=atlas_opacity,
                 warp=str(warp or "applied").strip().lower(), resolution=edge,
-                plugin_layers=as_list(layers), depth=depth, masks=as_list(masks))
+                plugin_layers=as_list(layers), depth=depth, masks=as_list(masks),
+                registrations=dict(registrations or {}),
+                sheet_edge=int(door.box.max_view_edge) if sheet else None)
         except Refused as refusal:
             return refusal.payload()
         result: dict[str, Any] = {"status": "ok"}
@@ -115,7 +119,12 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             result["layers"] = done.layers
         if getattr(done, "masks", None):
             result["masks"] = done.masks
-        return pictured(result, done)
+        result = pictured(result, done)
+        if done.sheets:  # the sheets are attached; the pictures they tile are saved
+            result["tiled"] = result["pictures"]
+            result["pictures"] = [{"id": made["id"], "caption": made["caption"],
+                                   "tiles": made["tiles"]} for made in done.sheets]
+        return result
 
     def zoom(box: list[float], picture: int, region: str = "") -> dict[str, Any]:
         try:
@@ -127,7 +136,9 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "picture is a picture number."}
         result: dict[str, Any] = {"status": "ok", "picture": done.picture,
-                                  "redrawn": done.redrawn}
+                                  "redrawn": done.redrawn,
+                                  **({"sheet": done.sheet, "box": done.box}
+                                     if done.sheet is not None else {})}
         if done.stale:
             result["stale"] = True
         result["pictures"] = list(done.entries)
@@ -208,10 +219,10 @@ def bodies(door: Door) -> dict[str, Callable[..., Any]]:
         result["can_change"] = can_change(door)
         return result
 
-    def list_files(path: str, pattern: str) -> dict[str, Any]:
+    def list_files(path: str, glob: str) -> dict[str, Any]:
         job.views.flush()  # every picture shown so far is on disk and indexed
         try:
-            done = ops_files.list_files(job, str(path or "."), str(pattern or ""))
+            done = ops_files.list_files(job, str(path or "."), str(glob or ""))
         except Refused as refusal:
             return refusal.payload()
         return {"status": "ok", "text": done.text}
