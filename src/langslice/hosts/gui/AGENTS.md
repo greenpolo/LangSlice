@@ -5,8 +5,8 @@ the project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror
 to the other. The user's page is `docs/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
-generator and Settings (top right). The prompt generator and settings are a
-placeholder sentence each. The agent viewer is a preliminary layout in the
+generator and Settings (top right). The prompt generator is a placeholder
+sentence. The agent viewer is a preliminary layout in the
 ABBA log's styling (`hosts/integrations/static/chat.css`'s palette and type,
 the comparison window's blue-grey picture panel); Nash designs the final one.
 
@@ -17,10 +17,34 @@ server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
 imports the core (`core.state`, `core.status`, `core.toolset`) and the job
 layer (`job.layout` names, `job.checkpoint.current_state`, `job.history`,
-`job.registrations`) only. Nothing imports it but `hosts/cli.py`
-(`langslice gui`); `doors/cli/linear.py`'s `--gui` starts that command as a
-process (`open_gui`). It is read-only: no command endpoints, nothing written to
-a job folder. Nothing in it is model-facing.
+`job.registrations`), and for the Settings tab the doors' setup
+(`doors.api.setup`: key presence, `save_api_key`, `login_oauth`) and the
+user's settings file (`doors.api.settings`). Nothing imports it but
+`hosts/cli.py` (`langslice gui`); `doors/cli/linear.py`'s `--gui` starts that
+command as a process (`open_gui`). The viewer is read-only: every job
+endpoint is GET only, nothing is written to a job folder. The Settings tab's
+three POSTs are the only writes (the user's settings file, a saved key, the
+ChatGPT login); sign-in runs in this window's process, never inside an agent
+tool call. Nothing in it is model-facing.
+
+## Settings
+
+Connections (`openai-oauth` signed in by the browser flow; `openai-api`,
+`anthropic-api`, `gemini-api` keys in `~/.langslice/provider_credentials.json`,
+an Anthropic key also counted from `~/.langslice/anthropic_api_key`), one chosen;
+"Registration runs in" (`app` / `langslice`), greyed until the chosen
+connection is present, `langslice` until the user picks; the chosen
+connection's agent model and reasoning. Saved in `doors/api/settings.py`'s file
+(`~/.langslice/settings.json`, `LANGSLICE_SETTINGS` another file or `off`;
+the test suite sets it off). `runs_in` is read by NOTHING yet: acting on it is
+Phase 5 (model-facing, awaiting Nash's approval). The agent entry IS read:
+`langslice linear run` with neither `--model` nor `--reasoning` runs on the
+chosen connection's saved model and effort (`apply_saved_agent_choice`); no
+file, no connection or no saved model leaves its default. Choosing a
+connection saves LangSlice's default model for it where there is one
+(`doors.api.settings.agent_models`: the ChatGPT account's from
+`providers.registry`, the same model for the OpenAI API key; Claude and
+Gemini keys list the models `agent.spend.PRICES` prices, with no default).
 
 ## Files
 
@@ -63,13 +87,28 @@ a job folder. Nothing in it is model-facing.
   and `state.json` only. The recent jobs file is the job layer's
   (`job/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
   `LANGSLICE_RECENT_JOBS`, another file or `off`).
-- `server.py` — `GuiServer(jobs, port=)`: `ThreadingHTTPServer` on
+- `server.py` — `GuiServer(jobs, port=, settings=)`: `ThreadingHTTPServer` on
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer; as
-  `abba_chat.ChatServer`), GET only (others 405). `answer(path, host)`: the
+  `abba_chat.ChatServer`). `answer(path, host)` (GET): the
   static files, `jobs`, `jobs/<n>/snapshot?since=&gen=&sv=`,
   `jobs/<n>/picture/<number>` (the `view.jpg` of a picture the job's
-  `views.jsonl` lists, read from disk); anything else 404.
+  `views.jsonl` lists, read from disk), `settings`; anything else 404.
+  `post(path, headers, body)`: only `settings.POSTS` (any other path 405),
+  with the token and `Host`, `Origin` exactly `http://127.0.0.1:<port>` and
+  `Sec-Fetch-Site` same-origin when sent (403), `Content-Type`
+  `application/json` (415), at most `MAX_BODY` bytes (413); a refusal is 400
+  `{"error"}`. PUT, DELETE, PATCH, HEAD: 405. The Settings code in `server.py`,
+  `index.html` and `app.css` sits between `Settings tab` marker comments.
+- `settings.py` — `Settings(login=)`: `state()` (each connection's presence
+  word from `doors.api.setup.connections`, never a key or token; the saved
+  choices; `runs_in` `{saved, enabled, value}`; per connection `models`,
+  `default`, `model`, `reasoning`; the sign-in's `running` / `url` /
+  `error`), `post(resource, body)`: `settings` (`connection`, `runs_in`,
+  `model`, `reasoning`), `settings/key` (`setup.save_api_key`; the refusal
+  never repeats the input), `settings/signin` (`setup.login_oauth` in a
+  thread, `SIGNIN_TIMEOUT_S`; a failure is worded without the provider's
+  reply); `SettingsError`.
 - `window.py` — `find_browser` (`PATH_NAMES` on the PATH, then
   `candidates(platform, env, home)`: Windows `WINDOWS_ROOTS` x
   `WINDOWS_PATHS`, macOS `/Applications` and `~/Applications` x `MAC_APPS`),
@@ -82,8 +121,11 @@ a job folder. Nothing in it is model-facing.
   newest, previous/next, one section's pictures, enlarge), the activity list
   (tool rows with their pictures as thumbnails, pictures no event claims
   grouped by call, the opening first; the agent's text and reasoning; raw
-  inputs under Details), the sections table, undo and redo, notes and spend.
-  Every text goes in by `textContent`.
+  inputs under Details), the sections table, undo and redo, notes and spend;
+  `settings.js` (the Settings tab: built once, updated from each answer, so a
+  key being typed survives a refresh; refreshed when the tab is opened, every
+  second while a sign-in runs; on the first load with no connection chosen it
+  opens the tab). Every text goes in by `textContent`.
 
 ## Tests
 
@@ -93,4 +135,9 @@ fallback, undo labels and the cap, a path outside the folder, the job list,
 a truncated file; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
 `tests/test_gui_server.py` (token and Host, GET only, snapshot and pictures,
 refused paths), `tests/test_gui_window.py` (the candidates per platform with a
-fake `which` and filesystem, the app window, both fallbacks).
+fake `which` and filesystem, the app window, both fallbacks),
+`tests/test_gui_settings.py` (the settings file in a temporary home, the
+environment override, the POST checks, a key never sent back, the Claude key
+loaded for the agent only, the run location's greying, models per
+connection, sign-in with a fake login, `linear run`'s model unchanged with no
+file or settings off).

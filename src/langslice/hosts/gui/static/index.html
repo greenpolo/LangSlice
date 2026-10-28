@@ -64,7 +64,10 @@
   </div>
 
   <div id="tab-prompt" class="tab placeholder" hidden><p>The prompt generator will turn your choices (atlas, tools, section thickness, image folder) into a request to paste into your agent app. It is not built yet.</p></div>
-  <div id="tab-settings" class="tab placeholder" hidden><p>Settings will hold your model connections (ChatGPT sign-in and API keys) and where registration runs. They are not built yet.</p></div>
+  <!-- Settings tab: filled by settings.js (hosts/gui/settings.py) -->
+  <div id="tab-settings" class="tab settings" hidden></div>
+  <script src="settings.js" defer></script>
+  <!-- end Settings tab -->
 
   <footer><span id="connection">Connecting…</span><span>Closing this window does not stop the run.</span></footer>
   <dialog id="lightbox"><button id="close-lightbox" aria-label="Close">×</button><img id="large" alt=""><p id="large-caption"></p></dialog>

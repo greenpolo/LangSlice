@@ -511,6 +511,24 @@ def open_gui(spec: Any) -> None:
         print(f"The LangSlice window could not be started: {exc}")
 
 
+def apply_saved_agent_choice(args: argparse.Namespace) -> bool:
+    """Fill ``--model`` (and ``--reasoning`` when it too is unset) from the
+    user's settings file (:func:`langslice.doors.api.settings.agent_choice`)
+    when the command names no model; True when it did. Without the file,
+    a chosen connection or a model saved for it, *args* is left as given."""
+    if getattr(args, "model", None):
+        return False
+    from langslice.doors.api.settings import agent_choice
+
+    choice = agent_choice()
+    if choice is None:
+        return False
+    args.model = choice[0]
+    if not getattr(args, "reasoning", None):
+        args.reasoning = choice[1]
+    return True
+
+
 def run_linear(args: argparse.Namespace) -> None:
     import asyncio
     import os
@@ -519,6 +537,11 @@ def run_linear(args: argparse.Namespace) -> None:
     from langslice.agent.trace import TRACE_DIR_ENV
 
     apply_trace_dir(args)
+    chosen = apply_saved_agent_choice(args)
+    if chosen:
+        print(f"Model: {args.model}"
+              + (f"  Reasoning: {args.reasoning}" if args.reasoning else "")
+              + " (from the LangSlice window's Settings)")
     try:
         spec = with_tool_plugins(build_linear_spec(args, args.image_folder), args)
     except ValueError as exc:

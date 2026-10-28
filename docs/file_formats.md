@@ -299,6 +299,32 @@ with `folder` (the job folder), `image_folder`, `atlas` and `at` (UTC, ISO
 file is rewritten with the newest line of each of the newest 500 job folders.
 `LANGSLICE_RECENT_JOBS` names another file, or `off` for none.
 
+## Settings (`~/.langslice/settings.json`)
+
+Outside the job folder: what the LangSlice window's Settings tab saves
+([the LangSlice window](gui.md)). No key or sign-in is in it.
+
+```json
+{
+ "version": 1,
+ "connection": "openai-oauth",
+ "runs_in": "langslice",
+ "agent": {
+  "openai-oauth": {"model": "openai-oauth/gpt-6.1-sol", "reasoning": null},
+  "anthropic-api": {"model": "anthropic-api/claude-opus-5-5", "reasoning": "high"}
+ }
+}
+```
+
+`connection` is one of `openai-oauth`, `openai-api`, `anthropic-api`,
+`gemini-api`, or null. `runs_in` is `app`, `langslice`, or null (not chosen);
+nothing reads it yet. `agent` keeps a model per connection, spelled as
+`langslice linear run --model` takes it, and a `reasoning` effort (`low`,
+`medium`, `high`, `xhigh`, `max`, or null for the provider's own).
+`langslice linear run` started with neither `--model` nor `--reasoning` runs
+on the chosen connection's entry. A value LangSlice does not know reads as
+unset. `LANGSLICE_SETTINGS` names another file, or `off` for none.
+
 ## Exports (`exports/`)
 
 Written at `submit` and by `export_maps`. Both are QuickNII-format JSON (`name`, `target`,

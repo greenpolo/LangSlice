@@ -1,18 +1,21 @@
 """The GUI's loopback server: the page, the job list, snapshots and pictures.
 
-One ``ThreadingHTTPServer`` on 127.0.0.1, GET only, every path under a random
-token (``/<token>/``), the ``Host`` header checked against the port (a page on
+One ``ThreadingHTTPServer`` on 127.0.0.1, every path under a random token
+(``/<token>/``), the ``Host`` header checked against the port (a page on
 another site cannot reach it through a rebound name), a strict
-Content-Security-Policy and ``no-store``. Endpoints:
+Content-Security-Policy and ``no-store``. GET endpoints:
 
-- ``""``, ``app.css``, ``app.js``: the page (``static/``);
+- ``""``, ``app.css``, ``app.js``, ``settings.js``: the page (``static/``);
 - ``jobs``: the job list (:meth:`JobList.listing`);
 - ``jobs/<n>/snapshot?since=&gen=&sv=``: :meth:`JobWatcher.snapshot`;
 - ``jobs/<n>/picture/<number>``: a saved ``view.jpg`` by its picture number,
-  read from disk, never by path.
+  read from disk, never by path;
+- ``settings``: the Settings tab's state (:meth:`Settings.state`).
 
 Only the folders the :class:`~langslice.hosts.gui.watch.JobList` lists are
-read. There are no command endpoints: the viewer is read-only.
+read, and the viewer is read-only: every job endpoint is GET only. The one
+kind of POST is the Settings tab's (:data:`~langslice.hosts.gui.settings.POSTS`,
+:meth:`GuiServer.post`), which also needs this server's ``Origin``.
 """
 
 from __future__ import annotations
@@ -26,12 +29,18 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from langslice.hosts.gui.settings import POSTS, Settings, SettingsError
 from langslice.hosts.gui.watch import JobList
 
 STATIC = Path(__file__).with_name("static")
 _FILES = {"": ("index.html", "text/html; charset=utf-8"),
           "app.css": ("app.css", "text/css"),
           "app.js": ("app.js", "text/javascript")}
+# --- Settings tab (hosts/gui/settings.py) ---
+_FILES["settings.js"] = ("settings.js", "text/javascript")
+#: The largest POST body read.
+MAX_BODY = 16 * 1024
+# --- end Settings tab ---
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
 _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 #: The headers every answer carries.
@@ -52,8 +61,9 @@ def _int(query: dict[str, list[str]], key: str, default: int) -> int:
 class GuiServer:
     """The server of one ``langslice gui`` process (see the module text)."""
 
-    def __init__(self, jobs: JobList, *, port: int = 0) -> None:
+    def __init__(self, jobs: JobList, *, port: int = 0, settings: Settings | None = None) -> None:
         self.jobs = jobs
+        self.settings = settings if settings is not None else Settings()
         self.token = secrets.token_urlsafe(24)
         owner = self
 
@@ -64,18 +74,31 @@ class GuiServer:
             def _refuse(self) -> None:
                 self.send_error(405)
 
-            do_POST = do_PUT = do_DELETE = do_PATCH = _refuse  # noqa: N815
+            do_PUT = do_DELETE = do_PATCH = _refuse  # noqa: N815
 
             def do_HEAD(self) -> None:
                 self.send_error(405)
 
+            # --- Settings tab: the only POSTs (owner.post) ---
+            def do_POST(self) -> None:  # noqa: N802
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = -1
+                body = (self.rfile.read(length) if 0 <= length <= MAX_BODY else None)
+                self._send(owner.post(self.path, self.headers, body))
+            # --- end Settings tab ---
+
             def do_GET(self) -> None:
-                answer = owner.answer(self.path, self.headers.get("Host", ""))
+                self._send(owner.answer(self.path, self.headers.get("Host", "")))
+
+            def _send(self, answer: int | tuple[bytes, str] | tuple[bytes, str, int]) -> None:
                 if isinstance(answer, int):
                     self.send_error(answer)
                     return
-                body, mime = answer
-                self.send_response(200)
+                body, mime, code = (answer if len(answer) == 3
+                                    else (answer[0], answer[1], 200))
+                self.send_response(code)
                 self.send_header("Content-Type", mime)
                 self.send_header("Content-Length", str(len(body)))
                 for key, value in HEADERS.items():
@@ -119,11 +142,50 @@ class GuiServer:
                 if path is None:
                     return 404
                 return path.read_bytes(), "image/jpeg"
+            if resource == "settings":  # the Settings tab (hosts/gui/settings.py)
+                return self._json(self.settings.state())
         except (ValueError, TypeError):
             return 400
         except OSError:
             return 404
         return 404
+
+    # --- Settings tab (hosts/gui/settings.py) ---
+    def post(self, raw_path: str, headers: Any,
+             body: bytes | None) -> int | tuple[bytes, str] | tuple[bytes, str, int]:
+        """A POST to a Settings resource: the token, the ``Host``, an
+        ``Origin`` of this server (a page of another site cannot send one),
+        ``Sec-Fetch-Site`` same-origin when sent, a JSON body of at most
+        :data:`MAX_BODY` bytes. Every other path is GET only (405). A refused
+        request is answered ``{"error"}`` with 400."""
+        parsed = urlsplit(raw_path)
+        prefix = f"/{self.token}/"
+        origin = f"http://127.0.0.1:{self.port}"
+        if (headers.get("Host", "") != f"127.0.0.1:{self.port}"
+                or not parsed.path.startswith(prefix)):
+            return 404
+        resource = parsed.path[len(prefix):]
+        if resource not in POSTS:
+            return 405
+        if (headers.get("Origin") != origin
+                or headers.get("Sec-Fetch-Site", "same-origin") != "same-origin"):
+            return 403
+        if not (headers.get("Content-Type") or "").startswith("application/json"):
+            return 415
+        if body is None:
+            return 413
+        try:
+            request = json.loads(body.decode("utf-8") or "null")
+        except (UnicodeDecodeError, ValueError):
+            return 400
+        try:
+            return self._json(self.settings.post(resource, request))
+        except SettingsError as exc:
+            return (*self._json({"error": str(exc)}), 400)
+        except OSError:
+            return (*self._json({"error": "The settings could not be saved in ~/.langslice/."}),
+                    500)
+    # --- end Settings tab ---
 
     @staticmethod
     def _json(value: Any) -> tuple[bytes, str]:
