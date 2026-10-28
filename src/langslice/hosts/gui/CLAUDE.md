@@ -25,7 +25,7 @@ a job folder. Nothing in it is model-facing.
 ## Files
 
 - `__init__.py` — `serve(folders, port=, window=)`: the job list
-  (`recent_jobs_file()`), the server, the window; runs until Ctrl-C or until
+  (the recent jobs file, `job.recent.recent_file()`), the server, the window; runs until Ctrl-C or until
   the app window's process has been gone for `LINGER_S` (5 s); a tab or no
   window serves until Ctrl-C.
 - `watch.py` — `JobWatcher(folder)`: per job, `_Tail`s (byte offsets, an
@@ -60,9 +60,9 @@ a job folder. Nothing in it is model-facing.
   `state_version` moved. `JobList`: the folders given, then the recent-jobs
   file's (`folder` of each line, newest first, existing folders, at most
   `MAX_RECENT`), indexed in the order added; `listing` peeks at `job.json`
-  and `state.json` only. `recent_jobs_file()`: `~/.langslice/recent_jobs.jsonl`,
-  or `LANGSLICE_RECENT_JOBS` (another file, or `off`), read as the job
-  layer writes it.
+  and `state.json` only. The recent jobs file is the job layer's
+  (`job/recent.py`: `~/.langslice/recent_jobs.jsonl`, or
+  `LANGSLICE_RECENT_JOBS`, another file or `off`).
 - `server.py` — `GuiServer(jobs, port=)`: `ThreadingHTTPServer` on
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer; as

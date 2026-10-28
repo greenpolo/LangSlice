@@ -21,10 +21,11 @@ def serve(folders: list[Path], *, port: int = 0, window: bool = True,
     """Serve the GUI for *folders* and the recent jobs until Ctrl-C, or until
     its app window has been closed for ``LINGER_S``."""
     from langslice.hosts.gui.server import GuiServer
-    from langslice.hosts.gui.watch import JobList, recent_jobs_file
+    from langslice.hosts.gui.watch import JobList
     from langslice.hosts.gui.window import Opened, open_window
+    from langslice.job.recent import recent_file
 
-    jobs = JobList(folders, recent=recent_jobs_file())
+    jobs = JobList(folders, recent=recent_file())
     server = GuiServer(jobs, port=port)
     server.start()
     say(f"LangSlice GUI at {server.url}")
