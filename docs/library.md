@@ -54,7 +54,7 @@ the QuickNII and VisuAlign exports, not the per-section maps.
 `export_maps(full_resolution=False)` writes the maps of placed sections at
 any point, submitted or not; `True` uses the source pixels.
 Each traced section's image-model reply is exported with its maps, to
-`exports/traces/<name>.npz` ([format](file_formats.md#tracesnamenpz)).
+`exports/traces/<name>.npz` ([format](reference/file_formats.md#tracesnamenpz)).
 
 ## Create a job
 
@@ -111,7 +111,7 @@ and affine transforms become supplied inputs; tasks default to `nonlinear`.
 VisuAlign's nonlinear markers are not imported. `registration=` cannot be
 combined with the placement arguments above. Check `job.imported` for
 unmatched, missing or refused sections and warnings. See
-[file matching and import constraints](file_formats.md#importing-a-registration).
+[file matching and import constraints](reference/file_formats.md#importing-a-registration).
 
 ## Image models
 
@@ -411,6 +411,6 @@ written. `langslice.load_atlas(name)` loads a cached
 BrainGlobe atlas. The handle exposes `folder`, `imported`, `image_model`
 and, for lower-level work, `job`, `state` and `workspace`.
 
-[File formats](file_formats.md) defines the coordinate conventions, map
+[File formats](reference/file_formats.md) defines the coordinate conventions, map
 arrays and exports. Change a registration through the tools; editing
 exported files does not change the job.

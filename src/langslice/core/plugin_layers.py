@@ -1,7 +1,7 @@
 """The layers tool plugins leave on sections: their files, and how ``look`` draws them.
 
 A layer (:class:`langslice.core.plugins.Layer`) is stored as one file with a
-fixed format per kind (``docs/file_formats.md``):
+fixed format per kind (``docs/reference/file_formats.md``):
 
 =========  ============================================  =====================
 kind       file                                          content

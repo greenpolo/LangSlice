@@ -61,7 +61,7 @@ conflicting section results are refused as `STALE_INPUT`.
 
 `submit` validates the enabled tasks and writes the QuickNII and VisuAlign
 exports; the per-section maps are written only by `export_maps` (CLI and
-Python), with or without submission. The [file contract](file_formats.md)
+Python), with or without submission. The [file contract](reference/file_formats.md)
 is independent of which interface produced the registration.
 
 ## Fiji connector and worker

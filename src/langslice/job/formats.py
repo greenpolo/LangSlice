@@ -1,6 +1,6 @@
 """The job folder's public files: ``registration.json`` and each section's maps.
 
-``docs/file_formats.md`` describes every field. ``state.json`` stays the
+``docs/reference/file_formats.md`` describes every field. ``state.json`` stays the
 job's one working source; what is written here is derived from it, in
 public units, for scripts and other programs, and is never read back as
 input:
@@ -97,7 +97,7 @@ NOTE = (
     "Derived from state.json on every change and never read back: edit nothing "
     "here. Change a registration through the verbs (langslice-job FOLDER VERB, or "
     "langslice.open_job in Python). Edited maps or label images become a "
-    "registration only through a fit (see docs/file_formats.md)."
+    "registration only through a fit (see docs/reference/file_formats.md)."
 )
 
 # --- the registration parameters ----------------------------------------------------
@@ -438,7 +438,7 @@ def write_trace_reply(
     layout: JobLayout, section_id: str, borders: np.ndarray, reply: np.ndarray,
     info: dict[str, Any],
 ) -> Path:
-    """Write one section's trace reply (``docs/file_formats.md``): ``borders``
+    """Write one section's trace reply (``docs/reference/file_formats.md``): ``borders``
     (bool, the model's lines), ``reply`` (uint8 RGB, its raw reply), both on
     the grid *info* names, and ``info`` (the facts as JSON text)."""
     path = trace_reply_path(layout, section_id)
