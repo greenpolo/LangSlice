@@ -79,7 +79,7 @@ with BrainGlobe's `asr` orientation, they run from the anterior edge toward
 the posterior. Ordering follows the positions. Cutting angles are pitch and
 yaw in degrees. A host can supply positions, per-section or stack-wide
 angles, orientation, transforms and pixel size, or import a
-[registration file](file_formats.md#importing-a-registration).
+[registration file](reference/file_formats.md#importing-a-registration).
 
 Notes supplied through `damaged` are information for the agent; actual
 damage exclusions are atlas regions marked with `mark_damage`.
@@ -761,7 +761,7 @@ fit metrics do not certify region identity or topology. The job saves the
 attachments, prompts, raw reply, extracted lines and fit separately, and
 `export_maps` exports each section's last reply and its lines
 on the section's maps grid, before any fit
-([`exports/traces/`](file_formats.md#tracesnamenpz)).
+([`exports/traces/`](reference/file_formats.md#tracesnamenpz)).
 
 `trace_borders` is offered only with Nonlinear enabled and an image model
 connected. `provider="none"` disables it while keeping FireANTs and landmark tools.
@@ -791,7 +791,7 @@ Undo is one history for the whole job, so it returns a section to an earlier
 fit only while nothing else was written since. Each registration a section
 holds (its orientation, transform and deformation) is numbered instead, per
 section, and kept whatever comes after
-([`registrations.jsonl`](file_formats.md#registrations-sectionsnameregistrationsjsonl)):
+([`registrations.jsonl`](reference/file_formats.md#registrations-sectionsnameregistrationsjsonl)):
 the section's status row says which it holds (`registration`), and so does the
 reply to the write that left it (the row it changed, or `registration`
 `{section: number}` beside a plugin tool's own rows, or "Now registration n of
@@ -839,7 +839,7 @@ exports (the per-section maps are `export_maps`'s alone):
   until each has one. Host-excluded sections are exempt. An image-model trace
   is never required.
 
-Results are [coordinate maps, labels and registration exports](file_formats.md).
+Results are [coordinate maps, labels and registration exports](reference/file_formats.md).
 
 `--playbook` adds optional positioning guidance using candidate planes,
 region lookup, incremental placement and stack review. It defaults off. Thickness and nominal interval are optional protocol facts,

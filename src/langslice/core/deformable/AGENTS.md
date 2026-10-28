@@ -292,7 +292,7 @@ folder's maps (`coords.tif`, `labels.tif`, `residual.tif`, written by
 `export_maps`) and the VisuAlign markers are composed from it by
 `core/maps.py` (`native_points`).
 
-On disk (`save(directory)` / `load(directory)`, `docs/file_formats.md`):
+On disk (`save(directory)` / `load(directory)`, `docs/reference/file_formats.md`):
 `record.json` (format `RECORD_VERSION` 2, written last: a folder without it
 is incomplete) and `warp.ome.zarr` (`ome_warp.py`: a Zarr v3 store in the
 OME-Zarr 0.6 layout; the fields `(2, rows, cols)` `(dy, dx)` float16, Blosc

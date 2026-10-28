@@ -1,15 +1,23 @@
-# Job folder file formats
+# Job folder and file formats
 
-A job stores settings in `job.json` and its working state in `state.json`.
-`registration.json`, maps and pictures are derived outputs. Change the job
-through its tools; editing an output does not change the registration.
-A registration file can also be explicitly imported when creating a job.
+Every job keeps everything in one {term}`job folder`: `langslice/` beside the
+section images. The job stores its settings in `job.json` and its working
+state in `state.json`. `registration.json`, the maps, the exports and the
+pictures are derived from the state and never read back, so editing one does
+not change the registration: change the job through its tools. A
+registration made elsewhere can be imported when the job is created
+([below](#importing-a-registration)).
+
+The files most readers use are the exports (`exports/quicknii.json`,
+`exports/visualign.json`), `registration.json`, and each section's maps
+(`coords.tif`, `labels.tif`, `labels_fiji.tif`), which `export_maps` writes.
 
 ## The job folder
 
 ```text
 <images>/langslice/
-  job.json              settings (the JobSpec, with its `disabled` tools and options, its `frozen` properties and its tool `plugins` when it has any), the format version, and the provenance of the plugins it ran with (`plugins`)
+  job.json              settings (the job spec, with its `disabled` tools and options, its `frozen` properties and its tool `plugins` when it has any), the format version, the user's `notes`, the agent CLI's `viewer`, and the provenance of the plugins it ran with (`plugins`)
+  job.lock              the write lock, held while a writer saves
   state.json            the checkpoint: the truth
   registration.json     its public rendering
   history/              undo and redo steps
@@ -22,13 +30,14 @@ A registration file can also be explicitly imported when creating a job.
                         (image_correction/), its pictures (views/)
   views/                pictures of several sections
   views.jsonl           the picture index: number, tool, history step, sections, caption
-  exports/              linear_results.json, spend.json, quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
+  views.seq             the picture and call numbers handed out
+  exports/              linear_results.json, spend.json, result.json (a saved ABBA job's result), quicknii.json, visualign.json, traces/ (image-model replies), plugins/<tool>/ (copies of plugin layers)
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
                         calls/<n>_<verb>.json, each call's whole envelope as printed),
-                        launches/<n>_<role>.md (the exact launch prompts of `langslice-job FOLDER launch`)
-                        and background runs, events.jsonl (job events: opens, plugins,
+                        launches/<n>_<role>.md (the exact launch prompts of `langslice-job FOLDER launch`),
+                        runs/<id>.json and <id>.log (background runs), events.jsonl (job events: opens, plugins,
                         every tool call on every door, a script_write line per write
                         a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
@@ -38,9 +47,10 @@ A registration file can also be explicitly imported when creating a job.
   scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
   AGENTS.md, CLAUDE.md  the reference card for coding agents
   TOOLS.md              every verb of the job with its description and arguments (written by init and launch)
+  prompt.txt            a saved ABBA job's copy prompt
 ```
 
-The job folder is `<images>/langslice/` unless `--job-dir` says otherwise (a
+The job folder is `<images>/langslice/` unless [`--job-dir`](settings.md#folders) says otherwise (a
 read-only image folder falls back to `~/.langslice/jobs/<id>/`). Output artifact
 paths are relative to the job folder. The default image folder reference is
 `..`; a separately located job records an absolute image path.
@@ -122,7 +132,7 @@ before steps named their method has none and is read as one of these),
 `smoothness_um`, and for a stain fit `metric`, `edges` and `detail`; a step
 saved before these were recorded lacks them) and regions; a landmark
 application's `method` `landmark_triangulation`; a deformation a tool plugin
-wrote (`docs/plugins.md`), `{"method": "plugin:<tool>", "start": "linear" |
+wrote ([tool plugins](../plugins.md)), `{"method": "plugin:<tool>", "start": "linear" |
 "current", "note"?, "settings"?}` (`current`: made on top of the deformation
 the section held, whose steps come first and whose record is its record's
 `parent`; `settings`: the call's, by the tool's names), whose record has the
@@ -131,7 +141,7 @@ plugin gave them (`engine.native_parameters`, `engine.version`), the
 `inverse_source` `fixed-point inversion of the supplied map`, and in its
 `provenance` `start`, `settings` and the `plugin` (`tool`, `call`, `version`,
 `note`, `meta`). One a script wrote through the library's `job.context`
-([your own method](library.md#your-own-method)) is the same with `script` for
+([your own method](../library.md#your-own-method)) is the same with `script` for
 `plugin:<tool>` and a provenance `script` (`call`, `note`, `meta`, `argv0`: the
 path of the running script); `fit_fireants` gives its call's settings by
 `fireants_syn`'s names and FireANTs' own numbers. A transform written by a
@@ -145,7 +155,7 @@ A `script_write` line in `logs/events.jsonl` (`property`, `sections`, `notes`,
 Written only by the `export_maps` verb (CLI and library), for every section
 with a position; never on a write or at `submit` (they are large). The
 library's `job.section_maps(section)` returns the same arrays in memory
-without writing them ([library](library.md#reading-results)). The grid
+without writing them ([library](../library.md#reading-results)). The grid
 is the section's working copy (a whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
 file downsampled to at most 3072 px), or with `full_resolution` the file's
 own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
@@ -284,7 +294,7 @@ call's arguments as JSON; past 2048 bytes they are that JSON cut to 2048
 bytes, as a string, and the line adds `args_truncated: true`. `step` is the
 undo history's depth after the call, as a picture's `step` in `views.jsonl`.
 `views` are the `view.jpg` paths of the pictures the call saved, relative to
-the job folder (written in the background: a file can appear just after the
+the job folder (written in the background: a file can appear shortly after the
 line). `failed` is true when the reply's status is `error` or `refused`, or the
 tool raised; `status` is the reply's status word (`ok` when it has none,
 `error` when the tool raised). The reply itself and picture bytes are never
@@ -453,7 +463,7 @@ pictures use `transport_snapshot` and subsequent zooms crop that snapshot.
 
 ## Plugin layers
 
-A tool plugin leaves layers on sections (`docs/plugins.md`), and so does a
+A tool plugin leaves layers on sections ([tool plugins](../plugins.md)), and so does a
 script through `job.context` (as tool `script`). Each tool keeps
 its files under `plugins/<tool>/`; nothing else of the job is written by it.
 `plugins/<tool>/layers.json` is the manifest of every layer the tool ever made:
@@ -493,7 +503,7 @@ record changes.
 ## Section images (`sections/<stem>/images/<name>.png`)
 
 One 8-bit gray PNG per made section image a section holds (`make_image`, a
-script's `add_image`, and the opening `preprocessed`; see `registration.md`):
+script's `add_image`, and the opening `preprocessed`; see [`make_image`](tools.md#make_image)):
 the working copy's size, in the image file's orientation (the quarter turn and
 flip are applied where it is drawn). Files are never deleted: undo only hides
 the state reference, and a name made again with other pixels gets a new file
@@ -523,7 +533,7 @@ reproduce the job's earlier fit. The first open of a large job takes a while
 
 ## Masks (`sections/<stem>/masks/<name>.npz`)
 
-One file per mask a section holds (`make_mask`; see `registration.md`). Arrays:
+One file per mask a section holds ([`make_mask`](tools.md#make_mask)). Arrays:
 `weights` float16 `(rows, cols)` in [0, 1] on the section's fit grid, `grid`
 `[width, height]`, `made` the ISO time. Files are never deleted: undo only hides
 the state reference, and a mask made again under a name that exists gets a new

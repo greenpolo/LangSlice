@@ -3,7 +3,7 @@
 Package guide for `src/langslice/core/nonlinear/`; `AGENTS.md` is a verbatim
 twin of this file. The image transport it calls is
 `src/langslice/providers/images.py`. Every way of using LangSlice goes through
-the job folder and its verbs. See `docs/registration.md` for tool behavior and `docs/file_formats.md`
+the job folder and its verbs. See `docs/registration.md` for tool behavior and `docs/reference/file_formats.md`
 for coordinate contracts.
 
 ## Supported design
