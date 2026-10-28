@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "langslice": {
+      "command": "langslice",
+      "args": ["mcp"],
+      "timeout": 86400000
+    }
+  }
+}

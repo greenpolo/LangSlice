@@ -24,6 +24,8 @@ from typing import Any
 import anyio
 from anyio import to_thread
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.lowlevel.server import NotificationOptions
+from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
 from PIL import Image
@@ -607,10 +609,19 @@ def serve(
                 session.close()
 
 
+def initialization_options(server: FastMCP) -> InitializationOptions:
+    """What the server tells the host when it connects: its capabilities with
+    ``tools.listChanged``, so a host takes the tool list again when
+    ``start_job`` installs a job's tools (``send_tool_list_changed``); a host
+    ignores the notice from a server that does not advertise it."""
+    lowlevel = server._mcp_server  # pyright: ignore[reportPrivateUsage]
+    return lowlevel.create_initialization_options(NotificationOptions(tools_changed=True))
+
+
 async def _run_stdio(server: FastMCP, wire: Any) -> None:
     out = anyio.wrap_file(TextIOWrapper(wire, encoding="utf-8", write_through=True))
     async with stdio_server(stdout=out) as (read_stream, write_stream):
         # FastMCP.run_stdio_async always writes to sys.stdout; the low-level
         # server takes the protocol stream explicitly.
         lowlevel = server._mcp_server  # pyright: ignore[reportPrivateUsage]
-        await lowlevel.run(read_stream, write_stream, lowlevel.create_initialization_options())
+        await lowlevel.run(read_stream, write_stream, initialization_options(server))
