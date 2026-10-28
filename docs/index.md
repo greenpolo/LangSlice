@@ -15,13 +15,13 @@ Coronal sections of the Allen mouse atlas are the most tested case.
 
 | Guide | What it covers |
 |---|---|
-| [Agents, CLI and MCP](agents.md) | Coding agents, Claude Desktop and LangSlice's built-in agent; setup, settings and replies |
+| [Agents, CLI and MCP](agents/index.md) | Coding agents, Claude Desktop and LangSlice's built-in agent; setup, settings and replies |
 | [ABBA](abba.md) | Install the Fiji connector and register sections inside ABBA |
 | [Registration tools](registration.md) | Tasks, calibration, viewing, affine fits, SyN deformations and optional image-model traces |
-| [The LangSlice window](gui.md) | Watch a run: its pictures, activity, sections and undo steps |
-| [Python library](library.md) | Write agent workflows using the same job and tools |
+| [The LangSlice window](developers/gui.md) | Watch a run: its pictures, activity, sections and undo steps |
+| [Python library](developers/library.md) | Write agent workflows using the same job and tools |
 | [File formats](reference/file_formats.md) | Job files, coordinate conventions, maps and registration imports/exports |
-| [Architecture](architecture.md) | Package layers, shared operations and the Fiji worker protocol |
+| [Architecture](developers/architecture.md) | Package layers, shared operations and the Fiji worker protocol |
 
 ## Install from source
 
@@ -42,12 +42,9 @@ your chosen interface above.
 :hidden:
 
 Overview <self>
-Agents, CLI and MCP <agents>
 ABBA <abba>
-The LangSlice window <gui>
 Registration tools <registration>
-Python library <library>
-Tool plugins <plugins>
 File formats <file_formats>
-Architecture <architecture>
+For agents <agents/index>
+For developers <developers/index>
 ```

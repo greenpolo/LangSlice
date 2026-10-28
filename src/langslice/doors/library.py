@@ -29,7 +29,7 @@ settings ``langslice-job FOLDER init`` takes, or a :class:`JobSpec`), the
 same ingest every host uses, and gets the same handle. Both take
 ``image_model=``: the model ``trace_borders`` calls, a provider name, a
 model profile (:func:`langslice.providers.profiles.image_model`) or a model
-of the caller's own (``docs/library.md``).
+of the caller's own (``docs/developers/library.md``).
 
 An image-model verb (``trace_borders``) and a long engine tool (``fireants_syn``,
 a plugin's ``stalign_lddmm``) return once the call has started; it lands in the
@@ -158,7 +158,7 @@ PREVIEW_CAPTION = "proposal: {what} drawn as proposed, NOT written"
 
 class ScriptContext(ToolContext):
     """A script's ``job.context``: the tool plugin context
-    (``docs/plugins.md``) for a script, one per job handle.
+    (``docs/developers/plugins.md``) for a script, one per job handle.
 
     Its writes are recorded as ``script`` (a transform's ``kind``, a
     deformation's ``method`` and engine, the record's provenance ``script``:
@@ -172,7 +172,7 @@ class ScriptContext(ToolContext):
     :meth:`preview_overlay` and :meth:`preview_positioning` save a
     proposal's picture as a numbered picture of the job, not written.
 
-    How (``c = job.context``; ``docs/library.md``, "Your own method", has a
+    How (``c = job.context``; ``docs/developers/library.md``, "Your own method", has a
     worked example):
 
     - ``f = c.fit_frame("<file>", stain=True)``: ``f.image`` the section on
@@ -506,7 +506,7 @@ class JobHandle:
     @property
     def context(self) -> ScriptContext:
         """The job as a method of the script's own reads and writes it
-        (:class:`ScriptContext`, ``docs/library.md``): the same reads,
+        (:class:`ScriptContext`, ``docs/developers/library.md``): the same reads,
         conversions and writes a tool plugin has, recorded as ``script``."""
         if self._context is None:
             door = self._opened.tools().door
@@ -772,7 +772,7 @@ def create_job(
     imported placement kept as it is. The handle's :attr:`JobHandle.imported`
     says what was placed; the warnings go to *emit* as well.
 
-    *plugins* adds tool plugins to the job's toolbox (``docs/plugins.md``):
+    *plugins* adds tool plugins to the job's toolbox (``docs/developers/plugins.md``):
     ``module:factory`` references, factory functions defined at module level,
     or :class:`~langslice.plugin_api.ToolSpec` objects, one or a list; the job
     records the references (``plugin_config`` in *settings* gives a factory its

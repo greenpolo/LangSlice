@@ -364,7 +364,7 @@ def _write_exports(job: Job, workspace: Workspace, facts: dict[str, Any],
     path = formats.write_registration(layout, state, workspace)
     if path is not None:
         files.append((str(path), "registration"))
-    if any(record.layers for record in state.slices):  # tool plugins' layers (docs/plugins.md)
+    if any(record.layers for record in state.slices):  # tool plugins' layers (docs/developers/plugins.md)
         from langslice.job.plugin_store import export_layers
 
         files += [(str(layout.resolve(relative)), "plugin_layer")

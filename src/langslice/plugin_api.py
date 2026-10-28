@@ -1,4 +1,4 @@
-"""The tool plugin API: what a plugin module imports (``docs/plugins.md``).
+"""The tool plugin API: what a plugin module imports (``docs/developers/plugins.md``).
 
 A plugin adds tools to a job's toolbox. It declares each tool with a
 :class:`ToolSpec` (a stub whose signature and docstring are the tool's

@@ -324,7 +324,7 @@ class JobSpec:
     #: record the answer on the state. One extra model call.
     debrief: bool = True
     #: Tool plugins the job loads, each ``module:factory``
-    #: (:mod:`langslice.core.plugins`, ``docs/plugins.md``): their tools join
+    #: (:mod:`langslice.core.plugins`, ``docs/developers/plugins.md``): their tools join
     #: the toolbox, and are named in ``disabled`` like the native ones. A
     #: plugin that cannot be loaded, or whose tools clash with another's, is
     #: refused when the spec is made. Code runs on load: only the library and

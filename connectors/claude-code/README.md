@@ -5,9 +5,9 @@ user's own Claude subscription (LangSlice never handles Claude credentials).
 The plugin is skills for the normal Claude Code session plus registration
 subagents that each register exactly one brain. It bundles LangSlice's MCP
 server (`.mcp.json`: the `langslice` executable with `mcp`, the server
-Claude Desktop uses, [`docs/agents.md`](../../docs/agents.md) "MCP"), and
+Claude Desktop uses, [`docs/agents/mcp.md`](../../docs/agents/mcp.md)), and
 the scripting subagent and the skills use the `langslice-job` command line
-([`docs/agents.md`](../../docs/agents.md)).
+([`docs/agents/cli.md`](../../docs/agents/cli.md)).
 
 ## Install
 
@@ -52,7 +52,7 @@ own agent gets) and the user's notes; it reads the opening pictures with
 the status table and the opening pictures listed as saved files. Each launch
 message is also saved in the job's `logs/launches/`, and the hook checks the
 subagent's first message against those files
-([`docs/agents.md`](../../docs/agents.md)).
+([`docs/agents/cli.md`](../../docs/agents/cli.md)).
 
 The MCP server holds one job at a time for the session, so one `register`
 subagent runs at a time per Claude Code session. It sends no progress during

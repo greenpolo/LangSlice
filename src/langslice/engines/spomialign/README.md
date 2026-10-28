@@ -1,6 +1,6 @@
 # SPOmiAlign as a LangSlice tool
 
-A LangSlice tool plugin (`docs/plugins.md` in LangSlice) that offers SPOmiAlign
+A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers SPOmiAlign
 (Wang et al. 2026, Brief Bioinform) to the registration agent as one tool,
 `spomialign(sections, fit, rigid, section_image, atlas_image, mask, smoothness_um, matches, view)`. Revised
 2026-10-19 after Fable's review
