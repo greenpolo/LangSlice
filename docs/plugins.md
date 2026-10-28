@@ -424,7 +424,7 @@ but must be in the file's orientation; `frame` is required to say which it is:
 `frame="oriented"` for one computed on the array of `section_raster`, which
 `add_layer` turns into the file's orientation. `atlas_um` coordinates are `[x, y, z]`
 BrainGlobe micrometres in the atlas's axis order. The file formats are in
-[file formats](file_formats.md#plugin-layers).
+[file formats](reference/file_formats.md#plugin-layers).
 
 The **fit grid** is `ctx.fit_frame(id).image`: the section turned and flipped
 as its orientation sets it, at the size LangSlice's fits run at (a long edge of

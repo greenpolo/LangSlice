@@ -9,7 +9,7 @@ pictures and the deformable-fit pictures ``ops.deformable.fit_deformable``
 draws, through ``coordinate_map``), ``labels.tif`` is the atlas read at
 ``coords.tif``, ``coords = pixel_to_atlas_um @ (p + residual)``, the QuickNII anchoring and
 VisuAlign markers reproduce the maps, the files are what
-``docs/file_formats.md`` says, and a job that persists nothing writes none.
+``docs/reference/file_formats.md`` says, and a job that persists nothing writes none.
 """
 
 from __future__ import annotations

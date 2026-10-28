@@ -57,7 +57,7 @@ launcher.
 
 [Registration tools](docs/registration.md) ·
 [Tool plugins](docs/plugins.md) ·
-[File formats](docs/file_formats.md) ·
+[File formats](docs/reference/file_formats.md) ·
 [Architecture](docs/architecture.md) ·
 [Full documentation](https://langslice.readthedocs.io)
 
