@@ -351,7 +351,16 @@ process forks for it, `cli/warm.py`).
   warning; `image_model_connected(provider)`: provider not `none` and its
   key or login present, nothing contacted; `image_model_choices()` /
   `IMAGE_MODEL_CHOICES`: the dialog's image models, each `connected` or not,
-  with the models to offer), `saved_jobs.py` (saved ABBA jobs,
+  with the models to offer; keys of `openai-api`, `gemini-api` and
+  `anthropic-api`, the last never an image model (`_IMAGE_KEY_PROVIDERS`),
+  `~/.langslice/anthropic_api_key` counted as its saved key; `connections()`:
+  every connection's presence for the LangSlice window), `settings.py` (the
+  user's settings file, `~/.langslice/settings.json` or `LANGSLICE_SETTINGS`
+  (`off`: none; the test suite's): the chosen `connection`, `runs_in` (read by
+  nothing yet), an `agent` model and effort per connection; `agent_models()`
+  the models offered and LangSlice's defaults; `agent_choice()`, which
+  `cli/linear.py`'s `apply_saved_agent_choice` gives `linear run` when it has
+  neither `--model` nor `--reasoning`), `saved_jobs.py` (saved ABBA jobs,
   `prepare_saved_job` for the engine method `mcp.prepare`: the job folder
   next to the snapshots, the id index, the host channel, the copy prompt) and
   `abba_worker.py` (the JVM-free snapshot worker of the Fiji connector:
