@@ -16,7 +16,7 @@ Dependencies flow downward: `hosts` → `doors` / `agent` → `ops` → `job` �
 | `ops` | Operations on a job; `registry.py` lists tools, task conditions and call limits |
 | `doors` | Shared declarations, native agent tools, MCP, CLI, Python library and worker contract |
 | `agent` | Built-in ADK agent session |
-| `hosts` | JSON-lines service, ABBA launcher, viewer and log |
+| `hosts` | JSON-lines service, ABBA launcher, viewer and log, the LangSlice window (`langslice gui`) |
 | `providers` | Model access, beside the layers; receives no task logic |
 
 `core`, `job` and `ops` import no provider or model SDK. Image models are

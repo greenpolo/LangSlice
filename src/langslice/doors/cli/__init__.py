@@ -4,7 +4,7 @@
 Groups: :mod:`~langslice.doors.cli.linear` (``linear run`` and the shared
 job flags), :mod:`~langslice.doors.cli.mcp` (``mcp``),
 :mod:`~langslice.doors.cli.transcripts` (``session-end``, the harness
-plugins' hook) and the host commands (``abba``, ``serve``:
+plugins' hook) and the host commands (``abba``, ``gui``, ``serve``:
 :mod:`langslice.hosts.cli`, loaded by module path through
 ``HOST_COMMANDS``, so the doors never import a host). The agent CLI is a
 command of its own, ``langslice-job`` (:mod:`~langslice.doors.cli.jobcli`),
@@ -31,6 +31,7 @@ import langslice
 #: import a host (import-linter's layers contract).
 HOST_COMMANDS = {
     "abba": ("langslice.hosts.cli", "add_abba_parser", "run_abba"),
+    "gui": ("langslice.hosts.cli", "add_gui_parser", "run_gui"),
     "serve": ("langslice.hosts.cli", "add_serve_parser", "run_serve"),
 }
 
@@ -68,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
     add_run_parser(linear_sub)
 
-    # langslice abba, langslice serve (the host commands, loaded on demand)
+    # langslice abba, gui, serve (the host commands, loaded on demand)
     for command in HOST_COMMANDS:
         _host_command(command, 0)(subparsers)
 
@@ -90,7 +91,8 @@ def main(argv: list[str] | None = None) -> None:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    load_credentials(saved=args.command not in {"serve", "login", "version", "session-end"})
+    load_credentials(saved=args.command not in {"serve", "gui", "login", "version",
+                                                "session-end"})
 
     # A group command (`linear`) carries the leaf name in `subcommand`;
     # top-level commands only set `command`. Leaf names are unique across
