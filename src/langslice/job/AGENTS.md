@@ -84,7 +84,7 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
   labels.csv,                wherever the section maps into the atlas volume
   residual.tif, maps.json
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
-                             opening strips, show_stack pages, brief's strips)
+                             opening strips, show_stack pages, launch's strips)
 views.jsonl          append-only index of every saved picture
 views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
@@ -100,6 +100,7 @@ logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, an error's
                      code and message, artifacts, `reply`)
 logs/calls/<n>_<verb>.json  each agent-CLI call's envelope as printed
+logs/launches/<n>_<role>.md  the exact launch prompts of `langslice-job FOLDER launch` (`LAUNCHES_DIR`)
 trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
                      built-in agent's trace, a coding agent's session copied in by
                      `langslice session-end` (`doors/cli/transcripts.py`); the
@@ -108,9 +109,7 @@ env/                 the job's own Python environment (`ENV_DIR`; `doors/cli/job
 prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
-BRIEF.md             the agent CLI's brief (`langslice-job FOLDER brief`, `init`):
-                     the job statement and the opening pictures' paths
-TOOLS.md             every verb of the job, its description and arguments (by `brief`)
+TOOLS.md             every verb of the job, its description and arguments (by `init`, `launch`)
 ```
 
 **The public files (`docs/file_formats.md` has every field).**

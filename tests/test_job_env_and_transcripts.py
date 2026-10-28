@@ -118,7 +118,7 @@ def _claude_transcript(job: Path, *, submit: bool) -> list[dict[str, Any]]:
     records = [
         {"type": "assistant", "message": {"content": [
             {"type": "tool_use", "name": "Bash",
-             "input": {"command": f'langslice-job "{job}" brief'}}]}},
+             "input": {"command": f'langslice-job "{job}" status'}}]}},
         {"type": "user", "message": {"content": [{"type": "tool_result", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                          "data": picture}}]}]}},
@@ -249,3 +249,71 @@ def test_slim_keeps_text_and_replaces_inline_data():
     assert slimmed["text"] == "a" * 10
     assert slimmed["data"].endswith("bytes of inline data>") and slimmed["list"][0] == \
         slimmed["data"]
+
+
+# --- the launch check ------------------------------------------------------------------
+
+PROMPT = "Register the brain in job folder X.\n\nThe job.\nSecond line of the job.\n"
+
+
+def _hook_run(job: Path, first: dict[str, Any], tmp_path: Path, monkeypatch, capsys,
+              harness: str = "claude-code") -> dict[str, Any]:
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text(_lines(first, {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Bash",
+         "input": {"command": f"langslice-job {job} status"}}]}}))
+    hook = {"conversationId": "c1", "transcriptPath": str(transcript)}
+    assert _run_hook(hook, harness, monkeypatch, capsys) == "{}"
+    return json.loads((job / "trace" / f"{harness}_c1.launch.json").read_text())
+
+
+def _saved_launch(job: Path, text: str = PROMPT) -> None:
+    folder = job / "logs" / "launches"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "000001_register.md").write_text(text)
+
+
+def test_launch_check_verbatim_changed_and_unchecked(capsys, job, tmp_path, monkeypatch):
+    user = {"type": "user", "message": {"role": "user", "content": PROMPT.rstrip() + "\n\n"}}
+    # No saved launch file: not checked.
+    checked = _hook_run(job, user, tmp_path, monkeypatch, capsys)
+    assert checked["checked"] is False and "launch" in checked["reason"]
+    _saved_launch(job)
+    checked = _hook_run(job, user, tmp_path, monkeypatch, capsys)
+    assert checked == {"checked": True, "verbatim": True, "launch": "000001_register.md",
+                       "similarity": 1.0, "first_difference": None,
+                       "expected_chars": len(PROMPT.rstrip()),
+                       "got_chars": len(PROMPT.rstrip())}
+    # Text blocks join; a summarised prompt is not verbatim and says where it differs.
+    short = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "text", "text": "Register the brain in job folder X.\n\nThe job."}]}}
+    checked = _hook_run(job, short, tmp_path, monkeypatch, capsys)
+    assert checked["verbatim"] is False and checked["first_difference"] == len(
+        "Register the brain in job folder X.\n\nThe job.")
+    assert 0 < checked["similarity"] < 1
+    # No first user message: not checked.
+    none = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
+    assert _hook_run(job, none, tmp_path, monkeypatch, capsys)["checked"] is False
+
+
+def test_launch_check_reads_an_antigravity_user_request(capsys, job, tmp_path, monkeypatch):
+    _saved_launch(job)
+    step = {"step_index": 0, "type": "USER_INPUT", "content": (
+        f"<USER_REQUEST>\n{PROMPT.rstrip()}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nx\n"
+        "</ADDITIONAL_METADATA>")}
+    checked = _hook_run(job, step, tmp_path, monkeypatch, capsys, harness="antigravity")
+    assert checked["checked"] is True and checked["verbatim"] is True
+
+
+@pytest.mark.parametrize("tail", ['. Call start_job(image_folder="{job}") first: it opens',
+                                  " with the langslice-job command line."])
+def test_an_agent_that_never_called_lands_in_the_job_its_launch_names(
+        capsys, job, tmp_path, monkeypatch, tail):
+    text = f"Register the brain in job folder {job}{tail.format(job=job)}\n\nThe job."
+    _saved_launch(job, text)
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text(_lines({"type": "user", "message": {"role": "user", "content": text}}))
+    hook = {"conversationId": "c2", "transcriptPath": str(transcript)}
+    assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
+    checked = json.loads((job / "trace" / "claude-code_c2.launch.json").read_text())
+    assert checked["verbatim"] is True

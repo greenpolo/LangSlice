@@ -67,19 +67,21 @@ mcp_tool_list_changed = true
 | `rules/langslice.rules` | sandboxing | allows `langslice-job` commands outside the sandbox, forbids `curl` |
 
 The role split is the same as in Claude Code: the main session owns setup,
-checking and import/export; each agent file has a minimal
-`developer_instructions` that defers to LangSlice's job statement. Ask Codex
+checking and import/export; each agent file has the same fixed
+`developer_instructions`, and the job statement comes in the launch message
+(`langslice-job <folder> launch --role register`, or `register-scripting`),
+which the main session passes on unchanged. Ask Codex
 to spawn the agent by name, for example "have register register the job in
 /data/M04". `register` is the default; `register_scripting` is for a user who
 wants the agent to write scripts.
 
-- `register` starts with `start_job(image_folder=<folder>)`, which answers
-  with LangSlice's job statement, reads every `show_stack` page (the opening
-  pictures, carried in the tool replies) and finishes with `submit`.
-- `register_scripting` starts with `langslice-job <folder> brief`: the same
-  job statement, the user's notes, the status table and the opening pictures
-  saved as files, also written to `BRIEF.md` in the job folder
-  ([`docs/agents.md`](../../docs/agents.md)). `AGENTS.md` in the job folder
+- `register` starts with `start_job(image_folder=<folder>)`, named in its
+  launch message (which holds LangSlice's job statement), reads every
+  `show_stack` page (the opening pictures, carried in the tool replies) and
+  finishes with `submit`.
+- `register_scripting`'s launch message holds the same job statement, the
+  user's notes, the status table and the opening pictures listed as saved
+  files ([`docs/agents.md`](../../docs/agents.md)). `AGENTS.md` in the job folder
   is its reference card. Create the job with `init --viewer codex`, so these
   pictures are sized for Codex's `view_image` (2048 px).
 

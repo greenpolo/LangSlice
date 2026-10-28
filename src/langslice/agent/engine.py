@@ -34,7 +34,12 @@ from langslice.core.state import StackState
 from langslice.core.workspace import log_progress
 from langslice.doors.card import write_card
 from langslice.doors.jobs import JobContext, close_job
-from langslice.doors.statement import read_notes, status_and_notes, user_notes_lines
+from langslice.doors.statement import (
+    SYSTEM_PROMPT,
+    read_notes,
+    status_and_notes,
+    user_notes_lines,
+)
 from langslice.doors.tools.media import opening_parts, packaged_tools
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.checkpoint import write_json_atomic
@@ -116,9 +121,10 @@ def build_context(
 # --- the session ---------------------------------------------------------
 
 
-def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
-    """The stack as ABBA-style strips (:mod:`langslice.core.opening`), the table."""
-    parts: list[types.Part] = opening_parts(state, ctx)
+def build_seed_message(state: StackState, ctx: EngineContext, job: str) -> types.Content:
+    """The first message: *job* (the job statement and the user's notes), the
+    stack as ABBA-style strips (:mod:`langslice.core.opening`), the table."""
+    parts: list[types.Part] = [types.Part.from_text(text=job), *opening_parts(state, ctx)]
     parts.append(types.Part.from_text(text=status_and_notes(state)))
     return types.Content(role="user", parts=parts)
 
@@ -198,13 +204,13 @@ async def run_session(
     agent = build_agent(
         model=ctx.model,
         name="linear_stack",
-        instruction="\n".join([statement, *notes]) if notes else statement,
+        instruction=SYSTEM_PROMPT,
         # The tools return plain pictures; ADK takes them as message parts.
         tools=packaged_tools(box.tools),
         reasoning=spec.reasoning,
     )
     sink: list[str] = []
-    seed = build_seed_message(state, ctx)
+    seed = build_seed_message(state, ctx, "\n".join([statement, *notes]))
     on_event = with_seed_views(on_event, save_opening(box, seed))
     spend = SpendMonitor(agent.model)
     try:

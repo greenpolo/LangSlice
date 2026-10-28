@@ -71,12 +71,14 @@ written with what it needs (`core/needs.py`) and rendered for the job.
 - `engine.py` — `EngineContext` (`doors.jobs.JobContext` plus the model),
   `build_context(spec)` (the job folder from `job.layout.locate_job_folder`:
   `spec.job_dir`, next to the images, or `~/.langslice/jobs/<id>/` for a
-  read-only image folder), `build_seed_message` (the opening strips,
+  read-only image folder), `build_seed_message` (the first message: the job
+  statement and the user's notes, the opening strips,
   `doors.tools.media.opening_parts`, and `doors.statement.status_and_notes`),
   `save_opening` / `with_seed_views` (the opening saved as the job's views,
   their paths on the live seed event), `run_session` (the system instruction
-  is `prompt.build_job_statement` plus the user's notes from `job.json`,
-  `doors.statement.read_notes`; the tools are
+  is `doors.statement.SYSTEM_PROMPT`, the same for every job; the first
+  message carries `prompt.build_job_statement` plus the user's notes from
+  `job.json`, `doors.statement.read_notes`; the tools are
   `doors.tools.media.packaged_tools(box.tools)`; the post-submit
   `DEBRIEF_PROMPT` when `spec.debrief`, its answer on `state.debrief`;
   `background_message`: when the model ends its turn while background work

@@ -80,10 +80,10 @@ SERVER_NAME = "langslice"
 READ_ONLY_TOOLS = frozenset(name for name, verb in VERBS.items() if verb.kind == "read")
 
 INSTRUCTIONS = (
-    "LangSlice places histology sections in a brain atlas. Call `start_job` "
-    "first: it opens the stack and answers with the job description. Read every "
-    "show_stack page before writing. Work only through the LangSlice tools and "
-    "finish with `submit`."
+    "LangSlice places histology sections in a brain atlas. The job comes in the message "
+    "that launched you; call `start_job` with its folder first: it opens the job and gives "
+    "you its tools. Read every show_stack page before writing. Work only through the "
+    "LangSlice tools and finish with `submit`."
 )
 
 
@@ -317,19 +317,46 @@ def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> list[s
         return []
 
 
-def briefing(session: Session) -> list[ContentBlock]:
-    """Text only; opening pictures are available through show_stack. The
-    statement asks the host to read every page before writing, so from here
-    every write is refused until it has (the toolbox's opening-read gate,
-    :meth:`langslice.doors.tools.toolbox.ToolBox.require_opening`)."""
+def mcp_statement(session: Session) -> str:
+    """The job statement as the MCP door words it: the toolbox's tool names, its
+    picture limit, the ``show_stack`` pages (drawn now when not yet), the
+    user's notes and the image-model line. ``start_job(job_id=...)`` returns it
+    (:func:`briefing`) and so does ``langslice-job FOLDER launch --role register``
+    (:mod:`langslice.doors.cli.launch`), so the two cannot drift."""
     if not session.pages:
         session.pages = opening_pages(session)
-    session.box.require_opening(len(session.pages))
-    return [TextContent(type="text", text=job_statement(
+    return job_statement(
         session.spec, session.state, session.ctx, door="mcp", tool_names=session.box.names,
         opening=opening_for_mcp(len(session.pages)), notes=session.notes,
         max_resolution=session.box.max_view_edge, image_model_off=session.image_model_off,
-    ))]
+    )
+
+
+def arm_opening(session: Session) -> int:
+    """Require the opening pages to be read before any write (the toolbox's
+    opening-read gate, :meth:`langslice.doors.tools.toolbox.ToolBox.require_opening`);
+    the number of pages."""
+    if not session.pages:
+        session.pages = opening_pages(session)
+    session.box.require_opening(len(session.pages))
+    return len(session.pages)
+
+
+def briefing(session: Session) -> list[ContentBlock]:
+    """The full job statement, text only (opening pictures are available
+    through show_stack); arms the opening-read gate (:func:`arm_opening`)."""
+    arm_opening(session)
+    return [TextContent(type="text", text=mcp_statement(session))]
+
+
+def opened_reply(session: Session) -> list[ContentBlock]:
+    """``start_job``'s reply for a job a launching message described: the job
+    opened, its sections, and the pages of its opening; arms the opening-read gate."""
+    pages = arm_opening(session)
+    shown = "page 1" if pages == 1 else f"pages 1 to {pages}"
+    return [TextContent(type="text", text=(
+        f"Job opened: {session.job.folder}. {len(session.state.in_order())} sections. "
+        f"The opening is show_stack {shown}: read every page before any write."))]
 
 
 def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Session:
@@ -540,12 +567,12 @@ def build_server(
     async def start_job(
         image_folder: str = "", job_id: str = "", ctx: Context | None = None,
     ) -> list[ContentBlock]:
-        """Open the job the user named: an image_folder (or its job folder),
-        or a saved ABBA job's job_id.
-
-        Returns the job facts and status table without images. Read every
-        show_stack page before writing. Omit both arguments to repeat the
-        current briefing. Never supply both job_id and image_folder.
+        """Open the job named in the message that launched you: its image_folder (or
+        its job folder). It answers with the job's section count and the pages of
+        its opening, and gives you the job's tools. Read every show_stack page
+        before writing. Omit both arguments to repeat that reply. A saved ABBA
+        job's job_id (never with image_folder) answers with the whole job
+        description instead.
         """
         if job_id and image_folder:
             raise ValueError("Supply job_id or image_folder, not both")
@@ -570,7 +597,11 @@ def build_server(
                 "message": "Name a job: start_job(image_folder=...), or a saved ABBA "
                            "job's start_job(job_id=...).",
             }))]
-        blocks = await to_thread.run_sync(briefing, session)
+        # A saved ABBA job (opened from ABBA's copy prompt) has no launching agent
+        # to carry its statement, so its start_job returns it; ABBA's copy-prompt
+        # dialog is scheduled for removal.
+        reply = briefing if session.job_id else opened_reply
+        blocks = await to_thread.run_sync(reply, session)
         if session.trace is not None:
             session.trace.write("briefing", content=describe_blocks(blocks))
         return blocks

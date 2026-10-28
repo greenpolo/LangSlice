@@ -16,6 +16,12 @@ submitted a job (:data:`SUBMIT_PATTERN`: the registration agent's, never the
 main session's that launched it), that job's own Python environment is then
 removed, its package list kept (:func:`langslice.doors.cli.jobenv.remove`).
 
+Each copy gets a launch check beside it, ``trace/<harness>_<session id>.launch.json``
+(:func:`launch_check`): whether the agent's first user message is, character
+for character, one of the job's saved launch prompts (``logs/launches/``,
+``langslice-job FOLDER launch``), which the main session must pass on
+unchanged.
+
 Never fails a session: anything that goes wrong is said on stderr, and
 stdout is ``{}`` (what an Antigravity ``Stop`` hook answers to let the agent
 stop).
@@ -23,6 +29,7 @@ stop).
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import sys
@@ -35,6 +42,10 @@ _UNQUOTED = r"[^\s\"';|&]+" if sys.platform == "win32" else r"[^\s\"'\\;|&]+"
 FOLDER_PATTERNS = (
     re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
     re.compile(r"""open_job\(\s*(?:r?"([^"]+)"|r?'([^']+)')"""),
+    # The launch prompt's first line (``langslice-job FOLDER launch``), so an
+    # agent that stopped before any call still reaches its job.
+    re.compile(r"Register the brain in job folder (.+?)(?:\. Call start_job"
+               r"| with the langslice-job command line\.)"),
 )
 #: An MCP ``start_job`` call's tool name, as each harness writes it:
 #: ``mcp__plugin_langslice_langslice__start_job`` (Claude Code's plugin),
@@ -94,6 +105,7 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(slim_lines(text), encoding="utf-8")
         copies.append(target)
+        write_launch_check(layout, text, target.with_suffix(".launch.json"))
         if submitted:
             jobenv.remove(layout)
     return copies
@@ -259,3 +271,87 @@ def _said(text: str) -> str:
 
 def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:120] or "session"
+
+
+# --- the launch check ----------------------------------------------------------------
+
+#: Antigravity wraps the user's message in this tag (and adds metadata after it).
+_USER_REQUEST = re.compile(r"<USER_REQUEST>\n?(.*?)\n?</USER_REQUEST>", re.S)
+
+
+def first_user_message(text: str) -> str | None:
+    """The first user message of a JSON-lines transcript: a Claude Code record
+    whose ``message.role`` is ``user`` (``content`` a string or text blocks), or
+    an Antigravity ``USER_INPUT`` step (its ``content`` inside ``<USER_REQUEST>``).
+    None when there is none."""
+    for line in text.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        message = record.get("message")
+        if isinstance(message, dict) and message.get("role") == "user":
+            content = message.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                parts = [block.get("text", "") for block in content
+                         if isinstance(block, dict) and block.get("type") == "text"]
+                if parts:
+                    return "\n".join(parts)
+            continue
+        if record.get("type") == "USER_INPUT" and isinstance(record.get("content"), str):
+            content = record["content"]
+            found = _USER_REQUEST.search(content)
+            return found.group(1) if found else content
+    return None
+
+
+def launch_check(layout: Any, text: str) -> dict[str, Any]:
+    """Compare the transcript's first user message with the job's saved launch
+    prompts: ``verbatim`` (equal to one, trailing whitespace aside), ``launch``
+    (that file, or the closest by ``similarity``: difflib's ratio over the
+    words), ``first_difference`` (a character index; None when verbatim) and
+    the two lengths. ``{"checked": false, "reason": ...}`` when there is no
+    launch file or no first user message."""
+    files = sorted(layout.launches_dir.glob("*.md")) if layout.launches_dir.is_dir() else []
+    if not files:
+        return {"checked": False, "reason": "the job has no saved launch prompt "
+                f"({layout.launches_dir.name}/ is empty or missing)"}
+    got = first_user_message(text)
+    if got is None:
+        return {"checked": False, "reason": "no first user message found in the transcript"}
+    got = got.rstrip()
+    best: tuple[float, str, str] | None = None
+    words = got.split()
+    for path in files:
+        expected = path.read_text(encoding="utf-8").rstrip()
+        if expected == got:
+            ratio = 1.0
+        else:
+            ratio = difflib.SequenceMatcher(None, expected.split(), words,
+                                            autojunk=False).ratio()
+        if best is None or ratio > best[0]:
+            best = (ratio, path.name, expected)
+    assert best is not None
+    ratio, name, expected = best
+    verbatim = expected == got
+    first = None
+    if not verbatim:
+        first = next((i for i, (a, b) in enumerate(zip(expected, got, strict=False)) if a != b),
+                     min(len(expected), len(got)))
+    return {"checked": True, "verbatim": verbatim, "launch": name,
+            "similarity": round(ratio, 4), "first_difference": first,
+            "expected_chars": len(expected), "got_chars": len(got)}
+
+
+def write_launch_check(layout: Any, text: str, target: Path) -> None:
+    """Write :func:`launch_check` to *target*; never raises."""
+    try:
+        target.write_text(json.dumps(launch_check(layout, text), indent=1) + "\n",
+                          encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - a hook never fails the session
+        print(f"langslice session-end: launch check: {type(exc).__name__}: {exc}",
+              file=sys.stderr)

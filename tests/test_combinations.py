@@ -337,7 +337,11 @@ def _mcp(server: Any, calls: list[tuple[str, dict[str, Any]]]) -> list[dict[str,
 def _mcp_server(spec: JobSpec) -> Any:
     from langslice.doors.mcp.server import build_server
 
-    return build_server(lambda _folder: spec, spec.image_folder, atlas_loader=atlas_loader())
+    sessions: dict[str, Any] = {}
+    server = build_server(lambda _folder: spec, spec.image_folder, atlas_loader=atlas_loader(),
+                          sessions=sessions)
+    server.test_sessions = sessions  # type: ignore[attr-defined]
+    return server
 
 
 # --- 2. Linear without positioning (positions supplied) -------------------------------------
@@ -671,10 +675,14 @@ def _mcp_listing_and_statement(server: Any) -> tuple[dict[str, str], str]:
             # A host reads every opening page before it writes (the gate).
             import re
 
-            pages = int(re.findall(r"show_stack\(page=(\d+)\)", first.text)[-1])
+            pages = int(re.findall(r"(\d+)[:.]", first.text.split("pages 1 to ")[-1])[0]) \
+                if "pages 1 to " in first.text else 1
             for page in range(1, pages + 1):
                 await client.call_tool("show_stack", {"page": page})
-            return {tool.name: tool.description or "" for tool in listed.tools}, first.text
+            from langslice.doors.mcp.server import mcp_statement
+
+            statement = mcp_statement(server.test_sessions["job"])  # type: ignore[attr-defined]
+            return {tool.name: tool.description or "" for tool in listed.tools}, statement
 
     return asyncio.run(body())
 

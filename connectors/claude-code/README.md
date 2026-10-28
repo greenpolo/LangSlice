@@ -38,16 +38,20 @@ it points at this folder. To try it from a checkout:
 The role split is deliberate. The main session owns everything around the
 registration (choices, job, checking, import and export with ABBA and other
 software); registration is always a subagent's. A subagent has one job and a
-minimal system prompt that defers to LangSlice's own job statement and the
-job card (`AGENTS.md` in the job folder). The skills are not preloaded into the
+one fixed system prompt, the same for every job; the job itself (LangSlice's
+job statement, the user's notes) is the message that launched them, made by
+`langslice-job <folder> launch --role register` (or `register-scripting`) and
+passed on unchanged. The job card (`AGENTS.md` in the job folder) is the
+scripting subagent's reference. The skills are not preloaded into the
 subagents (`skills` is empty and `Skill` is not in their `tools`).
 
-`register` starts with `start_job(image_folder=<folder>)`, which answers with
-LangSlice's job statement for the job (the one its own agent gets) and the
-user's notes, and reads the opening pictures with `show_stack`.
-`register-scripting` starts with `langslice-job <folder> brief`: the same
-statement, the status table and the opening pictures saved as files, also
-written to `BRIEF.md` in the job folder
+`register` starts with `start_job(image_folder=<folder>)`, named in its launch
+message, which also holds LangSlice's job statement for the job (the one its
+own agent gets) and the user's notes; it reads the opening pictures with
+`show_stack`. `register-scripting`'s launch message holds the same statement,
+the status table and the opening pictures listed as saved files. Each launch
+message is also saved in the job's `logs/launches/`, and the hook checks the
+subagent's first message against those files
 ([`docs/agents.md`](../../docs/agents.md)).
 
 The MCP server holds one job at a time for the session, so one `register`

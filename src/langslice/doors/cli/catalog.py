@@ -15,7 +15,7 @@ or the job of the folder it runs in, otherwise every argument (``hint``
 says how to narrow it), and then a job's plugin verbs are unknown (the
 refusal says how to name the job). ``schema`` is versioned (:data:`SCHEMA_VERSION`).
 ``schema`` of a job command
-(``init``, ``brief``, ``runs``, ``wait``, ``env``, ``python``: :data:`JOB_COMMANDS`) gives its
+(``init``, ``launch``, ``runs``, ``wait``, ``env``, ``python``: :data:`JOB_COMMANDS`) gives its
 summary, usage and flags (``init``'s are its parser's,
 :func:`langslice.doors.cli.job.init_parser`); ``langslice-job FOLDER NAME
 --help`` answers as ``schema NAME`` does (:func:`describe`). Both return
@@ -44,11 +44,12 @@ SCHEMA_VERSION = 3
 JOB_COMMANDS: dict[str, str] = {
     "init": "Create the job for a folder of section images (the job flags of "
             "`langslice linear run`, plus --notes TEXT and --viewer claude|codex|openai; "
-            "a job already in the folder is continued). Answers with the job statement.",
-    "brief": "Start here: LangSlice's job statement for this job (the one its own "
-             "agent gets), the status table, the user's notes, and the opening pictures "
-             "saved as files (artifacts of kind `opening`, in reading order); also "
-             "written to BRIEF.md in the job folder.",
+            "a job already in the folder is continued).",
+    "launch --role register|register-scripting": "The exact prompt that launches a "
+        "registration subagent (`result.prompt`): pass it unchanged as the subagent's "
+        "whole prompt. `register` is the MCP subagent, `register-scripting` the "
+        "command-line one; the prompt is also saved in logs/launches/. Run it again "
+        "for each launch: it reflects the job as it stands.",
     "runs [ID]": "The background runs (newest first), or one run: running, finished "
                 "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID): its answer, or "
@@ -69,7 +70,7 @@ JOB_COMMANDS: dict[str, str] = {
 
 
 def command_names() -> list[str]:
-    """The job commands by name (``init``, ``brief``, ``runs``, ``wait``,
+    """The job commands by name (``init``, ``launch``, ``runs``, ``wait``,
     ``ops``, ``schema``, ``env``, ``python``)."""
     return [key.split()[0] for key in JOB_COMMANDS]
 
@@ -108,6 +109,12 @@ def command_entry(name: str) -> dict[str, Any]:
 
         entry["usage"] = "langslice-job IMAGE_FOLDER init [--flag value ...]"
         entry["flags"] = flags_table(init_parser())
+    elif name == "launch":
+        entry["flags"] = [{"flag": "--role", "aliases": [], "default": None,
+                           "help": "The subagent the prompt launches: register (MCP tools) "
+                                   "or register-scripting (the command line)",
+                           "choices": ["register", "register-scripting"], "takes_value": True,
+                           "metavar": "ROLE"}]
     elif name == "wait":
         # background.WAIT_S, not imported: `schema` runs without the job modules.
         entry["flags"] = [{"flag": "--timeout", "aliases": [], "default": 30.0,
@@ -262,14 +269,14 @@ def ops(args: argparse.Namespace) -> Envelope:
             "usage": f"langslice-job {job} VERB --args '{{...}}' [--key value] [--dry-run] "
                      "[--background] [--verbose]",
             "long": LONG_WORDS, "job_commands": JOB_COMMANDS,
-        }, next=[f"langslice-job {job} brief", f"langslice-job {job} schema VERB [VERB ...]"])
+        }, next=[f"langslice-job {job} schema VERB [VERB ...]"])
     return Envelope(result={
         "verbs": verbs_table(_spec_here()),
         "usage": "langslice-job FOLDER VERB --args '{...}' [--key value] [--dry-run] "
                  "[--background] [--verbose]",
         "long": LONG_WORDS,
         "job_commands": JOB_COMMANDS,
-    }, next=["langslice-job FOLDER brief", "langslice-job FOLDER schema VERB [VERB ...]"])
+    }, next=["langslice-job FOLDER schema VERB [VERB ...]"])
 
 
 def _type_words(schema: dict[str, Any], defs: dict[str, Any]) -> str:
@@ -326,7 +333,7 @@ def tools_text(folder: str, names: list[str], variant: Any, spec: Any) -> str:
         "# LangSlice tools",
         "",
         f"Every verb of this job as `langslice-job {folder} schema VERB` declares it, "
-        "written by `brief`; the same words, as text. Call a verb as "
+        "written by `init` and `launch`; the same words, as text. Call a verb as "
         f"`langslice-job {folder} VERB --args '{{...}}'`.",
         "",
     ]
@@ -369,7 +376,7 @@ def schema(args: argparse.Namespace) -> Envelope:
     names = _names(args.verb)
     commands = command_names()
     if len(names) == 1 and names[0] in commands:
-        name = names[0]  # init, brief, runs, wait: no job needed
+        name = names[0]  # init, launch, runs, wait: no job needed
         entry = command_entry(name)
         return Envelope(result={"schema_version": SCHEMA_VERSION, "verb": name, **entry},
                         next=[entry["usage"]])

@@ -2,12 +2,12 @@
 
 ## start_job
 
-Open the job the user named: an image_folder (or its job folder),
-        or a saved ABBA job's job_id.
-
-        Returns the job facts and status table without images. Read every
-        show_stack page before writing. Omit both arguments to repeat the
-        current briefing. Never supply both job_id and image_folder.
+Open the job named in the message that launched you: its image_folder (or
+        its job folder). It answers with the job's section count and the pages of
+        its opening, and gives you the job's tools. Read every show_stack page
+        before writing. Omit both arguments to repeat that reply. A saved ABBA
+        job's job_id (never with image_folder) answers with the whole job
+        description instead.
         
 
 - `image_folder` (string):

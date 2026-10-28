@@ -215,7 +215,9 @@ def _model_texts(folder: Path, spec: JobSpec) -> dict[str, str]:
         low, high = ctx.position_range
         for door, connected in itertools.product(DOORS, (True, False)):
             opening = (opening_for_mcp(3) if door == "mcp"
-                       else opening_for_cli("/job", 3, spec.switched_off))
+                       else opening_for_cli(
+                           "/job", ["Strip 1 of 1: s0.png", "- /job/views/1/view.jpg"],
+                           spec.switched_off))
             texts[f"statement {door} connected={connected}"] = job_statement(
                 spec, state, ctx, door=door, tool_names=names, opening=opening,
                 image_model_off=not connected, auto=door == "cli")

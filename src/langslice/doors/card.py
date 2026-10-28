@@ -32,11 +32,8 @@ logger = logging.getLogger(__name__)
 
 #: The card's two names (Codex reads the first, Claude Code the second).
 CARD_FILES = ("AGENTS.md", "CLAUDE.md")
-#: The brief the agent CLI writes beside the card (``langslice-job FOLDER
-#: brief``, :mod:`langslice.doors.cli.brief`), which the card names first.
-BRIEF_FILE = "BRIEF.md"
 #: Every verb's description and arguments as the job declares them, written by
-#: ``brief`` beside the brief (:func:`langslice.doors.cli.catalog.tools_text`).
+#: ``init`` and ``launch`` beside the card (:func:`langslice.doors.cli.catalog.tools_text`).
 TOOLS_FILE = "TOOLS.md"
 
 
@@ -116,9 +113,8 @@ def card_text(layout: JobLayout) -> str:
 One registration job: the sections in `{images}` placed in a BrainGlobe atlas.
 Written by LangSlice {langslice.__version__} from its code; regenerated on open, so do not edit it.
 
-Registering it? Start with `langslice-job {layout.folder} brief`: the job statement
-LangSlice's own agent gets, the user's notes and the opening pictures as files, also
-written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
+A registering agent's job is the message that launched it, made by
+`langslice-job {layout.folder} launch --role register` (or `register-scripting`).
 
 ## Files: settings, state and derived outputs
 - `state.json`: THE TRUTH. Order, positions, flips, transforms and the applied
@@ -159,8 +155,9 @@ Pictures: `picture_files` (paths) first, then `artifacts`, each with its `index`
 `pictures`. Exit codes: 0 ok, 2 bad arguments, 3 refused by the job (`error.code`,
 `error.fix`), 4 internal. Calls may run in parallel (each write holds the folder's lock; a long
 verb re-checks each section first: `STALE_INPUT`, run it again for that section).
-`{TOOLS_FILE}` (from `brief`) describes every verb and its arguments; `langslice-job {layout.folder}
-schema VERB [VERB ...]` as JSON (every verb without one), `ops` lists them, `schema init` the flags.
+`{TOOLS_FILE}` (from `init` and `launch`) describes every verb and its arguments;
+`langslice-job {layout.folder} schema VERB [VERB ...]` as JSON (every verb without one),
+`ops` lists them, `schema init` the flags.
 {verbs}
 
 ## Python

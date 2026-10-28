@@ -525,10 +525,10 @@ def warm_up(folder: str) -> dict[str, Any]:
     root = logging.getLogger()
     handlers, level = list(root.handlers), root.level
     import langslice.doors.cli.background
-    import langslice.doors.cli.brief
     import langslice.doors.cli.catalog
     import langslice.doors.cli.job
     import langslice.doors.cli.jobenv
+    import langslice.doors.cli.launch
     import langslice.doors.library  # noqa: F401
     from langslice.core.deformable.engines import preload
     from langslice.core.maps import share_frames

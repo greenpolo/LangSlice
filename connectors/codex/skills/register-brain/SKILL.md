@@ -61,11 +61,13 @@ Pick the agent the user allows:
 | `register` | LangSlice's MCP tools only, no shell; the pictures come in the tool replies | default |
 | `register_scripting` | the shell: the `langslice-job` command line and scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
-Ask Codex to spawn that custom agent by name. The request names only the job
-folder: "Register the brain in job folder FOLDER". Add the user's notes only
-if they were not already saved in the job. Do not add registration advice of
-your own: the subagent works from LangSlice's own job statement. Do not give
-it any other task. Run one subagent per job at a time, and one `register` at a
+Ask Codex to spawn that custom agent by name. Make its request
+with `langslice-job FOLDER launch --role register` (or `--role
+register-scripting` for `register_scripting`) and pass `result.prompt` as the
+request, unchanged: nothing added, shortened or summarised. The user's notes
+belong in `init --notes` (the prompt holds them). Run `launch` again for each
+launch: it reflects the job as it stands. Do not give the subagent any other
+task. Run one subagent per job at a time, and one `register` at a
 time in this session (the LangSlice MCP server holds one open job).
 
 `register` needs the LangSlice MCP server in Codex's `config.toml`; if no

@@ -449,8 +449,10 @@ def test_a_folder_job_opens_as_saved_next_to_the_sections_and_resumes(tmp_path: 
     refused = json.loads(early.content[0].text)
     assert refused["error"] == "OPENING_NOT_READ" and refused["pages"] == [1]
     assert "show_stack(page=1)" in refused["detail"]
-    assert "0.150 mm" in briefing.content[0].text  # the saved interval, not a default
-    assert "User notes:\nSection 2 is torn." in briefing.content[0].text
+    # The job comes in the launching message, not in start_job's reply.
+    assert briefing.content[0].text == (
+        f"Job opened: {folder / 'langslice'}. 3 sections. The opening is show_stack "
+        "page 1: read every page before any write.")
     assert "position_sections" in tools and "interactive_transform" not in tools
     job_dir = folder / "langslice"
     # The sections are untouched; the job folder sits beside them.

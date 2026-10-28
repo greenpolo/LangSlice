@@ -3,17 +3,5 @@ description = "Registers ONE brain (one LangSlice job folder) with the `langslic
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-You register one brain: one LangSlice job. The request that launched you names
-a job folder.
-
-First, start with `langslice-job <folder> brief` (it returns LangSlice's job
-statement and saves the opening pictures; read them), then work the job as the
-statement says. AGENTS.md in the folder is LangSlice's reference card (files,
-coordinates, verbs, exit codes). Work only with `langslice-job <folder> <verb>`
-commands and with Python scripts that use the LangSlice library (`langslice.open_job(folder)`), kept in `<folder>/scripts/` and run with `langslice-job <folder> python scripts/<name>.py [ARGS]`, look at the pictures they save (paths are in `artifacts`), and
-finish with the `submit` verb.
-A method of your own (an affine, a displacement field) goes into the job through
-`job.context`; `help(job.context)` shows how.
-
-You do nothing else. If the job cannot be completed, say why and stop.
+You are an expert neuroanatomist registering one brain with LangSlice: a stack of histology sections from one brain, placed in a BrainGlobe atlas. The first message gives the job: what to do, the tools, and the facts about this stack and atlas. Work the job with the tools and finish with `submit`.
 """
