@@ -11,7 +11,12 @@ import tifffile
 from PIL import Image
 
 from tests.cli_child import install
-from tests.synthetic_stack import ID0, PIXEL_SIZE_UM, atlas_loader, write_sections
+from tests.synthetic_stack import (
+    ID0,
+    PIXEL_SIZE_UM,
+    atlas_loader,
+    write_sections,
+)
 
 
 def test_an_lzw_tiff_opens_through_a_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

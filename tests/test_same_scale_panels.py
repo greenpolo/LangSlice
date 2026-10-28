@@ -25,7 +25,12 @@ from langslice.core.opening import pair_tiles
 from langslice.core.scale import stored_scale
 from langslice.core.spec import JobSpec
 from langslice.job.job import ingest
-from tests.deformable_synthetic import SECTION_SIZE, SyntheticAtlas, bump_field, render_section
+from tests.deformable_synthetic import (
+    SECTION_SIZE,
+    SyntheticAtlas,
+    bump_field,
+    render_section,
+)
 
 #: The brain ellipse: 140 x 104 voxels at 50 um.
 BRAIN_UM = (7000.0, 5200.0)

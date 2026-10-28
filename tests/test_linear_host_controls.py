@@ -16,7 +16,12 @@ from langslice.agent.engine import build_context
 from langslice.core import deformation
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.doors.tools.toolbox import build_tools
-from langslice.job.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest, submit_errors
+from langslice.job.job import (
+    HOST_TRANSFORM_KIND,
+    apply_host_inputs,
+    ingest,
+    submit_errors,
+)
 from langslice.ops import transforms as ops_transforms
 from langslice.ops.transforms import AffineFit
 from tests.deformable_synthetic import SyntheticAtlas

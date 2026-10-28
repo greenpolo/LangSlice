@@ -21,7 +21,12 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.checkpoint import STATE_FORMAT_VERSION, read_checkpoint
 from langslice.job.history import UNDO_DEPTH
 from langslice.job.job import Job
-from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, job_folder_for, section_dirname
+from langslice.job.layout import (
+    JOB_FORMAT_VERSION,
+    JobLayout,
+    job_folder_for,
+    section_dirname,
+)
 from langslice.job.views import flush_all
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import tool_named as _tool

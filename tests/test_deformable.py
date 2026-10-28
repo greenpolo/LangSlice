@@ -22,11 +22,17 @@ from langslice.core.deformable import (
 )
 from langslice.core.deformable.fit import fit_prepared
 from langslice.core.deformable.geometry import Placement
-from langslice.core.deformable.plane_images import native_intensity, whole_region_ids
+from langslice.core.deformable.plane_images import (
+    native_intensity,
+    whole_region_ids,
+)
 from langslice.core.deformable.record import jacobian_determinant
 from langslice.core.deformable.regions import model_extent, named_regions
 from langslice.core.deformable.settings import DETAIL
-from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
+from langslice.core.oblique import (
+    plane_index_coordinates,
+    sample_oblique_plane,
+)
 from tests.deformable_synthetic import (
     CTX,
     SMOOTH_FIELD,
@@ -350,7 +356,10 @@ def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
 
 
 def test_taper_weight_holds_the_neighbourhood_and_fades_beyond():
-    from langslice.core.deformable.fit import RESTRICTED_TAPER_MM, _taper_weight
+    from langslice.core.deformable.fit import (
+        RESTRICTED_TAPER_MM,
+        _taper_weight,
+    )
 
     region = np.zeros((100, 200), dtype=bool)
     region[40:60, 20:40] = True

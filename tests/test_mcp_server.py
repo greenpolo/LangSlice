@@ -15,7 +15,11 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
-from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
+from langslice.core.opening import (
+    CLAUDE_MAX_IMAGE_EDGE,
+    CLAUDE_MAX_IMAGE_PATCHES,
+    patches,
+)
 from langslice.core.spec import JobSpec
 from langslice.doors.mcp.server import build_server, initialization_options
 from tests.fakes import SlabAtlas

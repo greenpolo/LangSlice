@@ -16,7 +16,11 @@ from PIL import Image
 from langslice.agent.engine import build_context
 from langslice.core.affine import physical_affine_matrix
 from langslice.core.atlas.levels import OVERLAY_DEPTH
-from langslice.core.atlas.render import annotation_slice, region_boundaries, region_outlines
+from langslice.core.atlas.render import (
+    annotation_slice,
+    region_boundaries,
+    region_outlines,
+)
 from langslice.core.canvas import canvas_geometry, physical_views
 from langslice.core.image_prep import read_pixel_size_um
 from langslice.core.sections import canvas_um_per_px

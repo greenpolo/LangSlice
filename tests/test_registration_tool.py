@@ -12,7 +12,10 @@ from langslice.core.handoff import (
     prepare_linear_registration,
 )
 from langslice.core.nonlinear import registration_tool as tool
-from langslice.core.nonlinear.border_refinement import border_overlay, smooth_border_overlay
+from langslice.core.nonlinear.border_refinement import (
+    border_overlay,
+    smooth_border_overlay,
+)
 from langslice.core.nonlinear.prompts import border_correction_tool_prompt
 from langslice.core.nonlinear.upright import Upright
 from langslice.core.spec import JobSpec

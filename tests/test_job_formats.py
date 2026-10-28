@@ -232,7 +232,12 @@ def test_residual_maps_agree_with_the_deformable_fit_pictures(placed):
     the field at the picture's size."""
     from langslice.core.affine import pixel_center_map
     from langslice.core.layers import coordinate_map
-    from langslice.core.maps import native_points, orientation_matrix, section_frame, unturned
+    from langslice.core.maps import (
+        native_points,
+        orientation_matrix,
+        section_frame,
+        unturned,
+    )
 
     job, root, _exported = placed
     record = job.state.by_id(ID0)

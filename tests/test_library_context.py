@@ -19,7 +19,14 @@ import numpy as np
 import pytest
 
 from tests.cli_child import install
-from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, atlas_loader, write_sections
+from tests.synthetic_stack import (
+    ID0,
+    ID1,
+    ID2,
+    PIXEL_SIZE_UM,
+    atlas_loader,
+    write_sections,
+)
 
 POSITIONS = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
 TRANSFORMS = {ID0: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], ID1: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],

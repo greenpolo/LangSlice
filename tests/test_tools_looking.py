@@ -17,7 +17,11 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.background import Landed
 from langslice.job.job import ingest
-from tests.deformable_synthetic import SyntheticAtlas, bump_field, render_section
+from tests.deformable_synthetic import (
+    SyntheticAtlas,
+    bump_field,
+    render_section,
+)
 from tests.fakes import SlabAtlas
 from tests.linear_tool_helpers import tool_named as _tool
 

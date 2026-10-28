@@ -28,7 +28,14 @@ import pytest
 
 from langslice.doors.cli.jobcli import main
 from tests.cli_child import install
-from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM, atlas_loader, write_sections
+from tests.synthetic_stack import (
+    ID0,
+    ID1,
+    ID2,
+    PIXEL_SIZE_UM,
+    atlas_loader,
+    write_sections,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 

@@ -27,7 +27,12 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.providers.registry import resolve_image_model
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, bump_field, render_section
+from tests.deformable_synthetic import (
+    SMOOTH_FIELD,
+    SyntheticAtlas,
+    bump_field,
+    render_section,
+)
 from tests.linear_tool_helpers import ToolContext
 from tests.linear_tool_helpers import tool_named as _tool
 
@@ -173,7 +178,9 @@ def test_fireants_syn_builds_on_the_current_registration_and_shows_it(tmp_path: 
     assert set(row["displacement_mm"]) == {"max", "median"}
     held = result["changed"][0]["deformation"]
     assert held["method"] == "fireants_syn" and held["steps"] == ["fireants_syn"]
-    from langslice.core.deformation import DETAIL_LEVEL  # the tests' patched level
+    from langslice.core.deformation import (
+        DETAIL_LEVEL,  # the tests' patched level
+    )
 
     assert held["settings"]["smoothness_um"] == 80.0 and held["settings"]["detail"] == DETAIL_LEVEL
     (picture,) = result["pictures"]

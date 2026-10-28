@@ -23,7 +23,12 @@ from langslice.core.affine import denormalized_affine, pixel_center_map
 from langslice.core.deformable.geometry import Placement
 from langslice.core.deformable.record import DeformableRecord
 from langslice.core.deformable.settings import FitSettings
-from langslice.core.maps import SectionFrame, native_points, orientation_matrix, unturned
+from langslice.core.maps import (
+    SectionFrame,
+    native_points,
+    orientation_matrix,
+    unturned,
+)
 
 FILE = (600, 400)
 PIXEL_UM = 20.0

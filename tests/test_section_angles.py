@@ -19,7 +19,12 @@ from typing import Any
 import numpy as np
 import pytest
 
-from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec, supplied_angles
+from langslice.core.spec import (
+    JobSpec,
+    NonlinearSpec,
+    TransformSpec,
+    supplied_angles,
+)
 from langslice.core.state import MixedAngles, SliceState, StackState
 from tests import test_combinations as combinations
 from tests.synthetic_stack import ID0, ID1, ID2, PIXEL_SIZE_UM

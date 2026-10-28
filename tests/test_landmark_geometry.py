@@ -9,9 +9,17 @@ import pytest
 from PIL import Image
 from scipy.ndimage import map_coordinates
 
-from langslice.core.landmarks import section_panel, section_picture_point, section_point
+from langslice.core.landmarks import (
+    section_panel,
+    section_picture_point,
+    section_point,
+)
 from langslice.core.state import SliceState
-from langslice.core.triangulation import DegenerateMesh, PiecewiseAffine, visualign_mesh
+from langslice.core.triangulation import (
+    DegenerateMesh,
+    PiecewiseAffine,
+    visualign_mesh,
+)
 
 
 def test_the_mesh_accepts_folds_and_keeps_its_forward_map():

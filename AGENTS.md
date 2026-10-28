@@ -80,6 +80,14 @@ and `environment.yml` hold the worker's source installation.
 - Judge image output by looking at it: open the raw output, describe what is
   anatomically right and wrong, and report a disagreement between the picture
   and a metric as a finding. Metrics are secondary diagnostics.
+- New code follows `STYLE.md`, enforced by `tools/stylecheck` against a
+  baseline (`tools/stylecheck/baseline.json`) that only shrinks. A failing
+  check is fixed in the code, never by adding a baseline entry or loosening
+  a setting in `pyproject.toml` (CI refuses both); after fixing baselined
+  errors run `python -m tools.stylecheck --prune` and commit the smaller
+  file; `--explain NAME` says what a rule wants. basedpyright's baseline
+  only shrinks too: never run `basedpyright --writebaseline`
+  (`CONTRIBUTING.md`).
 - Markdown is literal to the code: a behavior change updates the relevant page
   in `docs/` in the same change. Docs state what the code does now, without
   plans or history. Do not document or commit `_local/`, `references/`, `out/`
@@ -113,6 +121,7 @@ Linux + bash. The project environment is a uv venv at `.venv` (Python 3.11):
 source .venv/bin/activate
 python -m pytest              # in parallel (pytest-xdist); `slow` is deselected by default
 python -m ruff check .
+python -m tools.stylecheck    # STYLE.md; the baseline only shrinks
 python -m basedpyright
 lint-imports                  # the layer contracts
 langslice version

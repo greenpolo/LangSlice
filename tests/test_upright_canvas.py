@@ -20,7 +20,10 @@ import pytest
 from PIL import Image
 
 from langslice.core import deformation, handoff
-from langslice.core.atlas.render import annotation_slice, placed_border_coverage
+from langslice.core.atlas.render import (
+    annotation_slice,
+    placed_border_coverage,
+)
 from langslice.core.handoff import LinearRegistrationInput
 from langslice.core.nonlinear import registration_tool as tool
 from langslice.core.nonlinear.upright import upright

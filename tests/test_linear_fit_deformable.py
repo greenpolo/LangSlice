@@ -26,7 +26,13 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.ops import deformable as ops_deformable
-from tests.deformable_synthetic import HY, SMOOTH_FIELD, TH, SyntheticAtlas, render_section
+from tests.deformable_synthetic import (
+    HY,
+    SMOOTH_FIELD,
+    TH,
+    SyntheticAtlas,
+    render_section,
+)
 from tests.linear_tool_helpers import load_checkpoint
 from tests.linear_tool_helpers import tool_named as _tool
 

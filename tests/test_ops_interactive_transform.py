@@ -15,7 +15,10 @@ from langslice.core.spec import JobSpec
 from langslice.job.job import Job
 from langslice.ops import transforms
 from langslice.ops.refusal import Refused
-from tests.test_linear_fit_affine_regions import HalvesAtlas, _left_half_section
+from tests.test_linear_fit_affine_regions import (
+    HalvesAtlas,
+    _left_half_section,
+)
 
 _ATLAS = HalvesAtlas()
 

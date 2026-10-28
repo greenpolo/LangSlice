@@ -22,7 +22,13 @@ from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.cli import build_parser
 from langslice.doors.cli.linear import spec_from_args
 from tests.cli_child import install
-from tests.synthetic_stack import ID0, ID1, PIXEL_SIZE_UM, atlas_loader, write_sections
+from tests.synthetic_stack import (
+    ID0,
+    ID1,
+    PIXEL_SIZE_UM,
+    atlas_loader,
+    write_sections,
+)
 from tests.test_library import POSITIONS, TRANSFORMS, Stub, _no_network
 
 JOB_PROMPT = ("Image 1: a {plane} brain section photograph. Image 2: the same photograph "

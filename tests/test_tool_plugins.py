@@ -1938,7 +1938,12 @@ def test_a_registration_read_at_the_stack_plane_projects_onto_it(
         make, images: Path, tmp_path: Path):
     from langslice.core.layers import atlas_facts
     from langslice.job.quint import job_export
-    from tests.test_import_registrations import DeepAtlas, Given, export_rows, knobs
+    from tests.test_import_registrations import (
+        DeepAtlas,
+        Given,
+        export_rows,
+        knobs,
+    )
 
     ref = make("place_file_at", PLACER)
     atlas = DeepAtlas()

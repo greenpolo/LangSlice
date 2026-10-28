@@ -10,7 +10,11 @@ from langslice.core.spec import PositionSpec
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.toolbox import build_tools
 from tests.deformable_synthetic import SyntheticAtlas
-from tests.linear_tool_helpers import ToolContext, load_checkpoint, single_transform
+from tests.linear_tool_helpers import (
+    ToolContext,
+    load_checkpoint,
+    single_transform,
+)
 from tests.linear_tool_helpers import box as _box
 from tests.linear_tool_helpers import stack as _stack
 from tests.linear_tool_helpers import submit as _submit

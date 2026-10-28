@@ -16,7 +16,10 @@ from langslice.agent.engine import build_context
 from langslice.core import deformation
 from langslice.core import section_images as images
 from langslice.core.handoff import prepare_linear_registration
-from langslice.core.image_prep import adaptive_preprocess, prepare_image_for_vlm
+from langslice.core.image_prep import (
+    adaptive_preprocess,
+    prepare_image_for_vlm,
+)
 from langslice.core.maps import section_frame
 from langslice.core.sections import render_slice
 from langslice.core.spec import JobSpec

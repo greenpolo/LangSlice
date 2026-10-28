@@ -29,7 +29,11 @@ from langslice.ops import traces
 from langslice.ops.inputs import STALE_INPUT
 from langslice.ops.refusal import Refused
 from langslice.providers.registry import resolve_image_model
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
+from tests.deformable_synthetic import (
+    SMOOTH_FIELD,
+    SyntheticAtlas,
+    render_section,
+)
 
 if not deformation.engine_available():
     pytest.skip("trace_borders fits with FireANTs", allow_module_level=True)

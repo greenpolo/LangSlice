@@ -7,7 +7,11 @@ from PIL import Image
 
 from langslice.core import canvas, layers
 from langslice.core.oblique import plane_index_affine, plane_index_coordinates
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
+from tests.deformable_synthetic import (
+    SMOOTH_FIELD,
+    SyntheticAtlas,
+    render_section,
+)
 
 
 def _draw(**kwargs) -> tuple[list[Image.Image], list[canvas.PanelFrame]]:

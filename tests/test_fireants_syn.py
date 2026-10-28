@@ -14,7 +14,11 @@ from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.job.job import Job
 from langslice.ops import deformable as ops_deformable
 from langslice.ops.refusal import Refused
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
+from tests.deformable_synthetic import (
+    SMOOTH_FIELD,
+    SyntheticAtlas,
+    render_section,
+)
 
 pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")
 

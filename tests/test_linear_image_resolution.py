@@ -20,8 +20,18 @@ import pytest
 from PIL import Image
 
 from langslice.agent.engine import build_context, build_seed_message
-from langslice.core.captions import CAPTION_PX, _caption_font, caption, wrap_caption
-from langslice.core.opening import CLAUDE_MAX_VIEW_EDGE, COLUMN_GAP, section_tile, strip_layout
+from langslice.core.captions import (
+    CAPTION_PX,
+    _caption_font,
+    caption,
+    wrap_caption,
+)
+from langslice.core.opening import (
+    CLAUDE_MAX_VIEW_EDGE,
+    COLUMN_GAP,
+    section_tile,
+    strip_layout,
+)
 from langslice.core.sections import render_slice
 from langslice.core.sizes import MIN_RESOLUTION, PICTURE_EDGES, opening_edge
 from langslice.core.spec import JobSpec
@@ -280,7 +290,10 @@ def test_a_claude_lane_gets_claudes_limits_as_the_mcp_host_does():
     picture as the MCP door does for a Claude host, not at OpenAI's numbers."""
     from types import SimpleNamespace
 
-    from langslice.core.opening import CLAUDE_IMAGE_LIMIT, OPENAI_MAX_IMAGE_EDGE
+    from langslice.core.opening import (
+        CLAUDE_IMAGE_LIMIT,
+        OPENAI_MAX_IMAGE_EDGE,
+    )
     from langslice.doors.tools.view_options import view_edge_limit
 
     claude = SimpleNamespace(model="anthropic-api/claude-opus-5-5")

@@ -19,7 +19,12 @@ from langslice.ops import positions, transforms
 from langslice.ops.refusal import Refused
 from langslice.ops.registry import enabled
 from tests.linear_tool_helpers import SLAB, tool_named
-from tests.test_disabled_tools import _base_specs, _model_texts, _pattern, _stack_folder
+from tests.test_disabled_tools import (
+    _base_specs,
+    _model_texts,
+    _pattern,
+    _stack_folder,
+)
 from tests.test_linear_host_controls import _stack
 from tests.test_ops_interactive_transform import _open
 

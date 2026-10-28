@@ -13,7 +13,11 @@ from google.genai import types
 from langslice.agent.session import run_agent_session
 from langslice.agent.trace import SessionTrace
 from langslice.providers import openai_oauth
-from langslice.providers.usage import item_descriptor, request_descriptor, usage_diagnostics
+from langslice.providers.usage import (
+    item_descriptor,
+    request_descriptor,
+    usage_diagnostics,
+)
 
 
 def counters(inp=0, cached=0, writes=0, out=0):

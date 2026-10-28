@@ -13,11 +13,21 @@ from typing import Any
 import pytest
 
 from langslice.core.needs import render
-from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
+from langslice.core.spec import (
+    JobSpec,
+    NonlinearSpec,
+    PositionSpec,
+    TransformSpec,
+)
 from langslice.core.toolset import TOOLS, is_off, valid_names
 from langslice.doors import jobs
 from langslice.doors.cli.envelope import DISABLED, FIXES
-from langslice.doors.declarations import DOORS, Variant, arguments_schema, declaration
+from langslice.doors.declarations import (
+    DOORS,
+    Variant,
+    arguments_schema,
+    declaration,
+)
 from langslice.ops.registry import VERBS, enabled
 from tests.linear_tool_helpers import SLAB, tool_named
 

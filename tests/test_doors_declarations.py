@@ -16,7 +16,13 @@ import pytest
 from langslice.core.nonlinear.prompts import border_correction_tool_prompt
 from langslice.core.spec import JobSpec, TransformSpec
 from langslice.doors import declarations
-from langslice.doors.declarations import FULL, VIEW_TOOLS, Variant, declaration, declare
+from langslice.doors.declarations import (
+    FULL,
+    VIEW_TOOLS,
+    Variant,
+    declaration,
+    declare,
+)
 from langslice.doors.tools.arguments import SectionPosition, SectionTransform
 from langslice.ops.registry import VERBS
 

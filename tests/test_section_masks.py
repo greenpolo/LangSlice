@@ -19,7 +19,11 @@ from langslice.core.state import SliceState, StackState
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.job.layout import JobLayout
-from tests.deformable_synthetic import SyntheticAtlas, bump_field, render_section
+from tests.deformable_synthetic import (
+    SyntheticAtlas,
+    bump_field,
+    render_section,
+)
 
 ID = "s0.png"
 HOLE = (150, 112, 8)

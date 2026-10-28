@@ -25,7 +25,13 @@ from langslice.doors.cli.jobcli import main
 from langslice.job import registrations as regs
 from langslice.job.background import DONE, Work, notice_text
 from tests.cli_child import install
-from tests.synthetic_stack import ID0, ID1, PIXEL_SIZE_UM, atlas_loader, write_sections
+from tests.synthetic_stack import (
+    ID0,
+    ID1,
+    PIXEL_SIZE_UM,
+    atlas_loader,
+    write_sections,
+)
 
 IDENTITY = {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0, "translate_x_mm": 0.0,
             "translate_y_mm": 0.0}

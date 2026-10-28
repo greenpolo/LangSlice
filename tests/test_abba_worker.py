@@ -217,7 +217,10 @@ def test_existing_warp_is_kept_with_the_job_and_frozen_through_the_spec(params):
 
 
 def test_host_angles_are_sent_when_the_stack_wide_angles_change(tmp_path):
-    from langslice.doors.api.abba_worker import checkpoint_callback, prepare_linear
+    from langslice.doors.api.abba_worker import (
+        checkpoint_callback,
+        prepare_linear,
+    )
 
     for name in ("s0.tif", "s1.tif"):
         Image.new("L", (80, 40)).save(tmp_path / name)
@@ -269,7 +272,10 @@ def warped(tmp_path_factory):
 
     import langslice
     from langslice.core.spec import NonlinearSpec
-    from langslice.doors.api.abba_worker import PreparedLinear, checkpoint_callback
+    from langslice.doors.api.abba_worker import (
+        PreparedLinear,
+        checkpoint_callback,
+    )
     from langslice.doors.jobs import create
     from tests.synthetic_stack import (
         ID0,

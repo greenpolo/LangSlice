@@ -19,7 +19,10 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
 from langslice.ops import damage, deformable, traces, transforms
 from langslice.ops.refusal import Refused
-from tests.test_linear_fit_affine_regions import HalvesAtlas, _left_half_section
+from tests.test_linear_fit_affine_regions import (
+    HalvesAtlas,
+    _left_half_section,
+)
 
 ID = "s0.png"
 

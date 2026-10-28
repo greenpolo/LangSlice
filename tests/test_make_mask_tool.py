@@ -15,7 +15,11 @@ from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import ingest
 from langslice.ops import masks as ops_masks
 from langslice.ops.inputs import section_inputs
-from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
+from tests.deformable_synthetic import (
+    SMOOTH_FIELD,
+    SyntheticAtlas,
+    render_section,
+)
 from tests.linear_tool_helpers import tool_named as _tool
 
 pytest.importorskip("fireants", reason="fireants_syn needs FireANTs")

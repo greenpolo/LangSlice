@@ -74,6 +74,8 @@ dev = [
     "pytest-xdist",
     "ruff",
     "basedpyright",
+    # The docstring validation hook the style checker runs (tools/stylecheck).
+    "numpydoc>=1.6",
     # The layer contracts below (tests/test_import_layers.py runs them).
     "import-linter>=2.1",
     # The OME-NGFF schema check of the deformation records (tests/test_ome_warp.py).
@@ -140,18 +142,129 @@ pythonpath = ["src"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+# The formatter's width (STYLE.md 1.1), which the style checker
+# (tools/stylecheck) holds its trees to, line length and import order both,
+# against its baseline.
+line-length = 79
 include = [
     "src/langslice/**/*.py",
+    "tools/**/*.py",
     "tests/test_*.py",
     "tests/*_test.py",
+    "tests/stylecheck/*.py",
 ]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
-[tool.pyright]
-include = ["src/langslice"]
+# The main run's line limit, which every file meets; the style checker's
+# own ruff run uses line-length above instead.
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+# The main run's own ignores: the package's import order is the style
+# checker's, at 79 columns against its baseline. The checker's ruff run
+# empties this table (tools/stylecheck/external.py); an ignore both runs
+# keep goes in [tool.ruff.lint.extend-per-file-ignores].
+[tool.ruff.lint.per-file-ignores]
+"src/langslice/**" = ["I001"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+# The standard aliases of STYLE.md 10.1 beyond ruff's defaults.
+[tool.ruff.lint.flake8-import-conventions.extend-aliases]
+"numpy.typing" = "npt"
+"dask.array" = "da"
+"SimpleITK" = "sitk"
+
+# STYLE.md 4.3: `sitk` is a standard alias, not a constant imported lowercase.
+[tool.ruff.lint.pep8-naming]
+extend-ignore-names = ["sitk"]
+
+# The style checker (tools/stylecheck, STYLE.md 12). The limits and banned
+# words keep the defaults in tools/stylecheck/core.py; these are the settings
+# that name LangSlice's own modules and types. Modules are import names.
+[tool.stylecheck]
+# STYLE.md 4.4: the one parameter name of each central type.
+type_names = { Workspace = "workspace", "langslice.job.job.Job" = "job", JobSpec = "spec", JobLayout = "layout", StackState = "state", SliceState = "section", DeformableRecord = "record", ToolContext = "context", DisplayOptions = "options", ImageModel = "image_model" }
+# STYLE.md 5.1 and 3.6: the modules that read and write JSON files and wire
+# formats, where a TypedDict or a dict of results may stand.
+json_boundary_modules = [
+    "langslice.agent.trace",
+    "langslice.core.deformable.record",
+    "langslice.doors.api.models",
+    "langslice.doors.cli.envelope",
+    "langslice.doors.tools.arguments",
+    "langslice.doors.trace",
+    "langslice.hosts.api.service",
+    "langslice.job.checkpoint",
+    "langslice.job.formats",
+    "langslice.job.history",
+    "langslice.job.imports",
+    "langslice.job.index",
+    "langslice.job.plugin_store",
+    "langslice.job.recent",
+    "langslice.job.views",
+    "tools.stylecheck.baseline",
+    "tools.stylecheck.jsondata",
+    "tools.stylecheck.pyright_baseline",
+    "tools.stylecheck.settings",
+]
+# STYLE.md 8.5: the command modules, where print and sys.stdout.write belong.
+cli_modules = [
+    "langslice.cli",
+    "langslice.doors.cli",
+    "langslice.doors.cli.envelope",
+    "langslice.doors.cli.job",
+    "langslice.doors.cli.jobcli",
+    "langslice.doors.cli.linear",
+    "langslice.doors.cli.transcripts",
+    "langslice.doors.cli.warm",
+    "tools.stylecheck.__main__",
+]
+# STYLE.md 9.2: the one module that builds tool descriptions.
+docs_renderer_module = "langslice.doors.declarations"
+# STYLE.md 10.3, 8.1 and 2.6: no decorators module, codes enum or
+# infrastructure package exists yet. While decorators_module is empty,
+# decorator-location is off and nested-definition exempts no module, so a
+# decorator's wrapper is flagged wherever it is. While codes_module is
+# empty, error-dict and error-code-literal check every module; while
+# infra_package is empty, private-getattr checks every module.
+decorators_module = ""
+codes_module = ""
+infra_package = ""
+
+# STYLE.md 6.1 and 6.2, run by the style checker on public objects only
+# (tools/stylecheck/numpydoc_hook.py). GL08: a docstring; PR01-PR03 and
+# PR10: Parameters match the signature; RT01 and YD01: Returns and Yields;
+# SS01-SS06: a one-line summary that starts with a capital, ends with a
+# full stop and is not a third-person verb; GL06 and GL07: numpydoc's
+# sections, in order.
+[tool.numpydoc_validation]
+checks = [
+    "GL06", "GL07", "GL08",
+    "PR01", "PR02", "PR03", "PR10",
+    "RT01", "YD01",
+    "SS01", "SS02", "SS03", "SS04", "SS05", "SS06",
+]
+# Private names: a leading underscore on a member or on the module.
+exclude = ['\._', '^_[^_]']
+
+[tool.basedpyright]
+include = [
+    "src/langslice",
+    "tools/stylecheck",
+    "tests/stylecheck",
+    "tests/test_style.py",
+]
 extraPaths = ["src"]
 pythonVersion = "3.11"
-typeCheckingMode = "basic"
+# STYLE.md 5.5. Errors that predate strict mode are listed in
+# .basedpyright/baseline.json, which only shrinks.
+typeCheckingMode = "strict"
+reportAny = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecessaryComparison = "error"
+reportMissingParameterType = "error"
