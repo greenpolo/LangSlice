@@ -1,4 +1,5 @@
-"""Tool plugins: the public API (``docs/developers/plugins.md``), importable as ``langslice.plugin_api``.
+"""Tool plugins: the public API (``docs/developers/plugins.md``), importable as
+``langslice.plugin_api``.
 
 A plugin is a Python module whose factory returns a list of :class:`ToolSpec`;
 this package loads it, gives its handlers a :class:`ToolContext` and makes each
