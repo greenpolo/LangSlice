@@ -47,18 +47,18 @@ launcher.
 
 ## Use LangSlice
 
-- **[Agents, CLI and MCP](docs/agents.md):** Claude Code, Antigravity or Codex
+- **[Agents, CLI and MCP](docs/agents/index.md):** Claude Code, Antigravity or Codex
   through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
 - **[ABBA](docs/abba.md):** register selected sections through the Fiji
   connector and review changes in ABBA.
-- **[Python](docs/library.md):** coding agents can open a job and write their
+- **[Python](docs/developers/library.md):** coding agents can open a job and write their
   own workflows using the same tools.
 
 [Registration tools](docs/registration.md) ·
-[Tool plugins](docs/plugins.md) ·
+[Tool plugins](docs/developers/plugins.md) ·
 [File formats](docs/reference/file_formats.md) ·
-[Architecture](docs/architecture.md) ·
+[Architecture](docs/developers/architecture.md) ·
 [Full documentation](https://langslice.readthedocs.io)
 
 ## Citation and license

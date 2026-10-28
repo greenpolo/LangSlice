@@ -1,6 +1,6 @@
 """Tool plugins, the core's part: the data types and the registry of loaded plugins.
 
-A tool plugin adds tools to a job's toolbox at run time (``docs/plugins.md``).
+A tool plugin adds tools to a job's toolbox at run time (``docs/developers/plugins.md``).
 This module holds what the lower layers must know about one: the declaration
 of a tool (:class:`ToolSpec`), what its handler returns (:class:`ToolResult`),
 the layer a tool leaves on a section (:class:`Layer`), the one error a tool
@@ -82,7 +82,7 @@ class PluginError(ValueError):
 
 @dataclass(frozen=True, eq=False)
 class ToolSpec:
-    """One tool a plugin adds (``docs/plugins.md``).
+    """One tool a plugin adds (``docs/developers/plugins.md``).
 
     ``stub`` is a function whose signature is the tool's arguments and whose
     docstring is its description, written like the stubs of

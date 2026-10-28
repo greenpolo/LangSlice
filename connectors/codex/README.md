@@ -3,7 +3,7 @@
 Skills for the main session and two custom agents that register one brain:
 `register` works only through LangSlice's MCP tools (`langslice mcp`), and
 `register_scripting` works through the shell, the `langslice-job` command line
-([`docs/agents.md`](../../docs/agents.md)) and the Python library. Install the
+([`docs/agents/cli.md`](../../docs/agents/cli.md)) and the Python library. Install the
 supplied skill, agent and rule files and the MCP server entry directly; this
 folder contains no plugin package.
 
@@ -81,7 +81,7 @@ wants the agent to write scripts.
   finishes with `submit`.
 - `register_scripting`'s launch message holds the same job statement, the
   user's notes, the status table and the opening pictures listed as saved
-  files ([`docs/agents.md`](../../docs/agents.md)). `AGENTS.md` in the job folder
+  files ([`docs/agents/cli.md`](../../docs/agents/cli.md)). `AGENTS.md` in the job folder
   is its reference card. Create the job with `init --viewer codex`, so these
   pictures are sized for Codex's `view_image` (2048 px).
 

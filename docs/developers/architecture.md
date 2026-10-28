@@ -34,7 +34,7 @@ argument declarations. Tasks remove whole registration tools, a job's
 `disabled` list removes single tools and options, and viewing and image
 tools remain available otherwise. Model-facing text that names a tool or an
 option is written with what it needs (`core/needs.py`) and rendered for the
-job. See [registration](registration.md).
+job. See [registration](../registration.md).
 
 A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
 whose tools join the toolbox. `core/plugins.py` holds the plugin types and the
@@ -53,7 +53,7 @@ back. Source images remain immutable. Processes
 share a file lock and reload changed state before calls; a read never waits
 for the lock and reads the state as last saved. The agent CLI's calls
 on one job folder are answered by that folder's warm process
-(`doors/cli/warm.py`, [details](agents.md#the-warm-process)): it loads the
+(`doors/cli/warm.py`, [details](../agents/cli.md#the-warm-process)): it loads the
 libraries and the atlas once and forks a child per call, which runs the cold
 call's code as a process of its own. Long operations
 compute outside the lock, then validate their inputs before applying;
@@ -61,7 +61,7 @@ conflicting section results are refused as `STALE_INPUT`.
 
 `submit` validates the enabled tasks and writes the QuickNII and VisuAlign
 exports; the per-section maps are written only by `export_maps` (CLI and
-Python), with or without submission. The [file contract](reference/file_formats.md)
+Python), with or without submission. The [file contract](../reference/file_formats.md)
 is independent of which interface produced the registration.
 
 ## Fiji connector and worker
@@ -69,7 +69,7 @@ is independent of which interface produced the registration.
 The Java plugin in `connectors/fiji/` targets ABBA 0.24 on Java 21. It exports
 calibrated section snapshots and launches `langslice serve --stdio` in the
 selected Python environment. The worker starts no JVM. Installation and
-user workflow are in [ABBA](abba.md).
+user workflow are in [ABBA](../abba.md).
 
 Protocol version 1 uses one JSON object per line. Requests have `id`,
 `method`, `params`; responses carry the same `id` and `type` of `event`,
@@ -147,6 +147,6 @@ reviewed by looking at them.
 Image correctness requires inspecting raw output and fitted anatomy, not
 only metrics.
 
-[Agent traces](agents.md#logs-and-credentials) record calls and results.
+[Agent traces](../agents/builtin.md#logs-and-credentials) record calls and results.
 `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` additionally writes redacted ADK request
 captures. Credentials belong to user settings, not job or ABBA project files.

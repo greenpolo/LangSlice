@@ -1,6 +1,6 @@
 """A small tool plugin on synthetic data: one read tool and two write tools.
 
-It is the example ``docs/plugins.md`` points to and what the plugin tests load
+It is the example ``docs/developers/plugins.md`` points to and what the plugin tests load
 (``tests.fixtures.example_plugin:tools``). ``section_brightness`` reads each
 section's image and says how bright it is; ``nudge_sections`` writes an
 in-plane shift through the context, so it is one undo step and obeys what the
