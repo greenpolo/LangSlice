@@ -46,10 +46,6 @@ from langslice.job.layout import (
 POLL_S = 0.25
 #: A job whose files changed this recently is Running.
 RECENT_S = 30.0
-#: Another recent-jobs file, or ``off`` for none (the job layer's setting,
-#: ``job/recent.py``, read the same way here).
-RECENT_ENV = "LANGSLICE_RECENT_JOBS"
-_OFF = frozenset({"", "0", "off", "false", "no", "none"})
 #: The tools whose call is no undo step (``core.toolset`` kind ``read``); any
 #: other (a write, a plugin tool, a tool of an older version) may be one.
 _READS = frozenset(name for name, tool in TOOLS.items() if tool.kind == "read")
@@ -63,17 +59,6 @@ MAX_TEXT = 60_000
 MAX_ARGS = 2048
 #: The trace record kinds the viewer reads (LangSlice's own agent trace).
 _TRACE_KINDS = {"session", "model", "summary", "error", "spend"}
-
-
-def recent_jobs_file() -> Path | None:
-    """The recent-jobs file (``~/.langslice/recent_jobs.jsonl``, or
-    ``LANGSLICE_RECENT_JOBS``), or None when that setting turns it off."""
-    value = os.environ.get(RECENT_ENV)
-    if value is None:
-        return Path.home() / ".langslice" / "recent_jobs.jsonl"
-    if value.strip().lower() in _OFF:
-        return None
-    return Path(value).expanduser()
 
 
 class _Tail:
@@ -361,9 +346,12 @@ class JobWatcher:
             self._append({"kind": "note", "text": "Job reopened" if record.get("resumed")
                           else "Job opened", "at": at})
         elif kind == "script_write":
+            # library.ScriptContext: the properties written, on which sections.
+            what = ", ".join(str(p) for p in _list(record.get("property")))
+            words = _sections_words([str(s) for s in _list(record.get("sections"))])
             self._append({"kind": "note", "at": at,
-                          "text": "A script wrote to the job"
-                          + (f" ({record['tool']})" if record.get("tool") else "")})
+                          "text": "A script wrote " + (what or "to the job")
+                          + (f" ({words})" if words else "")})
         elif kind == "plugins":
             self._append({"kind": "note", "at": at, "text": "Tool plugins loaded"})
 

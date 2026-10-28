@@ -229,9 +229,7 @@ def test_pictures_named_by_a_path_outside_the_folder_are_refused(tmp_path: Path)
     assert watcher.picture(1) is None
 
 
-def test_the_job_list_reads_given_folders_and_recent_jobs(tmp_path: Path,
-                                                          monkeypatch: pytest.MonkeyPatch
-                                                          ) -> None:
+def test_the_job_list_reads_given_folders_and_recent_jobs(tmp_path: Path) -> None:
     given = _job(tmp_path)
     other = tmp_path / "other" / "langslice"
     shutil.copytree(given, other)
@@ -245,12 +243,6 @@ def test_the_job_list_reads_given_folders_and_recent_jobs(tmp_path: Path,
         (0, given, True), (1, other, False)]
     assert listing[1]["name"] == "other"
     assert jobs.get(1) is not None and jobs.get(2) is None
-    monkeypatch.setenv(watch.RECENT_ENV, "off")
-    assert watch.recent_jobs_file() is None
-    monkeypatch.setenv(watch.RECENT_ENV, str(recent))
-    assert watch.recent_jobs_file() == recent
-    monkeypatch.delenv(watch.RECENT_ENV)
-    assert watch.recent_jobs_file() == Path.home() / ".langslice" / "recent_jobs.jsonl"
 
 
 def test_a_truncated_file_starts_the_watch_over(tmp_path: Path) -> None:
