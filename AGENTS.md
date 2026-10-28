@@ -25,7 +25,7 @@ and CI) with no exceptions: a violation is fixed by moving code.
 | `doors/` | one declaration per verb feeds the native agent tools (`tools/`), MCP (`mcp/`), the agent CLI and the other commands (`cli/`), the engine contract and worker (`api/`), and the library (`library.py`) | `doors/CLAUDE.md` |
 | `agent/` | the ADK driver of `langslice linear run` | `agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth`, `none`; no task logic | |
-| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `serve` commands, the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
+| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `gui` / `serve` commands, the LangSlice window (`gui/`), the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
 
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.24, which starts `langslice serve
@@ -85,14 +85,15 @@ and `environment.yml` hold the worker's source installation.
   plans or history. Do not document or commit `_local/`, `references/`, `out/`
   or `archive/`.
 - Debug output: `langslice linear run` writes a full-content JSONL trace of
-  agent sessions to `--trace-dir`, else `LANGSLICE_TRACE_DIR`, else
-  `<job folder>/trace`;
+  agent sessions to `<job folder>/trace`, and the same file to `--trace-dir`,
+  else `LANGSLICE_TRACE_DIR`, when one is set; every tool call on every door
+  is a `tool_start` / `tool_end` line in `<job folder>/logs/events.jsonl`;
   `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` writes redacted ADK request captures.
 
 ## Docs
 
 `docs/` (built by Sphinx with MyST, `docs/conf.py`, warnings are errors): `index.md`, `agents.md`,
-`abba.md`, `registration.md`, `library.md`, `plugins.md`, `file_formats.md`,
+`abba.md`, `gui.md`, `registration.md`, `library.md`, `plugins.md`, `file_formats.md`,
 `architecture.md`.
 
 ## Environment and checks

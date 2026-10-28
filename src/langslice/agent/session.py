@@ -14,6 +14,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import aclosing
+from pathlib import Path
 from typing import Any, cast
 
 from google.adk.agents import LlmAgent
@@ -192,6 +193,8 @@ async def run_agent_session(
     background: Callable[[], list[Any] | None] | None = None,
     plugins: list[dict[str, Any]] | None = None,
     spend: SpendMonitor | None = None,
+    on_spend: Callable[[SpendMonitor], None] | None = None,
+    trace_mirror: str | Path | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -200,6 +203,11 @@ async def run_agent_session(
     it has spent: *spend* (a :class:`~langslice.agent.spend.SpendMonitor`,
     made from the agent's model when not given) only warns the operator, through
     *progress*, the live ``spend`` event and the trace, never the model.
+    *on_spend* is called with it after every model call it counted (the
+    engine keeps ``exports/spend.json`` current through it).
+
+    *trace_mirror* is the job folder's ``trace/``: the trace is written there
+    too when it goes to another folder (:func:`~langslice.agent.trace.open_trace`).
 
     *background*, when the model ends its turn without submitting: waits
     for the job's background work still running and returns what to say
@@ -215,7 +223,7 @@ async def run_agent_session(
         max_llm_calls=0,
         streaming_mode=StreamingMode.SSE if live else StreamingMode.NONE,
     )
-    trace = open_trace(run_label, agent=agent, plugins=plugins)
+    trace = open_trace(run_label, agent=agent, plugins=plugins, mirror_dir=trace_mirror)
     if trace is not None and hasattr(agent.model, "capture_usage_details"):
         cast(Any, agent.model).capture_usage_details = True
     app = App(
@@ -252,6 +260,11 @@ async def run_agent_session(
         elif quota:
             line += f"; quota {quota}"
         (progress or logger.info)(f"[tokens] {line}")
+        if on_spend is not None:
+            try:
+                on_spend(spend)
+            except Exception:
+                logger.warning("Spend observer failed", exc_info=True)
         if live is not None:
             live.emit("usage", tokens=tokens.as_dict())
         for warning in warnings:

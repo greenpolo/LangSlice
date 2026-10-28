@@ -58,7 +58,7 @@ from langslice.core.discovery import discover_slices
 from langslice.core.frozen import FROZEN
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_KNOBS, ROTATIONS, SliceState, StackState
-from langslice.job import formats
+from langslice.job import formats, recent
 from langslice.job import registrations as regs
 from langslice.job.background import SECTION_BUSY, BackgroundWork, in_worker
 from langslice.job.checkpoint import (
@@ -724,7 +724,8 @@ class Job:
         A folder holding the job of another image folder is refused
         (``ValueError``). ``job.json`` gets this spec, then the checkpoint
         is resumed (``spec.resume``) or the folder ingested, and the first
-        checkpoint written. A resumed job
+        checkpoint written; the open is a line of ``logs/events.jsonl`` and
+        of the recent jobs list (:mod:`langslice.job.recent`). A resumed job
         keeps its undo history; a fresh one starts without one (a history
         left by an earlier job here is emptied). A job folder or checkpoint
         of another format (a newer LangSlice's, or an older pre-release's) is
@@ -788,6 +789,7 @@ class Job:
                 job._save_history()
             job.checkpoint()
         layout.log_event("open", resumed=resumed)
+        recent.remember(layout.folder, images, spec.atlas)
         return job
 
     @classmethod

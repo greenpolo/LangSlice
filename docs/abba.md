@@ -91,7 +91,7 @@ mode, closing the window disconnects live updates; the MCP job continues
 independently. Save with ABBA's normal Save command. Saved registrations
 reopen without LangSlice installed.
 
-**Show agent log** displays activity. Every run keeps its full agent trace
+**Show agent log** displays activity. The [LangSlice window](gui.md) (`langslice gui`) shows the same run from its job folder. Every run keeps its full agent trace
 in the job folder's `trace/`, as `langslice linear run` does. **Open agent viewer** is available when ABBA was launched with
 `langslice abba`. That optional command starts ABBA from Python and needs
 the connector jar (`--connector-jar` or `LANGSLICE_CONNECTOR_JAR`) and Java

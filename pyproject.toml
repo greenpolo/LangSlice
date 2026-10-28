@@ -90,7 +90,7 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["core/atlas/*.json", "hosts/integrations/static/*"]
+langslice = ["core/atlas/*.json", "hosts/integrations/static/*", "hosts/gui/static/*"]
 
 # The layered core's dependency rule (docs/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs

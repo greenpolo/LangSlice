@@ -23,12 +23,14 @@ without an id. Inside::
     views.seq            the picture and call numbers handed out (+ views.seq.lock)
     exports/             linear_results.json, spend.json (the agent run's spend),
                          a host's result.json, quicknii.json and visualign.json
-    logs/                events.jsonl (opens), runs/ (the agent CLI's
-                         background runs), calls.jsonl (the agent CLI's calls),
+    logs/                events.jsonl (opens, plugins, every tool call's
+                         tool_start / tool_end on every door), runs/ (the agent
+                         CLI's background runs), calls.jsonl (the agent CLI's calls),
                          calls/ (each call's envelope), launches/ (the exact
                          launch prompts of `langslice-job FOLDER launch`)
     prompt.txt           a saved ABBA job's copy prompt
-    trace/               agent transcripts: LangSlice's own agent's trace, and
+    trace/               agent transcripts: LangSlice's own agent's trace (also
+                         when --trace-dir sends it elsewhere), and
                          a coding agent's session copied in by its harness
                          plugin (langslice.doors.cli.transcripts)
     env/                 the job's own Python environment, made by

@@ -5,7 +5,10 @@ sets it for one run): :func:`open_trace` returns ``None`` and the session loop
 skips every call. When it is set, each session started by
 :func:`~langslice.agent.session.run_agent_session` appends one JSONL file,
 ``<trace_dir>/<run_label>_<8 hex>.jsonl``, with one record per event — enough
-to reconstruct what the agent was shown, said, called, and got back.
+to reconstruct what the agent was shown, said, called, and got back. A session
+given its job folder's ``trace/`` (``mirror_dir``) writes every record there
+too, line by line, when the trace folder is another (``--trace-dir``,
+``LANGSLICE_TRACE_DIR``), so the job folder always holds its run's trace.
 
 This is deliberately not
 :class:`~langslice.agent.plugins.RequestCapturePlugin`: that one records shapes
@@ -103,12 +106,18 @@ class SessionTrace:
     """Append-only JSONL record of one linear agent session."""
 
     def __init__(self, trace_dir: str | Path, run_label: str, *, agent: Any,
-                 plugins: list[dict[str, Any]] | None = None) -> None:
+                 plugins: list[dict[str, Any]] | None = None,
+                 mirror_dir: str | Path | None = None) -> None:
         self._steps = 0
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in run_label)
         # Same uuid trick as RequestCapturePlugin: concurrent sessions can share
         # a run label, and must not share a file.
         self.path = Path(trace_dir) / f"{safe}_{uuid.uuid4().hex[:8]}.jsonl"
+        #: Every file the trace is written to: :attr:`path`, then the same
+        #: name in *mirror_dir* when that is another folder.
+        self.paths = [self.path]
+        if mirror_dir is not None and not _same_folder(Path(mirror_dir), Path(trace_dir)):
+            self.paths.append(Path(mirror_dir) / self.path.name)
         instruction = getattr(agent, "instruction", "")
         self._write({
             "kind": "session",
@@ -125,12 +134,18 @@ class SessionTrace:
     def _write(self, record: dict[str, Any]) -> None:
         record["at"] = datetime.now().isoformat(timespec="seconds")
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, default=str) + "\n")
+            line = json.dumps(record, default=str) + "\n"
         except Exception:
-            # A debug trace must never take down a 40-section run.
-            logger.warning("Could not write trace record to %s", self.path, exc_info=True)
+            logger.warning("Could not encode a trace record", exc_info=True)
+            return
+        for path in self.paths:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(line)
+            except Exception:
+                # A debug trace must never take down a 40-section run.
+                logger.warning("Could not write trace record to %s", path, exc_info=True)
 
     def seed(self, message: types.Content) -> None:
         self._write({"kind": "seed", "parts": _describe_parts(message.parts)})
@@ -238,10 +253,20 @@ class SessionTrace:
         self._write(record)
 
 
+def _same_folder(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return a.absolute() == b.absolute()
+
+
 def open_trace(run_label: str, *, agent: Any,
-               plugins: list[dict[str, Any]] | None = None) -> SessionTrace | None:
-    """A trace for this session, or ``None`` when tracing is off."""
+               plugins: list[dict[str, Any]] | None = None,
+               mirror_dir: str | Path | None = None) -> SessionTrace | None:
+    """A trace for this session, or ``None`` when tracing is off; written to
+    *mirror_dir* too (the job folder's ``trace/``) when that is another folder."""
     trace_dir = env_value(TRACE_DIR_ENV)
     if trace_dir is None:
         return None
-    return SessionTrace(trace_dir, run_label, agent=agent, plugins=plugins)
+    return SessionTrace(trace_dir, run_label, agent=agent, plugins=plugins,
+                        mirror_dir=mirror_dir)

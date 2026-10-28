@@ -1,5 +1,8 @@
 """Read-only, local browser companion for the existing sanitized agent stream."""
 
+# The LangSlice GUI (hosts/gui) carries this server's headers, token and browser
+# lookup forward; this log stays as long as `langslice abba` opens it.
+
 from __future__ import annotations
 
 import json
