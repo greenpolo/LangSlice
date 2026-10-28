@@ -4,7 +4,7 @@ Package guide for `src/langslice/agent/`: the ADK driver that runs the
 linear agent environment, and the rules that environment follows. The
 repo-level `CLAUDE.md` holds the project-wide rules. `AGENTS.md` here is a
 verbatim copy — edit one, mirror to the other. The design this implements is
-`docs/registration.md`; this file is the map of the code, not a second spec.
+`docs/reference/tools.md`; this file is the map of the code, not a second spec.
 
 ## Where the linear method lives
 
@@ -228,7 +228,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields:
   the section's `damage_note` (shown in status and the statement) whether or
   not `mark_damage` is disabled; it does not make the section damaged, and it
   stays first in the note whatever the agent marks.
-- **`frozen`** (`--frozen JSON`; `core/frozen.py`, `docs/registration.md`):
+- **`frozen`** (`--frozen JSON`; `core/frozen.py`, `docs/reference/settings.md`):
   per section, which of `position`, `angles`, `orientation`, `affine`,
   `deformation` the agent may not change; `"*"` is every section. A frozen
   property keeps the value `inputs` supplies, else its "none" (a frozen

@@ -488,7 +488,7 @@ wording; `registry.py` lists which.
   spec has, less the ones its `disabled` list names. `verbs_for(spec)` is the
   per-spec table: `VERBS` plus one `Verb` per tool of the plugins in
   `spec.plugins` (its function the plugin's handler; `core/plugins.py`,
-  `docs/plugins.md`), which `enabled(spec)` reads;
+  `docs/developers/plugins.md`), which `enabled(spec)` reads;
   `VERBS` itself stays the native table (and without plugins `verbs_for` is
   `VERBS`). The gating (`when`):
   `look`, `zoom`, `make_image`, `grep_atlas`, `grep_atlas_view`,

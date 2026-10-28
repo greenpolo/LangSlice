@@ -132,7 +132,7 @@ before steps named their method has none and is read as one of these),
 `smoothness_um`, and for a stain fit `metric`, `edges` and `detail`; a step
 saved before these were recorded lacks them) and regions; a landmark
 application's `method` `landmark_triangulation`; a deformation a tool plugin
-wrote ([tool plugins](../plugins.md)), `{"method": "plugin:<tool>", "start": "linear" |
+wrote ([tool plugins](../developers/plugins.md)), `{"method": "plugin:<tool>", "start": "linear" |
 "current", "note"?, "settings"?}` (`current`: made on top of the deformation
 the section held, whose steps come first and whose record is its record's
 `parent`; `settings`: the call's, by the tool's names), whose record has the
@@ -489,7 +489,7 @@ pictures use `transport_snapshot` and subsequent zooms crop that snapshot.
 
 ## Plugin layers
 
-A tool plugin leaves layers on sections ([tool plugins](../plugins.md)), and so does a
+A tool plugin leaves layers on sections ([tool plugins](../developers/plugins.md)), and so does a
 script through `job.context` (as tool `script`). Each tool keeps
 its files under `plugins/<tool>/`; nothing else of the job is written by it.
 `plugins/<tool>/layers.json` is the manifest of every layer the tool ever made:

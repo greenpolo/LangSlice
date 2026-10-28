@@ -47,5 +47,5 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   service the Fiji connector starts). The protocol models, the runtime
   handlers, setup, saved ABBA jobs and the JVM-free snapshot worker
   (`abba_worker.py`, whose checkpoints carry the affine and warp rows) are
-  door-level, in `doors/api/`. `docs/architecture.md`,
+  door-level, in `doors/api/`. `docs/developers/architecture.md`,
   `docs/abba.md`.

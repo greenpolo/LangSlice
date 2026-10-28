@@ -34,7 +34,7 @@ argument declarations. Tasks remove whole registration tools, a job's
 `disabled` list removes single tools and options, and viewing and image
 tools remain available otherwise. Model-facing text that names a tool or an
 option is written with what it needs (`core/needs.py`) and rendered for the
-job. See [registration](../registration.md).
+job. See [tools and options](../reference/tools.md).
 
 A job can load [tool plugins](plugins.md): `JobSpec.plugins` names modules
 whose tools join the toolbox. `core/plugins.py` holds the plugin types and the

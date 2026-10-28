@@ -24,6 +24,9 @@ dependencies = [
     "scipy",
     "Pillow",
     "tifffile",
+    # Codecs for compressed TIFFs (LZW, Deflate, JPEG and others): tifffile
+    # reads them only through imagecodecs.
+    "imagecodecs",
     # Windowed and pyramid-level TIFF reads (langslice.core.native) go through
     # tifffile's zarr store; a deformation record's arrays are an OME-Zarr
     # store (langslice.core.deformable.ome_warp).

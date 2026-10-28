@@ -257,7 +257,7 @@ longer exist be taken over by the images it is opened with.
   lock: the next number, or the entry the registration already has)), `now`,
   `SCRIPT`. Read back, never derived from the state; undo leaves it.
 - `plugin_store.py` — what tool plugins keep in the job folder
-  (`docs/plugins.md`): `register_layer(layout, record, tool, call, layer,
+  (`docs/developers/plugins.md`): `register_layer(layout, record, tool, call, layer,
   persist=)` writes a layer's file under `plugins/<tool>/layers/`, lists it in
   the tool's manifest `layers.json` and puts its reference in the section's
   `layers` (the state: undo hides it, the files stay); `read_manifest`,

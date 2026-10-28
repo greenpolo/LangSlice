@@ -39,7 +39,7 @@ whose imports are core-only:
   Never model-facing; `tests/test_gui_generator.py` checks that every tool
   and option has one and no other name does, and that none appears in the
   pinned model-facing text. A new tool or option is a row here too;
-- `plugins.py` and `plugin_layers.py`: tool plugins (`docs/plugins.md`), the
+- `plugins.py` and `plugin_layers.py`: tool plugins (`docs/developers/plugins.md`), the
   core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
   `ToolError`, `PluginError`, `PLUGIN_API_VERSION`), `check_tool` (the
   one-line reasons a tool declaration is refused), `tool_def` (a plugin tool
@@ -194,8 +194,8 @@ the angles in a caption (empty for the flat plane).
   `PREVIEW_LONG_EDGE` (512, the working frame every fit is computed on).
   Every look is drawn at the same size, so no image moves geometry. Cached on
   the workspace (`render_cache`, `render_scale`): read, never mutate.
-- `section_images.py` — section images (`docs/registration.md`, "Section
-  images and damage"): one named grayscale picture of a section that `look`
+- `section_images.py` — section images (`docs/reference/tools.md`,
+  "`make_image`"): one named grayscale picture of a section that `look`
   draws and every fit reads. **Raw**: a plane of the file
   (`Workspace.section_channels`, `raw_plane` at the working copy's size),
   never edited. **Made**: `SliceState.images[name]` = `{"source": {"recipe":
