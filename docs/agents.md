@@ -393,18 +393,23 @@ has spent. Spend is reported to whoever runs LangSlice, never to the model:
   write) is warned at $5, $10, $20, $40 and so on, doubling. A model without a
   price in `agent/spend.py` is said so once, with no estimate.
 - Each warning also reaches the live event stream as a `spend` event (the ABBA
-  agent viewer shows it) and the trace as a `spend` record. The run's final
-  account is written to `exports/spend.json` in the job folder, also when the
-  session fails part-way, and is the `spend` field of the trace's `summary`
-  and of the `complete` event.
+  agent viewer shows it) and the trace as a `spend` record. The account so
+  far is written to `exports/spend.json` in the job folder after every model
+  call; the final account is written there when the session ends, also when
+  it fails part-way, and is the `spend` field of the trace's `summary` and of
+  the `complete` event.
 
 ## Logs and credentials
 
-The built-in agent always writes a JSONL trace: `--trace-dir`, then
-`LANGSLICE_TRACE_DIR`, then the job's `trace/` folder. It records model and
+The built-in agent always writes a JSONL trace to the job's `trace/` folder.
+`--trace-dir`, else `LANGSLICE_TRACE_DIR`, names a second folder: the same
+file is written there too, line by line as the run goes. It records model and
 tool events; images are described by type, size and byte count rather than
 embedded. MCP traces record calls and results, not the host model's private
-conversation. The agent CLI logs every call in `logs/calls.jsonl` (the verb,
+conversation. Every tool call on every door (the built-in agent, MCP, the
+agent CLI, a script) is a `tool_start` and a `tool_end` line in the job's
+`logs/events.jsonl` ([format](file_formats.md#events-logseventsjsonl)). The
+agent CLI logs every call in `logs/calls.jsonl` (the verb,
 its arguments as given, the outcome, an error's code and message, the
 artifacts, the seconds) and keeps each call's whole envelope, as printed, in
 `logs/calls/<n>_<verb>.json`, which the call's line names under `reply`, so a

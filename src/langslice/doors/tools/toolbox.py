@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import json
 import logging
 import threading
 import uuid
@@ -61,6 +62,8 @@ FAILED_STATUSES = ("error", "refused")
 
 #: Tools whose host display targets are the whole stack.
 _STACK_TOOLS = frozenset({"status", "undo", "redo", "submit"})
+#: The most bytes of a call's arguments a ``logs/events.jsonl`` line keeps.
+EVENT_ARGS_BYTES = 2048
 
 
 def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
@@ -91,9 +94,55 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
     return targets
 
 
+def _event_args(arguments: Any) -> dict[str, Any]:
+    """A call's arguments as a ``logs/events.jsonl`` line keeps them: as
+    given when their JSON is within :data:`EVENT_ARGS_BYTES`, else that
+    JSON cut to it, as a string, with ``args_truncated``."""
+    data = json.dumps(arguments, default=str, ensure_ascii=False).encode("utf-8")
+    if len(data) <= EVENT_ARGS_BYTES:
+        return {"args": arguments}
+    return {"args": data[:EVENT_ARGS_BYTES].decode("utf-8", "ignore"), "args_truncated": True}
+
+
+def _job_events(job: Job, door: str) -> LiveCallback:
+    """The job folder's sink for the toolbox's ``tool_start`` / ``tool_end``
+    events: one line each in ``logs/events.jsonl`` (``JobLayout.log_event``),
+    on every door, so a viewer in another process follows any run. A line
+    holds ``name``, ``execution_id``, ``door``, ``target_ids`` and ``args``
+    (:func:`_event_args`); ``tool_end`` adds ``step`` (the undo history's
+    depth after the call, as a saved picture's ``step``), ``views`` (the
+    pictures the call saved, relative to the job folder), ``failed`` and
+    ``status`` (the reply's status word, ``ok`` when it has none). Never the
+    reply or picture bytes. A job that writes nothing (``persist`` False, a
+    dry run) logs nothing."""
+
+    def log(event: dict[str, Any]) -> None:
+        if not job.persist:
+            return
+        kind = str(event.get("kind"))
+        fields: dict[str, Any] = {
+            "name": event.get("name"), "execution_id": event.get("execution_id"),
+            "door": door, "target_ids": list(event.get("target_ids") or []),
+            **_event_args(event.get("args") or {}),
+        }
+        if kind == "tool_end":
+            response = event.get("response")
+            status = response.get("status") if isinstance(response, dict) else None
+            fields.update(
+                step=len(job.undo_stack),
+                views=[job.layout.relative(path) for path in event.get("views") or []],
+                failed=bool(event.get("failed")),
+                status=str(status) if status is not None else "ok",
+            )
+        job.layout.log_event(kind, **fields)
+
+    return log
+
+
 def _serialized(
     tool: Any, lock: threading.Lock, *, state: StackState | None = None,
     on_event: LiveCallback | None = None,
+    log: LiveCallback | None = None,
     guard: Callable[[], contextlib.AbstractContextManager[Any]] | None = None,
 ) -> Any:
     """Serialize execution and its host notifications under the same lock.
@@ -102,23 +151,26 @@ def _serialized(
     identify the tool actually executing, including stable filenames resolved
     before a reorder. They never enter model context or change its schema.
     ``tool_end`` carries ``views``: the paths of the pictures the call saved
-    in the job folder (``job.views``), never their bytes.
+    in the job folder (``job.views``), never their bytes. Each event goes to
+    *on_event* (a host's live observer) and to *log* (the job folder's
+    ``logs/events.jsonl``, :func:`_job_events`).
     *guard* is entered inside the lock around the tool (the job's write
     lock and its reload of a state file changed on disk).
     """
     signature = inspect.signature(tool)
 
     def notify(event: dict[str, Any]) -> None:
-        if on_event is not None:
-            try:
-                on_event(event)
-            except Exception:
-                logger.warning("Tool execution observer failed", exc_info=True)
+        for observer in (on_event, log):
+            if observer is not None:
+                try:
+                    observer(event)
+                except Exception:
+                    logger.warning("Tool execution observer failed", exc_info=True)
 
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
         with lock, (guard() if guard is not None else contextlib.nullcontext()):
-            if on_event is None:
+            if on_event is None and log is None:
                 return tool(*args, **kwargs)
             fields: dict[str, Any] = {"name": tool.__name__, "execution_id": uuid.uuid4().hex}
             try:
@@ -433,6 +485,7 @@ def build_tools(
     scripting: bool = False,
     image_model_connected: bool = True,
     door: str = "agent",
+    event_door: str | None = None,
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
@@ -457,11 +510,14 @@ def build_tools(
     one: no ``trace_borders``, ``submit`` not waiting for traces. The spec
     itself is left as it is. *door* is who reads the declarations
     (``agent``, ``mcp``, ``cli``: :data:`langslice.doors.declarations.DOORS`).
+    *event_door* is the door the job folder's ``logs/events.jsonl`` names
+    for every call (None: *door*; the library's is ``library``).
 
     Every tool is wrapped, innermost first: the opening-read gate (writes),
     the strict argument check, the stale-deformation sweep, the picture
     saving (``pictures``), the background-work notices at the head of the
-    reply, and the serialization lock with the host events.
+    reply, and the serialization lock with the host events (to *on_event*
+    and to the job folder's ``logs/events.jsonl``).
 
     A job whose spec names tool plugins (``spec.plugins``) gets their tools
     after the native ones: declared from their own stubs, their bodies run
@@ -536,6 +592,7 @@ def build_tools(
         box.plugins = provenance.records(variant)
         provenance.record(job, box.plugins)
     lock = threading.Lock()
+    log = _job_events(job, event_door or door)
 
     def behind_gate(name: str, tool: Any) -> Any:
         """A write behind the door's opening-read gate (armed by MCP only)."""
@@ -553,7 +610,7 @@ def build_tools(
             _announces_work(_saves_views(after_write(
                 name, _strict(behind_gate(name, declare(name, bodies[name], variant)))),
                 job, ctx), job),
-            lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
+            lock, state=state, on_event=on_event, log=log, guard=functools.partial(guarded, name))
         for name in enabled(spec, scripting=scripting, image_model=image_model_connected)
     ]
     return box

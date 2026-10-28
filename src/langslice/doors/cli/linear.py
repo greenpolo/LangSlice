@@ -288,7 +288,8 @@ def add_trace_argument(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="PATH",
         help="Write a full-content JSONL trace here. Overrides LANGSLICE_TRACE_DIR "
-        "(linear run without either: <job folder>/trace)",
+        "(linear run also writes it to <job folder>/trace, and only there without "
+        "either)",
     )
 
 
