@@ -89,7 +89,7 @@ untouched.
 | `plugins`, `plugin_config` | [Tool plugins](plugins.md) to add to the job's toolbox: `module:factory` references, factory functions defined at module level, or `ToolSpec` objects; options for a factory by reference. Loading runs their code. The references are saved with the job, so reopening it loads the same plugins |
 
 Set `tasks` explicitly for a job that must determine positions. The library
-default is `transform,nonlinear`, or just `nonlinear` when every section has
+default is `transform,nonlinear`, or `nonlinear` alone when every section has
 a supplied transform. Other `JobSpec` fields can be passed as keywords,
 such as `position={"interval_um": 100}`. Passing a `JobSpec` as the first
 argument uses it directly; only `image_model`, `atlas_loader` and `emit`
