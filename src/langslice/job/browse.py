@@ -9,7 +9,10 @@ inside the job folder:
   and a symlink pointing out of the folder are both refused
   (:class:`PathRefused`);
 * a walk never follows a symlink out of the folder, and skips its target;
-* a binary file is described (its kind and size), never dumped.
+* a binary file is described (its kind and size), never dumped;
+* ``trace/`` (:data:`HIDDEN`, the agent transcripts) is left out of every
+  listing and search, and a path under it is refused (:class:`PathRefused`):
+  it would only show the agent its own transcript.
 
 The caps keep one answer a small part of a tool reply (the reply budget,
 :data:`langslice.doors.tools.reply.REPLY_BYTES`, is far larger).
@@ -24,6 +27,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from langslice.job.layout import TRACE_DIR
+
 #: Entries one listing shows; the rest are counted.
 LIST_ENTRIES = 200
 #: Matches one search shows; the rest are counted.
@@ -37,6 +42,9 @@ TEXT_BYTES = 60_000
 LINE_CHARS = 400
 #: A file larger than this is not searched.
 SEARCH_FILE_BYTES = 8_000_000
+
+#: Folders of the job folder's top level these tools never show or open.
+HIDDEN = frozenset({TRACE_DIR})
 
 PICTURE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".bmp"})
 
@@ -70,7 +78,8 @@ def _missing(root: Path, text: str, candidate: Path) -> PathMissing:
     if root not in nearest.parents and nearest != root:
         nearest = root
     try:
-        names = sorted(nearest.iterdir(), key=lambda p: (not p.is_dir(), p.name))
+        names = sorted((p for p in nearest.iterdir() if not is_hidden(root, p)),
+                       key=lambda p: (not p.is_dir(), p.name))
     except OSError:
         names = []
     holds = [p.name + ("/" if p.is_dir() else "") for p in names[:NEAREST_NAMES]]
@@ -94,6 +103,15 @@ def root_of(folder: Path) -> Path:
     return Path(os.path.realpath(folder))
 
 
+def is_hidden(root: Path, path: Path) -> bool:
+    """Whether *path* (its real path) lies in one of the :data:`HIDDEN` folders of *root*."""
+    try:
+        parts = Path(os.path.realpath(path)).relative_to(root).parts
+    except ValueError:
+        return False
+    return bool(parts) and parts[0] in HIDDEN
+
+
 def resolve(folder: Path, path: str = ".") -> Path:
     """*path* resolved inside *folder*; :class:`PathRefused` when it leaves it
     (``..``, an absolute path elsewhere, a symlink pointing out) or does not exist."""
@@ -106,6 +124,9 @@ def resolve(folder: Path, path: str = ".") -> Path:
     resolved = Path(os.path.realpath(candidate))
     if resolved != root and root not in resolved.parents:
         raise PathRefused(f"'{text}' is outside the job folder; only files inside it can be read.")
+    if is_hidden(root, resolved):
+        raise PathRefused(f"'{text}' is in {TRACE_DIR}/, the agent transcripts, which these "
+                          "tools do not open.")
     if not resolved.exists():
         raise _missing(root, text, resolved)
     return resolved
@@ -143,18 +164,21 @@ def kind_of(path: Path) -> str:
 
 
 def _inside(root: Path, path: Path) -> Path | None:
-    """The real path of *path* when it stays inside *root*, else None."""
+    """The real path of *path* when it stays inside *root* and out of its
+    :data:`HIDDEN` folders, else None."""
     real = Path(os.path.realpath(path))
+    if is_hidden(root, real):
+        return None
     return real if real == root or root in real.parents else None
 
 
 def walk(folder: Path, start: Path) -> Iterator[Path]:
     """Every file under *start* (sorted, depth first) as a path under the folder,
-    skipping symlinks that leave the job folder and never descending a symlinked
-    directory."""
+    skipping symlinks that leave the job folder or enter a :data:`HIDDEN`
+    folder, never descending a symlinked directory or a hidden one."""
     root = root_of(folder)
     for current, dirs, files in os.walk(start, followlinks=False):
-        dirs.sort()
+        dirs[:] = sorted(name for name in dirs if not is_hidden(root, Path(current) / name))
         base = Path(current)
         for name in sorted(files):
             path = base / name
@@ -233,7 +257,7 @@ def search(folder: Path, start: Path, query: str, glob: str = "",
             continue
         if real.suffix.lower() in PICTURE_SUFFIXES or not real.is_file():
             continue
-        if root != real and root not in real.parents:
+        if (root != real and root not in real.parents) or is_hidden(root, real):
             continue
         try:
             if real.stat().st_size > SEARCH_FILE_BYTES or not is_text(real):

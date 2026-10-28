@@ -166,7 +166,7 @@ a different `frozen` is refused like one resumed with other `inputs`.
 | `grep_atlas` | Find region acronyms, names and ids; with `points`, the region drawn at given points of saved pictures |
 | `grep_atlas_view` | Show the atlas with only the selected regions' borders |
 | `status` | Read placements, settings, constraints and pending work |
-| `list_files`, `search_files`, `read_file` | Inspect the job folder (`list_files(path, glob)`, `search_files(query, path, glob)`; a path that does not exist is `NOT_FOUND`, naming the nearest folder above it and what it holds) |
+| `list_files`, `search_files`, `read_file` | Inspect the job folder (`list_files(path, glob)`, `search_files(query, path, glob)`; a path that does not exist is `NOT_FOUND`, naming the nearest folder above it and what it holds). `trace/`, the agent transcripts, is left out of listings and searches, and a path under it is refused (`BAD_PATH`). A picture file is answered with its picture-index entry, never pixels, and how to see it again: `zoom` by its number, or, in a job without `zoom`, the `look` call that draws a `look` picture's view again on the stack as it is now |
 
 Every picture is numbered, captioned and saved. `zoom(picture=N,
 box=[x0,y0,x1,y1])` redraws its selected area; omitting `picture` uses the
