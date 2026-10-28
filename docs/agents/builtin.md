@@ -26,50 +26,36 @@ An optional image model has its own provider setting and credentials.
 
 Claude models run in `langslice linear run` through the Anthropic API:
 `--model anthropic-api/<model id>` (install the extra with
-`pip install -e ".[anthropic]"`). The key is `ANTHROPIC_API_KEY`, else the
-file `~/.langslice/anthropic_api_key`. `--reasoning` sets Claude's
+`pip install -e ".[anthropic]"`). The key is `ANTHROPIC_API_KEY` (a key
+saved in the LangSlice window's Settings is loaded as it), else the file
+`~/.langslice/anthropic_api_key`. `--reasoning` sets Claude's
 effort (`low`, `medium`, `high`, `xhigh`, `max`) with adaptive thinking whose
 summary is written to the run trace, and the system prompt and the newest
 message are marked for prompt caching.
 
 ## Job settings
 
-`langslice linear run --help` and `langslice-job schema init` are the complete
-flag reference. The main choices are:
+Every job setting, with its flag, default and when to change it, is in
+[Job settings](../reference/settings.md); `langslice linear run --help` and
+`langslice-job schema init` are the complete flag reference.
+`langslice linear run` takes the same flags as `langslice-job FOLDER init`,
+and these of its own:
 
-| Setting | Flags |
+| Flag | What it does |
 |---|---|
-| Atlas and plane | `--atlas` (default `allen_mouse_25um`), `--plane` |
-| Tasks | `--tasks position,transform,nonlinear`; include only the tasks wanted |
-| Agent (`linear run` only) | `--model` (default `openai-oauth/gpt-6.1-sol`), `--reasoning` (OAuth default `medium`), `--no-debrief`, `--force-view` (change and fitting tools always return their picture), `--require-deformation` (Nonlinear: `submit` is refused until every section carries a deformation) |
-| Optional image model | `--image-provider openai-oauth\|openai-api\|gemini-api\|none`, `--image-model`, `--image-prompt FILE` (the base prompt `trace_borders` sends, in place of LangSlice's own) |
-| Calibration and section spacing | `--pixel-size-um`, `--thickness`, `--interval`, `--strict-interval` |
-| Supplied placement | `--registration`, or `--positions`, `--transforms`, `--orientation`, `--section-angles`, `--pitch`, `--yaw` |
-| Constraints and context | `--hemisphere-cue`, `--frozen`, `--damaged`, `--fact`, `--position-notes`, `--transform-notes`, `--nonlinear-notes` (the user's notes for a task, shown to the agent with it) |
-| Tools and options off | `--disable NAME[,NAME...]`: a tool (`zoom`) or `tool:option` (`look:positioning`, `interactive_transform:flip`); [valid names](../registration.md#switching-tools-and-options-off) |
-| Pictures | `--image-resolution low\|medium\|high\|auto`, `--preprocess auto\|none` |
-| Storage | `--job-dir`, `--out`, `--fresh` (`linear run`), `--trace-dir` (`linear run`, `mcp`) |
-| Watching (`linear run` only) | `--gui` opens the [LangSlice window](../developers/gui.md) on the job |
-
-`--pixel-size-um` is one number for every file, or a JSON mapping (inline or a file) of filenames to micrometres per pixel; a file it does not name reads its own TIFF/OME tags. `--thickness` and `--interval` are optional, in micrometres. Omit unknown
-values: the agent infers positions and spacing from anatomy and records
-estimates or uncertainty. Supplied values are advisory unless
-`--strict-interval` is enabled; that option requires `--interval`.
-
-Structured placement inputs take inline JSON or a JSON file. `--angles`
-lets the agent adjust cutting angles. A disabled task keeps the supplied
-answer and removes its tools; the [registration guide](../registration.md)
-explains these constraints. `init --notes TEXT` saves instructions for the
-agent with the job.
+| `--model` | The model that drives the run (default `openai-oauth/gpt-6.1-sol`). Without `--model`, the model chosen in the LangSlice window's Settings (`~/.langslice/settings.json`) is used, with its reasoning effort unless `--reasoning` is given; the run prints the model it took from there. |
+| `--reasoning` | Reasoning effort (OAuth default `medium`). |
+| `--no-debrief` | No closing call asking what tools the agent missed. |
+| `--out`, `--fresh` | Where the results JSON goes; start the job over. |
+| `--trace-dir` | A second folder for the run's trace (also `langslice mcp`). |
+| `--tool-plugin`, `--tool-plugin-config` | [Tool plugins](../developers/plugins.md). |
+| `--gui` | Opens the [LangSlice window](../developers/gui.md) on the job. |
 
 `--image-prompt FILE` replaces the base prompt `trace_borders` sends the
-image model for this job (`NonlinearSpec.image_prompt`, kept in the job's
-settings); `{plane}` in it becomes the section plane. Start from
-`langslice.default_prompt(provider, plane)`. It must describe the provider's
-attachment order: Image 1 the clean photograph and Image 2 the placed
-borders for the OpenAI providers, the other way round otherwise. The agent
-is shown it as the base it may edit per section, and its traces are recorded
-as an untested profile (`custom`).
+image model for this job; start from
+`langslice.default_prompt(provider, plane)`. The agent is shown it as the
+base it may edit per section, and its traces are recorded as an untested
+profile (`custom`).
 
 An interrupted job resumes from its checkpoint. Resuming with different
 supplied inputs is refused with `INPUTS_CHANGED`, and `init` with other job
@@ -132,7 +118,8 @@ image edits are not covered by these request retries.
 
 `langslice login` stores OAuth credentials in
 `~/.langslice/openai_auth.json`; `LANGSLICE_OPENAI_AUTH` overrides that path.
-LangSlice uses its own login. ABBA setup can also save API keys in
-`~/.langslice/provider_credentials.json`; explicit environment variables
-take precedence. Credential presence is checked offline when deciding
+LangSlice uses its own login. The LangSlice window's Settings and ABBA setup
+can also save API keys in `~/.langslice/provider_credentials.json` (the
+window also the Claude key, loaded as `ANTHROPIC_API_KEY`); explicit
+environment variables take precedence. Credential presence is checked offline when deciding
 whether to offer `trace_borders`.

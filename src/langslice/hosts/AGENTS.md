@@ -30,7 +30,9 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 - `gui/` — the LangSlice window (`langslice gui`, `linear run --gui`): a
   loopback page with the agent viewer, which learns everything by watching
-  job folders' files; read-only. Only `cli.py` imports it.
+  job folders' files; the viewer is read-only, and the Settings tab
+  (connections, run location, agent model) writes only the user's settings
+  and credentials. Only `cli.py` imports it.
   `gui/CLAUDE.md`, `docs/gui.md`.
 
 - `integrations/` — `abba_launch.py` (what `langslice abba` starts, and
