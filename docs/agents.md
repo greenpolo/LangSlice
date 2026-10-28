@@ -29,11 +29,10 @@ message are marked for prompt caching.
 
 ## Coding agents: `langslice-job`
 
-Initialize a job, read its brief, then choose tools from the live schema:
+Initialize a job, then choose tools from the live schema:
 
 ```bash
 langslice-job sections/ init --tasks position,transform,nonlinear --viewer codex
-langslice-job sections/ brief
 langslice-job sections/ ops
 langslice-job sections/ schema look zoom fireants_syn
 langslice-job sections/ look --mode positioning
@@ -41,12 +40,24 @@ langslice-job sections/ look --mode positioning
 
 `FOLDER` can be the image folder or its job folder. `init` runs no agent.
 The job contains identical `AGENTS.md` and `CLAUDE.md` reference cards;
-`brief` writes `BRIEF.md` and returns the opening pictures as file paths, and
-writes `TOOLS.md` beside it: every verb of the job with its description and
+`init` writes `TOOLS.md` beside them: every verb of the job with its description and
 its arguments (type and default), the words `schema` gives as JSON, so an
 agent reads them once from a file instead of one `--help` per verb.
 `langslice-job FOLDER ops` lists the job's own verbs (`langslice-job ops`
 lists every verb).
+A registering agent's instructions are never in a command's output it reads
+itself: they are the message that launched it. `langslice-job FOLDER launch
+--role register|register-scripting` prints that message as `result.prompt`
+and saves the exact text in `logs/launches/<six-digit number>_<role>.md`; the
+main session passes it unchanged as the registration subagent's whole prompt.
+`register` (the MCP subagent) gets one line naming the job folder and
+`start_job`, then the job statement worded for MCP; `register-scripting` gets
+one line naming the folder, then the statement worded for the command line,
+whose opening paragraph lists the opening pictures (drawn and saved now as the
+job's opening views, each strip's text then the picture's path) in reading
+order. `launch` also writes `TOOLS.md`. Run it again for each launch: it
+reflects the job as it stands. The subagent's system prompt is one fixed text,
+the same for every job and for the built-in agent.
 The coding agent opens those pictures with its image reader and decides what
 to do next. Keep its scripts in the job's `scripts/` and other work in
 `scratch/`, and run them with `langslice-job FOLDER python scripts/NAME.py`.
@@ -239,7 +250,18 @@ names (its `langslice-job FOLDER ...` commands, `open_job(...)` calls and MCP
 copies the transcript into each one's `trace/<harness>_<session id>.jsonl`,
 beside the built-in agent's traces, inline image data replaced by its size.
 When the transcript submitted the job (a `submit` command, call or MCP tool
-call), the job's `env/` is removed (its package list kept). It never fails the session and prints `{}`.
+call), the job's `env/` is removed (its package list kept).
+
+Beside each copy it writes `trace/<harness>_<session id>.launch.json`: the
+agent's first user message compared with the job's saved launch prompts
+(`logs/launches/`). `verbatim` is true when it equals one (trailing whitespace
+aside); `launch` names that file, or the closest; `similarity` is difflib's
+ratio over the words; `first_difference` is the character index where they
+part (null when verbatim); `expected_chars` and `got_chars` are the lengths.
+It is `{"checked": false, "reason": ...}` when the job has no saved launch
+prompt or the transcript has no first user message that can be read (Claude
+Code's user records and Antigravity's `USER_INPUT` steps are read). It never
+fails the session and prints `{}`.
 
 Ready-made setups: [Claude Code](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-code/README.md),
 [Antigravity](https://github.com/greenpolo/LangSlice/blob/main/connectors/antigravity/README.md)
@@ -276,10 +298,15 @@ restart Desktop:
 Use the environment's `Scripts/langslice.exe` on Windows. The source
 environment includes MCP; a minimal pip installation needs the `mcp` extra.
 
-Create a job with `langslice-job FOLDER init`, then ask the host's agent to
-call `start_job(image_folder="/absolute/path/to/FOLDER")`. For a job prepared
-in ABBA, paste ABBA's copy prompt, which supplies `start_job(job_id=...)`.
-The agent must read every `show_stack(page=...)` page before writing.
+Create a job with `langslice-job FOLDER init`, then launch the host's agent
+with `langslice-job FOLDER launch --role register`'s `result.prompt`, which
+names the folder and holds the job statement. The agent calls
+`start_job(image_folder="/absolute/path/to/FOLDER")`; its reply says only that
+the job is open, its section count and the pages of its opening (the server's
+instructions are one short text, the same for every job). For a job prepared
+in ABBA, paste ABBA's copy prompt, which supplies `start_job(job_id=...)`; that
+call answers with the whole job statement, as that path has no launching
+message. The agent must read every `show_stack(page=...)` page before writing.
 Tool replies include images directly; pages and replies have a size budget,
 and a reply reports when its images were reduced to fit.
 
@@ -296,7 +323,10 @@ langslice linear run sections/ --tasks position,transform,nonlinear --image-prov
 langslice linear run sections/ --registration quicknii.json
 ```
 
-One session handles the whole stack and ends at `submit`.
+One session handles the whole stack and ends at `submit`. Its system prompt
+is one short text, the same for every job (the coding-agent connectors use the
+same text); the job statement, the user's notes, the opening pictures and the
+status table are its first message.
 The default tasks are `position,transform`; `--registration` imports a linear
 placement and defaults to `nonlinear`. The agent chooses its sequence of
 tools, regions and fit settings. Nonlinear registration can fit to the stain

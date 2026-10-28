@@ -93,7 +93,7 @@ def _entry(**extra: Any) -> dict[str, Any]:
 
 def _seed_sections(state: Any, ctx: Any) -> list[Image.Image]:
     """The opening strip(s), and each section's tile as the strip draws it."""
-    parts = build_seed_message(state, ctx).parts or []
+    parts = build_seed_message(state, ctx, "The job.").parts or []
     strips = [Image.open(io.BytesIO(p.inline_data.data)) for p in parts if p.inline_data]
     _count, tile = strip_layout(image_limit(ctx)[0], opening_edge(ctx))
     assert strips[0].width == len(state.slices) * tile + (len(state.slices) - 1) * COLUMN_GAP

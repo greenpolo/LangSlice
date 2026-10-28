@@ -11,8 +11,8 @@ every door is generated from them and from the registry (`ops/registry.py`:
 | Door | Built by | Driver |
 |---|---|---|
 | agent tools (ADK) | `tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent (`agent/`) |
-| MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job` | Claude Desktop, Claude Code locked to it |
-| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `brief`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`cli/warm.py`) | Claude Code, Antigravity, Codex |
+| MCP tools | the same toolbox (`mcp/server.py`, `door="mcp"`), plus the door's `start_job` and `show_stack`; `readOnlyHint` on the read verbs; `trace_borders` only when the job's image model is connected (`jobs.image_model_off`); every reply within `tools.reply.REPLY_BYTES`; the opening-read gate armed by `start_job`, whose reply is a short fact (the job's own statement comes in the launching message, `cli/launch.py`) | Claude Desktop, Claude Code locked to it |
+| agent CLI (`langslice-job`) | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verb `export_maps`, `launch`, `env` and `python SCRIPT`; each call answered by the job's warm process when it is up (`cli/warm.py`) | Claude Code, Antigravity, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `job.context` (`ScriptContext`) for a method of the script's own | a script |
 
 A job whose spec names tool plugins (`JobSpec.plugins`) has their tools after
@@ -155,18 +155,20 @@ process forks for it, `cli/warm.py`).
   `look` takes `layers` on every job (plugins and scripts leave them; dropped
   without the `section` and `overlay` modes).
 - `statement.py` — the job statement every door gives a registration agent:
+  `SYSTEM_PROMPT` (the ADK agent's system prompt, the same for every job and
+  naming no tool a job can switch off; the statement is its first message; the connectors' agent files carry the same text, `tests/test_connector_agents.py`),
   `job_statement(spec, state, ctx, door=, tool_names=, opening=, notes=,
   max_resolution=, image_model_off=, auto=)` (`agent.prompt.build_job_statement`
   worded for the door, the door's opening paragraph, `IMAGE_MODEL_OFF`
   (`image_model_off_text(disabled)`) when the image model is not connected,
   the user's notes, `status_and_notes`).
-  `opening_for_mcp` (the `show_stack` pages), `opening_for_cli` (the saved
-  picture files, `--dry-run`, `--background` for `long_verbs()`, parallel
+  `opening_for_mcp` (the `show_stack` pages), `opening_for_cli(folder, listing, ...)` (the
+  opening pictures' paths listed inline after each strip's text, `--dry-run`, `--background` for `long_verbs()`, parallel
   calls). `status_and_notes(state)` (the status table and the newest
   `RECENT_NOTES` run notes) is the ADK seed message's text too.
   `read_notes(layout)`: the user's notes, `job.json` `notes` (written by
   ABBA's Claude mode and `job FOLDER init --notes`), read by every door. `image_model_state(spec, connected=)`: the
-  image model as the CLI's `status` and `brief` report it.
+  image model as the CLI's `status` and `init` report it.
 - `jobs.py` — opening a job without the agent: `JobContext` (the workspace
   plus the job folder and results path; the driver's `EngineContext` adds
   the model), `find(path)` (a job folder, or the image folder beside one;
@@ -245,9 +247,9 @@ process forks for it, `cli/warm.py`).
   Python entry point and what a method returns, and to keep the agent's own
   files in `scripts/` and `scratch/` of the job folder, not `/tmp`; one line
   pointing a method of the agent's own to `help(job.context)`; first,
-  run `brief` and read `BRIEF.md`; under 90 lines, `tests/test_agent_cli.py`),
+  one sentence that a registering agent's job is the message `launch` makes; under 90 lines, `tests/test_agent_cli.py`),
   `write_card` (writes where missing or worded differently; never raises);
-  `TOOLS_FILE` (`TOOLS.md`, which the card names and `brief` writes).
+  `TOOLS_FILE` (`TOOLS.md`, which the card names and `init` / `launch` write).
   Written by every door that opens or makes a job.
 - `trace.py` — `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`), `HostTrace` (the MCP
   door's trace: one JSON line per record, images as descriptors; one file
@@ -318,7 +320,7 @@ process forks for it, `cli/warm.py`).
 - `mcp/` — the MCP server (`server.py`; `connectors/claude-desktop/`):
   `open_job` (the job opened as the engine does, the toolbox at
   `CLAUDE_MAX_VIEW_EDGE`, `trace_borders` only when the image model is
-  connected), `Session`, `briefing` and `opening_pages` (the opening strips
+  connected), `Session`, `mcp_statement` (the MCP-worded statement `start_job(job_id=)` returns and `launch` embeds), `briefing`, `opened_reply` (`start_job`'s short reply for a folder job; both arm the gate through `arm_opening`) and `opening_pages` (the opening strips
   at `CLAUDE_IMAGE_LIMIT`, each composed within a page's byte budget, paged
   under `PAGE_BYTES`, a strip and its text kept together), `save_page`,
   `result_blocks` (every reply through `fit_reply`; a shrunk reply says so),
@@ -429,13 +431,17 @@ process forks for it, `cli/warm.py`).
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other refusal
     3); `FIXES` per code; `stdout_to_stderr()` (stdout holds the envelope
     only).
-  - `brief.py` — `brief` (and `init`'s statement): `build(opened, pictures=)`
-    -> `Brief`: the statement for door `cli` (no gates, `auto` sizing),
-    the opening strips saved as the job's `opening` views (artifacts with
-    `index` and `label`), the facts (`viewer`, `resolution`, `image_model`),
-    all written to `BRIEF.md` (artifact `brief`); `write_tools`: `TOOLS.md`
-    (artifact `tools`), every verb of the toolbox as its run declares it
-    (`ToolBox.variant`, `catalog.tools_text`).
+  - `launch.py` — `launch --role register|register-scripting`: the exact
+    prompt that launches a registration subagent, `result.prompt`, saved by
+    `save` in `logs/launches/<six-digit number>_<role>.md` (artifact
+    `launch`). `mcp_prompt`: line + `mcp.server.mcp_statement` of the job
+    opened as the MCP server opens it (`ImportError` -> `MCP_MISSING`);
+    `cli_prompt(opened)` -> `Launch`: line + the statement for door `cli`
+    (no gates, `auto` sizing), the opening strips saved as the job's `opening`
+    views (artifacts with `index` and `label`) and listed in the prompt in
+    reading order; `facts` (`viewer`, `resolution`, `image_model`, also
+    `init`'s); `write_tools`: `TOOLS.md` (artifact `tools`), every verb of the
+    toolbox as its run declares it (`ToolBox.variant`, `catalog.tools_text`).
   - `catalog.py` — `ops` (the listed verbs: name, kind, group, summary,
     `long`; `JOB_COMMANDS`; with `args.job`, `FOLDER ops`, the job's own
     verbs declared for it), `tools_text` (`TOOLS.md`: per verb its summary,
@@ -452,7 +458,7 @@ process forks for it, `cli/warm.py`).
     plugin verbs are known only with it); a job
     that cannot be read answers `JOB_UNREADABLE`; a job command,
     `command_names()`, answers `command_entry`: summary, usage and `flags`,
-    `init`'s read off `job.init_parser` by `flags_table`). Both return the
+    `init`'s read off `job.init_parser` by `flags_table`, `launch`'s `--role`). Both return the
     envelope. `describe(name, folder)`: what `FOLDER NAME --help` answers,
     `schema NAME` declared for FOLDER's job when it has one.
   - `job.py` — `langslice-job FOLDER VERB`: `execute` (never raises; every
@@ -489,7 +495,7 @@ process forks for it, `cli/warm.py`).
     parser `init_parser`: the job flags of `linear run`, `--notes`,
     `--viewer`; `--registration`'s report under `result.registration`,
     `BAD_REGISTRATION` when the file cannot be read or places nothing),
-    `brief`, `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
+    `launch` (`launch --role ...`, parsed before the verb flags), `runs` (`runs [ID]`, `wait [ID]`: `--timeout`, default
     `background.WAIT_S` (30 s), then `run_answer`: the run's own envelope, or
     while it runs `ok` with its state, `waited_s`, a message and the command
     that waits again (exit 0), or `RUN_LOST`), and `env` (`jobenv.command`). `CHECKED_ONLY`:
@@ -522,7 +528,7 @@ process forks for it, `cli/warm.py`).
     `job_id` under any harness's tool name, `started_jobs`, `START_JOB`;
     through `jobs.find`), each given the transcript as
     `trace/<harness>_<session>.jsonl` with inline image data replaced by its
-    size (`slim`); a transcript that submitted (`SUBMIT_PATTERN`, or an MCP `submit`
+    size (`slim`) and beside it a launch check, `<harness>_<session>.launch.json` (`launch_check`: the first user message, `first_user_message`, against `logs/launches/*.md`: `verbatim`, `launch`, `similarity`, `first_difference`, lengths; or `checked: false`); a transcript that submitted (`SUBMIT_PATTERN`, or an MCP `submit`
     call, `MCP_SUBMIT` through `called`) also removes the job's `env/`. Never raises; prints `{}`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module, so

@@ -58,6 +58,6 @@ def test_opening_of_100_angled_sections_filters_the_volume_once(
         return real(*args, **kwargs)
 
     monkeypatch.setattr(oblique, "_spline_filter_threaded", counting)
-    seed = build_seed_message(state, ctx)
+    seed = build_seed_message(state, ctx, "The job.")
     assert any(part.inline_data is not None for part in seed.parts or [])
     assert len(calls) == 1

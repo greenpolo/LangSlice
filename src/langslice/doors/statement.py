@@ -2,7 +2,7 @@
 
 LangSlice's own agent (:mod:`langslice.agent.engine`), the MCP door
 (:mod:`langslice.doors.mcp.server`, ``start_job``) and the agent CLI
-(``langslice-job FOLDER brief``, :mod:`langslice.doors.cli.job`) give the
+(``langslice-job FOLDER launch``, :mod:`langslice.doors.cli.launch`) give the
 agent the same job: the statement :func:`langslice.agent.prompt.build_job_statement`
 words (job, run facts, one line per tool, constraints, method), the opening
 pictures (:func:`langslice.core.opening.opening_items`), the status table with
@@ -12,11 +12,11 @@ the recent run notes (:func:`status_and_notes`) and the user's notes
 What differs is only what each door must say differently, chosen by its
 name (``agent``, ``mcp``, ``cli``: :data:`langslice.doors.declarations.DOORS`):
 where the opening pictures are (the seed message; ``show_stack`` pages;
-picture files the ``brief`` command saved) and how a long call answers. The
-ADK agent gets the statement as its system instruction and the pictures and
-:func:`status_and_notes` as its first message; a host-owned door
-(:func:`job_statement`) gets everything as one text, the pictures delivered
-its own way.
+picture files the ``launch`` command saved) and how a long call answers. The
+ADK agent's system prompt is :data:`SYSTEM_PROMPT`, the same for every job;
+its first message is the statement, the user's notes, the pictures and
+:func:`status_and_notes`. A host-owned door (:func:`job_statement`) gets
+everything as one text, the pictures delivered its own way.
 """
 
 from __future__ import annotations
@@ -37,6 +37,15 @@ if TYPE_CHECKING:
 
 #: Said when the job's image model is not connected to LangSlice here,
 #: written with what it needs (:mod:`langslice.core.needs`).
+#: The registration agent's system prompt: true of every job, naming no tool a
+#: job can switch off; the job itself comes in the first message.
+SYSTEM_PROMPT = (
+    "You are an expert neuroanatomist registering one brain with LangSlice: a stack "
+    "of histology sections from one brain, placed in a BrainGlobe atlas. The first "
+    "message gives the job: what to do, the tools, and the facts about this stack and "
+    "atlas. Work the job with the tools and finish with `submit`."
+)
+
 _IMAGE_MODEL_OFF = (
     "[[?trace_borders The image-model tool (trace_borders) is off: no image model is "
     "connected to LangSlice (no key or login for this job's image provider).[[?fireants_syn  "
@@ -103,27 +112,26 @@ def opening_for_mcp(pages: int) -> list[str]:
     ]
 
 
-def opening_for_cli(folder: str, pictures: int | None,
+def opening_for_cli(folder: str, listing: list[str],
                     disabled: Collection[str] = (), spec: Any = None) -> list[str]:
     """The agent CLI's opening paragraph and how its commands behave.
 
-    *pictures* is how many opening pictures ``brief`` saved (None: not saved
-    yet; ``init`` says how to). *disabled* is the job's disabled list; *spec*
-    the job's, whose plugin tools are listed with the long ones."""
-    if pictures is None:
-        opening = (f"Opening pictures: `langslice-job {folder} brief` saves them as "
-                   "picture files; open every one before any write. ")
-    else:
-        opening = (f"Opening pictures: `brief` saved {pictures} picture files, listed in "
-                   "reading order under `artifacts` (kind `opening`) and in BRIEF.md "
-                   "with the text that goes with each; open every one before any write. ")
+    *listing* is the opening in reading order: each strip's text line, then
+    ``- <absolute path>`` of its picture file. *disabled* is the job's
+    disabled list; *spec* the job's, whose plugin tools are listed with the
+    long ones."""
+    opening = [
+        "Opening pictures, saved as files, in reading order, each after the text that "
+        "goes with it. " + OPENING_SHOWS, "", *listing, "",
+        "Open every one of these pictures before any write.",
+    ]
     if spec is not None:  # a verb the run does not have is not mentioned either
         from langslice.ops.registry import enabled, verbs_for
 
         run = set(enabled(spec, scripting=True))
         disabled = [*disabled, *(name for name in verbs_for(spec) if name not in run)]
     return [
-        opening + OPENING_SHOWS,
+        *opening,
         "",
         "Commands:",
         f"- Every tool is a command: `langslice-job {folder} TOOL --args '{{...}}'` (or "
@@ -201,7 +209,7 @@ def job_statement(
 
 
 def image_model_state(spec: JobSpec, *, connected: bool) -> dict[str, Any] | None:
-    """The job's image model as the status and the brief report it: the
+    """The job's image model as the status and ``init`` report it: the
     provider, whether it is connected here, whether ``trace_borders`` is
     offered (None without the nonlinear task)."""
     if not spec.has("nonlinear"):
@@ -212,7 +220,7 @@ def image_model_state(spec: JobSpec, *, connected: bool) -> dict[str, Any] | Non
 
 
 __all__ = [
-    "IMAGE_MODEL_OFF", "NOTES_KEY", "OPENING_SHOWS", "image_model_off_text",
+    "IMAGE_MODEL_OFF", "NOTES_KEY", "OPENING_SHOWS", "SYSTEM_PROMPT", "image_model_off_text",
     "image_model_state", "job_statement", "opening_for_cli", "opening_for_mcp", "read_notes",
     "status_and_notes", "user_notes_lines",
 ]

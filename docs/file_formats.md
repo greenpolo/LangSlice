@@ -26,17 +26,17 @@ A registration file can also be explicitly imported when creating a job.
   plugins/<tool>/       a tool plugin's own files and the layers it left (layers.json, layers/);
                         plugins/script/: the layers a script left through job.context
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
-                        calls/<n>_<verb>.json, each call's whole envelope as printed)
+                        calls/<n>_<verb>.json, each call's whole envelope as printed),
+                        launches/<n>_<role>.md (the exact launch prompts of `langslice-job FOLDER launch`)
                         and background runs, events.jsonl (job events,
                         a script_write line per write a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
                         env.lock, held while env/ is made
-  trace/                agent transcripts: the built-in agent's trace, a coding agent's session copied in by its harness plugin
+  trace/                agent transcripts: the built-in agent's trace, a coding agent's session copied in by its harness plugin, and its launch check (<harness>_<session>.launch.json)
   env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
   scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
   AGENTS.md, CLAUDE.md  the reference card for coding agents
-  BRIEF.md              the agent CLI's brief
-  TOOLS.md              every verb of the job with its description and arguments (written by brief)
+  TOOLS.md              every verb of the job with its description and arguments (written by init and launch)
 ```
 
 The job folder is `<images>/langslice/` unless `--job-dir` says otherwise (a

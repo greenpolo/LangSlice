@@ -154,6 +154,12 @@ def _mcp_md(label: str, tasks: list[str], folder: Path) -> str:
     return "\n".join(out)
 
 
+def _system_prompt_md() -> str:
+    from langslice.doors.statement import SYSTEM_PROMPT
+
+    return f"# System prompt: every job\n\n{SYSTEM_PROMPT}\n"
+
+
 def _statement_md(label: str, spec: Any, with_notes: bool = False) -> str:
     from langslice.agent.prompt import build_job_statement, display_facts
     from langslice.doors.statement import user_notes_lines
@@ -173,28 +179,43 @@ def _statement_md(label: str, spec: Any, with_notes: bool = False) -> str:
     return f"# Job statement: {label}\n\n{text}\n"
 
 
-def _cli_md(folder: Path) -> str:
-    """What the agent CLI gives a coding agent of a job: the job folder's
-    reference card (``AGENTS.md``) and the statement ``brief`` writes."""
+def _launch_images(folder: Path) -> Path:
     import dataclasses
 
-    from langslice.doors.card import card_text
-    from langslice.doors.cli.brief import build
     from langslice.doors.jobs import create
 
     images = folder.parent / "cli_images"
     if not images.exists():
         write_sections(images)
-    spec = dataclasses.replace(_specs(images)["auto"], resume=False)
-    opened = create(spec, atlas_loader=atlas_loader(), emit=lambda _m: None, door="cli")
+        spec = dataclasses.replace(_specs(images)["auto"], resume=False)
+        create(spec, atlas_loader=atlas_loader(), emit=lambda _m: None, door="cli").close()
+    return images
+
+
+def _cli_card_md(folder: Path) -> str:
+    """The job folder's reference card (``AGENTS.md``) the agent CLI gives a coding agent."""
+    from langslice.doors.card import card_text
+    from langslice.doors.jobs import open_folder
+
+    images = _launch_images(folder)
+    opened = open_folder(images, atlas_loader=atlas_loader(), persist=False, door="cli")
     try:
         card = card_text(opened.job.layout)
-        statement = build(opened, pictures=False).statement
     finally:
         opened.close()
-    norm = Normaliser(images)
-    return "\n".join(["# Agent CLI: reference card", "", norm.text(card), "",
-                      "# Agent CLI: brief statement", "", norm.text(statement), ""])
+    return "\n".join(["# Agent CLI: reference card", "", Normaliser(images).text(card), ""])
+
+
+def _launch_md(folder: Path, role: str) -> str:
+    """The launch prompt of *role* for the synthetic job: what a main session
+    passes on as the registration subagent's whole prompt."""
+    from langslice.doors.cli.job import execute
+
+    images = _launch_images(folder)
+    envelope = execute(str(images), "launch", ["--role", role], atlas_loader=atlas_loader())
+    assert envelope.ok, envelope.error
+    prompt = envelope.result["prompt"]
+    return "\n".join([f"# Launch prompt: {role}", "", Normaliser(images).text(prompt), ""])
 
 
 #: Scripted refusals on the synthetic three-section job (no fits). Each is
@@ -270,6 +291,7 @@ def _artifacts(folder: Path) -> dict[str, Callable[[], str]]:
             "host (forced pictures, one tool off, deformation required)", specs["host"]),
         "mcp_transform": lambda: _mcp_md("transform", ["transform"], folder),
         "mcp_position": lambda: _mcp_md("position", ["position"], folder),
+        "system_prompt": _system_prompt_md,
         "job_statement_default": lambda: _statement_md("all tasks", specs["full"], with_notes=True),
         "job_statement_position": lambda: _statement_md("positioning only", specs["position"]),
         "job_statement_known_position": lambda: _statement_md(
@@ -278,7 +300,9 @@ def _artifacts(folder: Path) -> dict[str, Callable[[], str]]:
             "position and angles frozen, tools disabled", specs["frozen"]),
         "job_statement_auto": lambda: _statement_md("auto picture size", specs["auto"]),
         "refusals": lambda: _refusals_md(folder),
-        "cli_card_and_brief": lambda: _cli_md(folder),
+        "cli_card": lambda: _cli_card_md(folder),
+        "launch_register": lambda: _launch_md(folder, "register"),
+        "launch_register_scripting": lambda: _launch_md(folder, "register-scripting"),
     }
 
 
@@ -296,9 +320,10 @@ def _normalised(text: str, folder_hint: Path | None = None) -> str:
 
 @pytest.mark.parametrize("name", [
     "declarations_full", "declarations_auto", "declarations_position", "declarations_host",
-    "mcp_transform", "mcp_position", "job_statement_default", "job_statement_position",
+    "mcp_transform", "mcp_position", "system_prompt", "job_statement_default",
+    "job_statement_position",
     "job_statement_known_position", "job_statement_frozen", "job_statement_auto", "refusals",
-    "cli_card_and_brief",
+    "cli_card", "launch_register", "launch_register_scripting",
 ])
 def test_agent_text_matches_snapshot(name: str, artifacts: dict[str, Callable[[], str]]) -> None:
     got = _normalised(artifacts[name]())

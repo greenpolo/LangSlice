@@ -56,11 +56,11 @@ other tools are not offered to it.
 
 Both agents are `mainAgent` and `subagent`: the main session starts one with
 `invoke_subagent`, and a run without a chat starts one directly, in the job
-folder:
+folder, with the launch prompt as its message:
 
 ```bash
 cd /data/brains/M04/langslice     # the job folder (made by `langslice-job ... init`)
-agy -p "Register the brain in job folder /data/brains/M04/langslice" \
+agy -p "$(langslice-job . launch --role register | jq -r .result.prompt)" \
   --agent register --model gemini-4-argon-high --output-format stream-json \
   > run.jsonl
 ```

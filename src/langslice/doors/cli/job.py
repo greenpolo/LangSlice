@@ -2,8 +2,8 @@
 
 The agent CLI: every verb of :data:`langslice.ops.registry.VERBS`
 under the tool's own name (kebab-case accepted: ``set-positions``), plus
-``init`` (create the job for a folder of images), ``brief`` (the job
-statement and the opening pictures, :mod:`langslice.doors.cli.brief`),
+``init`` (create the job for a folder of images), ``launch --role ROLE`` (the
+launch prompt of a registration subagent, :mod:`langslice.doors.cli.launch`),
 ``runs [ID]`` and ``wait [ID]`` (background runs; ``status`` is only the
 verb). FOLDER is the job folder or the image folder beside it.
 
@@ -99,8 +99,8 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     """``FOLDER VERB [arguments]``, the ``langslice-job`` command's
     (:mod:`langslice.doors.cli.jobcli`)."""
     p.add_argument("folder", help="The job folder, or the image folder beside it")
-    p.add_argument("verb", help="A verb (`langslice-job ops`), init, brief, runs [ID], "
-                   "wait [ID], env or python SCRIPT [ARGS ...]")
+    p.add_argument("verb", help="A verb (`langslice-job ops`), init, launch --role ROLE, "
+                   "runs [ID], wait [ID], env or python SCRIPT [ARGS ...]")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="--args JSON|@file, --name value, --dry-run, --background, "
                    "--verbose, --timeout SECONDS")
@@ -179,12 +179,9 @@ def _execute(folder: str, name: str, rest: list[str], *, atlas_loader: Any) -> E
         named = [token for index, token in enumerate(rest) if not token.startswith("-")
                  and (index == 0 or rest[index - 1] != "--job")]  # FOLDER names the job
         return schema(argparse.Namespace(verb=named, job=job))
+    if name == "launch":
+        return launch(folder, rest, atlas_loader=atlas_loader)
     options, arguments, positional = parse(rest)
-    if name == "brief":
-        if arguments or positional:
-            raise _Refusal(Envelope.failure(
-                "BAD_ARGUMENTS", "brief takes no arguments.", verb=name))
-        return brief(folder, atlas_loader=atlas_loader)
     if name in ("runs", "wait"):
         return runs(folder, name, positional, options)
     if name == "env":
@@ -824,7 +821,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     except InputsChanged as exc:
         return Envelope.failure("INPUTS_CHANGED", str(exc), job=str(images))
     try:
-        from langslice.doors.cli import brief as briefs
+        from langslice.doors.cli import launch as launches
         from langslice.doors.jobs import VIEWER_KEY, job_viewer
         from langslice.doors.statement import NOTES_KEY
         from langslice.job.layout import write_job_file
@@ -836,7 +833,6 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         if settings:
             write_job_file(layout, **settings)
             opened.viewer = job_viewer(layout)
-        written = briefs.build(opened, pictures=False)
         listed_verbs = opened.listed_verbs()
         result = {
             "job_folder": str(layout.folder), "image_folder": str(images),
@@ -844,8 +840,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
             "tasks": list(spec.tasks), "atlas": spec.atlas, "plane": spec.plane,
             "verbs": listed_verbs, "resumed": bool(opened.job.undo_stack
                                                    or opened.job.redo_stack),
-            **written.facts,
-            "statement": written.statement,
+            **launches.facts(opened),
         }
         if imported is not None:
             result["registration"] = {key: value for key, value in imported.items()
@@ -853,40 +848,57 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         artifacts = [{"path": str(layout.folder / name), "kind": "card"}
                      for name in ("AGENTS.md", "CLAUDE.md")]
         artifacts.append({"path": str(layout.state_file), "kind": "state"})
-        artifacts += written.artifacts
+        tools = launches.write_tools(layout.folder, opened.tools())
+        if tools is not None:
+            artifacts.append({"path": str(tools), "kind": "tools"})
         return Envelope(result=result, artifacts=artifacts,
                         warnings=list((imported or {}).get("warnings") or []),
-                        next=[f"langslice-job {layout.folder} brief"])
+                        next=[f"langslice-job {layout.folder} launch --role register",
+                              f"langslice-job {layout.folder} launch --role register-scripting"])
     finally:
         opened.close()
 
 
-# --- brief ----------------------------------------------------------------------------
+# --- launch ---------------------------------------------------------------------------
 
 
-def brief(folder: str, *, atlas_loader: Any = None) -> Envelope:
-    """``brief``: the job statement, the opening pictures saved as files
-    (artifacts of kind ``opening``, in reading order) and ``BRIEF.md``
-    (:mod:`langslice.doors.cli.brief`)."""
-    from langslice.doors.cli import brief as briefs
+def launch(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
+    """``launch --role register|register-scripting``: the exact prompt that
+    launches a registration subagent, saved in ``logs/launches/``
+    (:mod:`langslice.doors.cli.launch`)."""
+    from langslice.doors.cli import launch as launches
+    from langslice.doors.jobs import NoJob, find
+    from langslice.job.layout import JobLayout
 
-    opened = _open(folder, persist=True, atlas_loader=atlas_loader)
+    parser = _Parser(prog="launch", add_help=False)
+    parser.add_argument("--role", required=True, choices=launches.ROLES)
+    role = parser.parse_args(rest).role
     try:
-        written = briefs.build(opened, pictures=True)
-        pictures = [item for item in written.artifacts if item["kind"] == "opening"]
-        expected = sum(1 for entry in written.opening if "picture" in entry)
-        warnings = ([] if len(pictures) == expected else [
-            "The opening pictures were not saved; "
-            "`langslice.open_job` gives them to a script."])
-        return Envelope(result={
-            "job_folder": str(opened.job.folder),
-            "statement": written.statement,
-            "opening": written.opening,
-            "verbs": opened.listed_verbs(),
-            **written.facts,
-        }, artifacts=written.artifacts, warnings=warnings)
-    finally:
-        opened.close()
+        layout = JobLayout(find(folder))
+    except NoJob as exc:
+        return Envelope.failure("NO_JOB", str(exc))
+    if role == "register":
+        try:
+            prompt = launches.mcp_prompt(layout.folder, atlas_loader)
+        except ImportError as exc:
+            return Envelope.failure(
+                "MCP_MISSING", f"The register role needs the `mcp` package ({exc}).",
+                fix="Install it in LangSlice's environment (pip install mcp), or use "
+                "--role register-scripting.")
+        except (FileNotFoundError, ValueError) as exc:
+            return Envelope.failure("JOB_UNREADABLE", str(exc), exit=EXIT_REFUSED)
+        made = launches.Launch(role=role, prompt=prompt)
+    else:
+        opened = _open(folder, persist=True, atlas_loader=atlas_loader)
+        try:
+            made = launches.cli_prompt(opened)
+        finally:
+            opened.close()
+    saved = launches.save(layout, role, made.prompt)
+    return Envelope(result={"role": role, "job_folder": str(layout.folder),
+                            "prompt": made.prompt, **made.facts},
+                    artifacts=[{"path": str(saved), "kind": "launch"}, *made.artifacts],
+                    warnings=made.warnings)
 
 
 # --- background runs ------------------------------------------------------------------

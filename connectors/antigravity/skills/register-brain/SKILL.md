@@ -59,15 +59,16 @@ Pick the agent the user allows:
 | `register-scripting` | run_command, view_file, write_to_file, replace_file_content and the web: the `langslice-job` command line, scripts with the LangSlice Python library, and packages installed in the job's own environment | the user wants scripting |
 
 Use `invoke_subagent` with `TypeName` set to that agent's name and
-`Workspace` set to `inherit`. The prompt names only the job folder: "Register
-the brain in job folder FOLDER". Add the user's notes only if they were not
-already saved in the job. Do not add registration advice of your own: the
-subagent works from LangSlice's own job statement. Do not give it any other
+`Workspace` set to `inherit`. Make its prompt with `langslice-job FOLDER launch --role register` (or `--role
+register-scripting` for `register-scripting`) and pass `result.prompt` as the
+prompt, unchanged: nothing added, shortened or summarised. The user's notes
+belong in `init --notes` (the prompt holds them). Run `launch` again for each
+launch: it reflects the job as it stands. Do not give the subagent any other
 task. Run one subagent per job at a time.
 
 The model is the user's choice: the agents inherit this session's. Without a
 chat, either agent runs headless, started in the job folder:
-`agy -p "Register the brain in job folder FOLDER" --agent register --model MODEL --effort LEVEL --output-format stream-json`
+`agy -p "<result.prompt of launch --role register>" --agent register --model MODEL --effort LEVEL --output-format stream-json`
 (or `--agent register-scripting`).
 
 When the session ends, the plugin copies its transcript into

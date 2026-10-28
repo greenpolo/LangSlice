@@ -59,11 +59,13 @@ Pick the agent the user allows:
 | `langslice:register-scripting` | Bash + Read + Write + Edit: the `langslice-job` command line and scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
 Use the Agent tool with that `subagent_type`, and the `model` and `effort`
-the user chose, if any (otherwise it inherits this session's). The prompt
-names only the job folder: "Register the brain in job folder FOLDER". Add the user's notes only
-if they were not already saved in the job. Do not add registration advice of
-your own: the subagent works from LangSlice's own job statement and card. Do
-not give it any other task. Run one subagent per job at a time. The
+the user chose, if any (otherwise it inherits this session's). Make its
+prompt with `langslice-job FOLDER launch --role register` (or `--role
+register-scripting` for `langslice:register-scripting`) and pass `result.prompt`
+as the subagent's entire prompt, unchanged: nothing added, shortened or
+summarised. The user's notes belong in `init --notes` (the prompt holds them).
+Run `launch` again for each launch: it reflects the job as it stands. Do not
+give the subagent any other task. Run one subagent per job at a time. The
 plugin's MCP server holds one job at a time for this session, so run one
 `langslice:register` subagent at a time; brains registered in parallel need
 `langslice:register-scripting`.

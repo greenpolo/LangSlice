@@ -223,7 +223,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     from langslice.ops.registry import VERBS
 
     for needle in ("state.json", "coordinate_map", "langslice-job", "langslice.open_job",
-                   "i * resolution", " brief`", "BRIEF.md", "STALE_INPUT",
+                   "i * resolution", " launch --role register`", "STALE_INPUT",
                    "- `elastix_affine` (write, Linear, long):",
                    "- `look` (read, Common):",
                    "- `interactive_transform` (write, Linear):",
@@ -253,7 +253,7 @@ def test_init_creates_the_job_and_its_reference_card(capsys, images):
     assert (job / "AGENTS.md").read_text() == agents
 
 
-# --- brief: the job statement and the opening, as LangSlice's own agent gets them ------
+# --- launch: the job statement and the opening, as LangSlice's own agent gets them ------
 
 
 def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any]:
@@ -276,63 +276,96 @@ def _native(images: Path, limit: tuple[int, int]) -> tuple[str, list[bytes], Any
     return statement, pictures, opened
 
 
-def test_brief_is_the_native_statement_and_opening(capsys, images):
+def test_launch_register_scripting_is_the_native_statement_and_opening(capsys, images):
     from langslice.core.opening import DEFAULT_IMAGE_LIMIT
 
     job = init(capsys, images, "--notes", "Section 2 is torn.", "--viewer", "codex")
-    code, envelope = cli(capsys, str(images), "brief")
+    code, envelope = cli(capsys, str(images), "launch", "--role", "register-scripting")
     assert code == 0, envelope
     result = envelope["result"]
-    statement = result["statement"]
+    prompt = result["prompt"]
+    assert result["role"] == "register-scripting"
+    first, _blank, statement = prompt.partition("\n\n")
+    assert first == (f"Register the brain in job folder {job} with the langslice-job "
+                     "command line.")
     code, status = cli(capsys, str(images), "status")
     verbs = status["result"]["verbs"]  # this door's verbs: the scripting ones too
     assert "export_maps" in verbs
     native, pictures, opened = _native(images, DEFAULT_IMAGE_LIMIT)
     try:
-        # The same text as the native agent's, but for the tools this door
-        # offers, then where this door's opening pictures are.
         tools = next(line for line in native.splitlines() if line.startswith("Tools ("))
         expected = native.replace(tools, tools.split(": ", 1)[0] + ": "
                                   + ", ".join(f"`{name}`" for name in verbs) + ".")
         assert expected != native and statement.startswith(expected + "\n\n")
         tail = statement[len(expected):]
-        assert "Opening pictures: `brief` saved 2 picture files" in tail
         assert "User notes:\nSection 2 is torn." in tail
+        assert "Open every one of these pictures before any write." in tail
+        assert "brief" not in tail and "BRIEF" not in tail
         from langslice.doors.statement import status_and_notes
 
         assert tail.endswith(status_and_notes(opened.job.state))
     finally:
         opened.close()
-    # The opening pictures: the native strips, byte for byte, in reading order.
+    # The opening pictures: the native strips, byte for byte, in reading order,
+    # listed inline in the prompt after their text.
     opening = [item for item in envelope["artifacts"] if item["kind"] == "opening"]
     assert [item["index"] for item in opening] == list(range(len(pictures)))
     assert [Path(item["path"]).read_bytes() for item in opening] == pictures
     assert opening[0]["label"].startswith("Strip 1 of 1: s0.png")
-    assert [entry.get("path") for entry in result["opening"] if "picture" in entry] == [
-        item["path"] for item in opening]
-    # BRIEF.md holds it all, and the card names it first.
-    brief = (job / "BRIEF.md").read_text(encoding="utf-8")
-    assert statement.replace("\r\n", "\n") in brief
-    assert all(item["path"] in brief for item in opening)
-    assert envelope["artifacts"][-2] == {"path": str(job / "BRIEF.md"), "kind": "brief"}
-    assert "BRIEF.md" in (job / "AGENTS.md").read_text()
-    # TOOLS.md beside it holds every verb's description and arguments, as declared here.
+    for item in opening:
+        assert f"{item['label']}\n- {item['path']}" in prompt
+    # The exact text is saved; TOOLS.md holds every verb's description.
+    launch = envelope["artifacts"][0]
+    assert launch == {"path": str(job / "logs" / "launches" / "000001_register-scripting.md"),
+                      "kind": "launch"}
+    assert Path(launch["path"]).read_text(encoding="utf-8") == prompt
     assert envelope["artifacts"][-1] == {"path": str(job / "TOOLS.md"), "kind": "tools"}
     tools = (job / "TOOLS.md").read_text(encoding="utf-8")
     assert "## look" in tools and "## export_maps" in tools and "- `mode`: one of" in tools
     assert "TOOLS.md" in (job / "AGENTS.md").read_text()
+    assert "BRIEF.md" not in (job / "AGENTS.md").read_text()
     assert result["viewer"] == "codex" and result["resolution"]["max"] == 2048
+    # The next launch is the next number.
+    code, again = cli(capsys, str(images), "launch", "--role", "register-scripting")
+    assert again["artifacts"][0]["path"].endswith("000002_register-scripting.md")
 
 
-def test_init_answers_with_the_statement_and_keeps_notes_and_viewer(capsys, images):
+def test_launch_register_is_the_mcp_statement(capsys, images):
+    pytest.importorskip("mcp")
+    job = init(capsys, images, "--notes", "Section 2 is torn.")
+    code, envelope = cli(capsys, str(images), "launch", "--role", "register")
+    assert code == 0, envelope
+    prompt = envelope["result"]["prompt"]
+    first, _blank, statement = prompt.partition("\n\n")
+    assert first == (f"Register the brain in job folder {images}. Call "
+                     f'start_job(image_folder="{images}") first: it opens the job and '
+                     "gives you its tools.")
+    assert "show_stack(page=1)" in statement and "User notes:\nSection 2 is torn." in statement
+    saved = job / "logs" / "launches" / "000001_register.md"
+    assert saved.read_text(encoding="utf-8") == prompt
+    assert envelope["artifacts"] == [{"path": str(saved), "kind": "launch"}]
+
+
+def test_launch_needs_a_role_and_a_job(capsys, images, tmp_path):
+    init(capsys, images)
+    code, envelope = cli(capsys, str(images), "launch")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
+    code, envelope = cli(capsys, str(images), "launch", "--role", "other")
+    assert code == 2
+    code, envelope = cli(capsys, str(tmp_path), "launch", "--role", "register")
+    assert envelope["error"]["code"] == "NO_JOB"
+
+
+def test_init_keeps_notes_and_viewer(capsys, images):
     code, envelope = cli(capsys, str(images), "init", "--tasks", "position",
                          "--preprocess", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
                          "--notes", "Mind the bulbs.")
     assert code == 0, envelope
-    statement = envelope["result"]["statement"]
-    assert "User notes:\nMind the bulbs." in statement
+    assert "statement" not in envelope["result"]
     assert envelope["result"]["viewer"] == "claude"  # the default viewer
-    assert envelope["next"] == [f"langslice-job {images / 'langslice'} brief"]
+    assert envelope["next"] == [
+        f"langslice-job {images / 'langslice'} launch --role register",
+        f"langslice-job {images / 'langslice'} launch --role register-scripting"]
     record = json.loads((images / "langslice" / "job.json").read_text())
     assert record["notes"] == "Mind the bulbs." and "viewer" not in record
     # Continuing the job keeps the notes; --viewer is stored.
@@ -378,10 +411,10 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     code, refused = cli(capsys, str(images), "trace_borders", "--id", ID0)
     assert code == 3 and refused["error"]["code"] == "IMAGE_MODEL_OFF"
     assert "langslice login" in refused["error"]["fix"]
-    code, brief = cli(capsys, str(images), "brief")
+    code, launch = cli(capsys, str(images), "launch", "--role", "register-scripting")
     from langslice.doors.statement import IMAGE_MODEL_OFF
 
-    assert IMAGE_MODEL_OFF in brief["result"]["statement"]
+    assert IMAGE_MODEL_OFF in launch["result"]["prompt"]
     # Connected (a login present), the verb is offered, as the MCP door offers it.
     from langslice.doors.api import setup
 
@@ -578,7 +611,7 @@ def test_folder_ops_lists_the_job_s_own_verbs(capsys, images):
     assert envelope["result"]["job"] == str(job)
     assert "look" in names and "position_sections" in names
     assert "fireants_syn" not in names and "elastix_affine" not in names
-    assert envelope["next"][0] == f"langslice-job {job} brief"
+    assert envelope["next"][0] == f"langslice-job {job} schema VERB [VERB ...]"
     code, envelope = cli(capsys, str(images), "ops", "--bogus")
     assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS"
 
@@ -1056,7 +1089,9 @@ def test_disable_takes_tools_and_options_off_a_cli_job(capsys, images):
     assert "zoom" not in envelope["result"]["verbs"] and "look" in envelope["result"]["verbs"]
     assert json.loads((folder / "job.json").read_text())["spec"]["disabled"] == [
         "zoom", "look:positioning", "interactive_transform:flip"]
-    statement = envelope["result"]["statement"]
+    code, launched = cli(capsys, str(folder), "launch", "--role", "register-scripting")
+    assert code == 0, launched
+    statement = launched["result"]["prompt"]
     assert "`zoom`" not in statement and "mode positioning" not in statement
     card = (folder / "AGENTS.md").read_text()
     assert "- `zoom`" not in card and "- `look`" in card

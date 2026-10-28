@@ -25,7 +25,8 @@ without an id. Inside::
                          a host's result.json, quicknii.json and visualign.json
     logs/                events.jsonl (opens), runs/ (the agent CLI's
                          background runs), calls.jsonl (the agent CLI's calls),
-                         calls/ (each call's envelope)
+                         calls/ (each call's envelope), launches/ (the exact
+                         launch prompts of `langslice-job FOLDER launch`)
     prompt.txt           a saved ABBA job's copy prompt
     trace/               agent transcripts: LangSlice's own agent's trace, and
                          a coding agent's session copied in by its harness
@@ -33,7 +34,7 @@ without an id. Inside::
     env/                 the job's own Python environment, made by
                          `langslice-job FOLDER env` (langslice.doors.cli.jobenv)
     AGENTS.md, CLAUDE.md the reference card for coding agents
-    BRIEF.md             the agent CLI's brief
+    TOOLS.md             every verb's description and arguments (by `launch`)
 
 Every path a job file stores is relative to the job folder
 (:meth:`JobLayout.relative`), so the folder can move with its images.
@@ -68,6 +69,9 @@ VIEWS_INDEX = "views.jsonl"
 EXPORTS_DIR = "exports"
 LOGS_DIR = "logs"
 EVENTS_FILE = "events.jsonl"
+#: Under ``logs/``: the launch prompts ``langslice-job FOLDER launch`` printed,
+#: ``<six-digit number>_<role>.md`` (the exact text).
+LAUNCHES_DIR = "launches"
 PROMPT_FILE = "prompt.txt"
 #: Agent transcripts: LangSlice's own agent's trace, a coding agent's session.
 TRACE_DIR = "trace"
@@ -281,6 +285,10 @@ class JobLayout:
     @property
     def logs_dir(self) -> Path:
         return self.folder / LOGS_DIR
+
+    @property
+    def launches_dir(self) -> Path:
+        return self.logs_dir / LAUNCHES_DIR
 
     @property
     def results_file(self) -> Path:
