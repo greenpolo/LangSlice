@@ -55,14 +55,18 @@ CLAUDE_MAX_IMAGE_PATCHES = 1_200_000 // (32 * 32)
 #: bytes, not the request.
 CLAUDE_MAX_VIEW_EDGE = 2000
 
+CLAUDE_IMAGE_LIMIT = (CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES)
 #: ``(long edge, patch budget)`` per canonical provider. A lane not listed
 #: (Gemini, a fake test model) uses the OpenAI numbers: unmeasured there.
 IMAGE_LIMITS: dict[str, tuple[int, int]] = {
     "openai-oauth": (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES),
     "openai-api": (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES),
+    "anthropic-api": CLAUDE_IMAGE_LIMIT,
 }
 DEFAULT_IMAGE_LIMIT = (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
-CLAUDE_IMAGE_LIMIT = (CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES)
+#: The largest picture the agent may ask for, per canonical provider, where it
+#: is not the lane's image edge: Claude's, as the MCP host's.
+VIEW_EDGES: dict[str, int] = {"anthropic-api": CLAUDE_MAX_VIEW_EDGE}
 
 #: The agent CLI's viewers: the coding agent that opens the picture files a
 #: CLI call saves, as ``(opening strip limit, largest later picture)``,

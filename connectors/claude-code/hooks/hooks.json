@@ -3,7 +3,7 @@
   "hooks": {
     "SubagentStop": [
       {
-        "matcher": "^langslice:register-",
+        "matcher": "^langslice:register(-scripting)?$",
         "hooks": [
           {
             "type": "command",

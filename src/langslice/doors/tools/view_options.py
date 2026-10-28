@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from langslice.core.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS
+from langslice.core.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS, VIEW_EDGES
 from langslice.core.sizes import MIN_RESOLUTION
 from langslice.providers.registry import canonical_provider
 
@@ -20,17 +20,22 @@ def image_limit(ctx: Any) -> tuple[int, int]:
     """``(long edge, patch budget)`` of one image for this run's model lane
     (:data:`langslice.core.opening.IMAGE_LIMITS`), read off the driver
     context's ``model`` (a ``provider/name`` string)."""
+    return IMAGE_LIMITS.get(_provider(ctx), DEFAULT_IMAGE_LIMIT)
+
+
+def _provider(ctx: Any) -> str:
+    """The canonical provider of the driver context's ``model``; "" without one."""
     model = str(getattr(ctx, "model", "") or "")
-    provider = canonical_provider(model.split("/", 1)[0]) if "/" in model else ""
-    return IMAGE_LIMITS.get(provider, DEFAULT_IMAGE_LIMIT)
+    return canonical_provider(model.split("/", 1)[0]) if "/" in model else ""
 
 
 def view_edge_limit(ctx: Any) -> int:
     """Largest picture the agent may ask for per call (``look``'s ``resolution``):
     the model lane's largest image edge (:func:`image_limit`). On the OpenAI
     lanes a near-square picture past ~1600 px still meets the patch budget,
-    which shrinks it."""
-    return image_limit(ctx)[0]
+    which shrinks it. A Claude lane takes Claude's (:data:`VIEW_EDGES`), as
+    the MCP host does."""
+    return VIEW_EDGES.get(_provider(ctx), image_limit(ctx)[0])
 
 
 def clamp_resolution(value: Any, max_edge: int) -> tuple[int | None, str]:

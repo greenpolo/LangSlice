@@ -273,3 +273,18 @@ def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
     # A word wider than the picture breaks between characters.
     assert all(font.getlength(line) <= 30 for line in
                wrap_caption("section_08_overlay.tif", font, 30).split("\n"))
+
+
+def test_a_claude_lane_gets_claudes_limits_as_the_mcp_host_does():
+    """LangSlice's own agent on Claude sizes its opening strips and largest
+    picture as the MCP door does for a Claude host, not at OpenAI's numbers."""
+    from types import SimpleNamespace
+
+    from langslice.core.opening import CLAUDE_IMAGE_LIMIT, OPENAI_MAX_IMAGE_EDGE
+    from langslice.doors.tools.view_options import view_edge_limit
+
+    claude = SimpleNamespace(model="anthropic-api/claude-opus-5-5")
+    openai = SimpleNamespace(model="openai-oauth/gpt-6")
+    assert image_limit(claude) == CLAUDE_IMAGE_LIMIT
+    assert view_edge_limit(claude) == CLAUDE_MAX_VIEW_EDGE
+    assert view_edge_limit(openai) == image_limit(openai)[0] == OPENAI_MAX_IMAGE_EDGE

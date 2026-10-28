@@ -32,8 +32,8 @@ Registration is always the subagent's, and it registers exactly one brain.
 `init` takes the job flags `langslice-job schema init` lists (each with its
 help, default and choices), among them `--notes TEXT` (the user's notes,
 saved in the job). Check that `langslice-job`
-runs (`langslice-job ops`); if it does not, tell the user how the plugin
-README says to install it, and stop.
+runs (`langslice-job ops`); if it does not, tell the user how
+`connectors/codex/README.md` says to install it, and stop.
 
 ## 2. Create the job
 
@@ -41,6 +41,9 @@ README says to install it, and stop.
 langslice-job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
   --pixel-size-um 4.0 --image-provider none
 ```
+
+For `register_scripting`, add `--viewer codex`, which sizes the pictures the
+command line saves for Codex's `view_image`.
 
 It prints one JSON object (`ok`, `result`, `artifacts` with the job's `card`
 and `state`, `warnings`). Report any warning to the user (for example what a
@@ -51,22 +54,25 @@ before starting over.
 
 ## 3. Launch exactly one registration subagent
 
-Pick the variant the user allows:
+Pick the agent the user allows:
 
 | Subagent | Can do | Use when |
 | --- | --- | --- |
-| `register_cli` | Bash + Read: the `langslice-job` command line | default |
-| `register_scripting` | Bash + Read + Write + Edit: also scripts with the LangSlice Python library in the job folder | the user wants scripting |
+| `register` | LangSlice's MCP tools only, no shell; the pictures come in the tool replies | default |
+| `register_scripting` | the shell: the `langslice-job` command line and scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
 Ask Codex to spawn that custom agent by name. The request names only the job
 folder: "Register the brain in job folder FOLDER". Add the user's notes only
 if they were not already saved in the job. Do not add registration advice of
-your own: the subagent works from LangSlice's own job statement and card. Do
-not give it any other task. Run one subagent per job at a time.
+your own: the subagent works from LangSlice's own job statement. Do not give
+it any other task. Run one subagent per job at a time, and one `register` at a
+time in this session (the LangSlice MCP server holds one open job).
 
-Shell restriction: Codex rules govern commands that run outside the sandbox
-only. If the user wants the agent limited, point them to
-`connectors/codex/README.md` (rules file and sandbox) before launching.
+`register` needs the LangSlice MCP server in Codex's `config.toml`; if no
+`langslice` MCP tools are listed, point the user to
+`connectors/codex/README.md` (Install) and stop. If the user wants the agent
+limited further, the same README's "Sandboxing, and the gaps" says what each
+agent can still do and how the sandbox and rules file restrict it.
 
 ## 4. Check the result yourself
 

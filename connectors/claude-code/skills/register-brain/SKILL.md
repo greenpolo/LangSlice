@@ -51,26 +51,36 @@ before starting over.
 
 ## 3. Launch exactly one registration subagent
 
-Pick the variant the user allows:
+Pick the agent the user allows:
 
 | Subagent | Can do | Use when |
 | --- | --- | --- |
-| `langslice:register-cli` | Bash + Read: the `langslice-job` command line | default |
-| `langslice:register-scripting` | Bash + Read + Write + Edit: also scripts with the LangSlice Python library in the job folder | the user wants scripting |
+| `langslice:register` | only LangSlice's MCP tools, whose replies carry the pictures; no shell, files or web | default |
+| `langslice:register-scripting` | Bash + Read + Write + Edit: the `langslice-job` command line and scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
 Use the Agent tool with that `subagent_type`, and the `model` and `effort`
 the user chose, if any (otherwise it inherits this session's). The prompt
 names only the job folder: "Register the brain in job folder FOLDER". Add the user's notes only
 if they were not already saved in the job. Do not add registration advice of
 your own: the subagent works from LangSlice's own job statement and card. Do
-not give it any other task. Run one subagent per job at a time.
+not give it any other task. Run one subagent per job at a time. The
+plugin's MCP server holds one job at a time for this session, so run one
+`langslice:register` subagent at a time; brains registered in parallel need
+`langslice:register-scripting`.
+
+You have LangSlice's MCP tools too; do not call them. They are the subagent's.
 
 When the subagent finishes, the plugin copies its transcript into
 `FOLDER/trace/`.
 
 Shell restriction: a plugin subagent cannot limit Bash to one command. If the
-user wants it to run only `langslice-job`, tell them to add the permission rule
-from the plugin README to their settings before launching.
+user wants `langslice:register-scripting` to run only `langslice-job`, tell
+them to add the permission rule from the plugin README to their settings
+before launching.
+
+Advisor: if you have an advisor tool, the subagent gets it too, and nothing in
+the plugin can remove it. Before launching, tell the user to turn it off with
+`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` (plugin README) and restart Claude Code.
 
 ## 4. Check the result yourself
 

@@ -51,26 +51,26 @@ before starting over.
 
 ## 3. Launch exactly one registration subagent
 
-Pick the variant the user allows:
+Pick the agent the user allows:
 
 | Subagent | Can do | Use when |
 | --- | --- | --- |
-| `register-cli` | run_command + view_file + the web: the `langslice-job` command line | default |
-| `register-scripting` | also write_to_file and replace_file_content: scripts with the LangSlice Python library, and packages installed in the job's own environment | the user wants scripting |
+| `register` | the LangSlice MCP tools (`call_mcp_tool` on the plugin's `langslice_mcp` server) and view_file, which opens the pictures Antigravity saves from their replies: no shell, no file writes | default |
+| `register-scripting` | run_command, view_file, write_to_file, replace_file_content and the web: the `langslice-job` command line, scripts with the LangSlice Python library, and packages installed in the job's own environment | the user wants scripting |
 
-Use `invoke_subagent` with that agent and the workspace inherited. The prompt
-names only the job folder: "Register the brain in job folder FOLDER". Add the
-user's notes only if they were not already saved in the job. Do not add
-registration advice of your own: the subagent works from LangSlice's own job
-statement and card. Do not give it any other task. Run one subagent per job at
-a time.
+Use `invoke_subagent` with `TypeName` set to that agent's name and
+`Workspace` set to `inherit`. The prompt names only the job folder: "Register
+the brain in job folder FOLDER". Add the user's notes only if they were not
+already saved in the job. Do not add registration advice of your own: the
+subagent works from LangSlice's own job statement. Do not give it any other
+task. Run one subagent per job at a time.
 
 The model is the user's choice: the agents inherit this session's. Without a
-chat, the same agent runs headless:
-`agy -p "Register the brain in job folder FOLDER" --agent register-cli --model MODEL --effort LEVEL --output-format stream-json`,
-started in the job folder.
+chat, either agent runs headless, started in the job folder:
+`agy -p "Register the brain in job folder FOLDER" --agent register --model MODEL --effort LEVEL --output-format stream-json`
+(or `--agent register-scripting`).
 
-When the subagent's session ends, the plugin copies its transcript into
+When the session ends, the plugin copies its transcript into
 `FOLDER/trace/`.
 
 ## 4. Check the result yourself

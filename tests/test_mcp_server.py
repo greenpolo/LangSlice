@@ -17,7 +17,7 @@ from PIL import Image
 
 from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
 from langslice.core.spec import JobSpec
-from langslice.doors.mcp.server import build_server
+from langslice.doors.mcp.server import build_server, initialization_options
 from tests.fakes import SlabAtlas
 
 #: ABBA's stack-wide angles as the connector always sends them (flat).
@@ -237,6 +237,13 @@ def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Pat
     assert {"status", "submit"} <= during
     # The second folder replaced the first job.
     assert len(_text(status)["rows"]) == 2
+
+
+def test_the_server_advertises_that_its_tool_list_changes():
+    """start_job installs the job's tools and says so; a host acts on that
+    notice only from a server whose capabilities say tools.listChanged."""
+    tools = initialization_options(build_server(_spec_for)).capabilities.tools
+    assert tools is not None and tools.listChanged is True
 
 
 def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):

@@ -309,6 +309,7 @@ process forks for it, `cli/warm.py`).
   `argument_refusal`, the one strictness rule every door
   applies; `normalize_arguments` for a door that validates first),
   `view_options.py` (`image_limit` / `view_edge_limit` of the model lane,
+  `core.opening.IMAGE_LIMITS` / `VIEW_EDGES`: a Claude lane at Claude's limits, as the MCP host,
   `clamp_resolution` of `look`'s `resolution`), `media.py` (the ADK message parts: `packaged`,
   `package_result`, `opening_parts`), `reply.py` (`REPLY_BYTES` 680 KB,
   `fit_reply` shrinks a reply's pictures together, `paged`, `strip_bytes`,
@@ -326,7 +327,9 @@ process forks for it, `cli/warm.py`).
   (a saved ABBA job by id), `open_folder` (the job of a named image or job
   folder as saved: `doors.jobs.find` / `read_spec`, its notes; a folder
   without one gets a new job from the server's job flags), `build_server`,
-  `serve`. `EventRelay` forwards a saved ABBA job's
+  `serve` (`initialization_options`: the capabilities advertise
+  `tools.listChanged`, so a host acts on the `send_tool_list_changed` that
+  `start_job` sends when it installs a job's tools). `EventRelay` forwards a saved ABBA job's
   tool events (and one `seed` per `show_stack` page) over its host channel
   (`host_channel.py`) as `agent_event`s; `tool_end` events carry `views`,
   the saved pictures' paths.
@@ -515,10 +518,12 @@ process forks for it, `cli/warm.py`).
     the hook of the Claude Code (`SubagentStop`) and Antigravity (`Stop`)
     plugins: the hook's JSON on stdin, the transcript (`transcript_path`), the
     job folders it names (`job_folders`: `langslice-job FOLDER` and
-    `open_job(...)`, through `jobs.find`), each given the transcript as
+    `open_job(...)`, then the MCP `start_job` calls' `image_folder` or saved
+    `job_id` under any harness's tool name, `started_jobs`, `START_JOB`;
+    through `jobs.find`), each given the transcript as
     `trace/<harness>_<session>.jsonl` with inline image data replaced by its
-    size (`slim`); a transcript that submitted (`SUBMIT_PATTERN`) also removes
-    the job's `env/`. Never raises; prints `{}`.
+    size (`slim`); a transcript that submitted (`SUBMIT_PATTERN`, or an MCP `submit`
+    call, `MCP_SUBMIT` through `called`) also removes the job's `env/`. Never raises; prints `{}`.
   - `background.py` — `--background`: `start` (a record in
     `logs/runs/<id>.json`, then `CHILD_COMMAND` (`jobcli` as a module, so
     the job's warm process answers it too) + `FOLDER VERB --args ...

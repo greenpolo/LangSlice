@@ -7,7 +7,7 @@ operations and saves work in a [job folder](file_formats.md).
 | Interface | Who drives it | Entry point |
 |---|---|---|
 | Agent CLI | A coding agent with a shell, such as Claude Code, Antigravity or Codex | `langslice-job FOLDER VERB` |
-| MCP | An agent in an MCP host, such as Claude Desktop | `langslice mcp` |
+| MCP | An agent in an MCP host, such as Claude Desktop, or a coding agent's `register` role | `langslice mcp` |
 | Built-in agent | LangSlice's agent session | `langslice linear run FOLDER` |
 | Python | A coding agent writing its own workflow | [Python library](library.md) |
 | ABBA | The agent works on sections selected in ABBA | [ABBA setup and use](abba.md) |
@@ -234,20 +234,31 @@ or not.
 `langslice session-end --harness claude-code|antigravity` is the hook the
 Claude Code and Antigravity plugins run when a registration agent's session
 ends. It reads the hook's JSON on stdin, finds the job folders the transcript
-names (its `langslice-job FOLDER ...` commands and `open_job(...)` calls) and
+names (its `langslice-job FOLDER ...` commands, `open_job(...)` calls and MCP
+`start_job` calls, by `image_folder` or a saved job's `job_id`) and
 copies the transcript into each one's `trace/<harness>_<session id>.jsonl`,
 beside the built-in agent's traces, inline image data replaced by its size.
-When the transcript submitted the job, the job's `env/` is removed (its
-package list kept). It never fails the session and prints `{}`.
+When the transcript submitted the job (a `submit` command, call or MCP tool
+call), the job's `env/` is removed (its package list kept). It never fails the session and prints `{}`.
 
 Ready-made setups: [Claude Code](https://github.com/greenpolo/LangSlice/blob/main/connectors/claude-code/README.md),
 [Antigravity](https://github.com/greenpolo/LangSlice/blob/main/connectors/antigravity/README.md)
 and [Codex](https://github.com/greenpolo/LangSlice/blob/main/connectors/codex/README.md).
+Each gives the coding agent two registration roles, each an agent file in the
+connector:
+
+| Role | Tools |
+|---|---|
+| `register` | LangSlice's MCP tools only, no shell. The Claude Code and Antigravity plugins ship the MCP server; for Codex it goes in the session's `config.toml` with `[features] mcp_tool_list_changed = true`, so the job's tools appear after `start_job`. The server holds one job at a time: one `register` per session |
+| `register-scripting` (`register_scripting` in Codex) | a shell, `langslice-job` and the [Python library](library.md) |
 
 ## MCP
 
 Configure an MCP host to launch the `langslice` executable from its installed
-environment, with `mcp` as its argument. In Claude Desktop, open Settings >
+environment, with `mcp` as its argument. The coding-agent connectors' `register`
+role works through this server (Ready-made setups, above). The server
+advertises that its tool list changes, so a host takes the job's tools once
+`start_job` has opened it. In Claude Desktop, open Settings >
 Developer > Edit Config and add this to `claude_desktop_config.json`, then
 restart Desktop:
 

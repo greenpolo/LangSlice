@@ -6,7 +6,9 @@ input (JSON) on stdin: Claude Code's ``SubagentStop`` (``agent_transcript_path``
 else ``<session>/subagents/agent-<agent_id>.jsonl`` beside ``transcript_path``)
 or Antigravity's ``Stop`` (``transcriptPath``, ``conversationId``). The job
 folders the transcript worked on are the ones its ``langslice-job FOLDER ...``
-commands and ``open_job(...)`` calls name; each gets the transcript in
+commands and ``open_job(...)`` calls name, and the ones its MCP ``start_job``
+calls open (:func:`started_jobs`: an ``image_folder`` or a saved job's
+``job_id``, under any harness's name for the tool); each gets the transcript in
 ``trace/<harness>_<session id>.jsonl`` (rewritten at each end of the session,
 so the copy is the latest), beside LangSlice's own agent's traces, with
 inline image data replaced by its size (:func:`slim`). When the transcript
@@ -34,8 +36,17 @@ FOLDER_PATTERNS = (
     re.compile(r"""langslice-job\s+(?:"([^"]+)"|'([^']+)'|(""" + _UNQUOTED + "))"),
     re.compile(r"""open_job\(\s*(?:r?"([^"]+)"|r?'([^']+)')"""),
 )
+#: An MCP ``start_job`` call's tool name, as each harness writes it:
+#: ``mcp__plugin_langslice_langslice__start_job`` (Claude Code's plugin),
+#: ``mcp__langslice__start_job``, or ``start_job`` itself (Antigravity's
+#: ``call_mcp_tool`` names it under ``ToolName``).
+START_JOB = re.compile(r"(?:^|__)start_job$")
+#: The ``start_job`` arguments that name a job.
+START_JOB_KEYS = ("image_folder", "job_id")
 #: A submit, on the command line or through the library.
 SUBMIT_PATTERN = re.compile(r"langslice-job\s+\S+\s+submit\b|\.submit\(")
+#: The MCP ``submit`` tool under any harness's name, as :data:`START_JOB`.
+MCP_SUBMIT = re.compile(r"(?:^|__)submit$")
 #: Words after ``langslice-job`` that are commands, not folders.
 NOT_FOLDERS = frozenset({"ops", "schema", "-h", "--help"})
 #: A string this long that looks like base64 is inline image data.
@@ -75,8 +86,9 @@ def session_end(hook: dict[str, Any], harness: str) -> list[Path]:
                   or hook.get("session_id") or transcript.stem)
     copies = []
     said = _said(text)
-    submitted = SUBMIT_PATTERN.search(said) is not None
-    for folder in job_folders(said, Path(str(hook.get("cwd") or "."))):
+    submitted = SUBMIT_PATTERN.search(said) is not None or called(text, MCP_SUBMIT)
+    for folder in job_folders(said, Path(str(hook.get("cwd") or ".")),
+                              also=started_jobs(text)):
         layout = JobLayout(folder)
         target = layout.trace_dir / f"{harness}_{_safe(session)}.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -99,28 +111,103 @@ def transcript_path(hook: dict[str, Any]) -> Path | None:
     return Path(str(main)).expanduser() if main else None
 
 
-def job_folders(text: str, cwd: Path) -> list[Path]:
-    """The job folders *text* (a transcript's strings, :func:`_said`) names
-    (each a job folder, or the image folder beside one), in the order first
-    named."""
+def job_folders(text: str, cwd: Path, also: list[str] | tuple[str, ...] = ()) -> list[Path]:
+    """The job folders *text* (a transcript's strings, :func:`_said`) names,
+    then those of *also* (folder names found otherwise, :func:`started_jobs`),
+    each a job folder or the image folder beside one, in the order first named."""
     from langslice.doors.jobs import NoJob, find
 
+    names = [next(group for group in match.groups() if group is not None)
+             for pattern in FOLDER_PATTERNS for match in pattern.finditer(text)]
     found: list[Path] = []
     seen: set[str] = set()
-    for pattern in FOLDER_PATTERNS:
-        for match in pattern.finditer(text):
-            name = next(group for group in match.groups() if group is not None)
-            if name in NOT_FOLDERS or name in seen or name.startswith("-"):
-                continue
-            seen.add(name)
-            path = Path(name).expanduser()
-            try:
-                folder = Path(find(path if path.is_absolute() else cwd / path))
-            except (NoJob, OSError, ValueError):
-                continue
-            if folder not in found:
-                found.append(folder)
+    for name in [*names, *also]:
+        if name in NOT_FOLDERS or name in seen or name.startswith("-"):
+            continue
+        seen.add(name)
+        path = Path(name).expanduser()
+        try:
+            folder = Path(find(path if path.is_absolute() else cwd / path))
+        except (NoJob, OSError, ValueError):
+            continue
+        if folder not in found:
+            found.append(folder)
     return found
+
+
+def started_jobs(text: str) -> list[str]:
+    """The folders the MCP ``start_job`` calls of a JSON-lines transcript
+    opened: each call's ``image_folder`` (an image folder or its job folder),
+    or the job folder a saved job's ``job_id`` names in the index. A call is
+    an object one of whose strings is the tool's name (:data:`START_JOB`); its
+    arguments are found anywhere in that object, also inside a string that
+    holds them as JSON."""
+    from langslice.job import index
+
+    found: list[str] = []
+
+    def arguments(value: Any) -> None:
+        if isinstance(value, str) and value.lstrip().startswith("{"):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                return
+        if isinstance(value, dict):
+            for key in START_JOB_KEYS:
+                named = value.get(key)
+                if isinstance(named, str) and named:
+                    if key == "job_id":
+                        try:
+                            entry = index.lookup(index.default_root(), named)
+                        except (OSError, ValueError):
+                            entry = None
+                        named = entry["job_folder"] if entry else ""
+                    if named:
+                        found.append(named)
+            for item in value.values():
+                arguments(item)
+        elif isinstance(value, list):
+            for item in value:
+                arguments(item)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if any(isinstance(item, str) and START_JOB.search(item) for item in value.values()):
+                arguments(value)
+                return
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for line in text.splitlines():
+        try:
+            walk(json.loads(line))
+        except ValueError:
+            continue
+    return found
+
+
+def called(text: str, name: re.Pattern[str]) -> bool:
+    """Whether a JSON-lines transcript holds an object one of whose strings
+    is a tool name *name* matches: an MCP call, under any harness's name."""
+
+    def walk(value: Any) -> bool:
+        if isinstance(value, dict):
+            return any(isinstance(item, str) and name.search(item) for item in value.values()) \
+                or any(walk(item) for item in value.values())
+        if isinstance(value, list):
+            return any(walk(item) for item in value)
+        return False
+
+    for line in text.splitlines():
+        try:
+            if walk(json.loads(line)):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def slim_lines(text: str) -> str:

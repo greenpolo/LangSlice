@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp": {
+      "command": "langslice",
+      "args": ["mcp"]
+    }
+  }
+}

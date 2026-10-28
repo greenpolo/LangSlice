@@ -145,7 +145,7 @@ def test_a_claude_code_subagent_transcript_lands_in_its_job(capsys, job, tmp_pat
     (session / "subagents" / "agent-abc.jsonl").write_text(
         _lines(*_claude_transcript(job, submit=True)))
     hook = {"session_id": "sess1", "transcript_path": f"{session}.jsonl",
-            "agent_id": "abc", "agent_type": "langslice:register-cli",
+            "agent_id": "abc", "agent_type": "langslice:register",
             "cwd": str(tmp_path), "hook_event_name": "SubagentStop"}
     assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
     copied = (job / "trace" / "claude-code_abc.jsonl").read_text()
@@ -167,6 +167,67 @@ def test_an_antigravity_session_that_did_not_submit_keeps_the_environment(
     assert _run_hook(hook, "antigravity", monkeypatch, capsys) == "{}"
     assert (job / "trace" / "antigravity_conv-1.jsonl").is_file()
     assert (job / "env").is_dir()
+
+
+@pytest.mark.parametrize("harness,records", [
+    ("claude-code", lambda image_folder, job_folder: [
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "mcp__plugin_langslice_langslice__start_job",
+             "input": {"image_folder": image_folder}}]}}]),
+    ("codex", lambda image_folder, job_folder: [
+        {"type": "response_item", "payload": {
+            "type": "function_call", "name": "mcp__langslice__start_job",
+            "arguments": json.dumps({"image_folder": job_folder})}}]),
+    ("antigravity", lambda image_folder, job_folder: [
+        {"step_index": 1, "type": "PLANNER_RESPONSE", "tool_calls": [
+            {"name": "call_mcp_tool", "args": {
+                "ServerName": "langslice", "ToolName": "start_job",
+                "Arguments": json.dumps({"image_folder": image_folder})}}]}]),
+], ids=["claude-code", "codex", "antigravity"])
+def test_an_mcp_agent_transcript_lands_in_the_job_its_start_job_opened(
+        capsys, job, tmp_path, monkeypatch, harness, records):
+    """An MCP registration agent names its job only in start_job's arguments."""
+    transcript = tmp_path / "mcp.jsonl"
+    transcript.write_text(_lines(*records(str(job.parent), str(job))))
+    found = transcripts.job_folders(transcripts._said(transcript.read_text()), tmp_path,
+                                    also=transcripts.started_jobs(transcript.read_text()))
+    assert found == [job]
+    if harness != "codex":  # the session-end hook is Claude Code's and Antigravity's
+        hook = {"conversationId": "c-mcp", "transcriptPath": str(transcript)}
+        assert _run_hook(hook, harness, monkeypatch, capsys) == "{}"
+        assert (job / "trace" / f"{harness}_c-mcp.jsonl").is_file()
+
+
+@pytest.mark.parametrize("submit", [
+    {"type": "tool_use", "name": "mcp__plugin_langslice_langslice__submit", "input": {}},
+    {"name": "call_mcp_tool", "args": {"ServerName": "langslice_mcp", "ToolName": "submit"}},
+], ids=["claude-code", "antigravity"])
+def test_an_mcp_submit_removes_the_environment(capsys, job, tmp_path, monkeypatch, submit):
+    """A job first worked with scripts, then submitted through the MCP tools."""
+    jobenv.ensure(JobLayout(job))
+    transcript = tmp_path / "mcp_submit.jsonl"
+    transcript.write_text(_lines(
+        {"type": "tool_use", "name": "mcp__langslice__start_job",
+         "input": {"image_folder": str(job)}}, {"calls": [submit]}))
+    assert transcripts.called(transcript.read_text(), transcripts.MCP_SUBMIT)
+    hook = {"conversationId": "c-sub", "transcriptPath": str(transcript)}
+    assert _run_hook(hook, "claude-code", monkeypatch, capsys) == "{}"
+    assert not (job / "env").exists()
+
+
+def test_a_start_job_by_saved_job_id_lands_in_that_job(capsys, job, tmp_path, monkeypatch):
+    from langslice.job import index
+
+    index.register(index.default_root(), "a1b2c3d4e5f6", job)
+    transcript = tmp_path / "saved.jsonl"
+    transcript.write_text(_lines({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "mcp__langslice__start_job",
+         "input": {"job_id": "a1b2c3d4e5f6"}}]}}))
+    assert transcripts.started_jobs(transcript.read_text()) == [str(job)]
+    # A start_job of an unknown id or with no arguments names nothing.
+    assert transcripts.started_jobs(_lines(
+        {"name": "mcp__langslice__start_job", "input": {"job_id": "no-such-job"}},
+        {"name": "mcp__langslice__start_job", "input": {}})) == []
 
 
 def test_a_transcript_naming_no_job_copies_nothing_and_never_fails(
