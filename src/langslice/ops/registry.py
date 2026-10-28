@@ -22,7 +22,7 @@ run, in this order, each one declared by
 methods and the job folder's reference card.
 
 A job that loads tool plugins (``JobSpec.plugins``,
-``docs/plugins.md``) has their tools after these: :func:`verbs_for` is the
+``docs/developers/plugins.md``) has their tools after these: :func:`verbs_for` is the
 per-spec view (:data:`VERBS` plus one :class:`Verb` per plugin tool, whose
 function is the plugin's handler), and :func:`enabled` reads it. :data:`VERBS`
 stays the native table.

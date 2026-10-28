@@ -92,7 +92,7 @@ include = ["langslice*"]
 [tool.setuptools.package-data]
 langslice = ["core/atlas/*.json", "hosts/integrations/static/*", "hosts/gui/static/*"]
 
-# The layered core's dependency rule (docs/architecture.md): each
+# The layered core's dependency rule (docs/developers/architecture.md): each
 # layer imports only the layers below it. tests/test_import_layers.py runs
 # `lint-imports`. Imports under `if TYPE_CHECKING:` are left out: a type
 # named in an annotation is not a dependency at run time. No contract has

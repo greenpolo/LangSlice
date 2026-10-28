@@ -131,7 +131,7 @@ plugin gave them (`engine.native_parameters`, `engine.version`), the
 `inverse_source` `fixed-point inversion of the supplied map`, and in its
 `provenance` `start`, `settings` and the `plugin` (`tool`, `call`, `version`,
 `note`, `meta`). One a script wrote through the library's `job.context`
-([your own method](library.md#your-own-method)) is the same with `script` for
+([your own method](developers/library.md#your-own-method)) is the same with `script` for
 `plugin:<tool>` and a provenance `script` (`call`, `note`, `meta`, `argv0`: the
 path of the running script); `fit_fireants` gives its call's settings by
 `fireants_syn`'s names and FireANTs' own numbers. A transform written by a
@@ -145,7 +145,7 @@ A `script_write` line in `logs/events.jsonl` (`property`, `sections`, `notes`,
 Written only by the `export_maps` verb (CLI and library), for every section
 with a position; never on a write or at `submit` (they are large). The
 library's `job.section_maps(section)` returns the same arrays in memory
-without writing them ([library](library.md#reading-results)). The grid
+without writing them ([library](developers/library.md#reading-results)). The grid
 is the section's working copy (a whole-slide TIFF's smallest pyramid level of at least 1536 px, otherwise the
 file downsampled to at most 3072 px), or with `full_resolution` the file's
 own pixels. A grid pixel `[row, col]` maps to the file by pixel centres

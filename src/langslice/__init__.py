@@ -28,7 +28,7 @@ loaded)::
 - :func:`load_atlas` (:mod:`langslice.core.atlas.core`): a cached BrainGlobe atlas.
 
 Each is loaded on first use, so ``import langslice`` stays light.
-``docs/library.md`` is the scripting guide.
+``docs/developers/library.md`` is the scripting guide.
 """
 
 from __future__ import annotations

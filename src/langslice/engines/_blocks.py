@@ -1,5 +1,5 @@
 """What the three in-tree engines share: the atlas image a call used, the section mask it was
-given, and the ``inputs`` / ``estimated`` blocks every fit reply carries (``docs/plugins.md``).
+given, and the ``inputs`` / ``estimated`` blocks every fit reply carries (``docs/developers/plugins.md``).
 
 The blocks are plain dicts of the shape ``langslice.core.engine_inputs`` gives the native
 fits; this module imports only :mod:`langslice.plugin_api`, as every engine does.

@@ -1,6 +1,6 @@
 """A script's own method through the library: ``job.context``.
 
-The plugin ``ToolContext`` handed to a script (``docs/library.md``, "Your own
+The plugin ``ToolContext`` handed to a script (``docs/developers/library.md``, "Your own
 method"): its writes recorded as ``script``, one undo step each, the job's
 freeze and staleness rules, the previews saved as numbered pictures, the
 engine I/O bridge, points through the registration, atlas planes anywhere,

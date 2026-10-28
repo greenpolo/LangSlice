@@ -1,6 +1,6 @@
 # emlddmm as LangSlice tools
 
-A LangSlice tool plugin (`docs/plugins.md` in LangSlice) that offers emlddmm (Tward et al. 2025,
+A LangSlice tool plugin (`docs/developers/plugins.md` in LangSlice) that offers emlddmm (Tward et al. 2025,
 Nat Commun; twardlab/emlddmm @ 9c4dc80 plus our fork's e426ece and 6ff62b0, Apache-2.0) to the
 registration agent as two tools. Design: Fable's proposal of 2026-10-19
 (`_local/notes/2026-10-19_comparator_plugin_review/emlddmm_proposal.md`), with one change Nash

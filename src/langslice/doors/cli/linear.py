@@ -48,7 +48,7 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="MODULE:FACTORY",
         help="Add the tools of a tool plugin to the agent's toolbox (repeatable): a "
         "Python module and the function in it that returns the tools. Importing it runs "
-        "its code; the job records which plugin ran (docs/plugins.md)",
+        "its code; the job records which plugin ran (docs/developers/plugins.md)",
     )
     p.add_argument(
         "--tool-plugin-config", dest="tool_plugin_configs", action="append", default=[],

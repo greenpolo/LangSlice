@@ -55,7 +55,7 @@ another version is refused. The same names are importable from
 | Field | Meaning |
 |---|---|
 | `name` | The tool's name: an identifier; not a native tool's nor another plugin tool's |
-| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/doors/declarations.py`. The description may use [needs marks](registration.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
+| `stub` | A function whose signature is the tool's arguments and whose docstring is its description, written like the stubs in `langslice/doors/declarations.py`. The description may use [needs marks](../registration.md#switching-tools-and-options-off) (`[[?look:overlay text]]`) |
 | `handler` | `handler(ctx, **arguments)`, returns a `ToolResult` |
 | `kind` | `read` or `write` |
 | `group` | `Common`, `Positioning`, `Linear` or `Nonlinear`: where a host lists it |
@@ -72,7 +72,7 @@ another version is refused. The same names are importable from
 A tool whose `atlases` or `planes` do not fit the job is absent, as a disabled
 tool is: it is not declared or listed, its options are gone, and every sentence
 that names it in the other tools' descriptions (written with [needs
-marks](registration.md#switching-tools-and-options-off), `[[?other_tool ...]]`)
+marks](../registration.md#switching-tools-and-options-off), `[[?other_tool ...]]`)
 is dropped. The provenance records the two fields.
 
 A plugin's description is also rendered by the tools the job's tasks leave out: a
@@ -119,7 +119,7 @@ refused (`NOT_FOR_SCRIPTS`).
 |---|---|
 | `ctx.sections()`, `ctx.section(id)` | `SectionView`: `id`, `index`, `file_size`, `pixel_size_um`, `pixel_size_source`, `position_mm`, `angles`, `flip`, `rotation_deg`, `affine` (`kind`, the six normalized numbers `matrix`, `knobs`, `mirrored`), `deformation`, `damaged_regions`, `damage_note`, `layers`, `frozen` |
 | `ctx.channels(id)` | The names of the section's raw channels in file order (`red`, `green`, `blue` or `gray` for a colour file; the host's names or `ch1`, `ch2`... for a multi-page file) |
-| `ctx.image_names(id)` | Every section image of the section ([section images](registration.md#section-images-and-damage)): its raw channels, then `preprocessed` and the images made since; what `images=[name]`, `fit_frame(image=)` and every fit's `section_image` take |
+| `ctx.image_names(id)` | Every section image of the section ([section images](../registration.md#section-images-and-damage)): its raw channels, then `preprocessed` and the images made since; what `images=[name]`, `fit_frame(image=)` and every fit's `section_image` take |
 | `ctx.working_grid(id)` | `(H, W)` of the section's working grid, in the file's orientation: the shape a made image has (`add_image`) |
 | `ctx.raw_plane(id, name)`, `ctx.working_rgb(id)` | One raw channel (`uint8` `(H, W)`) or the working copy as read (`(H, W, 3)`), in the image file's orientation, before the section's quarter turn and flip: the frame `add_image` takes (`section_raster` is turned as the section is) |
 | `ctx.section_raster(id, level=, images=, raw=False)` | `SectionRaster`: `array` (the section as its orientation sets it, RGB `uint8`, reduced to `level`: a long edge in pixels or `low` / `medium` / `high` / `auto`) with its frame: see [what a raster shows](#what-a-raster-shows) for what `images` and `raw` give; `to_section_px(xy)` and `from_section_px(xy)` convert `[x, y]` between the array's pixels and `section_px`, `mask_to_section_px(raster)` turns a raster computed on the array into the file's orientation |
@@ -202,7 +202,7 @@ record's provenance.
 | `ctx.set_deformations(rows, expect=None)` | rows `{"id", "map", "note"?, "meta"?}` (the map `deformation_from_map` takes) or `{"id", "deformation"}` (a `DeformationProposal`); each replaces the section's deformation, or, made with `start="current"`, builds on it; ok rows carry the proposal's `summary` | `deformation` |
 | `ctx.mark_damage(rows, expect=None)` | rows `{"id", "regions", "note"?}`, as `mark_damage` | any write tool |
 | `ctx.add_layer(id, layer)` | a [layer](#layers) | any write tool |
-| `ctx.add_image(id, name, array, note="")` | a made [section image](registration.md#section-images-and-damage): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation (computed from `raw_plane` or `working_rgb`), `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
+| `ctx.add_image(id, name, array, note="")` | a made [section image](../registration.md#section-images-and-damage): `array` `(H, W)` on the working grid (`ctx.working_grid(id)`) in the file's orientation (computed from `raw_plane` or `working_rgb`), `uint8` or floats from 0 to 1, saved as `sections/<stem>/images/<name>.png` with `note` as its source; returns its entry (`source`, `file`, `digest`); a raw channel's name, another shape or values is `BAD_ARGS` | any write tool |
 
 A write returns a `WriteResult`: `ok` is false when the call was refused whole
 (`error`, `message`); otherwise `rows` has one row per section asked
@@ -212,7 +212,7 @@ those as reply fields. A read tool that writes, or a write outside `writes`, is
 refused (`READ_TOOL_WRITES`, `WRITE_NOT_DECLARED`). The door adds `registration`
 `{section: number}` to the tool's reply for each section whose registration the
 call changed (the number `restore_registration` takes; see
-[writes](registration.md#writes-review-and-submission)), and a background notice ends
+[writes](../registration.md#writes-review-and-submission)), and a background notice ends
 with it.
 
 A deformation is written as a native fit's is: the record is saved in the
@@ -424,7 +424,7 @@ but must be in the file's orientation; `frame` is required to say which it is:
 `frame="oriented"` for one computed on the array of `section_raster`, which
 `add_layer` turns into the file's orientation. `atlas_um` coordinates are `[x, y, z]`
 BrainGlobe micrometres in the atlas's axis order. The file formats are in
-[file formats](file_formats.md#plugin-layers).
+[file formats](../file_formats.md#plugin-layers).
 
 The **fit grid** is `ctx.fit_frame(id).image`: the section turned and flipped
 as its orientation sets it, at the size LangSlice's fits run at (a long edge of
