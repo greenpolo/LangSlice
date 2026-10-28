@@ -37,12 +37,12 @@ sections back to registrations they held earlier (their status rows'
 `registration`), whatever was written since, as one undo step;
 `restore_registration(section=...)` lists one section's, and `look(...,
 registrations={id: n})` draws one without writing it
-([writes](../registration.md#writes-review-and-submission)). `look(...,
+([writes](../reference/tools.md#restore_registration)). `look(...,
 sheet=True)` tiles the pictures into sheets
-([looking](../registration.md#looking-and-calibration)).
+([looking](../reference/tools.md#look)).
 The handle reloads other processes' saved changes before each call; a read
 never waits for another process's write lock.
-Registration requirements still apply. See [registration tools](../registration.md).
+Registration requirements still apply. See [tools and options](../reference/tools.md).
 
 `trace_borders`, `fireants_syn` and a plugin's long tools (`stalign_lddmm`) start
 background work. Subsequent replies deliver its completion notice; `job.wait(timeout=None)`
@@ -83,8 +83,8 @@ untouched.
 | `orientation` | Per filename: a `rotation_deg` quarter turn and `flip` boolean; rotation then left-right flip |
 | `pixel_size_um` | Source pixel size in µm: one number for every file, or `{filename: um}` (a file it does not name uses its metadata); otherwise file metadata, else uncalibrated (image width mapped onto the atlas plane's width) |
 | `inputs` | Other `JobSpec.inputs`, including `order`, `damaged`, `channel_names` |
-| `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`; see [freezing](../registration.md#freezing-what-the-agent-may-not-change) |
-| `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](../registration.md#switching-tools-and-options-off) |
+| `frozen` | What the agent may not change, per section: `{filename: ["orientation", "affine"], "*": ["angles"]}`; properties `position`, `angles`, `orientation`, `affine`, `deformation`; see [freezing](../reference/settings.md#frozen) |
+| `disabled` | Tools and `tool:option` names the job does without, for example `["zoom", "look:positioning"]`; see [switching tools off](../reference/tools.md#switching-tools-and-options-off) |
 | `image_model` | Optional provider, profile or callable for `trace_borders`; omitted creates a job without one |
 | `plugins`, `plugin_config` | [Tool plugins](plugins.md) to add to the job's toolbox: `module:factory` references, factory functions defined at module level, or `ToolSpec` objects; options for a factory by reference. Loading runs their code. The references are saved with the job, so reopening it loads the same plugins |
 
@@ -189,7 +189,7 @@ lists them. For a script:
   supplies, is that section's row `FROZEN`; a placement write drops the
   deformations it made stale in the same undo step; the job's `disabled` list
   does not gate a script's writes (it switches tools off to save the agent's
-  context, [switching tools off](../registration.md#switching-tools-and-options-off));
+  context, [switching tools off](../reference/tools.md#switching-tools-and-options-off));
 - `work_dir()` and `start_work()` are refused (`NOT_FOR_SCRIPTS`): a script
   keeps its files in `scripts/` and `scratch/` and is its own computation.
 

@@ -15,7 +15,7 @@ LangSlice reads files with these endings:
 
 | Ending | Notes |
 |---|---|
-| `.tif`, `.tiff` | Plain, tiled and pyramidal (whole-slide) TIFF and OME-TIFF |
+| `.tif`, `.tiff` | Plain, tiled and pyramidal (whole-slide) TIFF and OME-TIFF, uncompressed or compressed (LZW, Deflate, JPEG) |
 | `.png` | |
 | `.jpg`, `.jpeg` | |
 
@@ -25,13 +25,6 @@ Tiff…**) or with the microscope's own software.
 
 A slide scan that holds several sections must be cut into one file per
 section first.
-
-:::{warning}
-A TIFF saved with LZW compression does not open with the standard
-installation. The job is created, but the next step fails with the message `<COMPRESSION.LZW: 5> requires the 'imagecodecs' package`.
-Save the images uncompressed, or ask your agent to install the
-`imagecodecs` package into the LangSlice environment.
-:::
 
 LangSlice never changes your image files. It writes its work into a new
 folder, `langslice`, inside the image folder. When it cannot write there, it

@@ -48,12 +48,12 @@ and `environment.yml` hold the worker's source installation.
   agent may not change; every write op refuses a change, `FROZEN`) and
   `disabled` (which tools exist). A task that is off freezes its properties
   everywhere.
-- The toolbox (`ops/registry.py`, `docs/registration.md`): looking and channel
+- The toolbox (`ops/registry.py`, `docs/reference/tools.md`): looking and channel
   tools shared by every run, and one distinct tool per registration method
   (`position_sections`, `interactive_transform`, `elastix_affine`, `fireants_syn`,
   `set_landmarks` / `landmark_triangulation`, `trace_borders`); a task switches its tools on or off whole. Sections are
   named by filename only.
-- A tool plugin (`JobSpec.plugins`, `docs/plugins.md`) adds first-class tools
+- A tool plugin (`JobSpec.plugins`, `docs/developers/plugins.md`) adds first-class tools
   through `langslice.plugin_api`; it loads only where the user chose it
   (library, `linear run --tool-plugin`), never through MCP or the ABBA worker,
   writes job state only through the context's operations and files only under
@@ -92,9 +92,16 @@ and `environment.yml` hold the worker's source installation.
 
 ## Docs
 
-`docs/` (built by Sphinx with MyST, `docs/conf.py`, warnings are errors): `index.md`, `agents.md`,
-`abba.md`, `gui.md`, `registration.md`, `library.md`, `plugins.md`, `file_formats.md`,
-`architecture.md`.
+`docs/` (built by Sphinx with MyST, `docs/conf.py`, warnings are errors;
+`docs/_extra/llms.txt` is copied to the site root): `index.md` (the front
+page), `getting-started/` (install, connect an AI app), `how-to/` (prepare
+images, tell the agent, check and correct, export, refine an existing
+registration), `abba.md`, `concepts/` (how registration works, what the AI
+decides, your data, plans and usage), `reference/` (`tools.md`, `settings.md`,
+`file_formats.md`, `glossary.md`), `troubleshooting.md`, `help.md`, `agents/`
+(install, the agent CLI, MCP, the built-in agent) and `developers/`
+(`library.md`, `plugins.md`, `architecture.md`, `gui.md`). Each section folder
+has an `index.md` with its toctree.
 
 ## Environment and checks
 

@@ -34,7 +34,6 @@ h2, h3 { font-size: 11px; font-weight: normal; color: var(--muted); margin: 0 0 
 .job-title { flex: 1; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: right; }
 
 .tab { flex: 1; min-height: 0; }
-.placeholder { padding: 28px 24px; color: var(--muted); font-size: 13px; }
 .viewer { display: flex; }
 .jobs { width: 190px; flex-shrink: 0; border-right: 1px solid var(--line); padding: 10px 8px; overflow-y: auto; }
 .jobs ul { list-style: none; margin: 0; padding: 0; }

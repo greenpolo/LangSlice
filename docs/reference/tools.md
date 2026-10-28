@@ -158,22 +158,57 @@ A call over a limit is refused with `TOO_MANY_SECTIONS` and nothing is done.
   closer to horizontal on the picture (a horizontal section shown with the
   anterior-posterior axis across), the halves are `top` and `bottom`. A
   sagittal plane lies in one hemisphere and has no sides (`NO_SIDES`).
+  Naming the pair a picture does not have is refused with
+  `WRONG_SIDE_PAIR`, whose message names the pair to use; a side on a
+  midline at 45 degrees is refused with `SIDES_AMBIGUOUS`.
 - **Pictures** are numbered, captioned and saved in the job folder. A
   later tool names a picture by its number, and points on it by `x`, `y`
   pixels from its top-left corner. Picture size changes what is shown, never
-  a fit or a stored transform. Image files are never modified.
+  a fit or a stored transform. Image files are never modified. Where the
+  agent chooses the picture size, `resolution` applies to every mode: a
+  section is never drawn past its source pixels, an atlas plane at most four
+  times past its voxels. The footer of a picture drawn at other than canvas
+  pixels gives both scales: `canvas` (micrometres per canvas pixel) and
+  `view` (micrometres per picture pixel, the number the caption calls
+  um/px).
+- **Scale.** A section's scale comes from the supplied pixel size (one for
+  the stack, or one per file) or the file's TIFF or OME tags, else from the
+  section image's width mapped onto the atlas plane's width (reported as
+  `uncalibrated`). Positioning pictures and the paired opening tiles use the
+  same micrometres per pixel for section and atlas, so tissue can appear
+  smaller than the atlas. The stored affine contributes its isotropic scale,
+  `sqrt(abs(det))`. Each section thumbnail is the whole image and each atlas
+  thumbnail is framed around the atlas anatomy; neither is stretched to fill
+  its tile.
 - **Brain size.** The fits' distances were set on adult mouse sections. For
   another brain every distance of `elastix_affine`, `fireants_syn`,
   `make_mask` and the image-model trace is multiplied by the atlas brain's
   size factor: the cube root of its annotated brain volume over the adult
   Allen mouse's, rounded to 0.05. Measured factors: every adult CCFv3 atlas
   1, `whs_sd_rat_39um` 1.7, `swc_female_rat_50um` 1.4, DeMBA P4 0.7, P10
-  0.9, P14 0.95. Distances on this page are the adult mouse's.
+  0.9, P14 0.95. Distances on this page are the adult mouse's. What is
+  scaled: the working pixels (20 µm in the adult mouse, 34 µm in the rat),
+  so a rat section is fitted as a mouse section drawn smaller;
+  `smoothness_um`; the edge channel's blur and the local-correlation
+  window; the outline and damage margins; the restricted neighbourhood and
+  its taper; a mask's EM contrast block and how far from the tissue it
+  samples background; the image-model line softening, gap closing and
+  smallest region; the displacement and smallest-region limits of the
+  plausibility flags; and the positioning picture's smallest ruler margin
+  and span. The EM's grid stays at the sampling at which holes, tears and
+  debris are seen. A fit's reply reports its engine numbers at the job's
+  scale (`core/atlas/size.py`).
 - **`view`.** Every tool that changes the registration returns a picture of
   the result unless called with `view` false. A job with
   [`force_view`](settings.md#pictures) does not offer `view`, so the
   pictures always come.
 - **Undo.** Every write is one undo step and is saved at once.
+- **Background work and conflicts.** Work running in the background
+  (`trace_borders`, a plugin's) holds its sections: any write to them is
+  refused `SECTION_BUSY`, naming the work, until it lands. Long fits compute
+  outside the job's write lock and check their inputs again before they
+  apply: a section whose inputs changed meanwhile is `STALE_INPUT`, and the
+  other sections' results still apply.
 
 ## Common tools
 
@@ -207,6 +242,55 @@ stay). Without `overlay`, `atlas_opacity` and `warp` go; without `atlas` and
 `positioning`, `positions_mm` goes; without `section` and `overlay`,
 `layers` and `registrations` go.
 
+**Details.** New jobs leave sections without supplied positions unplaced; no
+position is inferred from filename order or the nominal interval. The opening
+shows unplaced sections beside a separate overview of the atlas. In
+`positioning` mode an unplaced section appears at the right, labelled "no
+position", with no line to the ruler; `positions_mm` draws candidate atlas
+planes above it.
+
+`look(mode="atlas", sections=[...])` draws one atlas picture per section, at
+that section's own position and cutting angles (captioned `atlas at 5.00 mm
+... (s0.png's cutting angles)`); `positions_mm` given with `sections` is
+refused `BAD_ARGS` unless it is the sections' own positions.
+
+`registrations={filename: number}` (with `overlay` or `section`) draws each
+named section under that earlier registration and writes nothing. The caption
+says `registration 3 (not held)` (or `(held)`), the picture index records the
+registration drawn, and a zoom of the picture draws it again without calling
+it stale. With `sections` empty only the named sections are drawn; a named
+section missing from `sections`, or another mode, is `BAD_ARGS`, and the
+registration's own refusals apply (`UNKNOWN_REGISTRATION`,
+`REGISTRATION_ELSEWHERE`, `DEFORMATION_UNREADABLE`).
+
+`images` with several raw channels draws each in its own colour with automatic
+contrast per section: black at the background and full colour at the tissue's
+95th percentile on a dark background, the 1st and 99.5th percentiles on a
+light one. There are no display settings: a stretched, inverted or
+gamma-corrected view is a made image, which a fit can read too. Every caption
+names the image drawn and what it is (its recipe, a script's note, or how the
+opening image was made).
+
+`borders` draws the boundaries between regions at one `depth` of the atlas
+ontology; a highlighted region is outlined from the leaf annotation, whatever
+its depth. A picture takes a black core with a white outline when its own
+pixels under the lines are light (mean CIELAB lightness 50 or more), else a
+white core with a black outline; the caption names it (`borders black,
+white-edged`). Faint context lines and thick highlighted regions keep the same
+arrangement. The image model's pictures keep plain yellow lines. `masks`
+outlines each mask where its weight is 0.5 on `section` and `overlay`
+pictures; the caption says that the ringed patches are what the mask leaves
+out of a fit, and names each mask and its source.
+
+`sheet=True` (agent CLI and library) also tiles the pictures drawn into sheets
+of up to 16, each at most the viewer's largest picture: each tile is one
+picture as drawn, scaled down whole, under a header naming its number. The
+sheet is captioned with every tile's caption and saved as a picture of its own
+(mode `sheet`), whose recipe lists each tile's picture and box. Every picture
+is still saved and numbered (on the agent CLI its JPEG is an artifact of kind
+`tile`, the sheet the one in `picture_files`); the reply's `pictures` lists
+the sheets with their tiles and `tiled` the pictures they tile.
+
 ### `zoom`
 
 Draws a pixel box, or one atlas region, of an earlier picture again at the
@@ -227,6 +311,19 @@ A zoom of a picture whose sections have changed since draws them as they
 were and says `stale`.
 
 **Switch off:** `zoom`. Without `look:overlay`, `region` goes.
+
+**Details.** Without `picture`, the newest picture that is not a zoom is used.
+A zoom of a tall or narrow box is padded with black beside its picture and
+captioned below; the reply's `content_box` `[x0, y0, x1, y1]` is where the
+picture itself lies, and `covers` `[x0, y0, x1, y1]` is the part of the whole
+picture it shows. The grid's step is a round number from 1 to 5000 pixels
+that gives at most twelve lines along the longer side, labelled at every
+edge. `region` takes one acronym or numeric id, descendants included,
+optionally with a side, and uses the saved picture's placement, deformation
+and display settings; the region must occur in that plane. `zoom` on a sheet
+takes the box on the tile holding most of it and zooms that tile's own
+picture (the reply's `sheet` and `box`, the box in that picture's pixels);
+`region` is refused on a sheet, and a box over no tile is `EMPTY_BOX`.
 
 ### `make_image`
 
@@ -268,6 +365,43 @@ pixels gets a new file (`<name>.2.png`), so undo finds the old one.
 **Switch off:** `make_image`. The raw channels and `preprocessed` stay.
 Without `look:section`, `view` goes.
 
+**Details.** For an ABBA job that sends preprocessing settings,
+`preprocessed` is the host's channel blend. It is made once on the working
+copy and saved as its file; from then on every reader (the fits, the image
+model, `look`, zooms, masks) reads that file, resized to the size it works
+at, so a fit reply's file and digest are exactly what the engine read.
+`make_image("preprocessed")` with every argument at its default writes the
+same file again. A recipe image is likewise computed once on the working copy
+and read back from its file. `weights` empty is every raw channel by its
+tissue coverage; an image cannot be its own source, and a raw channel's name
+cannot be made. Naming `sections` remakes the image for them alone under the
+same name. One undo step per call. Through the agent CLI and the library
+`view` returns every section. Refusals: `BAD_ARGS`, `UNKNOWN_SLICE_IDS`,
+`UNKNOWN_IMAGE`, `RENDER_FAILED`.
+
+A script adds an image it computed with
+`job.context.add_image(id, name, array, note="")`
+([library](../developers/library.md#your-own-method)): an `(H, W)` array on
+the section's working grid in the file's orientation, `uint8` or floats from
+0 to 1, recorded with the note as its source, one undo step.
+
+Every fit reply's `inputs.section_image` is `{name, kind, file, digest}` (for
+a raw channel, the section's image file and no digest); the picture
+`elastix_affine` and `fireants_syn` return is drawn on that image. A fit's
+cache key holds the image's digest, so an image made again while a fit
+computes makes that section `STALE_INPUT`. `status` lists the raw channels
+and the made images (`section_images`: each name with its recipe, a script's
+note or the opening image's recipe, `varies` with the sections that differ,
+and `only` / `except` where it exists on some sections). No image changes
+geometry: every image is held at the working copy's size.
+
+The job statement says what the section images are and how `preprocessed` was
+made, that a channel whose signal is sparse shows little of the anatomy the
+atlas draws, which atlas images there are and which one the fits' default
+`nissl` is, and that a fit compares one section image with one atlas image
+and does best when both show as much internal structure as possible and look
+alike.
+
 ### `grep_atlas`
 
 Looks regions up in the atlas hierarchy by acronym, name or id. Text only.
@@ -281,6 +415,17 @@ Looks regions up in the atlas hierarchy by acronym, name or id. Text only.
 Returns at most 40 rows: acronym, id, name, ancestry and descendant count.
 
 **Switch off:** `grep_atlas`. Option: `grep_atlas:points`.
+
+**Details.** With `points` (`query` may be left empty), each point's answer is
+the region's acronym, name and id, and `within`, the regions containing it,
+nearest first (the root left out, at most six), or `region: null` with a note
+when the point is outside the atlas or outside the picture's image content.
+On a zoom, x and y are the numbers its grid prints and give the same answer as
+on the whole picture. It reads what the picture drew: the saved `labels.tif`
+of an overlay or a zoom of one, the section's atlas plane for an atlas picture
+drawn with `look(mode="atlas", sections=[...])`, and the source picture of a
+crop. An atlas picture not tied to a section is refused with
+`NO_ATLAS_IN_PICTURE`, as is a picture of the section alone.
 
 ### `grep_atlas_view`
 
@@ -310,6 +455,20 @@ holds:
 
 **Switch off:** cannot be switched off.
 
+**Details.** Every status row (here, and the rows of the sections a write
+changed) gives the section's `transform`: its `kind`, the values
+`interactive_transform` takes (`rotation_deg`, `scale_x`, `scale_y`, `shear`,
+`translate_x_mm`, `translate_y_mm`, `pivot`) and `mirrored`; and the
+`deformation` it holds: `method` (its last step's), `steps` (every step's
+method, first first) and `settings` (what the last step was made with, by the
+tools' names: a native fit's `section_image`, `atlas_image`, `mask`,
+`smoothness_um`, `metric`, `edges`, `detail` and `restrict_to`; a plugin's or
+a script's call settings). A section with landmark pairs carries `landmarks:
+{total, pending, stale, warp}` (`pending` counts moved pairs too; `warp` says
+in words whether the applied warp matches the pairs), and `can_change` names
+the landmark tools when they are on. Replies give a transform's values under
+`transform` everywhere.
+
 ### `list_files`, `search_files`, `read_file`
 
 Read the job folder. Write nothing. The agent transcripts (`trace/`) are
@@ -323,6 +482,12 @@ the picture index (`views.jsonl`), never its pixels.
 | `read_file` | `path` (required), `offset` (0), `limit` (400; at most 2000 lines) |
 
 **Switch off:** each by its own name.
+
+**Details.** A path that does not exist is `NOT_FOUND`, naming the nearest
+folder above it and what it holds; a path under `trace/` is refused
+(`BAD_PATH`). A picture file's answer says how to see it again: `zoom` by its
+number or, in a job without `zoom`, the `look` call that draws the view again
+on the stack as it is now.
 
 ### `mark_damage`
 
@@ -345,6 +510,11 @@ Returns a picture of the marked regions shaded on the section beside the same
 regions on the atlas.
 
 **Switch off:** `mark_damage`.
+
+**Details.** Its description tells the agent to leave intact tissue shifted
+near its place unmarked, for the warp to fit; to move tissue shifted further
+with landmarks; and that marking a whole large region when most of it is
+missing keeps the surrounding anatomy safe.
 
 ### `make_mask`
 
@@ -375,6 +545,19 @@ refuses it (`STALE_MASK`) until it is made again.
 which also removes the `mask` argument of the fits and `look`'s `masks`.
 **Needs:** `look:section`.
 
+**Details.** A mask has one of two kinds. `em` is made at each section's
+current registration: the atlas image placed through its transform and
+applied deformation, on a 20 µm working grid. `fit` is copied from the sorting
+the section's applied deformation saved when its engine estimated one
+(`NO_DEFORMATION` or `NO_SORTING` when there is none). There is no threshold
+mask and no drawn mask. `elastix_affine` and `fireants_syn` cut the weights at
+0.5 and combine them with the section's own mask; a tool plugin's engine uses
+them as its own limits say. With `mask="none"` every pixel inside the placed
+atlas outline counts. A section that cannot get a mask (no position; no
+deformation for `fit`) is that section's row and the others are written.
+`status` lists each section's masks (name, kind, `stale`,
+`earlier_registration`).
+
 ### `note`
 
 Appends one line (`text`) to the run notes, saved with the results.
@@ -389,6 +572,13 @@ tool call, or a finished piece of background work, is one step. Both take
 is saved and survives a restart.
 
 **Switch off:** `redo`. `undo` cannot be switched off.
+
+**Details.** The reply's `undone` (or `redone`) holds the `sections` the steps
+touched and the `fields` they changed, then those sections' status rows and the
+remaining depth; with more than one step asked, `steps` (how many were taken)
+and, when fewer, a `message`. Undo returns a section to an earlier fit only
+while nothing else was written since; `restore_registration` returns one
+section alone.
 
 ### `restore_registration`
 
@@ -409,6 +599,22 @@ is refused (`REGISTRATION_ELSEWHERE`) until the section is back there.
 
 **In a run when** Linear or Nonlinear is on. **Switch off:**
 `restore_registration`. **Needs:** `look:overlay`.
+
+**Details.** Each registration is numbered per section
+([`registrations.jsonl`](file_formats.md#registrations-sectionsnameregistrationsjsonl)).
+The section's status row says which it holds (`registration`), and so does
+the reply to the write that left it. The listing gives, per number, the tool
+that made it and when, its `transform`, its `deformation` (`method`, `steps`,
+`settings`), `pictures` (the numbers of the pictures the write that left it
+saved), the one held, and `not_here` for one fitted at another position or
+cutting angles. A section that cannot go back is its own row (`results`) and
+the others are written: `UNKNOWN_REGISTRATION` for a number it never held
+(the row lists its numbers), `REGISTRATION_ELSEWHERE` (above), `FROZEN` for a
+frozen property it would change, `SECTION_BUSY` while background work runs on
+it. When no section can go back, the first row's code leads the reply. A
+registration held before its section's list began (a job made by an older
+LangSlice) is listed when a write replaces it, or when the tool lists the
+section.
 
 ### `submit`
 
@@ -538,6 +744,21 @@ region too small for Elastix is refused (`REGION_TOO_SMALL`).
 **In a run when** Linear is on. **Switch off:** `elastix_affine`.
 **Needs:** `look:overlay`.
 
+**Details.** Each ok row carries the `inputs` it read and `estimated: null`.
+Each flag is also worded in the row's `warning`; a section that holds only
+part of the brain (a hemisphere) can be stretched over atlas it does not hold.
+For a deformed section, undo the deformation first or fit a warp on it. A call that fits nothing answers with the code and sentence every
+section was refused for when they share one (`HAS_DEFORMATION`, `FROZEN`),
+else `NOTHING_FITTED`, each row naming its own; `fireants_syn` answers the
+same way. A restricted fit highlights those regions' borders and may zoom its
+picture to them; other borders stay faint. A region is too small when its
+support outside the damage marks spans fewer than four native atlas pixels in
+either in-plane direction or holds fewer than sixteen pixels, checked before
+any padding or fitting; use a larger region or `interactive_transform`.
+Under a frozen `orientation`, a fit keeps the section's handedness (the sign
+of its transform's determinant), and a fit that would mirror it is refused; a
+frozen `affine` is refused by name.
+
 ## Nonlinear tools
 
 ### `fireants_syn`
@@ -571,6 +792,59 @@ position, orientation, cutting angles or transform clears its deformation.
 `fireants_syn:metric`, `fireants_syn:edges`, `fireants_syn:detail` (the
 argument goes and keeps its default). **Needs:** `look:overlay`.
 
+**Details.** The engine is FireANTs' SyN with ANTs' step rule: mutual
+information (or local correlation) plus an edge channel, four pyramid levels
+(five at `fine`), `smoothness_um` as the Gaussian smoothing of each step and a
+quarter of it for the whole warp; the step size, the iterations per level and
+the pyramid are fixed. About a second per section on a GPU. Identical inputs
+give identical fields. A fit runs once and measures the section inside the
+placed atlas outline widened by 0.2 mm (for a restricted fit, only within the
+regions' neighbourhood), less the section pixels a named mask's weights put
+under 0.5; `elastix_affine` and the fit of traced borders do the same. Marked
+damage is left out, with a margin. A restricted fit's masks limit where it is
+measured, not where its smooth field reaches: the change fades to none over a
+further 0.3 mm and the tissue beyond keeps its earlier fit.
+
+`atlas_image` takes any of the atlas's images: BrainGlobe's `template` and
+every additional reference the atlas ships, under BrainGlobe's names. The
+alias `nissl`, the default, is the atlas's Nissl image where it has or
+borrows one (the template of `ccfv3augmented_mouse_25um`, which is a Nissl;
+an additional reference whose name contains "nissl"), else its template. An
+Allen CCFv3 atlas, which ships no Nissl (one whose BrainGlobe metadata names
+the `allen-adult-mouse-ccf-space` coordinate space, or names none and has its
+grid), is also offered `ccfv3augmented_nissl`, the Blue Brain averaged Nissl
+template of `ccfv3augmented_mouse_25um`, downloaded on first use; `nissl`
+resolves to it. The reply names the image it resolved to, with
+`atlas_image_note` where `nissl` was honoured by the Nissl template of
+`ccfv3augmented_mouse_25um`. The job statement lists the images, quotes
+BrainGlobe's description of the atlas, and asks the agent to fit against the
+image whose contrast is closest to the section's and that lines up with the
+borders.
+
+The reply carries `settings` (the call) and, per section, `inputs` (the
+section image `{name, kind, file, digest}`; the atlas image as asked and as
+resolved; the mask, always an object: `name` (`"none"` for no mask), `kind`,
+`stale`, `earlier_registration`; the damage regions and the margin left
+around them; the regions restricted to; the brightness scaling in words) and
+`estimated` (null: FireANTs sorts nothing itself); the deformation record's
+provenance holds the same blocks. The reply names what was used and nothing
+about how well it worked. The outsized-displacement flag counts only what the
+fit adds beyond the section's landmark warp, so a deliberate landmark move is
+never flagged. Up to 20 sections per call because every fitted section is held
+in memory until the call writes them all as one undo step (20 sections peaked
+at 6.4 GB).
+
+A fit that waited a second or more for the machine's GPU queue (one fit at a
+time across every job on the machine) says how long in its row
+(`gpu_wait_s`); one that found the GPU's memory taken by another process,
+waited and ran again says so (`retried`). What the engines print goes to the
+job's `logs/engine.log`, never into the reply. A fit whose engine fails is
+that section's row `FIT_FAILED`: its message is the error's first line (a GPU
+out of memory said in words: running the call again fits it from the start)
+and says that `logs/engine.log` holds the whole error. The same holds for
+`elastix_affine`, `make_mask` and the library's `fit_fireants` and
+`fit_elastix`.
+
 ### `set_landmarks`
 
 Adds, updates and deletes {term}`landmark` pairs of one section: each pair is
@@ -595,6 +869,66 @@ endpoints stale.
 `landmark_triangulation`. **Needs:** `look:atlas` or `look:overlay`;
 `look:section` or `look:overlay`; `landmark_triangulation`.
 
+**Details.** Endpoints are x,y pixels of a numbered picture, from the top-left
+of the whole image, panel offsets included. On a zoom, x,y are the numbers its
+grid prints, so a number read off any grid works whether the call names the
+zoom or the whole picture; a point the zoom does not show is refused with the
+range it covers. An atlas endpoint outside the atlas is refused before
+anything is written (`ATLAS_ENDPOINT_OUTSIDE`), naming the pair and giving
+the nearest point 1.5 atlas pixels inside the outline. A generic atlas
+picture drawn by `positions_mm` has no section and cannot supply endpoints.
+When MCP shrinks pictures to fit its reply budget, the delivered sizes get new
+picture numbers with exact geometry; earlier numbers still refer to the
+originals.
+
+Omitted endpoints of an update stay as they were; `delete=["all"]` clears the
+section's pairs as one step. Every reply lists the section's pairs (`id`,
+`atlas` and `section` as `{picture, x, y}`, and a `state`) with their counts:
+`applied` (in the landmark warp now applied, with these endpoints), `moved`
+(in it, with other endpoints now), `pending` (saved, not in it) or `stale`
+(placed against an atlas plane the section has left; `stale` wins). A `warp`
+block gives `built_from`, `not_applied`, `deleted_still_in_warp` and a `note`
+that `landmark_triangulation` must run again. A call with no pairs and no
+`delete` writes nothing and returns this listing. The reply names the region
+drawn at each atlas endpoint it placed (`atlas_endpoint_regions`). A refused
+endpoint names the pair (its index and id), the endpoint, the picture and the
+x,y, and says what to do: a point outside the image content gives the
+picture's content box, a picture without geometry for the section or drawn at
+an earlier atlas plane says which picture to draw again, and
+`TOO_MANY_LANDMARK_VIEWS` says to resend with `view=false` or in calls of
+four. A section whose `deformation` is frozen is refused (`FROZEN`) by both
+landmark tools.
+
+On the agent CLI, `pairs` goes through `--args`, as a JSON object or a file:
+
+```bash
+langslice-job JOB set_landmarks --args @pairs.json     # {"section": "s01.tif", "pairs": [...]}
+langslice-job JOB set_landmarks --args '{"section": "s01.tif", "delete": ["L2"]}'
+langslice-job JOB zoom --picture 12 --box 960,230,1300,940   # or --box '[960,230,1300,940]'
+```
+
+The `view` crop carries the atlas region borders as `look` draws them. A zoom
+of it is a saved-image crop and reports `redrawn=False`. Later section views
+show open-centre circles, atlas views diamonds, and overlays both, with
+matching ids, outlined in white and black. Markers are drawn after
+compositing and never enter fit images or image-model inputs; older pictures
+keep their original markers. Editing pairs, or marking damage, does not make
+an older picture `stale`; a change to the placement or the registration does.
+Appearance changes leave pairs valid; section endpoints are stored in the
+original image's normalized frame and survive orientation changes, and
+linear transform changes keep both endpoints.
+
+The tool's description advises placing both endpoints of a pair on one
+overlay (or a zoom of it) where possible, the atlas point where a border is
+drawn and the section point where that border belongs; after a warp, an
+overlay shows the section warped onto the fixed atlas and a point placed
+there is read through the warp. Endpoints are best read off a close zoom with
+grid lines 10 to 20 pixels apart. Pairs are spread over the outline and the
+internal anatomy (the midline, a ventricle, a fibre tract). An atlas region
+with no tissue on the section takes no pair (`mark_damage` records it); a
+region only partly present keeps its pairs on the part that is present;
+tissue with no atlas counterpart takes none.
+
 ### `landmark_triangulation`
 
 Applies the section's saved landmark pairs as a piecewise affine warp, built
@@ -613,6 +947,38 @@ the job's `image_resolution` is `auto`.
 
 **In a run when** Nonlinear is on. **Switch off:** only together with
 `set_landmarks`. **Needs:** `look:overlay`; `set_landmarks`.
+
+**Details.** The triangulation is of the pairs' section points in their pixel
+aspect ratio, with the four corners 10% outside the frame, and a piecewise
+affine pull-back to the matching atlas points (`core/triangulation.py`). A
+pair whose two endpoints are one point of an overlay corresponds to that spot
+against the baseline the warp is applied on, so it keeps it where it is. A
+pair on the outline with no pair beside it drags distant anatomy through the
+large triangles that reach the corners. LangSlice adds no points of its own. A
+state whose landmark warp carries automatic holds (`landmark_holds`, fold
+vertices named `~K`) still opens: those fields are ignored. The inverse uses
+the same triangles. Repeated section points (the reply names the pairs) and
+zero-area source triangles are refused.
+
+A triangle whose atlas points wind the other way from its section points (a
+fold) is applied and the forward map is unchanged. Where target triangles
+overlap, the inverse takes the unfolded triangles first and then the folded
+ones, each in mesh order, so the result is deterministic. The reply reports
+`folds`: `area_fraction` (the share of the frame covered by folded
+triangles), `pairs` (the ids at their corners), the first triangles with
+their pair ids, and `triangle_count`; the result picture outlines each folded
+triangle in magenta. It lists `built_from` and, since `displacement_mm` is the
+whole deformation now applied, `step_displacement_mm`, the change this
+application made (`displacement_note` says so).
+
+The first application composes the landmark warp onto the current
+deformation. Later applications replace that landmark warp on the same
+earlier baseline, so editing or deleting a pair removes its influence. A
+FireANTs or trace fit in between becomes the baseline for the next
+application. A missing baseline inverse or an unreadable deformation is
+refused. Reapplying an unchanged set writes nothing. Editing or deleting
+pairs leaves the current registration in force until the next application;
+undo restores the registration before an application.
 
 ### `trace_borders`
 
@@ -641,3 +1007,36 @@ the prompts, the raw reply, the extracted lines and the fit.
 `none`, and (on MCP and the agent CLI) the image model's key or login is on
 this computer. **Switch off:** `trace_borders`, or set
 `nonlinear.provider` to `none`. **Needs:** `look:overlay`.
+
+
+**Details.** The section is turned upright on the model's frame from its
+linear placement: the atlas's dorsal side (the anterior end on a horizontal
+section) points straight up, and on a coronal or horizontal section the atlas
+midline runs down the middle. A sagittal section is only turned. It is a turn
+and shift, never a mirror. The crop is the placed atlas's extent plus 15% of
+its larger side on every side, never past the section image, and on a coronal
+or horizontal section widened to stay symmetric about the midline, padded
+with the slide's background colour where it runs past the image. Turn, crop
+and scale are one resample, and the model's lines are read back through them.
+
+The model's outer line sets the section's extent: the fit pulls the atlas in
+or out to it, wherever the linear placement left the atlas edge. The fit of
+traced lines steps half as far as a stain fit, smooths the whole warp twice
+as wide, and gives every traced region and the lines an equal pull (each
+one's gradient scaled to the same length, as ANTs' multi-metric rule does),
+so no single large region or stray line drives the warp. A completed fit is
+its own undo step. Identical inputs reuse the saved reply; a changed
+placement or section image needs a new trace, and a result whose inputs
+changed while it ran is refused `STALE_INPUT`. The prompt tells the model
+that the atlas decides which borders exist, even where tissue boundaries are
+faint, and that only physically missing tissue justifies leaving one out.
+
+Inspect the raw model reply, then the extracted lines on the original
+photograph, then the fitted overlay: a model may redraw tissue, a fit may
+degrade a useful trace, yellow tissue can confuse the line extractor, and fit
+numbers do not certify region identity. `export_maps` exports each traced
+section's last reply and its lines on the maps grid
+([`exports/traces/`](file_formats.md#tracesnamenpz)). With
+`nonlinear.provider` `none` the FireANTs and landmark tools stay. Custom image
+models and prompts are in the
+[library guide](../developers/library.md#image-models).

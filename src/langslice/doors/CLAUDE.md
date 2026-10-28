@@ -93,7 +93,7 @@ process forks for it, `cli/warm.py`).
   JSON schema, unknown keys refused), `argument_texts(doc)` (each argument's
   `Args` entry on one line). `FULL` is the variant of a caller
   without a job (LangSlice's coronal base prompt for the OpenAI models).
-- `plugins/` — tool plugins (`docs/plugins.md`); `langslice/plugin_api.py`
+- `plugins/` — tool plugins (`docs/developers/plugins.md`); `langslice/plugin_api.py`
   re-exports its names. `loader.py`: `load(ref, config)` imports
   `module:factory`, calls it, checks every tool (`core.plugins.check_tool`),
   builds the provenance (module, factory, versions, source
@@ -392,7 +392,7 @@ process forks for it, `cli/warm.py`).
   and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
   process of its own, by command, never importing the host),
   `mcp.py` (`mcp`), and the agent CLI
-  (`docs/agents.md`), a command of its own so that allowing it allows
+  (`docs/agents/cli.md`), a command of its own so that allowing it allows
   no agent, server, host or login:
   - `jobcli.py` — `langslice-job` (entry point `langslice.doors.cli.jobcli:main`,
     also `python -m langslice.doors.cli.jobcli`): `main()` without argv
@@ -403,7 +403,7 @@ process forks for it, `cli/warm.py`).
     child's): `ops` and `schema` first (run inside `stdout_to_stderr`,
     their envelope printed after), anything else `FOLDER VERB`; returns the
     exit code.
-  - `warm.py` — the warm process (`docs/agents.md`, "The warm process"):
+  - `warm.py` — the warm process (`docs/agents/cli.md`, "The warm process"):
     one fork server per job folder and Python environment (`identity`:
     interpreter, flags, import path, LangSlice's folder), standard library
     only on the client's side. Client `run(argv)`: `job_folder` (not

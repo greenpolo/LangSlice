@@ -12,7 +12,8 @@ extensions = [
 myst_enable_extensions = ["colon_fence", "deflist", "tasklist"]
 myst_heading_anchors = 6
 
-exclude_patterns = ["requirements.txt", "_build"]
+exclude_patterns = ["requirements.txt", "_build", "_extra"]
+html_extra_path = ["_extra"]  # llms.txt at the site root
 
 html_theme = "pydata_sphinx_theme"
 html_title = "LangSlice"

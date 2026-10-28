@@ -12,6 +12,12 @@ Registration is always the subagent's, and it registers exactly one brain.
 
 ## 1. Ask the user (only what is not already said)
 
+If the user's message holds a `langslice-job FOLDER init` command from the
+LangSlice window's prompt generator, those settings are the user's choices:
+run that command as given (change only its quoting to suit your shell, and add
+any setting it names as left to you), and ask only about what its request says
+it leaves out, and which subagent to use.
+
 - The folder of section images.
 - Tasks: Positioning (order and position along the atlas), Linear (in-plane
   alignment), Nonlinear (a deformation per section). Default is positioning

@@ -15,7 +15,7 @@ here is a verbatim copy — edit one, mirror to the other.
   `get_root_mask`. The public surface is deliberately small: what LangSlice
   itself reads.
 - `disk_cache.py` — volumes derived from an atlas, kept on disk between
-  processes (`docs/architecture.md`, "Atlas cache"): `cached_volume(atlas,
+  processes (`docs/developers/architecture.md`, "Atlas cache"): `cached_volume(atlas,
   name, build)` reads `<cache>/<atlas>_v<version>/format<FORMAT>/<name>.npy`
   memory-mapped, else builds it and saves it under a temporary name renamed
   into place; `cache_root` (`LANGSLICE_ATLAS_CACHE`, `off`, else

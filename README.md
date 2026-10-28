@@ -47,6 +47,8 @@ launcher.
 
 ## Use LangSlice
 
+- **[Getting started](docs/getting-started/index.md):** install LangSlice and
+  connect the AI app you already use (Codex, Antigravity or Claude Code).
 - **[Agents, CLI and MCP](docs/agents/index.md):** Claude Code, Antigravity or Codex
   through `langslice-job`, Claude Desktop through MCP, or the built-in agent with
   `langslice linear run sections/`.
@@ -55,7 +57,7 @@ launcher.
 - **[Python](docs/developers/library.md):** coding agents can open a job and write their
   own workflows using the same tools.
 
-[Registration tools](docs/registration.md) ·
+[Tools and options](docs/reference/tools.md) ·
 [Tool plugins](docs/developers/plugins.md) ·
 [File formats](docs/reference/file_formats.md) ·
 [Architecture](docs/developers/architecture.md) ·

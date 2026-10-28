@@ -7,7 +7,7 @@ off — a task that is OFF takes its answer from ``inputs`` instead of from the
 agent, and its tools are not built at all. ``disabled`` takes single tools and
 tool options off on top of what the tasks give.
 
-See ``docs/registration.md`` for the design this mirrors.
+See ``docs/reference/settings.md`` for the design this mirrors.
 """
 
 from __future__ import annotations

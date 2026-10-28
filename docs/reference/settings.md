@@ -160,6 +160,21 @@ Common freezes:
   `{"s_007.tif": ["orientation", "affine"]}`.
 - A section left out of the deformation: `{"s_007.tif": ["deformation"]}`.
 
+A refused section is not written; the other sections of a per-section call
+still are (`position_sections` and the library's `set_transforms` refuse the
+whole call). Under a frozen `orientation` a fit keeps the section's
+handedness: the sign of its transform's determinant stays that of the
+transform it replaces (positive without one). A frozen `affine` is never
+rewritten: `elastix_affine` refuses it by name, and `interactive_transform`
+refuses a changed value (the same numbers again write nothing, and the
+orientation may change under it when it is free). A section whose
+`deformation` is free is still deformed on its supplied transform. The job
+statement says what is frozen, grouping sections that share a freeze, and
+each `status` row of a section with something frozen carries `frozen`. A
+`job.json` that holds `inputs.locked`, `inputs.keep_warp` or
+`inputs.nonlinear_skip` reads them as the freezes they stand for
+(`orientation` and `affine`; `deformation`; `deformation`).
+
 Freeze what you have checked and trust. Leave a supplied value unfrozen when
 it is a starting guess the agent should improve.
 

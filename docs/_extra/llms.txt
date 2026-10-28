@@ -1,0 +1,33 @@
+# LangSlice
+
+> LangSlice registers histology brain sections to BrainGlobe atlases. A user's coding-agent app (Codex, Antigravity, Claude Code) creates a job folder for one brain with `langslice-job FOLDER init`, launches one registration agent with the prompt `langslice-job FOLDER launch --role register|register-scripting` writes, and checks the saved pictures. Install from source into the conda environment of environment.yml.
+
+Rules for an agent setting up a registration: never register sections yourself; put the user's notes in the job (`init --notes`); pass `result.prompt` of `launch` to the registration agent unchanged; run `launch` again for each launch; judge the result by its pictures, not the agent's summary.
+
+## For agents
+
+- [Install LangSlice (for agents)](https://langslice.readthedocs.io/en/latest/agents/install.html): source install, verification, connecting Codex, Antigravity and Claude Code
+- [The agent CLI](https://langslice.readthedocs.io/en/latest/agents/cli.html): jobs, launch prompts, verbs, replies, background runs, the job's Python environment
+- [The MCP server](https://langslice.readthedocs.io/en/latest/agents/mcp.html): `langslice mcp`, `start_job`
+- [The built-in agent](https://langslice.readthedocs.io/en/latest/agents/builtin.html): `langslice linear run`, its own flags, spend, logs
+
+## How-to
+
+- [Prepare your images](https://langslice.readthedocs.io/en/latest/how-to/prepare-images.html)
+- [Tell the agent what you already know](https://langslice.readthedocs.io/en/latest/how-to/tell-the-agent.html)
+- [Check and correct a registration](https://langslice.readthedocs.io/en/latest/how-to/check-and-correct.html)
+- [Export results for cell counting](https://langslice.readthedocs.io/en/latest/how-to/export-results.html)
+- [Refine an existing registration](https://langslice.readthedocs.io/en/latest/how-to/refine-existing.html)
+
+## Reference
+
+- [Tools and options](https://langslice.readthedocs.io/en/latest/reference/tools.html): every registration tool, its arguments, what a job can switch off
+- [Job settings](https://langslice.readthedocs.io/en/latest/reference/settings.html): every `init` setting with its flag, default and when to change it
+- [Job folder and file formats](https://langslice.readthedocs.io/en/latest/reference/file_formats.html): the job folder, coordinate conventions, maps, exports, importing a registration
+
+## Optional
+
+- [Python library](https://langslice.readthedocs.io/en/latest/developers/library.html)
+- [Tool plugins](https://langslice.readthedocs.io/en/latest/developers/plugins.html)
+- [Architecture](https://langslice.readthedocs.io/en/latest/developers/architecture.html)
+- [Source and connectors](https://github.com/greenpolo/LangSlice)
