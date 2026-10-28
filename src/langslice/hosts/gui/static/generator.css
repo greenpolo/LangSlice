@@ -1,0 +1,48 @@
+/* The prompt generator tab (generator.js), in app.css's palette and type. */
+.tab.generator { overflow-y: auto; }
+.gen-page { display: flex; gap: 22px; align-items: flex-start; padding: 16px 20px 28px; max-width: 1240px; }
+.gen-form { flex: 1; min-width: 0; max-width: 660px; }
+.gen-intro { margin: 0 0 14px; font-size: 13px; }
+.gen-section { margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.gen-section h3 { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+.gen-field { display: flex; flex-direction: column; gap: 3px; margin: 0 0 9px; }
+.gen-label { font-size: 12px; }
+.gen-help { display: block; color: var(--muted); font-size: 11px; }
+.gen-help.gen-inline { display: inline; margin-left: 8px; }
+.gen-about { margin: -4px 0 10px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.gen-field input, .gen-field textarea, .gen-field select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); padding: 4px 7px; width: 100%; }
+.gen-field textarea { resize: vertical; }
+.gen-field input:focus-visible, .gen-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gen-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.gen-check { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 7px; cursor: pointer; }
+.gen-check input { margin: 3px 0 0; accent-color: var(--accent); flex-shrink: 0; }
+.gen-check input:disabled + span { color: var(--muted); }
+.gen-check.gen-kept span { text-decoration: line-through; }
+.gen-howto { margin: 0 0 4px; }
+.gen-howto summary, .gen-advanced > summary { cursor: pointer; color: var(--accent); }
+.gen-howto ul { margin: 6px 0 4px; padding-left: 18px; font-size: 11px; }
+.gen-howto li { margin-bottom: 3px; }
+.gen-advanced { margin-top: 4px; }
+.gen-advanced > summary { font-size: 12px; margin-bottom: 6px; }
+.gen-group { border: 1px solid var(--line); margin: 0 0 10px; padding: 6px 10px 4px; }
+.gen-group legend { color: var(--muted); font-size: 11px; padding: 0 4px; }
+.gen-tool { margin: 0 0 2px; }
+.gen-tool.gen-absent { opacity: 0.45; }
+.gen-name { color: var(--muted); font-family: var(--mono); font-size: 10px; margin-left: 8px; }
+.gen-options { margin: -3px 0 5px 22px; display: flex; flex-wrap: wrap; column-gap: 16px; }
+.gen-options .gen-check { margin-bottom: 3px; font-size: 11px; }
+.gen-output { width: 540px; flex-shrink: 0; position: sticky; top: 0; border: 1px solid var(--line); background: var(--panel); padding: 10px 12px; }
+.gen-output-head { display: flex; align-items: center; gap: 10px; }
+.gen-output-head h3 { flex: 1; margin: 0; }
+.gen-copy { padding: 3px 16px; border-color: var(--accent); color: var(--accent); }
+.gen-copy:disabled { opacity: 0.4; cursor: default; }
+.gen-message { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; background: var(--bg); border: 1px solid var(--line); padding: 8px 10px; margin: 8px 0; max-height: calc(100vh - 250px); overflow-y: auto; user-select: all; }
+.gen-problems, .gen-warnings { margin: 6px 0; padding-left: 18px; font-size: 11px; }
+.gen-problems { color: var(--bad); }
+.gen-warnings { color: #e0cf9e; }
+.gen-problems:empty, .gen-warnings:empty { display: none; }
+@media (max-width: 900px) {
+  .gen-page { flex-direction: column; padding: 12px 16px 24px; }
+  .gen-output { width: auto; position: static; }
+  .gen-row { grid-template-columns: 1fr; }
+}

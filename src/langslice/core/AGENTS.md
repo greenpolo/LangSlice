@@ -32,6 +32,13 @@ whose imports are core-only:
   (`TOOLS` plus the tools of `spec.plugins`; `TOOLS` itself without plugins),
   which `valid_names(spec)`, `check_names`, `refusal(spec)`, `off_names`,
   `catalog(spec)` read, so a job's `disabled` list can name a plugin tool;
+- `tool_labels.py`: a short label for people per tool and `tool:option`
+  (`TOOL_LABELS`, `label`), per task (`TASK_LABELS`, `TASK_ABOUT`) and per
+  tool group (`GROUP_LABELS`, with the group's task), for the LangSlice
+  window's prompt generator (`hosts/gui/generator.py`, its only importer).
+  Never model-facing; `tests/test_gui_generator.py` checks that every tool
+  and option has one and no other name does, and that none appears in the
+  pinned model-facing text. A new tool or option is a row here too;
 - `plugins.py` and `plugin_layers.py`: tool plugins (`docs/plugins.md`), the
   core's part. `plugins.py`: the types (`ToolSpec`, `ToolResult`, `Layer`,
   `ToolError`, `PluginError`, `PLUGIN_API_VERSION`), `check_tool` (the

@@ -63,7 +63,11 @@
     </main>
   </div>
 
-  <div id="tab-prompt" class="tab placeholder" hidden><p>The prompt generator will turn your choices (atlas, tools, section thickness, image folder) into a request to paste into your agent app. It is not built yet.</p></div>
+  <!-- prompt generator: generator.js fills this tab -->
+  <div id="tab-prompt" class="tab generator" hidden></div>
+  <link rel="stylesheet" href="generator.css">
+  <script src="generator.js" defer></script>
+  <!-- /prompt generator -->
   <div id="tab-settings" class="tab placeholder" hidden><p>Settings will hold your model connections (ChatGPT sign-in and API keys) and where registration runs. They are not built yet.</p></div>
 
   <footer><span id="connection">Connecting…</span><span>Closing this window does not stop the run.</span></footer>
