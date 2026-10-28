@@ -14,18 +14,25 @@ was shown: number, tool, sections, caption, step), ``state.json`` (the whole
 state, its run ``notes`` included), ``job.json`` (the settings and the user's
 notes), ``registration.json``, ``history/``, ``exports/`` and ``logs/``.
 A picture file is not returned as pixels: it is answered with its index record
-and the way to see it again (``zoom`` by its number).
+and the way to see it again (``zoom`` by its number; where the job has no
+``zoom``, the ``look`` call that draws a ``look`` picture's view again).
+``trace/``, the agent transcripts, is neither listed, searched nor read
+(:data:`langslice.job.browse.HIDDEN`).
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
+from langslice.core.look import RENDERER as LOOK_RENDERER
+from langslice.core.needs import render
+from langslice.core.toolset import LOOK_MODES
 from langslice.job import browse
 from langslice.job.browse import PathMissing, PathRefused
 from langslice.ops.refusal import Refused
@@ -167,6 +174,46 @@ def _record_text(record: PictureRecord) -> list[str]:
     return lines
 
 
+def _look_arguments(record: PictureRecord) -> dict[str, Any] | None:
+    """The ``look`` arguments that draw *record*'s view again (from its recipe),
+    or None when ``look`` did not draw it."""
+    recipe = record.recipe or {}
+    args = recipe.get("args") or {}
+    if recipe.get("renderer") != LOOK_RENDERER or args.get("mode") not in LOOK_MODES:
+        return None
+    out: dict[str, Any] = {"mode": args["mode"]}
+    for key in ("sections", "positions_mm", "images", "masks"):
+        if args.get(key):
+            out[key] = list(args[key])
+    if args.get("atlas_layers") is not None:
+        out["atlas_layers"] = list(args["atlas_layers"])
+    if args.get("warp") not in (None, "applied"):
+        out["warp"] = args["warp"]
+    if args.get("registrations"):
+        out["registrations"] = {str(name): int(number)
+                                for name, number, _held in args["registrations"]}
+    return out
+
+
+def _see_again(record: PictureRecord, off: Collection[str]) -> str:
+    """The reply's line on how to see *record* again, written with its needs
+    and rendered for the job's disabled list *off*: ``zoom`` by its number,
+    else the ``look`` call that draws its view again, else nothing."""
+    redraw = _look_arguments(record)
+    zoomed = bool(((record.recipe or {}).get("args") or {}).get("zoom"))
+    with_look = "" if redraw is None else (
+        f"[[?look:{redraw['mode']} To draw its view again, call look with {{call}} "
+        f"(it draws the stack as it is now{', and the whole picture, unzoomed' if zoomed else ''}"
+        ").]]")
+    text = render(f"[[?zoom To see it again, call zoom with picture {record.seq} and a box "
+                  "over the part to see (a box as large as the picture shows all of it)."
+                  f"||{with_look}]]", off)
+    if redraw is not None:  # the arguments go in after the marks are read
+        text = text.replace("{call}", ", ".join(f"{key}={value!r}"
+                                                for key, value in redraw.items()))
+    return text
+
+
 def _dimensions(real: Path) -> str:
     try:
         with Image.open(real) as image:
@@ -182,7 +229,9 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
     remain, the offset to continue from. A picture file is not returned as
     pixels: its reply is its picture-index record (number, tool, sections,
     caption, step) and says to see it again with ``zoom`` by that
-    number. A binary file is described by its size.
+    number, or, where the job has no ``zoom``, the ``look`` call that draws a
+    ``look`` picture's view again (on the stack as it is now). A binary file is
+    described by its size.
     """
     real = _resolved(job, path)
     shown = browse.relative(_folder(job), real)
@@ -197,10 +246,10 @@ def read_file(job: Job, path: str, offset: int = 0, limit: int = browse.READ_LIN
             return FileText(shown, kind, f"{shown} is a picture file ({facts}) with no entry in "
                             "the picture index. Pixels are not returned by this tool.")
         body = [f"{shown} is a picture file ({facts}); pixels are not returned here.",
-                *_record_text(record),
-                *([] if job.spec.off("zoom") else [
-                    f"To see it again, call zoom with picture {record.seq} and a box over "
-                    "the part to see (a box as large as the picture shows all of it)."])]
+                *_record_text(record)]
+        again = _see_again(record, job.spec.switched_off)
+        if again:
+            body.append(again)
         return FileText(shown, kind, "\n".join(body), picture=record.seq)
     if kind == "binary":
         return FileText(shown, kind, f"{shown} is a binary file ({_size(real.stat().st_size)}); "

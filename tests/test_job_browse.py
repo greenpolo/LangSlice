@@ -22,11 +22,12 @@ from tests.fakes import SlabAtlas
 _ATLAS = SlabAtlas()
 
 
-def _open(tmp_path: Path) -> Job:
+def _open(tmp_path: Path, disabled: list[str] | None = None) -> Job:
     images = tmp_path / "images"
-    images.mkdir()
+    images.mkdir(parents=True)
     Image.fromarray(np.full((30, 40, 3), 90, dtype=np.uint8)).save(images / "s0.png")
-    spec = JobSpec(image_folder=str(images), model="fake-model", preprocess="none")
+    spec = JobSpec(image_folder=str(images), model="fake-model", preprocess="none",
+                   disabled=list(disabled or []))
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
     return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
 
@@ -143,3 +144,83 @@ def test_picture_files_answer_with_their_index_record(tmp_path: Path):
     stray = job.layout.folder / "stray.png"
     Image.new("RGB", (4, 4)).save(stray)
     assert files.read_file(job, "stray.png").picture is None
+
+
+def _look_recipe(**args: Any) -> dict[str, Any]:
+    return {"renderer": "look", "args": {
+        "mode": "overlay", "sections": ["s0.png"], "positions_mm": [], "images": [],
+        "atlas_layers": None, "atlas_opacity": None, "warp": "applied", "long_edge": None,
+        "zoom": [], "part": None, "highlight": [], "depth": 6, **args}}
+
+
+def _saved(job: Job, tool: str, recipe: dict[str, Any] | None) -> str:
+    job.views.save(tool=tool, pictures=[(Image.new("RGB", (20, 10)), None)],
+                   recipes=[recipe], captions=["a picture"])
+    job.views.flush()
+    record = job.views.latest(exclude_tool=None)
+    assert record is not None and record.path
+    return f"{record.path}/view.jpg"
+
+
+def test_a_picture_is_seen_again_with_zoom_or_drawn_again_with_look(tmp_path: Path):
+    """With zoom, the picture's number; without it, the look call that draws a
+    look picture's view again on the stack as it is now; else nothing."""
+    with_zoom = _open(tmp_path / "zoom")
+    shown = files.read_file(with_zoom, _saved(with_zoom, "look", _look_recipe())).text
+    assert "call zoom with picture 1" in shown and "call look" not in shown
+
+    job = _open(tmp_path / "nozoom", disabled=["zoom"])
+    looked = files.read_file(job, _saved(job, "look", _look_recipe(
+        registrations=[["s0.png", 2, False]], masks=["tissue"]))).text
+    assert "call zoom" not in looked
+    assert ("To draw its view again, call look with mode='overlay', sections=['s0.png'], "
+            "masks=['tissue'], registrations={'s0.png': 2} (it draws the stack as it is now)."
+            ) in looked
+    zoomed = files.read_file(job, _saved(job, "interactive_transform", _look_recipe(
+        zoom=[0.1, 0.1, 0.5, 0.5]))).text
+    assert "call look with mode='overlay', sections=['s0.png'] (it draws the stack as it " \
+        "is now, and the whole picture, unzoomed)." in zoomed
+    atlas = files.read_file(job, _saved(job, "look", _look_recipe(
+        mode="atlas", sections=[], positions_mm=[4.5]))).text
+    assert "call look with mode='atlas', positions_mm=[4.5]" in atlas
+    # A picture look did not draw (a crop, a sheet, no recipe) gets no line.
+    for recipe in ({"renderer": "crop", "source": 1, "box": [0, 0, 5, 5]}, None):
+        other = files.read_file(job, _saved(job, "zoom", recipe)).text
+        assert "To draw" not in other and "To see" not in other
+    # A look mode the job switches off is not offered either.
+    no_atlas = _open(tmp_path / "noatlas", disabled=["zoom", "look:atlas"])
+    text = files.read_file(no_atlas, _saved(no_atlas, "look", _look_recipe(
+        mode="atlas", sections=[], positions_mm=[4.5]))).text
+    assert "call look" not in text and "To draw" not in text
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks")
+def test_the_agent_transcripts_are_neither_listed_searched_nor_read(tmp_path: Path):
+    job = _open(tmp_path)
+    folder = job.layout.folder
+    trace = job.layout.trace_dir
+    (trace / "deep").mkdir(parents=True)
+    (trace / "session.jsonl").write_text("needle in the transcript\n")
+    (trace / "deep" / "more.jsonl").write_text("needle deeper\n")
+    (folder / "notes.txt").write_text("needle outside\n")
+    (folder / "into_trace").symlink_to(trace / "session.jsonl")
+
+    listed = files.list_files(job)
+    assert "trace" not in listed.text and "into_trace" not in listed.text
+    assert "notes.txt" in listed.text
+    every = files.list_files(job, glob="*")
+    assert not any(e.path.startswith("trace") or e.path == "into_trace"
+                   for e in every.entries)
+    found = files.search_files(job, "needle")
+    assert found.matches == ("notes.txt:1: needle outside",)
+    for path in ("trace", "trace/", "./trace/session.jsonl", "trace/deep/more.jsonl",
+                 "trace/no_such_file", "history/../trace/session.jsonl",
+                 str(trace / "session.jsonl"), "into_trace"):
+        for call, args in ((files.read_file, (path,)), (files.list_files, (path,)),
+                           (files.search_files, ("needle", path))):
+            refused = _refused(call, job, *args)
+            assert "the agent transcripts, which these tools do not open" in str(
+                refused.details["message"])
+    # A missing path's refusal does not name the folder among the job folder's names.
+    missing = _refused(files.read_file, job, "no_such_file", code="NOT_FOUND")
+    assert "trace/" not in missing.details["holds"]

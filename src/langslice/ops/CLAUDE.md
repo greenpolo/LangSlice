@@ -140,9 +140,16 @@ wording; `registry.py` lists which.
   `list_files(job, path=".", glob="")` -> `Listing`, `search_files(job, query,
   path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
   `FileText`; each has a capped `text` reply that counts what it leaves out. A picture
-  file is answered with its `views.jsonl` record (`job.views.records()`) and the
-  number to give `zoom`, never pixels; `views.jsonl`, `state.json`
-  (the run notes) and `job.json` read as text.
+  file is answered with its `views.jsonl` record (`job.views.records()`), never
+  pixels, and a line written with its needs (`core.needs.render`): the number to
+  give `zoom`; where the job disables `zoom`, for a picture whose recipe is
+  `look`'s, the `look` call that draws its view again (`_look_arguments`: mode,
+  sections, positions, images, masks, atlas layers, warp, registrations, from the
+  recipe's `args`; said to draw the stack as it is now, and unzoomed for a zoomed
+  recipe), offered only while its mode is on; for any other picture nothing.
+  `views.jsonl`, `state.json` (the run notes) and `job.json` read as text.
+  `trace/` (the agent transcripts, `browse.HIDDEN`) is never listed, searched
+  or read: `BAD_PATH`.
 - `history.py` — `undo(job, steps=1)` / `redo(job, steps=1)`: that many
   steps under one hold of the job's lock (fewer when the history holds
   fewer); `Stepped` (`done`, `depth`, `step`: the sections and field groups

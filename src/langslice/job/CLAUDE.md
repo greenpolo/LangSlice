@@ -102,7 +102,8 @@ logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, an e
 logs/calls/<n>_<verb>.json  each agent-CLI call's envelope as printed
 trace/               agent transcripts (`TRACE_DIR`, `JobLayout.trace_dir`): the
                      built-in agent's trace, a coding agent's session copied in by
-                     `langslice session-end` (`doors/cli/transcripts.py`)
+                     `langslice session-end` (`doors/cli/transcripts.py`); the
+                     agent's file tools never show or open it (`browse.HIDDEN`)
 env/                 the job's own Python environment (`ENV_DIR`; `doors/cli/jobenv.py`)
 prompt.txt           a saved ABBA job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
@@ -438,7 +439,10 @@ longer exist be taken over by the images it is opened with.
   (regex, else plain text; case-insensitive; text files only), `read_lines`,
   `kind_of` (dir/text/picture/binary), and the caps (`LIST_ENTRIES`,
   `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips
-  symlinks leaving the folder.
+  symlinks leaving the folder. `HIDDEN` (`TRACE_DIR`, the agent transcripts;
+  `is_hidden`): left out of every listing, search, walk and a missing path's
+  `holds`, and a path in it (or a symlink into it) refused with `PathRefused`
+  whether or not it exists.
 - `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
   placed sections, each anchoring from its exact pixel -> atlas map, so any
   plane and cutting angle; `exports/quicknii.json` and `visualign.json`,
