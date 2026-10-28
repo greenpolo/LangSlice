@@ -95,7 +95,10 @@ exports/             linear_results.json (the run's result; spec.out overrides
                      plugins/<tool>/ (copies of the layers plugins left)
 plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/);
                      the only place a plugin tool writes
-logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read)
+logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read), per
+                     change of the plugins' record, and a `tool_start` / `tool_end`
+                     pair per tool call on every door (`doors/tools/toolbox.py`,
+                     `_job_events`; `docs/file_formats.md` has the fields)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, an error's
                      code and message, artifacts, `reply`)
@@ -278,6 +281,12 @@ longer exist be taken over by the images it is opened with.
   `History.problem` says why (logged, and `Job.open` says it through the
   progress log), and `save` writes and deletes nothing while it is set; a
   fresh job reads a history before emptying it. Only a history that was read is pruned.
+- `recent.py` — the jobs opened on this computer,
+  `~/.langslice/recent_jobs.jsonl` (`folder`, `image_folder`, `atlas`, `at`;
+  one line per `Job.open`), for the GUI's job list: `remember`, `read`,
+  `recent_file` (`LANGSLICE_RECENT_JOBS`, `RECENT_ENV`: another file, or
+  `off`; the test suite sets it off); past `KEEP_BYTES` rewritten with the
+  newest line of each of the newest `KEEP_JOBS` folders. Never fails an open.
 - `index.py` — saved host jobs by id: `~/.langslice/jobs/<id>.json`
   (`job_id`, `job_folder`, `host_channel`, `created_at`, and `fallback`
   when the job folder is under `~/.langslice/jobs/` because the image
@@ -295,7 +304,7 @@ longer exist be taken over by the images it is opened with.
 - `job.py` — `Job`: `open` (resume or ingest, the opening `preprocessed`
   image of every section without one, `core.section_images.ensure_opening`,
   outside undo, then the first checkpoint; the open event records
-  `resumed`), `load` (as it stands, writing nothing, except once for a job of
+  `resumed`; the job added to the recent jobs list, `recent.remember`), `load` (as it stands, writing nothing, except once for a job of
   state format 3 or without its opening images: then the migrated state and
   history are written at format 4 under the lock, after reading the state file
   again there (`_write_upgrade`: another process may have migrated and written

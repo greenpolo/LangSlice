@@ -110,7 +110,8 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   (one table; source and date in its comment; reasoning tokens as output where
   ADK reports them apart) warned at $5 doubling; a model with no price is said
   so once. `engine.run_session` writes `summary()` to `exports/spend.json`
-  when the session ends or fails. A new provider lane adds its row group to
+  after every model call (`run_agent_session(on_spend=)`) and when the
+  session ends or fails. A new provider lane adds its row group to
   `PRICES`; the provider modules supply raw usage only.
 - `prompt.py` — `build_job_statement`: the job, the run facts (`run_facts`:
   the range, the optional protocol (`cutting_protocol_fact`: unknown values
@@ -150,7 +151,12 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   every model call. `env_value` / `env_float` read the environment.
 - `trace.py` — `SessionTrace`, the full-content JSONL trace (what the agent
   was shown, said, called and got back; images as descriptors, never
-  bytes), written only when `LANGSLICE_TRACE_DIR` is set (`--trace-dir`). A
+  bytes), written only when `LANGSLICE_TRACE_DIR` is set (`--trace-dir`;
+  `linear run` sets it to the job's `trace/` when neither is given). The
+  engine passes the job's `trace/` as `run_agent_session(trace_mirror=)`:
+  when the trace folder is another, every record is written to the same
+  file name in both (`SessionTrace.paths`), so the job folder always holds
+  its run's trace, line by line as it goes. A
   job that loaded tool plugins adds a `plugins` record after `session`
   (`ToolBox.plugins`: provenance and each tool's declaration as the model saw
   it; `run_agent_session(plugins=)`).
@@ -163,7 +169,9 @@ written with what it needs (`core/needs.py`) and rendered for the job.
   reasoning stays in provider replay only. The toolbox emits `tool_start` /
   `tool_end` inside its serialization lock, with resolved `target_ids`, a
   unique execution id and, on `tool_end`, `views` (the pictures the call
-  saved); these events never enter model context. `plain` copies JSON
+  saved); these events never enter model context. The same events are
+  lines of the job's `logs/events.jsonl` on every door, observer or not
+  (`toolbox._job_events`). `plain` copies JSON
   content without media bytes.
 - `cost.py` — `estimate(spec, n_slices)` (the sections whose orientation and
   affine are frozen cost no transform work): the pre-run usage-window

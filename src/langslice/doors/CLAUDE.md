@@ -271,7 +271,14 @@ process forks for it, `cli/warm.py`).
   that already lists `pictures`, saved by its operation, is left as it is),
   `_announces_work` (`with_notices`: the notices of background work
   finished since the last reply first, under `background`, and its pictures
-  after the reply's own) and `_serialized`; `_tool_target_ids`;
+  after the reply's own) and `_serialized` (one lock; the `tool_start` /
+  `tool_end` events to the host's `on_event` and, on every door, to the
+  job's `logs/events.jsonl` through `_job_events`: `name`,
+  `execution_id`, `door` (`build_tools(event_door=)`, else `door`;
+  `Opened.tools` names the library's `library`), `target_ids`, `args`
+  (cut at `EVENT_ARGS_BYTES`, `_event_args`), and on `tool_end` `step`
+  (undo depth), `views` relative to the job folder, `failed`, `status`;
+  never the reply; nothing when `Job.persist` is False); `_tool_target_ids`;
   `with_job_prompt`: the image model with the job's own base prompt,
   `nonlinear.image_prompt`, as an untested `custom` profile), `door.py`
   (`Door`, what every tool body of a run shares: the job, the workspace,

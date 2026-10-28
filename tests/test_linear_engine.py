@@ -301,6 +301,50 @@ def test_window_share_warnings_go_to_the_operator_every_ten_points(
     assert next(e for e in events if e["kind"] == "complete")["spend"]["quota_used_percent"] == 20
 
 
+def test_a_trace_sent_elsewhere_is_also_written_in_the_job_folder_as_it_goes(
+    tmp_path: Path, monkeypatch
+):
+    """With LANGSLICE_TRACE_DIR pointing outside the job (as SliceBench runs
+    it), the job's trace/ holds the same file, line for line, while the run
+    goes; exports/spend.json is current after every model call; every tool
+    call is a door `agent` event in logs/events.jsonl."""
+    names = _make_stack(tmp_path, n=3)
+    install_fake_adk_model_stack(
+        monkeypatch, positions=dict(zip(names, [4.0, 4.5, 5.0], strict=True)),
+        input_tokens_per_call=1000)
+    elsewhere = tmp_path / "run_traces"
+    monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(elsewhere))
+    job_folder = tmp_path / "langslice"
+    live: list[tuple[int, int]] = []
+
+    def on_event(event: dict) -> None:
+        if event["kind"] == "usage":  # after the call is counted
+            spend = json.loads((job_folder / "exports" / "spend.json").read_text())
+            mirrored = list((job_folder / "trace").glob("*.jsonl"))
+            live.append((spend["tokens"]["input_uncached"], len(mirrored)))
+
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
+    state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS,
+                            on_event=on_event))
+
+    assert state.submitted is True
+    first, second = (sorted(folder.glob("*.jsonl")) for folder in
+                     (elsewhere, job_folder / "trace"))
+    assert len(first) == len(second) == 1 and first[0].name == second[0].name
+    assert first[0].read_bytes() == second[0].read_bytes()
+    kinds = [json.loads(line)["kind"] for line in second[0].read_text().splitlines()]
+    assert kinds[0] == "session" and kinds[-1] == "summary"
+    # The account after each call, before the run ended; the mirror already there.
+    assert len(live) >= 2
+    assert [tokens for tokens, _ in live] == [1000 * n for n in range(1, len(live) + 1)]
+    assert all(count == 1 for _, count in live)
+    events = [json.loads(line) for line in
+              (job_folder / "logs" / "events.jsonl").read_text().splitlines()]
+    calls = [e for e in events if e["kind"] in ("tool_start", "tool_end")]
+    assert calls and {e["door"] for e in calls} == {"agent"}
+    assert calls[-1]["kind"] == "tool_end" and calls[-1]["name"] == "submit"
+
+
 def test_an_api_key_lane_is_told_its_dollar_estimate_through_the_whole_session(
     tmp_path: Path, monkeypatch
 ):

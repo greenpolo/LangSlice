@@ -480,7 +480,7 @@ SHA-256 of the source files that declared its tools, and per tool its kind,
 group, task, `writes`, `limits`, `meta` and `declaration`: the name,
 description and argument schema as the model sees them. A change is also a
 `plugins` line in `logs/events.jsonl`. The built-in agent's trace
-(`<job>/trace` or `--trace-dir`) has a `plugins` record after `session` with
+(`<job>/trace`, and `--trace-dir` when given) has a `plugins` record after `session` with
 the same content; plugin tool calls and replies are traced like native ones.
 
 ## Where plugins load

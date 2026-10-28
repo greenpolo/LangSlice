@@ -102,6 +102,29 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
     assert _text(submit)["error"] == "MISSING_POSITIONS"
 
 
+def test_every_mcp_tool_call_is_an_event_in_the_job_folder(tmp_path: Path):
+    """Without any ABBA channel, each tool call over MCP leaves a `tool_start`
+    and a `tool_end` line in the job folder's logs/events.jsonl."""
+    folder = _folder(tmp_path)
+    server = build_server(_spec_for, str(folder), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return await client.call_tool("look", {"mode": "section", "sections": ["s1.png"]})
+
+    _session(server, body)
+    lines = [json.loads(line) for line in
+             (folder / "langslice" / "logs" / "events.jsonl").read_text().splitlines()]
+    events = [line for line in lines if line["kind"] in ("tool_start", "tool_end")]
+    assert [(e["kind"], e["name"], e["door"]) for e in events] == [
+        ("tool_start", "look", "mcp"), ("tool_end", "look", "mcp")]
+    start, end = events
+    assert start["execution_id"] == end["execution_id"]
+    assert start["target_ids"] == ["s1.png"] and start["args"]["sections"] == ["s1.png"]
+    assert end["failed"] is False and end["status"] == "ok" and end["step"] == 0
+    assert len(end["views"]) == 1 and not Path(end["views"][0]).is_absolute()
+    assert "response" not in end
+
+
 def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
     server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
 
