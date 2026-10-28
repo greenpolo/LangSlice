@@ -46,7 +46,8 @@ here is a verbatim copy — edit one, mirror to the other.
   details" page, CC BY 4.0), kept in `brainglobe_atlas_details.json` by atlas
   name (lower case) with the page's commit; `atlas_description(name)`, which
   the job statement quotes (`agent/prompt.py`, `atlas_facts`): what the
-  reference images are and where one is misaligned. Refresh with
+  reference images are and where one is misaligned; `descriptions()`, every
+  atlas the page lists, the LangSlice window's atlas list. Refresh with
   `python -m langslice.core.atlas.details`.
 - `sides.py` — one side of a region, `"CTX:left"`: the grammar
   (`split_side`), the native plane's two ML halves
