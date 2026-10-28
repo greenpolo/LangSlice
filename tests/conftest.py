@@ -15,6 +15,9 @@ os.environ.setdefault("LANGSLICE_ATLAS_CACHE", "off")
 # Nor the recent jobs list (~/.langslice/recent_jobs.jsonl); its tests point
 # it at a temporary file.
 os.environ.setdefault("LANGSLICE_RECENT_JOBS", "off")
+# Nor read or write the user's settings (~/.langslice/settings.json), which
+# `linear run` reads for its model; their tests point it at a temporary file.
+os.environ.setdefault("LANGSLICE_SETTINGS", "off")
 # A long verb's CLI call runs in its own process unless a test detaches it
 # (whatever harness runs the tests: Claude Code sets CLAUDECODE).
 os.environ["LANGSLICE_DETACH"] = "0"

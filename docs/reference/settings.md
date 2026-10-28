@@ -107,7 +107,7 @@ own flag:
 | `orientation` | `--orientation JSON` | `{filename: {"flip": true or false, "rotation_deg": 0, 90, 180 or 270}}`. |
 | `transforms` | `--transforms JSON` | `{filename: transform}`: in-plane transforms. In the library, six numbers `[a, b, tx, c, d, ty]` or a transform record. |
 | `damaged` | `--damaged JSON` | `{filename: note}`: notes for the agent. A note excludes no region from the fits; only the agent's `mark_damage` does. |
-| `pixel_size_um` | `--pixel-size-um UM or JSON` | Micrometres per pixel: one number for every file, or `{filename: um}`. |
+| `pixel_size_um` | `--pixel-size-um UM or JSON` | Micrometres per pixel: one number for every file, or `{filename: um}`; a file the mapping does not name reads its own TIFF or OME tags. |
 | `channel_names` | (hosts only) | One name per page of a multi-page image. |
 
 Flags marked JSON take inline {term}`JSON` or the path of a JSON file. Any other key is
@@ -270,8 +270,8 @@ chooses the model.
 
 | Key | Default | Flag | What it does |
 |---|---|---|---|
-| `model` | `openai-oauth/gpt-6.1-sol` | `--model` | The model that drives the run. |
-| `reasoning` | the provider's | `--reasoning low|medium|high|xhigh|max` | Reasoning effort, for models that expose one. |
+| `model` | `openai-oauth/gpt-6.1-sol`, or the model chosen in the LangSlice window's Settings | `--model` | The model that drives the run. Without `--model`, the model saved in `~/.langslice/settings.json` ([format](file_formats.md#settings-langslicesettingsjson)) is used when one is saved. |
+| `reasoning` | the provider's, or the effort saved with that model | `--reasoning low|medium|high|xhigh|max` | Reasoning effort, for models that expose one. |
 | `debrief` | on | `--no-debrief` | After `submit`, one more model call asks what tools the agent missed. |
 
 ## Folders

@@ -24,11 +24,27 @@ PROTOCOL_VERSION = 2
 _KEY_ENV = {
     "openai-api": ("OPENAI_API_KEY",),
     "gemini-api": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "anthropic-api": ("ANTHROPIC_API_KEY",),
 }
+#: The key providers that can run an image model (``anthropic-api`` runs the
+#: agent only).
+_IMAGE_KEY_PROVIDERS = ("openai-api", "gemini-api")
 
 
 def _credentials_path() -> Path:
     return Path.home() / ".langslice" / "provider_credentials.json"
+
+
+def _key_file_present(provider: str) -> bool:
+    """Whether the Anthropic key file ``providers/anthropic_api.py`` also
+    reads (its ``KEY_FILE``, ``~/.langslice/anthropic_api_key``) holds a key."""
+    if provider != "anthropic-api":
+        return False
+    try:
+        return bool((Path.home() / ".langslice" / "anthropic_api_key")
+                    .read_text(encoding="utf-8").strip())
+    except OSError:
+        return False
 
 
 def _read_saved() -> dict[str, Any]:
@@ -64,9 +80,10 @@ def _read_keys() -> dict[str, str]:
 
 def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
     source = next((name for name in _KEY_ENV[provider] if os.getenv(name, "").strip()), None)
+    saved = bool(keys.get(provider)) or _key_file_present(provider)
     return {
-        "configured": bool(source or keys.get(provider)),
-        "source": "environment" if source else "saved" if keys.get(provider) else None,
+        "configured": bool(source or saved),
+        "source": "environment" if source else "saved" if saved else None,
         "validated": False,
     }
 
@@ -196,7 +213,7 @@ def image_model_connected(provider: str) -> bool:
     canonical = canonical_provider(str(provider or ""))
     if canonical == "openai-oauth":
         return bool(_oauth_status()["configured"])
-    if canonical not in _KEY_ENV:
+    if canonical not in _IMAGE_KEY_PROVIDERS:
         return False
     if canonical == "openai-api" and os.getenv("OPENAI_IMAGE_API_KEY", "").strip():
         return True
@@ -210,7 +227,7 @@ def image_model_connected(provider: str) -> bool:
 def save_api_key(provider: str, api_key: str) -> dict[str, object]:
     """Atomically save a supported provider key with owner-only file permissions."""
     if provider not in _KEY_ENV:
-        raise ValueError("API-key setup supports openai-api and gemini-api only.")
+        raise ValueError("API-key setup supports openai-api, gemini-api and anthropic-api only.")
     key = api_key.strip()
     if not key or any(character.isspace() or ord(character) < 32 for character in key):
         raise ValueError("Enter a nonempty API key without whitespace or control characters.")
@@ -268,6 +285,23 @@ def load_credentials(*, saved: bool = True) -> None:
     load_dotenv()
     if saved:
         apply_saved_credentials()
+
+
+def connections() -> dict[str, Any]:
+    """Each connection's presence, checked offline as :func:`setup_status`
+    checks it (nothing validated, no token refreshed, no provider contacted),
+    and the saved-key file's read error: ``{"providers": {name:
+    {"configured", "source", "validated"}}, "credentials_error"}``. No key or
+    token is in it."""
+    error = None
+    try:
+        keys = _read_keys()
+    except ValueError as exc:
+        keys, error = {}, str(exc)
+    providers: dict[str, Any] = {"openai-oauth": _oauth_status()}
+    for provider in _KEY_ENV:
+        providers[provider] = _api_status(provider, keys)
+    return {"providers": providers, "credentials_error": error}
 
 
 def login_oauth(

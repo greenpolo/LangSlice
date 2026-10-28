@@ -120,3 +120,38 @@ dialog p { font-size: 11px; margin: 8px 5px 0; color: var(--muted); }
   .activity { width: auto; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
   .panel-row { grid-template-columns: 1fr; }
 }
+
+/* --- Settings tab (static/settings.js) --- */
+.settings { overflow-y: auto; }
+.set-page { max-width: 760px; padding: 18px 24px 40px; }
+.set-title { font-size: 14px; color: var(--text); margin-bottom: 14px; }
+.set-block { border: 1px solid var(--line); background: var(--panel); padding: 12px 14px; margin-bottom: 16px; }
+.set-block h3 { margin-bottom: 8px; }
+.set-choice { display: flex; align-items: baseline; gap: 8px; cursor: pointer; padding: 2px 0; }
+.set-choice input { accent-color: var(--accent); margin: 0; }
+.set-choice.disabled { color: #6c6c6c; cursor: default; }
+.set-choice.disabled .set-hint { color: #5a5a5a; }
+.set-choice-text { white-space: nowrap; }
+.set-hint { color: var(--muted); font-size: 11px; }
+.set-note { color: var(--muted); font-size: 11px; margin: 8px 0 0; }
+.set-note.bad, .set-message.bad { color: var(--bad); }
+.set-note:empty { display: none; }
+.set-row { display: grid; grid-template-columns: 230px 170px 1fr; align-items: center; gap: 10px; padding: 6px 6px; border-left: 2px solid transparent; }
+.set-row + .set-row { border-top: 1px solid #2a2a2a; }
+.set-row.chosen { border-left-color: var(--accent); background: #262626; }
+.set-state { color: var(--muted); font-size: 11px; }
+.set-state.good { color: var(--good); }
+.set-action { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.set-key { display: flex; gap: 6px; flex: 1; min-width: 0; }
+.set-key input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); padding: 2px 6px; }
+.set-key input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.set-button:disabled { color: var(--muted); cursor: default; }
+.set-link { color: var(--accent); font-size: 11px; }
+.set-grid { display: grid; grid-template-columns: 80px minmax(0, 320px); gap: 6px 10px; align-items: center; }
+.set-grid select { width: 100%; }
+.set-field { color: var(--muted); font-size: 11px; }
+.set-message { min-height: 1.5em; font-size: 11px; color: var(--good); margin: 0; }
+@media (max-width: 900px) {
+  .set-row { grid-template-columns: 1fr; gap: 4px; }
+}
+/* --- end Settings tab --- */
