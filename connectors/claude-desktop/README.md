@@ -2,7 +2,7 @@
 
 LangSlice serves registration tools over MCP; the host runs the agent
 conversation using its own account. Setup, job creation and tool behavior
-are described in [Agents, CLI and MCP](../../docs/agents.md#mcp).
+are described in [The MCP server](../../docs/agents/mcp.md).
 
 [`langslice.mcp.json`](langslice.mcp.json) configures the server with
 `langslice mcp`. Use the absolute path to `langslice` in your installed

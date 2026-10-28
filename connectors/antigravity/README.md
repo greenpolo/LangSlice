@@ -6,7 +6,7 @@ account. Like the Claude Code plugin ([`../claude-code/`](../claude-code/README.
 it is skills for the main session plus two registration agents that each
 register exactly one brain: `register` through LangSlice's MCP tools, and
 `register-scripting` through the `langslice-job` command line and the Python
-library ([`docs/agents.md`](../../docs/agents.md)).
+library ([`docs/agents/cli.md`](../../docs/agents/cli.md)).
 
 ## Install
 

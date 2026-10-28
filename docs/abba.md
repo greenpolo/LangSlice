@@ -71,7 +71,7 @@ Use the preview to check contrast between anatomical regions.
 ## Run and review
 
 With **ChatGPT**, choose the agent model and reasoning, then **Run**.
-With **Claude**, configure the [MCP server](agents.md#mcp), choose
+With **Claude**, configure the [MCP server](agents/mcp.md), choose
 **Copy prompt**, and paste it into the MCP conversation. Keep ABBA's
 progress window open to receive live updates.
 
@@ -91,7 +91,7 @@ mode, closing the window disconnects live updates; the MCP job continues
 independently. Save with ABBA's normal Save command. Saved registrations
 reopen without LangSlice installed.
 
-**Show agent log** displays activity. The [LangSlice window](gui.md) (`langslice gui`) shows the same run from its job folder. Every run keeps its full agent trace
+**Show agent log** displays activity. The [LangSlice window](developers/gui.md) (`langslice gui`) shows the same run from its job folder. Every run keeps its full agent trace
 in the job folder's `trace/`, as `langslice linear run` does. **Open agent viewer** is available when ABBA was launched with
 `langslice abba`. That optional command starts ABBA from Python and needs
 the connector jar (`--connector-jar` or `LANGSLICE_CONNECTOR_JAR`) and Java
@@ -100,4 +100,4 @@ directly.
 
 For troubleshooting, activate the environment and run `langslice version`.
 Worker protocol and checkpoint handling are described in
-[architecture](architecture.md#fiji-connector-and-worker).
+[architecture](developers/architecture.md#fiji-connector-and-worker).

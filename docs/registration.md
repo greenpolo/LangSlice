@@ -5,8 +5,8 @@ placing and fitting. The agent inspects the anatomy, chooses tools and
 regions, reviews their pictures and revises the registration. Image-model
 border tracing is optional; affine and FireANTs fits can use the stain directly.
 
-The tools have the same names across [CLI, MCP and agent sessions](agents.md)
-and the [Python library](library.md). Use `langslice-job schema VERB --job
+The tools have the same names across [CLI, MCP and agent sessions](agents/index.md)
+and the [Python library](developers/library.md). Use `langslice-job schema VERB --job
 FOLDER` for exact arguments and limits.
 
 ## Tasks and supplied inputs
@@ -43,7 +43,7 @@ and in `job.json`'s spec). A name is a tool, or `tool:option`:
 | `interactive_transform:flip` | mirroring: the `flip` key of its sections |
 | `interactive_transform:rotate` | the quarter turn: the `rotate_quarter` key of its sections |
 
-The tools of a job's [plugins](plugins.md) are valid names too, for that job.
+The tools of a job's [plugins](developers/plugins.md) are valid names too, for that job.
 `look`, `status`, `undo` and `submit` cannot be disabled. An unknown name is
 refused when the job is made, with the valid names listed. A list that cannot
 work is refused with one line saying why:
@@ -70,7 +70,7 @@ sentence that needs what is off, or word it another way.
 
 Switching a tool off saves the agent's context: it is not a guard against
 the agent using a method. A script's own writes through the library's
-[`job.context`](library.md#your-own-method) are not gated by `disabled`; what
+[`job.context`](developers/library.md#your-own-method) are not gated by `disabled`; what
 a job freezes holds for them as for every tool.
 
 Sections are addressed by filename, or by a stem unique within the job.
@@ -119,7 +119,7 @@ Three common freezes:
 - A section left out of Nonlinear: `{"s_007.tif": ["deformation"]}`.
 
 Every write that would change a frozen property is refused, in every door
-and through a script's [`job.context`](library.md#your-own-method),
+and through a script's [`job.context`](developers/library.md#your-own-method),
 with `FROZEN` naming the sections and properties; nothing is written for the
 refused section, and the others in a per-section call still are
 (`position_sections` and `set_transforms` refuse the whole call). The
@@ -765,7 +765,7 @@ on the section's maps grid, before any fit
 
 `trace_borders` is offered only with Nonlinear enabled and an image model
 connected. `provider="none"` disables it while keeping FireANTs and landmark tools.
-Custom models and prompts are described in the [library guide](library.md#image-models).
+Custom models and prompts are described in the [library guide](developers/library.md#image-models).
 
 ## Writes, review and submission
 
