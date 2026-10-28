@@ -2,11 +2,10 @@
 
 Package guide for `src/langslice/hosts/gui/`. The repo-level `CLAUDE.md` holds
 the project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror
-to the other. The user's page is `docs/gui.md`.
+to the other. The user's page is `docs/developers/gui.md`.
 
 One local window, titled "LangSlice", with three tabs: Agent viewer, Prompt
-generator and Settings (top right). The prompt generator is a placeholder
-sentence. The agent viewer is a preliminary layout in the
+generator and Settings (top right). The agent viewer is a preliminary layout in the
 ABBA log's styling (`hosts/integrations/static/chat.css`'s palette and type,
 the comparison window's blue-grey picture panel); Nash designs the final one.
 
@@ -15,17 +14,20 @@ the comparison window's blue-grey picture panel); Nash designs the final one.
 The GUI is a separate process from every run (the built-in agent, an MCP
 server, the agent CLI's calls, a SliceBench subprocess), so it learns
 everything by watching files: no socket, no relay, no import of the run. It
-imports the core (`core.state`, `core.status`, `core.toolset`) and the job
+imports the core (`core.state`, `core.status`, `core.toolset`, `core.spec`,
+`core.tool_labels`, `core.atlas.details`) and the job
 layer (`job.layout` names, `job.checkpoint.current_state`, `job.history`,
 `job.registrations`), and for the Settings tab the doors' setup
 (`doors.api.setup`: key presence, `save_api_key`, `login_oauth`) and the
 user's settings file (`doors.api.settings`). Nothing imports it but
 `hosts/cli.py` (`langslice gui`); `doors/cli/linear.py`'s `--gui` starts that
-command as a process (`open_gui`). The viewer is read-only: every job
-endpoint is GET only, nothing is written to a job folder. The Settings tab's
-three POSTs are the only writes (the user's settings file, a saved key, the
-ChatGPT login); sign-in runs in this window's process, never inside an agent
-tool call. Nothing in it is model-facing.
+command as a process (`open_gui`). The viewer and the prompt generator are
+read-only: every job and generator endpoint is GET only, nothing is written to
+a job folder. The Settings tab's three POSTs are the only writes (the user's
+settings file, a saved key, the ChatGPT login); sign-in runs in this window's
+process, never inside an agent tool call. Nothing in it is model-facing: the
+prompt generator's message is the person's to send, and its labels
+(`core.tool_labels`) are for people.
 
 ## Settings
 
@@ -91,7 +93,8 @@ Gemini keys list the models `agent.spend.PRICES` prices, with no default).
   127.0.0.1, every path under a random token, the `Host` header checked
   against the port, `HEADERS` (CSP, `no-store`, `nosniff`, no referrer; as
   `abba_chat.ChatServer`). `answer(path, host)` (GET): the
-  static files, `jobs`, `jobs/<n>/snapshot?since=&gen=&sv=`,
+  static files, `jobs`, `generator` (`generator.payload()`),
+  `jobs/<n>/snapshot?since=&gen=&sv=`,
   `jobs/<n>/picture/<number>` (the `view.jpg` of a picture the job's
   `views.jsonl` lists, read from disk), `settings`; anything else 404.
   `post(path, headers, body)`: only `settings.POSTS` (any other path 405),
@@ -100,6 +103,17 @@ Gemini keys list the models `agent.spend.PRICES` prices, with no default).
   `application/json` (415), at most `MAX_BODY` bytes (413); a refusal is 400
   `{"error"}`. PUT, DELETE, PATCH, HEAD: 405. The Settings code in `server.py`,
   `index.html` and `app.css` sits between `Settings tab` marker comments.
+- `generator.py` — the prompt generator's choices, `payload()` (`GET
+  generator`): `tools()` (`toolset.catalog()` without the scripting verbs,
+  each with its `tool_labels` label, its options' names and labels, and
+  `runs_in`: the task choices, comma-joined, whose `JobSpec` has it by
+  `ToolDef.when`), the tasks (label, sentence, default), the groups (label,
+  task), `TASK_WRITERS`, `KEEP` (the properties the form can keep on every
+  section, `angles` / `orientation`, with their tasks) and `frozen_off` (what
+  a freeze of each switches off, `JobSpec.switched_off`), the atlases
+  (`core.atlas.details.descriptions()`, each with BrainGlobe's paragraph and
+  `species`: Mouse, Rat or Other by name) and `JobSpec`'s default atlas, the
+  planes.
 - `settings.py` — `Settings(login=)`: `state()` (each connection's presence
   word from `doors.api.setup.connections`, never a key or token; the saved
   choices; `runs_in` `{saved, enabled, value}`; per connection `models`,
@@ -115,6 +129,26 @@ Gemini keys list the models `agent.spend.PRICES` prices, with no default).
   `open_window` (`--app=URL`, a private `--user-data-dir`, `--window-size`;
   a browser that exits at once, or none, falls back to `webbrowser.open`,
   then to printing the address) -> `Opened` (`app`, `tab`, `none`).
+- `static/generator.js`, `static/generator.css` — the prompt generator tab
+  (loaded by one delimited block in `index.html`). `Generator`, pure
+  functions on the payload and a plain form object (`folder`, `atlas`,
+  `plane`, `thickness`, `interval`, `pixelSize`, `tasks`, `off`, `ordered`,
+  `damaged`, `keep`, `notes`), exported to node for the tests: `message`
+  -> `{text, problems, warnings}`. The text is one request sentence, a
+  sentence naming what the form leaves to the agent (atlas, plane,
+  thickness, interval, pixel size, the tasks when none is chosen) and one on
+  bash quoting when a word is quoted, then a fenced `bash` block: the
+  `langslice-job FOLDER init` command, one flag per line, only the fields
+  set (`--tasks`, `--atlas`, `--plane`, `--thickness`, `--interval`,
+  `--pixel-size-um`, `--disable` in table order: the tools of this run off
+  whole, then the options off of tools still on, a name a kept property
+  already switches off left out; `--frozen {"*": [...]}`, `--damaged`
+  `{file: note}` from `file: note` lines, `--fact` for the cutting order,
+  `--notes`). `problems` (no message while one stands) mirror
+  `toolset.refusal` on the form: the folder, whole micrometres, `look`
+  keeps a mode, each chosen task keeps a writer, each tool on keeps what it
+  needs (one sentence per needed group). The form's DOM is built in the
+  file; every text goes in by `textContent`.
 - `static/` — `index.html`, `app.css`, `app.js`: the tabs, the job list
   (polled every 2 s; the most recently changed job is shown until the user
   picks one), the snapshot poll (300 ms), the picture pane (follows the
@@ -134,7 +168,13 @@ whole, a trace appearing mid-run, time order, missing files, the raw-state
 fallback, undo labels and the cap, a path outside the folder, the job list,
 a truncated file; a `slow` replay of a real folder, `LANGSLICE_GUI_REPLAY_JOB`),
 `tests/test_gui_server.py` (token and Host, GET only, snapshot and pictures,
-refused paths), `tests/test_gui_window.py` (the candidates per platform with a
+refused paths), `tests/test_gui_generator.py` (the catalog-driven tools, a
+tool the toolset loses is not offered, every name labelled, no label in the
+pinned model-facing text and `tool_labels` imported only here, the payload
+and its endpoint; under node, skipped without it: golden messages for a
+default and a filled form, read back by `init`'s parser into a `JobSpec`, a
+tool of a task not chosen left out, refused tool choices giving no message
+and refused by the spec too, warping alone), `tests/test_gui_window.py` (the candidates per platform with a
 fake `which` and filesystem, the app window, both fallbacks),
 `tests/test_gui_settings.py` (the settings file in a temporary home, the
 environment override, the POST checks, a key never sent back, the Claude key

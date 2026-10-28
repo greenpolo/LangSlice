@@ -63,7 +63,11 @@
     </main>
   </div>
 
-  <div id="tab-prompt" class="tab placeholder" hidden><p>The prompt generator will turn your choices (atlas, tools, section thickness, image folder) into a request to paste into your agent app. It is not built yet.</p></div>
+  <!-- prompt generator: generator.js fills this tab -->
+  <div id="tab-prompt" class="tab generator" hidden></div>
+  <link rel="stylesheet" href="generator.css">
+  <script src="generator.js" defer></script>
+  <!-- /prompt generator -->
   <!-- Settings tab: filled by settings.js (hosts/gui/settings.py) -->
   <div id="tab-settings" class="tab settings" hidden></div>
   <script src="settings.js" defer></script>

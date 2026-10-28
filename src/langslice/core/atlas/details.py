@@ -69,6 +69,12 @@ def _details() -> dict[str, str]:
         return {}
 
 
+def descriptions() -> dict[str, str]:
+    """Every atlas BrainGlobe's page describes, by name, with its paragraph
+    (the LangSlice window's atlas list)."""
+    return dict(_details())
+
+
 def atlas_description(atlas_name: str) -> str | None:
     """BrainGlobe's description of *atlas_name*, or None for an atlas its page
     does not list."""
