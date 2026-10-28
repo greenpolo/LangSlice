@@ -91,7 +91,7 @@ and `environment.yml` hold the worker's source installation.
 
 ## Docs
 
-`docs/` (built by MkDocs, `mkdocs.yml`, strict): `index.md`, `agents.md`,
+`docs/` (built by Sphinx with MyST, `docs/conf.py`, warnings are errors): `index.md`, `agents.md`,
 `abba.md`, `registration.md`, `library.md`, `plugins.md`, `file_formats.md`,
 `architecture.md`.
 
