@@ -467,7 +467,7 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     user's own warp, kept with the job's ABBA facts).
     Any other key is refused (:data:`REQUEST_KEYS`). The run keeps its full
     agent trace as ``langslice linear run`` does: in the job folder's
-    ``trace/`` unless ``LANGSLICE_TRACE_DIR`` names another folder.
+    ``trace/``, and also in the folder ``LANGSLICE_TRACE_DIR`` names.
     The run ends with one more checkpoint of the final state.
     Checkpoint events carry initial=True with no mutations for ingestion.
     Later host_updates are replacement corrections relative to the previous

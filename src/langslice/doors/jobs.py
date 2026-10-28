@@ -229,7 +229,9 @@ class Opened:
         the caller (``view.resolution`` up to :attr:`max_view_edge`) and
         the scripting verbs (``export_maps``) added; ``trace_borders`` calls
         :attr:`image_model` when one was handed in, and is offered only when
-        the image model is connected (:attr:`image_model_connected`)."""
+        the image model is connected (:attr:`image_model_connected`). Its
+        calls are logged in ``logs/events.jsonl`` as door ``cli``, or
+        ``library`` for a script (door ``agent``)."""
         if self._box is None:
             from langslice.core.sizes import AUTO_RESOLUTION
             from langslice.doors.tools.toolbox import build_tools
@@ -239,7 +241,8 @@ class Opened:
                                     level=AUTO_RESOLUTION, scripting=True,
                                     image_model=self.image_model,
                                     image_model_connected=self.image_model_connected,
-                                    door=self.door)
+                                    door=self.door,
+                                    event_door="library" if self.door == "agent" else self.door)
         return self._box
 
     def listed_verbs(self) -> list[str]:

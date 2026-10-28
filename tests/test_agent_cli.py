@@ -481,6 +481,103 @@ def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
         f"{picture['id']:06d}_")
 
 
+def _tool_events(job: Path) -> list[dict[str, Any]]:
+    lines = [json.loads(line) for line in (job / "logs" / "events.jsonl").read_text()
+             .splitlines()]
+    return [line for line in lines if line["kind"] in ("tool_start", "tool_end")]
+
+
+def test_every_tool_call_is_an_event_in_the_job_folder(capsys, images):
+    """Each call on the CLI door and the library door: a `tool_start` and a
+    `tool_end` line in logs/events.jsonl, the pictures as job-relative paths,
+    never the reply; a dry run logs nothing."""
+    import langslice
+
+    job = init(capsys, images)
+    code, _ = cli(capsys, str(images), "look", "--mode", "section", "--sections", ID0)
+    assert code == 0
+    code, _ = cli(capsys, str(images), "position_sections", "--sections",
+                  json.dumps([{"id": ID1, "position_mm": 0.15}]))
+    assert code == 0
+    code, _ = cli(capsys, str(images), "redo")
+    assert code == 3
+    code, _ = cli(capsys, str(images), "position_sections", "--sections",
+                  json.dumps([{"id": ID1, "position_mm": 0.3}]), "--dry-run")
+    assert code == 0
+    with langslice.open_job(images) as handle:
+        handle.look(mode="section", sections=[ID2])
+
+    events = _tool_events(job)
+    assert [(e["kind"], e["name"], e["door"]) for e in events] == [
+        ("tool_start", "look", "cli"), ("tool_end", "look", "cli"),
+        ("tool_start", "position_sections", "cli"), ("tool_end", "position_sections", "cli"),
+        ("tool_start", "redo", "cli"), ("tool_end", "redo", "cli"),
+        ("tool_start", "look", "library"), ("tool_end", "look", "library"),
+    ]
+    for start, end in zip(events[::2], events[1::2], strict=True):
+        assert start["execution_id"] == end["execution_id"] and start["at"]
+        assert "response" not in end and "response" not in start
+    look_start, look_end = events[0], events[1]
+    assert look_start["target_ids"] == [ID0]
+    assert look_start["args"]["sections"] == [ID0] and look_start["args"]["mode"] == "section"
+    assert look_end["failed"] is False and look_end["status"] == "ok"
+    assert look_end["step"] == 0
+    assert look_end["views"] and all(
+        not Path(view).is_absolute() and (job / view).is_file() for view in look_end["views"])
+    write_end = events[3]
+    assert write_end["target_ids"] == [ID1] and write_end["step"] == 1
+    assert write_end["failed"] is False
+    redo_end = events[5]
+    assert redo_end["failed"] is True and redo_end["status"] == "error"
+    assert events[6]["target_ids"] == [ID2] and events[7]["views"]
+
+
+def test_the_gui_watcher_follows_real_calls_on_the_cli_and_library_doors(
+        capsys, images, tmp_path, monkeypatch):
+    """End to end, nothing synthesized: `init` lists the job in the recent jobs
+    file, the GUI's job list finds it there, and its watcher turns the lines
+    real CLI and library calls wrote into activity rows whose pictures are the
+    pictures the calls saved, with the write labelling its undo step."""
+    import langslice
+    from langslice.hosts.gui.watch import JobList
+
+    recent = tmp_path / "recent_jobs.jsonl"
+    monkeypatch.setenv("LANGSLICE_RECENT_JOBS", str(recent))
+    job = init(capsys, images)
+    jobs = JobList([], recent=recent)
+    assert [Path(entry["folder"]) for entry in jobs.listing()] == [job]
+    watcher = jobs.get(0)
+    assert watcher is not None
+
+    code, looked = cli(capsys, str(images), "look", "--mode", "section", "--sections", ID0)
+    assert code == 0
+    code, _ = cli(capsys, str(images), "position_sections", "--sections",
+                  json.dumps([{"id": ID1, "position_mm": 0.15}]))
+    assert code == 0
+    with langslice.open_job(images) as handle:
+        handle.look(mode="section", sections=[ID2])
+
+    watcher.poll(force=True)
+    snapshot = watcher.snapshot(since=0, generation=watcher.generation)
+    tools = [item for item in snapshot["items"] if item["kind"] == "tool"]
+    assert [(t["name"], t["phase"], t["door"]) for t in tools] == [
+        ("look", "start", "cli"), ("look", "end", "cli"),
+        ("position_sections", "start", "cli"), ("position_sections", "end", "cli"),
+        ("look", "start", "library"), ("look", "end", "library")]
+    look_end = tools[1]
+    assert look_end["sections"] == [ID0] and look_end["failed"] is False
+    assert look_end["args"]["sections"] == [ID0]
+    pictures = {item["path"]: item for item in snapshot["items"] if item["kind"] == "picture"}
+    assert look_end["views"] and all(view in pictures for view in look_end["views"])
+    shown = watcher.picture(pictures[look_end["views"][0]]["number"])
+    assert shown is not None
+    view_artifact = next(item for item in looked["artifacts"] if item["kind"] == "view")
+    assert shown.resolve() == Path(view_artifact["path"]).resolve()
+    assert tools[3]["step"] == 1 and tools[5]["views"]
+    assert watcher.undo()["undo"] == [f"Position sections ({ID1})"]
+    assert snapshot["status"]["word"] == "Running"  # files changed seconds ago
+
+
 # --- writes, pictures, exit codes -----------------------------------------------------
 
 

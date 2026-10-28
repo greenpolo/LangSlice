@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LangSlice</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <strong class="brand">LangSlice</strong>
+    <nav class="tabs" aria-label="Sections of the window">
+      <button data-tab="viewer" class="active">Agent viewer</button>
+      <button data-tab="prompt">Prompt generator</button>
+    </nav>
+    <span id="job-title" class="job-title"></span>
+    <button data-tab="settings" class="settings-tab">Settings</button>
+  </header>
+
+  <div id="tab-viewer" class="tab viewer">
+    <aside class="jobs" aria-label="Jobs">
+      <h2>Jobs</h2>
+      <ul id="job-list"><li class="muted">Looking for jobs…</li></ul>
+    </aside>
+    <main class="watch">
+      <div class="statusline">
+        <span id="word" class="word">Starting</span>
+        <span id="sentence" class="sentence"></span>
+        <span id="facts" class="facts"></span>
+      </div>
+      <div class="columns">
+        <section class="left" aria-label="Pictures and tables">
+          <div class="picture-pane">
+            <div class="picture-head">
+              <span id="picture-label" class="picture-label">No pictures yet</span>
+              <span class="picture-nav">
+                <select id="section-filter" aria-label="Show pictures of one section"><option value="">All sections</option></select>
+                <button id="previous" title="Earlier picture">←</button>
+                <span id="picture-count">0 / 0</span>
+                <button id="next" title="Later picture">→</button>
+                <button id="follow" class="active" title="Follow the newest picture">Follow</button>
+              </span>
+            </div>
+            <div class="picture-frame" id="picture-frame"><img id="picture" alt=""><span id="picture-empty" class="muted">The pictures the agent sees appear here as they are saved.</span></div>
+            <p id="caption" class="caption"></p>
+          </div>
+          <section class="panel">
+            <h3>Sections <span id="sections-count" class="muted"></span></h3>
+            <p id="sections-note" class="muted small"></p>
+            <div class="table-wrap"><table id="sections"><thead><tr><th>#</th><th>Section</th><th>Position (mm)</th><th>Angles (pitch, yaw)</th><th>Flipped</th><th>Transform</th><th>Deformation</th><th>Damaged</th><th>Registration</th></tr></thead><tbody></tbody></table></div>
+          </section>
+          <div class="panel-row">
+            <section class="panel"><h3>Undo <span id="undo-count" class="muted"></span></h3><ol id="undo" class="steps"></ol><h3>Redo <span id="redo-count" class="muted"></span></h3><ol id="redo" class="steps"></ol></section>
+            <section class="panel"><h3>Notes</h3><div id="notes"></div><h3>Spend</h3><div id="spend" class="muted">No spend recorded yet.</div></section>
+          </div>
+        </section>
+        <section class="activity" aria-label="Activity">
+          <h3>Activity</h3>
+          <div id="activity"><p class="muted">Waiting for the run.</p></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="tab-prompt" class="tab placeholder" hidden><p>The prompt generator will turn your choices (atlas, tools, section thickness, image folder) into a request to paste into your agent app. It is not built yet.</p></div>
+  <div id="tab-settings" class="tab placeholder" hidden><p>Settings will hold your model connections (ChatGPT sign-in and API keys) and where registration runs. They are not built yet.</p></div>
+
+  <footer><span id="connection">Connecting…</span><span>Closing this window does not stop the run.</span></footer>
+  <dialog id="lightbox"><button id="close-lightbox" aria-label="Close">×</button><img id="large" alt=""><p id="large-caption"></p></dialog>
+</body>
+</html>

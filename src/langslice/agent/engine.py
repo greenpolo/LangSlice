@@ -213,6 +213,15 @@ async def run_session(
     seed = build_seed_message(state, ctx, "\n".join([statement, *notes]))
     on_event = with_seed_views(on_event, save_opening(box, seed))
     spend = SpendMonitor(agent.model)
+
+    def write_spend(monitor: SpendMonitor) -> None:
+        """``exports/spend.json``: the account so far, after every model
+        call, and the final one when the session ends."""
+        try:
+            write_json_atomic(str(box.job.layout.spend_file), monitor.summary())
+        except OSError:
+            logger.warning("Could not write %s", box.job.layout.spend_file, exc_info=True)
+
     try:
         outcome = await run_agent_session(
             agent=agent,
@@ -228,14 +237,13 @@ async def run_session(
             background=functools.partial(background_message, box.job),
             plugins=box.plugins,
             spend=spend,
+            on_spend=write_spend,
+            trace_mirror=box.job.layout.trace_dir,
         )
     finally:
         # The account is written even when the session fails part-way: the
         # tokens were spent. A monitoring agent reads it from the job folder.
-        try:
-            write_json_atomic(str(box.job.layout.spend_file), spend.summary())
-        except OSError:
-            logger.warning("Could not write %s", box.job.layout.spend_file, exc_info=True)
+        write_spend(spend)
     if sink and sink[0]:
         state.debrief = sink[0]
         box.job.checkpoint()

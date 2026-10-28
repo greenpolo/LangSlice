@@ -22,9 +22,16 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 - `cli.py` — the host commands `abba` (ABBA 0.24.x started from Python with
   the Fiji connector jar on the classpath and the passive Python viewer and
-  log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`)
-  and `serve` (the engine service), registered with the `langslice`
-  command by module path.
+  log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`),
+  `gui` (the LangSlice window on job folders: `FOLDER ...`, an image folder
+  standing for its `langslice/` job folder; `--port`, `--no-window`) and
+  `serve` (the engine service), registered with the `langslice` command by
+  module path.
+
+- `gui/` — the LangSlice window (`langslice gui`, `linear run --gui`): a
+  loopback page with the agent viewer, which learns everything by watching
+  job folders' files; read-only. Only `cli.py` imports it.
+  `gui/CLAUDE.md`, `docs/gui.md`.
 
 - `integrations/` — `abba_launch.py` (what `langslice abba` starts, and
   the listener of the connector's run messages), the ABBA agent viewer

@@ -28,11 +28,12 @@ A registration file can also be explicitly imported when creating a job.
   logs/                 the agent CLI's calls (calls.jsonl, one line per call, and
                         calls/<n>_<verb>.json, each call's whole envelope as printed),
                         launches/<n>_<role>.md (the exact launch prompts of `langslice-job FOLDER launch`)
-                        and background runs, events.jsonl (job events,
-                        a script_write line per write a script's job.context landed);
+                        and background runs, events.jsonl (job events: opens, plugins,
+                        every tool call on every door, a script_write line per write
+                        a script's job.context landed);
                         engine.log (what the registration engines printed while they fit);
                         env.lock, held while env/ is made
-  trace/                agent transcripts: the built-in agent's trace, a coding agent's session copied in by its harness plugin, and its launch check (<harness>_<session>.launch.json)
+  trace/                agent transcripts: the built-in agent's trace (also when it is sent elsewhere), a coding agent's session copied in by its harness plugin, and its launch check (<harness>_<session>.launch.json)
   env/                  the job's own Python environment (`langslice-job FOLDER env`), removed when the harness session that submitted the job ends
   scripts/, scratch/    a coding agent's own files; scripts/requirements.txt lists the packages env/ holds
   AGENTS.md, CLAUDE.md  the reference card for coding agents
@@ -260,6 +261,44 @@ saying `NOT written`, its recipe a `transport_snapshot` (a zoom crops the
 saved picture); a linear proposal's overlay keeps its layers and frame, a
 deformation proposal's has none.
 
+## Events (`logs/events.jsonl`)
+
+One JSON object per line, appended as things happen, each with `kind` and
+`at` (UTC, ISO 8601, seconds). Readers in another process (the LangSlice GUI)
+follow the job through it.
+
+| `kind` | When | Other fields |
+|---|---|---|
+| `open` | the job is opened (`Job.open`: created or resumed) | `resumed` |
+| `plugins` | the tool plugins' record in `job.json` changed | `plugins` |
+| `script_write` | a script's `job.context` write landed | `property`, `sections`, `notes`, `argv0`, `call` |
+| `tool_start` | a tool call begins, on any door | `name`, `execution_id`, `door`, `target_ids`, `args` |
+| `tool_end` | that call ends | the same, plus `step`, `views`, `failed`, `status` |
+
+The tool lines are written for every door: `door` is `agent` (the built-in
+agent, `langslice linear run` and the ABBA worker), `mcp`, `cli` (the agent
+CLI) or `library` (a script). `execution_id` pairs a call's two lines.
+`target_ids` are the sections the call names (every section for `status`,
+`undo`, `redo`, `submit` and a stack-wide call), as filenames. `args` are the
+call's arguments as JSON; past 2048 bytes they are that JSON cut to 2048
+bytes, as a string, and the line adds `args_truncated: true`. `step` is the
+undo history's depth after the call, as a picture's `step` in `views.jsonl`.
+`views` are the `view.jpg` paths of the pictures the call saved, relative to
+the job folder (written in the background: a file can appear just after the
+line). `failed` is true when the reply's status is `error` or `refused`, or the
+tool raised; `status` is the reply's status word (`ok` when it has none,
+`error` when the tool raised). The reply itself and picture bytes are never
+written. A dry run (`--dry-run`) writes no line.
+
+## Recent jobs (`~/.langslice/recent_jobs.jsonl`)
+
+Outside the job folder: every `Job.open` (a run, `langslice-job FOLDER init`,
+`create_job`, an MCP `start_job` that makes or resumes a job) appends one line
+with `folder` (the job folder), `image_folder`, `atlas` and `at` (UTC, ISO
+8601), so the GUI can list the jobs opened on this computer. Past 256 KB the
+file is rewritten with the newest line of each of the newest 500 job folders.
+`LANGSLICE_RECENT_JOBS` names another file, or `off` for none.
+
 ## Exports (`exports/`)
 
 Written at `submit` and by `export_maps`. Both are QuickNII-format JSON (`name`, `target`,
@@ -320,8 +359,10 @@ put it on the tissue.
 
 ### `spend.json`
 
-Written by `langslice linear run` when the session ends (also when it fails),
-for the person or agent monitoring the run: `lane` and `model`; `tokens`
+Written by `langslice linear run` (and the ABBA worker's run) after every model
+call, so it holds the account so far while the run goes, and once more when
+the session ends (also when it fails), for the person or agent monitoring the
+run: `lane` and `model`; `tokens`
 (`input_uncached`, `input_cached`, `output`, `reasoning`, the model's reported
 counts summed over the run); `quota_used_percent` (the usage window's rise since
 the run's first reading, null when the provider reports no window) and
