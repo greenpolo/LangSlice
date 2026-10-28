@@ -78,8 +78,11 @@ dev = [
     # The anthropic-api provider's imports (type check, tests/test_anthropic_api_provider.py).
     "anthropic>=1.13",
     "httpx2",
-    # The docs build (mkdocs.yml, `mkdocs build --strict`).
-    "mkdocs-material>=9.5",
+    # The docs build (docs/conf.py, `sphinx-build -W docs <out>`).
+    "sphinx>=7.3",
+    "myst-parser>=3",
+    "pydata-sphinx-theme>=0.15",
+    "sphinx-copybutton>=0.5",
 ]
 
 [tool.setuptools.packages.find]

@@ -1,1 +1,4 @@
-mkdocs-material>=9.5
+sphinx>=7.3
+myst-parser>=3
+pydata-sphinx-theme>=0.15
+sphinx-copybutton>=0.5

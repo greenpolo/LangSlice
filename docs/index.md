@@ -36,3 +36,16 @@ The environment includes registration engines, MCP and the Python ABBA
 launcher. On Windows, use Miniforge Prompt or PowerShell with conda
 initialized. Atlases download on first use. Continue with the setup for
 your chosen interface above.
+
+```{toctree}
+:hidden:
+
+Overview <self>
+Agents, CLI and MCP <agents>
+ABBA <abba>
+Registration tools <registration>
+Python library <library>
+Tool plugins <plugins>
+File formats <file_formats>
+Architecture <architecture>
+```
