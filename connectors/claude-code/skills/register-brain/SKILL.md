@@ -93,7 +93,7 @@ When the subagent returns, do not trust its summary alone:
 - Read `FOLDER/registration.json` (derived from `state.json`, the truth) and
   the exports under `FOLDER/exports/` (`quicknii.json`, `visualign.json`).
   Submit writes no per-section maps: `langslice-job FOLDER export_maps`
-  writes them when they are wanted. `docs/file_formats.md` in the
+  writes them when they are wanted. `docs/reference/file_formats.md` in the
   LangSlice repository describes every file.
 - Look at the pictures the job saved (`views/`, paths in `artifacts`) with
   Read, and tell the user in plain words what looks right and what does not.

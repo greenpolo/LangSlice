@@ -20,7 +20,7 @@ Coronal sections of the Allen mouse atlas are the most tested case.
 | [Registration tools](registration.md) | Tasks, calibration, viewing, affine fits, SyN deformations and optional image-model traces |
 | [The LangSlice window](gui.md) | Watch a run: its pictures, activity, sections and undo steps |
 | [Python library](library.md) | Write agent workflows using the same job and tools |
-| [File formats](file_formats.md) | Job files, coordinate conventions, maps and registration imports/exports |
+| [File formats](reference/file_formats.md) | Job files, coordinate conventions, maps and registration imports/exports |
 | [Architecture](architecture.md) | Package layers, shared operations and the Fiji worker protocol |
 
 ## Install from source

@@ -2,7 +2,7 @@
 
 LangSlice gives an agent tools to inspect and register a stack of sections.
 Choose who runs the conversation; every option uses the same registration
-operations and saves work in a [job folder](file_formats.md).
+operations and saves work in a [job folder](reference/file_formats.md).
 
 | Interface | Who drives it | Entry point |
 |---|---|---|
@@ -133,7 +133,7 @@ and every plugin tool, engines included) are validated without running them.
 maps from its present state, submitted or not (`submit` writes no maps);
 with the maps it writes each traced
 section's image-model reply to `exports/traces/<name>.npz`
-([format](file_formats.md#tracesnamenpz)).
+([format](reference/file_formats.md#tracesnamenpz)).
 
 ### Replies and pictures
 
@@ -408,7 +408,7 @@ tool events; images are described by type, size and byte count rather than
 embedded. MCP traces record calls and results, not the host model's private
 conversation. Every tool call on every door (the built-in agent, MCP, the
 agent CLI, a script) is a `tool_start` and a `tool_end` line in the job's
-`logs/events.jsonl` ([format](file_formats.md#events-logseventsjsonl)). The
+`logs/events.jsonl` ([format](reference/file_formats.md#events-logseventsjsonl)). The
 agent CLI logs every call in `logs/calls.jsonl` (the verb,
 its arguments as given, the outcome, an error's code and message, the
 artifacts, the seconds) and keeps each call's whole envelope, as printed, in

@@ -98,7 +98,7 @@ plugins/<tool>/      a tool plugin's own files and layers (layers.json, layers/)
 logs/events.jsonl    one line per open (`resumed`: whether a checkpoint was read), per
                      change of the plugins' record, and a `tool_start` / `tool_end`
                      pair per tool call on every door (`doors/tools/toolbox.py`,
-                     `_job_events`; `docs/file_formats.md` has the fields)
+                     `_job_events`; `docs/reference/file_formats.md` has the fields)
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 logs/calls.jsonl     one line per agent-CLI call (verb, arguments, outcome, an error's
                      code and message, artifacts, `reply`)
@@ -115,7 +115,7 @@ AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
 TOOLS.md             every verb of the job, its description and arguments (by `init`, `launch`)
 ```
 
-**The public files (`docs/file_formats.md` has every field).**
+**The public files (`docs/reference/file_formats.md` has every field).**
 `state.json` stays the one working source; `formats.py` renders it for scripts and other programs, in BrainGlobe micrometres (the
 atlas's axis order, voxel `i`'s centre at `i * resolution`) and image-file
 pixels `[row, col]`, and never reads any of it back. `Job.checkpoint`
@@ -246,7 +246,7 @@ longer exist be taken over by the images it is opened with.
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
   `write_job_file` (fields over what it holds; `created_at` kept).
 - `registrations.py` — every registration a section has held
-  (`docs/file_formats.md`, "Registrations"): `value(state, record)` (its
+  (`docs/reference/file_formats.md`, "Registrations"): `value(state, record)` (its
   orientation, transform and deformation, copied; a deformation whose
   `linear_key` changed is no part of it; None with neither a transform nor a
   deformation), `digest` (orientation, transform, the deformation's record
@@ -364,7 +364,7 @@ longer exist be taken over by the images it is opened with.
   map on the job's file, VisuAlign markers rescaled to the file and raw;
   `transform()` the stored-transform dict, kind `imported`; `unmatched`,
   `missing`, `refused`). Geometry through `job/quint.py`'s inverses and
-  `core/import_geometry.py`; `docs/file_formats.md` ("Importing a
+  `core/import_geometry.py`; `docs/reference/file_formats.md` ("Importing a
   registration made elsewhere"). `registration_inputs(source,
   workspace)` -> `RegistrationInputs`: the result as `JobSpec.inputs`
   (`positions`, `angles` stack-wide when every section's agree to within

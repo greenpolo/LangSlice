@@ -487,7 +487,7 @@ the angles in a caption (empty for the flat plane).
   per-call picture notes (below).
 - `maps.py` — section pixels to atlas
   micrometres for the job folder's public files (`job/formats.py`,
-  `docs/file_formats.md`). `SectionFrame` / `section_frame(state,
+  `docs/reference/file_formats.md`). `SectionFrame` / `section_frame(state,
   workspace, record)`: one placed section's linear map from its image FILE
   (`[x, y]` pixel centres; rotation and flip are part of the map,
   `orientation_matrix`, PIL's counter-clockwise quarter turns first, then

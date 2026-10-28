@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 class AffineView:
     """A section's in-plane transform: ``kind`` (``interactive``, ``elastix``,
     ``plugin:<tool>``...), the six normalized numbers ``[a, b, tx, c, d, ty]``
-    (``docs/file_formats.md``), the knobs they are in (``rotation_deg``,
+    (``docs/reference/file_formats.md``), the knobs they are in (``rotation_deg``,
     ``scale_x``, ``scale_y``, ``shear``, ``translate_x_mm``, ``translate_y_mm``,
     ``pivot``), and whether it mirrors the section."""
 
