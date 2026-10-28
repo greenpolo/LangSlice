@@ -5,8 +5,10 @@ token (``/<token>/``), the ``Host`` header checked against the port (a page on
 another site cannot reach it through a rebound name), a strict
 Content-Security-Policy and ``no-store``. Endpoints:
 
-- ``""``, ``app.css``, ``app.js``: the page (``static/``);
+- ``""``, ``app.css``, ``app.js``, ``generator.js``, ``generator.css``: the
+  page (``static/``);
 - ``jobs``: the job list (:meth:`JobList.listing`);
+- ``generator``: the prompt generator's choices (:func:`.generator.payload`);
 - ``jobs/<n>/snapshot?since=&gen=&sv=``: :meth:`JobWatcher.snapshot`;
 - ``jobs/<n>/picture/<number>``: a saved ``view.jpg`` by its picture number,
   read from disk, never by path.
@@ -26,12 +28,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from langslice.hosts.gui import generator
 from langslice.hosts.gui.watch import JobList
 
 STATIC = Path(__file__).with_name("static")
 _FILES = {"": ("index.html", "text/html; charset=utf-8"),
           "app.css": ("app.css", "text/css"),
-          "app.js": ("app.js", "text/javascript")}
+          "app.js": ("app.js", "text/javascript"),
+          # prompt generator (generator.py serves its choices at `generator`)
+          "generator.js": ("generator.js", "text/javascript"),
+          "generator.css": ("generator.css", "text/css")}
 _SNAPSHOT = re.compile(r"jobs/(\d+)/snapshot")
 _PICTURE = re.compile(r"jobs/(\d+)/picture/(\d+)")
 #: The headers every answer carries.
@@ -106,6 +112,8 @@ class GuiServer:
                 return (STATIC / name).read_bytes(), mime
             if resource == "jobs":
                 return self._json({"jobs": self.jobs.listing()})
+            if resource == "generator":  # prompt generator
+                return self._json(generator.payload())
             if match := _SNAPSHOT.fullmatch(resource):
                 watcher = self.jobs.get(int(match[1]))
                 if watcher is None:
