@@ -65,6 +65,12 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
         default=True,
         help="Ignore any existing checkpoint and start over",
     )
+    p.add_argument(
+        "--gui",
+        action="store_true",
+        help="Open the LangSlice window on this job (`langslice gui`) to watch the run; "
+        "closing it does not stop the run",
+    )
 
 
 def add_linear_arguments(p: argparse.ArgumentParser) -> None:
@@ -485,6 +491,25 @@ def with_tool_plugins(spec: JobSpec, args: argparse.Namespace) -> JobSpec:
                                plugin_config={**spec.plugin_config, **configs})
 
 
+def open_gui(spec: Any) -> None:
+    """Start ``langslice gui`` on the run's job folder as a process of its own
+    (the hosts layer, reached by command, never imported); it outlives nothing
+    of the run, and the run never waits for it."""
+    import subprocess
+    import sys
+
+    from langslice.job.layout import locate_job_folder
+
+    folder, _ = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
+    command = [sys.executable, "-c", "from langslice.cli import main; main()", "gui",
+               str(folder)]
+    try:
+        subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as exc:
+        print(f"The LangSlice window could not be started: {exc}")
+
+
 def run_linear(args: argparse.Namespace) -> None:
     import asyncio
     import os
@@ -504,6 +529,8 @@ def run_linear(args: argparse.Namespace) -> None:
 
         folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
         os.environ[TRACE_DIR_ENV] = str(job_trace_dir(folder))
+    if getattr(args, "gui", False):
+        open_gui(spec)
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")

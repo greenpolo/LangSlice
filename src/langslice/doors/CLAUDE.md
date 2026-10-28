@@ -32,7 +32,7 @@ CLI's `linear run` and the MCP server start its engine) and the providers (a
 door resolves a provider name); never a host (`hosts/`). Only the ADK
 packaging (`tools/media.py`) imports `google.*`. import-linter's layers
 contract (`pyproject.toml`, `tests/test_import_layers.py`) checks it, with no
-exceptions listed. The host commands (`abba`, `serve`) live in
+exceptions listed. The host commands (`abba`, `gui`, `serve`) live in
 `hosts/cli.py`; `cli/__init__.py` names them by module path
 (`HOST_COMMANDS`) and imports that module when it builds the parser.
 `tests/test_core_imports.py` loads the doors' agent-free modules in a fresh
@@ -372,7 +372,9 @@ process forks for it, `cli/warm.py`).
   `--registration FILE` to `REGISTRATION_TASKS`; `--registration` with any
   of `REGISTRATION_CLASHES` is refused; a bad flag value ends the command
   with a message; `linear run` alone also takes `--tool-plugin
-  MODULE:FACTORY` and `--tool-plugin-config REF=JSON`, `with_tool_plugins`),
+  MODULE:FACTORY` and `--tool-plugin-config REF=JSON`, `with_tool_plugins`,
+  and `--gui`: `open_gui` starts `langslice gui` on the job folder as a
+  process of its own, by command, never importing the host),
   `mcp.py` (`mcp`), and the agent CLI
   (`docs/agents.md`), a command of its own so that allowing it allows
   no agent, server, host or login:

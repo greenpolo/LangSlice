@@ -25,7 +25,7 @@ and CI) with no exceptions: a violation is fixed by moving code.
 | `doors/` | one declaration per verb feeds the native agent tools (`tools/`), MCP (`mcp/`), the agent CLI and the other commands (`cli/`), the engine contract and worker (`api/`), and the library (`library.py`) | `doors/CLAUDE.md` |
 | `agent/` | the ADK driver of `langslice linear run` | `agent/CLAUDE.md` |
 | `providers/` | model access: `gemini-api`, `openai-api`, `openai-oauth`, `none`; no task logic | |
-| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `serve` commands, the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
+| `hosts/` | host code in LangSlice's own environment: the JSON-lines service, `abba` / `gui` / `serve` commands, the LangSlice window (`gui/`), the ABBA agent viewer and log | `hosts/CLAUDE.md`, `hosts/gui/CLAUDE.md`, `hosts/integrations/CLAUDE.md` |
 
 `connectors/` holds what is installed into someone else's program:
 `fiji/` (the Java connector for ABBA 0.24, which starts `langslice serve

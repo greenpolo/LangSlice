@@ -40,6 +40,7 @@ nav:
   - Overview: index.md
   - Agents, CLI and MCP: agents.md
   - ABBA: abba.md
+  - The LangSlice window: gui.md
   - Registration tools: registration.md
   - Python library: library.md
   - Tool plugins: plugins.md
