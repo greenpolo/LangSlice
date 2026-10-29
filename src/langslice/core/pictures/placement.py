@@ -50,6 +50,7 @@ from langslice.core.pictures.canvas import (
 from langslice.core.pictures.drawn import note
 from langslice.core.pictures.options import MODE_RULES, DisplayOptions
 from langslice.core.pictures.panels import atlas_image_picture
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.images import Look
 from langslice.core.sections.renders import (
     PREVIEW_LONG_EDGE,
@@ -385,15 +386,6 @@ def placement_pictures(
 # --- the interactive transform --------------------------------------------------
 
 
-class StageFailure(ValueError):
-    """A section that cannot be staged: ``code`` is ``ATLAS_RENDER_FAILED``
-    (no atlas plane at its position) or ``BAD_PIVOT``."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
 @dataclass(frozen=True)
 class Staged:
     """One section ready to be drawn or measured on its physical canvas."""
@@ -445,8 +437,8 @@ def stage(
     frame, calibration and canvas, and *pivot* ("canvas" or ``[fx, fy]``
     fractions of the canvas) resolved onto it.
 
-    Raises :class:`StageFailure` when the atlas plane cannot be drawn there
-    or the pivot is not one of those.
+    Raises :class:`Refused` ``ATLAS_RENDER_FAILED`` when the atlas plane
+    cannot be drawn there, ``BAD_PIVOT`` when the pivot is not one of those.
     """
     section = render_slice(ws, record, long_edge=PREVIEW_LONG_EDGE)
     um_per_px, source = calibrate(state, ws, record, section)
@@ -462,11 +454,12 @@ def stage(
         )
     except Exception as exc:
         logger.warning("transform: atlas render failed for %s: %s", record.id, exc)
-        raise StageFailure("ATLAS_RENDER_FAILED", str(exc)) from exc
+        raise Refused(RefusalCode.ATLAS_RENDER_FAILED,
+                      message=str(exc)) from exc
     try:
         point = pivot_on_canvas(pivot, geometry)
     except ValueError as exc:
-        raise StageFailure("BAD_PIVOT", str(exc)) from exc
+        raise Refused(RefusalCode.BAD_PIVOT, message=str(exc)) from exc
     width, height = geometry.size
     centre = point or (width / 2.0, height / 2.0)
     return Staged(

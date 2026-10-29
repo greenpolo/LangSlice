@@ -7,9 +7,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import break_ids, normalize_to_atlas_order
 from langslice.tools.exports import Exported
-from langslice.tools.refusal import Refused, unknown_sections
+from langslice.tools.refusal import unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -46,7 +47,8 @@ def clean_breaks(job: Job, values: Any) -> list[int]:
     if values is None:
         return []
     if not isinstance(values, (list, tuple)):
-        raise Refused("BAD_ARGS", message="interval_breaks is a list of filenames.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="interval_breaks is a list of filenames.")
     breaks: list[int] = []
     unknown: list[str] = []
     for raw in values:
@@ -100,7 +102,7 @@ def submit(
         job.settle_image_corrections()
     refusal = job.submit_errors(breaks)
     if refusal is not None:
-        raise Refused.of(refusal)
+        raise refusal
 
     state = job.state
     before = job.snapshot()

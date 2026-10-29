@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.plugins import SCRIPT_CALLER, ToolError
+from langslice.core.refusal import RefusalCode
 from langslice.doors.plugins.context import (
     Caller,
     DeformationProposal,
@@ -233,7 +234,8 @@ class ScriptContext(ToolContext):
         from langslice.core.pictures.drawn import collecting, note, note_for
 
         if not proposal:
-            raise ToolError("BAD_ARGS", "a preview draws a proposal; job.look(mode='overlay', "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "a preview draws a proposal; job.look(mode='overlay', "
                             "sections=[...]) draws the section as it stands")
         record = self._record(section)
         what = ("deformation" if proposal.get("deformation") is not None
@@ -271,7 +273,8 @@ class ScriptContext(ToolContext):
         from langslice.core.pictures.drawn import note
 
         if not proposal:
-            raise ToolError("BAD_ARGS", "a preview draws a proposal; job.look(mode="
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            "a preview draws a proposal; job.look(mode="
                             "'positioning') draws the stack as it stands")
         names = [self._record(ref).id for ref in sections] if sections else [
             view.id for view in self.sections()]

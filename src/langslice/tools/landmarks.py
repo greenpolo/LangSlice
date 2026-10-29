@@ -24,7 +24,8 @@ from langslice.core.geometry.triangulation import (
     DegenerateMesh,
     visualign_mesh,
 )
-from langslice.tools.refusal import Refused, check_frozen, unknown_sections
+from langslice.core.refusal import RefusalCode, Refused
+from langslice.tools.refusal import check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.stack.section import SliceState
@@ -80,23 +81,25 @@ def _endpoint(
     here = f"{label}, {role} endpoint"
     if not isinstance(point, dict):
         raise Refused(
-            "BAD_ARGS", message=f"{here}: an endpoint is an object with picture, x and y."
+            RefusalCode.BAD_ARGS, message=f"{here}: an endpoint is an object with picture, x and y."
         )
     try:
         seq, x, y = int(point["picture"]), float(point["x"]), float(point["y"])
         given = (x, y)
     except (KeyError, TypeError, ValueError):
         raise Refused(
-            "BAD_ARGS", message=f"{here}: an endpoint needs picture, x and y in pixels."
+            RefusalCode.BAD_ARGS, message=f"{here}: an endpoint needs picture, x and y in pixels."
         ) from None
     if point.get("picture") != seq or isinstance(point.get("picture"), bool):
-        raise Refused("BAD_ARGS", message=f"{here}: picture is a whole saved picture number.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"{here}: picture is a whole saved picture number.")
     if set(point) - {"picture", "x", "y"}:
-        raise Refused("BAD_ARGS", message=f"{here}: an endpoint accepts picture, x and y only.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"{here}: an endpoint accepts picture, x and y only.")
     picture = job.views.lookup(seq)
     if picture is None:
         raise Refused(
-            "UNKNOWN_PICTURE",
+            RefusalCode.UNKNOWN_PICTURE,
             picture=seq,
             message=(
                 f"{here}: there is no saved picture {seq}"
@@ -116,7 +119,7 @@ def _endpoint(
     if not panels:
         others = sorted({str(p.get("section")) for p in every})
         raise Refused(
-            "BAD_LANDMARK_PICTURE",
+            RefusalCode.BAD_LANDMARK_PICTURE,
             picture=seq,
             message=(
                 f"{here}: picture {seq} has no {role} geometry for {record.id}"
@@ -135,7 +138,7 @@ def _endpoint(
     ]
     if not eligible or not np.isfinite([x, y]).all():
         raise Refused(
-            "BAD_LANDMARK_POINT",
+            RefusalCode.BAD_LANDMARK_POINT,
             picture=seq,
             message=(
                 f"{here}: the point {where} is outside the image content (in a caption/gutter, "
@@ -148,7 +151,7 @@ def _endpoint(
         now = geometry.plane_context(job.state, record)
         if held.get("plane") != now:
             raise Refused(
-                "STALE_LANDMARK_PLANE",
+                RefusalCode.STALE_LANDMARK_PLANE,
                 picture=seq,
                 message=(
                     f"{here}: picture {seq} was drawn at the atlas plane "
@@ -170,7 +173,7 @@ def _endpoint(
                 warp = None
             if warp is None:
                 raise Refused(
-                    "LANDMARK_WARP_UNAVAILABLE",
+                    RefusalCode.LANDMARK_WARP_UNAVAILABLE,
                     picture=seq,
                     message=f"{here}: the warped view in picture {seq} needs its stored "
                     "inverse mapping, which is gone; draw the section again with look.",
@@ -179,7 +182,7 @@ def _endpoint(
         limits = np.ones(2)
     if not np.isfinite(canonical).all() or np.any(canonical < 0) or np.any(canonical >= limits):
         raise Refused(
-            "BAD_LANDMARK_POINT",
+            RefusalCode.BAD_LANDMARK_POINT,
             picture=seq,
             message=(
                 f"{here}: the point {where} lies outside the {role} image; "
@@ -263,9 +266,11 @@ def _refuse_outside(job: Job, workspace: Workspace, plane: dict[str, Any],
                          f"{seq}")
         sentences.append(sentence + ".")
     raise Refused(
-        "ATLAS_ENDPOINT_OUTSIDE", pairs=[label for label, _pair in outside],
-        message=" ".join(sentences) + " Nothing was written. For a pair on the outline, put "
-        "the atlas endpoint on the drawn border or just inside it.")
+        RefusalCode.ATLAS_ENDPOINT_OUTSIDE,
+        pairs=[label for label, _pair in outside],
+        message=" ".join(sentences) + " Nothing was written. For a pair on "
+        "the outline, put the atlas endpoint on the drawn border or just "
+        "inside it.")
 
 
 def _listing(job: Job, record: SliceState) -> list[dict[str, Any]]:
@@ -316,7 +321,8 @@ def set_landmarks(
         or any(not isinstance(pair_id, str) for pair_id in delete)
     ):
         raise Refused(
-            "BAD_ARGS", message="pairs is a list of objects; delete is a list of pair IDs."
+            RefusalCode.BAD_ARGS,
+            message="pairs is a list of objects; delete is a list of pair IDs.",
         )
     record = _section(job, section)
     current = copy.deepcopy(record.landmarks or {"next_id": 1, "pairs": []})
@@ -324,17 +330,19 @@ def set_landmarks(
     if len(set(delete)) != len(delete) or len({p.get("id") for p in pairs if p.get("id")}) != sum(
         bool(p.get("id")) for p in pairs
     ):
-        raise Refused("BAD_ARGS", message="A pair ID may be edited or deleted only once per batch.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="A pair ID may be edited or deleted only once per batch.")
     changed: list[str] = []
     placed: list[dict[str, Any]] = []
     labels: list[str] = []
     deleted = list(by_id) if DELETE_ALL in delete else list(delete)
     if DELETE_ALL in delete and len(delete) > 1:
-        raise Refused("BAD_ARGS", message=f'delete ["{DELETE_ALL}"] stands alone.')
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f'delete ["{DELETE_ALL}"] stands alone.')
     for pair_id in deleted:
         if pair_id not in by_id:
             raise Refused(
-                "UNKNOWN_LANDMARK",
+                RefusalCode.UNKNOWN_LANDMARK,
                 id=pair_id,
                 message=(
                     f"{record.id} has no pair {pair_id}; its pairs are "
@@ -347,7 +355,7 @@ def set_landmarks(
         label = f"pairs[{index}] ({pair_id or 'new pair'})"
         if pair_id and pair_id not in by_id:
             raise Refused(
-                "UNKNOWN_LANDMARK",
+                RefusalCode.UNKNOWN_LANDMARK,
                 id=pair_id,
                 message=(
                     f"{label}: {record.id} has no pair {pair_id}; its pairs are "
@@ -356,14 +364,16 @@ def set_landmarks(
             )
         if set(edit) - {"id", "atlas", "section"}:
             raise Refused(
-                "BAD_ARGS", message=f"{label}: pair entries accept id, atlas and section only."
+                RefusalCode.BAD_ARGS,
+                message=f"{label}: pair entries accept id, atlas and section only.",
             )
         if not any(role in edit for role in ("atlas", "section")):
-            raise Refused("BAD_ARGS", message=f"{label}: an edit needs at least one endpoint.")
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message=f"{label}: an edit needs at least one endpoint.")
         previous = by_id.get(pair_id)
         if not previous and (not edit.get("atlas") or not edit.get("section")):
             raise Refused(
-                "BAD_ARGS",
+                RefusalCode.BAD_ARGS,
                 message=f"{label}: a new pair needs explicit atlas and section endpoints.",
             )
         item = copy.deepcopy(previous or {})
@@ -483,14 +493,14 @@ def _require_applicable(job: Job, record: SliceState) -> list[dict[str, Any]]:
     pairs = record.landmarks.get("pairs", [])
     if len(pairs) < 3:
         raise Refused(
-            "INSUFFICIENT_LANDMARKS",
+            RefusalCode.INSUFFICIENT_LANDMARKS,
             message=f"{record.id} has {len(pairs)} saved pair(s); at least three corresponding "
             "pairs are required (set_landmarks adds them).",
         )
     stale_ids = [pair["id"] for pair in pairs if geometry.stale(job.state, record, pair)]
     if stale_ids:
         raise Refused(
-            "STALE_LANDMARK_PLANE",
+            RefusalCode.STALE_LANDMARK_PLANE,
             pairs=stale_ids,
             message=(
                 f"Pairs {', '.join(stale_ids)} were placed against an earlier atlas plane of "
@@ -511,7 +521,7 @@ def _mesh(
     except DegenerateMesh as exc:
         # The mesh's first four vertices are the fixed corners.
         raise Refused(
-            "LANDMARK_TRIANGULATION_FAILED",
+            RefusalCode.LANDMARK_TRIANGULATION_FAILED,
             pairs=sorted({names[i - 4] for group in exc.vertices for i in group if i >= 4}),
             message=_degenerate_words(exc, names),
         ) from exc
@@ -582,7 +592,7 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
             current = None
         if held and current is None:
             raise Refused(
-                "LANDMARK_WARP_UNAVAILABLE",
+                RefusalCode.LANDMARK_WARP_UNAVAILABLE,
                 message="The current deformation cannot be read; undo it first.",
             )
         replacing = current is not None and current.engine.get("name") == "landmark_triangulation"
@@ -641,7 +651,8 @@ def landmark_triangulation(job: Job, workspace: Workspace, section: str) -> dict
     except Refused:
         raise
     except (ValueError, OSError) as exc:
-        raise Refused("LANDMARK_TRIANGULATION_FAILED", message=str(exc)) from exc
+        raise Refused(RefusalCode.LANDMARK_TRIANGULATION_FAILED,
+                      message=str(exc)) from exc
     key = digest(
         {
             "landmarks": revision,

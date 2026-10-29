@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from langslice.core.refusal import Refused
 from langslice.core.sections.damage import exclusions, normalized_entries
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.stack.section import SliceState
@@ -18,7 +19,6 @@ from langslice.doors.agent.engine import build_context
 from langslice.doors.tools.toolbox import build_tools
 from langslice.job.job import apply_host_inputs, ingest
 from langslice.tools import damage, deformable, traces, transforms
-from langslice.tools.refusal import Refused
 from tests.test_linear_fit_affine_regions import (
     HalvesAtlas,
     _left_half_section,
@@ -124,7 +124,7 @@ def test_mark_damage_refuses_a_side_the_placement_does_not_have(tmp_path: Path):
     with pytest.raises(Refused) as refused:
         damage.mark_damage(box.job, ctx, ID, ["R:top"])
     assert refused.value.code == "WRONG_SIDE_PAIR"
-    assert "'left' and 'right'" in refused.value.details["message"]
+    assert "'left' and 'right'" in refused.value.facts["message"]
     assert state.by_id(ID).damaged_regions == [] and len(box.job.undo_stack) == steps
     assert damage.mark_damage(box.job, ctx, ID, ["R:left"]).written
 

@@ -19,13 +19,13 @@ from langslice.core.geometry.pixel_frames import SourceFrame, source_frame
 from langslice.core.pictures.drawn import collecting
 from langslice.core.pictures.grid import draw_grid
 from langslice.core.pictures.landmarks import pair_picture
+from langslice.core.refusal import Refused
 from langslice.core.spec import NonlinearSpec
 from langslice.core.stack.stack import StackState
 from langslice.job.job import Job
 from langslice.job.pictures import DiscardedViews
 from langslice.tools import atlas, damage, landmarks, look
 from langslice.tools import zoom as tools_zoom
-from langslice.tools.refusal import Refused
 from tests.test_ops_look import _job
 
 
@@ -474,7 +474,7 @@ def test_repeated_section_points_refuse_the_triangulation(tmp_path):
         with pytest.raises(Refused) as caught:
             landmarks.landmark_triangulation(job, ws, record.id)
         assert caught.value.code == "LANDMARK_TRIANGULATION_FAILED"
-        assert caught.value.details["pairs"] == ["L1", "L2"]
+        assert caught.value.facts["pairs"] == ["L1", "L2"]
     finally:
         job.close()
 
@@ -489,7 +489,7 @@ def test_a_stale_plane_refuses_a_picture_from_the_old_plane(tmp_path):
         job.commit(before)
         with pytest.raises(Refused) as caught:
             landmarks.landmark_triangulation(job, ws, record.id)
-        assert caught.value.details["pairs"] == ["L1", "L2", "L3"]
+        assert caught.value.facts["pairs"] == ["L1", "L2", "L3"]
         with pytest.raises(Refused) as caught:
             landmarks.set_landmarks(job, ws, record.id, [{"id": "L1", "atlas": edits[0]["atlas"]}])
         assert caught.value.code == "STALE_LANDMARK_PLANE"

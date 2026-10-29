@@ -25,6 +25,7 @@ from PIL import Image
 
 from langslice.core.atlas.sides import SEPARATOR, split_side
 from langslice.core.pictures.canvas import AUTO_BORDER_COLOR
+from langslice.core.refusal import RefusalCode, Refused
 
 if TYPE_CHECKING:
     from langslice.core.pictures.canvas import PanelFrame
@@ -40,14 +41,6 @@ HATCH_SPACING_PX = 9
 HATCH_WIDTH_PX = 2
 #: Strength of the hatch lines over the picture (the tissue shows between them).
 HATCH_ALPHA = 0.8
-
-
-class DamagePictureError(ValueError):
-    """A mark that cannot be drawn, with its error code."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 def entry_key(entry: str | int) -> tuple[str, str | None]:
@@ -184,10 +177,10 @@ def damage_picture(
     is *long_edge* on its long side (``display.default_options``'s size
     when None). Captioned with the marked regions and the note.
 
-    :class:`DamagePictureError` ``NO_POSITION`` for a section without a
-    position, ``NO_REGIONS`` for one without marked regions;
-    ``ValueError`` (unknown regions) and ``atlas.sides.SideError`` (a side
-    the placement cannot define) pass through.
+    :class:`Refused` ``NO_POSITION`` for a section without a position,
+    ``NO_REGIONS`` for one without marked regions; ``ValueError`` (unknown
+    regions) and the side refusals (a side the placement cannot define)
+    pass through.
     """
     from langslice.core.fits.affine import calibrate
     from langslice.core.fits.deformable.plane_images import resolve_entries
@@ -206,11 +199,13 @@ def damage_picture(
     from langslice.core.sections.renders import PREVIEW_LONG_EDGE, render_slice
 
     if record.position_mm is None:
-        raise DamagePictureError("NO_POSITION", "The section has no position, so its "
-                                 "marked regions cannot be drawn on it.")
+        raise Refused(RefusalCode.NO_POSITION,
+                      "The section has no position, so its "
+                      "marked regions cannot be drawn on it.")
     entries = list(record.damaged_regions)
     if not entries:
-        raise DamagePictureError("NO_REGIONS", "The section has no marked regions.")
+        raise Refused(RefusalCode.NO_REGIONS,
+                      "The section has no marked regions.")
     resolved = resolve_entries(ws.atlas, entries)
     regions = tuple((name, ids) for name, (_region, _side, ids) in zip(entries, resolved,
                                                                      strict=True))

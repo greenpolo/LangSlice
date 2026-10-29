@@ -18,10 +18,11 @@ from typing import TYPE_CHECKING, Any
 from langslice.core.fits import deformation
 from langslice.core.fits import frame as handoff
 from langslice.core.fits.trace import trace as registration_tool
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.damage import exclusions
 from langslice.job.background import DONE, FAILED, Landed
-from langslice.tools.refusal import Refused, frozen_row, unknown_sections
-from langslice.tools.stale import STALE_INPUT, section_inputs
+from langslice.tools.refusal import frozen_row, unknown_sections
+from langslice.tools.stale import section_inputs
 
 if TYPE_CHECKING:
     from langslice.core.pictures.options import DisplayOptions
@@ -75,7 +76,7 @@ def _start_trace(
     prepared outside the job's write lock and started under it."""
     record = job.state.resolve(ref)
     if record is None:
-        raise Refused("UNKNOWN_SLICE_IDS", **unknown_sections(job.state, [str(ref)]).details)
+        raise unknown_sections(job.state, [str(ref)])
     section_id = record.id
     frozen = frozen_row(job, section_id, "deformation")
     if frozen is not None:
@@ -91,16 +92,18 @@ def _start_trace(
             job.state, workspace, section_id, prompt=prompt, image_model=image_model,
             calls_dir=job.layout.image_correction_dir(section_id), include=kept, exclude=dropped)
     except ValueError as exc:
-        raise Refused("INVALID_LINEAR_PLACEMENT", id=section_id, message=str(exc)) from exc
+        raise Refused(RefusalCode.INVALID_LINEAR_PLACEMENT,
+                      id=section_id, message=str(exc)) from exc
     except OSError as exc:
-        raise Refused("IMAGE_CORRECTION_IO_ERROR", id=section_id, message=str(exc)) from exc
+        raise Refused(RefusalCode.IMAGE_CORRECTION_IO_ERROR,
+                      id=section_id, message=str(exc)) from exc
     with job.writing():  # prepared outside the lock; written under it
         before = job.snapshot()
         now = job.state.by_id(section_id)
         fingerprint = result["geometry_fingerprint"]
         if now is None or handoff.correction_fingerprint(
                 job.state, workspace, section_id) != fingerprint:
-            raise Refused(STALE_INPUT, id=section_id,
+            raise Refused(RefusalCode.STALE_INPUT, id=section_id,
                           message=_STALE_MESSAGE + " Run trace_borders again.")
         if call is not None:
             job.start_image_job(section_id, fingerprint, call, workers=workers)
@@ -120,7 +123,12 @@ TRACE_WORK = "trace_borders"
 TRACE_FIT = deformation.Choice(fit_section=deformation.TRACED_BORDERS, fit_atlas="borders",
                                smoothness_um=80.0)
 #: Fit rows that mean the section or its trace changed before the fit applied.
-_STALE_CODES = (STALE_INPUT, "TRACE_STALE", "TRACE_RUNNING", "NO_TRACE")
+_STALE_CODES = (
+    RefusalCode.STALE_INPUT,
+    RefusalCode.TRACE_STALE,
+    RefusalCode.TRACE_RUNNING,
+    RefusalCode.NO_TRACE,
+)
 
 
 def trace_borders(
@@ -223,7 +231,8 @@ def land_trace(
     record = state.by_id(section_id)
     if record is None:
         return Landed(status=FAILED, text=f"{section_id} is no longer in the stack; nothing "
-                      "was applied.", result={"error": "UNKNOWN_SLICE_IDS"})
+                      "was applied.",
+                      result={"error": RefusalCode.UNKNOWN_SLICE_IDS})
     held = record.image_correction or {}
     trace = {key: held[key] for key in ("status", "attempt", "cached", "prompt_edited",
                                         "include", "exclude", "error", "message")
@@ -231,13 +240,15 @@ def land_trace(
     if held.get("status") == "error":
         reason = str(held.get("message") or held.get("error") or "no image")
         return Landed(status=FAILED, text=f"the image model's call failed ({reason}); "
-                      "nothing was applied.", result={"error": "TRACE_FAILED", "trace": trace})
+                      "nothing was applied.",
+                      result={"error": RefusalCode.TRACE_FAILED,
+                              "trace": trace})
     if section_inputs(state, record, deformation=True) != expected or held.get("status") != "ok":
         return _stale(trace)
     done = fit_deformable(job, workspace, [record], TRACE_FIT, restrict_to=regions,
                           options=options)
     row: dict[str, Any] = (done.rows[0] if done.rows
-                           else {"status": "error", "error": "FIT_FAILED"})
+                           else Refused(RefusalCode.FIT_FAILED).payload())
     if row.get("status") == "error":
         if row.get("error") in _STALE_CODES:
             return _stale(trace)
@@ -279,7 +290,8 @@ def _landed(job: Job, record: Any) -> bool:
 
 
 def _stale(trace: dict[str, Any]) -> Landed:
-    return Landed(status=FAILED, text=f"{STALE_INPUT}: the section's placement, section "
+    return Landed(status=FAILED,
+                  text=f"{RefusalCode.STALE_INPUT}: the section's placement, section "
                   "images, damage, deformation or trace changed before the trace landed; "
                   "nothing was applied. Run trace_borders again.",
-                  result={"error": STALE_INPUT, "trace": trace})
+                  result={"error": RefusalCode.STALE_INPUT, "trace": trace})

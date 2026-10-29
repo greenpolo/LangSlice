@@ -11,12 +11,13 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from langslice.core.refusal import RefusalCode
 from langslice.core.spec import JobSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.background import DONE, FAILED, Landed
 from langslice.job.job import Job
 from langslice.tools import submit as ops_submit
-from langslice.tools.stale import STALE_INPUT, section_inputs
+from langslice.tools.stale import section_inputs
 from langslice.tools.traces import land_trace
 from tests.fakes import SlabAtlas
 
@@ -157,8 +158,8 @@ def test_a_trace_landing_on_a_changed_section_is_stale(tmp_path: Path):
     record.position_mm = 2.5  # the section moved while the image call ran
     depth = len(job.undo_stack)
     landed = land_trace(job, ctx, record.id, expected)
-    assert landed.status == FAILED and landed.result["error"] == STALE_INPUT
-    assert landed.text.startswith(f"{STALE_INPUT}: ")
+    assert landed.status == FAILED and landed.result["error"] == RefusalCode.STALE_INPUT
+    assert landed.text.startswith(f"{RefusalCode.STALE_INPUT}: ")
     assert record.deformation is None and len(job.undo_stack) == depth
     record.image_correction = {"status": "error", "message": "no image"}
     record.position_mm = 2.0

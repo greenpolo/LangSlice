@@ -39,6 +39,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from langslice.core.refusal import RefusalCode
 from langslice.tools.refusal import unknown_sections
 
 if TYPE_CHECKING:
@@ -113,7 +114,7 @@ def export_maps(
     from langslice.core.pictures.layers import atlas_facts
     from langslice.core.stack.stack import StackState
     from langslice.job import public_files as formats
-    from langslice.tools.stale import STALE_INPUT, section_inputs
+    from langslice.tools.stale import section_inputs
 
     started = time.perf_counter()
     with job.writing():
@@ -166,7 +167,8 @@ def export_maps(
             current = job.state.by_id(record.id)
             if current is None or section_inputs(job.state, current,
                                                  deformation=True) != computed_from:
-                skipped.append({"id": record.id, "reason": f"{STALE_INPUT}: the section "
+                skipped.append({"id": record.id,
+                                "reason": f"{RefusalCode.STALE_INPUT}: the section "
                                 "changed while its maps were computed; export it again"})
                 continue
             entry = formats.section_entry(job.state, workspace, layout, current, facts)

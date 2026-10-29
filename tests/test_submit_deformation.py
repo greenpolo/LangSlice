@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.tools import submit as ops_submit
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

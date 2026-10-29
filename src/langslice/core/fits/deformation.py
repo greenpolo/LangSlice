@@ -66,7 +66,9 @@ from langslice.core.fits.deformable.settings import (
     TOTAL_SIGMA_FRACTION,
     neighbourhood_um_for,
 )
+from langslice.core.fits.flags import SECTION_FLAGS, FitFlag
 from langslice.core.fits.frame import digest
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
@@ -90,8 +92,6 @@ FIT_BORDERS = "borders"
 TRACED_BORDERS = "traced_borders"
 #: Flags listed per fit before the rest are only counted.
 MAX_FLAGS = 12
-#: Flags about the whole section, listed before any per-region flag.
-SECTION_FLAGS = ("DISPLACEMENT_OUTSIZED", "FOLDS")
 #: Longest one ``fit_deformable`` call waits for running ``trace_borders``
 #: calls its traced section images need (an image call takes ~1-3 minutes).
 TRACE_WAIT_S = 300.0
@@ -102,14 +102,6 @@ USE_PROCESS_POOL = True
 #: beside the agent's own calls): the engines' seed and thread settings are
 #: process-wide.
 _ENGINE_LOCK = threading.Lock()
-
-
-class FitRefusal(Exception):
-    """A refusal with its error code and payload fields."""
-
-    def __init__(self, code: str, message: str, **extra: Any) -> None:
-        super().__init__(message)
-        self.payload = {"status": "error", "error": code, "message": message, **extra}
 
 
 def engine_available() -> bool:
@@ -229,24 +221,29 @@ def traced_lines(
     record = grid.record
     held = record.image_correction or {}
     if running:
-        raise FitRefusal("TRACE_TIMEOUT", f"{record.id}'s trace_borders call is still "
-                         f"running after {waited_s:g} s of waiting; call again later.",
-                         id=record.id)
+        raise Refused(RefusalCode.TRACE_TIMEOUT,
+                      f"{record.id}'s trace_borders call is still "
+                      f"running after {waited_s:g} s of waiting; call again later.",
+                      id=record.id)
     if held.get("status") == "running":
-        raise FitRefusal("TRACE_RUNNING", f"{record.id}'s trace_borders result is recorded "
-                         "as running, but no call is running in this session; call "
-                         "trace_borders again.", id=record.id)
+        raise Refused(RefusalCode.TRACE_RUNNING,
+                      f"{record.id}'s trace_borders result is recorded "
+                      "as running, but no call is running in this session; call "
+                      "trace_borders again.", id=record.id)
     if held.get("status") == "error":
-        raise FitRefusal("TRACE_FAILED", f"{record.id}'s trace_borders call failed: "
-                         + str(held.get("message") or held.get("error") or "no image"),
-                         id=record.id)
+        raise Refused(RefusalCode.TRACE_FAILED,
+                      f"{record.id}'s trace_borders call failed: "
+                      + str(held.get("message") or held.get("error") or "no image"),
+                      id=record.id)
     if held.get("status") != "ok":
-        raise FitRefusal("NO_TRACE", f"{record.id} has no completed trace_borders "
-                         "result; traced section images need one.", id=record.id)
+        raise Refused(RefusalCode.NO_TRACE,
+                      f"{record.id} has no completed trace_borders "
+                      "result; traced section images need one.", id=record.id)
     if held.get("geometry_fingerprint") != handoff.correction_fingerprint(state, ctx, record.id):
-        raise FitRefusal("TRACE_STALE", f"{record.id}'s trace_borders result was made at "
-                         "a different placement; trace the current placement first.",
-                         id=record.id)
+        raise Refused(RefusalCode.TRACE_STALE,
+                      f"{record.id}'s trace_borders result was made at "
+                      "a different placement; trace the current placement first.",
+                      id=record.id)
     stored = str(held.get("artifact_dir", ""))
     directory = Path(stored)
     if not directory.is_absolute() and root is not None:
@@ -254,8 +251,9 @@ def traced_lines(
     lines_path = directory / "extracted_lines.png"
     request_path = directory / "request.json"
     if not lines_path.exists() or not request_path.exists():
-        raise FitRefusal("NO_TRACE", f"{record.id}'s trace_borders artifacts are missing "
-                         f"({stored}).", id=record.id)
+        raise Refused(RefusalCode.NO_TRACE,
+                      f"{record.id}'s trace_borders artifacts are missing "
+                      f"({stored}).", id=record.id)
     atlas_to_canvas = np.asarray(json.loads(request_path.read_text())["atlas_to_canvas"],
                                  dtype=np.float64)
     with Image.open(lines_path) as opened:
@@ -445,11 +443,12 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
     # Whole-section flags first, so the per-region cap never hides them.
     for flag in sorted(record.diagnostics.get("flags", []),
                        key=lambda item: item.get("code") not in SECTION_FLAGS):
-        if flag.get("code") == "FOLDS":
-            flags.append({"code": "FOLDS", "fold_fraction": round(float(flag["fold_fraction"]), 5)})
+        if flag.get("code") == FitFlag.FOLDS:
+            fold = float(flag["fold_fraction"])  # pyright: ignore[reportAny]  # saved JSON
+            flags.append({"code": FitFlag.FOLDS, "fold_fraction": round(fold, 5)})
             continue
-        if flag.get("code") == "DISPLACEMENT_OUTSIZED":
-            flags.append({"code": "DISPLACEMENT_OUTSIZED",
+        if flag.get("code") == FitFlag.DISPLACEMENT_OUTSIZED:
+            flags.append({"code": FitFlag.DISPLACEMENT_OUTSIZED,
                           **{key: round(float(flag[key]), 3) for key in (
                               "max_mm", "median_mm", "max_limit_mm", "median_limit_mm")}})
             continue

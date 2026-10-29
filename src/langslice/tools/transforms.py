@@ -21,15 +21,11 @@ import numpy as np
 
 from langslice.core.fits.affine import physical_decomposition
 from langslice.core.fits.engine_log import engine_output, failure_message
-from langslice.core.frozen import FROZEN
+from langslice.core.fits.flags import FitFlag
 from langslice.core.geometry.affine import normalized_physical_affine
+from langslice.core.refusal import RefusalCode, Refused, ReplyStatus
 from langslice.core.sections.damage import exclusions
-from langslice.tools.refusal import (
-    Refused,
-    check_frozen,
-    frozen_row,
-    unknown_sections,
-)
+from langslice.tools.refusal import check_frozen, frozen_row, unknown_sections
 from langslice.tools.stale import section_inputs, stale_row
 
 if TYPE_CHECKING:
@@ -138,11 +134,11 @@ def plausibility_flags(previous: Mapping[str, Any] | None,
     low, high = SCALE_CHANGE_LIMITS
     flags: list[dict[str, Any]] = []
     if any(not low <= new / old <= high for new, old in zip(scale, held, strict=True) if old):
-        flags.append({"code": "SCALE_CHANGED", "scale": [round(v, 3) for v in scale],
+        flags.append({"code": FitFlag.SCALE_CHANGED, "scale": [round(v, 3) for v in scale],
                       "previous": [round(v, 3) for v in held], "limits": [low, high]})
     shear, was = float(after.get("shear") or 0.0), float(before.get("shear") or 0.0)
     if abs(shear - was) > SHEAR_CHANGE_LIMIT:
-        flags.append({"code": "SHEAR", "shear": round(shear, 3), "previous": round(was, 3),
+        flags.append({"code": FitFlag.SHEAR, "shear": round(shear, 3), "previous": round(was, 3),
                       "limit": SHEAR_CHANGE_LIMIT})
     return flags
 
@@ -187,7 +183,8 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
         record = job.state.by_id(name)
         if (record is not None and "orientation" in job.frozen_for(name)
                 and reverses_orientation(record, transform)):
-            raise Refused(FROZEN, ids=[name], properties=["orientation"],
+            raise Refused(RefusalCode.FROZEN,
+                          ids=[name], properties=["orientation"],
                           message=_mirrors(name))
     with job.writing():
         records = []
@@ -222,14 +219,23 @@ class AffineFit:
     fitted: list[str] = field(default_factory=list)
 
 
-HAS_DEFORMATION = "HAS_DEFORMATION"
+def refit_refusal(section: SliceState) -> Refused:
+    """Refuse a linear refit of a section that holds a deformation.
 
+    Parameters
+    ----------
+    section
+        The section asked for, which holds a deformation.
 
-def has_deformation_row(record: SliceState) -> dict[str, Any]:
-    """The row of a section refused a linear refit because it holds a deformation."""
-    return {"id": record.id, "status": "error", "error": HAS_DEFORMATION,
-            "message": f"{record.id} holds a deformation, which a new transform would "
-            "leave misplaced; undo the deformation first, or fit a warp on it."}
+    Returns
+    -------
+    Refused
+        ``HAS_DEFORMATION``, saying to undo the deformation first.
+    """
+    return Refused(
+        RefusalCode.HAS_DEFORMATION,
+        f"{section.id} holds a deformation, which a new transform would "
+        "leave misplaced; undo the deformation first, or fit a warp on it.")
 
 
 def _fit_elastix(
@@ -259,7 +265,7 @@ def _fit_elastix(
     The fits run outside the job's write lock, from the state as it stood; the
     write takes the lock (:meth:`~langslice.job.job.Job.writing`) and refuses a
     section whose inputs changed meanwhile
-    (:data:`langslice.tools.stale.STALE_INPUT`, that section's row), writing
+    (``STALE_INPUT``, that section's row), writing
     the others.
     """
     from langslice.core.fits.affine import fit_elastix
@@ -277,7 +283,7 @@ def _fit_elastix(
             rows.append(frozen)
             continue
         if record.deformation:
-            rows.append(has_deformation_row(record))
+            rows.append({"id": record.id, **refit_refusal(record).payload()})
             continue
         kept, dropped = exclusions(record, restrict_to)
         try:
@@ -292,19 +298,21 @@ def _fit_elastix(
                                       edges=edges, section_weights=weights)
         except Exception as exc:  # nothing is written for this section
             logger.warning("elastix_affine failed for %s: %s", record.id, exc)
-            code = getattr(exc, "code", "FIT_FAILED")
-            rows.append({"id": record.id, "status": "error", "error": code,
-                         "message": failure_message(
-                             f"{type(exc).__name__}: {exc}", job.engine_log,
-                             f"the Elastix affine of {record.id} failed")
-                         if code == "FIT_FAILED" else str(exc)})
+            code = getattr(exc, "code", RefusalCode.FIT_FAILED)
+            message = str(exc)
+            if code == RefusalCode.FIT_FAILED:
+                message = failure_message(
+                    f"{type(exc).__name__}: {exc}", job.engine_log,
+                    f"the Elastix affine of {record.id} failed")
+            failure = Refused(code, message=message)
+            rows.append({"id": record.id, **failure.payload()})
             continue
-        if outcome.get("error") == "FIT_FAILED":
+        if outcome.get("error") == RefusalCode.FIT_FAILED:
             outcome["message"] = failure_message(
                 str(outcome.get("message", "")), job.engine_log,
                 f"the Elastix affine of {record.id} failed")
         rows.append(outcome)
-        if outcome["status"] != "ok":
+        if outcome["status"] != ReplyStatus.OK:
             continue
         outcome["inputs"] = inputs_block(
             state, workspace, record, section_image=section_image,
@@ -360,7 +368,7 @@ def elastix_fit(
     from dataclasses import replace
 
     from langslice.core.atlas.images import resolve_image
-    from langslice.core.fits.affine import RegionTooSmall, elastix_affine
+    from langslice.core.fits.affine import elastix_affine
     from langslice.core.geometry.affine import IDENTITY_PARAMS
     from langslice.tools import masks as ops_masks
     from langslice.tools.deformable import inputs_block, region_entries
@@ -370,13 +378,14 @@ def elastix_fit(
     if record is None:
         raise unknown_sections(job.state, [str(section)])
     if record.position_mm is None:
-        raise Refused("NO_POSITION", message=f"{record.id} has no position yet.")
+        raise Refused(RefusalCode.NO_POSITION,
+                      message=f"{record.id} has no position yet.")
     if record.deformation:
-        raise Refused(HAS_DEFORMATION, message=has_deformation_row(record)["message"])
+        raise refit_refusal(record)
     try:
         resolved = resolve_image(workspace.atlas, str(atlas_image))
     except ValueError as exc:
-        raise Refused("BAD_ARGS", message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     section_image = check_image(job, workspace, [record], section_image)
     include = region_entries(workspace, job.state, list(restrict_to))
     dropped = region_entries(workspace, job.state, list(exclude))
@@ -393,10 +402,11 @@ def elastix_fit(
                                  exclude=dropped, atlas_image=resolved,
                                  section_image=section_image,
                                  edges=edges, section_weights=weights)
-    except RegionTooSmall as exc:
-        raise Refused("REGION_TOO_SMALL", message=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - the engine's failure is the caller's refusal
-        raise Refused("FIT_FAILED", message=f"{record.id}: " + failure_message(
+        if isinstance(exc, Refused) and exc.code == RefusalCode.REGION_TOO_SMALL:
+            raise
+        raise Refused(RefusalCode.FIT_FAILED,
+                      message=f"{record.id}: " + failure_message(
             f"{type(exc).__name__}: {exc}", job.engine_log,
             f"the Elastix affine of {record.id} failed")) from exc
     block = inputs_block(job.state, workspace, record, section_image=section_image,
@@ -507,7 +517,7 @@ def interactive_transform(
     """
     from dataclasses import replace
 
-    from langslice.core.pictures.placement import StageFailure, stage
+    from langslice.core.pictures.placement import stage
     from langslice.core.stack.section import ROTATIONS
 
     state = job.state
@@ -515,7 +525,7 @@ def interactive_transform(
     pending: dict[str, tuple[bool, int, dict[str, Any] | None]] = {}
     for entry in sections:
         if not isinstance(entry, Mapping):
-            done.append(Adjustment(error={"status": "error", "error": "BAD_ARGS"}))
+            done.append(Adjustment(error=Refused(RefusalCode.BAD_ARGS).payload()))
             continue
         record = state.resolve(entry.get("id", ""))
         if record is None:
@@ -526,16 +536,16 @@ def interactive_transform(
         frozen_now = job.frozen_for(name)
 
         def refuse(error: str, name: str = name, **facts: Any) -> None:
-            done.append(Adjustment(error={"status": "error", "error": error, "id": name,
-                                          **facts}, id=name))
+            refusal = Refused(error, id=name, **facts)
+            done.append(Adjustment(error=refusal.payload(), id=name))
 
         flip = record.flip
         if entry.get("flip") is not None:
             if not isinstance(entry["flip"], bool):
-                refuse("BAD_ARGS", message="flip is true or false")
+                refuse(RefusalCode.BAD_ARGS, message="flip is true or false")
                 continue
             if entry["flip"] != flip and job.spec.off("interactive_transform:flip"):
-                refuse("FLIP_DISABLED")
+                refuse(RefusalCode.FLIP_DISABLED)
                 continue
             flip = entry["flip"]
         rotation = record.rotation_deg
@@ -546,20 +556,23 @@ def interactive_transform(
             except (TypeError, ValueError):
                 rotation = -1
             if rotation not in ROTATIONS:
-                refuse("BAD_ROTATION", allowed=list(ROTATIONS))
+                refuse(RefusalCode.BAD_ROTATION, allowed=list(ROTATIONS))
                 continue
             if rotation != record.rotation_deg and job.spec.off("interactive_transform:rotate"):
-                refuse("OPTION_OFF", message="rotate_quarter is switched off for this job")
+                refuse(RefusalCode.OPTION_OFF,
+                       message="rotate_quarter is switched off for this job")
                 continue
         knobs = held_knobs(record)
         given = {key: entry[key] for key in KNOB_DEFAULTS if entry.get(key) is not None}
         try:
             knobs.update({key: float(value) for key, value in given.items()})
         except (TypeError, ValueError):
-            refuse("BAD_ARGS", message="every transform number must be a number")
+            refuse(RefusalCode.BAD_ARGS,
+                   message="every transform number must be a number")
             continue
         if not all(math.isfinite(value) for value in knobs.values()):
-            refuse("BAD_ARGS", message="every transform number must be finite")
+            refuse(RefusalCode.BAD_ARGS,
+                   message="every transform number must be finite")
             continue
         changed = (flip, rotation) != (record.flip, record.rotation_deg)
         held = record.transform
@@ -581,15 +594,15 @@ def interactive_transform(
             done.append(Adjustment(id=name, orientation=orientation, written=changed))
             continue
         if record.position_mm is None:
-            refuse("NO_POSITION")
+            refuse(RefusalCode.NO_POSITION)
             continue
         pivot = ((held or {}).get("physical") or {}).get("pivot")
         twin = replace(record, flip=flip, rotation_deg=rotation)
         try:
             staged = stage(workspace, state, twin, knobs,
                            pivot if pivot else "canvas")
-        except StageFailure as failure:
-            refuse(failure.code, message=str(failure))
+        except Refused as failure:
+            refuse(failure.code, message=failure.message)
             continue
         transform = transform_record(
             size=staged.section.size, um_per_px=staged.um_per_px,
@@ -720,15 +733,17 @@ def elastix_affine(
     from langslice.tools.deformable import refuse_unknown_inputs
 
     if not sections:
-        raise Refused("BAD_ARGS", message="sections must name one or more sections")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="sections must name one or more sections")
 
     asked = str(atlas_image or "nissl").strip()
     try:
         image = resolve_image(workspace.atlas, asked)
     except ValueError as exc:
-        raise Refused("BAD_ARGS", message=str(exc)) from exc
+        raise Refused(RefusalCode.BAD_ARGS, message=str(exc)) from exc
     if any(not isinstance(name, str) for name in restrict_to):
-        raise Refused("BAD_ARGS", message="restrict_to lists atlas regions")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="restrict_to lists atlas regions")
     records = []
     for ref in sections:
         record = job.state.resolve(ref)
@@ -743,7 +758,7 @@ def elastix_affine(
     if restrict_to:
         for row in result.rows:
             record = job.state.by_id(str(row.get("id")))
-            if row.get("status") == "ok" and record is not None:
+            if row.get("status") == ReplyStatus.OK and record is not None:
                 box = region_box(workspace, job.state, record, restrict_to)
                 if box is not None:
                     row["restrict_box"] = box

@@ -9,8 +9,8 @@ one step and the checkpoint), and returns a plain record of what changed.
 Pictures are the core's: a verb given display options returns the pictures the
 core draws, never drawing its own. No wording for a model: that belongs to the
 doors (the agent tools, MCP, the CLI), which call these and add them. A refusal
-is :class:`~langslice.tools.refusal.Refused`, carrying its code and the plain
-facts behind it.
+is the core's :class:`~langslice.core.refusal.Refused`, carrying its code (a
+:class:`~langslice.core.refusal.RefusalCode`) and the plain facts behind it.
 
 The layer rule (``tests/test_core_imports.py``): this package imports the
 core and the job layer only, never a door (``doors.tools.toolbox``,
@@ -31,5 +31,6 @@ the linear placement: fit, apply, or keep the linear placement),
 :mod:`.traces` (the image model's border traces), :mod:`.submit` (the
 submit gates and the final write), :mod:`.exports` (the maps and exports),
 :mod:`.inputs` (what a long verb re-checks before it applies),
-:mod:`.refusal` (the refusal every verb raises).
+:mod:`.refusal` (the refusals the job's rules decide: an unknown, frozen or
+busy section).
 """

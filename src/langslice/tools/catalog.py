@@ -33,6 +33,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.toolset import (
     GROUPS,
     TOOLS,
@@ -63,7 +64,6 @@ from langslice.tools import (
     status as views,
 )
 from langslice.tools import zoom as tools_zoom
-from langslice.tools.refusal import Refused
 
 __all__ = ["GROUPS", "VERBS", "Group", "Kind", "Verb", "enabled", "positions_on", "verbs_for"]
 
@@ -176,7 +176,8 @@ def check_section_count(job: Any, name: str, count: int) -> None:
         cap = min(held) if held else None
         reason = " here"
     if cap is not None and count > cap:
-        raise Refused("TOO_MANY_SECTIONS", max_sections=cap, requested=count,
+        raise Refused(RefusalCode.TOO_MANY_SECTIONS,
+                      max_sections=cap, requested=count,
                       message=f"{name} takes at most {cap} sections per call{reason}; "
                       f"{count} were named. Nothing was done: split them over calls.")
 

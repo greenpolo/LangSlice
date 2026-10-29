@@ -9,11 +9,11 @@ from typing import Any
 import pytest
 
 from langslice.core.fits import deformation
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.tools import deformable as ops_deformable
-from langslice.tools.refusal import Refused
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,

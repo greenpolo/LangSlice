@@ -31,6 +31,7 @@ from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from langslice.core.pictures.opening import (
     CLAUDE_MAX_VIEW_EDGE,
 )
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.spec import JobSpec
 from langslice.core.stack.stack import StackState
 from langslice.core.toolset import refusal
@@ -303,7 +304,7 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
             result = await to_thread.run_sync(serialized)
         except Exception as exc:
             logger.exception("Tool %s failed", tool.__name__)
-            result = {"status": "error", "error": type(exc).__name__, "message": str(exc)}
+            result = Refused(type(exc).__name__, message=str(exc)).payload()
         blocks = result_blocks(result, job=session.job)
         if session.trace is not None:
             session.trace.write("tool_result", name=tool.__name__, args=kwargs,
@@ -350,7 +351,7 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
             arguments = self.pre_parse_json(arguments_to_validate)
             refusal = argument_refusal(tool, arguments)
             if refusal is not None:
-                blocks = result_blocks(refusal)
+                blocks = result_blocks(refusal.payload())
                 held = trace()
                 if held is not None:
                     held.write("tool_result", name=name, args=arguments,
@@ -458,12 +459,12 @@ def build_server(
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
         if session is None:
-            return [TextContent(type="text", text=json.dumps({
-                "status": "error",
-                "error": "NO_FOLDER",
-                "message": "Name a job: start_job(image_folder=...), or a saved ABBA "
-                           "job's start_job(job_id=...).",
-            }))]
+            refusal = Refused(
+                RefusalCode.NO_FOLDER,
+                "Name a job: start_job(image_folder=...), or a saved ABBA "
+                "job's start_job(job_id=...).")
+            reply = json.dumps(refusal.payload())
+            return [TextContent(type="text", text=reply)]
         # A saved ABBA job (opened from ABBA's copy prompt) has no launching agent
         # to carry its statement, so its start_job returns it; ABBA's copy-prompt
         # dialog is scheduled for removal.

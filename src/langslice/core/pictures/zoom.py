@@ -42,23 +42,17 @@ from langslice.core.pictures.captions import caption
 from langslice.core.pictures.drawn import annotate, note
 from langslice.core.pictures.grid import draw_grid
 from langslice.core.pictures.sizes import picture_edge
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.stack import StackState
 from langslice.core.workspace import Workspace
 
 #: The recipe renderer of a picture cropped from a saved image.
 CROP_RENDERER = "crop"
+#: The redraw refusals after which the saved picture is cropped instead: its
+#: section is gone, or another version of LangSlice saved its recipe.
+CROPPED_INSTEAD = (RefusalCode.UNKNOWN_SECTION, RefusalCode.UNREADABLE_RECIPE)
 #: How much a crop (no redraw) is enlarged at most: it holds no more detail.
 MAX_CROP_ENLARGE = 4.0
-
-
-class ZoomError(ValueError):
-    """A zoom that cannot be drawn: ``code`` is ``BAD_BOX`` (not four
-    numbers), ``EMPTY_BOX`` (no area inside the picture) or ``NO_PICTURE``
-    (nothing to redraw and no saved picture to crop)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 @dataclass(frozen=True)
@@ -81,22 +75,25 @@ class Zoomed:
 def box_fractions(box: Sequence[float], shown: Sequence[float]) -> tuple[float, ...]:
     """*box* (``[x0, y0, x1, y1]`` pixels of a picture whose content is
     *shown* ``(width, height)``) as fractions of that content, ordered and
-    clamped. :class:`ZoomError` for a box that is not four numbers or that
+    clamped. :class:`Refused` for a box that is not four numbers or that
     leaves no area."""
     try:
         values = [float(v) for v in box]
     except (TypeError, ValueError):
-        raise ZoomError("BAD_BOX", "box must be four numbers [x0, y0, x1, y1]") from None
+        raise Refused(RefusalCode.BAD_BOX,
+                      "box must be four numbers [x0, y0, x1, y1]") from None
     if len(values) != 4:
-        raise ZoomError("BAD_BOX", "box must be four numbers [x0, y0, x1, y1]")
+        raise Refused(RefusalCode.BAD_BOX,
+                      "box must be four numbers [x0, y0, x1, y1]")
     width, height = max(float(shown[0]), 1.0), max(float(shown[1]), 1.0)
     x0, x1 = sorted((values[0], values[2]))
     y0, y1 = sorted((values[1], values[3]))
     out = (min(max(x0 / width, 0.0), 1.0), min(max(y0 / height, 0.0), 1.0),
            min(max(x1 / width, 0.0), 1.0), min(max(y1 / height, 0.0), 1.0))
     if (out[2] - out[0]) * width < 2 or (out[3] - out[1]) * height < 2:
-        raise ZoomError("EMPTY_BOX", f"box {values} has no area inside the picture "
-                        f"({int(width)} x {int(height)} px above its caption)")
+        raise Refused(RefusalCode.EMPTY_BOX,
+                      f"box {values} has no area inside the picture "
+                      f"({int(width)} x {int(height)} px above its caption)")
     return out
 
 
@@ -115,7 +112,7 @@ def _shown(recipe: dict[str, Any] | None, picture: Image.Image | None) -> tuple[
     if held:
         return float(held[0]), float(held[1])
     if picture is None:
-        raise ZoomError("NO_PICTURE", "no picture to read the box on")
+        raise Refused(RefusalCode.NO_PICTURE, "no picture to read the box on")
     return float(picture.width), float(picture.height)
 
 
@@ -166,15 +163,18 @@ def redraw(
     """
     renderer = (recipe or {}).get("renderer")
     if not isinstance(region, str):
-        raise ZoomError("BAD_ARGS", "region must be one atlas acronym or numeric id.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      "region must be one atlas acronym or numeric id.")
     region = region.strip()
     if region and box:
-        raise ZoomError("BAD_ARGS", "Give either box or region, not both.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      "Give either box or region, not both.")
     window = None
     if region:
         if (recipe is None or renderer != looks.RENDERER or state is None
                 or (recipe.get("args") or {}).get("mode") != "overlay"):
-            raise ZoomError("BAD_REGION_PICTURE", "Region zoom works only on overlay pictures.")
+            raise Refused(RefusalCode.BAD_REGION_PICTURE,
+                          "Region zoom works only on overlay pictures.")
         recipe, window = looks.overlay_region_window(workspace, state, recipe, region,
                                                      store=store)
     source = _image(picture)
@@ -184,13 +184,13 @@ def redraw(
             window = compose((recipe.get("args") or {}).get("zoom") or (), inner)
         try:
             drawn = RENDERERS[renderer](recipe, window, workspace, state, store, long_edge)
-        except looks.LookError as exc:
+        except Refused as exc:
             # A section gone, or a recipe another version of LangSlice saved:
             # the saved picture is cropped instead.
-            if region or exc.code not in ("UNKNOWN_SECTION", "UNREADABLE_RECIPE") or source is None:
+            if region or exc.code not in CROPPED_INSTEAD or source is None:
                 raise
             return _crop(None, box, source, long_edge or picture_edge(workspace), stale=True,
-                         note_text=str(exc))
+                         note_text=exc.message)
         image, text = drawn.image, drawn.caption
         if drawn.stale:
             image = caption(image, STALE_NOTE)
@@ -209,8 +209,9 @@ def redraw(
                       stale=drawn.stale, sections=drawn.sections, mode=drawn.mode,
                       um_per_px=drawn.um_per_px)
     if source is None:
-        raise ZoomError("NO_PICTURE", "this picture cannot be redrawn and no saved copy was "
-                        "given to crop")
+        raise Refused(RefusalCode.NO_PICTURE,
+                      "this picture cannot be redrawn and no saved copy was "
+                      "given to crop")
     return _crop(recipe, box, source,
                  long_edge or picture_edge(workspace),
                  stale=bool(recipe and state and recipe.get("state")
@@ -279,5 +280,5 @@ def _crop(
 
 
 __all__ = [
-    "CROP_RENDERER", "RENDERERS", "Zoomed", "ZoomError", "box_fractions", "compose", "redraw",
+    "CROP_RENDERER", "RENDERERS", "Zoomed", "box_fractions", "compose", "redraw",
 ]

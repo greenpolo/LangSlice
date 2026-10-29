@@ -24,19 +24,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from langslice.core.fits.deformation import linear_key
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.stack.section import SliceState
 from langslice.core.stack.stack import StackState
 from langslice.core.stack.status import deformation_entry, transform_entry
 from langslice.job import registrations as regs
-from langslice.tools.refusal import Refused, check_frozen, unknown_sections
+from langslice.tools.refusal import check_frozen, unknown_sections
 
 if TYPE_CHECKING:
     from langslice.job.job import Job
-
-UNKNOWN_REGISTRATION = "UNKNOWN_REGISTRATION"
-REGISTRATION_ELSEWHERE = "REGISTRATION_ELSEWHERE"
-DEFORMATION_UNREADABLE = "DEFORMATION_UNREADABLE"
-
 
 @dataclass(frozen=True)
 class Listed:
@@ -170,7 +166,8 @@ def _unknown(job: Job, record: SliceState, number: Any) -> Refused:
     numbers = [item["id"] for item in job.registrations.entries(record.id)]
     listed = (f"its registrations are {', '.join(str(n) for n in numbers)}" if numbers
               else "it has none listed yet")
-    return Refused(UNKNOWN_REGISTRATION, id=record.id, registration=number,
+    return Refused(RefusalCode.UNKNOWN_REGISTRATION,
+                   id=record.id, registration=number,
                    registrations=numbers,
                    message=f"{record.id} has no registration {number}; {listed}. "
                            "Call restore_registration with the section alone to list them.")
@@ -185,7 +182,8 @@ def entry_for(job: Job, section: Any, number: Any) -> tuple[SliceState, dict[str
     ``REGISTRATION_ELSEWHERE``, ``DEFORMATION_UNREADABLE``, ``BAD_ARGS``."""
     record = _resolve(job, str(section))
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
-        raise Refused("BAD_ARGS", message=f"{record.id}: a registration is a number from 1; "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"{record.id}: a registration is a number from 1; "
                       f"got {number!r}.")
     held = job.registrations.number_of(job.state, record)
     entry = job.registrations.get(record.id, number)
@@ -199,14 +197,16 @@ def _check_entry(job: Job, record: SliceState, entry: dict[str, Any]) -> None:
     """Refuse *entry* where it cannot sit on *record* as it stands."""
     elsewhere = _elsewhere(job.state, record, entry)
     if elsewhere:
-        raise Refused(REGISTRATION_ELSEWHERE, id=record.id, registration=entry["id"],
+        raise Refused(RefusalCode.REGISTRATION_ELSEWHERE,
+                      id=record.id, registration=entry["id"],
                       message=f"Registration {entry['id']} of {record.id} cannot go back "
                               f"as the section stands: {elsewhere}. Put the section back "
                               "at that position and those cutting angles first.")
     deformation = entry.get("deformation")
     if deformation and not (job.layout.resolve(str(deformation.get("record", "")))
                             / "record.json").is_file():
-        raise Refused(DEFORMATION_UNREADABLE, id=record.id, registration=entry["id"],
+        raise Refused(RefusalCode.DEFORMATION_UNREADABLE,
+                      id=record.id, registration=entry["id"],
                       message=f"The deformation of registration {entry['id']} of "
                               f"{record.id} is no longer in the job folder "
                               f"({deformation.get('record')}).")
@@ -218,7 +218,8 @@ def _restore_one(job: Job, record: SliceState, number: Any) -> Restored:
     store = job.registrations
     held = _list_held(job, record)
     if isinstance(number, bool) or not isinstance(number, int) or number < 1:
-        raise Refused("BAD_ARGS", message=f"{record.id}: a registration is a number from 1; "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message=f"{record.id}: a registration is a number from 1; "
                       f"got {number!r}.")
     entry = store.get(record.id, number)
     if entry is None:
@@ -259,7 +260,8 @@ def restore(job: Job, sections: Any) -> RestoredMany:
     entries = list(sections or [])
     if not entries or not all(isinstance(e, dict) and set(e) == {"id", "registration"}
                               for e in entries):
-        raise Refused("BAD_ARGS", message="sections is a list of {\"id\": filename, "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="sections is a list of {\"id\": filename, "
                       "\"registration\": number}, one per section to put back.")
     with job.writing():
         state = job.state
@@ -276,7 +278,8 @@ def restore(job: Job, sections: Any) -> RestoredMany:
         ids = [record.id for record in named]
         doubled = sorted({name for name in ids if ids.count(name) > 1})
         if doubled:
-            raise Refused("DUPLICATE_SLICE_IDS", duplicate_ids=doubled,
+            raise Refused(RefusalCode.DUPLICATE_SLICE_IDS,
+                          duplicate_ids=doubled,
                           message="Name each section once.")
         before = job.snapshot()
         rows: list[dict[str, Any]] = []
@@ -303,6 +306,5 @@ def restore(job: Job, sections: Any) -> RestoredMany:
         return RestoredMany(rows=rows, written=written)
 
 
-__all__ = ["DEFORMATION_UNREADABLE", "REGISTRATION_ELSEWHERE", "UNKNOWN_REGISTRATION",
-           "Listed", "Restored", "RestoredMany", "entry_for", "listing", "restore", "row",
+__all__ = ["Listed", "Restored", "RestoredMany", "entry_for", "listing", "restore", "row",
            "saved_pictures"]

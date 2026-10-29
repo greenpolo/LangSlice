@@ -33,8 +33,9 @@ from langslice.core.pictures import look as looks
 from langslice.core.pictures import sheet as sheets
 from langslice.core.pictures.drawn import PictureNote, collecting, note_for
 from langslice.core.pictures.sizes import MIN_RESOLUTION
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.job.pictures import has_frame
-from langslice.tools.refusal import Refused, unknown_sections
+from langslice.tools.refusal import unknown_sections
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -145,7 +146,7 @@ def _strings(value: Any, name: str) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise Refused("BAD_ARGS", message=f"{name} must be a list.")
+        raise Refused(RefusalCode.BAD_ARGS, message=f"{name} must be a list.")
     return list(value)
 
 
@@ -215,7 +216,7 @@ def look(
     state = job.state
     if str(mode) in looks.MODES and job.spec.off(f"look:{mode}"):
         on = [name for name in looks.MODES if not job.spec.off(f"look:{name}")]
-        raise Refused("OPTION_OFF", option=f"look:{mode}", modes=on,
+        raise Refused(RefusalCode.OPTION_OFF, option=f"look:{mode}", modes=on,
                       message=f"look mode {mode} is switched off for this job; the modes "
                       f"are {', '.join(on)}.")
     refs = _strings(sections, "sections")
@@ -235,11 +236,13 @@ def look(
     try:
         positions = tuple(float(v) for v in _strings(positions_mm, "positions_mm"))
     except (TypeError, ValueError):
-        raise Refused("BAD_ARGS", message="positions_mm must be numbers.") from None
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="positions_mm must be numbers.") from None
     layers = None if atlas_layers is None else tuple(str(v) for v in _strings(
         atlas_layers, "atlas_layers"))
     if atlas_opacity is not None and not 0.0 <= float(atlas_opacity) <= 1.0:
-        raise Refused("BAD_ARGS", message="atlas_opacity is between 0 and 1.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="atlas_opacity is between 0 and 1.")
     edge = max(int(resolution), MIN_RESOLUTION) if resolution else None
     named = tuple(str(v) for v in _strings(plugin_layers, "layers"))
     if named:
@@ -248,18 +251,16 @@ def look(
     if mask_names:
         _check_masks(job, str(mode), ids, mask_names)
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
-        raise Refused("BAD_ARGS", message="depth is a whole number, 0 or more.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="depth is a whole number, 0 or more.")
     request = looks.LookRequest(
         mode=str(mode), sections=tuple(ids), positions_mm=positions,
         images=tuple(str(c) for c in _strings(images, "images")), atlas_layers=layers,
         atlas_opacity=None if atlas_opacity is None else float(atlas_opacity),
         warp=str(warp or "applied"), long_edge=edge, layers=named, masks=mask_names, depth=depth,
         registrations=shown_under)
-    try:
-        with collecting() as notes:
-            drawn = looks.look(workspace, state, request, store=job.deformations)
-    except looks.LookError as exc:
-        raise Refused(exc.code, message=str(exc)) from exc
+    with collecting() as notes:
+        drawn = looks.look(workspace, state, request, store=job.deformations)
     if shown_under:
         numbers = {name: number for name, number, _held in shown_under}
         for picture in drawn:
@@ -285,16 +286,19 @@ def _under_registrations(
     from langslice.tools import registrations as ops_registrations
 
     if mode not in ("section", "overlay"):
-        raise Refused("BAD_ARGS", message="registrations are drawn in mode section or "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="registrations are drawn in mode section or "
                       "overlay.")
     if not isinstance(registrations, Mapping):
-        raise Refused("BAD_ARGS", message="registrations is {filename: number}.")
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="registrations is {filename: number}.")
     trial = StackState.from_dict(job.state.to_dict())
     shown: list[tuple[str, int, bool]] = []
     for ref, number in registrations.items():
         record, entry, held = ops_registrations.entry_for(job, ref, number)
         if ids and record.id not in ids:
-            raise Refused("BAD_ARGS", message=f"registrations names {record.id}, which is not "
+            raise Refused(RefusalCode.BAD_ARGS,
+                          message=f"registrations names {record.id}, which is not "
                           "among the sections to draw; add it to sections, or leave sections "
                           "empty.")
         copy_ = trial.by_id(record.id)
@@ -312,19 +316,22 @@ def _check_plugin_layers(job: Job, mode: str, ids: Sequence[str], names: Sequenc
     from langslice.core.pictures.plugin_layers import known_names
 
     if mode not in ("section", "overlay"):
-        raise Refused("BAD_ARGS", message="layers are drawn on pictures of mode section or "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="layers are drawn on pictures of mode section or "
                       "overlay.")
     held = known_names(job.state, ids)
     unknown = [name for name in names if name != "all" and name not in held]
     if unknown:
-        raise Refused("UNKNOWN_PLUGIN_LAYER", unknown=unknown, layers=held,
+        raise Refused(RefusalCode.UNKNOWN_PLUGIN_LAYER,
+                      unknown=unknown, layers=held,
                       message=f"No drawn section has a layer named {', '.join(unknown)}; "
                       f"the layers: {', '.join(held) or 'none'}.")
 
 
 def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) -> None:
     if mode not in ("section", "overlay"):
-        raise Refused("BAD_ARGS", message="masks are outlined on pictures of mode section or "
+        raise Refused(RefusalCode.BAD_ARGS,
+                      message="masks are outlined on pictures of mode section or "
                       "overlay.")
     state = job.state
     records = [r for r in (state.by_id(i) for i in ids) if r is not None] if ids \
@@ -332,7 +339,7 @@ def _check_masks(job: Job, mode: str, ids: Sequence[str], names: Sequence[str]) 
     held = sorted({name for record in records for name in (getattr(record, "masks", None) or {})})
     unknown = [name for name in names if name not in held]
     if unknown:
-        raise Refused("UNKNOWN_MASK", unknown=unknown, masks=held,
+        raise Refused(RefusalCode.UNKNOWN_MASK, unknown=unknown, masks=held,
                       message=f"No drawn section has a mask named {', '.join(unknown)}; the "
                       f"masks: {', '.join(held) or 'none'}. Make one with make_mask.")
 
@@ -465,8 +472,8 @@ def show_result(
             try:
                 drawn = looks.look(workspace, state, request, store=job.deformations)
             except Exception as exc:  # noqa: BLE001 - the write stands; say why
-                failed.append({"error": getattr(exc, "code", "RENDER_FAILED"),
-                               "message": str(exc)})
+                code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
+                failed.append({"error": code, "message": str(exc)})
         else:
             for section in sections:
                 window = tuple(float(v) for v in windows.get(section) or ())
@@ -478,8 +485,8 @@ def show_result(
                 try:
                     drawn += looks.look(workspace, state, request, store=job.deformations)
                 except Exception as exc:  # noqa: BLE001 - the write stands; say why
-                    failed.append({"id": section, "error": getattr(exc, "code",
-                                                                   "RENDER_FAILED"),
+                    code = getattr(exc, "code", RefusalCode.RENDER_FAILED)
+                    failed.append({"id": section, "error": code,
                                    "message": str(exc)})
     shown, rest = split_shown(job, drawn)
     entries = save_pictures(job, workspace, tool, shown, notes,

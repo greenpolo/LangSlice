@@ -325,9 +325,10 @@ longer exist be taken over by the images it is opened with.
   forgotten only once its reply is recorded), `background` (above), `close`
   (the background work, then the pictures), `wire_views` (a saved
   picture's `step` is the undo history's depth), `frozen_for(id)` and
-  `frozen_refusal(ids, *properties)` (the `FROZEN` payload when a write to a
+  `frozen_refusal(ids, *properties)` (the `FROZEN` `Refused` when a write to a
   property the job froze on one of the sections would change it: `ids`,
-  `properties`, `message`), `emit_results` (atomic).
+  `properties`, `message`; `busy_refusal(ids)` the `SECTION_BUSY` one),
+  `emit_results` (atomic).
   `ingest`, `apply_host_inputs` (the host's inputs, each section named
   checked; `spec.frozen` must name sections that are here, a frozen position
   must have been supplied, and a frozen affine without a supplied transform
@@ -338,8 +339,8 @@ longer exist be taken over by the images it is opened with.
   resume.
   A host's `inputs.damaged` note becomes the section's `damage_note` only
   (`apply_host_inputs`): a section is damaged when it has marked regions. The submit
-  gates, `submit_errors(state, spec, breaks)`, in order and
-  only for the tasks that are on: `MISSING_POSITIONS` (no position),
+  gates, `submit_errors(state, spec, breaks)` (the first gate's `Refused`, or
+  None), in order and only for the tasks that are on: `MISSING_POSITIONS` (no position),
   `STRICT_INTERVAL` or
   `INTERVAL_BREAKS_UNSUPPORTED`; `MISSING_TRANSFORMS`;
   `MISSING_DEFORMATIONS`, only where the host requires a deformation on every
@@ -442,15 +443,15 @@ longer exist be taken over by the images it is opened with.
   writes never share one.
 - `browse.py` — read-only browsing of the job folder for `tools/files.py`: `resolve`
   (a path relative to the folder, or absolute inside it; `..` and a symlink
-  pointing out are refused with `PathRefused`; one that does not exist with
-  `PathMissing`, naming the nearest folder above it that exists and at most
-  `NEAREST_NAMES` of its names), `list_entries`, `search`
+  pointing out are refused, `Refused` `BAD_PATH`; one that does not exist,
+  `NOT_FOUND` with `nearest`, the nearest folder above it that exists, and
+  `holds`, at most `NEAREST_NAMES` of its names), `list_entries`, `search`
   (regex, else plain text; case-insensitive; text files only), `read_lines`,
   `kind_of` (dir/text/picture/binary), and the caps (`LIST_ENTRIES`,
   `SEARCH_MATCHES`, `READ_LINES`, `TEXT_BYTES`, `LINE_CHARS`). A walk skips
   symlinks leaving the folder. `HIDDEN` (`TRACE_DIR`, the agent transcripts;
   `is_hidden`): left out of every listing, search, walk and a missing path's
-  `holds`, and a path in it (or a symlink into it) refused with `PathRefused`
+  `holds`, and a path in it (or a symlink into it) refused `BAD_PATH`
   whether or not it exists.
 - `quint.py` — QUINT JSON: `job_export` (QuickNII / VisuAlign JSON of the
   placed sections, each anchoring from its exact pixel -> atlas map, so any

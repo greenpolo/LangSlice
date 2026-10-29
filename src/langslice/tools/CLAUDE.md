@@ -58,10 +58,15 @@ toolbox are still `doors/tools/`.
   `refusal.check_frozen(job, ids, *properties)` raises it for a whole call,
   `refusal.frozen_row(job, id, *properties)` is a section's row in a
   per-section answer.
-- A refusal is `refusal.Refused(code, status="error", **facts)`, nothing
-  written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
-  every door answers with (`status` "refused" for a gate, `Refused.of`
-  turns a job gate's payload into one).
+- A refusal is the core's `Refused(RefusalCode.X, message, **facts)`
+  (`core/refusal.py`), raised, nothing written; this package re-exports
+  nothing of it. `Refused.payload()` is the `{"status": ..., "error": code,
+  ...}` the tool door answers with (`status` "refused" for a gate, as the
+  opening-read gate's; the job's submit gates return theirs as a `Refused`,
+  `Job.submit_errors`, which `submit` raises); a section's row
+  in a per-section answer is `{"id": ..., **refusal.payload()}`. A code is
+  always a `RefusalCode` member (a fit's flag a `core.fits.flags.FitFlag`),
+  never a string written out.
 - A section is named by its filename (`StackState.resolve`: the filename,
   or its stem when no other section shares it; never a number). A name
   that is no section's is `refusal.unknown_sections(state, refs)`:
@@ -145,7 +150,8 @@ The operations of `look` and `zoom` are `look.py` and `zoom.py`.
 - `files.py` — read-only file access over the job folder for the native agent
   (`job.browse` keeps every path inside it; `BAD_PATH` otherwise, and
   `NOT_FOUND` for a path that does not exist, with `nearest`, the nearest
-  folder above it that does, and `holds`, its names; `browse.PathMissing`):
+  folder above it that does, and `holds`, its names; both raised by
+  `browse.resolve`):
   `list_files(job, path=".", glob="")` -> `Listing`, `search_files(job, query,
   path=".", glob="")` -> `Found`, `read_file(job, path, offset=0, limit=400)` ->
   `FileText`; each has a capped `text` reply that counts what it leaves out. A picture

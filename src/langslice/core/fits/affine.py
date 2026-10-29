@@ -36,6 +36,7 @@ from langslice.core.geometry.affine import (
 )
 from langslice.core.needs import render
 from langslice.core.pictures.canvas import canvas_geometry
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections.renders import (
     PREVIEW_LONG_EDGE,
     canvas_um_per_px,
@@ -149,10 +150,6 @@ ELASTIX_DETAIL = "standard"
 ELASTIX_MIN_REGION_SPAN = 4
 
 
-class RegionTooSmall(ValueError):
-    """An Elastix fit whose selected anatomy is too small to fit safely."""
-
-
 def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> None:
     if not include:
         return
@@ -168,7 +165,8 @@ def _check_elastix_region(prepared: Any, atlas: Any, include: Sequence[str]) -> 
     ys, xs = np.nonzero(mask)
     span = (int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1) if xs.size else (0, 0)
     if min(span) < ELASTIX_MIN_REGION_SPAN or xs.size < ELASTIX_MIN_REGION_SPAN ** 2:
-        raise RegionTooSmall(
+        raise Refused(
+            RefusalCode.REGION_TOO_SMALL,
             "Region is too small for elastix. Select a larger region"
             "[[?interactive_transform  or use interactive_transform]]; no fit was run. "
             f"Selected atlas support: {span[0]} x {span[1]} pixels, {xs.size} pixels total.")
@@ -318,10 +316,8 @@ def fit_elastix(
     ``calibration`` of the working frame, and a ``regions`` report when
     regions were given.
     """
-    from langslice.core.atlas.sides import SideError
-
     if record.position_mm is None:
-        return {"status": "error", "error": "NO_POSITION", "id": record.id}
+        return Refused(RefusalCode.NO_POSITION, id=record.id).payload()
     section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
     stored = (record.transform or {}).get("params")
     start = (list(stored) if stored is not None and len(stored) == 6
@@ -341,19 +337,16 @@ def fit_elastix(
                              include=include, exclude=exclude, atlas_image=atlas_image,
                              section_image=section_image, edges=edges,
                              section_weights=section_weights)
-    except RegionTooSmall as error:
-        return {"status": "error", "error": "REGION_TOO_SMALL", "id": record.id,
-                "message": render(str(error), ctx.spec.switched_off)}
-    except SideError as error:
-        return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
+    except Refused as refusal:  # regions too small, or a side it lacks
+        message = render(refusal.message, ctx.spec.switched_off)
+        return Refused(refusal.code, id=record.id, message=message).payload()
     except Exception as exc:
         logger.warning("elastix_affine failed for %s: %s", record.id, exc)
-        return {
-            "status": "error",
-            "error": "FIT_FAILED",
-            "id": record.id,
-            "message": f"The Elastix affine failed: {exc}",
-        }
+        return Refused(
+            RefusalCode.FIT_FAILED,
+            id=record.id,
+            message=f"The Elastix affine failed: {exc}",
+        ).payload()
     in_section = denormalized_affine(fit.params, section.size)
     return _fit_payload(record, section, um_per_px, source, geometry, in_section,
                         regions=fit.report if (include or exclude) else None)

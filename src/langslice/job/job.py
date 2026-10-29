@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.core import frozen as freeze
 from langslice.core.fits import deformation
-from langslice.core.frozen import FROZEN
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.sections import images as section_images
 from langslice.core.sections.discovery import discover_slices
 from langslice.core.spec import (
@@ -67,7 +67,7 @@ from langslice.core.stack.stack import StackState
 from langslice.job import public_files as formats
 from langslice.job import recent
 from langslice.job import registrations as regs
-from langslice.job.background import SECTION_BUSY, BackgroundWork, in_worker
+from langslice.job.background import BackgroundWork, in_worker
 from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
 from langslice.job.history import History
 from langslice.job.layout import (
@@ -375,11 +375,11 @@ def _job_result(
         if not future.done():  # the wait ran out; a job's own timeout is a result
             raise
         error: BaseException = future.exception() or TimeoutError()
-        return {"id": section_id, "geometry_fingerprint": fingerprint,
-                "status": "error", "error": type(error).__name__, "message": str(error)}
+        failure = Refused(type(error).__name__, message=str(error))
+        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure.payload()}
     except Exception as exc:  # the job records its own failures; this is a backstop
-        return {"id": section_id, "geometry_fingerprint": fingerprint,
-                "status": "error", "error": type(exc).__name__, "message": str(exc)}
+        failure = Refused(type(exc).__name__, message=str(exc))
+        return {"id": section_id, "geometry_fingerprint": fingerprint, **failure.payload()}
 
 
 def _land(state: StackState, section_id: str, fingerprint: str, result: dict[str, Any]) -> bool:
@@ -992,7 +992,7 @@ class Job:
         cap = self.spec.transform.max_parallel
         return cap if cap < MAX_PARALLEL_TRANSFORMS else None
 
-    def submit_errors(self, breaks: list[int]) -> dict[str, Any] | None:
+    def submit_errors(self, breaks: list[int]) -> Refused | None:
         """Every submit gate that applies to this job, in order (:func:`submit_errors`)."""
         return submit_errors(self.state, self.spec, breaks)
 
@@ -1001,8 +1001,8 @@ class Job:
         return self.spec.frozen_for(section_id)
 
     def frozen_refusal(self, section_ids: Collection[str], *properties: str,
-                       ) -> dict[str, Any] | None:
-        """``{"error": "FROZEN", "ids", "properties", "message"}`` when a write
+                       ) -> Refused | None:
+        """``FROZEN`` (``ids``, ``properties``, ``message``) when a write
         to any of *properties* of any of *section_ids* would change what the
         job froze there (the sections and the properties it names are the
         frozen ones), else None."""
@@ -1014,11 +1014,12 @@ class Job:
         if not hit:
             return None
         named = [name for name in freeze.PROPERTIES if any(name in held for held in hit.values())]
-        return {"error": FROZEN, "ids": list(hit), "properties": named,
-                "message": freeze.message(named, list(hit), len(self.state.slices))}
+        message = freeze.message(named, list(hit), len(self.state.slices))
+        return Refused(RefusalCode.FROZEN, ids=list(hit), properties=named,
+                       message=message)
 
-    def busy_refusal(self, section_ids: Collection[str]) -> dict[str, Any] | None:
-        """``{"error": "SECTION_BUSY", "ids", "work", "message"}`` when background
+    def busy_refusal(self, section_ids: Collection[str]) -> Refused | None:
+        """:class:`Refused` ``SECTION_BUSY`` (``ids``, ``work``, ``message``) when background
         work is running on any of *section_ids* (it will write them when it
         lands, from what they hold now), else None. The landing of that work
         itself is not refused."""
@@ -1028,9 +1029,10 @@ class Job:
         works = list({work.id: work for work in busy.values()}.values())
         running = "; ".join(f"{work.kind} is running on {', '.join(work.sections)} (work {work.id})"
                             for work in works)
-        return {"error": SECTION_BUSY, "ids": list(busy), "work": [work.id for work in works],
-                "message": f"{running}. Nothing written: write to it once the work lands "
-                           "(its notice comes with a later reply)."}
+        return Refused(RefusalCode.SECTION_BUSY, ids=list(busy),
+                       work=[work.id for work in works],
+                       message=f"{running}. Nothing written: write to it once the work "
+                       "lands (its notice comes with a later reply).")
 
     def clear_stale_deformations(self) -> list[str]:
         """Drop deformations whose linear placement changed; checkpoint; their ids.

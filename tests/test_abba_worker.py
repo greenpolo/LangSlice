@@ -495,7 +495,8 @@ def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monke
         job.position_sections(sections=[{"id": ID0, "position_mm": 0.1}], view=False)
         job.interactive_transform(sections=[{"id": ID0, "rotation_deg": 0.0}], view=False)
         assert "FROZEN" in json.dumps(job.fireants_syn(sections=[ID0], view=False))
-        assert job.job.frozen_refusal([ID0], "deformation")["error"] == "FROZEN"
+        refusal = job.job.frozen_refusal([ID0], "deformation")
+        assert refusal is not None and refusal.code == "FROZEN"
     finally:
         job.close()
 

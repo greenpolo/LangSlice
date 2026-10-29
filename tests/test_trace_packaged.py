@@ -21,14 +21,13 @@ from PIL import Image
 
 from langslice.core.fits import deformation
 from langslice.core.fits.trace.request import GeneratedSegmentation
+from langslice.core.refusal import RefusalCode, Refused
 from langslice.core.spec import JobSpec, NonlinearSpec
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.providers.connections import resolve_image_model
 from langslice.tools import deformable as ops_deformable
 from langslice.tools import traces
-from langslice.tools.refusal import Refused
-from langslice.tools.stale import STALE_INPUT
 from tests.deformable_synthetic import (
     SMOOTH_FIELD,
     SyntheticAtlas,
@@ -213,7 +212,7 @@ def test_a_section_changed_while_the_model_draws_gets_nothing(tmp_path, atlas):
     job.background.wait_all()
     (work,) = job.background.notices()
     assert work.status == "failed"
-    assert f"{STALE_INPUT}: " in work.notice
+    assert f"{RefusalCode.STALE_INPUT}: " in work.notice
     assert job.state.slices[0].deformation is None
     assert len(job.undo_stack) == depth
 

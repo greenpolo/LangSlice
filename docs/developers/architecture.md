@@ -21,7 +21,15 @@ Import-linter enforces the boundaries without exceptions.
 | `providers` | Model access, beside the layers; receives no task logic |
 
 `core`, `job` and `tools` import no provider or model SDK. Image models are
-passed in as arguments. `connectors/` contains code installed in another
+passed in as arguments.
+
+A call that cannot be done raises one exception, `Refused` (`core/refusal.py`),
+with a code from the `RefusalCode` enum (every code the agent can meet, each
+with its meaning), a message and the facts behind it; nothing is written for
+it. The core, the job and the tools raise it, and each interface turns it into
+its own answer once: the tool reply `{"status": "error", "error": code, ...}`,
+the agent CLI's envelope with its exit code and fix, the MCP text block, the
+library's reply. A plugin raises the same refusal as `ToolError`. `connectors/` contains code installed in another
 program: Fiji's Java plugin and the Claude Desktop, Claude Code, Antigravity
 and Codex setups.
 

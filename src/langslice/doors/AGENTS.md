@@ -52,6 +52,36 @@ quota accounting there); pictures are files and artifacts in the CLI, inline els
 each CLI call is a process of its own (cold, or the child the job's warm
 process forks for it, `agent_cli/warm.py`).
 
+A refusal is the core's `Refused` (`core/refusal.py`: a `RefusalCode`, a
+message, the facts), raised by the core, the job, the tools and the tool
+bodies, and turned into an answer once per door:
+
+- the tool door (every door's tools): `tools/toolbox._strict` answers a
+  `Refused` the body raises (its argument check and the opening-read
+  gate's included) with `Refused.payload()`, inside the steps that clear
+  stale deformations, name registrations, save pictures and open the reply
+  with background notices, so a refusal's reply passes through them as any
+  reply does; a plugin tool's `ToolError` is a `Refused` and is answered
+  the same way (`plugins/runtime.py` re-raises it; any other exception of a
+  handler is `PLUGIN_FAILED`);
+- the agent CLI: a verb's reply whose `status` is in
+  `core.refusal.FAILED_STATUSES` becomes `Envelope.failure(code, message,
+  ...)` (`agent_cli/calls.call`), its exit code from the code
+  (`envelope.exit_code`) and its fix from `tools/descriptions/fixes.FIXES`;
+  the CLI's own refusals (arguments, flags, an unknown verb, a missing job)
+  are made as envelopes where they arise and carried out by
+  `calls._Refusal`, so the fix is read while the job's disabled list applies;
+- MCP: the reply as the first text block (`mcp/pages.result_blocks`);
+  `start_job` without a job answers `NO_FOLDER`; an exception a tool raises
+  is answered with its type's name as the code;
+- the built-in agent: the reply is the function response;
+  `agent/adk_plugins.StrictArgumentsPlugin` answers an argument refusal with
+  its payload before the tool runs;
+- the library: a verb method returns the reply (`library/replies.Reply`);
+  the methods outside the toolbox (`JobHandle.section_maps`, a script's
+  `job.context`) raise the `Refused` (a `ValueError`) or the plugin's
+  `ToolError`.
+
 ## Files
 
 - `langslice/tools/descriptions/render.py` — each verb's declaration: a stub function per verb
@@ -147,8 +177,9 @@ process forks for it, `agent_cli/warm.py`).
   `sections=` for a picture of the handler's own, so the saved picture
   records each section's registration) and
   its views. `runtime.py`: the body of a plugin tool (limits, the context, a
-  write tool's call as one undo step, `ToolError` / `Refused` / any exception
-  as a reply, the reply and pictures from the `ToolResult`). `provenance.py`:
+  write tool's call as one undo step, a `ToolError` / `Refused` left to the
+  tool door, any other exception `PLUGIN_FAILED`, the reply and pictures from
+  the `ToolResult`). `provenance.py`:
   `job.json`'s `plugins` and the declarations as the model sees them (also
   `ToolBox.plugins`, the trace's `plugins` record). `mcp.py`: the generic MCP
   adapter plugin (LangSlice as a client of a configured server, allow-list,
@@ -451,8 +482,8 @@ process forks for it, `agent_cli/warm.py`).
     `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,
     `EXIT_REFUSED` 3, `EXIT_INTERNAL` 4; `exit_code(code)` (`BAD_*`,
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other refusal
-    3); `FIXES` per code; `stdout_to_stderr()` (stdout holds the envelope
-    only).
+    3; `ARGUMENT_CODES` are `RefusalCode` members); `FIXES` per code;
+    `stdout_to_stderr()` (stdout holds the envelope only).
   - `launch.py` — `launch --role register|register-scripting`: the exact
     prompt that launches a registration subagent, `result.prompt`, saved by
     `save` in `logs/launches/<six-digit number>_<role>.md` (artifact

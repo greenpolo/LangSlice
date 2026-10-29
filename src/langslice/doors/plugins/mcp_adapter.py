@@ -71,6 +71,7 @@ from langslice.core.plugins import (
     ToolResult,
     ToolSpec,
 )
+from langslice.core.refusal import RefusalCode
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,8 @@ class Connection:
         """The server's answer to tool *name* (``CallToolResult``)."""
         queue = self._queue
         if queue is None:
-            raise ToolError("MCP_UNAVAILABLE", f"the {self.options.get('server')} MCP server "
+            raise ToolError(RefusalCode.MCP_UNAVAILABLE,
+                            f"the {self.options.get('server')} MCP server "
                             "is not running")
         future: concurrent.futures.Future[Any] = concurrent.futures.Future()
         self._loop.call_soon_threadsafe(queue.put_nowait, (name, dict(arguments), timeout,
@@ -170,7 +172,8 @@ class Connection:
         try:
             return future.result(timeout=timeout + 5)
         except (concurrent.futures.TimeoutError, TimeoutError):
-            raise ToolError("MCP_TIMEOUT", f"{name} did not answer within {timeout:g} s") \
+            raise ToolError(RefusalCode.MCP_TIMEOUT,
+                            f"{name} did not answer within {timeout:g} s") \
                 from None
 
     def close(self) -> None:
@@ -389,7 +392,8 @@ def _fill(ctx: Any, rules: Mapping[str, Mapping[str, Any]], arguments: Mapping[s
         send = rule.get("send")
         section = arguments.get(str(rule.get("section") or "section"))
         if section in (None, ""):
-            raise ToolError("BAD_ARGS", f"{rule.get('section') or 'section'} names the section "
+            raise ToolError(RefusalCode.BAD_ARGS,
+                            f"{rule.get('section') or 'section'} names the section "
                             f"whose {send} is sent")
         if send == "section_image":
             image = ctx.section_image(section, level=rule.get("level", "high"))
@@ -413,7 +417,8 @@ def _fill(ctx: Any, rules: Mapping[str, Mapping[str, Any]], arguments: Mapping[s
                 "affine": None if view.affine is None else list(view.affine.matrix or ()),
                 "file_size": list(view.file_size), "pixel_size_um": view.pixel_size_um}
         else:
-            raise ToolError("BAD_CONFIG", f"unknown input rule {send!r}")
+            raise ToolError(RefusalCode.BAD_CONFIG,
+                            f"unknown input rule {send!r}")
     return out
 
 
@@ -425,16 +430,20 @@ def _layer(rule: Mapping[str, Any], value: Any, default_name: str) -> Layer:
         if kind == "points":
             points = np.asarray(value, dtype=np.float64)
             if points.size > MAX_LAYER_POINTS * 3:
-                raise ToolError("BAD_LAYER", "too many points")
+                raise ToolError(RefusalCode.BAD_LAYER, "too many points")
             return Layer.points(points, frame=frame, name=name)
         if kind == "lines":
             if sum(len(line) for line in value) > MAX_LAYER_POINTS:
-                raise ToolError("BAD_LAYER", "too many vertices")
+                raise ToolError(RefusalCode.BAD_LAYER, "too many vertices")
             return Layer.lines(value, closed=bool(rule.get("closed", False)), frame=frame,
                                name=name)
+    except ToolError:  # the layer's own check: its own words
+        raise
     except (TypeError, ValueError) as exc:
-        raise ToolError("BAD_LAYER", f"the server's answer is no {kind} layer: {exc}") from exc
-    raise ToolError("BAD_CONFIG", f"a mapped layer is points or lines; got {kind!r}")
+        raise ToolError(RefusalCode.BAD_LAYER,
+                        f"the server's answer is no {kind} layer: {exc}") from exc
+    raise ToolError(RefusalCode.BAD_CONFIG,
+                    f"a mapped layer is points or lines; got {kind!r}")
 
 
 def _apply(ctx: Any, rules: Sequence[Mapping[str, Any]], arguments: Mapping[str, Any],
@@ -460,7 +469,8 @@ def _apply(ctx: Any, rules: Sequence[Mapping[str, Any]], arguments: Mapping[str,
             done = ctx.set_positions([{"id": section, "position_mm": float(value)}])
             applied.append({"to": "position", **done.reply()})
         else:
-            raise ToolError("BAD_CONFIG", f"unknown result rule {target!r}")
+            raise ToolError(RefusalCode.BAD_CONFIG,
+                            f"unknown result rule {target!r}")
     return applied
 
 
@@ -480,7 +490,8 @@ def handler_for(server: Mapping[str, Any], remote_name: str, options: Mapping[st
         answer = connection(server).call(remote_name, remote_arguments, timeout)
         text, data, images = _answer(answer)
         if getattr(answer, "isError", False):
-            raise ToolError("MCP_TOOL_ERROR", (text or "the server reported an error")[:MAX_TEXT],
+            raise ToolError(RefusalCode.MCP_TOOL_ERROR,
+                            (text or "the server reported an error")[:MAX_TEXT],
                             server=server["server"], tool=remote_name)
         reply: dict[str, Any] = {"server": server["server"], "tool": remote_name}
         if text:

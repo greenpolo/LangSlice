@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from langslice.core.pictures import positioning
-from langslice.core.pictures.look import LookError, LookRequest, look
+from langslice.core.pictures.look import LookRequest, look
 from langslice.core.pictures.positioning import (
     GAP,
     MARGIN,
@@ -29,6 +29,7 @@ from langslice.core.pictures.positioning import (
     split,
 )
 from langslice.core.pictures.zoom import redraw
+from langslice.core.refusal import Refused
 from tests.look_synthetic import SECTIONS, stack
 
 #: A coronal-ish section and atlas plane, micrometres.
@@ -164,7 +165,7 @@ def test_positioning_split_into_parts_each_redrawn_by_its_recipe(
     assert "part 2 of 2 zoomed" in zoomed.caption
     only = look(ws, state, LookRequest("positioning", positions_mm=(0.05, 0.14), part=1))
     assert [p.sections for p in only] == [("s1.png",)]
-    with pytest.raises(LookError) as caught:
+    with pytest.raises(Refused) as caught:
         look(ws, state, LookRequest("positioning", part=5))
     assert caught.value.code == "UNKNOWN_PART"
 

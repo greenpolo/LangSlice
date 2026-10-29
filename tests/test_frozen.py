@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 import langslice
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.core.toolset import TOOLS
 from langslice.doors import jobs
@@ -17,7 +18,6 @@ from langslice.job.gates import submit_errors
 from langslice.tools import deformable as ops_deformable
 from langslice.tools import positions, transforms
 from langslice.tools.catalog import enabled
-from langslice.tools.refusal import Refused
 from tests.linear_tool_helpers import SLAB, tool_named
 from tests.test_disabled_tools import (
     _base_specs,
@@ -110,9 +110,9 @@ def test_position_sections_refuses_a_frozen_position_or_angles_whole(tmp_path: P
         positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0},
                                                {"id": "s1.png", "position_mm": 6.0}])
     assert refused.value.code == "FROZEN"
-    assert refused.value.details["ids"] == ["s1.png"]
-    assert refused.value.details["properties"] == ["position"]
-    assert "s1.png" in refused.value.details["message"]
+    assert refused.value.facts["ids"] == ["s1.png"]
+    assert refused.value.facts["properties"] == ["position"]
+    assert "s1.png" in refused.value.facts["message"]
     assert job.undo_stack == []  # nothing written, the unfrozen section included
     assert positions.position_sections(job, ctx, [{"id": "s0.png", "position_mm": 5.0}]).written
     # The angles are one plane for the stack: one section with them frozen refuses all.
@@ -120,7 +120,7 @@ def test_position_sections_refuses_a_frozen_position_or_angles_whole(tmp_path: P
     job, ctx = _open(tmp_path / "angles", n=2, frozen={"s0.png": ["angles"]})
     with pytest.raises(Refused) as angles:
         positions.position_sections(job, ctx, [], {"pitch_deg": 1.0, "yaw_deg": 1.0})
-    assert angles.value.code == "FROZEN" and angles.value.details["ids"] == ["s0.png"]
+    assert angles.value.code == "FROZEN" and angles.value.facts["ids"] == ["s0.png"]
 
 
 def test_interactive_transform_refuses_per_entry_what_is_frozen(tmp_path: Path):
@@ -160,7 +160,7 @@ def test_elastix_affine_and_set_transforms_refuse_a_frozen_affine(
     assert done.rows[1]["properties"] == ["affine"] and seen == ["s0.png"]
     with pytest.raises(Refused) as refused:
         transforms.set_transforms(job, {"s1.png": {"params": [1, 0, 0, 0, 1, 0]}})
-    assert refused.value.code == "FROZEN" and refused.value.details["ids"] == ["s1.png"]
+    assert refused.value.code == "FROZEN" and refused.value.facts["ids"] == ["s1.png"]
 
 
 def test_the_deformation_tools_refuse_a_frozen_deformation(
@@ -177,7 +177,8 @@ def test_the_deformation_tools_refuse_a_frozen_deformation(
     required = JobSpec.from_dict({**job.spec.to_dict(), "nonlinear": {
         **job.spec.to_dict()["nonlinear"], "require_deformation": True}})
     refusal = submit_errors(job.state, required, [])
-    assert refusal is not None and [row["id"] for row in refusal["sections"]] == ["s1.png"]
+    assert refusal is not None
+    assert [row["id"] for row in refusal.facts["sections"]] == ["s1.png"]
 
 
 # --- the partial freezes ---------------------------------------------------------------
@@ -219,7 +220,7 @@ def test_handedness_is_the_one_the_supplied_transform_carries(tmp_path: Path):
     assert transforms.set_transforms(job, {"s0.png": {**mirrored, "params": [-1, 0, 2, 0, 1, 0]}})
     with pytest.raises(Refused) as refused:
         transforms.set_transforms(job, {"s0.png": {"params": [1, 0, 0, 0, 1, 0]}})
-    assert refused.value.code == "FROZEN" and refused.value.details["properties"] == [
+    assert refused.value.code == "FROZEN" and refused.value.facts["properties"] == [
         "orientation"]
 
 
@@ -237,7 +238,8 @@ def test_a_frozen_affine_leaves_the_deformation_free_and_a_deformation_fit_write
     job, ctx = _open(tmp_path, tasks=["transform", "nonlinear"],
                      frozen={"s0.png": ["affine"]}, nonlinear=NonlinearSpec(provider="none"))
     assert job.frozen_refusal(["s0.png"], "deformation") is None
-    assert job.frozen_refusal(["s0.png"], "affine")["error"] == "FROZEN"
+    refusal = job.frozen_refusal(["s0.png"], "affine")
+    assert refusal is not None and refusal.code == "FROZEN"
     held = dict(job.state.by_id("s0.png").transform)
     assert held["kind"] == "host"
     # the deformation tools are on, and they only ever write the deformation
@@ -364,7 +366,8 @@ def test_submit_does_not_ask_a_frozen_section_for_a_deformation(tmp_path: Path):
         inputs={"transforms": {"s0.png": {"params": [1, 0, 0, 0, 1, 0]},
                                "s1.png": {"params": [1, 0, 0, 0, 1, 0]}}})
     refusal = submit_errors(state, spec, [])
-    assert refusal is not None and [row["id"] for row in refusal["sections"]] == ["s1.png"]
+    assert refusal is not None
+    assert [row["id"] for row in refusal.facts["sections"]] == ["s1.png"]
 
 
 # --- the text -----------------------------------------------------------------------------

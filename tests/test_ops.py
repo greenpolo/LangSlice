@@ -10,12 +10,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.core.refusal import Refused
 from langslice.core.spec import JobSpec
 from langslice.core.stack.section import SliceState
 from langslice.doors.agent.engine import build_context
 from langslice.job.job import Job
 from langslice.tools import damage, notes, positions, transforms
-from langslice.tools.refusal import Refused
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -116,7 +116,7 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
     assert job.undo() and _record(job, "s1.png").transform is None
     with pytest.raises(Refused) as frozen:
         transforms.set_transforms(job, {"s0.png": record, "s2.png": record})
-    assert frozen.value.code == "FROZEN" and frozen.value.details["ids"] == ["s2.png"]
-    assert frozen.value.details["properties"] == ["affine"]
+    assert frozen.value.code == "FROZEN" and frozen.value.facts["ids"] == ["s2.png"]
+    assert frozen.value.facts["properties"] == ["affine"]
     assert _record(job, "s0.png").transform is None
     assert transforms.set_transforms(job, {}) == []
